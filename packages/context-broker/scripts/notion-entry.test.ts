@@ -1,5 +1,6 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
+import * as filesystem from "node:fs/promises";
 import { mkdir, mkdtemp, readFile, readdir, realpath, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -108,8 +109,10 @@ test("native resource tools resolve stable File ID and report materialization wi
   const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;
   const ctx: ExtensionContext = { cwd: f.root, hasUI: false, mode: "rpc" };
   const requested: string[] = [];
-  await installHostSkills(api, { config: {}, getRecords: async () => ({ records: [f.metadata], failures: [] }),
-    loadRecord: async () => f.selected,
+  const metadata = Promise.withResolvers<{ records: SkillRecord[]; failures: [] }>();
+  let mainReads = 0;
+  await installHostSkills(api, { config: {}, getRecords: async () => metadata.promise,
+    loadRecord: async () => { mainReads++; return f.selected; },
     loadResource: async (record, path, _ctx, signal) => {
       requested.push(path);
       return materializeNotionEntryFile(record, path, ensure, async (file, output) => { await writeFile(output, f.bytes.get(file.path)!); }, signal);
@@ -117,7 +120,13 @@ test("native resource tools resolve stable File ID and report materialization wi
   }, createPiHostAdapter(api));
   const emit = async (name: string, event: unknown) => { const result = []; for (const listener of events.get(name) ?? []) result.push(await listener(event as never, ctx)); return result; };
   const input = { path: f.files[1]!.ref.replace(f.resource, "old-spelling.md") };
-  await emit("tool_call", { toolName: "read", toolCallId: "resource", input });
+  const pending = emit("tool_call", { toolName: "read", toolCallId: "resource", input });
+  expect(mainReads).toBe(0); expect(requested).toEqual([]);
+  expect(input.path).toContain("old-spelling.md");
+  metadata.resolve({ records: [f.metadata], failures: [] });
+  const admission = await pending;
+  expect(admission, JSON.stringify(admission)).not.toContainEqual(expect.objectContaining({ block: true }));
+  expect(mainReads).toBe(1);
   expect(input.path).toBe(join(f.selected.entryManifest!.root, f.resource));
   expect(requested).toEqual([f.resource]);
   const content = [{ type: "text" as const, text: f.bytes.get(f.resource)!.toString("utf8") }];
@@ -126,7 +135,8 @@ test("native resource tools resolve stable File ID and report materialization wi
   expect(result.details.original).toBe(true);
   expect(result.details.contextBrokerRead).toBeUndefined();
   expect(result.details.contextBrokerResource).toMatchObject({
-    version: 1, id: f.selected.id, scope: f.selected.sourceScope, snapshot_id: f.selected.snapshotId,
+    version: 2, id: f.selected.id, scope: f.selected.sourceScope, snapshot_id: f.selected.snapshotId,
+    delivery: { start: 0, end: content[0]!.text.length, encoding: "raw" },
     file_id: "guide", path: f.resource, ref: f.files[1]!.ref, bytes: f.files[1]!.bytes, sha256: f.files[1]!.sha256,
     delivered_complete_text: true, loaded: false,
   });
@@ -138,6 +148,103 @@ test("native resource tools resolve stable File ID and report materialization wi
   await emit("tool_call", { toolName: "read", toolCallId: "old", input: { path: f.files[1]!.ref } });
   await emit("session_switch", { type: "session_switch" });
   expect(await emit("tool_result", { toolName: "read", toolCallId: "old", content, isError: false })).toEqual([undefined]);
+});
+
+test("a completed cold resource cannot authorize an old read after a controlled session cancellation", async () => {
+  const f = await entry(), completed = Promise.withResolvers<string>(), release = Promise.withResolvers<void>();
+  const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
+  const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;
+  const ctx: ExtensionContext = { cwd: f.root, hasUI: false, mode: "rpc" };
+  await installHostSkills(api, { config: {}, getRecords: async () => ({ records: [f.metadata], failures: [] }),
+    loadRecord: async () => f.selected,
+    loadResource: async (record, path, _ctx, signal) => {
+      const output = await materializeNotionEntryFile(record, path, ensure, async (file, output) => { await writeFile(output, f.bytes.get(file.path)!); }, signal);
+      completed.resolve(output);
+      // The source has completed. The old host consumer still must recheck its
+      // lifetime when this already completed result is admitted.
+      await release.promise;
+      return output;
+    },
+  }, createPiHostAdapter(api));
+  const emit = async (name: string, event: unknown) => { const values = []; for (const listener of events.get(name) ?? []) values.push(await listener(event as never, ctx)); return values; };
+  const original = f.files[1]!.ref.replace(f.resource, "old-spelling.md"), input = { path: original };
+  const pending = emit("tool_call", { toolName: "read", toolCallId: "old-resource", input });
+  const output = await completed.promise;
+  expect(await readFile(output)).toEqual(f.bytes.get(f.resource)!);
+  expect(f.selected.entryManifest?.local_files_ready).toBe(true);
+  await emit("session_before_branch", { type: "session_before_branch" });
+  release.resolve();
+  const returned = await pending;
+  expect(input.path).toBe(original);
+  const blocked = returned.find((value): value is { block: true; reason: string; admission?: Record<string, unknown> } => !!value && typeof value === "object" && "block" in value);
+  expect(blocked?.admission).toBeDefined();
+  expect(blocked!.admission!.generation_current).toBeGreaterThan(blocked!.admission!.generation_started as number);
+  expect(JSON.parse(blocked!.reason).admission).toEqual(blocked!.admission);
+  expect(blocked!.reason).not.toContain(original);
+  expect(blocked).toMatchObject({ block: true, admission: {
+    version: 1, phase: "hook", stage: "admission", code: "SOURCE_ACTIVATION_CANCELLED", signal_aborted: true,
+    generation_started: expect.any(Number), generation_current: expect.any(Number),
+  } });
+  const content = [{ type: "text" as const, text: f.bytes.get(f.resource)!.toString("utf8") }];
+  expect(await emit("tool_result", { toolName: "read", toolCallId: "old-resource", input, content, isError: false })).toEqual([undefined]);
+});
+
+for (const substituted of ["leaf", "parent"] as const) test(`resource admission rejects a ${substituted} symlink introduced during acquisition`, async () => {
+  const f = await entry();
+  const destination = join(f.selected.entryManifest!.root, f.resource), outside = join(f.root, "outside");
+  await mkdir(outside);
+  await writeFile(join(outside, "guide.md"), f.bytes.get(f.resource)!);
+  const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
+  const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;
+  const ctx: ExtensionContext = { cwd: f.root, hasUI: false, mode: "rpc" };
+  await installHostSkills(api, { config: {}, getRecords: async () => ({ records: [f.metadata], failures: [] }),
+    loadRecord: async () => f.selected,
+    loadResource: async () => {
+      if (substituted === "parent") await symlink(outside, dirname(destination), "dir");
+      else {
+        await mkdir(dirname(destination));
+        await symlink(join(outside, "guide.md"), destination);
+      }
+      return destination;
+    },
+  }, createPiHostAdapter(api));
+  const input = { path: f.files[1]!.ref }, admission = [];
+  for (const listener of events.get("tool_call") ?? []) admission.push(await listener({ toolName: "read", toolCallId: "substitution", input } as never, ctx));
+  expect(admission).toContainEqual(expect.objectContaining({ block: true, admission: expect.objectContaining({ stage: "path_validation", code: "SOURCE_REFERENCE_INVALID" }) }));
+  expect(input.path).toBe(f.files[1]!.ref);
+});
+
+test("resource admission retains the verified directory path when file realpath names another hard link", async () => {
+  const f = await entry();
+  let stage = "";
+  const destination = await materializeNotionEntryFile(f.selected, f.resource, ensure, async (file, output) => {
+    stage = output;
+    await writeFile(output, f.bytes.get(file.path)!);
+  });
+  const [published, staged] = await Promise.all([stat(destination), stat(stage)]);
+  expect(published.ino).toBe(staged.ino);
+  expect(published.nlink).toBe(2);
+  const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
+  const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;
+  const ctx: ExtensionContext = { cwd: f.root, hasUI: false, mode: "rpc" };
+  await installHostSkills(api, { config: {}, getRecords: async () => ({ records: [f.metadata], failures: [] }),
+    loadRecord: async () => f.selected,
+    loadResource: async (record, path, _ctx, signal) => materializeNotionEntryFile(record, path, ensure,
+      async (file, output) => { await writeFile(output, f.bytes.get(file.path)!); }, signal),
+  }, createPiHostAdapter(api));
+  const originalRealpath = filesystem.realpath;
+  // macOS inode path lookup can report the other hard link. Reproduce that
+  // observed result deterministically, without requiring a runtime-specific race.
+  const lookup = spyOn(filesystem, "realpath").mockImplementation(async path => path === destination ? stage : originalRealpath(path));
+  try {
+    expect(await realpath(destination)).toBe(stage);
+    const input = { path: f.files[1]!.ref };
+    const admission = [];
+    for (const listener of events.get("tool_call") ?? []) admission.push(await listener({ toolName: "read", toolCallId: "hardlink", input } as never, ctx));
+    expect(admission, JSON.stringify(admission)).not.toContainEqual(expect.objectContaining({ block: true }));
+    expect(input.path).toBe(destination);
+    expect(await readFile(input.path)).toEqual(f.bytes.get(f.resource)!);
+  } finally { lookup.mockRestore(); }
 });
 
 for (const resourceHasFileId of [true, false]) for (const scheduling of ["sequential", "concurrent"] as const) test(`${resourceHasFileId ? "File ID" : "owner path"} ${scheduling} resource reads through an exact ref and advertised tree path deliver one provider body`, async () => {
@@ -163,7 +270,7 @@ for (const resourceHasFileId of [true, false]) for (const scheduling of ["sequen
   const read = async (path: string, toolCallId: string): Promise<AgentMessage> => {
     const input = { path };
     const admission = await emit("tool_call", { toolName: "read", toolCallId, input });
-    expect(admission.some(value => value && typeof value === "object" && "block" in value)).toBe(false);
+    expect(admission, JSON.stringify(admission)).not.toContainEqual(expect.objectContaining({ block: true }));
     const content = [{ type: "text" as const, text: await readFile(input.path, "utf8") }];
     const returned = await emit("tool_result", { toolName: "read", toolCallId, input, content, isError: false });
     const annotated = returned.find((value): value is { details: unknown } => !!value && typeof value === "object" && "details" in value)!;

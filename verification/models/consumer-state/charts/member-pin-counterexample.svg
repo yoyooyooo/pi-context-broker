@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-state" viewBox="0 0 890 1030" width="890" height="1030" style="max-width:100%;height:auto;--_bg:var(--pele-bg,#fff);--_fg:var(--pele-fg,#1f1f1f);--_m:var(--pele-muted,#6e6e6e);--_l:var(--pele-line,#1f1f1f);--_s:var(--pele-surface,#f3f3f3);--_a:var(--pele-surface-alt,#e6e6e6);--_b:var(--pele-border,#8a8a8a);--_c:var(--pele-accent,#5b7bd5);color:var(--_fg);--_tw:var(--pele-title-weight,bold);--_fm:var(--pele-font-mono,monospace);font:16px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--pele-font,sans-serif)" fill="var(--_fg)" role="graphics-document document" aria-roledescription="state"><style>
+.pele {
+  --pele-bg: #ffffff;
+  --pele-fg: #1c1c1c;
+  --pele-muted: #656565;
+  --pele-line: #808080;
+  --pele-surface: #fcfcfc;
+  --pele-surface-alt: #f1f1f1;
+  --pele-border: #c9c9c9;
+}
+.pele .blue rect { fill: #c3e0ff; }
+.pele .orange rect { fill: #f0d3bf; }
+.pele .purple rect { fill: #e3d5ff; }
+.pele .yellow rect { fill: #f0dcbf; }
+.pele .teal rect { fill: #bfe3df; }
+.pele .tan rect { fill: #e5d9ce; }
+.pele .pink rect { fill: #ffcbe6; }
+.pele .breaks rect {
+  fill: #ffecee !important;
+  stroke: #e72e3b !important;
+  stroke-width: 2.5px !important;
+}
+.pele .breaks text {
+  fill: #cd2834 !important;
+}
+.pele .mayBreak rect {
+  fill: #fff3e6 !important;
+  stroke: #e8730c !important;
+  stroke-width: 2.5px !important;
+}
+.pele .mayBreak text {
+  fill: #b85a06 !important;
+}
+.pele .bugPath rect {
+  stroke: #1680f3 !important;
+  stroke-width: 2.5px !important;
+}
+.pele .repeats rect {
+  stroke: #9b35d6 !important;
+  stroke-width: 2.5px !important;
+  stroke-dasharray: 6 3;
+}
+@media (prefers-color-scheme: dark) {
+  .pele {
+    --pele-bg: #1f1f1f;
+    --pele-fg: #f5f5f5;
+    --pele-muted: #acacac;
+    --pele-line: #939393;
+    --pele-surface: #121212;
+    --pele-surface-alt: #2c2c2c;
+    --pele-border: #4e4e4e;
+  }
+  .pele .blue rect { fill: #1b3857; }
+  .pele .orange rect { fill: #573117; }
+  .pele .purple rect { fill: #3c2e57; }
+  .pele .yellow rect { fill: #573d17; }
+  .pele .teal rect { fill: #174641; }
+  .pele .tan rect { fill: #3d3127; }
+  .pele .pink rect { fill: #57233e; }
+  .pele .breaks rect {
+    fill: #2e2021 !important;
+    stroke: #cf2b35 !important;
+  }
+  .pele .breaks text {
+    fill: #ff6463 !important;
+  }
+  .pele .mayBreak rect {
+    fill: #2e2619 !important;
+    stroke: #d0700f !important;
+  }
+  .pele .mayBreak text {
+    fill: #ffa257 !important;
+  }
+  .pele .bugPath rect {
+    stroke: #116dd2 !important;
+  }
+  .pele .repeats rect {
+    stroke: #9a3fcf !important;
+  }
+}
+</style><text class="pele-title" font-weight="var(--_tw)" text-anchor="middle" xml:space="preserve"><tspan x="445" y="25.6">固定选择与完整成员 pin 检查</tspan></text><g transform="translate(0,36)"><g class="pele-clusters"><g class="pele-cluster pele-state-composite" data-id="legend"><rect x="8" y="8" width="529.02" height="151" rx="10" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"/><path d="M8,44H537.02" fill="none" stroke="var(--_b)"/><text class="pele-cluster-label" x="272.51" y="31.6" text-anchor="middle">Legend</text></g><g class="pele-cluster pele-state-composite" data-id="s0"><rect x="340.02" y="203" width="488" height="521" rx="10" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"/><path d="M340.02,239H828.02" fill="none" stroke="var(--_b)"/><text class="pele-cluster-label" x="388.02" y="226.6" text-anchor="middle">当前操作</text></g></g><g class="pele-edges" fill="none" stroke="var(--_l)" stroke-linecap="round"><g class="pele-edge pele-transition" data-id="edge0"><path d="M584.02,159L584.02,268"/><path class="pele-marker" d="M584.02,275L580.66,267L587.38,267Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge1"><path d="M584.02,319L584.02,381"/><path class="pele-marker" d="M584.02,388L580.66,380L587.38,380Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge2"><path d="M532.02,432C532.02,441.25 460.02,441.25 460.02,450.5L460.02,509"/><path class="pele-marker" d="M460.02,516L456.66,508L463.38,508Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge3"><path d="M636.02,432C636.02,441.25 708.02,441.25 708.02,450.5L708.02,509"/><path class="pele-marker" d="M708.02,516L704.66,508L711.38,508Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge4"><path d="M460.02,560L460.02,618.5C460.02,625.44 548.02,625.44 548.02,632.38L548.02,637"/><path class="pele-marker" d="M548.02,644L544.66,636L551.38,636Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge5"><path d="M708.02,560L708.02,618.5C708.02,625.44 620.02,625.44 620.02,632.38L620.02,637"/><path class="pele-marker" d="M620.02,644L616.66,636L623.38,636Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge6"><path d="M576.02,688L576.02,724C576.02,734.88 350.9,737.87 350.9,748.75L350.9,917"/><path class="pele-marker" d="M350.9,924L347.54,916L354.26,916Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge7"><path d="M592.02,688L592.02,724C592.02,731.36 778.02,735.14 778.02,742.5L778.02,786"/><path class="pele-marker" d="M778.02,793L774.66,785L781.38,785Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge8"><path d="M530.9,846L530.9,917"/><path class="pele-marker" d="M530.9,924L527.54,916L534.26,916Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge9"><path d="M584.02,724C584.02,733.25 530.9,733.25 530.9,742.5L530.9,795"/><path class="pele-marker" d="M530.9,802L527.54,794L534.26,794Z" fill="var(--_l)" stroke="none"/></g></g><g class="pele-edge-labels" font-size="14"><g class="pele-edge-label" data-id="edge1"><rect x="545.02" y="339.5" width="78" height="21" rx="3" fill="var(--_bg)"/><text x="584.02" y="354.9" text-anchor="middle">收到准备图</text></g><g class="pele-edge-label" data-id="edge2"><rect x="414.02" y="460" width="92" height="21" rx="3" fill="var(--_bg)"/><text x="460.02" y="475.4" text-anchor="middle">检查输出预算</text></g><g class="pele-edge-label" data-id="edge3"><rect x="611.82" y="452.5" width="192.41" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="708.02" y="466.4">检查 scope、snapshot、hash</tspan><tspan x="708.02" y="484.4">与闭包</tspan></text></g><g class="pele-edge-label" data-id="edge4"><rect x="363.82" y="580.5" width="192.41" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="460.02" y="594.4">检查 scope、snapshot、hash</tspan><tspan x="460.02" y="612.4">与闭包</tspan></text></g><g class="pele-edge-label" data-id="edge5"><rect x="662.02" y="588" width="92" height="21" rx="3" fill="var(--_bg)"/><text x="708.02" y="603.4" text-anchor="middle">检查输出预算</text></g><g class="pele-edge-label" data-id="edge6"><rect x="304.9" y="813.5" width="92" height="21" rx="3" fill="var(--_bg)"/><text x="350.9" y="828.9" text-anchor="middle">尝试最终提交</text></g><g class="pele-edge-label" data-id="edge7"><rect x="732.02" y="744.5" width="92" height="21" rx="3" fill="var(--_bg)"/><text x="778.02" y="759.9" text-anchor="middle">尝试最终提交</text></g><g class="pele-edge-label" data-id="edge8"><rect x="484.9" y="875.5" width="92" height="21" rx="3" fill="var(--_bg)"/><text x="530.9" y="890.9" text-anchor="middle">尝试最终提交</text></g><g class="pele-edge-label" data-id="edge9"><rect x="477.9" y="744.5" width="106" height="21" rx="3" fill="var(--_bg)"/><text x="530.9" y="759.9" text-anchor="middle">取消或会话换代</text></g></g><g class="pele-nodes"><g class="pele-node pele-state" data-id="s6" transform="translate(530.9,824)"><rect x="-104" y="-22" width="208" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">操作失效，等待拒绝提交</text></g><g class="pele-node pele-state" data-id="s7" transform="translate(440.9,955)"><rect x="-112.01" y="-31" width="224.02" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">拒绝替换，旧组合保留 root</tspan><tspan x="0" y="16.1">v1 / Requires v2</tspan></text></g><g class="pele-node pele-state breaks bugPath" data-id="s8" transform="translate(778.02,824)"><rect x="-103.12" y="-31" width="206.24" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)" style="fill:#ffecee;stroke:#e72e3b;stroke-width:2.5px;"/><text class="pele-label" style="fill:#cd2834;" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">违例：根 pin 覆盖了依赖</tspan><tspan x="0" y="16.1">pin</tspan></text></g><g class="pele-node pele-state-start" data-id="root_start" transform="translate(584.02,152)"><circle r="7" fill="var(--_l)"/></g><g class="pele-node pele-state breaks" data-id="lg0" transform="translate(138.26,101.5)"><rect x="-114.26" y="-31" width="228.51" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)" style="fill:#ffecee;stroke:#e72e3b;stroke-width:2.5px;"/><text class="pele-label" style="fill:#cd2834;" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">Breaks</tspan><tspan x="0" y="16.1">EachMemberKeepsOwnPin</tspan></text></g><g class="pele-node pele-state bugPath" data-id="lg1" transform="translate(406.77,101.5)"><rect x="-114.26" y="-41.5" width="228.51" height="83" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-15.4">Path to the</tspan><tspan x="0" y="5.6">EachMemberKeepsOwnPin</tspan><tspan x="0" y="26.6">bug</tspan></text></g><g class="pele-node pele-state bugPath" data-id="s1" transform="translate(584.02,297)"><rect x="-96" y="-22" width="192" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">保留旧选择，等待准备</text></g><g class="pele-node pele-state bugPath" data-id="s2" transform="translate(584.02,410)"><rect x="-104" y="-22" width="208" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">图已准备，检查尚未完成</text></g><g class="pele-node pele-state bugPath" data-id="s3" transform="translate(460.02,538)"><rect x="-104" y="-22" width="208" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">预算已检查，身份待检查</text></g><g class="pele-node pele-state" data-id="s4" transform="translate(708.02,538)"><rect x="-104" y="-22" width="208" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">身份已检查，预算待检查</text></g><g class="pele-node pele-state bugPath" data-id="s5" transform="translate(584.02,666)"><rect x="-88" y="-22" width="176" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">身份与预算均已检查</text></g></g></g></svg>

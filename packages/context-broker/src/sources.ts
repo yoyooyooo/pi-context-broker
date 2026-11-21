@@ -4,10 +4,15 @@ import { resolve } from "node:path";
 import { buildRegistryFromRoots, normalizeKey } from "./skill-records";
 import { discoverNotionSource, discoverNotionCatalogAndDirectory, loadNotionSkill, SourceError, ReferenceMiss, sourceFailureMessage } from "./notion-source";
 import { validSharedIdentity } from "./shared-skill-identity";
+import type { ConsumptionPolicy } from "./consumption-effects";
 import type { ConfigFile, NotionDirectorySelection, NotionDirectoryObservation, NotionListObservation, SkillRecord, SourceConfig, SourcePolicy, ScanConfig, DiscoveryResult, SourceFailure } from "./types";
 
 export { SourceError } from "./notion-source";
-export type SourceOptions = { signal?: AbortSignal; stale?: boolean; refreshSourceIds?: readonly string[]; snapshotId?: string; directorySelections?: ReadonlyMap<string, NotionDirectorySelection> };
+export type SourceOptions = ConsumptionPolicy & { signal?: AbortSignal; stale?: boolean; refreshSourceIds?: readonly string[]; snapshotId?: string; directorySelections?: ReadonlyMap<string, NotionDirectorySelection> };
+
+export function hasEnabledNotionSource(config: Pick<ConfigFile, "sources">): boolean {
+  return config.sources?.some(source => source.type === "notion" && source.enabled !== false) === true;
+}
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -90,16 +95,12 @@ export function normalizeSources(value: unknown): SourceConfig[] | undefined {
       return { ...common, type: "filesystem", roots, scan: scan(raw.scan), requireAutoload: boolean(raw.requireAutoload) };
     }
     if (raw.type !== "notion") invalid();
-    let command: string | string[] | undefined;
-    if (raw.command !== undefined) {
-      command = Array.isArray(raw.command) ? strings(raw.command) : string(raw.command);
-      if (Array.isArray(command) && command.length === 0) invalid();
-    }
+    if (raw.command !== undefined) throw new SourceError("SOURCE_COMMAND_UNSUPPORTED", id);
     if (raw.requestTimeoutMs !== undefined && (!Number.isSafeInteger(raw.requestTimeoutMs) || (raw.requestTimeoutMs as number) <= 0 || (raw.requestTimeoutMs as number) > 2_147_483_647)) invalid();
     const database = optionalString(raw.database), profileId = optionalString(raw.profile_id);
     if (profileId !== undefined && (!database || !validSharedIdentity(profileId))) invalid();
     return {
-      ...common, type: "notion", command,
+      ...common, type: "notion",
       database, default_view_id: optionalString(raw.default_view_id), ...(profileId === undefined ? {} : { profile_id: profileId }), cacheDir: optionalString(raw.cacheDir),
       discovery: policy(raw.discovery), activation: policy(raw.activation), requestTimeoutMs: raw.requestTimeoutMs as number | undefined,
       preparation: preparation(raw.preparation),
@@ -175,15 +176,13 @@ export async function discoverSourceCatalog(config: ConfigFile, cwd = process.cw
       if (source.type === "notion" && selection !== undefined) {
         const paired = await discoverNotionCatalogAndDirectory(source, cwd, selection, { ...options,
           refresh: options.refresh || !source.discovery?.offline && options.refreshSourceIds?.includes(source.id) });
-        if (paired) {
-          // Keep the valid View even when unrelated full-library discovery failed.
-          directories.set(source.id, { selection, outcome: paired.directory });
-          if (!paired.catalog.ok) throw new SourceError(paired.catalog.code, source.id);
-          records.push(...paired.catalog.value);
-          lists.push(paired.catalog.value.list);
-          failures.push(...paired.catalog.value.failures);
-          continue;
-        }
+        // Keep the valid View even when unrelated full-library discovery failed.
+        directories.set(source.id, { selection, outcome: paired.directory });
+        if (!paired.catalog.ok) throw new SourceError(paired.catalog.code, source.id);
+        records.push(...paired.catalog.value);
+        lists.push(paired.catalog.value.list);
+        failures.push(...paired.catalog.value.failures);
+        continue;
       }
       const discovered = await discoverSources({ ...config, sources: [source] }, cwd, options);
       records.push(...discovered);

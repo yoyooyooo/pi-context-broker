@@ -3,6 +3,7 @@ import type { HostCapabilities } from "./host-adapter";
 import type { ExtensionAPI, PiReadDefinition, SkillRecord } from "./types";
 import { installPiDollarAutocompleteEditor } from "./pi-dollar-editor";
 import { DEFAULT_RESOURCE_READ_BUDGET } from "./resource-read-types";
+import { consumptionEffectsJsonSchema } from "./consumption-effects";
 
 const escapeText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const PI_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
@@ -15,6 +16,7 @@ async function loadPiReadFactory(): Promise<PiReadFactory | undefined> {
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const resourceOutputSchema = {
   type: "object", properties: {
+    effects: consumptionEffectsJsonSchema,
     status: { const: "ready" }, files: { type: "array", items: { anyOf: [
       { type: "object", properties: { kind: { const: "text" }, ref: { type: "string" }, path: { type: "string" }, content: { type: "string" } },
         required: ["kind", "ref", "path", "content"], additionalProperties: false },
@@ -57,15 +59,21 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
         } };
         // Providers may reject root combinators. Enforce the two exclusive modes
         // before shared preparation or native I/O, including direct tool callers.
-        const parameters: Record<string, unknown> = { type: "object", properties: { ...scalarProperties, paths } };
+        const parameters: Record<string, unknown> = { type: "object", additionalProperties: false, properties: { ...scalarProperties, paths,
+          refresh: { type: "boolean", description: "Use only for a user-requested current-version inspection; a successful complete read needs no follow-up refresh. Keeps the active selection unchanged. Only for a supplied Notion Skill ref in path; fixed resources and local files keep their versions." } } };
         const definition: PiReadDefinition = {
           ...native,
-          description: "For Notion introductions, summaries or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
+          description: "For Notion introductions, summaries, comparisons or inspection, copy a supplied Skill/resource ref into path. This reads content without loading Requires or activating its workflow. If the task already calls for applying a chosen Skill, call notion_use directly; it loads the root and Requires without a preliminary main read. For a requested latest-version inspection, use refresh:true with the supplied main Skill ref; the current task keeps its previous selection. To adopt the latest instructions, call notion_use with refresh:true directly. Reuse a complete successful read. Notion reads do not write to the remote library. " + native.description + " Alternatively, paths reads fixed resources of one owner and snapshot together; choose path or paths. Batch reads exclude offset/limit and the main entrypoint.",
           parameters, defaultActive: activeTools().includes("read"),
           ...(native.outputSchema ? { outputSchema: { anyOf: [native.outputSchema, resourceOutputSchema] } } : {}),
           async execute(id, input, signal, onUpdate, context) {
+            if (Object.hasOwn(input, "readOnly")) throw Object.assign(new Error("readOnly is not supported. Omit it; Notion reads do not write to the remote library."), { code: "INVALID_ARGUMENT" });
             const hasPath = Object.hasOwn(input, "path"), hasPaths = Object.hasOwn(input, "paths");
-            if (hasPath === hasPaths
+            // The native reader owns its options. Reject the other Notion
+            // tool's selector here without filtering native passthrough fields.
+            if (Object.hasOwn(input, "ref") || hasPath === hasPaths
+              || input.refresh !== undefined && typeof input.refresh !== "boolean"
+              || input.refresh === true && (typeof input.path !== "string" || !/^(?:skill:\/\/|sr:[CS][A-Za-z0-9_-]{22}$)/.test(input.path))
               || hasPath && (typeof input.path !== "string" || [input.offset, input.limit].some(value => value !== undefined && (typeof value !== "number" || !Number.isFinite(value))))
               || hasPaths && (Object.keys(input).some(key => key !== "paths") || !Array.isArray(input.paths)
                 || input.paths.length < 1 || input.paths.length > DEFAULT_RESOURCE_READ_BUDGET.maxFiles

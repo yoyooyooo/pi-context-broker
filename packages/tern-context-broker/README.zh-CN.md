@@ -108,7 +108,7 @@ omp -e ./packages/context-broker/src/index.ts
 
 TypeScript、CLI 或 Skill 资源变化后重新构建、安装复制包；只改 Luau 时重新安装即可。实时 Luau 开发使用 `tern plugin link ./packages/tern-context-broker` 直接引用源码，再用 `tern plugin reload` 重载。已有复制包须先备份或移到系统废纸篓，`--force` 不覆盖链接；切回复制 Release 前执行 `tern plugin unlink context-broker`。日志与运行配置放在链接源码之外。
 
-`bun run test:ui` 使用隔离的真实 Tern 窗口与 OMP 宿主，配合受控 provider/source fixture，检查自动胶囊、正文次数、手动 Unicode 替换、取消与焦点变化，并保留截图和证据。Pi TUI、OMP TUI、真实 Notion 内容和模型实际使用指令有各自验证入口，不能由单个原生窗口结果替代。
+当前先收敛Broker/SDK，Tern与OMP验收延期。旧CLI fixture原生窗口驱动已退役。真实终端/编辑器动作、当前Notion消费和模型行为分别验收；Broker代码或安装检查不能证明Tern UI已通过。
 
 ## 排障
 

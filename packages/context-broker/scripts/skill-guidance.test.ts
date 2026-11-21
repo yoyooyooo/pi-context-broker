@@ -1,19 +1,105 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { buildCliGuidance, buildInjectedPayload, installSkillGuidance } from "../src/index";
-import { installHostSkills } from "../src/host-skills";
+import { currentNotionFixture } from "./fixtures/current-notion-source";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+const runtime = await currentNotionFixture();
+const { buildCliGuidance, buildInjectedPayload, installSkillGuidance } = await import(pathToFileURL(join(runtime.root, "src/index.ts")).href);
+const { installHostSkills } = await import(pathToFileURL(join(runtime.root, "src/host-skills.ts")).href);
+const { hostCliScope } = await import(pathToFileURL(join(runtime.root, "src/host-command.ts")).href);
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import type { AgentMessage, ConfigFile, ContextResult, ExtensionAPI, ExtensionContext, NativeSkillGraphDefinition, SkillRecord } from "../src/types";
 
 const full = ["read", "skill_search", "skill_prepare", "skill_graph", "bash"];
 const config: ConfigFile = { sources: [
-  { id: "alpha", type: "notion", command: ["/configured alpha/node", "/configured alpha/cli.mjs"], database: "database-a" },
-  { id: "beta", type: "notion", command: ["/configured beta/node", "/configured beta/cli.mjs", "--profile", "selected"], database: "database-b" },
-  { id: "disabled", type: "notion", command: "/must-not-appear", enabled: false },
+  { id: "alpha", type: "notion", database: "database-a" },
+  { id: "beta", type: "notion", database: "database-b" },
+  { id: "disabled", type: "notion", enabled: false },
   { id: "local", type: "filesystem", roots: [] },
 ] };
 const text = (tools?: readonly string[]) => String(buildCliGuidance(config, tools).content);
 const guidanceText = (messages: AgentMessage[]) => String(messages.find(message => message.customType === "ntn-skills-guidance")?.content);
+
+test("native Pi guidance is a bounded routing contract, not a duplicated CLI tutorial", () => {
+  const guidance = text(["read", "notion_list", "notion_use", "bash"]);
+  expect(Buffer.byteLength(guidance)).toBeLessThanOrEqual(900);
+  expect(guidance).not.toContain("Zero tool calls/body reads");
+  expect(guidance).toContain("refresh:true inspects latest main without changing task pins");
+  expect(guidance).toContain("refresh:true adopts latest on request");
+  expect(guidance).toContain("Reuse complete content; refresh only on requested updates");
+  expect(guidance).toContain("read(path) inspects");
+  expect(guidance).toContain("Apply with notion_use(ref); Requires load automatically");
+  for (const boundary of ["candidates", "Local @Skills", "availability", "read", "notion_use", "Requires", "Members", "snapshot", "sr:", "authorize", "Code mode"])
+    expect(guidance).toContain(boundary);
+  for (const extra of ["<cli", "--query", "maxNodes", "/configured", "next_cursor", "tool_search", "doctor", "notion-skill-owner"])
+    expect(guidance).not.toContain(extra);
+  expect((guidance.match(/<ntn-skills-guidance>/g) ?? [])).toHaveLength(1);
+});
+
+test("native capability fallback alone adds exact CLI scope without teaching unavailable operations", () => {
+  const baseline = text(["read", "notion_list", "notion_use", "bash"]);
+  const partial = text(["notion_list", "notion_use", "bash"]);
+  expect(partial).toContain("ntn-skills.mjs");
+  expect(partial).toContain("database-b");
+  expect(partial).not.toContain("/must-not-appear");
+  expect(partial).toContain("read REF");
+  expect(baseline).not.toContain("/configured");
+  expect(text(["notion_list", "notion_use"])).toContain("unavailable");
+  expect(text(["notion_list", "notion_use"])).not.toContain("<cli");
+});
+
+test("normal Pi maintenance routes to the explicit task CLI without advertising commands when shell is unavailable", () => {
+  const routed = text(["read", "notion_list", "notion_use", "bash"]);
+  expect(routed).toContain("Maintenance: use the task's CLI");
+  expect(routed).toContain("ctl builtin read notion/ntn-skills-maintain");
+  expect(routed).toContain("never activate the edited item");
+  expect(routed).toContain("node for .js/.mjs");
+  expect(routed).not.toContain("/configured");
+  expect(routed).not.toContain("/must-not-appear");
+  const readonly = text(["read", "notion_list", "notion_use"]);
+  expect(readonly).not.toContain("Maintenance:");
+  expect(readonly).not.toContain("ctl builtin read");
+});
+
+test("deferred native management exposes only exact enabled source IDs when a CLI must be located", async () => {
+  const normal = ["read", "notion_list", "notion_use", "bash"];
+  const native = [...normal, "notion_ctl"];
+  const hidden = text(normal), discovered = text(native);
+  expect(hidden).not.toContain("cli_source");
+  expect(discovered).toContain("notion_ctl cli_source");
+  expect(discovered).toContain('["alpha","beta"]');
+  expect(discovered).toContain("Choose explicitly");
+  expect(discovered).toContain("no execution or authorization");
+  for (const forbidden of ["/configured", "database-a", "database-b", "disabled", "must-not-appear", '"local"'])
+    expect(discovered).not.toContain(forbidden);
+  expect(Buffer.byteLength(hidden)).toBeLessThanOrEqual(900);
+  expect(Buffer.byteLength(discovered)).toBeLessThanOrEqual(1200);
+  expect(text(native.filter(tool => tool !== "bash"))).not.toContain("cli_source");
+  const h = await graphHarness();
+  h.tools(native);
+  const result = resultJson(await h.invoke({ cli_source: "beta" }));
+  expect(result).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: hostCliScope([config.sources![1]!]).command,
+    database: "database-b", executed: false });
+  expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
+});
+
+test("source-ID routing is projected once only after native management discovery and disappears without shell", async () => {
+  const h = guidanceHarness();
+  const original: AgentMessage[] = [{ role: "user", content: "Maintain the chosen source, but do not guess a global CLI." }];
+  h.tools(["read", "notion_list", "notion_use", "bash"]);
+  const normal = await h.project("context_with_system", original);
+  expect(guidanceText(normal)).not.toContain("cli_source");
+  h.tools(["read", "notion_list", "notion_use", "notion_ctl", "bash"]);
+  const discovered = await h.project("context_with_system", normal);
+  expect(guidanceText(discovered)).toContain('["alpha","beta"]');
+  expect(discovered.filter(message => message.customType === "ntn-skills-guidance")).toHaveLength(1);
+  expect(await h.project("context_with_system", discovered)).toBe(discovered);
+  h.tools(["read", "notion_list", "notion_use", "notion_ctl"]);
+  const noShell = await h.project("context_with_system", discovered);
+  expect(guidanceText(noShell)).not.toContain("cli_source");
+  expect(noShell[0]).toBe(original[0]);
+  expect(guidanceText(normal)).not.toContain("cli_source");
+});
 
 test("native consumption keeps exact references and operation intent without machine commands", () => {
   const guidance = text(full);
@@ -30,7 +116,7 @@ test("native consumption keeps exact references and operation intent without mac
 
 test("fallback follows missing operations and never advertises disabled tools or shell", () => {
   const shell = text(["bash"]);
-  expect(shell).toContain("/configured beta/cli.mjs");
+  expect(shell).toContain("ntn-skills.mjs");
   expect(shell).toContain("<list-args>"); expect(shell).toContain("<read-args>");
   expect(shell).toContain("database-b"); expect(shell).not.toContain("cli_source");
   expect(shell).not.toContain("Use read with"); expect(shell).not.toContain("Use skill_prepare");
@@ -50,11 +136,11 @@ test("fallback follows missing operations and never advertises disabled tools or
   expect(text(["read", "skill_search", "skill_prepare", "bash"])).not.toContain("cli_source");
 });
 
-function guidanceHarness(host: "pi" | "omp" = "pi", known = true) {
+function guidanceHarness(host: "pi" | "omp" = "pi", known = true, settings: ConfigFile = config) {
   let active = [...full];
   const handlers = new Map<string, (event: never, ctx: ExtensionContext) => unknown>();
   const api: ExtensionAPI = { on(name, listener) { handlers.set(name, listener); }, ...(known ? { getActiveTools: () => [...active] } : {}) };
-  installSkillGuidance(api, config, { host });
+  installSkillGuidance(api, settings, { host });
   const ctx: ExtensionContext = { cwd: "/unused-guidance-test", hasUI: false };
   async function project(event: "context" | "context_with_system", messages: AgentMessage[]) {
     const result = await handlers.get(event)?.({ messages } as never, ctx) as ContextResult | undefined;
@@ -62,6 +148,36 @@ function guidanceHarness(host: "pi" | "omp" = "pi", known = true) {
   }
   return { api, handlers, project, tools: (next: string[]) => { active = next; } };
 }
+
+test("Pi with no enabled Notion source omits new and stale guidance without touching local history", async () => {
+  for (const known of [false, true]) for (const sources of [undefined, [], [{ id: "n", type: "notion" as const, enabled: false }], [{ id: "fs", type: "filesystem" as const, roots: [] }]]) {
+    const h = guidanceHarness("pi", known, { sources });
+    h.tools(["read", "notion_list", "notion_use", "existing_mcp_tool"]);
+    const system = { role: "system", content: "Native local Skill directory" };
+    const user = { role: "user", content: "Literal <ntn-skills-guidance> is user content" };
+    const local = { role: "custom", customType: "context-broker", content: "LOCAL_BODY <ntn-skills-guidance>" };
+    const stale = { role: "custom", ...buildCliGuidance(config) };
+    const history = [system, user, stale, local], original = JSON.stringify(history);
+    expect(await h.handlers.get("before_agent_start")?.({} as never, {})).toBeUndefined();
+    for (const event of known ? ["context", "context_with_system"] as const : ["context"] as const) {
+      const result = await h.project(event, history);
+      expect(result).toEqual([system, user, local]);
+      expect(result[0]).toBe(system); expect(result[1]).toBe(user); expect(result[2]).toBe(local);
+    }
+    expect(JSON.stringify(history)).toBe(original);
+  }
+});
+
+test("Pi guidance follows reloaded source availability without restoring stale disabled context", async () => {
+  let history: AgentMessage[] = [{ role: "user", content: "Keep the native local Skill" }];
+  for (const enabled of [false, true, false]) {
+    const h = guidanceHarness("pi", true, { sources: [{ id: "notion", type: "notion", enabled }] });
+    h.tools(enabled ? ["read", "notion_list", "notion_use"] : ["read", "existing_mcp_tool"]);
+    history = await h.project("context_with_system", history);
+    expect(history.filter(message => message.customType === "ntn-skills-guidance")).toHaveLength(enabled ? 1 : 0);
+    expect(history[0]).toEqual({ role: "user", content: "Keep the native local Skill" });
+  }
+});
 
 test("each final context projects current capabilities without mutating history, body or system", async () => {
   const h = guidanceHarness();
@@ -77,7 +193,7 @@ test("each final context projects current capabilities without mutating history,
   expect(guidanceText(native)).not.toContain("/configured");
   h.tools(["bash"]);
   const fallback = await h.project("context_with_system", native);
-  expect(guidanceText(fallback)).toContain("/configured alpha/node");
+  expect(guidanceText(fallback)).toContain("ntn-skills.mjs");
   expect(guidanceText(native)).not.toContain("/configured");
   h.tools([]);
   const unavailable = await h.project("context_with_system", fallback);
@@ -95,12 +211,12 @@ test("Notion source flags are scoped to native installations without rewriting s
   const original = JSON.stringify(history);
   const projected = await h.project("context", history);
   const guidance = guidanceText(projected);
-  expect(guidance).toContain("Notion's Default View controls its default directory");
-  expect(guidance).toContain("Native-loader/editor flags in source text (for example disable-model-invocation) describe native installations");
-  expect(guidance).toContain("reported availability and permissions and the current user intent");
-  expect(guidance).toContain("Local Skills keep their native discovery and read paths");
-  expect(guidance).toContain("does not authorize executing its workflow");
-  expect(guidance).toContain("Choosing a Skill to introduce or inspect uses read");
+  expect(guidance).toContain("beyond the default View");
+  expect(guidance).toContain("Editor flags do not change Notion availability or permissions");
+  expect(guidance).toContain("Local @Skills follow native routes; Use Notion only for extra content");
+  expect(guidance).toContain("loading authorizes no commands, writes or delegation");
+  expect(guidance).toContain("read(path) inspects.");
+  expect(guidance).toContain("Inspection does not activate;");
   expect(projected[0]).toBe(system);
   expect(projected).toContain(source);
   expect(JSON.stringify(history)).toBe(original);
@@ -166,7 +282,7 @@ const resultJson = (result: Awaited<ReturnType<Awaited<ReturnType<typeof graphHa
 test("cli_source returns only the requested host-local scope without loading, execution or graph mutation", async () => {
   const h = await graphHarness();
   const result = await h.invoke({ cli_source: "beta" });
-  expect(resultJson(result)).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: ["/configured beta/node", "/configured beta/cli.mjs", "--profile", "selected"], database: "database-b", executed: false });
+  expect(resultJson(result)).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: hostCliScope([config.sources![1]!]).command, database: "database-b", executed: false });
   expect(result.details).toEqual(resultJson(result));
   expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
   expect(resultJson(await h.invoke({}))).toEqual({ portable: true });
@@ -192,7 +308,7 @@ test("cli_source rejects ambiguous/disabled/foreign scopes, inactive tools and m
   }
   const unknown = await graphHarness(config, false);
   await expect(unknown.invoke({ cli_source: "beta" })).rejects.toThrow("HOST_CLI_TOOL_UNAVAILABLE");
-  const ambiguous = await graphHarness({ sources: [{ id: "same", type: "notion", command: "/one" }, { id: "same", type: "notion", command: "/two" }] });
+  const ambiguous = await graphHarness({ sources: [{ id: "same", type: "notion" }, { id: "same", type: "notion" }] });
   await expect(ambiguous.invoke({ cli_source: "same" })).rejects.toThrow("HOST_SOURCE_AMBIGUOUS");
   const cancelled = new AbortController(); cancelled.abort();
   await expect(h.invoke({ cli_source: "beta" }, cancelled.signal)).rejects.toThrow();

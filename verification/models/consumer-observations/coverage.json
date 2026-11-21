@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "source_base": "fd7ebf718f26ec0a2b060cb8a968cb3f209061b2",
+  "correspondence": "Current consumer state contracts. SDK v2 acquisition is a read-only input port; these models do not represent Notion retention writes, remote history/version management, management completion or independent acceptance.",
+  "maintenance": {
+    "owner_skill": ".agents/skills/verify-notion-consumer-state/SKILL.md",
+    "routing": "Use the existing observations or consumer-state suite and its exact cases inventory. Current SDK, package pins and installation are checked by verify-notion-skills-integration.",
+    "source_review": "Review changed owner functions and their actual guards before updating any source hash. Hashes bind the reviewed bytes; they do not establish implementation refinement.",
+    "rule_inventory": "cases.expected_rules is the independent complete rule inventory. Missing, additional, unchecked or unexpected broken rules fail; do not regenerate expectations from changed configurations."
+  },
+  "files": {
+    "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
+    "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
+    "packages/context-broker/src/host-skills.ts": "bddd2b345c52df9ddd1bb83a6029258c14e628b4fc0025572a0820caa80bf81a",
+    "packages/context-broker/src/prepare-protocol.ts": "6c0229a5217726416e3bd719faaf7d922c40f479ca03d6a9ab0ef1275be903f4",
+    "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
+    "packages/context-broker/scripts/host-prepare.test.ts": "ce17ea58dd60df728b1994142b62cf41d173c44ebf4f676905b856c2d8fd2876",
+    "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51"
+  },
+  "models": {
+    "Availability": {
+      "spec": "Availability.tla",
+      "bounds": "One record and one retained pagination cursor",
+      "properties": [
+        "KnownObservationAgrees",
+        "CursorCannotMixAvailability"
+      ],
+      "owners": {
+        "KnownObservationAgrees": [
+          "createConsumerObservations.observe",
+          "createConsumerObservations.deny",
+          "graphPreparation",
+          "refreshMetadata"
+        ],
+        "CursorCannotMixAvailability": [
+          "notion_list catalogKey effective availability, View and coverage"
+        ]
+      },
+      "replays": [
+        "F1",
+        "F2",
+        "F3",
+        "F4",
+        "F5"
+      ],
+      "negative": "Availability.cursor-negative.cfg"
+    },
+    "ReadRace": {
+      "spec": "ReadRace.tla",
+      "bounds": "Two in-flight reads and two session epochs",
+      "properties": [
+        "NewestObservationWins",
+        "NoCrossSessionPublication"
+      ],
+      "owners": [
+        "createConsumerObservations.begin/current/accept",
+        "graphPreparation publication and commit checks",
+        "host lifecycle generation and cancellation"
+      ],
+      "replays": [
+        "F7",
+        "older current success after a newer denial",
+        "retired session/cancelled operation"
+      ],
+      "negative": "ReadRace.generation-negative.cfg"
+    }
+  },
+  "cases": [
+    {
+      "model": "Availability",
+      "config": "current",
+      "expected_broken": [
+        "KnownObservationAgrees",
+        "CursorCannotMixAvailability"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "KnownObservationAgrees",
+        "CursorCannotMixAvailability",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "Availability",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "KnownObservationAgrees",
+        "CursorCannotMixAvailability",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "Availability",
+      "config": "cursor-negative",
+      "expected_broken": [
+        "CursorCannotMixAvailability"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "KnownObservationAgrees",
+        "CursorCannotMixAvailability",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ReadRace",
+      "config": "current",
+      "expected_broken": [
+        "NewestObservationWins"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "NewestObservationWins",
+        "NoCrossSessionPublication",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ReadRace",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "NewestObservationWins",
+        "NoCrossSessionPublication",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "ReadRace",
+      "config": "generation-negative",
+      "expected_broken": [
+        "NewestObservationWins",
+        "NoCrossSessionPublication"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "NewestObservationWins",
+        "NoCrossSessionPublication",
+        "NoDeadlock"
+      ]
+    }
+  ],
+  "excluded": [
+    "SDK transport and decoder implementation, installed CLI/SDK version and package hashes, management command observation and catalog invalidation, prompt guidance and actual Pi/provider runs are outside the finite state model. Their existing integration and direct regression gates remain separate.",
+    "Selected content pins mean locally verified immutable content. They do not promise remote historical recovery, create Notion history, or extend current permission evidence.",
+    "Source/target identity, wall-clock behavior, HTTP consistency and serialized provider bytes retain their concrete test obligations; finite exploration does not prove arbitrary production interleavings."
+  ],
+  "current_source_review": {
+    "host_skills": "Current Notion materialization requires a complete entry manifest; older receipt scanning/fallback was removed. Pi use/read/resource inputs reject retired readOnly and internally always select no-write policy. Qualification, request ordering, cursor state, final graph commit, cancellation, provider acceptance, turn completion and public projection guards are unchanged.",
+    "host_prepare_tests": "The canonical-binding regression now uses the actual shared_skill record and keeps the physical-page substitution as a negative. It still observes one current use, complete source-body ownership and an unchanged injected message. Existing failure-attribution, incomplete-body, budget, cancellation, provider/turn and projection assertions remain in place.",
+    "transport_boundary": "The installed OpenAI serializer case was removed from final-request-undici.test.ts during host deferral; its real Node HTTP entity checks remain. No installed serializer or real Pi result is claimed by these finite models.",
+    "scope": "The exact TLA/config/view bytes, model bounds, cases and expected rules are unchanged. Build/pin, user guidance, historical driver scores and unrelated producer files are not formal premises.",
+    "identity_contract": "Reviewed the diff from fd7ebf718f26ec0a2b060cb8a968cb3f209061b2: remote preparation and catalog members accept only explicit shared_skill identities with current enablement. Implicit notion_page/subscription/upstream mapping is removed. Canonical raw page UUID input still qualifies against the current physical owner. Exact source, scope, locator and ref equality remain required; no changed request ordering, cancellation, graph commit, delivery or public projection guard.",
+    "current_effects_contract": "The current SDK and host effects contract now has exactly version, remote_writes and author_content. Retained-history outcomes and retention arrays are rejected. Existing cancellation, partial-source failure, source-span retirement, exact-body and receipt-preservation cases use current none/unknown observations; unknown remains dominant and absent observations are unknown. Final-request validation rejects explicit malformed effects before payload acceptance and combines top-level/preparation observations conservatively. Actual HTTP entity and delivery guards remain in place. The effects field schema and diagnostic aggregation are concrete regression obligations outside the finite models; no model, bound, case inventory, expected rule or mutation target changed."
+  },
+  "outside_finite_models": [
+    {
+      "name": "actual validation time and cache origin",
+      "tests": [
+        "consumer-observation.test.ts",
+        "shared-notion-adapter.test.ts"
+      ],
+      "contract": "Caches retain their original validation time. Offline/fixed content never proves current eligibility. A later-started cache lookup does not outrank an earlier still-in-flight current denial."
+    },
+    {
+      "name": "metadata expiry and default fields",
+      "tests": [
+        "host-prepare.test.ts",
+        "view-discovery.test.ts",
+        "catalog-menu tests"
+      ],
+      "contract": "F6 uses the actual metadata consumer and controlled clocks. Current SDK transport and installed package checks are separate. Default Context remains an optional author/View filter; Enabled remains the availability switch."
+    },
+    {
+      "name": "complete graph and future delivery",
+      "tests": [
+        "host-prepare.test.ts",
+        "native-read-session.test.ts",
+        "resource-read-projection.test.ts"
+      ],
+      "contract": "Exact dependency failures do not deny the root. Failed replacement does not replace the graph. Known authorization denial withholds verified source spans on future requests. Explicit new selection retires old main and supporting-file spans but never edits native history."
+    }
+  ],
+  "current_review": {
+    "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
+    "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
+    "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted.",
+    "resource_path": "Reviewed the acquisition path change against the deterministic same-inode hardlink alias reproduction. Canonical parent directory plus the selected basename preserves logical resource identity; within-root and lstat.isFile remain mandatory. Leaf/parent symlink substitution, outer alias, content hash, cancellation and concurrent reads have concrete regressions. Filesystem/runtime behavior is outside the finite models; no model rule, bound or mutation target is changed.",
+    "natural_guidance": "Reviewed the change from bd3cb59: task application directly loads roots and automatic Requires, successful complete reads are reused, requested inspect/adopt updates remain distinct, and read(path) versus notion_use(ref) is explicit. The advertised native read schema excludes unknown fields; its execution boundary explicitly rejects a ref alias while continuing to delegate native options to the native reader. The full regression caught a too-broad option filter and that filter was removed rather than weakening the native passthrough fixture. No selection, freshness, authorization, cancellation, recovery, delivery or commit guard changed. Natural task quality and tool necessity are separate observed regression obligations outside these finite models."
+  }
+}

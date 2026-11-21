@@ -1,21 +1,24 @@
 import { createHash } from "node:crypto";
 import type { PreparationDirectory, PreparationPurpose } from "./prepare-protocol";
 import type { ContentRecord } from "./types";
+import { consumptionEffects, isConsumptionEffects, type ConsumptionEffects } from "./consumption-effects.ts";
+import { parseNativeReference } from "./native-reference.ts";
 
 /** This compiler changes the host envelope, never the CLI's source projection. */
 export const SKILL_PREPARATION_COMPILER = "context-broker/skill-prepare/v1" as const;
 export type SkillPreparationBodySpan = { start: number; end: number; encoding: "json" };
 export type SkillPreparationModelDirectory = {
-  files: readonly { path: string; ref: string; bytes: number }[];
+  files: readonly { path: string; ref: string; bytes: number; description?: string }[];
   required: readonly SkillPreparationModelRelation[];
   candidates: readonly SkillPreparationModelRelation[];
-  references: readonly SkillPreparationModelRelation[];
+  references: readonly (SkillPreparationModelRelation | { ref: string })[];
 };
 export type SkillPreparationModelRelation = {
   ref: string; kind: string; name: string; description: string; availability: string;
 };
 export type SkillPreparationModel = {
   ok: true; status: "ready"; purpose: PreparationPurpose; roots: readonly string[];
+  effects?: ConsumptionEffects;
   records: readonly {
     name: string; kind: ContentRecord["kind"]; ref: string; content: string;
     directory?: SkillPreparationModelDirectory;
@@ -34,10 +37,12 @@ export type SkillPreparationProjection = {
   version: 1; compiler: typeof SKILL_PREPARATION_COMPILER; sourceProjection: "source-identity/v1";
   rendered: { sha256: string; bytes: number };
   records: readonly SkillPreparationProjectionRecord[];
-  derived?: { reason: "deduplicate" | "supersede"; parentSha256: string };
+  derived?: { reason: "deduplicate" | "supersede"; parentSha256: string;
+    directories?: readonly { index: number; sha256: string; bytes: number }[] };
 };
 export type SkillPreparationCompilationInput = {
   purpose: PreparationPurpose; roots: readonly string[];
+  effects?: ConsumptionEffects;
   records: readonly {
     name: string; kind: ContentRecord["kind"]; ref: string; content: string;
     source: SkillPreparationSourceIdentity; directory?: PreparationDirectory;
@@ -57,35 +62,63 @@ export function projectSkillDirectory(value: PreparationDirectory | undefined): 
   if (value === undefined) return undefined;
   const relation = ({ ref, kind, name, description, availability }: PreparationDirectory["required"][number]) =>
     ({ ref, kind, name, description, availability });
-  return {
+  return compactSkillDirectory({
     files: value.files.map(({ path, ref, bytes }) => ({ path, ref, bytes })),
     required: value.required.map(relation), candidates: value.candidates.map(relation), references: value.references.map(relation),
+  });
+}
+
+/** A verified exact file reference shares its existing file object. Unfixed,
+ * foreign and unavailable references retain their independent full cards. */
+export function compactSkillDirectory(value: SkillPreparationModelDirectory): SkillPreparationModelDirectory {
+  const descriptions = new Map<string, string>();
+  for (const reference of value.references) {
+    if (!("kind" in reference) || reference.kind !== "file" || reference.availability !== "available") continue;
+    if (!/^sr:R[A-Za-z0-9_-]{22}$/.test(reference.ref)) {
+      try { if (!parseNativeReference(reference.ref).snapshot) continue; }
+      catch { continue; }
+    }
+    const matches = value.files.filter(file => file.ref === reference.ref && file.path === reference.name);
+    if (matches.length !== 1 || value.references.some(other => other.ref === reference.ref
+      && "description" in other && other.description !== reference.description)) continue;
+    descriptions.set(reference.ref, reference.description);
+  }
+  if (!descriptions.size) return value;
+  return { ...value,
+    files: value.files.map(file => descriptions.has(file.ref) ? { ...file, description: descriptions.get(file.ref)! } : file),
+    references: value.references.map(reference => descriptions.has(reference.ref) && "kind" in reference
+      && reference.kind === "file" && reference.availability === "available"
+      && value.files.some(file => file.ref === reference.ref && file.path === reference.name) ? { ref: reference.ref } : reference),
   };
+}
+
+export function isSkillPreparationDirectory(value: unknown): value is SkillPreparationModelDirectory {
+  const relation = (item: unknown) => object(item) && keys(item, ["ref", "kind", "name", "description", "availability"])
+    && ["ref", "kind", "name", "description", "availability"].every(key => typeof item[key] === "string");
+  return object(value) && keys(value, ["files", "required", "candidates", "references"])
+    && Array.isArray(value.files) && value.files.every(file => object(file) && keys(file, ["path", "ref", "bytes", "description"])
+      && typeof file.path === "string" && typeof file.ref === "string" && natural(file.bytes)
+      && (file.description === undefined || typeof file.description === "string"))
+    && ["required", "candidates"].every(key => Array.isArray(value[key]) && value[key].every(relation))
+    && Array.isArray(value.references) && value.references.every(reference => relation(reference)
+      || object(reference) && Object.keys(reference).length === 1 && typeof reference.ref === "string"
+      && Array.isArray(value.files) && value.files.filter(file => object(file) && file.ref === reference.ref
+        && typeof file.description === "string").length === 1);
 }
 
 /** Exact generated schema. Author content is only ever an opaque string. */
 export function isSkillPreparationModel(value: unknown): value is SkillPreparationModel {
-  if (!object(value) || !keys(value, ["ok", "status", "purpose", "roots", "records"])
+  if (!object(value) || !keys(value, ["ok", "status", "purpose", "roots", "records", "effects"])
+    || value.effects !== undefined && !isConsumptionEffects(value.effects)
     || value.ok !== true || value.status !== "ready" || value.purpose !== "use" && value.purpose !== "inspect"
     || !Array.isArray(value.roots) || !value.roots.length || value.roots.some(ref => typeof ref !== "string" || !ref)
     || new Set(value.roots).size !== value.roots.length || !Array.isArray(value.records) || !value.records.length) return false;
-  const relation = (item: unknown) => object(item) && keys(item, ["ref", "kind", "name", "description", "availability"])
-    && ["ref", "kind", "name", "description", "availability"].every(key => typeof item[key] === "string");
   const records = value.records;
   for (const record of records) {
     if (!object(record) || !keys(record, ["name", "kind", "ref", "content", "directory"])
       || typeof record.name !== "string" || typeof record.kind !== "string" || !["skill", "router", "prompt"].includes(record.kind)
       || typeof record.ref !== "string" || !record.ref || typeof record.content !== "string") return false;
-    if (record.directory !== undefined) {
-      const directory = record.directory;
-      if (!object(directory) || !keys(directory, ["files", "required", "candidates", "references"])
-        || !Array.isArray(directory.files) || directory.files.some(file => !object(file) || !keys(file, ["path", "ref", "bytes"])
-          || typeof file.path !== "string" || typeof file.ref !== "string" || !natural(file.bytes))
-        || ["required", "candidates", "references"].some(key => {
-          const entries = directory[key];
-          return !Array.isArray(entries) || !entries.every(relation);
-        })) return false;
-    }
+    if (record.directory !== undefined && !isSkillPreparationDirectory(record.directory)) return false;
   }
   return value.roots.every(ref => records.some(record => object(record) && record.ref === ref));
 }
@@ -105,7 +138,7 @@ export function renderSkillPreparationModel(model: SkillPreparationModel): { con
     bodySpans.push({ start, end: content.length, encoding: "json" });
     content += '"' + (record.directory === undefined ? "" : ',"directory":' + JSON.stringify(record.directory)) + "}";
   }
-  return { content: content + "]}", bodySpans };
+  return { content: content + "]" + (model.effects === undefined ? "" : ',"effects":' + JSON.stringify(model.effects)) + "}", bodySpans };
 }
 
 export function compileSkillPreparation(input: SkillPreparationCompilationInput): {
@@ -119,6 +152,7 @@ export function compileSkillPreparation(input: SkillPreparationCompilationInput)
       return { name: record.name, kind: record.kind, ref: record.ref, content: record.content,
         ...(record.directory === undefined ? {} : { directory: projectSkillDirectory(record.directory) }) };
     }),
+    effects: consumptionEffects(input.effects),
   };
   const rendered = renderSkillPreparationModel(model);
   const projection: SkillPreparationProjection = {

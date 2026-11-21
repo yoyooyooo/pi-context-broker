@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rename, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { installHostSkills } from "../src/host-skills";
@@ -13,22 +13,22 @@ const firstId = "11111111-1111-4111-8111-111111111111";
 const secondId = "22222222-2222-4222-8222-222222222222";
 const removedId = "33333333-3333-4333-8333-333333333333";
 const hash = (content: string) => createHash("sha256").update(content).digest("hex");
-try {
+{
   const record = async (id: string, sourceId: string, name: string, entrypoint = "SKILL.md", kind: "skill" | "router" = "skill"): Promise<SkillRecord> => {
     const path = join(root, "metadata", sourceId, id, entrypoint);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, "metadata only");
-    return { id: "notion_page:" + id, kind, name, description: "member fixture", aliases: [], normalizedName: name, normalizedDescription: "member fixture", normalizedAliases: [], autoloadEnabled: true, defaultDiscovery: kind === "router", source: "notion", sourceId, sourceScope: sourceId === "selected" ? "a".repeat(64) : "b".repeat(64), token: `${sourceId}/${name}`, path, metadataIndexPath: path, entrypoint, ref: `skill://${id}/${entrypoint}` };
+    const logicalId = "shared_skill:member:" + id;
+    return { id: logicalId, kind, enabled: true, locator: { type: "shared_skill", library_id: "member", skill_id: id, page_id: id, database_id: "66666666-6666-4666-8666-666666666666", data_source_id: "77777777-7777-4777-8777-777777777777" }, name, description: "member fixture", aliases: [], normalizedName: name, normalizedDescription: "member fixture", normalizedAliases: [], autoloadEnabled: true, defaultDiscovery: kind === "router", source: "notion", sourceId, sourceScope: sourceId === "selected" ? "a".repeat(64) : "b".repeat(64), token: `${sourceId}/${name}`, path, metadataIndexPath: path, entrypoint, ref: `skill://${encodeURIComponent(logicalId)}/${entrypoint}` };
   };
   const first = await record(firstId, "selected", "first");
   const second = await record(secondId, "selected", "shared-name", "nested/SKILL.md");
   const wrongSource = await record(secondId, "other", "shared-name", "nested/SKILL.md");
-  const nameTrap = await record(removedId, "other", removedId);
-  nameTrap.ref = "skill://55555555-5555-4555-8555-555555555555/SKILL.md";
+  const nameTrap = await record("55555555-5555-4555-8555-555555555555", "other", removedId);
   nameTrap.token = removedId;
   const router = await record("44444444-4444-4444-8444-444444444444", "selected", "router", "ROUTER.md", "router");
   const bodies = new Map<SkillRecord, string>([
-    [first, `First Skill\n[second](skill://${secondId}/references/deep/selected.md)\n`],
+    [first, `First Skill\n[second](skill://${encodeURIComponent(second.id!)}/references/deep/selected.md)\n`],
     [second, "SECOND_SELECTED_BODY\n"], [wrongSource, "WRONG_SOURCE_BODY\n"],
     [nameTrap, "UUID_NAME_TRAP\n"], [router, `Members: ${first.ref}, ${second.ref}\n`],
   ]);
@@ -74,35 +74,34 @@ try {
   const read = (path: string) => emit("tool_call", { toolName: "read", input: { path, limit: 8 } });
   await emit("before_agent_start", { prompt: "Discover routers", systemPrompt: "base" });
   assert.deepEqual(calls, [], "Router discovery must not load any member body or invoke AK");
-  assert.equal((await read(`skill://${secondId}/references/deep/selected.md`))?.block, true, "Duplicate UUID without invocation scope fails closed");
+  assert.equal((await read(`skill://${encodeURIComponent(second.id!)}/references/deep/selected.md`))?.block, true, "Duplicate logical identity without invocation scope fails closed");
   assert.equal((await read(`skill://${removedId}/SKILL.md`))?.block, true, "Missing UUID never falls back to a native command name");
   assert.equal((await read("skill:///SKILL.md"))?.block, true);
-  assert.equal((await read(`skill://${firstId}/%2e%2e/outside.md`))?.block, true, "Traversal is rejected before activation");
+  assert.equal((await read(`skill://${encodeURIComponent(first.id!)}/%2e%2e/outside.md`))?.block, true, "Traversal is rejected before activation");
   assert.deepEqual(calls, []);
   await emit("input", { source: "rpc", text: "/skill:selected-first" });
   assert.deepEqual(calls.map(item => item.id), [first.id], "Selecting one member does not load its linked members");
-  const result = await read(`skill://${secondId}/references/deep/selected.md:2-4`);
-  assert.equal(result?.input?.path, join(root, "snapshots/selected", second.id!, "references/deep/selected.md") + ":2-4");
+  const result = await read(`skill://${encodeURIComponent(second.id!)}/references/deep/selected.md`);
+  assert.equal(result?.input?.path, join(root, "snapshots/selected", second.id!, "references/deep/selected.md"));
   assert.equal(result?.input?.limit, 8);
-  const nativeBytes = await readFile(result!.input!.path.slice(0, -4), "utf8");
+  const nativeBytes = await readFile(result!.input!.path, "utf8");
   assert.equal(nativeBytes, resource);
   assert.equal(hash(nativeBytes), hash(resource), "Native read receives the exact selected member bytes");
   assert.deepEqual(calls.map(item => item.sourceId), ["selected", "selected"]);
   const snapshot = "s_" + hash(bodies.get(second)!);
-  assert.equal((await read(`skill://${secondId}/references/deep/selected.md?snapshot=${snapshot}:raw`))?.input?.path.endsWith("selected.md:raw"), true);
-  assert.equal((await read(`skill://${secondId}/references/deep/selected.md?snapshot=wrong:raw`))?.block, true);
+  assert.equal((await read(`skill://${encodeURIComponent(second.id!)}/references/deep/selected.md?snapshot=${snapshot}`))?.input?.path.endsWith("selected.md"), true);
+  assert.equal((await read(`skill://${encodeURIComponent(second.id!)}/references/deep/selected.md?snapshot=s_${"f".repeat(64)}`))?.block, true);
+  assert.equal((await read(`skill://${encodeURIComponent(second.id!)}/references/deep/selected.md:2-4`))?.block, true, "Line controls belong to native read arguments, not the canonical URI");
   for (const target of ["../outside.md", "%2e%2e/outside.md", "%2Fetc/passwd", "/etc/passwd", "C%3A/windows", "references/%ZZ", "references/%00bad", "references%5c..%5coutside.md", "references%3Fbad", "escape.md", "missing.md"]) {
-    assert.equal((await read(`skill://${firstId}/${target}`))?.block, true, target);
+    assert.equal((await read(`skill://${encodeURIComponent(first.id!)}/${target}`))?.block, true, target);
   }
   assert.equal((await read(`skill://${removedId}/SKILL.md`))?.block, true, "UUID-shaped host name cannot substitute for a missing record in the current scope");
-  await rm(join(root, "snapshots/selected", second.id!, "references/deep/selected.md"));
-  assert.equal((await read(`skill://${secondId}/references/deep/selected.md`))?.block, true, "Removed resource cannot fall back to native filesystem read");
+  await rename(join(root, "snapshots/selected", second.id!, "references/deep/selected.md"), join(root, "removed-selected.md"));
+  assert.equal((await read(`skill://${encodeURIComponent(second.id!)}/references/deep/selected.md`))?.block, true, "Removed resource cannot fall back to native filesystem read");
   records = records.filter(item => item !== second);
   await host.refresh();
   await emit("input", { source: "rpc", text: "/skill:selected-first" });
-  assert.equal((await read(`skill://${secondId}/SKILL.md`))?.block, true, "Removed member cannot fall back to same-name record from another source");
+  assert.equal((await read(`skill://${encodeURIComponent(second.id!)}/SKILL.md`))?.block, true, "Removed member cannot fall back to same-name record from another source");
   assert.ok(calls.every(item => item.sourceId === "selected"));
-  console.log("Native member read contracts passed");
-} finally {
-  await rm(root, { recursive: true, force: true });
+  console.log("Native member read contracts passed; owned fixture retained at " + root);
 }

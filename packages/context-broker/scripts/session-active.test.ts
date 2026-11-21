@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { activeSources, activeSelection, missingActiveSources, assertRestoredSource, confirmActiveSources, SESSION_ACTIVE_ENTRY } from "../src/session-active";
 import { persistSessionSelection } from "../src/session-graph";
+import { assertWorkingSetBudget, exportWorkingSet, releaseWorkingSetRoots, setWorkingSetBudget } from "../src/session-working-set";
 import { sourceDeliveryReceipt, projectSelectedSourceMessages, deferredSourceEntries, nativeReadReceipt, sourceBodyLoaded, sourceMessageText, withSessionSourceReceipts } from "../src/session-source-snapshot";
 import { installHostSkills, type HostSkillOptions } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
@@ -16,8 +17,9 @@ const canonical = (value: unknown): string => value === null || typeof value !==
   : Array.isArray(value) ? "[" + value.map(canonical).join(",") + "]"
     : "{" + Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 const scope = "e".repeat(64);
-function graph(revision = "A", purpose: PreparationPurpose = "use"): PreparedHostGraph {
-  const records = (purpose === "use" ? ["root", "required"] : ["root"]).map((name): SkillRecord => {
+function graph(revision = "A", purpose: PreparationPurpose = "use", root = "root"): PreparedHostGraph {
+  const hasRequired = purpose === "use" && root !== "required";
+  const records = (hasRequired ? [root, "required"] : [root]).map((name): SkillRecord => {
     const id = "shared_skill:controlled:" + name;
     const metadata: ContentRecord = { id, kind: "skill", name, alias: name, description: name, enabled: true, default_context: false,
       entrypoint: "SKILL.md", ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
@@ -28,7 +30,7 @@ function graph(revision = "A", purpose: PreparationPurpose = "use"): PreparedHos
       preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId } };
   });
   const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope, roots: [records[0]!.id!],
-    required: purpose === "use" ? [{ from: records[0]!.id!, to: records[1]!.id!, ref: records[1]!.preparationBinding!.ref }] : [], bindings: records.map(record => record.preparationBinding!) };
+    required: hasRequired ? [{ from: records[0]!.id!, to: records[1]!.id!, ref: records[1]!.preparationBinding!.ref }] : [], bindings: records.map(record => record.preparationBinding!) };
   return { purpose, scope, sourceId: "controlled", roots: vector.roots, records, bindings: vector.bindings, lock: { ...vector, sha256: hash(canonical(vector)) },
     budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
     usage: { prepared_nodes: records.length, instruction_bytes: 100, context_bytes: 100, max_depth: 1 } };
@@ -41,6 +43,112 @@ function fixture() {
 }
 const delivered = (records: SkillRecord[]): AgentMessage[] => records.map(record => ({ role: "custom", customType: "context-broker", content: record.body,
   details: { records: [sourceDeliveryReceipt(record, record.body!)] } }));
+
+test("NXT12 measures finite roots and releases only unused closure while retaining history and shared Requires", () => {
+  const f = fixture(), first = graph(), second = graph("A", "use", "second");
+  for (const current of [first, first, second]) {
+    persistSessionSelection(f.api, f.ctx, [current], "extend");
+    confirmActiveSources(f.api, f.ctx, current.records, delivered(current.records));
+  }
+  const messages = delivered([...first.records, second.records[0]!]), raw = JSON.stringify(messages);
+  const before = exportWorkingSet(f.ctx, messages);
+  expect(before.roots).toHaveLength(2);
+  expect(before.nodes).toHaveLength(3);
+  expect(before.history.versions).toBe(3);
+  expect(before.release_candidates[0]).toMatchObject({ released_nodes: [first.records[0]!.id],
+    released_instruction_bytes: Buffer.byteLength(first.records[0]!.body!), retained_as_required: false });
+  expect(before.budget).toMatchObject({ max_instruction_bytes: null, unit: "utf8_bytes", automatic_eviction: false });
+  expect(() => releaseWorkingSetRoots(f.api, f.ctx, [first.records[1]!.preparationBinding!.ref])).toThrow("still required");
+  const rootRef = first.records[0]!.preparationBinding!.ref;
+  expect(releaseWorkingSetRoots(f.api, f.ctx, [rootRef]).changed).toBe(true);
+  const after = exportWorkingSet(f.ctx, messages);
+  expect(after.roots).toEqual([second.records[0]!.preparationBinding!.ref]);
+  expect(after.nodes.map(node => node.name).sort()).toEqual(["required", "second"]);
+  expect(after.active.instruction_bytes).toBe(before.active.instruction_bytes! - Buffer.byteLength(first.records[0]!.body!));
+  expect(after.history).toEqual(before.history);
+  expect(releaseWorkingSetRoots(f.api, f.ctx, [rootRef]).changed).toBe(false);
+  const projected = projectSelectedSourceMessages(messages, activeSelection(f.ctx));
+  expect(JSON.stringify(projected)).not.toContain(first.records[0]!.body!.trim());
+  expect(JSON.stringify(projected)).toContain(first.records[1]!.body!.trim());
+  expect(JSON.stringify(messages)).toBe(raw);
+  expect(missingActiveSources(f.ctx, []).map(source => source.record.name).sort()).toEqual(["required", "second"]);
+  const resumed: ExtensionContext = { sessionManager: { getBranch: () => structuredClone(f.branch) } };
+  expect(exportWorkingSet(resumed, []).roots).toEqual(after.roots);
+  confirmActiveSources(f.api, f.ctx, first.records, messages);
+  expect(exportWorkingSet(f.ctx, messages).roots).toEqual(after.roots);
+  persistSessionSelection(f.api, f.ctx, [first], "extend");
+  confirmActiveSources(f.api, f.ctx, first.records, messages);
+  expect(exportWorkingSet(f.ctx, messages).roots).toHaveLength(2);
+});
+
+test("NXT12 budget checks the complete union without trimming or silently evicting instructions", () => {
+  const f = fixture(), first = graph(), second = graph("A", "use", "second");
+  persistSessionSelection(f.api, f.ctx, [first], "extend");
+  confirmActiveSources(f.api, f.ctx, first.records, delivered(first.records));
+  const size = exportWorkingSet(f.ctx, delivered(first.records)).active.instruction_bytes!;
+  expect(setWorkingSetBudget(f.api, f.ctx, size)).toBe(true);
+  expect(setWorkingSetBudget(f.api, f.ctx, size)).toBe(false);
+  assertWorkingSetBudget(f.ctx, [{ graphs: [first], mode: "extend" }]);
+  const original = JSON.stringify(f.branch);
+  expect(() => assertWorkingSetBudget(f.ctx, [{ graphs: [second], mode: "extend" }])).toThrow("complete root/Requires");
+  expect(JSON.stringify(f.branch)).toBe(original);
+  expect(exportWorkingSet(f.ctx, []).active.instruction_bytes).toBe(size);
+  expect(setWorkingSetBudget(f.api, f.ctx, size - 1)).toBe(true);
+  expect(exportWorkingSet(f.ctx, []).budget.status).toBe("exceeded");
+  expect(activeSources(f.ctx).sources.size).toBe(2);
+  expect(setWorkingSetBudget(f.api, f.ctx, null)).toBe(true);
+  assertWorkingSetBudget(f.ctx, [{ graphs: [second], mode: "extend" }]);
+  expect(() => setWorkingSetBudget(f.api, f.ctx, -1)).toThrow("positive integer");
+});
+
+test("NXT12 an old fixed release cannot remove a refreshed root or a current Required node", () => {
+  const f = fixture(), old = graph("A"), current = graph("B");
+  for (const [index, value] of [old, current].entries()) {
+    persistSessionSelection(f.api, f.ctx, [value], index ? "replace" : "extend");
+    confirmActiveSources(f.api, f.ctx, value.records, delivered(value.records));
+  }
+  const before = JSON.stringify(f.branch);
+  expect(() => releaseWorkingSetRoots(f.api, f.ctx, [old.records[0]!.preparationBinding!.ref])).toThrow("different fixed version");
+  expect(JSON.stringify(f.branch)).toBe(before);
+  expect(exportWorkingSet(f.ctx, []).roots).toEqual([current.records[0]!.preparationBinding!.ref]);
+
+  const independent = graph("B", "use", "required");
+  persistSessionSelection(f.api, f.ctx, [independent], "extend");
+  confirmActiveSources(f.api, f.ctx, independent.records, delivered(independent.records));
+  const ref = independent.records[0]!.preparationBinding!.ref;
+  expect(releaseWorkingSetRoots(f.api, f.ctx, [ref]).changed).toBe(true);
+  expect(() => releaseWorkingSetRoots(f.api, f.ctx, [ref])).toThrow("still required");
+  expect(exportWorkingSet(f.ctx, []).nodes.map(node => node.name).sort()).toEqual(["required", "root"]);
+});
+
+test("NXT12 public release retires an in-flight use before it can republish the old root", async () => {
+  const f = fixture(), prepared = graph();
+  persistSessionSelection(f.api, f.ctx, [prepared], "extend");
+  confirmActiveSources(f.api, f.ctx, prepared.records, delivered(prepared.records));
+  const tools: Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0][] = [];
+  const api: ExtensionAPI = { ...f.api, registerTool(tool) { tools.push(tool); } };
+  let finish!: (graphs: PreparedHostGraph[]) => void, started!: () => void;
+  const pending = new Promise<PreparedHostGraph[]>(resolve => { finish = resolve; });
+  const start = new Promise<void>(resolve => { started = resolve; });
+  const host = await installHostSkills(api, {
+    config: { sources: [{ id: "controlled", type: "notion", prefetch: false }] },
+    getRecords: async () => ({ records: prepared.records, failures: [] }), loadRecord: async record => record,
+    prepareGraph: async () => { started(); return pending; }, sessionGraph: () => ({}),
+    persistGraphs: (graphs, ctx, mode) => persistSessionSelection(api, ctx, graphs, mode),
+  }, createPiHostAdapter(api));
+  await host.refresh(f.ctx);
+  const use = tools.find(tool => String(tool.name) === "notion_use"), ctl = tools.find(tool => String(tool.name) === "notion_ctl");
+  if (!use || !ctl) throw new Error("Expected public Notion tools");
+  const acquisition = use.execute("late-use", { ref: prepared.records[0]!.ref }, undefined, undefined, f.ctx);
+  await start;
+  const released = await ctl.execute("release", { working_set: "release", roots: [prepared.records[0]!.preparationBinding!.ref] }, undefined, undefined, f.ctx);
+  expect(released.details).toMatchObject({ action: "release", changed: true, roots: [] });
+  const branch = JSON.stringify(f.branch);
+  finish([prepared]);
+  await expect(acquisition).rejects.toThrow("SOURCE_ACTIVATION_CANCELLED");
+  expect(JSON.stringify(f.branch)).toBe(branch);
+  expect(activeSources(f.ctx).sources.size).toBe(0);
+});
 
 test("selected use and ready partial delivery remain inactive until a complete confirmed closure", () => {
   const f = fixture(), prepared = graph();
@@ -157,13 +265,13 @@ async function deferredFixture(prepared?: PreparedHostGraph) {
       confirmDelivery: (records, deliveredMessages, context) => confirmActiveSources(api, context, records, deliveredMessages),
       restoreActive: async (deliveredMessages, context, _signal, pending) => {
         const missing = missingActiveSources(context, deliveredMessages, pending);
-        if (!missing.length) return undefined;
+        if (!missing.length) return { messages: deliveredMessages, restored: [], notices: [] };
         restored.push(missing.map(source => source.record.id!));
-        return sourceMessage(missing.map(source => {
+        return { messages: deliveredMessages, notices: [], restored: [sourceMessage(missing.map(source => {
           const record = prepared.records.find(record => record.id === source.record.id);
           if (!record) throw new Error("Expected the fixed fixture owner");
           return assertRestoredSource(source, record);
-        }));
+        }))] };
       },
     } satisfies Pick<HostSkillOptions, "prepareGraph" | "buildPreparedPrompt" | "persistGraphs" | "confirmDelivery" | "restoreActive"> : {}),
   }, createPiHostAdapter(api));
@@ -269,7 +377,9 @@ test("deferred slash selection preserves root and Requires receipts across nativ
       expect(JSON.stringify(f.entries.find(entry => entry.sourceEntry.id === "tool-0")!.sourceEntry)).toBe(rawTool);
     }
     expect(JSON.stringify(f.user)).toBe(originalUser);
-    expect(f.entries[0]!.messages[0]!.content).toEqual([...projectedContent, { type: "text", text: prepared.records.map(record => record.body!).join("\n\n") }]);
+    expect(f.entries[0]!.messages[0]!.content).toEqual([...projectedContent,
+      { type: "text", text: prepared.records.map(record => record.body!).join("\n\n") },
+      { type: "text", text: '<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>' }]);
     expect(f.entries.filter(entry => entry.sourceEntry.type === "message").map(entry => entry.sourceEntry.id)).toEqual([
       "user", "assistant-0", "tool-0", "assistant-1", "tool-1", "assistant-2", "tool-2",
     ]);

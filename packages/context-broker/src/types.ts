@@ -201,6 +201,8 @@ export type ExtensionContext = {
   };
   cwd?: string;
   mode?: "tui" | "rpc" | "print" | "json";
+  /** Present on Pi's live context. Absent in tests that only drive logical acceptance. */
+  model?: { api?: string; baseUrl?: string; provider?: string; id?: string };
   /** Pi's current agent-operation signal, exposed in event and tool contexts. */
   signal?: AbortSignal;
   abort?(): void;
@@ -302,7 +304,6 @@ export type SourceConfig = {
   | { type: "filesystem"; roots: string[]; scan?: ScanConfig; requireAutoload?: boolean }
   | {
       type: "notion";
-      command?: string | string[];
       database?: string;
       default_view_id?: string;
       profile_id?: string;
@@ -332,6 +333,7 @@ export type NotionViewState =
   | { sourceId: string; origin: "session" | "configured" | "profile" | "first"; status: "error"; code: string };
 export type NotionListObservation = {
   sourceId: string;
+  scope?: string;
   exhaustive?: boolean;
   policy: "default" | "max_age" | "refresh" | "offline" | "pinned";
   validatedAt?: string;
@@ -371,8 +373,6 @@ export type SkillMetadata = {
 export type ContentKind = "skill" | "router" | "prompt";
 export type ContentLocator =
   | { type: "shared_skill"; page_id: string; database_id: string; data_source_id: string; library_id: string; skill_id: string }
-  | { type: "notion_page"; page_id: string; database_id: string; data_source_id: string }
-  | { type: "notion_subscription"; subscription_id: string; database_id: string; data_source_id: string; target_database_id: string }
   | { type: "local"; id: string; entry: string };
 
 /** Public CLI wire. Display names and materialized paths never identify content. */
@@ -387,7 +387,6 @@ export type ContentRecord = {
   enabled?: boolean;
   entrypoint: string;
   ref: string;
-  upstream?: { repo: string };
 };
 
 export type CatalogRemoteReference = {
@@ -430,7 +429,6 @@ export type SkillRecord = SkillMetadata & {
   ref?: string;
   default_context?: boolean;
   enabled?: boolean;
-  upstream?: ContentRecord["upstream"];
   source?: "local" | "notion";
   path: string;
   normalizedName: string;
@@ -444,6 +442,7 @@ export type SkillRecord = SkillMetadata & {
   defaultDiscovery?: boolean;
   versionId?: string;
   freshness?: unknown;
+  currentObservation?: import("./consumer-observation").CurrentEvidence;
   coverage?: unknown;
   sourceScope?: string;
   metadataIndexPath?: string;

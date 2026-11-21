@@ -228,13 +228,9 @@ test("canonical restored delivery retains fixed relative-resource routing withou
     assertSourceSpan(message, record);
   }
   const native = sourceMessageText(buildCliGuidance({}, nativeTools).content);
-  expect(native).toContain("preserve its owner and snapshot, replace only the logical file path");
-  expect(native).toContain("do not reuse the main file_id for another file");
-  const config: ConfigFile = { sources: [{ id: "alpha", type: "notion", command: ["/configured/node", "/configured/skills.mjs"] }] };
-  const fallback = sourceMessageText(buildCliGuidance(config, ["bash"]).content);
-  expect(fallback).toContain("/configured/skills.mjs");
-  expect(fallback).toContain("<read-args>");
-  expect(fallback).toContain("CLI commands cannot resolve session sr: handles");
+  expect(native).toContain("Keep owner/snapshot");
+  expect(native).toContain("never edit sr: handles");
+  expect(native).toContain("paths reads same-snapshot files");
 });
 
 test("undefined presentation references preserve legacy local and unavailable-native guidance exactly", () => {
@@ -263,7 +259,8 @@ test("Pi search projects candidate choices while retaining source disambiguation
   for (const [index, record] of records.entries()) {
     const card = cards[index]!, machine = full[index]!;
     expect(card).toEqual({ ref: machine.ref, kind: record.kind, name: record.name, description: record.description,
-      source: record.sourceId, in_default_view: false, availability: record.enabled ? "available" : "disabled" });
+      source: record.sourceId, in_default_view: false, availability: record.enabled ? "available" : "disabled",
+      ...(record.enabled ? {} : { error_code: "CONTENT_DISABLED" }) });
     expect(machine).toEqual({ ...card, id: record.id, scope: record.sourceScope });
     const reference = h.bridge.resolve(h.ctx, string(card.ref));
     const candidate = parseNativeReference(reference.canonicalRef);
@@ -331,7 +328,11 @@ test("native main footer keeps exact v3 prefix and actionable relations while mo
   expect(footer).not.toContain('"sha256":');
   expect(footer).not.toContain(hash(root.body));
   expect(JSON.stringify(root)).toBe(before);
-  expect(await h.read(root, root.body.slice(1))).toBeUndefined();
+  const partial = await h.read(root, root.body.slice(1));
+  if (!partial) throw new Error("Expected partial read effects without source proof");
+  expect(object(partial.details).contextBrokerRead).toBeUndefined();
+  expect(sourceBodyLoaded([partial], root)).toBe(false);
+  expect(sourceMessageText(partial.content)).toBe(root.body.slice(1) + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>');
   expect(await h.read(root, root.body, true)).toBeUndefined();
 
   const resourceText = "Exact supporting bytes.\r\n", directoryWithFiles: PreparationDirectory = {
@@ -354,8 +355,9 @@ test("native main footer keeps exact v3 prefix and actionable relations while mo
 test("native reads without a short-reference session retain complete source and host directory without inventing handles", async () => {
   const root = fixture("native-fallback"), h = await hostHarness([root], nativeTools, false), message = await h.read(root);
   if (!message) throw new Error("Expected native main proof");
-  expect(sourceMessageText(message.content)).toBe(root.body);
-  expect(object(object(message.details).contextBrokerRead)).toMatchObject({ version: 2, directory: root.preparationDirectory });
+  expect(sourceMessageText(message.content)).toBe(root.body + '\n\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>');
+  expect(object(object(message.details).contextBrokerRead)).toMatchObject({ version: 3, directory: root.preparationDirectory,
+    delivery: { start: 0, end: root.body.length, encoding: "raw" } });
   expect(sourceBodyLoaded([message], root)).toBe(true);
   expect(h.entries).toEqual([]);
 });

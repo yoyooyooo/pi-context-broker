@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { JsonSchema, Schema, SchemaRepresentation } from "effect";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,6 +10,9 @@ import { createSessionShortRefHost } from "../src/session-short-ref-host";
 import { parseNativeReference } from "../src/native-reference";
 import { sessionSourceSnapshot } from "../src/session-source-snapshot";
 import { DEFAULT_RESOURCE_READ_BUDGET, type ResourceReadBatch, type ResourceReadFile } from "../src/resource-read-types";
+import { consumptionEffects, noConsumptionWrites, type ConsumptionEffects } from "../src/consumption-effects";
+import { validateResourceReadProjection } from "../src/resource-read-projection";
+import { sourceMessageText } from "../src/session-source-snapshot";
 import type { ContentRecord, ExtensionAPI, ExtensionContext, PiReadDefinition, SessionEntry, SkillRecord } from "../src/types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -33,7 +37,8 @@ async function fixture() {
   const manifestFiles = [{ path: "SKILL.md", bytes: 11, sha256: ownerBinding.body_sha256, ref: ownerBinding.ref }, ...files];
   const manifest = { complete: true, scope, snapshot_id: snapshot, version_id: version, record: content, entrypoint: "SKILL.md", files: manifestFiles.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })) };
   const state = { id: "session-one", entries: [] as SessionEntry[], calls: [] as string[][], mainReads: 0, persisted: 0,
-    nameCalls: [] as string[], fixedCalls: [] as string[], scalarReads: 0,
+    nameCalls: [] as string[], fixedCalls: [] as string[], scalarReads: 0, readOnly: [] as Array<boolean | undefined>,
+    effects: undefined as ConsumptionEffects | undefined, failure: undefined as Error | undefined,
     transform: (batch: ResourceReadBatch): ResourceReadBatch => batch, wait: undefined as undefined | (() => Promise<void>), signal: undefined as AbortSignal | undefined };
   const events = new Map<string, Array<(event: never, context: ExtensionContext) => unknown>>();
   const tools = new Map<string, { definition: PiReadDefinition; source: string }>();
@@ -54,7 +59,7 @@ async function fixture() {
     getSessionId: () => state.id, getSessionFile: () => join(root, state.id + ".jsonl"), getBranch: () => state.entries,
   } };
   const host = await installHostSkills(api, {
-    config: {}, getRecords: async () => ({ records: [metadata], failures: [] }),
+    config: { sources: [{ id: "notion", type: "notion", prefetch: false }] }, getRecords: async () => ({ records: [metadata], failures: [] }),
     resolveNamedReference: async input => {
       state.nameCalls.push(input);
       const parsed = parseNativeReference(input);
@@ -64,16 +69,20 @@ async function fixture() {
     loadRecord: async () => { state.mainReads++; throw new Error("Resource reads cannot load the main entry"); },
     prepareGraph: async () => { state.mainReads++; throw new Error("Resource reads cannot prepare a graph"); },
     persistGraphs: () => { state.persisted++; },
-    readFixedResource: async (_record, input) => {
+    readFixedResource: async (_record, input, _ctx, _signal, policy) => {
       state.fixedCalls.push(input);
+      state.readOnly.push(policy?.readOnly);
       const selected = files[0]!;
       if (parseNativeReference(input).path !== selected.path) throw new Error("Unexpected scalar resource");
       return { selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding, entrypoint: content.entrypoint,
         file: { requested_ref: input, ref: selected.ref, path: selected.path, file_id: selected.file_id, bytes: selected.bytes, sha256: selected.sha256, output: scalarOutput } };
     },
-    readResources: async (_record, refs, _ctx, signal) => {
+    readResources: async (_record, refs, _ctx, signal, policy) => {
       state.calls.push([...refs]); state.signal = signal;
+      state.readOnly.push(policy?.readOnly);
       await state.wait?.();
+      if (state.effects) policy?.observeEffects?.(state.effects);
+      if (state.failure) throw state.failure;
       const seen = new Set<string>();
       const selected = refs.map(requested_ref => {
         const parsed = parseNativeReference(requested_ref);
@@ -83,7 +92,7 @@ async function fixture() {
         if (seen.has(file.path)) throw Object.assign(new Error("Duplicate canonical selection"), { code: "RESOURCE_SELECTION_CONFLICT" });
         seen.add(file.path); return { ...file, requested_ref };
       });
-      return state.transform({ selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding, manifest,
+      return state.transform({ selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding, manifest, effects: consumptionEffects(state.effects),
         manifest_sha256: hash(JSON.stringify(manifest)), files: selected, budget: DEFAULT_RESOURCE_READ_BUDGET, machine: { status: "ready", manifest, files: selected } });
     },
   }, createPiHostAdapter(api, async () => () => native));
@@ -96,6 +105,7 @@ async function fixture() {
       manifest_complete: true, local_files_ready: false, materialized_paths: [] } };
   const short = createSessionShortRefHost(api);
   return { root, ref, files, metadata, selected, ctx, state, emit, short,
+    definition: () => tools.get("read")!.definition,
     result: async (result: Record<string, unknown>) => {
       const updates: unknown[] = [];
       for (const handler of events.get("tool_result") ?? []) updates.push(await handler({ toolName: "read", toolCallId: "batch-call", ...result } as never, ctx));
@@ -116,6 +126,59 @@ test("one resource batch delivers exact selected text and binary metadata withou
   expect(f.metadata.body).toBeUndefined(); expect(f.metadata.entryManifest).toBeUndefined();
   expect(sessionSourceSnapshot([{ role: "toolResult", toolName: "read", toolCallId: "batch-call", ...result }], f.metadata)).toBeUndefined();
   expect(result.details).toMatchObject({ contextBrokerResource: { version: 2, toolCallId: "batch-call", loaded: false }, contextBrokerResourceSource: { source_id: "notion" } });
+  expect(result.structuredContent).toHaveProperty("effects.remote_writes", "unknown");
+});
+
+test("every Pi batch forbids writes and preserves complete issued-resource receipts", async () => {
+  const f = await fixture(), paths = f.files.map(file => f.short.resource(f.ctx, f.selected, file.ref));
+  const entries = f.state.entries.length, effects = noConsumptionWrites();
+  f.state.effects = effects;
+  const result = await f.read({ paths }), text = sourceMessageText(result.content);
+  expect(f.state.readOnly).toEqual([true]); expect(f.state.calls).toEqual([f.files.map(file => file.ref)]);
+  const proof = validateResourceReadProjection(text, (result.details as { contextBrokerResource: unknown }).contextBrokerResource);
+  expect(proof).toBeDefined();
+  expect(proof?.files.map(file => file.model_ref)).toEqual(paths);
+  expect(proof?.files.map(file => file.sha256)).toEqual(f.files.map(file => file.sha256));
+  expect(proof?.files.map(file => file.delivered_complete_text)).toEqual([true, true, false]);
+  expect(JSON.parse(text)).toMatchObject({ effects, files: [{ content: f.files[0]!.content }, { content: "" }, { kind: "binary" }] });
+  expect(result.details).toHaveProperty("effects", effects);
+  expect(f.state.entries).toHaveLength(entries);
+  expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
+});
+
+test("ready batch effects satisfy the registered Pi output schema", async () => {
+  const f = await fixture(), paths = f.files.map(file => f.short.resource(f.ctx, f.selected, file.ref));
+  const registered = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(f.definition().outputSchema);
+  const decode = Schema.decodeUnknownSync(SchemaRepresentation.fromJsonSchemaDocument(
+    JsonSchema.fromSchemaDraft2020_12(registered)), { onExcessProperty: "error" });
+  const ordinary = await f.read({ paths });
+  expect(ordinary.structuredContent).toHaveProperty("effects.remote_writes", "unknown");
+  expect(decode(ordinary.structuredContent)).toEqual(ordinary.structuredContent);
+  f.state.effects = noConsumptionWrites();
+  const strict = await f.read({ paths });
+  expect(strict.structuredContent).toHaveProperty("effects.remote_writes", "none");
+  expect(decode(strict.structuredContent)).toEqual(strict.structuredContent);
+  expect(decode("native scalar output")).toBe("native scalar output");
+  const model = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(strict.structuredContent);
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), version: "1" } })).toThrow();
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), retention: [] } })).toThrow();
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), remote_writes: "retained" } })).toThrow();
+  expect(() => decode({ ...model, effects: { ...noConsumptionWrites(), author_content: "unknown" } })).toThrow();
+  const unknownUnchanged = { ...model, effects: { version: 1, remote_writes: "unknown", author_content: "unchanged" } };
+  expect(decode(unknownUnchanged)).toEqual(unknownUnchanged);
+  expect(() => decode({ ...model, unexpected: true })).toThrow();
+});
+
+test("a producer requiring writes fails an ordinary batch without a body delivery", async () => {
+  const f = await fixture(), effects = noConsumptionWrites();
+  const original = Object.freeze(Object.assign(new Error("Strict source refused a semantic write"), { code: "NOTION_READ_ONLY", details: { effects } }));
+  f.state.failure = original;
+  await expect(f.read({ paths: f.files.map(file => file.ref) })).rejects.toMatchObject({
+    code: "NOTION_READ_ONLY", details: { effects }, cause: original,
+  });
+  expect(f.state.readOnly).toEqual([true]); expect(f.state.calls).toHaveLength(1);
+  expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
+  expect(original.message).toBe("Strict source refused a semantic write");
 });
 
 test("SC25 scalar fixed-name resources deliver the exact file without preparing the main entry", async () => {
@@ -126,6 +189,7 @@ test("SC25 scalar fixed-name resources deliver the exact file without preparing 
     contextBrokerResource: expect.objectContaining({ delivered_complete_text: true, loaded: false, ref: f.files[0]!.ref }),
   }) })]));
   expect(f.state.nameCalls).toEqual([input]); expect(f.state.fixedCalls).toEqual([f.ref("references/a.md")]);
+  expect(f.state.readOnly).toEqual([true]);
   expect(f.state.scalarReads).toBe(1); expect(f.state.calls).toHaveLength(0); expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
 });
 
@@ -146,6 +210,8 @@ test("batch admission rejects invalid modes and identities before any SDK operat
   const selected = f.short.selected(f.ctx, f.selected);
   for (const input of [
     { paths: [] }, { path: first, paths: [first] }, { paths: [first], offset: 1 }, { paths: ["/local/file"] },
+    { paths: [first], readOnly: "true" }, { paths: [first], readOnly: null },
+    { paths: [first], readOnly: true }, { paths: [first], readOnly: false }, { paths: [first], readOnly: undefined },
     { paths: [first.split("?")[0]!] }, { paths: [selected] }, { paths: [first, first] },
     { paths: [first, first.replace("references/a.md", "old.md")] },
     { paths: [first, f.files[1]!.ref.replace(/snapshot=s_[a-f0-9]+/, "snapshot=s_" + hash("other"))] },

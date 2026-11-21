@@ -8,14 +8,19 @@ import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createSessionShortRefHost } from "../src/session-short-ref-host";
 import { parseNativeReference } from "../src/native-reference";
 import { recordIdentity } from "../src/discovery-records";
-import { sessionSourceBindings, sessionSourceSnapshot } from "../src/session-source-snapshot";
-import type { FixedResourceRead } from "../src/resource-read-types";
-import type { PreparationBinding } from "../src/prepare-protocol";
+import { sessionSourceBindings, sessionSourceSnapshot, sourceMessageText, projectSelectedSourceMessages, contextSourceIdentities } from "../src/session-source-snapshot";
+import { DEFAULT_RESOURCE_READ_BUDGET, type FixedResourceRead } from "../src/resource-read-types";
+import type { PreparationBinding, PreparedHostGraph } from "../src/prepare-protocol";
+import { SourceError } from "../src/notion-source";
+import { noConsumptionWrites } from "../src/consumption-effects";
 import type { ActivePreparation } from "../src/skill-preparation";
 import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, NativeReadResult, PiReadDefinition, SessionEntry, SkillRecord, SourceFailure } from "../src/types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
-async function fixture(protectMain = true, withSessionBinding = false) {
+const canonical = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
+  : Array.isArray(value) ? "[" + value.map(canonical).join(",") + "]"
+    : "{" + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
+async function fixture(protectMain = true, withSessionBinding = false, currentInspection = false, outsideCatalog = false) {
   const root = await mkdtemp(join(tmpdir(), "broker-scalar-resource-host-"));
   const id = "shared_skill:scalar:owner", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
   const base = "skill://" + encodeURIComponent(id) + "/";
@@ -38,17 +43,19 @@ async function fixture(protectMain = true, withSessionBinding = false) {
   const ownerBinding = { record: content, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash(body), ref: ref("SKILL.md", "main") };
   const manifestFiles = [{ path: "SKILL.md", bytes: Buffer.byteLength(body), sha256: hash(body), ref: ownerBinding.ref }, ...files];
   const selected: SkillRecord = { ...metadata, body, path: join(entryRoot, "SKILL.md"), snapshotId: snapshot, versionId: version, preparationBinding: ownerBinding,
+    preparationDirectory: { files: manifestFiles, required: [], candidates: [], references: [] },
     fileBindings: [{ path: "SKILL.md", file_id: "main", page_id: "00000000-0000-4000-8000-000000000001" },
       ...files.map((file, index) => ({ path: file.path, file_id: file.file_id, page_id: "00000000-0000-4000-8000-" + String(index + 2).padStart(12, "0") }))],
     entryManifest: { version: 1, root: entryRoot, receipt: join(root, "manifest"), manifest_id: hash("fixture"), files: manifestFiles,
       manifest_complete: true, local_files_ready: true, materialized_paths: manifestFiles.map(file => file.path) } };
   const state = {
-    id: "session-one", file: join(root, "session-one.jsonl"), entries: [] as SessionEntry[], failures: [] as SourceFailure[],
+    id: "session-one", file: join(root, "session-one.jsonl"), entries: [] as SessionEntry[], messages: [] as AgentMessage[], failures: [] as SourceFailure[],
     calls: [] as string[], nativeInputs: [] as Record<string, unknown>[], mainReads: 0, graphReads: 0, resourceReads: 0, persisted: 0,
     snapshot: undefined as string | undefined, unsupported: false, transform: (value: FixedResourceRead): FixedResourceRead => value,
     binding: undefined as PreparationBinding | undefined, snapshotReads: 0, bindingReads: 0, loaded: false, entry: undefined as ActivePreparation | undefined,
     wait: undefined as undefined | (() => Promise<void>), nativeWait: undefined as undefined | (() => Promise<void>),
     signal: undefined as AbortSignal | undefined, nativeResult: undefined as NativeReadResult | undefined,
+    resourceFailure: undefined as Error | undefined, batchCalls: [] as string[][],
   };
   const events = new Map<string, Array<(event: never, context: ExtensionContext) => unknown>>();
   const tools = new Map<string, { definition: PiReadDefinition; source: string }>();
@@ -66,18 +73,30 @@ async function fixture(protectMain = true, withSessionBinding = false) {
   };
   const ctx: ExtensionContext = { cwd: root, hasUI: false, mode: "rpc", sessionManager: {
     getSessionId: () => state.id, getSessionFile: () => state.file, getBranch: () => state.entries,
+    buildSessionContext: () => ({ messages: state.messages }),
   } };
   const host = await installHostSkills(api, {
-    config: {}, getRecords: async () => ({ records: [metadata], failures: state.failures }),
+    config: { sources: [{ id: "notion", type: "notion", prefetch: false }] }, getRecords: async () => ({ records: outsideCatalog ? [] : [metadata], failures: state.failures }),
+    ...(outsideCatalog ? { lookupReference: async () => ({ records: [metadata], failures: [] }) } : {}),
     sessionSnapshot: () => { state.snapshotReads++; return state.snapshot; },
     ...(withSessionBinding ? { sessionBinding: () => { state.bindingReads++; return state.binding; } } : {}),
     isLoaded: () => state.loaded, onPreparation: entry => { state.entry = entry; },
     loadRecord: async () => { state.mainReads++; if (protectMain) throw new Error("Resource reads cannot load the main"); return selected; },
-    ...(protectMain ? { prepareGraph: async () => { state.graphReads++; throw new Error("Resource reads cannot prepare a graph"); } } : {}),
+    resolveCurrentRoot: async () => ({ record: metadata, ref: metadata.ref! }),
+    ...(protectMain ? { prepareGraph: async (_records, _ctx, _signal, purpose): Promise<PreparedHostGraph[]> => {
+      state.graphReads++;
+      if (!currentInspection || purpose !== "inspect") throw new Error("Resource reads cannot prepare a graph");
+      const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope, roots: [id], required: [], bindings: [ownerBinding] };
+      return [{ purpose, scope, sourceId: "notion", roots: [id], records: [selected], bindings: [ownerBinding],
+        lock: { ...vector, sha256: hash(canonical(vector)) },
+        budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
+        usage: { prepared_nodes: 1, instruction_bytes: Buffer.byteLength(body), context_bytes: Buffer.byteLength(body), max_depth: 0 } }];
+    } } : {}),
     loadResource: async (_record, path) => { state.resourceReads++; return files.find(file => file.path === path)!.output; },
     persistGraphs: () => { state.persisted++; },
     readFixedResource: async (_record, requested_ref, _ctx, signal) => {
       state.calls.push(requested_ref); state.signal = signal; await state.wait?.();
+      if (state.resourceFailure) throw state.resourceFailure;
       const parsed = parseNativeReference(requested_ref);
       if (state.unsupported || parsed.fileId === "main" || parsed.fileId === undefined && parsed.path === "SKILL.md") return undefined;
       const file = files.find(file => parsed.fileId === undefined ? file.path === parsed.path : file.file_id === parsed.fileId);
@@ -85,8 +104,25 @@ async function fixture(protectMain = true, withSessionBinding = false) {
       return state.transform({ selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding, entrypoint: content.entrypoint,
         file: { requested_ref, ref: file.ref, path: file.path, file_id: file.file_id, bytes: file.bytes, sha256: file.sha256, output: file.output } });
     },
+    readResources: async (_record, refs) => {
+      state.batchCalls.push([...refs]);
+      if (state.resourceFailure) throw state.resourceFailure;
+      return { selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding,
+        manifest: {}, manifest_sha256: hash("controlled resource manifest"), budget: DEFAULT_RESOURCE_READ_BUDGET, machine: {}, effects: noConsumptionWrites(),
+        files: refs.map(requested_ref => {
+          const parsed = parseNativeReference(requested_ref), file = files.find(file => parsed.fileId ? parsed.fileId === file.file_id : parsed.path === file.path);
+          if (!file) throw new Error("Unexpected fixture resource");
+          const identity = { requested_ref, ref: file.ref, path: file.path, file_id: file.file_id, bytes: file.bytes, sha256: file.sha256 };
+          return typeof file.data === "string" ? { ...identity, encoding: "utf8" as const, content: file.data }
+            : { ...identity, encoding: "base64" as const, content: file.data.toString("base64"), output: file.output };
+        }) };
+    },
   }, createPiHostAdapter(api, async () => () => native));
-  const emit = async (name: string, event: Record<string, unknown> = { type: name }) => { for (const handler of events.get(name) ?? []) await handler(event as never, ctx); };
+  const emit = async (name: string, event: Record<string, unknown> = { type: name }) => {
+    const results: unknown[] = [];
+    for (const handler of events.get(name) ?? []) results.push(await handler(event as never, ctx));
+    return results;
+  };
   const finish = async (toolCallId: string, input: Record<string, unknown>, result: NativeReadResult, flags: { isError?: boolean; parentToolCallId?: string } = {}) => {
     let merged = result;
     for (const handler of events.get("tool_result") ?? []) {
@@ -100,6 +136,140 @@ async function fixture(protectMain = true, withSessionBinding = false) {
     read: (input: Record<string, unknown>, signal?: AbortSignal, toolCallId = "scalar-call") => tools.get("read")!.definition.execute(toolCallId, input, signal, undefined, ctx) };
 }
 
+test("a current main inspection permits only its returned fixed resources while the task keeps its old pin", async () => {
+  const f = await fixture(true, true, true);
+  const old = "s_" + hash("old task snapshot");
+  f.state.snapshot = old;
+  f.state.binding = { ...f.selected.preparationBinding!, snapshot_id: old, ref: f.selected.preparationBinding!.ref.replace(f.selected.snapshotId!, old) };
+  await expect(f.read({ path: f.files[0]!.ref })).rejects.toThrow("SOURCE_SESSION_CONFLICT");
+  const input = { path: f.metadata.ref!, refresh: true };
+  const main = await f.finish("inspect-b", input, await f.read(input, undefined, "inspect-b"));
+  const mainMessage: AgentMessage = { role: "toolResult", toolName: "read", toolCallId: "inspect-b", ...main };
+  f.state.messages.push(mainMessage);
+  const directory = JSON.parse(sourceMessageText(main.content).split("<skill-directory>\n")[1]!.split("\n</skill-directory>")[0]!);
+  const resource = directory.directory.files.find((file: { path: string }) => file.path === "references/guide.md").ref;
+  const acquired = f.state.calls.length;
+  for (const path of [f.files[0]!.ref.replace(f.selected.snapshotId!, "s_" + hash("uninspected C")), f.ref("references/unlisted.md")])
+    await expect(f.read({ path })).rejects.toThrow("SOURCE_SESSION_CONFLICT");
+  expect(f.state.calls).toHaveLength(acquired);
+  f.state.transform = value => ({ ...value, ownerBinding: { ...value.ownerBinding, record: { ...value.ownerBinding.record,
+    locator: { ...value.ownerBinding.record.locator, page_id: "00000000-0000-4000-8000-000000009999" } as typeof value.ownerBinding.record.locator } } });
+  await expect(f.read({ path: resource })).rejects.toThrow("SOURCE_IDENTITY_MISMATCH");
+  f.state.transform = value => ({ ...value, file: { ...value.file, sha256: hash("changed file proof") } });
+  await expect(f.read({ path: f.files[0]!.ref })).rejects.toThrow("SOURCE_IDENTITY_MISMATCH");
+  f.state.transform = value => value;
+  // The fixture returns B: an explicit A resource must reject it rather than
+  // silently upgrading the task's fixed resource to the inspected version.
+  await expect(f.read({ path: f.files[0]!.ref.replace(f.selected.snapshotId!, old) })).rejects.toThrow("SOURCE_IDENTITY_MISMATCH");
+  const read = await f.finish("inspect-resource-b", { path: resource }, await f.read({ path: resource }, undefined, "inspect-resource-b"));
+  expect(sourceMessageText(read.content)).toContain(f.text);
+  expect(read.details).toMatchObject({ contextBrokerResource: { purpose: "inspect", snapshot_id: f.selected.snapshotId, loaded: false } });
+  expect(f.state.snapshot).toBe(old); expect(f.state.binding.snapshot_id).toBe(old); expect(f.state.persisted).toBe(0);
+  expect(f.state.graphReads).toBe(1); expect(f.state.mainReads).toBe(0);
+  const resourceMessage: AgentMessage = { role: "toolResult", toolName: "read", toolCallId: "inspect-resource-b", ...read };
+  expect(sessionSourceBindings([mainMessage, resourceMessage], f.metadata.sourceScope!)).toEqual([]);
+  const selection = { scopes: new Map([[f.metadata.sourceScope!, { scope: f.metadata.sourceScope!, roots: new Set([f.metadata.id!]), graphs: [],
+    retired: new Map(), selectionId: "old", bindings: new Map([[f.metadata.id!, f.state.binding]]) }]]) };
+  expect(sourceMessageText(projectSelectedSourceMessages([resourceMessage], selection)[0]!.content)).toContain(f.text);
+  expect(sourceMessageText(projectSelectedSourceMessages([resourceMessage], selection, () => "unavailable")[0]!.content)).not.toContain(f.text);
+  expect(contextSourceIdentities([resourceMessage])).toEqual([{ scope: f.metadata.sourceScope, id: f.metadata.id }]);
+  expect(contextSourceIdentities(projectSelectedSourceMessages([resourceMessage], selection, () => "unavailable"))).toEqual([]);
+  f.state.messages = []; f.state.entries.push({ type: "message", message: mainMessage });
+  expect(sourceMessageText((await f.read({ path: resource })).content)).toContain(f.text);
+  f.state.entries = []; // A different branch cannot borrow the prior inspection.
+  await expect(f.read({ path: f.files[0]!.ref })).rejects.toThrow("SOURCE_SESSION_CONFLICT");
+  await f.emit("session_shutdown");
+});
+
+test("inspection resource batches keep exact B proofs without selecting B and retain final authorization guards", async () => {
+  const f = await fixture(true, true, true), old = "s_" + hash("old task A");
+  f.state.binding = { ...f.selected.preparationBinding!, snapshot_id: old, ref: f.selected.preparationBinding!.ref.replace(f.selected.snapshotId!, old) };
+  const input = { path: f.metadata.ref!, refresh: true };
+  const main = await f.finish("inspect-b", input, await f.read(input, undefined, "inspect-b"));
+  f.state.messages.push({ role: "toolResult", toolName: "read", toolCallId: "inspect-b", ...main });
+  const directory = JSON.parse(sourceMessageText(main.content).split("<skill-directory>\n")[1]!.split("\n</skill-directory>")[0]!);
+  const paths = directory.directory.files.filter((file: { path: string }) => file.path.startsWith("references/")).map((file: { ref: string }) => file.ref);
+  const result = await f.read({ paths }, undefined, "inspection-batch");
+  const message: AgentMessage = { role: "toolResult", toolName: "read", toolCallId: "inspection-batch", ...result };
+  expect(result.details).toMatchObject({ contextBrokerResource: { purpose: "inspect", loaded: false, selection: { snapshot_id: f.selected.snapshotId } } });
+  expect(contextSourceIdentities([message])).toEqual([{ scope: f.metadata.sourceScope, id: f.metadata.id }]);
+  expect(sessionSourceBindings([message], f.metadata.sourceScope!)).toEqual([]);
+  expect(f.state.binding.snapshot_id).toBe(old); expect(f.state.persisted).toBe(0); expect(f.state.graphReads).toBe(1);
+  const unavailable = projectSelectedSourceMessages([message], { scopes: new Map() }, () => "unavailable");
+  expect(sourceMessageText(unavailable[0]!.content)).not.toContain(JSON.stringify(f.text).slice(1, -1));
+  expect(contextSourceIdentities(unavailable)).toEqual([]);
+  const calls = f.state.batchCalls.length;
+  await expect(f.read({ paths: [f.files[0]!.ref.replace(f.selected.snapshotId!, "s_" + hash("uninspected C"))] })).rejects.toThrow("SOURCE_SESSION_CONFLICT");
+  expect(f.state.batchCalls).toHaveLength(calls);
+  const controller = new AbortController(); f.ctx.signal = controller.signal; f.ctx.abort = () => controller.abort();
+  f.ctx.model = { api: "openai-completions", baseUrl: "http://127.0.0.1:8989/v1" };
+  await f.emit("before_agent_start", { prompt: "Compare B resources.", systemPrompt: "Current." }); await f.emit("agent_start");
+  let messages: AgentMessage[] = [{ role: "system", content: "Current." }, { role: "user", content: "Compare B resources." }, message];
+  for (const event of ["context", "context_with_system"]) for (const value of await f.emit(event, { messages }))
+    if (value && typeof value === "object" && "messages" in value && Array.isArray(value.messages)) messages = value.messages;
+  f.state.resourceFailure = new SourceError("AUTH_REQUIRED", "notion");
+  await expect(f.read({ paths })).rejects.toThrow("AUTH_REQUIRED");
+  const payload = { messages: messages.map(message => ({ role: message.role === "toolResult" ? "tool" : message.role === "custom" ? "user" : message.role,
+    content: sourceMessageText(message.content), ...(message.role === "toolResult" ? { tool_call_id: message.toolCallId } : {}) })) };
+  await expect(f.emit("before_provider_request", { payload })).rejects.toMatchObject({ code: "AUTH_REQUIRED" });
+  expect(controller.signal.aborted).toBe(true); expect(f.state.binding.snapshot_id).toBe(old);
+  await f.emit("agent_end");
+  const next = new AbortController(); f.ctx.signal = next.signal; f.ctx.abort = () => next.abort();
+  await f.emit("before_agent_start", { prompt: "Continue without the denied content.", systemPrompt: "Current." }); await f.emit("agent_start");
+  messages = [{ role: "system", content: "Current." }, { role: "user", content: "Continue without the denied content." }, message];
+  for (const event of ["context", "context_with_system"]) for (const value of await f.emit(event, { messages }))
+    if (value && typeof value === "object" && "messages" in value && Array.isArray(value.messages)) messages = value.messages;
+  await f.emit("before_provider_request", { payload: { messages: messages.map(message => ({
+    role: message.role === "toolResult" ? "tool" : message.role === "custom" ? "user" : message.role, content: sourceMessageText(message.content),
+    ...(message.role === "toolResult" ? { tool_call_id: message.toolCallId } : {}),
+  })) } });
+  expect(next.signal.aborted).toBe(false);
+  expect(messages.map(message => sourceMessageText(message.content)).join("\n")).not.toContain(JSON.stringify(f.text).slice(1, -1));
+  await f.emit("session_shutdown");
+});
+
+test("an inspected owner outside the catalog remains attributable after metadata refresh and a real source denial", async () => {
+  const f = await fixture(true, false, true, true);
+  const input = { path: f.metadata.ref!, refresh: true };
+  const main = await f.finish("outside-inspect", input, await f.read(input, undefined, "outside-inspect"));
+  const message: AgentMessage = { role: "toolResult", toolName: "read", toolCallId: "outside-inspect", ...main };
+  await f.host.refresh(f.ctx); // Absence alone is not a denial.
+  const context = async () => {
+    const result = (await f.emit("context", { messages: [message] })).find(value => value && typeof value === "object" && "messages" in value);
+    if (!result || typeof result !== "object" || !("messages" in result) || !Array.isArray(result.messages)) throw new Error("Missing context projection");
+    return result.messages as AgentMessage[];
+  };
+  expect(sourceMessageText((await context())[0]!.content)).toContain(f.body);
+  f.state.failures = [{ sourceId: "notion", namespace: "notion", type: "notion", code: "AUTH_REQUIRED", message: "Controlled authoritative source denial" }];
+  await f.host.refresh(f.ctx);
+  expect(sourceMessageText((await context())[0]!.content)).not.toContain(f.body);
+  expect(f.state.persisted).toBe(0); expect(f.state.binding).toBeUndefined();
+  await f.emit("session_shutdown");
+});
+
+test("partial, failed or cancelled current main reads cannot grant cross-version resource inspection", async () => {
+  for (const mode of ["partial", "failed", "cancelled"] as const) {
+    const f = await fixture(true, true, true, true), old = "s_" + hash("old A");
+    f.state.binding = { ...f.selected.preparationBinding!, snapshot_id: old, ref: f.selected.preparationBinding!.ref.replace(f.selected.snapshotId!, old) };
+    const input = { path: f.metadata.ref!, refresh: true }, controller = new AbortController();
+    let output: NativeReadResult;
+    if (mode === "cancelled") {
+      f.state.nativeWait = async () => { controller.abort(); };
+      await expect(f.read(input, controller.signal, "incomplete-inspect")).rejects.toThrow();
+      output = { content: [{ type: "text", text: f.body }] };
+    } else {
+      if (mode === "partial") f.state.nativeResult = { content: [{ type: "text", text: "Partial main." }] };
+      output = await f.read(input, undefined, "incomplete-inspect");
+    }
+    const result = await f.finish("incomplete-inspect", input, output, { isError: mode === "failed" });
+    expect(result.details).not.toHaveProperty("contextBrokerRead");
+    f.state.messages = [{ role: "toolResult", toolName: "read", toolCallId: "incomplete-inspect", ...result }];
+    await expect(f.read({ path: f.files[0]!.ref })).rejects.toThrow("SOURCE_SESSION_CONFLICT");
+    expect(f.state.persisted).toBe(0); expect(f.state.binding.snapshot_id).toBe(old);
+    await f.emit("session_shutdown");
+  }
+});
+
 test("a fixed scalar resource delegates every native option and result without preparing or selecting its main", async () => {
   const f = await fixture(), input = { path: f.files[0]!.ref, offset: 1, limit: 2, nativeOption: "preserved" };
   const native = { content: [{ type: "text" as const, text: f.text }], details: { native: true }, nativeExtra: "preserved" };
@@ -108,8 +278,10 @@ test("a fixed scalar resource delegates every native option and result without p
   expect(result).toBe(native); expect(f.state.nativeInputs).toEqual([{ ...input, path: f.files[0]!.output }]);
   expect(input.path).toBe(f.files[0]!.ref); expect(f.state.calls).toEqual([f.files[0]!.ref]);
   const delivered = await f.finish("scalar-call", input, result);
-  expect(delivered.content).toBe(native.content);
-  expect(delivered.details).toMatchObject({ native: true, contextBrokerResource: { version: 1, loaded: false, delivered_complete_text: true,
+  expect(delivered.content.slice(0, native.content.length)).toEqual(native.content);
+  expect(delivered.content.at(-1)).toEqual({ type: "text", text: '\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>' });
+  expect(delivered.details).toMatchObject({ native: true, contextBrokerResource: { version: 2, loaded: false, delivered_complete_text: true,
+    delivery: { start: 0, end: f.text.length, encoding: "raw" },
     id: f.metadata.id, scope: f.metadata.sourceScope, snapshot_id: f.selected.snapshotId, file_id: "guide", sha256: hash(f.text) } });
   const messages: AgentMessage[] = [{ role: "toolResult", toolName: "read", toolCallId: "scalar-call", ...delivered }];
   expect(sessionSourceSnapshot(messages, f.metadata)).toBeUndefined(); expect(sessionSourceBindings(messages, f.metadata.sourceScope!)).toEqual([]);
@@ -127,7 +299,8 @@ test("native partial text, empty files and images retain their content and truth
     const input = { path: f.files[index]!.ref, offset: 2, limit: 1 };
     f.state.nativeResult = { ...native, content: [...native.content] };
     const result = await f.read(input), delivered = await f.finish("scalar-call", input, result);
-    expect(result).toBe(f.state.nativeResult); expect(delivered.content).toEqual(native.content);
+    expect(result).toBe(f.state.nativeResult); expect(delivered.content.slice(0, native.content.length)).toEqual(native.content);
+    expect(delivered.content.at(-1)).toEqual({ type: "text", text: '\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>' });
     expect(delivered.details).toHaveProperty("contextBrokerResource.delivered_complete_text", complete);
     expect(delivered.details).toHaveProperty("contextBrokerResource.loaded", false);
   }
@@ -179,7 +352,15 @@ test("foreign scalar selections fail before native read and never trigger prepar
     value => ({ ...value, file: { ...value.file, ref: f.ref("references/guide.md", "other") } }),
     value => ({ ...value, file: { ...value.file, output: "relative.md" } }),
   ];
-  for (const transform of mutations) { f.state.transform = transform; await expect(f.read({ path: f.files[0]!.ref })).rejects.toThrow(); }
+  for (const transform of mutations) {
+    f.state.transform = transform;
+    const input = { path: f.files[0]!.ref };
+    await expect(f.read(input)).rejects.toMatchObject({ details: { admission: {
+      version: 1, phase: "execute", stage: "resource", code: expect.any(String), signal_aborted: false,
+      generation_started: expect.any(Number), generation_current: expect.any(Number),
+    } } });
+    expect(input.path).toBe(f.files[0]!.ref);
+  }
   expect(f.state.nativeInputs).toHaveLength(0); expect(f.state.mainReads + f.state.graphReads).toBe(0);
 });
 

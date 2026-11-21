@@ -1,27 +1,5 @@
 import assert from 'node:assert/strict';
 
-/** Host selection belongs to verification orchestration, not the source adapter.
- * A Pi-only run must neither probe nor launch an unrelated installed host.
- * Cross-host cache and native-editor scenarios remain explicitly multi-host.
- */
-export function selectIntegrationHosts({ host, sharedCatalog = false, cacheLifecycle = false }) {
-  if (host !== undefined && !['pi', 'omp'].includes(host)) {
-    throw new Error('--host must be pi or omp; omit it to run both hosts');
-  }
-  if (host !== undefined && (sharedCatalog || cacheLifecycle)) {
-    throw new Error('--host cannot narrow shared-catalog or cache-lifecycle: those scenarios require multiple hosts');
-  }
-  return host === undefined ? ['pi', 'omp'] : [host];
-}
-
-/** Preserve the default policy unless a run explicitly selects the daily mode. */
-export function selectIntegrationPrefetch(value) {
-  if (value === undefined) return undefined;
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  throw new Error('--prefetch must be true or false');
-}
-
 export function decodeCatalogText(value) {
   const entities = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
   return value.replace(/&(amp|lt|gt|quot|apos);/g, (_match, name) => entities[name]);
@@ -36,9 +14,10 @@ export function selectLiveCatalogRecord(records, ref) {
   };
   const target = owner(ref);
   const uuid = value => typeof value === 'string' && /^(?:[a-f0-9]{32}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/iu.test(value) ? value.replaceAll('-', '').toLowerCase() : undefined;
-  const exact = records.filter(record => record.id === target || record.ref === ref || owner(record.ref) === target
-    || uuid(target) !== undefined && [record.locator?.page_id, record.locator?.subscription_id].some(id => uuid(id) === uuid(target)));
-  const matches = exact.length ? exact : records.filter(record => record.name === target || record.alias === target);
+  const current = records.filter(record => record.locator?.type === 'shared_skill');
+  const exact = current.filter(record => record.id === target || record.ref === ref || owner(record.ref) === target
+    || uuid(target) !== undefined && record.locator?.type === 'shared_skill' && uuid(record.locator.page_id) === uuid(target));
+  const matches = exact.length ? exact : current.filter(record => record.name === target || record.alias === target);
   assert.equal(matches.length, 1, 'Requested real Skill owner must match exactly one selected catalog record');
   return matches[0];
 }
@@ -59,10 +38,8 @@ export function projectedResourceRef(context, name, path) {
 }
 
 export function measuredConsumptionArgs(args) {
-  const prepare = args[0] === 'prepare' || args[0] === 'ctl' && args[1] === 'prepare';
-  const measured = prepare || ['list', 'read', 'files', 'use'].includes(args[0]);
-  if (!measured || args.includes('--raw')) return args;
-  // prepare is already a machine protocol and has no --json flag. use needs
-  // explicit JSON for metrics; the other consumer commands support it as well.
-  return [...args, ...(prepare || args.includes('--json') ? [] : ['--json']), ...(args.includes('--metrics') ? [] : ['--metrics'])];
+  if (args[0] === 'prepare' || args[0] === 'ctl' && args[1] === 'prepare')
+    throw new Error('The prepare protocol is retired; select current content with use.');
+  if (!['list', 'read', 'files', 'use'].includes(args[0]) || args.includes('--raw')) return args;
+  return [...args, ...(args.includes('--json') ? [] : ['--json']), ...(args.includes('--metrics') ? [] : ['--metrics'])];
 }

@@ -12,13 +12,33 @@ $design-review review this API boundary
 
 The broker resolves `design-review`, sends its context to the model, and avoids appending another copy while that context remains in the active session branch.
 
+## Connect an existing Notion library
+
+An existing library needs neither new tables nor a local Skill directory. Preview its connection in Pi:
+
+```text
+/context-broker connect personal ENTRY --config /absolute/config.json
+```
+
+Use the existing Skills library entry and the user's chosen project configuration path. A preview writes no configuration. After authorization, execute its exact returned `--apply` command and reload Pi with that same file. Library validation, configuration saved, Pi connected and body actually read are separate observations.
+
+Given only this package's CLI path, run `node /absolute/package/dist/ntn-skills.mjs ctl builtin read notion/ntn-skills-maintain --path references/setup.md` for the complete offline guide. No schema crawl, source search or Notion login is needed to read it. `ctl library inspect ENTRY` checks the descriptor without creating a library or connecting Pi.
+
+For existing Skill edits, read the short bundled maintenance workflow, then obtain a fixed author reference with `read PAGE_ID --database ENTRY --authoring --read-only`. When the user has explicitly authorized that exact target and complete input, use `apply RETURNED_PIN --database ENTRY --input DIR --compact`: the apply itself validates the whole tree before dispatch. Use `apply RETURNED_PIN --database ENTRY --input DIR --dry-run` instead when a preview is requested, authorization is missing or intent is unclear. A preview never grants authorization. The directory may contain a changed main and new references; omitted files remain unchanged.
+
+`--compact` preserves the original operation ID, fixed refs, verified state and aggregate costs, omitting only the detailed HTTP trace from model-visible stdout. Full output remains the default. Exact HTTP audits require full stdout or the installed command-output proof v1 integration, whose independent original ledger must match the normally closed process's stdout hash and length. Do not reread an unchanged baseline or export solely to repeat a verified apply; report its result to the user.
+
 ## Why use it
 
 Agent setups accumulate review checklists, runbooks and team workflows. Context Broker publishes names and descriptions before loading selected bodies. A Notion source uses a session-selected View, its configured `default_view_id`, or the first View in API order. `Default Context` is an ordinary checkbox used only by saved View filters. Full `$` selection, search and explicit reads remain available outside that View. Startup may prepare metadata and snapshots; it never sends a model request or activates bodies.
 
-Pi 1.4 consumes Notion Skills through `notion_list`, native `read`, and `notion_use`. List discovers metadata; read inspects an entry or resource; use obtains the root and complete Requires once, leaving Members as candidates. Local Skills retain Pi's native discovery and reading. Default Notion discovery and consumption share the bundled SDK; explicit `source.command` configurations retain their compatibility path. Each provider context contains one short `<ntn-skills-guidance>` block matching the active tools. Management is available through the deferred `notion_ctl` tool; OMP retains its existing interface.
+Pi consumes Notion Skills through `notion_list`, native `read`, and `notion_use`. List discovers metadata; read inspects an entry or resource; use obtains the root and complete Requires once, leaving Members as candidates. Local Skills retain Pi's native discovery and reading. All Notion discovery and consumption use the paired bundled SDK; old `source.command` configurations are rejected. Each provider context contains one short `<ntn-skills-guidance>` block matching the active tools. Management is available through the deferred `notion_ctl` tool; OMP/Tern evolution is deferred on `next`.
 
 Pi can read up to 16 selected resources in one `read({ paths: [...] })` call using fixed `sr:R` handles or pinned `skill://` file refs from the same Skill snapshot. Text arrives in full; binary resources provide verified file metadata and a local path. Ordinary `read({ path, offset?, limit? })` keeps Pi's native behavior. See [fixed resource batches](./packages/context-broker/docs/fixed-resource-batches.md) for selection, budgets and delivery semantics.
+
+Pi's deferred `notion_ctl` also manages the current Notion working set. `working_set: "show"` reports active roots, shared Requires and UTF-8 instruction bytes; `"budget"` with `max_bytes` sets an explicit Session limit; `"release"` with exact `roots` stops applying those roots. Shared dependencies remain while another active root needs them. Release preserves the original Session history, fixed snapshots and Notion data. The default has no automatic eviction. See [working-set controls](./packages/context-broker/docs/skill-consumption-runtime.md#当前工作集预算与显式释放).
+
+Existing conversations retain their selected root and Requires versions across Notion edits and metadata expiry. Explicit `read` with `refresh: true` compares the current main without changing task pins; `notion_use` with `refresh: true` adopts complete current versions for the requested roots. Missing fixed bytes produce a bounded capability warning and withhold the affected instruction closure while independent conversation continues. See [refresh and recovery](./packages/context-broker/docs/skill-consumption-runtime.md#内容变更明确刷新与管理开关) and the [paired next-worktree delivery contract](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/next-worktree-delivery.md).
 
 In Tern/OMP, loading a selected source Skill adds a persistent, collapsible transcript record, `Read ntn-skills://<alias>`, with its source, elapsed time, and `running`, `done`, or `error` state. The target omits the namespace and retains a page suffix when needed. Terminal records remain after completion and resume restores them; an unfinished record is marked interrupted. `ntn-skills://` is a display identifier. Real reads still use `skill://`. The record and its expanded details never enter provider messages, compaction, or branch summaries. Other terminals use text feedback; enabling a Notion source is sufficient for discovery and use, without a builtin installation. See the [activation contract](./packages/context-broker/docs/reference.md#built-in-sources).
 
@@ -81,6 +101,25 @@ omp -e ./packages/context-broker/src/index.ts
 
 The optional Tern companion has its own [release installation](#tern-completion).
 
+## Direct source dogfooding
+
+Use the current source checkout directly; no release channel or dated candidate install is needed. Build the CLI/SDK from your `notion-skills-cli` checkout, then select that exact build for the existing Broker build:
+
+```sh
+cd /absolute/notion-skills-cli
+bun install --frozen-lockfile
+bun run build
+export NTN_SKILLS_DEV_ROOT="$PWD"  # existing ntn-skills source-selection shim
+cd /absolute/pi-context-broker
+bun install --frozen-lockfile
+NTN_SKILLS_BUILD_ENTRY=/absolute/notion-skills-cli/packages/cli/dist/ntn-skills.js bun run build:broker
+pi install "$PWD/packages/context-broker"
+```
+
+Keep one Broker entry in Pi (`pi remove OLD_BROKER_SOURCE` removes a previous entry); preserve other extensions. Follow the Notion source configuration below with your own authorized library, then open a new Pi session. CLI edits run through its existing shim without rebuilding, but the default Broker SDK is bundled: rebuild CLI and `build:broker` at the same paths when that SDK input changes. No new launcher or version manager is involved. Without an installed CLI shim, `bun run /absolute/notion-skills-cli/scripts/dev.ts` runs the same commands directly.
+
+Use the [CLI source quick start](https://github.com/yoyooyooo/notion-skills-cli/blob/main/CONTRIBUTING.md#direct-source-dogfooding) for connection, owned library creation and the first Skill. A cold installation configures its own credentials and entry ID; it does not copy a maintainer's SQLite database or caches. For a code or wiring change, run its relevant regression and inspect the affected actual Session; do not require every platform/model or a formal release before daily use.
+
 ## Quick start
 
 ### 1. Configure a Skill directory
@@ -134,7 +173,7 @@ $design-review review this API boundary
 
 Enter reserves the submission while leaving the draft editable. The native composer shows running and **Stop**; **Stop** or Escape cancels preparation. Enter during preparation does not submit the edited draft. In Pi, selected content is prepared in the cancellable `context` stage, after the host creates the agent operation. RPC `abort` also cancels that work. Successful preparation includes the original prompt, images, and complete selected Skill bodies in the first provider request. Preparation failure or cancellation prevents that request; a session switch also prevents late dispatch.
 
-Pi confirms a selected Skill as active when `after_provider_response` receives 2xx response headers and the complete body matches the request's fixed selection. This confirms request acceptance, not completion of the model's response. Cached bytes and a ready preparation result do not establish active state.
+Pi confirms a selected Skill as active when `after_provider_response` receives 2xx response headers and the complete body matches the request's fixed selection. This confirms logical request acceptance, not completion of the model's response and not final wire delivery. Ordinary `openai-completions` wire proof is a separate Node Undici entity-hash check; other transports are not reported as wire-confirmed. Cached bytes and a ready preparation result do not establish active state.
 
 Unknown simple `$name` and `$name@namespace`, amounts and paths such as `$bunfs/root/chunks/cli-nxfh2cp0.js` remain ordinary text without a failure notification. A previously accepted choice or full identity token that is unavailable produces explicit user/model **not loaded** feedback. Other valid Skill/Prompt/Router references, original text and images still proceed once. Ambiguity and actual selected-record permission, network, catalog or integrity errors block activation; no other source is selected silently.
 
@@ -143,6 +182,8 @@ The next model request includes the Skill content. Submitting the same record th
 OMP, including Tern-hosted OMP, treats a complete Skill body in the active context as already read. Dollar injection identifies the invocation, native source Skill name and resource directory, so the model can use the body directly and read additional resources only when needed. Directory paths retain `pathMode` redaction. See the [host consumption contract](./packages/context-broker/docs/reference.md#host-discovery-and-selected-activation).
 
 ### Add a Notion source
+
+After the CLI's init/attach returns a library entry, run `/context-broker connect personal ENTRY --config /absolute/project/config.json` to preview connecting it to Pi. The returned apply command names the same file and preview digest; execute it to save the source, then restart Pi with `CONTEXT_BROKER_CONFIG` pointing to that file. With no explicit file or environment override, the command asks you to choose one. It reports configuration saved separately from remote readiness and body delivery. The connection does not edit credentials or a global configuration implicitly.
 
 The plugin includes `ntn-skills`; no global `ntn-skills` installation is needed. Its direct HTTP engine uses the existing project token (`config.token`, then `NOTION_API_TOKEN`). Add a source to the same broker config:
 
@@ -157,7 +198,7 @@ sources:
     prefetch: false
 ```
 
-In this checkout, Pi uses the bundled in-process `ntn-skills` SDK when `source.command` is omitted. The full catalog and Default View use SDK `listCatalog`; one `consume` call prepares the selected Skill/Router graph for each source without spawning `prepare` followed by one `read` per node. A requested resource uses SDK `readSkill` with its fixed File reference. Diagnostics, an explicit custom command, OMP, Prompt loading and configured prefetch retain their CLI paths. A missing or incompatible SDK fails explicitly without a CLI fallback.
+The `next` Notion consumer uses the bundled in-process SDK for metadata, Skill/Router/Prompt bodies, supporting files and bounded prefetch. One `consume` call owns preparation and the complete file directory; only selected main files are initially materialized, and resources use their verified fixed File references. Each explicit Prompt submission loads its current material again. Diagnostics and explicit management retain the paired CLI. `source.command`, CLI prepare/read chains and full-export fallback are retired; a missing or incompatible package fails with an upgrade instruction. OMP/Tern work is deferred.
 
 Pi exposes session references through `notion_list`, `notion_use` and native `read`: `sr:C` identifies a catalog candidate, `sr:S` a fixed selected main, and `sr:R` a resource belonging to that selection. Copy the returned reference unchanged. `notion_use` is a top-level model tool and cannot be called inside Code mode; preparation and actual complete delivery are checked separately. References belong to the current session branch and still require source authorization and identity checks. See the [Skill consumption runtime](./packages/context-broker/docs/skill-consumption-runtime.md) for preparation, delivery and restoration boundaries.
 
@@ -215,7 +256,7 @@ See the [Tern package guide](./packages/tern-context-broker/README.md) for confi
 
 ## Privacy and support
 
-The broker runs with the host agent's local permissions. Selected Skill content is sent to your configured model provider and stored in session history. Routers expose member metadata and paths; their bodies are loaded separately. Use trusted roots, catalogs, source commands and Notion databases. Notion credentials stay with `ntn-skills`; metadata and selected bodies/resources are cached locally. Source errors expose safe codes instead of raw stderr or secrets. Paths are home-relative by default; `pathMode: hash` provides stronger path redaction, and decision logs omit paths unless enabled.
+The broker runs with the host agent's local permissions. Selected Skill content is sent to your configured model provider and stored in session history. Routers expose member metadata and paths; their bodies are loaded separately. Use trusted roots, catalogs and Notion databases. Notion credentials stay with `ntn-skills`; metadata and selected bodies/resources are cached locally. Source errors expose safe codes instead of raw stderr or secrets. Paths are home-relative by default; `pathMode: hash` provides stronger path redaction, and decision logs omit paths unless enabled.
 
 Local Pi/OMP checks have run on macOS; CI runs CLI and artifact checks on Linux. Windows path-list separators are supported, but Windows runtime behavior remains unverified. Native Tern UI checks require macOS; remote panes and the Tern web client are unsupported by the manual companion.
 

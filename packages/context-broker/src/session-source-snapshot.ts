@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { recordIdentity } from "./discovery-records";
-import { parseNativeReference } from "./native-reference";
+import { parseNativeReference, type ExactNativeReference } from "./native-reference";
 import type { AgentMessage, MessageContent, ProjectedSessionEntry, SessionBoundaryDraft, SkillRecord } from "./types";
-import { decodePreparationLock, isPreparationBinding, type PreparationBinding } from "./prepare-protocol";
+import { decodePreparationLock, isPreparationBinding, isPreparationDirectory, type PreparationBinding, type PreparationDirectory } from "./prepare-protocol";
 import type { SessionSelection } from "./session-graph";
 import { deriveSkillPrepareProjection, validateSkillPrepareProjection } from "./skill-context-projection-proof";
 import { deriveResourceReadProjection, validateResourceReadProjection } from "./resource-read-projection";
+import { isConsumptionEffects } from "./consumption-effects";
+import { isSkillPreparationDirectory, isSkillPreparationModel, projectSkillDirectory, type SkillPreparationModelDirectory } from "./skill-context-projection";
 
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -67,12 +69,13 @@ export function deferredSourceEntries(entries: readonly ProjectedSessionEntry[],
 
 /** Produced only for a successfully completed, whole-entry native tool read.
  * Stored in the actual tool result, not a second model-visible body message. */
-export function nativeReadReceipt(record: SkillRecord, toolCallId: string, content: MessageContent | undefined) {
+export function nativeReadReceipt(record: SkillRecord, toolCallId: string, content: MessageContent | undefined, purpose?: "inspect") {
   const text = sourceMessageText(content);
   if (!record.sourceId || !snapshot(record.snapshotId) || !toolCallId || !record.body || !text.startsWith(record.body) || (Array.isArray(content) && content.some(part => part.type !== "text"))) return undefined;
   return { version: text === record.body ? 2 : 3, identity: recordIdentity(record), contentIdentity: sourceContentIdentity(record), toolCallId, snapshotId: record.snapshotId,
-    bodySha256: hash(record.body), bytes: Buffer.byteLength(record.body),
-    ...(text === record.body ? {} : { delivery: { start: 0, end: record.body.length, encoding: "raw" } }),
+    bodySha256: hash(record.body), bytes: Buffer.byteLength(record.body), ...(purpose ? { purpose } : {}),
+    ...(text === record.body ? {} : { delivery: { start: 0, end: record.body.length, encoding: "raw" },
+      rendered: { sha256: hash(text), bytes: Buffer.byteLength(text) } }),
     ...(record.preparationBinding ? { binding: record.preparationBinding } : {}) };
 }
 
@@ -97,8 +100,11 @@ function verifiedReadProof(message: AgentMessage) {
   if (message.role !== "toolResult" || message.toolName !== "read" || message.isError === true || !object(message.details)) return undefined;
   const proof = message.details.contextBrokerRead;
   if (!object(proof) || proof.loaded === false || ![1, 2, 3].includes(Number(proof.version)) || typeof proof.identity !== "string"
-    || typeof proof.toolCallId !== "string" || !proof.toolCallId || proof.toolCallId !== message.toolCallId || !snapshot(proof.snapshotId)) return undefined;
+    || typeof proof.toolCallId !== "string" || !proof.toolCallId || proof.toolCallId !== message.toolCallId || !snapshot(proof.snapshotId)
+    || proof.purpose !== undefined && proof.purpose !== "inspect") return undefined;
   const text = sourceMessageText(message.content);
+  if (proof.rendered !== undefined && (!object(proof.rendered) || proof.rendered.sha256 !== hash(text)
+    || proof.rendered.bytes !== Buffer.byteLength(text))) return undefined;
   if (proof.version === 3) {
     const delivery = proof.delivery;
     if (!object(delivery) || delivery.start !== 0 || delivery.encoding !== "raw" || !Number.isSafeInteger(delivery.end)
@@ -117,7 +123,8 @@ function verifiedResourceReadProof(message: AgentMessage) {
   if (message.role !== "toolResult" || message.toolName !== "read" || message.isError === true || !object(message.details)
     || Array.isArray(message.content) && message.content.some(part => part.type !== "text")) return undefined;
   const proof = message.details.contextBrokerResource;
-  if (!object(proof) || proof.version !== 1 || proof.delivered_complete_text !== true || proof.loaded !== false
+  if (!object(proof) || ![1, 2].includes(Number(proof.version)) || proof.delivered_complete_text !== true || proof.loaded !== false
+    || proof.purpose !== undefined && proof.purpose !== "inspect"
     || typeof proof.toolCallId !== "string" || !proof.toolCallId || proof.toolCallId !== message.toolCallId
     || typeof proof.scope !== "string" || !proof.scope || typeof proof.id !== "string" || !proof.id
     || !snapshot(proof.snapshot_id) || proof.file_id !== undefined && (typeof proof.file_id !== "string" || !proof.file_id)
@@ -128,6 +135,13 @@ function verifiedResourceReadProof(message: AgentMessage) {
       || reference.fileId !== proof.file_id || reference.path !== proof.path) return undefined;
   } catch { return undefined; }
   const text = sourceMessageText(message.content);
+  if (proof.version === 2) {
+    const delivery = proof.delivery;
+    if (!object(delivery) || delivery.start !== 0 || delivery.encoding !== "raw" || !Number.isSafeInteger(delivery.end)
+      || Number(delivery.end) < 0 || Number(delivery.end) > text.length) return undefined;
+    const body = text.slice(0, Number(delivery.end));
+    return hash(body) === proof.sha256 && Buffer.byteLength(body) === proof.bytes ? proof : undefined;
+  }
   return hash(text) === proof.sha256 && Buffer.byteLength(text) === proof.bytes ? proof : undefined;
 }
 
@@ -139,6 +153,8 @@ function verifiedResourceBatchProof(message: AgentMessage) {
 }
 
 function verifiedPreparationProjection(message: AgentMessage, proof: Record<string, unknown>) {
+  if (message.role !== "toolResult" || !["notion_use", "skill_prepare"].includes(message.toolName ?? "")
+    || message.isError === true || proof.version !== 2 || !message.toolCallId || proof.toolCallId !== message.toolCallId) return undefined;
   if (Array.isArray(message.content) && message.content.some(part => part.type !== "text")) return undefined;
   const text = sourceMessageText(message.content), projection = validateSkillPrepareProjection(text, proof.projection);
   if (!projection || !Array.isArray(proof.records) || proof.records.length !== projection.records.length
@@ -265,15 +281,24 @@ function deferredDeliveryRecords(messages: AgentMessage[]): Record<string, unkno
 }
 
 type Replacement = { start: number; end: number; text: string };
-function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number, Replacement[]>, reason: "deduplicate" | "supersede"): AgentMessage[] {
+function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number, Replacement[]>, reason: "deduplicate" | "supersede",
+  omittedDirectories: ReadonlyMap<number, readonly number[]> = new Map()): AgentMessage[] {
   const adjusted = new Map<Record<string, unknown>, Record<string, unknown> | null>();
   injectedSnapshots(messages, (proof, index) => {
     const spans = replacements.get(index);
     if (!spans?.length || !object(proof.delivery)) return;
     const start = Number(proof.delivery.start), end = Number(proof.delivery.end);
-    if (spans.some(span => span.start < end && span.end > start)) { adjusted.set(proof, null); return; }
+    const bodyRemoved = spans.some(span => span.start < end && span.end > start);
     const shift = spans.filter(span => span.end <= start).reduce((sum, span) => sum + span.text.length - (span.end - span.start), 0);
-    if (shift) adjusted.set(proof, { ...proof, delivery: { ...proof.delivery, start: start + shift, end: end + shift } });
+    const resources = object(proof.resourcesDelivery) ? proof.resourcesDelivery : undefined;
+    const removed = resources && spans.some(span => span.start === resources.start && span.end === resources.end && !span.text);
+    const resourcesShift = resources ? spans.filter(span => span.end <= Number(resources.start))
+      .reduce((sum, span) => sum + span.text.length - (span.end - span.start), 0) : 0;
+    if (shift || bodyRemoved || removed || resourcesShift) adjusted.set(proof, { ...proof,
+      ...(bodyRemoved ? { loaded: false } : shift ? { delivery: { ...proof.delivery, start: start + shift, end: end + shift } } : {}),
+      ...(removed ? { resourcesDelivery: undefined, resourcesOmitted: { sha256: resources.sha256, bytes: resources.bytes } }
+        : resourcesShift ? { resourcesDelivery: { ...resources, start: Number(resources!.start) + resourcesShift, end: Number(resources!.end) + resourcesShift } } : {}),
+    });
   });
   const projected = messages.map((message, index) => {
     const spans = replacements.get(index);
@@ -326,7 +351,7 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
       const changedIndices = verified.records.flatMap((record, recordIndex) => changes.some(change =>
         change.start < record.delivery.end && change.end > record.delivery.start) ? [recordIndex] : []);
       const derived = deriveSkillPrepareProjection(sourceMessageText(original.content), sourceMessageText(message.content),
-        verified, changedIndices, reason);
+        verified, changedIndices, reason, omittedDirectories.get(index));
       // A new content digest must never bless an invalid old receipt or an
       // unrelated metadata edit. Failed derivation keeps evidence invalid.
       if (!derived || !Array.isArray(preparation.records)) return { ...message, details: next };
@@ -334,11 +359,22 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
         delivery: derived.records[recordIndex]!.delivery, loaded: derived.records[recordIndex]!.state === "source" } : record);
       return { ...message, details: { ...next, contextBrokerPreparation: { ...next.contextBrokerPreparation, records, projection: derived } } };
     }
-    if (projected[index] !== original && reason === "deduplicate") {
+    if (projected[index] !== original) {
       // A confirmation can equal a very short author body. Invalidate only the
       // provider copy explicitly instead of relying on different text hashes.
       const native = verifiedReadProof(original);
-      if (native && object(next)) return { ...message, details: { ...next, contextBrokerRead: { ...native, loaded: false } } };
+      if (native && object(next)) {
+        const end = readProofEnd(native, original), changedBody = (replacements.get(index) ?? []).some(span => span.start < end && span.end > 0);
+        const text = sourceMessageText(message.content);
+        const directory = nativeDirectory(original, native);
+        const directoryRemoved = directory && (replacements.get(index) ?? []).some(span =>
+          span.start === directory.start && span.end === directory.end && span.text === "");
+        const directoryText = directoryRemoved ? JSON.stringify(directory.directory) : undefined;
+        return { ...message, details: { ...next, contextBrokerRead: { ...native,
+          ...(changedBody ? { loaded: false } : {}),
+          ...(directoryText === undefined ? {} : { directoryOmitted: { sha256: hash(directoryText), bytes: Buffer.byteLength(directoryText) } }),
+          ...(native.rendered === undefined ? {} : { rendered: { sha256: hash(text), bytes: Buffer.byteLength(text) } }) } } };
+      }
       const resource = verifiedResourceReadProof(original);
       if (resource && object(next)) return { ...message, details: { ...next, contextBrokerResource: { ...resource, delivered_complete_text: false } } };
       const batch = verifiedResourceBatchProof(original);
@@ -355,6 +391,71 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
   });
 }
 
+function generatedDirectoryMatches(value: SkillPreparationModelDirectory, canonical: unknown): boolean {
+  if (!isPreparationDirectory(canonical)) return false;
+  const normalized = projectSkillDirectory(canonical)!;
+  for (const group of ["files", "required", "candidates", "references"] as const) {
+    const expected = normalized[group], actual = value[group];
+    if (!Array.isArray(expected) || expected.length !== actual.length) return false;
+    if (actual.some((row, index) => {
+      const original = expected[index]!;
+      const fields = Object.keys(original).filter(key => key !== "ref");
+      return !isDeepStrictEqual(Object.keys(row).filter(key => key !== "ref").sort(), [...fields].sort())
+        || fields.some(field => Reflect.get(row, field) !== Reflect.get(original, field));
+    })) return false;
+  }
+  return true;
+}
+
+function nativeDirectory(message: AgentMessage, proof: Record<string, unknown>) {
+  if (proof.version !== 3 || !object(proof.rendered) || !isPreparationBinding(proof.binding)) return undefined;
+  if (proof.snapshotId !== proof.binding.snapshot_id || proof.bodySha256 !== proof.binding.body_sha256
+    || proof.contentIdentity !== JSON.stringify([proof.binding.scope, proof.binding.record.id])) return undefined;
+  const text = sourceMessageText(message.content), start = readProofEnd(proof, message);
+  let suffix = text.slice(start);
+  if (object(message.details) && isConsumptionEffects(message.details.effects)) {
+    const footer = "\n\n<notion-effects>" + JSON.stringify(message.details.effects) + "</notion-effects>";
+    if (!suffix.endsWith(footer)) return undefined;
+    suffix = suffix.slice(0, -footer.length);
+  }
+  const match = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(suffix);
+  if (!match) return undefined;
+  try {
+    const value: unknown = JSON.parse(match[1]!);
+    if (!object(value) || Object.keys(value).length !== 2 || typeof value.ref !== "string"
+      || JSON.stringify(value) !== match[1] || !isSkillPreparationDirectory(value.directory)
+      || !generatedDirectoryMatches(value.directory, proof.directory)) return undefined;
+    if (value.ref !== proof.binding.ref && !/^sr:S[A-Za-z0-9_-]{22}$/.test(value.ref)) return undefined;
+    return { directory: value.directory, binding: proof.binding, start, end: start + suffix.length };
+  } catch { return undefined; }
+}
+
+/** A complete explicitly refreshed main read may name fixed files for further
+ * inspection. The receipt establishes routing, never an active instruction pin
+ * or renewed authorization. Only files in its verified directory qualify. */
+export function inspectedResource(messages: readonly AgentMessage[], record: SkillRecord, reference: ExactNativeReference): {
+  binding: PreparationBinding; file: PreparationDirectory["files"][number];
+} | undefined {
+  if (!reference.snapshot || !reference.path || record.source !== "notion") return undefined;
+  for (const message of messages) {
+    const proof = verifiedReadProof(message);
+    if (!proof || proof.purpose !== "inspect" || proof.identity !== recordIdentity(record) || !nativeDirectory(message, proof)
+      || !isPreparationBinding(proof.binding) || !isPreparationDirectory(proof.directory)) continue;
+    const binding = proof.binding;
+    if (binding.scope !== record.sourceScope || binding.record.id !== record.id || binding.record.kind !== record.kind
+      || !isDeepStrictEqual(binding.record.locator, record.locator) || binding.snapshot_id !== reference.snapshot) continue;
+    const files = proof.directory.files.filter(file => {
+      try {
+        const ref = parseNativeReference(file.ref);
+        return file.path !== binding.record.entrypoint && ref.selector === reference.selector && ref.snapshot === reference.snapshot
+          && ref.path === file.path && (reference.fileId === undefined ? ref.path === reference.path : ref.fileId === reference.fileId);
+      } catch { return false; }
+    });
+    if (files.length === 1) return { binding, file: files[0]! };
+  }
+  return undefined;
+}
+
 /** Preserve every actual tool result and tool-call ID in session history. Only
  * the provider projection replaces an already available exact entry or resource copy with
  * a receipt-sized confirmation. Different snapshots/scopes and partial or
@@ -362,12 +463,71 @@ function projectDeliverySpans(messages: AgentMessage[], replacements: Map<number
 export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[] {
   const seen = new Map<string, string>();
   const replacements = new Map<number, Replacement[]>();
+  const omittedDirectories = new Map<number, number[]>();
   const entryConfirmation = "Already loaded.", resourceConfirmation = "Already available.";
   function replace(index: number, start: number, end: number, text: string) {
     const spans = replacements.get(index) ?? [];
     if (!spans.some(span => span.start === start && span.end === end)) spans.push({ start, end, text });
     replacements.set(index, spans);
   }
+  const directories = new Set<string>();
+  const supportDirectories = new Set<string>();
+  const supportKey = (binding: PreparationBinding, files: readonly { path: string; ref: string }[]) =>
+    JSON.stringify([binding.scope, binding.record.id, binding.snapshot_id, binding.version_id,
+      files.filter(file => file.path !== binding.record.entrypoint).map(({ path, ref }) => ({ path, ref }))]);
+  const directoryKey = (binding: PreparationBinding, directory: SkillPreparationModelDirectory) =>
+    JSON.stringify([binding.scope, binding.record.id, binding.snapshot_id, binding.version_id, directory]);
+  // Match the body's preference for a verified preparation. Native footer text
+  // is generated material only when its complete output and binding are intact.
+  messages.forEach((message, index) => {
+    const proof = object(message.details) ? message.details.contextBrokerPreparation : undefined;
+    const projection = object(proof) ? verifiedPreparationProjection(message, proof) : undefined;
+    if (!object(proof) || !projection || !Array.isArray(proof.records)) return;
+    const text = sourceMessageText(message.content), model: unknown = JSON.parse(text);
+    if (!isSkillPreparationModel(model)) return;
+    for (const [recordIndex, record] of model.records.entries()) {
+      const receipt: unknown = proof.records[recordIndex];
+      if (!record.directory || !object(receipt) || !isPreparationBinding(receipt.binding)
+        || !generatedDirectoryMatches(record.directory, receipt.directory)) continue;
+      const key = directoryKey(receipt.binding, record.directory);
+      supportDirectories.add(supportKey(receipt.binding, record.directory.files));
+      if (!directories.has(key)) { directories.add(key); continue; }
+      const start = projection.records[recordIndex]!.delivery.end + 1, encoded = ',"directory":' + JSON.stringify(record.directory);
+      if (text.slice(start, start + encoded.length) !== encoded) continue;
+      replace(index, start, start + encoded.length, "");
+      omittedDirectories.set(index, [...omittedDirectories.get(index) ?? [], recordIndex]);
+    }
+  });
+  messages.forEach((message, index) => {
+    const proof = verifiedReadProof(message), value = proof && nativeDirectory(message, proof);
+    if (!value) return;
+    const key = directoryKey(value.binding, value.directory);
+    supportDirectories.add(supportKey(value.binding, value.directory.files));
+    if (!directories.has(key)) { directories.add(key); return; }
+    replace(index, value.start, value.end, "");
+  });
+  injectedSnapshots(messages, (proof, index) => {
+    const span = proof.resourcesDelivery;
+    if (!object(span) || !isPreparationBinding(proof.binding) || !isPreparationDirectory(proof.directory)
+      || proof.snapshotId !== proof.binding.snapshot_id || proof.bodySha256 !== proof.binding.body_sha256
+      || proof.contentIdentity !== JSON.stringify([proof.binding.scope, proof.binding.record.id])
+      || !Number.isSafeInteger(span.start) || !Number.isSafeInteger(span.end)
+      || Number(span.start) < 0 || Number(span.end) <= Number(span.start)
+      || !object(proof.delivery) || Number(span.end) > Number(proof.delivery.start)) return;
+    const text = sourceMessageText(messages[index]?.content), encoded = text.slice(Number(span.start), Number(span.end));
+    if (hash(encoded) !== span.sha256 || Buffer.byteLength(encoded) !== span.bytes
+      || !encoded.startsWith("<resources>") || !encoded.endsWith("</resources>")) return;
+    try {
+      const files: unknown = JSON.parse(unescaped(encoded.slice("<resources>".length, -"</resources>".length)));
+      const binding = proof.binding;
+      const original = proof.directory.files.filter(file => file.path !== binding.record.entrypoint);
+      if (!Array.isArray(files) || files.length !== original.length || files.some((file, n) =>
+        !object(file) || Object.keys(file).length !== 2 || file.path !== original[n]!.path || typeof file.ref !== "string")) return;
+      const key = supportKey(binding, files);
+      if (supportDirectories.has(key)) replace(index, Number(span.start), Number(span.end), "");
+      else supportDirectories.add(key);
+    } catch { /* Author tags or damaged generated receipts never justify omission. */ }
+  });
   // Prefer explicit complete instruction deliveries, then retain the first
   // native read when no delivery exists. Repeated prepare results are subject
   // to exactly the same scope/pin/hash proof as repeated native reads.
@@ -394,7 +554,7 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
       const fileIdentity = proof.file_id === undefined ? ["path", proof.path] : ["file_id", proof.file_id];
       const key = JSON.stringify([proof.scope, proof.id, proof.snapshot_id, fileIdentity, proof.sha256]);
       if (!resources.has(key)) resources.add(key);
-      else if (proof.bytes !== 0) replace(index, 0, sourceMessageText(message.content).length, resourceConfirmation);
+      else if (proof.bytes !== 0) replace(index, 0, proof.version === 2 && object(proof.delivery) ? Number(proof.delivery.end) : sourceMessageText(message.content).length, resourceConfirmation);
       return;
     }
     const batch = verifiedResourceBatchProof(message);
@@ -409,14 +569,14 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
       if (file.bytes !== 0) replace(index, file.delivery.start, file.delivery.end, JSON.stringify(resourceConfirmation).slice(1, -1));
     }
   });
-  return replacements.size ? projectDeliverySpans(messages, replacements, "deduplicate") : messages;
+  return replacements.size ? projectDeliverySpans(messages, replacements, "deduplicate", omittedDirectories) : messages;
 }
 
 export function nativeReadSnapshot(messages: AgentMessage[], record: SkillRecord): string | undefined {
   const ids = new Set<string>();
   for (const message of messages) {
     const proof = verifiedReadProof(message);
-    if (proof && (proof.contentIdentity === sourceContentIdentity(record) || proof.identity === recordIdentity(record)) && snapshot(proof.snapshotId)) ids.add(proof.snapshotId);
+    if (proof && proof.purpose !== "inspect" && (proof.contentIdentity === sourceContentIdentity(record) || proof.identity === recordIdentity(record)) && snapshot(proof.snapshotId)) ids.add(proof.snapshotId);
   }
   if (ids.size > 1) throw Object.assign(new Error("Conflicting active native Skill snapshots"), { code: "SOURCE_SESSION_CONFLICT" });
   return ids.values().next().value;
@@ -428,7 +588,7 @@ export function sessionSourceSnapshot(messages: AgentMessage[], record: SkillRec
   if (!record.sourceId || record.source !== "notion" || record.kind === "prompt") return undefined;
   const native = nativeReadSnapshot(messages, record);
   const ids = new Set(native ? [native] : []);
-  for (const item of injectedSnapshots(messages)) if ((item.contentIdentity === sourceContentIdentity(record) || item.identity === recordIdentity(record)) && snapshot(item.snapshotId)) ids.add(item.snapshotId);
+  for (const item of injectedSnapshots(messages)) if (item.purpose !== "inspect" && (item.contentIdentity === sourceContentIdentity(record) || item.identity === recordIdentity(record)) && snapshot(item.snapshotId)) ids.add(item.snapshotId);
   if (ids.size > 1) throw Object.assign(new Error("Conflicting active Skill snapshots"), { code: "SOURCE_SESSION_CONFLICT" });
   return ids.values().next().value;
 }
@@ -440,7 +600,7 @@ export function sourceBodyLoaded(messages: AgentMessage[], record: SkillRecord):
   if (!pin || record.snapshotId !== undefined && pin !== record.snapshotId) return false;
   const proofs = [...injectedSnapshots(messages), ...messages.flatMap(message => { const proof = verifiedReadProof(message); return proof ? [proof] : []; })];
   const expectedHash = record.body === undefined ? record.preparationBinding?.body_sha256 : hash(record.body);
-  return proofs.some(proof => (proof.contentIdentity === sourceContentIdentity(record) || proof.identity === recordIdentity(record))
+  return proofs.some(proof => proof.purpose !== "inspect" && (proof.contentIdentity === sourceContentIdentity(record) || proof.identity === recordIdentity(record))
     && proof.snapshotId === pin && (expectedHash === undefined || proof.bodySha256 === expectedHash)
     && (record.body === undefined || proof.bytes === Buffer.byteLength(record.body)));
 }
@@ -449,19 +609,39 @@ export function sourceBodyLoaded(messages: AgentMessage[], record: SkillRecord):
  * still contains the exact complete bytes it confirmed. */
 export function sourceDeliveryLoaded(messages: AgentMessage[], expected: { identity: string; contentIdentity: string; snapshotId: string; bodySha256: string; bytes: number }): boolean {
   const proofs = [...injectedSnapshots(messages), ...messages.flatMap(message => { const proof = verifiedReadProof(message); return proof ? [proof] : []; })];
-  return proofs.some(proof => (proof.contentIdentity === expected.contentIdentity || proof.identity === expected.identity)
+  return proofs.some(proof => proof.purpose !== "inspect" && (proof.contentIdentity === expected.contentIdentity || proof.identity === expected.identity)
     && proof.snapshotId === expected.snapshotId && proof.bodySha256 === expected.bodySha256 && proof.bytes === expected.bytes);
 }
 
-export function sessionSourceBindings(messages: AgentMessage[], scope: string): PreparationBinding[] {
+function verifiedContentBindings(messages: AgentMessage[], scope: string, includeInspection: boolean): PreparationBinding[] {
   const proofs = [...injectedSnapshots(messages), ...messages.flatMap(message => { const proof = verifiedReadProof(message); return proof ? [proof] : []; })];
-  const bindings = new Map<string, PreparationBinding>();
-  for (const proof of proofs) {
+  return proofs.flatMap(proof => {
     const value = proof.binding;
-    if (!isPreparationBinding(value) || value.scope !== scope || value.snapshot_id !== proof.snapshotId || value.body_sha256 !== proof.bodySha256) continue;
+    return (includeInspection || proof.purpose !== "inspect") && isPreparationBinding(value) && value.scope === scope
+      && value.snapshot_id === proof.snapshotId && value.body_sha256 === proof.bodySha256 ? [value] : [];
+  });
+}
+/** Authorization covers every verified body, including content-only current
+ * inspection alongside a different fixed instruction version. */
+export function contextSourceIdentities(messages: AgentMessage[]): { scope: string; id: string }[] {
+  const identities = new Map<string, { scope: string; id: string }>();
+  const add = (scope: string, id: string) => { identities.set(JSON.stringify([scope, id]), { scope, id }); };
+  const proofs = [...injectedSnapshots(messages), ...messages.flatMap(message => { const proof = verifiedReadProof(message); return proof ? [proof] : []; })];
+  for (const proof of proofs) if (isPreparationBinding(proof.binding) && proof.snapshotId === proof.binding.snapshot_id
+    && proof.bodySha256 === proof.binding.body_sha256) add(proof.binding.scope, proof.binding.record.id);
+  for (const message of messages) {
+    const resource = verifiedResourceReadProof(message);
+    if (resource) add(String(resource.scope), String(resource.id));
+    const batch = verifiedResourceBatchProof(message);
+    if (batch?.files.some(file => file.delivered_complete_text)) add(batch.selection.scope, batch.selection.owner);
+  }
+  return [...identities.values()];
+}
+export function sessionSourceBindings(messages: AgentMessage[], scope: string): PreparationBinding[] {
+  const bindings = new Map<string, PreparationBinding>();
+  for (const binding of verifiedContentBindings(messages, scope, false)) {
     // This is the exact CLI binding emitted with a verified body receipt. The CLI
     // revalidates the complete record and current authorization when it is reused.
-    const binding = value;
     const previous = bindings.get(binding.record.id);
     if (previous && (previous.snapshot_id !== binding.snapshot_id || previous.body_sha256 !== binding.body_sha256)) {
       throw Object.assign(new Error("Conflicting active Skill bindings"), { code: "SOURCE_SESSION_CONFLICT" });
@@ -473,32 +653,67 @@ export function sessionSourceBindings(messages: AgentMessage[], scope: string): 
 
 /** Replace only verified superseded spans in the provider projection. Stored
  * native tool results and user messages are never rewritten. */
-export function projectSelectedSourceMessages(messages: AgentMessage[], selection: SessionSelection): AgentMessage[] {
+export function projectSelectedSourceMessages(messages: AgentMessage[], selection: SessionSelection,
+  unavailable?: (scope: string, id: string) => "unavailable" | "incomplete" | undefined): AgentMessage[] {
   const replacements = new Map<number, Replacement[]>();
-  function retired(proof: Record<string, unknown>): boolean {
-    let identity: unknown;
-    try { identity = JSON.parse(String(proof.contentIdentity ?? proof.identity)); } catch { return false; }
-    if (!Array.isArray(identity)) return false;
-    const scopeId = identity.length === 2 ? identity[0] : identity[1], id = identity.length === 2 ? identity[1] : identity[4];
-    if (typeof scopeId !== "string" || typeof id !== "string") return false;
+  function identityRetired(scopeId: string, id: string, snapshotId: unknown, bodySha256?: unknown): "unavailable" | "incomplete" | "superseded" | undefined {
+    const refusal = unavailable?.(scopeId, id);
+    if (refusal) return refusal;
     const scope = selection.scopes.get(scopeId);
-    if (!scope) return false;
+    if (!scope) return undefined;
     const binding = scope.bindings.get(id);
-    return binding ? binding.snapshot_id !== proof.snapshotId || binding.body_sha256 !== proof.bodySha256 : scope.retired.has(id);
+    return (binding ? binding.snapshot_id !== snapshotId || bodySha256 !== undefined && binding.body_sha256 !== bodySha256 : scope.retired.has(id)) ? "superseded" : undefined;
   }
-  function add(index: number, start: number, end: number, encoding: unknown) {
-    const text = "An explicit new selection superseded these Skill instructions. Use the currently selected graph and its fixed references.";
+  function retired(proof: Record<string, unknown>): "unavailable" | "incomplete" | "superseded" | undefined {
+    let identity: unknown;
+    try { identity = JSON.parse(String(proof.contentIdentity ?? proof.identity)); } catch { return undefined; }
+    if (!Array.isArray(identity)) return undefined;
+    const scopeId = identity.length === 2 ? identity[0] : identity[1], id = identity.length === 2 ? identity[1] : identity[4];
+    if (typeof scopeId !== "string" || typeof id !== "string") return undefined;
+    const reason = identityRetired(scopeId, id, proof.snapshotId, proof.bodySha256);
+    // Current inspection may coexist with different or incomplete instruction
+    // pins, but it carries no exemption from authorization withholding.
+    return proof.purpose === "inspect" && reason !== "unavailable" ? undefined : reason;
+  }
+  function add(index: number, start: number, end: number, encoding: unknown, reason: "unavailable" | "incomplete" | "superseded") {
+    const text = reason === "unavailable" ? "Source access is no longer available in the current scope. These verified source bytes are withheld from this request."
+      : reason === "incomplete" ? "This Skill's mandatory instruction closure is unavailable. These instructions are withheld from this request; its fixed selection has not changed."
+      : "An explicit new selection superseded these Skill instructions. Use the currently selected graph and its fixed references.";
     const replacement = { start, end, text: encoding === "json" ? JSON.stringify(text).slice(1, -1) : text };
     const list = replacements.get(index) ?? [];
     if (!list.some(item => item.start === start && item.end === end)) list.push(replacement);
     replacements.set(index, list);
   }
   injectedSnapshots(messages, (proof, index) => {
-    if (retired(proof) && object(proof.delivery)) add(index, Number(proof.delivery.start), Number(proof.delivery.end), proof.delivery.encoding);
+    const reason = retired(proof);
+    if (reason && object(proof.delivery)) add(index, Number(proof.delivery.start), Number(proof.delivery.end), proof.delivery.encoding, reason);
   });
   for (const [index, message] of messages.entries()) {
     const proof = verifiedReadProof(message);
-    if (proof && retired(proof)) add(index, 0, readProofEnd(proof, message), "raw");
+    const reason = proof && retired(proof);
+    if (proof && reason) add(index, 0, readProofEnd(proof, message), "raw", reason);
+    const resource = verifiedResourceReadProof(message);
+    const resourceRetired = resource && identityRetired(String(resource.scope), String(resource.id), resource.snapshot_id);
+    const resourceReason = resource?.purpose === "inspect" && resourceRetired !== "unavailable" ? undefined : resourceRetired;
+    if (resource && resourceReason) {
+      const text = sourceMessageText(message.content);
+      const end = resource.version === 2 && object(resource.delivery) ? Number(resource.delivery.end) : text.length;
+      const suffix = text.slice(end);
+      // Retire the source, not this acquisition's outcome. A generated footer
+      // must still match its operation receipt; never bless an arbitrary suffix.
+      if (suffix) {
+        const effects = object(message.details) ? message.details.effects : undefined;
+        const footer = isConsumptionEffects(effects) ? "\n\n<notion-effects>" + JSON.stringify(effects) + "</notion-effects>" : undefined;
+        if (!footer || suffix !== footer && suffix !== "\n" + footer)
+          throw Object.assign(new Error("Resource result footer is inconsistent"), { code: "SOURCE_CONTEXT_PROJECTION_INVALID" });
+      }
+      add(index, 0, end, "raw", resourceReason);
+    }
+    const batch = verifiedResourceBatchProof(message);
+    const batchRetired = batch && identityRetired(batch.selection.scope, batch.selection.owner, batch.selection.snapshot_id);
+    const batchReason = batch?.purpose === "inspect" && batchRetired !== "unavailable" ? undefined : batchRetired;
+    if (batch && batchReason) for (const file of batch.files)
+      if (file.delivered_complete_text && file.delivery) add(index, file.delivery.start, file.delivery.end, "json", batchReason);
   }
   return replacements.size ? projectDeliverySpans(messages, replacements, "supersede") : messages;
 }

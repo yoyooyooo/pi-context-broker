@@ -30,7 +30,7 @@ export function notionDirectorySelections(config: ConfigFile, ctx?: ExtensionCon
   }));
 }
 
-export async function resolveViewDiscovery(config: ConfigFile, catalog: DiscoveryResult<SkillRecord>, ctx?: ExtensionContext, signal?: AbortSignal, paired?: ReadonlyMap<string, NotionDirectoryObservation>): Promise<DiscoveryResult<SkillRecord>> {
+export async function resolveViewDiscovery(config: ConfigFile, catalog: DiscoveryResult<SkillRecord>, ctx?: ExtensionContext, signal?: AbortSignal, paired?: ReadonlyMap<string, NotionDirectoryObservation>, refresh = false): Promise<DiscoveryResult<SkillRecord>> {
   const records = new Map(catalog.records.map(record => [recordIdentity(record), { ...record, defaultDiscovery: record.source !== "notion" }]));
   const failures = catalog.failures.map(failure => ({ ...failure }));
   const views: NotionViewState[] = [];
@@ -44,7 +44,7 @@ export async function resolveViewDiscovery(config: ConfigFile, catalog: Discover
       const observation = paired?.get(source.id);
       const outcome = observation && isDeepStrictEqual(observation.selection, selections.get(source.id)) ? observation.outcome : undefined;
       if (outcome && !outcome.ok) throw new SourceError(outcome.code, source.id);
-      const selected = outcome?.ok ? outcome.value : await discoverNotionSource(source, ctx?.cwd ?? process.cwd(), { signal, ...(selector === undefined ? { defaultView: true } : { view: selector }) });
+      const selected = outcome?.ok ? outcome.value : await discoverNotionSource(source, ctx?.cwd ?? process.cwd(), { signal, ...(refresh ? { refresh: true } : {}), ...(selector === undefined ? { defaultView: true } : { view: selector }) });
       signal?.throwIfAborted();
       // Only associate rows observed under the same credential scope.
       const scopes = new Set(catalog.records.filter(record => record.sourceId === source.id).map(record => record.sourceScope));
@@ -56,7 +56,9 @@ export async function resolveViewDiscovery(config: ConfigFile, catalog: Discover
       for (const record of selected) {
         const identity = recordIdentity(record);
         const existing = records.get(identity);
-        records.set(identity, { ...(existing ?? record), defaultDiscovery: record.kind !== "prompt" });
+        const newer = record.currentObservation !== undefined && (!existing?.currentObservation
+          || record.currentObservation.validatedAt > existing.currentObservation.validatedAt);
+        records.set(identity, { ...(newer ? record : existing ?? record), defaultDiscovery: record.kind !== "prompt" });
       }
       // A complete View can still deliver exact records when full-library discovery
       // has unrelated failures. Retain the warning; do not turn it into an ACL.

@@ -216,8 +216,12 @@ for (const representation of ['flat', 'combined']) test('SDK observer retains ac
   assert.throws(() => graphSourceAccounting(events.filter(event => event.phase !== 'sdk-end'), receipts, { sourceMode: 'sdk' }), /must finish/);
 });
 
-test('Pi observer admits a discovered short ref before execution and verifies SDK main, native directory and fixed resource at the provider', async () => {
+test('Pi observer verifies source modes and effect-bearing native main and scalar resource delivery', async () => {
   const fixture = sourceFixture(), root = await mkdtemp(path.join(await systemTempRoot(), 'graph-sdk-native-'));
+  fixture.files.forEach((file, index) => { file.mode = index ? '100755' : '100644'; fixture.manifest.files[index].mode = file.mode; });
+  fixture.entry.manifest_sha256 = hash(canonical(fixture.manifest));
+  const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
+  const effectsFooter = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
   const cache = path.join(root, 'cache'), responses = path.join(root, 'responses'), output = path.join(root, 'observer.jsonl');
   await Promise.all([cache, responses].map(directory => mkdir(directory))); await writeFile(output, '');
   const candidate = 'sr:C' + 'A'.repeat(22), selected = 'sr:S' + 'B'.repeat(22), resourceRef = 'sr:R' + 'C'.repeat(22);
@@ -240,6 +244,7 @@ test('Pi observer admits a discovered short ref before execution and verifies SD
     assert.equal(invoke('before-provider-main', { path: candidate })?.block, true);
     const tools = GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } }));
     handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'system', content: system }] } }, ctx);
+    for (const readOnly of [true, false]) assert.equal(invoke('retired-policy-' + readOnly, { path: candidate, readOnly }).block, true);
     assert.equal(invoke('main', { path: candidate }), undefined, 'Actual provider metadata identity authorizes the native request before source acquisition');
     const prior = sourceFixture('parent');
     prior.value.preparation.nodes.push({ id: fixture.id, state: 'candidate', record: fixture.record });
@@ -254,10 +259,10 @@ test('Pi observer admits a discovered short ref before execution and verifies SD
       snapshot_id: fixture.snapshot, version_id: fixture.version, body_sha256: hash(fixture.body), entrypoint: 'SKILL.md', ref: fixture.node.ref, file_id: 'file-main' } } },
       { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: resourceRef, target: { kind: 'resource', owner: selected,
         path: 'guide.md', ref: fixture.files[1].ref, bytes: fixture.files[1].bytes, sha256: fixture.files[1].sha256, file_id: 'file-guide' } } });
-    const directory = { files: fixture.files, required: [], candidates: [], references: [] };
+    const directory = { files: fixture.files.map(({ mode, ...file }) => file), required: [], candidates: [], references: [] };
     const modelDirectory = { ...directory, files: fixture.files.map((file, index) => ({ path: file.path, bytes: file.bytes, ref: index ? resourceRef : selected })) };
-    const content = fixture.body + '\n\n<skill-directory>\n' + JSON.stringify({ ref: selected, directory: modelDirectory }) + '\n</skill-directory>';
-    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'main', content: [{ type: 'text', text: content }], details: { contextBrokerRead: {
+    const content = fixture.body + '\n\n<skill-directory>\n' + JSON.stringify({ ref: selected, directory: modelDirectory }) + '\n</skill-directory>' + effectsFooter;
+    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'main', content: [{ type: 'text', text: content }], details: { effects, contextBrokerRead: {
       version: 3, toolCallId: 'main', snapshotId: fixture.snapshot, bodySha256: hash(fixture.body), bytes: Buffer.byteLength(fixture.body), binding: fixture.binding,
       delivery: { start: 0, end: fixture.body.length, encoding: 'raw' }, directory } } }, ctx);
     assert.equal(invoke('guide', { path: resourceRef }), undefined);
@@ -265,12 +270,29 @@ test('Pi observer admits a discovered short ref before execution and verifies SD
       version_id: fixture.version, path: 'guide.md', ref: fixture.files[1].ref, bytes: fixture.files[1].bytes, sha256: fixture.files[1].sha256,
       entrypoint_sha256: hash(fixture.body), file_bindings: fixture.bindings }), outputEvidence: { path: path.join(cache, 'already-produced'),
       content: fixture.resource, bytes: fixture.files[1].bytes, sha256: fixture.files[1].sha256 } });
-    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'guide', content: [{ type: 'text', text: fixture.resource }] }, ctx);
-    handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'main', content }, { role: 'tool', tool_call_id: 'guide', content: fixture.resource }] } }, ctx);
+    const resourceContent = fixture.resource + effectsFooter;
+    const resourceDetails = toolCallId => ({ effects, contextBrokerResource: { version: 2, toolCallId, id: fixture.id, scope: fixture.scope,
+      snapshot_id: fixture.snapshot, version_id: fixture.version, ref: fixture.files[1].ref, path: 'guide.md', file_id: 'file-guide',
+      bytes: fixture.files[1].bytes, sha256: fixture.files[1].sha256, delivery: { start: 0, end: fixture.resource.length, encoding: 'raw' },
+      delivered_complete_text: true, loaded: false } });
+    handlers.get('tool_result')({ toolName: 'read', toolCallId: 'guide', content: [{ type: 'text', text: resourceContent }], details: resourceDetails('guide') }, ctx);
+    handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'main', content }, { role: 'tool', tool_call_id: 'guide', content: resourceContent }] } }, ctx);
     const events = await lines(output);
     assert.equal(events.find(event => event.phase === 'catalog').skills[0].provenance.source, 'verified-notion-metadata');
     for (const id of ['main', 'guide']) assert.equal(events.find(event => event.phase === 'tool-result' && event.toolCallId === id)?.complete, true, JSON.stringify(events.filter(event => event.phase === 'tool-result')));
     assert.deepEqual(events.filter(event => event.phase === 'provider-request').at(-1).contents.map(item => item.sha256).sort(), [hash(fixture.body), hash(fixture.resource)].sort());
+    assert.equal(events.find(event => event.phase === 'tool-result' && event.toolCallId === 'guide').sha256, hash(fixture.resource), 'The disclosed effects footer is not author file content');
+    for (const [id, mutate] of [
+      ['wrong-effects', result => { result.content[0].text = fixture.resource + effectsFooter.replace('unchanged', 'unknown'); }],
+      ['wrong-resource-owner', result => { result.details.contextBrokerResource.id = 'another-owner'; }],
+      ['wrong-resource-pin', result => { result.details.contextBrokerResource.snapshot_id = 's_' + 'e'.repeat(64); }],
+      ['missing-resource-bytes', result => { result.content[0].text = fixture.resource.slice(1) + effectsFooter; }],
+    ]) {
+      assert.equal(invoke(id, { path: resourceRef }), undefined);
+      const result = { toolName: 'read', toolCallId: id, content: [{ type: 'text', text: resourceContent }], details: resourceDetails(id) };
+      mutate(result); handlers.get('tool_result')(result, ctx);
+      assert.equal((await lines(output)).find(row => row.phase === 'tool-result' && row.toolCallId === id)?.complete, false, id);
+    }
     branch.push({ ...branch[1], data: { ...branch[1].data, target: { ...branch[1].data.target, snapshot_id: 's_' + 'd'.repeat(64) } } });
     assert.equal(invoke('wrong-branch', { path: selected }).block, true, 'A conflicting persisted binding never authorizes a read');
   } finally { globalThis.fetch = originalFetch; }

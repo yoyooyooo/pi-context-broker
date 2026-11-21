@@ -1,4 +1,5 @@
 import type { PreparationBinding } from "./prepare-protocol";
+import type { ConsumptionEffects } from "./consumption-effects";
 
 export type ResourceReadBudget = Readonly<{ maxFiles: number; maxBytes: number; timeBudgetMs: number }>;
 export const DEFAULT_RESOURCE_READ_BUDGET: ResourceReadBudget = Object.freeze({ maxFiles: 16, maxBytes: 1024 * 1024, timeBudgetMs: 30_000 });
@@ -26,6 +27,7 @@ export type FixedResourceRead = Readonly<{
 /** Independently verified owner metadata and only the explicitly selected file bytes.
  * A resource read never means that the owner's main body has been prepared or delivered. */
 export type ResourceReadBatch = Readonly<{
+  effects: ConsumptionEffects;
   selection: Readonly<{ scope: string; owner: string; snapshot_id: string; version_id: string }>;
   ownerBinding: PreparationBinding;
   manifest: unknown;

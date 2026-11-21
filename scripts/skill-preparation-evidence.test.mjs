@@ -129,6 +129,30 @@ test('independent evidence verifier preserves authored Unicode, BOM, CRLF and li
   assert.notEqual(result.records[0].mapping.source.bytes, result.records[0].mapping.rendered.bytes);
 });
 
+test('effects extend the compact envelope without weakening body proof or accepting false zero receipts', () => {
+  for (const effects of [
+    { version: 1, remote_writes: 'none', author_content: 'unchanged' },
+    { version: 1, remote_writes: 'unknown', author_content: 'unchanged' },
+    { version: 1, remote_writes: 'unknown', author_content: 'unknown' },
+  ]) {
+    const value = fixture(); value.model.effects = effects; repack(value);
+    assert.deepEqual(verify(value).model.effects, effects);
+    assert.deepEqual(verify(value).records.map(record => record.decodedContent), bodies);
+  }
+  for (const effects of [
+    { version: 1, remote_writes: 'none' },
+    { version: 1, remote_writes: 'none', author_content: 'unknown' },
+    { version: 2, remote_writes: 'none', author_content: 'unchanged' },
+    { version: 1, remote_writes: 'none', author_content: 'unchanged', retention: [] },
+    { version: 1, remote_writes: 'retained', author_content: 'unchanged',
+      retention: [{ skill_page_id: 'owner', file_id: 'main', operation_id: 'old', status: 'confirmed' }] },
+    { version: 1, remote_writes: 'none', author_content: 'unchanged', extra: true },
+  ]) {
+    const value = fixture(); value.model.effects = effects; repack(value);
+    assert.throws(() => verify(value));
+  }
+});
+
 test('same body in two distinct records remains two independently located source spans', () => {
   const value = fixture({ identical: true }), result = verify(value);
   assert.equal(result.records[0].mapping.source.sha256, result.records[1].mapping.source.sha256);

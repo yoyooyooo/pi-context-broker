@@ -3,31 +3,43 @@ import childProcess from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { channel } from 'node:diagnostics_channel';
 import { appendFileSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { verifyBundledRuntime } from './verify-package-closure.mjs';
 
 const args = process.argv.slice(2), worker = args[0] === '--worker';
 if (worker) args.shift();
+const keys = ['--package', '--fixture', '--source-http-helper', '--pi-package', '--out'];
+const usage = 'Usage: node scripts/verify-notion-sdk-installed.mjs --package INSTALLED_BROKER --fixture CURRENT_FIXTURE --source-http-helper ABS --pi-package PI_PACKAGE_JSON --out NEW_ABSOLUTE_DIRECTORY';
 const options = new Map();
 for (let index = 0; index < args.length; index += 2) {
   const key = args[index], value = args[index + 1];
-  if (!['--package', '--fixture', '--pi-package', '--out'].includes(key) || !value || options.has(key)) throw new Error('Usage: node scripts/verify-notion-sdk-installed.mjs --package INSTALLED_BROKER --fixture fixture.json --pi-package PI_PACKAGE_JSON --out NEW_ABSOLUTE_DIRECTORY');
+  assert.ok(keys.includes(key) && value && isAbsolute(value) && !options.has(key), usage);
   options.set(key, resolve(value));
 }
-for (const key of ['--package', '--fixture', '--pi-package', '--out']) assert.ok(options.has(key), key + ' is required');
-const packageRoot = options.get('--package'), out = options.get('--out');
+for (const key of keys) assert.ok(options.has(key), key + ' is required');
+const packageRoot = await realpath(options.get('--package'));
 const fixture = JSON.parse(await readFile(options.get('--fixture'), 'utf8'));
+assert.equal(fixture.version, 2);
+assert.equal(fixture.kind, 'current-notion-service');
+assert.ok(fixture.expected.catalog_count > 0 && fixture.expected.file_count > 100);
+assert.ok(!('snapshots' in fixture) && !('scope' in fixture), 'Only current service facts are accepted');
 const hash = value => createHash('sha256').update(value).digest('hex');
+const noWrites = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
+let out = options.get('--out');
 async function inventory() {
   const files = [];
   async function walk(directory) {
     for (const entry of await readdir(join(packageRoot, directory), { withFileTypes: true })) {
       const path = join(directory, entry.name);
-      assert.equal(entry.isSymbolicLink(), false, 'Packaged source/runtime may not route to a checkout');
+      assert.equal(entry.isSymbolicLink(), false, 'Installed runtime may not route to a checkout');
       if (entry.isDirectory()) await walk(path);
-      else if (entry.isFile()) { const bytes = await readFile(join(packageRoot, path)); files.push({ path, bytes: bytes.length, sha256: hash(bytes) }); }
+      else if (entry.isFile()) {
+        const bytes = await readFile(join(packageRoot, path));
+        files.push({ path, bytes: bytes.length, sha256: hash(bytes) });
+      }
     }
   }
   await walk('src'); await walk('dist');
@@ -36,140 +48,188 @@ async function inventory() {
 
 if (!worker) {
   await mkdir(out, { recursive: false, mode: 0o700 });
+  out = await realpath(out);
+  options.set('--out', out);
   const before = await inventory();
-  await writeFile(join(out, 'package-before.json'), JSON.stringify(before, null, 2) + '\n', { mode: 0o600 });
-  const env = JSON.parse(await readFile(fixture.env, 'utf8'));
   const runtime = JSON.parse(await readFile(join(packageRoot, 'dist/ntn-skills-runtime.json'), 'utf8'));
-  await writeFile(join(out, 'plan.json'), JSON.stringify({ version: 1, node: process.version, packageRoot, fixture: options.get('--fixture'),
-    runtime, driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))), scenarios: ['one-root', 'two-roots', 'three-roots', 'binary-resource', 'wrong-scope', 'wrong-physical-owner', 'broken-required', 'cancel-before-sdk', 'cancel-before-materialization'],
-    scope: 'Controlled offline snapshots; actual installed Node SDK/Broker and custom CLI comparison. This is not live Notion or real-model evidence.' }, null, 2) + '\n');
-  const child = childProcess.spawn(process.execPath, [fileURLToPath(import.meta.url), '--worker', ...args], {
-    cwd: out, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  const stdout = [], stderr = [];
-  child.stdout.on('data', bytes => stdout.push(bytes)); child.stderr.on('data', bytes => stderr.push(bytes));
-  const exit = await new Promise((done, reject) => { child.once('error', reject); child.once('close', (code, signal) => done({ code, signal })); });
-  await writeFile(join(out, 'stdout.log'), Buffer.concat(stdout), { mode: 0o600 });
-  await writeFile(join(out, 'stderr.log'), Buffer.concat(stderr), { mode: 0o600 });
-  const after = await inventory();
-  await writeFile(join(out, 'package-after.json'), JSON.stringify(after, null, 2) + '\n', { mode: 0o600 });
-  assert.deepEqual(after, before, 'Verification may not alter installed product files');
-  await writeFile(join(out, 'worker-exit.json'), JSON.stringify({ ...exit, package_unchanged: true }) + '\n');
-  const result = JSON.parse(await readFile(join(out, 'result.json'), 'utf8').catch(() => '{"status":"failed","error":"NO_RESULT"}'));
-  console.log(JSON.stringify({ ...result, evidence: out }));
-  process.exitCode = exit.code === 0 && result.status === 'passed' ? 0 : 1;
-} else {
-  const sdkEvents = [], processEvents = [];
-  const topic = channel('context-broker.notion-sdk');
-  topic.subscribe(event => { sdkEvents.push(event); appendFileSync(join(out, 'sdk.jsonl'), JSON.stringify(event) + '\n', { mode: 0o600 }); });
-  const originalSpawn = childProcess.spawn;
-  childProcess.spawn = function(command, argv, spawnOptions) {
-    const child = originalSpawn.call(this, command, argv, spawnOptions);
-    const started = process.hrtime.bigint();
-    const start = { event: 'start', pid: child.pid, command: basename(String(command)), operation: Array.isArray(argv) ? argv.find(value => ['prepare', 'read', 'export'].includes(value)) ?? null : null, monotonic_ns: started.toString() };
-    processEvents.push(start); appendFileSync(join(out, 'children.jsonl'), JSON.stringify(start) + '\n');
-    child.once('close', (code, signal) => { const event = { event: 'close', pid: child.pid, code, signal, monotonic_ns: process.hrtime.bigint().toString() }; processEvents.push(event); appendFileSync(join(out, 'children.jsonl'), JSON.stringify(event) + '\n'); });
-    return child;
+  verifyBundledRuntime({ manifest: runtime, expectedVersion: runtime.package_version,
+    cliBytes: await readFile(join(packageRoot, 'dist/ntn-skills.mjs')),
+    sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')) });
+  const { startSdkSourceFixture } = await import(pathToFileURL(options.get('--source-http-helper')).href);
+  const service = await startSdkSourceFixture(fixture, join(out, 'source.jsonl'));
+  const fixtureEnv = JSON.parse(await readFile(fixture.env, 'utf8'));
+  const env = {
+    PATH: dirname(process.execPath) + ':/usr/bin:/bin:/usr/sbin:/sbin',
+    HOME: join(out, 'home'), TMPDIR: out, LANG: 'en_US.UTF-8',
+    XDG_CONFIG_HOME: join(out, 'xdg-config'), XDG_CACHE_HOME: join(out, 'xdg-cache'),
+    XDG_DATA_HOME: join(out, 'xdg-data'), XDG_STATE_HOME: join(out, 'xdg-state'),
+    NTN_SKILLS_HOME: join(out, 'state'), NTN_SKILLS_CONFIG_HOME: join(out, 'config'),
+    NTN_SKILLS_CACHE_HOME: join(out, 'cache'), NTN_SKILLS_DATA_HOME: join(out, 'data'),
+    NTN_SKILLS_NOTION_INTERVAL_MS: fixtureEnv.NTN_SKILLS_NOTION_INTERVAL_MS,
+    NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', NOTION_API_TOKEN: fixtureEnv.NOTION_API_TOKEN,
+    NOTION_API_BASE_URL: service.origin,
   };
-  // Count alternate process APIs as well. A default SDK call through any of
-  // these APIs is a failed zero-child assertion, even if its PID is unavailable.
-  for (const name of ['spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) {
+  await mkdir(env.HOME, { mode: 0o700 });
+  let result = { status: 'failed', error: 'NO_RESULT' };
+  try {
+    const child = childProcess.spawn(process.execPath, [fileURLToPath(import.meta.url), '--worker',
+      ...[...options].flat()], { cwd: out, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const stdout = [], stderr = [];
+    child.stdout.on('data', bytes => stdout.push(bytes)); child.stderr.on('data', bytes => stderr.push(bytes));
+    const exit = await new Promise((done, reject) => {
+      child.once('error', reject); child.once('close', (code, signal) => done({ code, signal }));
+    });
+    await writeFile(join(out, 'stdout.log'), Buffer.concat(stdout), { mode: 0o600 });
+    await writeFile(join(out, 'stderr.log'), Buffer.concat(stderr), { mode: 0o600 });
+    result = JSON.parse(await readFile(join(out, 'result.json'), 'utf8').catch(() => JSON.stringify(result)));
+    assert.deepEqual(await inventory(), before, 'Verification may not alter installed product files');
+    assert.equal(exit.code, 0, Buffer.concat(stderr).toString());
+    assert.equal(result.status, 'passed');
+    assert.deepEqual(service.unexpected, [], 'No undeclared reads or semantic writes are allowed');
+    assert.ok(service.requests.every(call => call.method === 'GET'
+      || call.method === 'POST' && /^\/v1\/data_sources\/[^/]+\/query$/.test(call.path)));
+    const countQueries = id => service.requests.filter(call => call.path === '/v1/data_sources/' + id + '/query').length;
+    assert.ok(countQueries(fixture.notion.library.files.data_source_id) >= 2, 'Files must page beyond 100 rows');
+    if (fixture.expected.catalog_count > 100)
+      assert.ok(countQueries(fixture.notion.library.skills.data_source_id) >= 2, 'Catalog must page beyond 100 rows');
+    result = { ...result, runtime, package_unchanged: true, http_requests: service.requests.length,
+      semantic_writes: 0, fixture: options.get('--fixture'),
+      boundary: 'Actual independently installed Broker and SDK v2 against controlled current Notion HTTP.',
+      not_run: ['Pi session', 'provider/model', 'live Notion', 'OMP', 'Tern'] };
+    await writeFile(join(out, 'result.json'), JSON.stringify(result, null, 2) + '\n');
+  } finally { await service.close(); }
+  console.log(JSON.stringify({ ...result, evidence: out }));
+} else {
+  const sdkEvents = [], processEvents = [], results = [];
+  const topic = channel('context-broker.notion-sdk');
+  topic.subscribe(event => {
+    sdkEvents.push(event); appendFileSync(join(out, 'sdk.jsonl'), JSON.stringify(event) + '\n', { mode: 0o600 });
+  });
+  for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) {
     const original = childProcess[name];
     childProcess[name] = function(...values) {
-      const event = { event: 'start', api: name, pid: null, command: basename(String(values[0])), operation: null, monotonic_ns: process.hrtime.bigint().toString() };
-      processEvents.push(event); appendFileSync(join(out, 'children.jsonl'), JSON.stringify(event) + '\n');
+      processEvents.push({ api: name, command: basename(String(values[0])) });
       return original.apply(this, values);
     };
   }
   syncBuiltinESMExports();
+  // Pi supplies only the TypeScript loader here. No Pi session/provider is started.
   const { createJiti } = createRequire(options.get('--pi-package'))('jiti');
   const jiti = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
-  const { prepareNotionSkills, loadNotionResource } = await jiti.import(join(packageRoot, 'src/notion-source.ts'));
-  const source = { type: 'notion', id: 'sdk-fixture', namespace: 'sdk-fixture', database: fixture.database, activation: { offline: true }, cacheDir: join(out, 'host-cache'), prefetch: false };
-  const records = fixture.snapshots.map(snapshot => ({ ...snapshot.record, source: 'notion', sourceId: source.id, sourceScope: fixture.scope,
-    path: join(out, 'metadata', snapshot.record.alias, 'SKILL.md'), aliases: [], normalizedAliases: [], normalizedName: snapshot.record.alias,
-    normalizedDescription: snapshot.record.description.toLowerCase(), autoloadEnabled: true, token: 'sdk-fixture/' + snapshot.record.alias }));
-  const roots = fixture.roots.map(ref => records.find(record => ref.startsWith(record.ref + '?')));
-  assert.ok(roots.every(Boolean));
-  const rootPins = new Map(fixture.snapshots.map(snapshot => [snapshot.record.id, snapshot.snapshot_id]));
-  const results = [], graphs = new Map();
+  const { discoverNotionSource, loadNotionSkill, prepareNotionSkills, loadNotionResource, readNotionResources } =
+    await jiti.import(join(packageRoot, 'src/notion-source.ts'));
+  const source = { type: 'notion', id: 'current-sdk', namespace: 'current-sdk',
+    database: fixture.database, cacheDir: join(out, 'host-cache'), prefetch: false };
+  let directory, selected, loaded;
+  const expectedFile = path => {
+    const file = fixture.expected.files.find(file => file.path === path);
+    assert.ok(file, path); return file;
+  };
+  function verified(bytes, expected) {
+    assert.equal(bytes.length, expected.bytes); assert.equal(hash(bytes), expected.sha256);
+    assert.deepEqual(bytes, Buffer.from(expected.content, expected.encoding === 'base64' ? 'base64' : 'utf8'));
+  }
   async function scenario(name, run) {
-    const sdkBefore = sdkEvents.length, processesBefore = processEvents.length, started = process.hrtime.bigint();
+    const sdkBefore = sdkEvents.length, processesBefore = processEvents.length, started = performance.now();
     try {
       const details = await run();
-      const sdk = sdkEvents.slice(sdkBefore), processes = processEvents.slice(processesBefore);
-      const row = { name, status: 'passed', elapsed_ms: Number(process.hrtime.bigint() - started) / 1e6, sdk_calls: sdk.filter(e => e.event === 'start').length,
-        sdk_completed: sdk.filter(e => e.event === 'end').length, child_starts: processes.filter(e => e.event === 'start').length,
-        child_closes: processes.filter(e => e.event === 'close').length, ...details };
-      results.push(row); await writeFile(join(out, 'progress.json'), JSON.stringify(results, null, 2) + '\n');
+      const events = sdkEvents.slice(sdkBefore), ended = events.filter(event => event.event === 'end');
+      assert.equal(processEvents.length, processesBefore, 'Broker consumption must not spawn CLI children');
+      assert.equal(events.filter(event => event.event === 'start').length, ended.length);
+      results.push({ name, status: 'passed', elapsed_ms: performance.now() - started, sdk_calls: ended.length,
+        requests: ended.map(event => event.request_metrics), child_starts: 0, ...details });
+      await writeFile(join(out, 'progress.json'), JSON.stringify(results, null, 2) + '\n');
     } catch (error) {
-      results.push({ name, status: 'failed', code: error.code ?? error.name });
+      results.push({ name, status: 'failed', code: error.code ?? error.name, message: error.message });
       await writeFile(join(out, 'result.json'), JSON.stringify({ status: 'failed', cases: results }, null, 2) + '\n');
       throw error;
     }
   }
-  function proof(graph) {
-    return graph.records.map(record => ({ id: record.id, scope: record.sourceScope, snapshot: record.snapshotId, version: record.versionId,
-      body: record.body, files: record.entryManifest.files, fileBindings: record.fileBindings, materialized: record.entryManifest.materialized_paths,
-      local_files_ready: record.entryManifest.local_files_ready, binding: record.preparationBinding })).sort((a, b) => a.id.localeCompare(b.id));
-  }
-  for (const [name, count] of [['one-root', 1], ['two-roots', 2], ['three-roots', 3]]) await scenario(name, async () => {
-    const childBefore = processEvents.length, sdkBefore = sdkEvents.length;
-    const sdk = await prepareNotionSkills(roots.slice(0, count), source, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk' });
-    const observed = sdkEvents.slice(sdkBefore);
-    assert.equal(processEvents.length, childBefore, 'Default SDK preparation must not spawn any CLI node read');
-    assert.equal(observed.filter(e => e.event === 'start').length, 1);
-    assert.equal(observed.filter(e => e.event === 'end').length, 1);
-    const end = observed.find(e => e.event === 'end');
-    assert.equal(end.metrics_observed, true); assert.ok(end.request_metrics); assert.equal(end.request_metrics.total_requests, 0);
-    assert.equal(sdk.records.length, count + 1, 'Shared Required is prepared once');
-    assert.equal(sdk.records.filter(record => record.id.endsWith(':base')).length, 1);
-    for (const record of sdk.records) assert.equal(await readFile(record.path, 'utf8'), record.body);
-    const comparisonBefore = processEvents.length;
-    const cli = await prepareNotionSkills(roots.slice(0, count), { ...source, cacheDir: join(out, 'cli-host-cache'), command: [process.execPath, join(packageRoot, 'dist/ntn-skills.mjs')] }, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk' });
-    const cliProcesses = processEvents.slice(comparisonBefore);
-    assert.deepEqual(proof(sdk), proof(cli)); assert.deepEqual(sdk.lock, cli.lock);
-    assert.equal(cliProcesses.filter(e => e.event === 'start').length, count + 2);
-    assert.equal(cliProcesses.filter(e => e.event === 'start' && e.operation === 'read').length, count + 1);
-    graphs.set(count, sdk);
-    return { default_sdk_children: 0, default_sdk_http: 0, default_sdk_calls: 1, custom_cli_children: count + 2, prepared_nodes: sdk.records.length,
-      bodies_sha256: hash(JSON.stringify(proof(sdk).map(({ id, body }) => ({ id, body })))), graph_lock: sdk.lock.sha256 };
+  await scenario('catalog-current-pagination', async () => {
+    directory = await discoverNotionSource(source, out);
+    assert.equal(directory.length, fixture.expected.catalog_count);
+    assert.equal(directory.failures.length, 0);
+    selected = directory.find(record => record.locator.page_id === fixture.root_page_id);
+    assert.ok(selected); assert.equal(selected.body, undefined);
+    return { catalog_count: directory.length };
   });
-  await scenario('binary-resource', async () => {
-    const record = graphs.get(1).records.find(record => record.id === roots[0].id), before = processEvents.length;
-    const path = await loadNotionResource(record, 'assets/sample.bin', source, fixture.cwd, undefined, 'sdk');
-    const bytes = await readFile(path);
-    assert.equal(bytes.length, fixture.resource.bytes); assert.equal(hash(bytes), fixture.resource.sha256);
-    assert.equal(processEvents.length, before); assert.equal(record.entryManifest.local_files_ready, true);
-    return { bytes: bytes.length, sha256: hash(bytes), default_sdk_children: 0 };
+  await scenario('entry-current-complete-directory', async () => {
+    const effects = [];
+    loaded = await loadNotionSkill(selected, source, out, { observeEffects: value => effects.push(value) });
+    verified(await readFile(loaded.path), expectedFile('SKILL.md'));
+    assert.equal(loaded.body, expectedFile('SKILL.md').content);
+    assert.equal(loaded.entryManifest.files.length, fixture.expected.file_count);
+    assert.equal(loaded.fileBindings.length, fixture.expected.file_count);
+    assert.deepEqual(loaded.entryManifest.files.map(file => file.path).sort(), fixture.expected.files.map(file => file.path).sort());
+    assert.deepEqual(loaded.entryManifest.materialized_paths, ['SKILL.md']);
+    assert.equal(loaded.entryManifest.local_files_ready, false);
+    assert.ok(effects.length > 0); effects.forEach(value => assert.deepEqual(value, noWrites));
+    return { file_count: loaded.entryManifest.files.length, snapshot: loaded.snapshotId };
   });
-  await scenario('wrong-scope', async () => {
-    await assert.rejects(prepareNotionSkills([{ ...roots[0], sourceScope: 'f'.repeat(64) }], source, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk' }), { code: 'SOURCE_PREPARATION_INVALID' });
+  await scenario('entry-warm-current-cache', async () => {
+    const before = sdkEvents.length;
+    const warm = await loadNotionSkill(selected, source, out);
+    assert.equal(warm.snapshotId, loaded.snapshotId);
+    verified(await readFile(warm.path), expectedFile('SKILL.md'));
+    for (const event of sdkEvents.slice(before).filter(event => event.event === 'end')) {
+      assert.equal(event.metrics_observed, true);
+      assert.equal(event.request_metrics.requests.notion_body, 0);
+      assert.equal(event.request_metrics.requests.notion_write, 0);
+      assert.ok(event.request_metrics.total_requests <= 1, "Only the operation authentication check may repeat");
+    }
   });
-  await scenario('wrong-physical-owner', async () => {
-    const foreign = records.find(record => record.id.includes('sdk-foreign-library'));
-    await assert.rejects(prepareNotionSkills([{ ...roots[0], locator: { ...roots[0].locator, page_id: foreign.locator.page_id } }], source, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk' }), { code: 'SOURCE_PREPARATION_INVALID' });
+  await scenario('prepare-current-use', async () => {
+    const graph = await prepareNotionSkills([selected], source, out, { purpose: 'use' });
+    assert.equal(graph.records.length, 1); assert.deepEqual(graph.roots, [selected.id]);
+    assert.deepEqual(graph.effects, noWrites);
+    verified(await readFile(graph.records[0].path), expectedFile('SKILL.md'));
+    assert.equal(graph.records[0].snapshotId, loaded.snapshotId);
   });
-  await scenario('broken-required', async () => {
-    const broken = records.find(record => fixture.broken.startsWith(record.ref + '?'));
-    await assert.rejects(prepareNotionSkills([broken], source, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk' }), error => /^(PREPARE_|SNAPSHOT_|CACHE_)/.test(error.code));
+  await scenario('read-scalar-resource', async () => {
+    const effects = [];
+    const path = await loadNotionResource(loaded, 'references/guide.txt', source, out, undefined,
+      { observeEffects: value => effects.push(value) });
+    verified(await readFile(path), expectedFile('references/guide.txt'));
+    assert.ok(effects.length > 0); effects.forEach(value => assert.deepEqual(value, noWrites));
+    assert.equal(loaded.entryManifest.local_files_ready, false);
+  });
+  await scenario('read-resource-batch', async () => {
+    const paths = ['references/guide.txt', 'assets/raw.bin'];
+    const refs = paths.map(path => loaded.entryManifest.files.find(file => file.path === path).ref);
+    const batch = await readNotionResources(loaded, refs, source, out);
+    assert.deepEqual(batch.effects, noWrites);
+    assert.deepEqual(batch.files.map(file => file.path), paths);
+    for (const file of batch.files) {
+      verified(Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8'), expectedFile(file.path));
+      if (file.encoding === 'base64') verified(await readFile(file.output), expectedFile(file.path));
+    }
+  });
+  await scenario('reject-wrong-scope', async () => {
+    await assert.rejects(prepareNotionSkills([{ ...selected, sourceScope: 'f'.repeat(64) }], source, out,
+      { purpose: 'use' }), { code: 'SOURCE_PREPARATION_INVALID' });
+  });
+  await scenario('reject-wrong-physical-owner', async () => {
+    await assert.rejects(prepareNotionSkills([{ ...selected, locator: { ...selected.locator,
+      page_id: directory.find(record => record.id !== selected.id)?.locator.page_id ?? fixture.notion.files[0].id } }], source, out,
+      { purpose: 'use' }), { code: 'SOURCE_PREPARATION_INVALID' });
   });
   await scenario('cancel-before-sdk', async () => {
     const controller = new AbortController(); controller.abort();
     const before = sdkEvents.length;
-    await assert.rejects(prepareNotionSkills(roots.slice(0, 1), source, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk', signal: controller.signal }), { code: 'SOURCE_CANCELLED' });
+    await assert.rejects(prepareNotionSkills([selected], source, out,
+      { purpose: 'use', signal: controller.signal }), { code: 'SOURCE_CANCELLED' });
     assert.equal(sdkEvents.length, before);
   });
   await scenario('cancel-before-materialization', async () => {
-    const controller = new AbortController(), cancelledCache = join(out, 'cancelled-host-cache');
+    const controller = new AbortController(), cacheDir = join(out, 'cancelled-host-cache');
     const cancel = event => { if (event.event === 'end' && event.operation === 'consume') controller.abort(); };
     topic.subscribe(cancel);
     try {
-      await assert.rejects(prepareNotionSkills(roots.slice(0, 1), { ...source, cacheDir: cancelledCache }, fixture.cwd, { purpose: 'use', rootPins, transport: 'sdk', signal: controller.signal }), { code: 'SOURCE_CANCELLED' });
-      await assert.rejects(readdir(cancelledCache), { code: 'ENOENT' });
+      await assert.rejects(prepareNotionSkills([selected], { ...source, cacheDir }, out,
+        { purpose: 'use', signal: controller.signal }), { code: 'SOURCE_CANCELLED' });
+      await assert.rejects(readdir(cacheDir), { code: 'ENOENT' });
     } finally { topic.unsubscribe(cancel); }
   });
-  assert.equal(processEvents.filter(e => e.event === 'start').length, processEvents.filter(e => e.event === 'close').length);
-  await writeFile(join(out, 'result.json'), JSON.stringify({ status: 'passed', node: process.version, cases: results, sdk_calls: sdkEvents.filter(e => e.event === 'start').length,
-    custom_cli_children: processEvents.filter(e => e.event === 'start').length, child_closes: processEvents.filter(e => e.event === 'close').length }, null, 2) + '\n');
+  await writeFile(join(out, 'result.json'), JSON.stringify({ status: 'passed', node: process.version,
+    cases: results, sdk_calls: sdkEvents.filter(event => event.event === 'start').length, child_starts: processEvents.length }, null, 2) + '\n');
 }

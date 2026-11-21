@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNotionFixture, database, firstViewId, secondViewId } from "../../../scripts/notion-integration-fixture.mjs";
-import { listNotionViews } from "../src/notion-source";
+import { currentNotionFixture } from "./fixtures/current-notion-source";
 import { notionDirectorySelections, resolveViewDiscovery, sessionViews, VIEW_SELECTION_ENTRY } from "../src/view-discovery";
 import { viewSystemPrompt } from "../src/view-prompt";
 import { normalizeSources } from "../src/sources";
@@ -15,10 +15,10 @@ const record = (name: string, path: string): SkillRecord => ({ name, path, alias
 
 function pairedView() {
   const page = "11111111-1111-4111-8111-111111111111", dataSource = "22222222-2222-4222-8222-222222222222";
-  const source: Extract<SourceConfig, { type: "notion" }> = { id: "paired", type: "notion", command: ["must-not-spawn-paired-directory"] };
-  const selected: SkillRecord = { ...record("Paired member", "/owned/paired/SKILL.md"), id: "notion_page:" + page,
-    source: "notion", sourceId: source.id, sourceScope: "a".repeat(64), kind: "skill", ref: "skill://" + page + "/SKILL.md",
-    locator: { type: "notion_page", page_id: page, database_id: database, data_source_id: dataSource } };
+  const source: Extract<SourceConfig, { type: "notion" }> = { id: "paired", type: "notion" };
+  const selected: SkillRecord = { ...record("Paired member", "/owned/paired/SKILL.md"), id: "shared_skill:paired:member", enabled: true,
+    source: "notion", sourceId: source.id, sourceScope: "a".repeat(64), kind: "skill", ref: "skill://shared_skill%3Apaired%3Amember/SKILL.md",
+    locator: { type: "shared_skill", library_id: "paired", skill_id: "member", page_id: page, database_id: database, data_source_id: dataSource } };
   const directory: NotionDirectory = Object.assign([selected], { list: { sourceId: source.id, policy: "default" as const, exhaustive: true }, failures: [],
     view: { id: firstViewId, name: "Paired view", type: "table", database_id: database, data_source_id: dataSource, url: `https://notion.so/${database}?v=${firstViewId}` } });
   const paired = new Map<string, NotionDirectoryObservation>([[source.id, { selection: {}, outcome: { ok: true, value: directory } }]]);
@@ -72,7 +72,12 @@ test("paired failed or empty directory stays distinct and cancellation publishes
 test("source View listing calls the public ctl route with its exact scope and policy", async () => {
   const root = await mkdtemp(join(tmpdir(), "broker-ctl-views-"));
   const fixture = await createNotionFixture(root);
-  const views = await listNotionViews({ id: "controlled", type: "notion", command: fixture.command, database, discovery: { offline: true } }, root);
+  const runtime = await currentNotionFixture();
+  await writeFile(join(runtime.root, "src/ntn-skills.mjs"),
+    "import { spawnSync } from 'node:child_process';\n" +
+    "const command = " + JSON.stringify(fixture.command) + ";\n" +
+    "const result = spawnSync(command[0], [...command.slice(1), ...process.argv.slice(2)], { stdio: 'inherit' }); process.exitCode = result.status ?? 1;\n");
+  const views = await runtime.boundary.listNotionViews({ id: "controlled", type: "notion", database, discovery: { offline: true } }, root);
   expect(views.map(view => view.id)).toEqual([firstViewId, secondViewId]);
   const calls = (await readFile(fixture.callsPath, "utf8")).trim().split("\n").map(JSON.parse);
   expect(calls).toHaveLength(1);
@@ -179,15 +184,77 @@ test("Pi Notion directory keeps authored names and explicit sources without rena
   const local = '<available_skills><skill><name>native-local</name><description>Local rules</description><location>/local/SKILL.md</location></skill></available_skills>';
   const before = JSON.stringify([first, second]);
   const prompt = viewSystemPrompt(local, [first, second], [], new Set(), [], "/cwd", value => value.ref, "notion_list", true);
-  expect(prompt.match(/<name>Review Rules<\/name>/g)).toHaveLength(2);
-  expect(prompt).toContain("<source>team-one</source>");
-  expect(prompt).toContain("<source>team-two</source>");
-  expect(prompt).toContain("<location>skill://one/SKILL.md</location>");
-  expect(prompt).toContain("<location>skill://two/SKILL.md</location>");
+  expect(prompt.match(/name="Review Rules"/g)).toHaveLength(2);
+  expect(prompt).toContain('source="team-one"');
+  expect(prompt).toContain('source="team-two"');
+  expect(prompt).toContain('location="skill://one/SKILL.md"');
+  expect(prompt).toContain('location="skill://two/SKILL.md"');
   expect(prompt).toContain(local);
   expect(prompt).not.toContain("notion-one-review-rules");
   expect(JSON.stringify([first, second])).toBe(before);
   const legacy = viewSystemPrompt(local, [first, second], [], new Set(), []);
   expect(legacy).toContain("<name>notion-one-review-rules</name>");
   expect(legacy).not.toContain("<source>");
+});
+
+test("Default Context affects discovery only through explicit View membership, not a second checkbox test", async () => {
+  const f=pairedView();const first={...f.selected,default_context:false};f.directory[0]=first;
+  const catalog={records:[first],failures:[]};
+  const included=await resolveViewDiscovery({sources:[f.source]},catalog,undefined,undefined,f.paired);
+  expect(included.records[0]?.defaultDiscovery).toBe(true);
+  // The Notion-selected View now excludes this record. Its authorized catalog
+  // entry remains available for an exact selection, rather than being deleted.
+  f.directory.splice(0,1);
+  const excluded=await resolveViewDiscovery({sources:[f.source]},catalog,undefined,undefined,f.paired);
+  expect(excluded.records[0]?.defaultDiscovery).toBe(false);expect(excluded.records[0]?.ref).toBe(first.ref);
+  const checked={...first,default_context:true};f.directory.push(checked);
+  const selected=await resolveViewDiscovery({sources:[f.source]},{records:[checked],failures:[]},undefined,undefined,f.paired);
+  expect(selected.records[0]?.defaultDiscovery).toBe(true);
+});
+
+test("a more recently verified View preserves its new metadata instead of restoring an older catalog description", async () => {
+  const f=pairedView(),now=Date.now();
+  const older={...f.selected,description:'old',currentObservation:{origin:'cache' as const,validatedAt:now-1000,validUntil:now+5000}};
+  f.directory[0]={...f.selected,description:'new',currentObservation:{origin:'remote',validatedAt:now,validUntil:now+5000}};
+  const result=await resolveViewDiscovery({sources:[f.source]},{records:[older],failures:[]},undefined,undefined,f.paired);
+  expect(result.records[0]?.description).toBe('new');expect(result.records[0]?.ref).toBe(older.ref);
+});
+
+test("View count states the current visible candidates explicitly, including zero after eligibility changes", () => {
+  const f = pairedView();if(!f.directory.view)throw new Error("Expected bound View");
+  const views = [{sourceId:f.source.id,origin:"configured" as const,status:"ready" as const,view:f.directory.view,count:1,partial:false}];
+  const empty=viewSystemPrompt("Native rules",[],[],new Set(),views);
+  expect(empty).toContain('count="0"');expect(empty).not.toContain("<skill>");expect(empty).not.toContain('status="error"');
+  const one=viewSystemPrompt("Native rules",[f.selected],[],new Set(),views);
+  expect(one).toContain('count="1"');expect(one).toContain("<skill>");
+});
+
+test("grouped catalog cards round-trip names, descriptions, refs, kind, source and order", () => {
+  const decode = (value: string) => value.replaceAll("&#13;", "\r").replaceAll("&#10;", "\n").replaceAll("&#9;", "\t")
+    .replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+  const attrs = (raw: string) => Object.fromEntries([...raw.matchAll(/([a-z]+)="([^"]*)"/g)].map(match => [match[1], decode(match[2] ?? "")]));
+  const skill = (name: string, sourceId: string, description: string): SkillRecord => ({ ...record(name, "/owned/" + name + "/SKILL.md"),
+    source: "notion", sourceId, description, ref: "skill://" + name + "/SKILL.md" });
+  const first = skill("Alpha & \"one\"", "alpha", "Keep\n<full> & \"text\"\r\n");
+  const second = skill("Beta", "alpha", "");
+  const omitted = skill("Gamma", "beta", "Must stay out when reused");
+  const router: SkillRecord = { ...record("Route", "/owned/route/ROUTER.md"), source: "notion", kind: "router", ref: "skill://route/ROUTER.md", description: "Route <cards>." };
+  const prompt = viewSystemPrompt("", [first, second, omitted], [router], new Set(), [], "/cwd", value => "sr:" + value.name, "notion_list", true, value => value === omitted);
+  const block = /<catalog-cards>([\s\S]*?)<\/catalog-cards>/.exec(prompt)?.[1] ?? "";
+  const cards = [...block.matchAll(/<group\b([^>]*)>([\s\S]*?)<\/group>/g)].flatMap(group => {
+    const header = attrs(group[1] ?? "");
+    return [...(group[2] ?? "").matchAll(/<card\b([^>]*?)\/>|<card\b([^>]*)>([\s\S]*?)<\/card>/g)].map(card => {
+      const self = card[1] !== undefined, fields = attrs((self ? card[1] : card[2]) ?? "");
+      return { kind: header.kind, name: fields.name, source: fields.source ?? header.source, location: fields.location, ref: fields.ref,
+        description: self ? undefined : decode(card[3] ?? "") };
+    });
+  });
+  expect(cards.map(card => [card.kind, card.name, card.source, card.location, card.ref, card.description])).toEqual([
+    ["skill", first.name, "alpha", "sr:Alpha & \"one\"", undefined, first.description],
+    ["skill", second.name, "alpha", "sr:Beta", undefined, ""],
+    ["skill", omitted.name, "beta", "sr:Gamma", undefined, undefined],
+    ["router", router.name, undefined, undefined, "sr:Route", router.description],
+  ]);
+  expect(prompt).not.toContain(omitted.description);
+  expect(prompt).not.toContain("Must stay out");
 });

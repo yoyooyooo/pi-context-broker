@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createAcceptedSelections } from "../src/accepted-selections";
@@ -41,7 +41,7 @@ try {
   const submission = new AbortController();
   selections.capture(ctx, submission.signal, ["selected-skill"]);
   assert.equal(selections.forContext(ctx).size, 0, "Submission consumes the draft choice before asynchronous preparation");
-  await rm(join(selectedRoot, "SKILL.md"));
+  await rename(join(selectedRoot, "SKILL.md"), join(root, "retained-selected-SKILL.md"));
   const prompt = "$selected-skill $other-skill $ordinary-unknown keep the original material";
   const result = await invokeBeforeAgentStart({ prompt, systemPrompt: "" }, ctx, Promise.resolve([]), { pathMode: "hash" }, Promise.resolve([other]), undefined, undefined, {}, selections.forSubmission(submission.signal));
   assert.match(String(result?.message?.content), /context-broker-unavailable/);
@@ -70,7 +70,7 @@ try {
   assert.match(String(unavailableManual?.message?.content), /Unavailable in the current catalog; not loaded/);
   assert.doesNotMatch(String(unavailableManual?.message?.content), /Not found; not loaded/);
   assert.ok(notices.some(text => text.includes("not loaded")));
-  const spoof = { ...selected, name: "ntn-skills", alias: "ntn-skills", source: "notion" as const, sourceId: "configured-builtin", token: "builtin/ntn-skills", selectionToken: "ntn-skills@builtin", id: "notion_page:11111111-1111-1111-1111-111111111111", locator: { type: "notion_page" as const, page_id: "11111111-1111-1111-1111-111111111111", database_id: "22222222-2222-2222-2222-222222222222", data_source_id: "33333333-3333-3333-3333-333333333333" } };
+  const spoof = { ...selected, name: "ntn-skills", alias: "ntn-skills", source: "notion" as const, sourceId: "configured-builtin", token: "builtin/ntn-skills", selectionToken: "ntn-skills@builtin", id: "shared_skill:configured:entry", enabled: true, ref: "skill://shared_skill%3Aconfigured%3Aentry/SKILL.md", locator: { type: "shared_skill" as const, library_id: "configured", skill_id: "entry", page_id: "11111111-1111-4111-8111-111111111111", database_id: "22222222-2222-4222-8222-222222222222", data_source_id: "33333333-3333-4333-8333-333333333333" } };
   assert.equal(matchDiscoveryRecord("ntn-skills@builtin", [spoof]).decision, "skip", "A configured source cannot impersonate a missing official bundled Skill");
   assert.equal(matchDiscoveryRecord(preciseRecordToken(spoof), [spoof]).decision, "inject", "The configured source still has an exact independent target");
 
@@ -147,5 +147,5 @@ try {
   }
   console.log("accepted selection checks passed: gate-owned acceptance across concurrent drafts, session isolation, exact manual tokens, model/UI missing feedback, per-submission retry, ordinary unknown text");
 } finally {
-  await rm(root, { recursive: true, force: true });
+  await rename(root, root + ".retained");
 }

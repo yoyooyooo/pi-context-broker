@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { constants } from 'node:fs';
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
+import { verifyNextWorktreePair } from './verify-next-worktrees.mjs';
 
 // The run action is deliberately explicit. Merely importing/checking this file
 // or generating a plan never launches Pi or changes the daily installation.
@@ -27,15 +29,16 @@ function plan(config) {
     version: 1, kind: 'pi-daily-installation-readonly-diagnostics', status: 'prepared_not_executed',
     settings: join(homedir(), '.pi/agent/settings.json'), expected_package_index: config.packageIndex ?? 1,
     expected_package_count: config.packageCount ?? 21, broker_root: config.brokerRoot ?? null,
-    cli_root: config.cliRoot ?? null, required_artifacts: ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'embeddedSdkSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256'],
-    pi_arguments: ['--mode', 'rpc', '--session-dir', '<new owned directory>'],
+    cli_root: config.cliRoot ?? null, next_worktrees: config.worktrees ?? null, required_artifacts: ['brokerRoot', 'brokerArchive', 'brokerArchiveSha256', 'embeddedCliSha256', 'embeddedSdkSha256', 'cliRoot', 'cliArchive', 'cliArchiveSha256', 'cliEntrySha256'],
+    cli_lookup: { selection: 'ntn-skills on the unchanged PATH', expected_path: config.cliShim ?? null, volta_identity: config.voltaIdentity ?? null },
+    pi_arguments: ['--mode', 'rpc', '-ns', '--session-dir', '<new owned directory>'],
     rpc_commands: ['get_state', 'get_commands', '/context-broker find ' + (config.findQuery ?? 'pstack'), '/context-broker doctor', 'get_state'],
     expected_find_record: config.expectedFindRecord ?? null,
     reviewed_external_namespace_diagnostics: config.namespaceDiagnosticsReview ?? null,
-    observation: 'Actual get_commands.sourceInfo, published-file SHA closure and passive SDK/process/HTTP observation. SDK attempts pair with independent HTTP response request IDs; unpaired host HTTP remains unknown. Startup/find remain metadata-only; the explicit doctor --database CLI may probe one current Skill as documented by the public CLI. No source.command substitution or target -e argument.',
+    observation: 'Actual get_commands.sourceInfo, published-file SHA closure and passive SDK/process/HTTP observation. Every host Notion request and SDK attempt needs an exact independent HTTP match. Other host HTTP remains unattributed, with failures retained separately. Startup/find/doctor read Notion metadata only; this check does not establish all Pi/plugin HTTP success or zero external traffic. No source.command substitution or target -e argument.',
     preserved: ['HOME and normal agent directory', 'all settings packages and extensions', 'source/auth/model configuration', 'existing sessions', 'PATH and source.command'],
-    forbidden: ['provider or tool execution', 'Notion writes or body loading outside the explicit doctor process', 'official ntn invocation', 'Tern execution', 'user-session restart'],
-    execution: 'Run only after root activates the final immutable package and CLI shim. Supply final package paths/hashes; run refuses an old settings package before launching Pi.',
+    forbidden: ['provider or tool execution', 'Notion writes or Skill body loading', 'official ntn invocation', 'Tern execution', 'user-session restart'],
+    execution: 'Run after both next worktrees are committed, rebuilt and selected by the ordinary daily entries. Bind the same target commits and build bytes on Pro and Mini; the source/build gate precedes a fresh pi -ns process.',
   };
 }
 
@@ -48,6 +51,7 @@ function installPassiveObserver(config) {
   const cp = require('node:child_process');
   const path = require('node:path');
   const crypto = require('node:crypto');
+  const zlib = require('node:zlib');
   const digest = value => crypto.createHash('sha256').update(value).digest('hex');
   const file = path.join(config.directory, `observer-${process.pid}.jsonl`);
   const write = value => fs.appendFileSync(file, JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ...value }) + '\n', { mode: 0o600 });
@@ -81,27 +85,105 @@ function installPassiveObserver(config) {
     });
     return result;
   };
-  const nativeFetch = globalThis.fetch;
-  let sequence = 0;
-  if (typeof nativeFetch === 'function') globalThis.fetch = function(...args) {
-    const input = args[0], init = args[1];
-    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
-    const method = String(init?.method ?? input?.method ?? 'GET').toUpperCase();
-    const id = `${process.pid}:${++sequence}`;
-    const body = init?.body;
-    const requestBytes = typeof body === 'string' ? Buffer.byteLength(body) : body instanceof Uint8Array ? body.byteLength : body == null ? 0 : null;
-    const requestHash = typeof body === 'string' || body instanceof Uint8Array ? digest(body) : body == null ? digest('') : null;
-    write({ event: 'http_start', id, method, origin: url.origin, path: url.pathname, request_bytes: requestBytes, request_sha256: requestHash });
-    return Reflect.apply(nativeFetch, this, args).then(response => {
-      const requestId = response.headers.get('x-request-id') ?? response.headers.get('request-id');
-      write({ event: 'http_end', id, status: response.status,
-        response_request_id: typeof requestId === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(requestId) ? requestId : null });
-      return response;
-    }, error => {
-      write({ event: 'http_error', id, code: error?.code ?? error?.name ?? 'unknown' });
-      throw error;
-    });
+  // Observe the actual transport, including SDKs and extensions that retain a
+  // fetch reference before this preload. Wrapping globalThis.fetch misses those
+  // requests. Diagnostics neither replace fetch nor consume response streams.
+  const diagnostics = require('node:diagnostics_channel');
+  const requests = new Map(), active = new Set();
+  let sequence = 0, observerErrors = 0;
+  const subscribe = (name, callback) => diagnostics.subscribe('undici:request:' + name, event => {
+    try { callback(event); }
+    catch { observerErrors++; write({ event: 'http_observer_error', channel: name }); }
+  });
+  const requestOf = request => {
+    const row = requests.get(request);
+    if (!row || !active.has(request)) throw new Error('UNOBSERVED_REQUEST');
+    return row;
   };
+  const bodyLimit = 16 * 1024 * 1024;
+  const bodyIdOrigins = new Set(config.responseRequestIdBodyOrigins ?? ['https://api.notion.com']);
+  const validRequestId = value => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(value);
+  subscribe('create', ({ request }) => {
+    const url = new URL(String(request.path), String(request.origin));
+    if (requests.has(request)) throw new Error('DUPLICATE_REQUEST');
+    const row = { id: `${process.pid}:${++sequence}`, at: new Date().toISOString(), started_ms: performance.now(),
+      method: request.method, origin: url.origin, path: url.pathname, bytes: 0,
+      hash: crypto.createHash('sha256'), sent: false, status: null, responseId: null,
+      responseIdSource: null, encoding: 'identity', json: false, responseBytes: 0, responseChunks: [] };
+    requests.set(request, row);
+    active.add(request);
+    // Creation precedes connection and TLS errors. Retain its identity even if
+    // no request body is sent and consequently no response ID can exist.
+    write({ event: 'http_created', id: row.id, at: row.at, started_ms: row.started_ms,
+      method: row.method, origin: row.origin, path: row.path });
+  });
+  subscribe('bodyChunkSent', ({ request, chunk }) => {
+    const row = requestOf(request);
+    if (row.sent) throw new Error('REQUEST_BODY_ALREADY_FINISHED');
+    row.bytes += Buffer.byteLength(chunk); row.hash.update(chunk);
+  });
+  subscribe('bodySent', ({ request }) => {
+    const row = requestOf(request);
+    if (row.sent) throw new Error('DUPLICATE_REQUEST_BODY');
+    row.sent = true;
+    write({ event: 'http_start', id: row.id, at: row.at, method: row.method, origin: row.origin, path: row.path,
+      started_ms: row.started_ms, request_bytes: row.bytes, request_sha256: row.hash.digest('hex'), observation: 'undici-request-body-sent' });
+  });
+  subscribe('headers', ({ request, response }) => {
+    const row = requestOf(request), headers = response.headers;
+    if (row.status !== null) throw new Error('DUPLICATE_RESPONSE_HEADERS');
+    row.status = response.statusCode;
+    for (let i = 0; i + 1 < headers.length; i += 2) {
+      const decode = value => ArrayBuffer.isView(value) ? Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('utf8') : String(value);
+      const name = decode(headers[i]).toLowerCase(), value = decode(headers[i + 1]);
+      if (['x-request-id', 'request-id'].includes(name) && validRequestId(value)) { row.responseId = value; row.responseIdSource = 'response-header'; }
+      if (name === 'content-type') row.json = bodyIdOrigins.has(row.origin) && /^application\/json(?:\s*;|$)/iu.test(value);
+      if (name === 'content-encoding') row.encoding = value.toLowerCase();
+    }
+  });
+  subscribe('bodyChunkReceived', ({ request, chunk }) => {
+    const row = requestOf(request);
+    row.responseBytes += chunk.byteLength;
+    // Only bounded JSON from the exact Notion origin is retained privately.
+    // Loopback tests may explicitly inject their own origin. No response body
+    // is written to the ledger or substituted for the consumer's stream.
+    if (row.json && row.responseId === null && row.responseBytes <= bodyLimit) row.responseChunks.push(Buffer.from(chunk));
+    else row.responseChunks.length = 0;
+  });
+  subscribe('trailers', ({ request }) => {
+    const row = requestOf(request);
+    if (!row.sent || row.status === null) throw new Error('INCOMPLETE_HTTP');
+    active.delete(request);
+    if (row.responseId === null && row.json && row.responseBytes <= bodyLimit) {
+      try {
+        let body = Buffer.concat(row.responseChunks);
+        const decode = { gzip: zlib.gunzipSync, deflate: zlib.inflateSync, br: zlib.brotliDecompressSync }[row.encoding];
+        if (decode) body = decode(body, { maxOutputLength: bodyLimit });
+        else if (row.encoding !== 'identity') throw new Error('UNKNOWN_RESPONSE_ENCODING');
+        const value = JSON.parse(body.toString('utf8'))?.request_id;
+        if (validRequestId(value)) { row.responseId = value; row.responseIdSource = 'response-json'; }
+      } catch { /* Missing IDs remain unknown; no heuristic attribution. */ }
+    }
+    row.responseChunks.length = 0;
+    write({ event: 'http_end', id: row.id, status: row.status, response_request_id: row.responseId,
+      response_request_id_source: row.responseIdSource, ended_ms: performance.now(), observation: 'undici-response-trailers' });
+  });
+  subscribe('error', ({ request, error }) => {
+    const row = requestOf(request); active.delete(request);
+    row.responseChunks.length = 0;
+    write({ event: 'http_error', id: row.id, code: error?.code ?? error?.name ?? 'unknown',
+      method: row.method, origin: row.origin, path: row.path, started_ms: row.started_ms, ended_ms: performance.now(),
+      request_body_sent: row.sent, sent_request_bytes: row.bytes, status: row.status, response_request_id: row.responseId,
+      error: { name: error?.name ?? null, code: error?.code ?? null, message: error?.message ?? null,
+        errno: error?.errno ?? null, syscall: error?.syscall ?? null } });
+  });
+  process.once('exit', () => write({ event: 'http_observer_end', errors: observerErrors,
+    complete: observerErrors === 0 && active.size === 0,
+    pending: [...active].map(request => requests.get(request).id), method: 'undici-diagnostics-channel' }));
+}
+
+export function dailyObserverPreloadSource(config) {
+  return `(${installPassiveObserver.toString()})(${JSON.stringify(config)});\n`;
 }
 
 async function packageClosure(root, archive, expectedHash) {
@@ -125,6 +207,53 @@ async function packageClosure(root, archive, expectedHash) {
   return { root, archive: archiveIdentity, file_count: files.length, files, sha256: hash(JSON.stringify(files)) };
 }
 
+export async function verifyDailyPackageSource(spec, settingsPath, brokerRoot) {
+  assert.equal(typeof spec, 'string');
+  // Pi resolves a user settings package relative to its agent directory.
+  const path = await realpath(resolve(dirname(settingsPath), spec));
+  assert.equal(path, await realpath(brokerRoot), 'The daily package slot has not been switched to the final Broker');
+  return { selected_package: spec, resolved_package: path };
+}
+
+async function executableOnPath(name, env) {
+  for (const directory of (env.PATH ?? '').split(delimiter)) {
+    const path = resolve(directory, name);
+    try { await access(path, constants.X_OK); return path; }
+    catch (error) { if (!['ENOENT', 'EACCES', 'ENOTDIR'].includes(error.code)) throw error; }
+  }
+  throw new Error(`${name}: executable not found on the normal PATH`);
+}
+
+export async function verifyDailyCliShim(config, env = process.env) {
+  const standalone = await fileIdentity(join(config.cliRoot, 'dist/ntn-skills.js'));
+  assert.equal(standalone.sha256, config.cliEntrySha256);
+  const selected = await executableOnPath('ntn-skills', env);
+  if (config.cliShim) assert.equal(selected, resolve(config.cliShim), 'The configured CLI shim differs from the normal PATH selection');
+  const shim = await fileIdentity(selected);
+  let resolution;
+  if (shim.realpath === standalone.realpath) {
+    assert.equal(shim.sha256, standalone.sha256);
+    resolution = { kind: 'direct', entry: standalone };
+  } else {
+    const volta = await fileIdentity(await executableOnPath('volta', env));
+    const dispatcher = await fileIdentity(join(dirname(volta.realpath), 'volta-shim'));
+    assert.equal(volta.sha256, config.voltaIdentity?.executable_sha256, 'Freeze the actual Volta executable SHA before daily verification');
+    assert.equal(dispatcher.sha256, config.voltaIdentity?.dispatcher_sha256, 'Freeze the actual Volta dispatcher SHA before daily verification');
+    assert.equal(shim.realpath, dispatcher.realpath, 'The selected CLI is not the actual Volta dispatcher');
+    assert.equal(shim.sha256, dispatcher.sha256);
+    const argv = [volta.path, 'which', 'ntn-skills'];
+    const path = execFileSync(argv[0], argv.slice(1), {
+      env, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    assert.ok(isAbsolute(path) && !/[\r\n]/u.test(path), 'Volta must resolve one absolute CLI entry');
+    const entry = await fileIdentity(path);
+    assert.equal(entry.realpath, standalone.realpath, 'Volta resolved a different installed CLI');
+    assert.equal(entry.sha256, config.cliEntrySha256, 'The Volta-resolved CLI bytes changed');
+    resolution = { kind: 'volta', argv, executable: volta, dispatcher, entry };
+  }
+  return { ...shim, resolution, references_final_cli: true, executed_by_harness: false };
+}
+
 async function configurationSnapshot(config) {
   const agent = join(homedir(), '.pi/agent'), settingsPath = join(agent, 'settings.json');
   if (process.env.PI_CODING_AGENT_DIR) assert.equal(await realpath(process.env.PI_CODING_AGENT_DIR), await realpath(agent), 'Use the normal daily Pi agent directory');
@@ -137,8 +266,7 @@ async function configurationSnapshot(config) {
   assert.equal(settings.packages?.length, config.packageCount ?? 21);
   const index = config.packageIndex ?? 1, selected = settings.packages[index];
   const spec = typeof selected === 'string' ? selected : selected?.source;
-  assert.equal(typeof spec, 'string');
-  assert.equal(await realpath(spec), await realpath(config.brokerRoot), 'The daily package slot has not been switched to the final Broker');
+  const selectedIdentity = await verifyDailyPackageSource(spec, settingsPath, config.brokerRoot);
   const candidates = ['.yml', '.yaml', '.json'].map(ext => join(agent, 'context-broker', 'config' + ext));
   const sourcePath = (await Promise.all(candidates.map(async path => await exists(path) ? path : undefined))).find(Boolean);
   assert.ok(sourcePath, 'The existing daily source configuration is required');
@@ -153,7 +281,7 @@ async function configurationSnapshot(config) {
     assert.ok(source.prefetch === false || source.prefetch === undefined, 'This metadata-only run requires disabled prefetch');
   }
   return {
-    settings: { path: settingsPath, sha256: hash(raw), packages: settings.packages.length, selected_index: index, selected_package: spec, other_packages_sha256: hash(JSON.stringify(settings.packages.filter((_, i) => i !== index))) },
+    settings: { path: settingsPath, sha256: hash(raw), packages: settings.packages.length, selected_index: index, ...selectedIdentity, other_packages_sha256: hash(JSON.stringify(settings.packages.filter((_, i) => i !== index))) },
     source: { path: sourcePath, sha256: hash(sourceBytes), sources: sources.map(source => ({ id: source.id, type: source.type, database: source.database, default_view_id: source.default_view_id, profile_id: source.profile_id, prefetch: source.prefetch ?? false, command_configured: false })) },
   };
 }
@@ -212,6 +340,7 @@ export function validateDailyDoctor(reports, review, sourceDatabaseIds, required
 }
 
 export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObservation } = {}) {
+  assert.ok(!observed.some(row => row.event === 'http_observer_error'), 'Independent HTTP observer contains invalid evidence');
   const parents = new Map();
   for (const row of observed) {
     if (row.event === 'process_start' && Number.isInteger(row.ppid)) parents.set(row.pid, row.ppid);
@@ -253,7 +382,7 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
       assert.equal(metrics[0].total_requests, events.filter(event => event.phase === 'attempt' && event.requestId === operation.requestId).length);
     }
   }
-  const source = [], sdk = [], otherPlugins = [];
+  const source = [], sdk = [], otherPlugins = [], unattributedHostHttp = [];
   for (const request of observed.filter(row => row.event === 'http_start')) {
     let pid = request.pid, role;
     const visited = new Set();
@@ -264,6 +393,16 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
       pid = parents.get(pid);
     }
     if (role === 'host') {
+      const origin = new URL(request.origin);
+      assert.ok(['http:', 'https:'].includes(origin.protocol) && origin.origin === request.origin, 'Host HTTP has no exact origin');
+      const outcomes = observed.filter(row => ['http_end', 'http_error'].includes(row.event) && row.id === request.id && row.pid === request.pid);
+      const hasSdkAttempt = outcomes.some(row => sdkAttempts.has(row.response_request_id));
+      // The target includes every Notion request and every declared SDK attempt.
+      // Other host traffic stays unknown; it cannot satisfy or hide an SDK attempt.
+      if (origin.hostname !== 'api.notion.com' && !hasSdkAttempt) {
+        unattributedHostHttp.push({ ...request, outcomes });
+        continue;
+      }
       const terminal = observed.filter(row => row.event === 'http_end' && row.id === request.id && row.pid === request.pid);
       assert.equal(terminal.length, 1, 'Host HTTP needs one independent response');
       const match = sdkAttempts.get(terminal[0].response_request_id);
@@ -284,18 +423,13 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
     }
   }
   assert.equal(matchedSdk.size, sdkAttempts.size, 'An SDK attempt lacks independent HTTP evidence');
-  return { source, sdk, otherPlugins };
+  return { source, sdk, otherPlugins, unattributedHostHttp };
 }
 
-export function classifyDailyNotionRequest(request, doctorPid) {
+export function classifyDailyNotionRequest(request) {
   assert.equal(request.origin, 'https://api.notion.com', 'Unexpected provider/external HTTP in the verified Notion consumer');
-  const body = /\/(?:markdown|children)$/u.test(request.path);
-  if (body) {
-    assert.equal(request.pid, doctorPid, 'Startup/find must not load current Skill bodies');
-    assert.equal(request.method, 'GET', 'The explicit doctor probe is read-only');
-    assert.ok(/^\/v1\/(?:pages\/[0-9a-f-]+\/markdown|blocks\/[0-9a-f-]+\/children)$/u.test(request.path));
-    return 'doctor-body';
-  }
+  const body = /^\/v1\/blocks(?:\/|$)/u.test(request.path) || /\/(?:markdown|children)(?:\/|$)/u.test(request.path);
+  assert.equal(body, false, 'Startup/find/doctor must not load Skill bodies');
   const readonly = ['GET', 'HEAD'].includes(request.method) || request.method === 'POST' && (/^\/v1\/(?:data_sources|databases)\/[^/]+\/query$/u.test(request.path) || /^\/v1\/views\/[^/]+\/queries$/u.test(request.path) || request.path === '/v1/search');
   assert.ok(readonly, 'A remote mutation was observed in the Notion consumer');
   return 'metadata';
@@ -312,6 +446,7 @@ async function run(config) {
   const result = { version: 1, kind: 'actual-daily-pi-autoload-and-diagnostics', status: 'running', evidence, plan: plan(config), harness: await fileIdentity(fileURLToPath(import.meta.url)), modifications: { user_settings: 0, source_config: 0, harness_model_credential_files_read: 0, old_sessions_read: 0, target_extensions_injected: 0, source_command_overrides: 0 }, phases: [] };
   let rpc, observedRpc, before, broker;
   try {
+    result.worktrees_before = await verifyNextWorktreePair(config);
     before = await configurationSnapshot(config);
     let namespaceReview;
     if (config.namespaceDiagnosticsReview) {
@@ -335,22 +470,20 @@ async function run(config) {
     assert.equal(sdkManifest.cli_sha256, embedded.sha256); assert.equal(sdkManifest.sdk_sha256, embeddedSdk.sha256);
     const standalone = await fileIdentity(join(config.cliRoot, 'dist/ntn-skills.js'));
     assert.equal(standalone.sha256, config.cliEntrySha256);
-    const shim = await fileIdentity(config.cliShim ?? join(homedir(), '.local/bin/ntn-skills'));
-    const shimReferencesFinalCli = inside(await realpath(config.cliRoot), shim.realpath) || (await readFile(shim.path, 'utf8')).includes(standalone.path);
-    assert.ok(shimReferencesFinalCli, 'The daily CLI shim has not been switched to the final CLI');
-    result.artifacts = { broker: { root: broker.root, archive_sha256: broker.archive.sha256, published_files: broker.file_count, files_sha256: broker.sha256 }, embedded, embeddedSdk, sdkManifest, standalone, cli_shim: { ...shim, references_final_cli: shimReferencesFinalCli, executed_by_harness: false } };
+    const shim = await verifyDailyCliShim(config);
+    result.artifacts = { broker: { root: broker.root, archive_sha256: broker.archive.sha256, published_files: broker.file_count, files_sha256: broker.sha256 }, embedded, embeddedSdk, sdkManifest, standalone, cli_shim: shim };
     result.configuration_before = before;
     const host = await resolveHost('pi'); result.host = host;
     assert.ok(host.identity.includes('/@earendil-works/pi-coding-agent/'), 'The daily host must be actual Pi');
     const preload = join(evidence, 'observe-process.cjs');
-    await writeFile(preload, `(${installPassiveObserver.toString()})(${JSON.stringify({ directory: observerDir, cliEntry: embedded.realpath })});\n`, { mode: 0o600 });
+    await writeFile(preload, dailyObserverPreloadSource({ directory: observerDir, cliEntry: embedded.realpath }), { mode: 0o600 });
     const sdkPreload = join(evidence, 'observe-source.mjs'), sourceLedger = join(evidence, 'source-operations.jsonl');
     await writeFile(sdkPreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: resolve(fileURLToPath(new URL('..', import.meta.url))),
       clockId: 'daily-' + Date.now(), cliPath: embedded.realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { mode: 0o600 });
     const processLedger = join(evidence, 'owned-processes.jsonl');
     await writeFile(processLedger, '', { flag: 'wx', mode: 0o600 });
     const env = { ...process.env, BROKER_E2E_PROCESS_LEDGER: processLedger, NODE_OPTIONS: [process.env.NODE_OPTIONS, '--require=' + JSON.stringify(preload), '--import=' + JSON.stringify(sdkPreload)].filter(Boolean).join(' ') };
-    const args = ['--session-dir', sessions];
+    const args = ['-ns', '--session-dir', sessions];
     result.launch = { host: 'pi', cwd, args: ['--mode', 'rpc', ...args], normal_user_settings: true, preexisting_node_options_preserved: Boolean(process.env.NODE_OPTIONS), observer_sha256: hash(await readFile(preload)), source_observer_sha256: hash(await readFile(sdkPreload)) };
     await save(join(evidence, 'result.json'), result);
     rpc = await startRpc({ host: 'pi', cwd, env, args, timeoutMs: 120000 });
@@ -402,11 +535,10 @@ async function run(config) {
     }
     const doctors = spawned.filter(row => row.cli_args[0] === 'ctl' && row.cli_args[1] === 'doctor');
     assert.equal(doctors.length, 1, 'One explicit source doctor probe is expected');
-    assert.ok(doctors[0].at >= result.phases.find(phase => phase.command.endsWith('doctor')).startedAt, 'The doctor body probe must follow its explicit command');
+    assert.ok(doctors[0].at >= result.phases.find(phase => phase.command.endsWith('doctor')).startedAt, 'The doctor probe must follow its explicit command');
     const doctor = observed.find(row => row.event === 'child_close' && row.child_pid === doctors[0].child_pid && row.bundled_cli && row.receipt?.ok === true && row.receipt.transport === 'direct_http' && row.receipt.notion_api_version === '2026-03-11');
     assert.ok(doctor, 'No actual successful direct-HTTP doctor receipt');
-    assert.equal(doctor.receipt.skill_read?.checked, true);
-    assert.equal(doctor.receipt.skill_read?.available, true);
+    assert.equal(doctor.receipt.skill_read?.checked, false);
     const owned = (await readFile(processLedger, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);
     const sourceObservation = await readSourceObservation(sourceLedger);
     const sdkOperations = sourceObservation.events.filter(row => row.kind === 'sdk' && row.phase === 'started');
@@ -414,22 +546,20 @@ async function run(config) {
     const partition = classifyDailyHttp(observed, new Set(spawned.map(row => row.child_pid)), new Set(owned.filter(row => row.event === 'spawn').map(row => row.pid)), { sourceObservation });
     const http = partition.source;
     result.other_plugin_http = partition.otherPlugins.map(request => ({ ...request, process: observed.find(row => row.event === 'process_start' && row.pid === request.pid), outcome: observed.find(row => ['http_end', 'http_error'].includes(row.event) && row.id === request.id) }));
-    result.http_accounting_scope = 'Default bundled SDK attempts are paired by PID, response request ID, method, status and request bytes. The explicit doctor uses its verified bundled CLI process tree. Other configured plugin child-process HTTP is separate; other host HTTP is unattributed and rejected. Worker transport is outside this passive process observer.';
+    result.unattributed_host_http = partition.unattributedHostHttp;
+    result.http_accounting_scope = 'The verified target includes every host request to api.notion.com, every complete SDK attempt and the verified bundled CLI process tree. SDK attempts are paired by PID, response request ID, method, status and request bytes. Other plugin child-process HTTP is separate. Non-Notion host HTTP without SDK attribution remains in unattributed_host_http with its original failures or missing outcomes; it is excluded from target costs and does not establish global Pi/plugin health or zero external traffic. Worker transport is outside this passive process observer.';
     assert.ok(http.length, 'No real HTTP metadata request was observed');
-    const diagnosticBodyRequests = [];
     for (const request of http) {
-      if (classifyDailyNotionRequest(request, doctor.child_pid) === 'doctor-body') diagnosticBodyRequests.push(request);
+      classifyDailyNotionRequest(request);
       assert.ok(observed.some(row => row.event === 'http_end' && row.id === request.id && row.status >= 200 && row.status < 300), 'An observed Notion request did not complete with HTTP 2xx');
     }
     assert.ok(!observed.some(row => row.event === 'spawn' && basename(row.executable ?? '') === 'ntn'), 'Official ntn was invoked');
     result.actual_default_sdk = { entry: embeddedSdk.realpath, sha256: embeddedSdk.sha256, operations: sdkOperations,
       http: partition.sdk, source_observation_complete: sourceObservation.complete, source_command_overridden: false, catalog_cli_children: 0 };
     result.explicit_doctor_cli = { entry: embedded.realpath, sha256: embedded.sha256, processes: spawned.map(row => ({ parent_pid: row.pid, pid: row.child_pid, executable: row.executable, script: row.script, args: row.cli_args })), doctor: doctor.receipt, path_cli_used_for_default_source: false };
-    result.metadata_http_requests = http.length - diagnosticBodyRequests.length;
-    result.diagnostic_body_requests = diagnosticBodyRequests;
-    result.startup_and_find_body_reads = 0;
+    result.metadata_http_requests = http.length;
     result.provider_invocations = 0; result.tool_invocations = 0; result.remote_mutations = 0;
-    result.current_body_reads = diagnosticBodyRequests.length;
+    result.current_body_reads = 0;
     result.status = 'passed';
   } catch (error) {
     result.status = 'failed'; result.error = { code: error.code ?? 'DAILY_VERIFICATION_FAILED', message: error.message };
@@ -438,6 +568,11 @@ async function run(config) {
     if (observedRpc) {
       await save(join(evidence, 'rpc.json'), observedRpc.frames);
       await save(join(evidence, 'rpc-lifecycle.json'), observedRpc.lifecycle);
+    }
+    if (result.worktrees_before) {
+      result.worktrees_after = await verifyNextWorktreePair(config).catch(error => ({ status: 'failed', error: error.message }));
+      result.worktrees_unchanged = JSON.stringify(result.worktrees_before) === JSON.stringify(result.worktrees_after);
+      if (!result.worktrees_unchanged) result.status = 'failed';
     }
     if (before) {
       result.configuration_after = await configurationSnapshot(config).catch(() => ({ validation_failed: true }));
@@ -449,7 +584,8 @@ async function run(config) {
       if (!result.broker_files_unchanged) result.status = 'failed';
     }
     if (result.artifacts?.cli_shim) {
-      result.cli_shim_unchanged = hash(await readFile(result.artifacts.cli_shim.path)) === result.artifacts.cli_shim.sha256;
+      result.cli_shim_after = await verifyDailyCliShim(config).catch(() => ({ validation_failed: true }));
+      result.cli_shim_unchanged = JSON.stringify(result.cli_shim_after) === JSON.stringify(result.artifacts.cli_shim);
       if (!result.cli_shim_unchanged) result.status = 'failed';
     }
     if (result.namespace_diagnostics_review) {
@@ -469,11 +605,39 @@ async function run(config) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv.length === 3 && ['--help', '-h'].includes(process.argv[2])) {
+    console.log(`Usage:
+  node scripts/verify-pi-daily-installation.mjs plan --config ABSOLUTE_CONFIG.json
+  node scripts/verify-pi-daily-installation.mjs run --config ABSOLUTE_CONFIG.json
+  node scripts/verify-pi-daily-installation.mjs candidate-plan --config ABSOLUTE_CONFIG.json
+  node scripts/verify-pi-daily-installation.mjs candidate-run --config ABSOLUTE_CONFIG.json --live
+
+plan: describe ordinary daily pi -ns diagnostics; does not execute Pi.
+run: verify the committed next worktree pair, current builds, existing installation and a fresh ordinary Pi process.
+candidate-plan: validate and describe the separate project-scoped candidate; does not execute Pi.
+candidate-run: execute that candidate with its specified provider/model and record actual evidence.
+
+Each action requires an explicit version:1 JSON config and owned absolute evidence paths.
+Daily runs require worktrees.cli and worktrees.broker with root and complete commit,
+plus the selected cliRoot, brokerRoot and artifact hashes. Candidate configs require
+scope:project-scoped-candidate-precheck and explicit turns. A plan is prepared_not_executed;
+a candidate does not prove the ordinary daily installation or the other machine.
+These actions do not install packages or change user settings.`);
+    process.exit(0);
+  }
   const [action, flag, input, ...extra] = process.argv.slice(2);
-  assert.ok(['plan', 'run'].includes(action) && flag === '--config' && input && !extra.length, 'Usage: node scripts/verify-pi-daily-installation.mjs plan|run --config ABSOLUTE_CONFIG.json');
+  const candidate = action === 'candidate-plan' || action === 'candidate-run';
+  assert.ok(['plan', 'run', 'candidate-plan', 'candidate-run'].includes(action) && flag === '--config' && input
+    && (action === 'candidate-run' ? extra.length === 1 && extra[0] === '--live' : !extra.length),
+  'Usage: node scripts/verify-pi-daily-installation.mjs plan|run|candidate-plan --config ABSOLUTE_CONFIG.json; candidate-run --config ABSOLUTE_CONFIG.json --live');
   const config = await json(resolve(input));
   assert.equal(config.version, 1);
-  if (action === 'plan') console.log(JSON.stringify(plan(config), null, 2));
+  if (candidate) {
+    const { candidatePlan, runCandidate } = await import('./verify-pi-daily-candidate.mjs');
+    const result = action === 'candidate-plan' ? candidatePlan(config) : await runCandidate(config, { packageClosure, fileIdentity });
+    console.log(JSON.stringify(result, null, 2));
+    if (action === 'candidate-run' && result.status !== 'passed') process.exitCode = 1;
+  } else if (action === 'plan') console.log(JSON.stringify(plan(config), null, 2));
   else {
     const result = await run(config);
     console.log(JSON.stringify({ status: result.status, evidence: result.evidence, error: result.error }));

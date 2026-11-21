@@ -1,6 +1,305 @@
 import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { delimiter, dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { classifyDailyHttp, classifyDailyNotionRequest, validateDailyDoctor, validateDailyFind } from './verify-pi-daily-installation.mjs';
+import { classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, validateDailyDoctor, validateDailyFind, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
+
+test('daily HTTP observation includes retained fetch references without changing responses or double counting', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'daily-http-observer-'));
+  const preload = dailyObserverPreloadSource({ directory, cliEntry: join(directory, 'unused-cli.js') });
+  const child = `
+    const http = require('node:http'), vm = require('node:vm');
+    const retainedFetch = globalThis.fetch;
+    vm.runInThisContext(${JSON.stringify(preload)});
+    if (globalThis.fetch !== retainedFetch) throw new Error('Observer replaced fetch');
+    const server = http.createServer(async (req, res) => {
+      let body = ''; for await (const chunk of req) body += chunk;
+      res.writeHead(200, {'x-request-id': '${sdkRequestId}'}); res.end(body);
+    });
+    (async () => {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      try {
+        const url = 'http://127.0.0.1:' + server.address().port + '/metadata';
+        for (const fetch of [retainedFetch, globalThis.fetch]) {
+          const response = await fetch(url, {method: 'POST', body: '{"unicode":"数据"}'});
+          if (await response.text() !== '{"unicode":"数据"}') throw new Error('Observer changed response');
+        }
+      } finally { await new Promise(resolve => server.close(resolve)); }
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  execFileSync(process.execPath, ['-e', child], { timeout: 15000, stdio: 'pipe' });
+  const files = await readdir(directory);
+  const rows = (await Promise.all(files.map(file => readFile(join(directory, file), 'utf8')))).flatMap(text => text.trim().split('\n').map(JSON.parse));
+  const requests = rows.filter(row => row.event === 'http_start');
+  assert.equal(requests.length, 2, 'Both retained and current fetch must have independent transport evidence');
+  assert.equal(rows.filter(row => row.event === 'http_end').length, 2);
+  assert.ok(requests.every(row => row.request_bytes === Buffer.byteLength('{"unicode":"数据"}')));
+  assert.ok(rows.filter(row => row.event === 'http_end').every(row => row.status === 200 && row.response_request_id === sdkRequestId));
+  assert.ok(rows.some(row => row.event === 'http_observer_end' && row.complete === true && row.errors === 0));
+});
+
+test('daily transport preserves an aborted response as failure after headers', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'daily-http-aborted-'));
+  const preload = dailyObserverPreloadSource({ directory, cliEntry: join(directory, 'unused-cli.js') });
+  const child = `
+    const http = require('node:http'), vm = require('node:vm');
+    vm.runInThisContext(${JSON.stringify(preload)});
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, {'content-length': '100', 'x-request-id': '${sdkRequestId}'});
+      res.write('x'); setTimeout(() => res.destroy(), 10);
+    });
+    (async () => {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      try {
+        const response = await fetch('http://127.0.0.1:' + server.address().port + '/metadata');
+        try { await response.text(); throw new Error('Expected an interrupted response'); }
+        catch (error) { if (error.message === 'Expected an interrupted response') throw error; }
+      } finally { await new Promise(resolve => server.close(resolve)); }
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  execFileSync(process.execPath, ['-e', child], { timeout: 15000, stdio: 'pipe' });
+  const rows = (await Promise.all((await readdir(directory)).map(file => readFile(join(directory, file), 'utf8')))).flatMap(text => text.trim().split('\n').map(JSON.parse));
+  assert.equal(rows.filter(row => row.event === 'http_start').length, 1);
+  assert.equal(rows.filter(row => row.event === 'http_error').length, 1);
+  assert.equal(rows.filter(row => row.event === 'http_end').length, 0, 'Response headers alone do not establish complete delivery');
+  assert.ok(rows.some(row => row.event === 'http_observer_end' && row.complete === true && row.errors === 0));
+});
+
+test('a pre-send connection failure retains request identity and terminal error without inventing a response ID', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'daily-http-connect-failure-'));
+  const preload = dailyObserverPreloadSource({ directory, cliEntry: join(directory, 'unused-cli.js') });
+  const child = `
+    const http = require('node:http'), vm = require('node:vm');
+    vm.runInThisContext(${JSON.stringify(preload)});
+    const server = http.createServer();
+    (async () => {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      const port = server.address().port;
+      await new Promise(resolve => server.close(resolve));
+      try { await fetch('http://127.0.0.1:' + port + '/metadata'); throw new Error('Expected connection failure'); }
+      catch (error) { if (error.cause?.code !== 'ECONNREFUSED') throw error; }
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  execFileSync(process.execPath, ['-e', child], { timeout: 15000, stdio: 'pipe' });
+  const rows = (await Promise.all((await readdir(directory)).map(file => readFile(join(directory, file), 'utf8')))).flatMap(text => text.trim().split('\n').map(JSON.parse));
+  const created = rows.filter(row => row.event === 'http_created'), failed = rows.filter(row => row.event === 'http_error');
+  assert.equal(created.length, 1); assert.equal(failed.length, 1);
+  assert.equal(rows.filter(row => row.event === 'http_start' || row.event === 'http_end').length, 0);
+  for (const field of ['id', 'pid', 'method', 'origin', 'path', 'started_ms']) assert.equal(failed[0][field], created[0][field]);
+  assert.equal(failed[0].method, 'GET'); assert.equal(failed[0].path, '/metadata');
+  assert.equal(failed[0].code, 'ECONNREFUSED'); assert.equal(failed[0].error.code, 'ECONNREFUSED');
+  assert.match(failed[0].error.message, /ECONNREFUSED/);
+  assert.equal(failed[0].status, null); assert.equal(failed[0].response_request_id, null);
+  assert.equal(failed[0].request_body_sent, false); assert.equal(failed[0].sent_request_bytes, 0);
+  assert.ok(failed[0].ended_ms >= failed[0].started_ms);
+  assert.ok(rows.some(row => row.event === 'http_observer_end' && row.complete === true && row.errors === 0));
+});
+
+async function observeJsonResponseBodyId(allowLoopback) {
+  const directory = await mkdtemp(join(tmpdir(), 'daily-http-body-id-'));
+  const preload = dailyObserverPreloadSource({ directory, cliEntry: join(directory, 'unused-cli.js'),
+    ...(allowLoopback ? { responseRequestIdBodyOrigins: ['http://127.0.0.1:__PORT__'] } : {}) });
+  const child = `
+    const http = require('node:http'), vm = require('node:vm'), zlib = require('node:zlib');
+    const body = JSON.stringify({request_id: '${sdkRequestId}', value: '数据'});
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, {'content-type': 'application/json', 'content-encoding': 'gzip'}); res.end(zlib.gzipSync(body));
+    });
+    (async () => {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      vm.runInThisContext(${JSON.stringify(preload)}.replace('http://127.0.0.1:__PORT__', 'http://127.0.0.1:' + server.address().port));
+      try {
+        const response = await fetch('http://127.0.0.1:' + server.address().port + '/metadata');
+        if (await response.text() !== body) throw new Error('Observer changed response');
+      } finally { await new Promise(resolve => server.close(resolve)); }
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  execFileSync(process.execPath, ['-e', child], { timeout: 15000, stdio: 'pipe' });
+  const raw = (await Promise.all((await readdir(directory)).map(file => readFile(join(directory, file), 'utf8')))).join('');
+  const rows = raw.trim().split('\n').map(JSON.parse), completed = rows.filter(row => row.event === 'http_end');
+  assert.equal(completed.length, 1);
+  assert.equal(raw.includes('数据'), false, 'Private response bodies must not be persisted');
+  assert.ok(rows.some(row => row.event === 'http_observer_end' && row.complete === true && row.errors === 0));
+  return completed[0];
+}
+
+test('a complete JSON response may carry its server request ID in a compressed body', async () => {
+  const completed = await observeJsonResponseBodyId(true);
+  assert.equal(completed.response_request_id, sdkRequestId);
+  assert.equal(completed.response_request_id_source, 'response-json');
+});
+
+test('the production observer never parses a JSON request ID from an unrelated origin', async () => {
+  const completed = await observeJsonResponseBodyId(false);
+  assert.equal(completed.response_request_id, null);
+  assert.equal(completed.response_request_id_source, null);
+});
+
+async function installationFixture() {
+  const root = await mkdtemp(join(tmpdir(), 'daily-installation-identity-'));
+  const agent = join(root, '.pi/agent'), broker = join(root, '.local/share/broker');
+  const cliRoot = join(root, 'cli'), bin = join(root, '.volta/bin');
+  await Promise.all([agent, broker, join(cliRoot, 'dist'), bin].map(path => mkdir(path, { recursive: true })));
+  const entry = join(cliRoot, 'dist/ntn-skills.js'), content = '#!/usr/bin/env node\nthrow new Error("The CLI must not execute in identity tests");\n';
+  await writeFile(entry, content, { mode: 0o755 });
+  const resolution = join(root, 'volta-resolution.txt');
+  const selected = join(root, 'image/bin/ntn-skills');
+  await mkdir(join(root, 'image/bin'), { recursive: true });
+  await symlink(entry, selected);
+  await writeFile(resolution, selected + '\n');
+  await writeFile(join(bin, 'volta'), `#!${process.execPath}\nconst fs = require('node:fs');\nif (process.argv.slice(2).join(' ') !== 'which ntn-skills' || process.env.DAILY_LOOKUP_SENTINEL !== 'preserved') process.exit(7);\nprocess.stdout.write(fs.readFileSync(${JSON.stringify(resolution)}, 'utf8'));\n`, { mode: 0o755 });
+  await writeFile(join(bin, 'volta-shim'), 'fixture Volta dispatcher: never executed\n', { mode: 0o755 });
+  const shim = join(bin, 'ntn-skills');
+  await symlink('volta-shim', shim);
+  return {
+    root, agent, broker, cliRoot, bin, entry, selected, resolution, shim,
+    env: { PATH: bin, DAILY_LOOKUP_SENTINEL: 'preserved' },
+    config: {
+      cliRoot, cliShim: shim, cliEntrySha256: createHash('sha256').update(content).digest('hex'),
+      voltaIdentity: {
+        executable_sha256: createHash('sha256').update(await readFile(join(bin, 'volta'))).digest('hex'),
+        dispatcher_sha256: createHash('sha256').update(await readFile(join(bin, 'volta-shim'))).digest('hex'),
+      },
+    },
+  };
+}
+
+test('daily plan and launched host receive -ns without replacing normal HOME or settings', async () => {
+  const f = await installationFixture(), digest = value => createHash('sha256').update(value).digest('hex');
+  const settingsPath = join(f.agent, 'settings.json'), sourcePath = join(f.agent, 'context-broker/config.json');
+  const skillPath = join(f.agent, 'skills/kept/SKILL.md'), skill = '# Existing global skill\n';
+  const settings = { packages: ['npm:kept-plugin', relative(f.agent, f.broker)], defaultModel: 'kept-model' };
+  const source = { sources: [{ id: 'notion', type: 'notion', database: 'fixture-database', prefetch: false }] };
+  await Promise.all([dirname(sourcePath), dirname(skillPath), join(f.broker, 'dist')].map(path => mkdir(path, { recursive: true })));
+  await writeFile(settingsPath, JSON.stringify(settings));
+  await writeFile(sourcePath, JSON.stringify(source));
+  await writeFile(skillPath, skill);
+  const embeddedCli = 'throw new Error("Fixture CLI must not execute");\n', embeddedSdk = 'throw new Error("Fixture SDK must not execute");\n';
+  await writeFile(join(f.broker, 'dist/ntn-skills.mjs'), embeddedCli);
+  await writeFile(join(f.broker, 'dist/ntn-skills-sdk.mjs'), embeddedSdk);
+  await writeFile(join(f.broker, 'dist/ntn-skills-runtime.json'), JSON.stringify({ version: 1, package: 'ntn-skills', cli_sha256: digest(embeddedCli), sdk_sha256: digest(embeddedSdk) }));
+  const config = { ...f.config, version: 1, packageCount: 2, packageIndex: 1, brokerRoot: f.broker,
+    embeddedCliSha256: digest(embeddedCli), embeddedSdkSha256: digest(embeddedSdk), evidenceRoot: join(f.root, 'evidence') };
+  for (const [name, root] of [['broker', f.broker], ['cli', f.cliRoot]]) {
+    const staging = join(f.root, name + '-archive'), archive = join(f.root, name + '.tgz');
+    await cp(root, join(staging, 'package'), { recursive: true });
+    execFileSync('tar', ['-czf', archive, '-C', staging, 'package'], { env: { PATH: process.env.PATH, COPYFILE_DISABLE: '1' } });
+    config[name + 'Archive'] = archive;
+    config[name + 'ArchiveSha256'] = digest(await readFile(archive));
+  }
+  const host = join(f.root, 'host/@earendil-works/pi-coding-agent/cli.cjs'), bin = join(f.root, 'host-bin');
+  const receipt = join(f.root, 'host-launch.json');
+  await Promise.all([dirname(host), bin].map(path => mkdir(path, { recursive: true })));
+  // This controlled host records the real launch boundary, then exits before
+  // RPC, extension loading or any model/network operation can take place.
+  await writeFile(host, `#!/usr/bin/env node\nconst fs = require('node:fs'), path = require('node:path'), os = require('node:os');
+const settingsPath = path.join(os.homedir(), '.pi/agent/settings.json');
+fs.writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ args: process.argv.slice(2), home: process.env.HOME,
+  agentOverride: process.env.PI_CODING_AGENT_DIR ?? null, sourceOverride: process.env.CONTEXT_BROKER_CONFIG ?? null,
+  settingsPath, settings: JSON.parse(fs.readFileSync(settingsPath, 'utf8')) }));
+process.exit(17);\n`, { mode: 0o755 });
+  await symlink(host, join(bin, 'pi'));
+  const configPath = join(f.root, 'config.json');
+  await writeFile(configPath, JSON.stringify(config));
+  const entry = fileURLToPath(new URL('./verify-pi-daily-installation.mjs', import.meta.url));
+  const env = { ...f.env, HOME: f.root, PATH: [bin, f.bin, dirname(process.execPath), '/usr/bin', '/bin'].join(delimiter) };
+  const planned = JSON.parse(execFileSync(process.execPath, [entry, 'plan', '--config', configPath], { env, encoding: 'utf8' }));
+  assert.deepEqual(planned.pi_arguments, ['--mode', 'rpc', '-ns', '--session-dir', '<new owned directory>']);
+  assert.equal(planned.settings, settingsPath);
+  const launched = spawnSync(process.execPath, [entry, 'run', '--config', configPath], { env, encoding: 'utf8', timeout: 15000 });
+  assert.equal(launched.error, undefined);
+  assert.equal(launched.status, 1, launched.stderr);
+  const result = JSON.parse(launched.stdout);
+  assert.match(result.error.message, /RPC exited \(code=17,/);
+  const observed = JSON.parse(await readFile(receipt, 'utf8'));
+  assert.deepEqual(observed.args, ['--mode', 'rpc', '-ns', '--session-dir', join(result.evidence, 'sessions')]);
+  assert.equal(observed.home, f.root);
+  assert.equal(observed.agentOverride, null);
+  assert.equal(observed.sourceOverride, null);
+  assert.equal(observed.settingsPath, settingsPath);
+  assert.deepEqual(observed.settings, settings);
+  assert.equal(await readFile(settingsPath, 'utf8'), JSON.stringify(settings));
+  assert.equal(await readFile(sourcePath, 'utf8'), JSON.stringify(source));
+  assert.equal(await readFile(skillPath, 'utf8'), skill);
+});
+
+test('daily relative package source resolves from the settings agent directory, independently of cwd', async () => {
+  const f = await installationFixture();
+  const spec = relative(f.agent, f.broker);
+  assert.notEqual(process.cwd(), f.agent);
+  assert.deepEqual(await verifyDailyPackageSource(spec, join(f.agent, 'settings.json'), f.broker), {
+    selected_package: spec, resolved_package: await realpath(f.broker),
+  });
+});
+
+test('daily Volta shim uses official which resolution and binds the exact frozen CLI bytes', async () => {
+  const f = await installationFixture();
+  const identity = await verifyDailyCliShim(f.config, f.env);
+  assert.equal(identity.resolution.kind, 'volta');
+  assert.deepEqual(identity.resolution.argv, [join(f.bin, 'volta'), 'which', 'ntn-skills']);
+  assert.equal(identity.resolution.entry.realpath, await realpath(f.entry));
+  assert.equal(identity.resolution.entry.sha256, f.config.cliEntrySha256);
+  assert.equal(identity.executed_by_harness, false);
+});
+
+test('daily package identity accepts an absolute source and rejects a different slot or agent-relative target', async () => {
+  const f = await installationFixture();
+  assert.equal((await verifyDailyPackageSource(f.broker, join(f.agent, 'settings.json'), f.broker)).resolved_package, await realpath(f.broker));
+  await assert.rejects(verifyDailyPackageSource(f.cliRoot, join(f.agent, 'settings.json'), f.broker), /final Broker/);
+  await assert.rejects(verifyDailyPackageSource(relative(f.agent, f.broker), join(f.root, 'another-agent/settings.json'), f.broker));
+});
+
+test('daily direct CLI selection resolves exactly to the frozen entry and hash', async () => {
+  const f = await installationFixture(), bin = join(f.root, 'direct-bin');
+  await mkdir(bin);
+  const shim = join(bin, 'ntn-skills');
+  await symlink(f.entry, shim);
+  const config = { ...f.config, cliShim: shim }, env = { PATH: bin };
+  assert.equal((await verifyDailyCliShim(config, env)).resolution.kind, 'direct');
+  await assert.rejects(verifyDailyCliShim({ ...config, cliEntrySha256: '0'.repeat(64) }, env));
+});
+
+test('daily CLI identity rejects a wrapper containing the final bundle path and a shadowed PATH selection', async () => {
+  const f = await installationFixture(), bin = join(f.root, 'shadow-bin');
+  await mkdir(bin);
+  const wrapper = join(bin, 'ntn-skills');
+  await writeFile(wrapper, `#!/bin/sh\n# ${f.entry}\nexit 0\n`, { mode: 0o755 });
+  const env = { ...f.env, PATH: bin + delimiter + f.bin };
+  await assert.rejects(verifyDailyCliShim({ ...f.config, cliShim: wrapper }, env), /actual Volta dispatcher/);
+  await assert.rejects(verifyDailyCliShim(f.config, env), /normal PATH selection/);
+});
+
+test('daily Volta resolution rejects a different entry even with identical bytes and rejects ambiguous output', async () => {
+  const f = await installationFixture(), other = join(f.cliRoot, 'dist/other.js');
+  await writeFile(other, await readFile(f.entry), { mode: 0o755 });
+  await writeFile(f.resolution, other + '\n');
+  await assert.rejects(verifyDailyCliShim(f.config, f.env), /different installed CLI/);
+  await writeFile(f.resolution, f.selected + '\n' + f.entry + '\n');
+  await assert.rejects(verifyDailyCliShim(f.config, f.env), /one absolute CLI entry/);
+});
+
+test('daily identity reread detects changed frozen entry bytes and a changed Volta mapping', async () => {
+  const f = await installationFixture();
+  const initial = await verifyDailyCliShim(f.config, f.env);
+  assert.deepEqual(await verifyDailyCliShim(f.config, f.env), initial);
+  await writeFile(f.entry, (await readFile(f.entry, 'utf8')) + '// changed\n');
+  await assert.rejects(verifyDailyCliShim(f.config, f.env));
+  await writeFile(f.resolution, f.broker + '\n');
+  const changedHash = createHash('sha256').update(await readFile(f.entry)).digest('hex');
+  await assert.rejects(verifyDailyCliShim({ ...f.config, cliEntrySha256: changedHash }, f.env));
+});
+
+test('daily Volta identity requires reviewed executable and dispatcher bytes, not their path names', async () => {
+  const f = await installationFixture();
+  await assert.rejects(verifyDailyCliShim({ ...f.config, voltaIdentity: undefined }, f.env), /actual Volta executable SHA/);
+  await assert.rejects(verifyDailyCliShim({ ...f.config, voltaIdentity: { ...f.config.voltaIdentity, dispatcher_sha256: '0'.repeat(64) } }, f.env), /actual Volta dispatcher SHA/);
+  await writeFile(join(f.bin, 'volta'), (await readFile(join(f.bin, 'volta'), 'utf8')) + '// changed\n');
+  await assert.rejects(verifyDailyCliShim(f.config, f.env), /actual Volta executable SHA/);
+});
 
 const selected = { selection: 'required-router@notion', kind: 'router', source: 'notion', page: 'current-page' };
 const finding = 'context-broker find: required-router -> 1/1\n$required-router@notion\n  kind: router\n  source: notion\n  page: current-page';
@@ -69,6 +368,7 @@ test('host, unknown, or cyclic ancestry cannot conceal HTTP as other-plugin traf
   for (const rows of [
     [{ event: 'http_start', pid: 10 }],
     [{ event: 'http_start', pid: 99 }],
+    [{ event: 'http_start', pid: 99, origin: 'https://external.example', id: 'unknown' }],
     [{ event: 'process_start', pid: 40, ppid: 41 }, { event: 'process_start', pid: 41, ppid: 40 }, { event: 'http_start', pid: 40 }],
   ]) assert.throws(() => classifyDailyHttp(rows, new Set([20]), new Set([10])));
 });
@@ -117,16 +417,59 @@ test('SDK HTTP rejects absent, ambiguous, failed or mismatched receipt evidence'
     new Set(), new Set([10]), { sourceObservation: sdkObservation() }));
 });
 
-test('metadata and an explicit doctor body probe are accounted separately', () => {
-  const request = { origin: 'https://api.notion.com', pid: 20, method: 'GET', path: '/v1/pages/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/markdown' };
-  assert.equal(classifyDailyNotionRequest(request, 20), 'doctor-body');
-  assert.equal(classifyDailyNotionRequest({ ...request, pid: 30, method: 'POST', path: '/v1/views/view-id/queries' }, 20), 'metadata');
+test('every host Notion request still needs an exact SDK match', () => {
+  for (const origin of ['https://api.notion.com', 'http://api.notion.com', 'https://api.notion.com:8443']) {
+    const request = { ...sdkHttp[0], origin };
+    const response = { ...sdkHttp[1], response_request_id: null };
+    assert.throws(() => classifyDailyHttp([request, response], new Set(), new Set([10])), /no exact SDK request ID match/u);
+  }
 });
 
-test('body reads outside the doctor and writes from any source process remain forbidden', () => {
-  const request = { origin: 'https://api.notion.com', pid: 20, method: 'GET', path: '/v1/pages/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/markdown' };
-  assert.throws(() => classifyDailyNotionRequest({ ...request, pid: 30 }, 20));
-  assert.throws(() => classifyDailyNotionRequest({ ...request, method: 'PATCH' }, 20));
-  assert.throws(() => classifyDailyNotionRequest({ ...request, method: 'DELETE', path: '/v1/pages/page-id' }, 20));
-  assert.throws(() => classifyDailyNotionRequest({ ...request, origin: 'https://example.com' }, 20));
+test('non-Notion host traffic retains failures and missing outcomes outside target costs', () => {
+  const unauthorized = { event: 'http_start', pid: 10, id: '10:external-1', origin: 'https://mcp.external.example', path: '/mcp', method: 'POST', request_bytes: 161 };
+  const unauthorizedEnd = { event: 'http_end', pid: 10, id: unauthorized.id, status: 401, response_request_id: null };
+  const stream = { ...unauthorized, id: '10:external-2', method: 'GET', request_bytes: 0 };
+  const streamError = { event: 'http_error', pid: 10, id: stream.id, status: 200, response_request_id: null, code: 20, error: { name: 'AbortError', message: 'stream aborted' } };
+  const pending = { ...stream, id: '10:external-3' };
+  const external = [unauthorized, unauthorizedEnd, stream, streamError, pending];
+  const result = classifyDailyHttp([...sdkHttp, ...external], new Set(), new Set([10]), { sourceObservation: sdkObservation() });
+  assert.deepEqual(result.source.map(row => row.id), ['10:1']);
+  assert.equal(result.sdk.length, 1);
+  assert.deepEqual(result.otherPlugins, []);
+  assert.deepEqual(result.unattributedHostHttp, [
+    { ...unauthorized, outcomes: [unauthorizedEnd] },
+    { ...stream, outcomes: [streamError] },
+    { ...pending, outcomes: [] },
+  ]);
+  assert.throws(() => classifyDailyHttp(external, new Set(), new Set([10]), { sourceObservation: sdkObservation() }), /SDK attempt lacks independent HTTP evidence/u);
+});
+
+test('an SDK-attributed external provider stays in scope and fails Notion metadata verification', () => {
+  const request = { ...sdkHttp[0], origin: 'https://provider.example', path: '/content' };
+  const result = classifyDailyHttp([request, sdkHttp[1]], new Set(), new Set([10]), { sourceObservation: sdkObservation() });
+  assert.equal(result.source.length, 1);
+  assert.deepEqual(result.unattributedHostHttp, []);
+  assert.throws(() => classifyDailyNotionRequest(result.source[0]), /Unexpected provider/u);
+  assert.throws(() => classifyDailyHttp([{ ...request, pid: 11 }, { ...sdkHttp[1], pid: 11 }], new Set(), new Set([10, 11]), { sourceObservation: sdkObservation() }), /no exact SDK request ID match/u);
+});
+
+test('startup, find and doctor allow read-only Notion metadata', () => {
+  for (const pid of [10, 20, 30]) {
+    const request = { origin: 'https://api.notion.com', pid, method: 'GET', path: '/v1/pages/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' };
+    assert.equal(classifyDailyNotionRequest(request), 'metadata');
+    assert.equal(classifyDailyNotionRequest({ ...request, method: 'POST', path: '/v1/views/view-id/queries' }), 'metadata');
+    assert.equal(classifyDailyNotionRequest({ ...request, method: 'POST', path: '/v1/data_sources/source-id/query' }), 'metadata');
+    assert.equal(classifyDailyNotionRequest({ ...request, method: 'POST', path: '/v1/search' }), 'metadata');
+  }
+});
+
+test('doctor and other source processes reject body reads and every semantic write', () => {
+  for (const pid of [10, 20, 30]) {
+    const request = { origin: 'https://api.notion.com', pid, method: 'GET', path: '/v1/pages/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' };
+    for (const path of [request.path + '/markdown', '/v1/blocks/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', '/v1/blocks/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/children'])
+      assert.throws(() => classifyDailyNotionRequest({ ...request, path }), /must not load Skill bodies/u);
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'])
+      assert.throws(() => classifyDailyNotionRequest({ ...request, method }), /remote mutation/u);
+    assert.throws(() => classifyDailyNotionRequest({ ...request, origin: 'https://example.com' }), /Unexpected provider/u);
+  }
 });

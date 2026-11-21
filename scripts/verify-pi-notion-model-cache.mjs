@@ -16,7 +16,7 @@ import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan,
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { installedBrokerIdentity } from './notion-skill-graph-session.mjs';
 import { verificationCliEnvironment, systemTempRoot } from './verification-paths.mjs';
-import { assertCatalogCancellationBoundary } from './notion-sdk-pi.mjs';
+import { assertCatalogCancellationBoundary } from './notion-sdk-observers.mjs';
 import { consumptionCostExtensionSource, readConsumptionCostEvents } from './skill-consumption-cost.mjs';
 import { dailyRouteContract, verifyDailyRouteState, verifyDailyRouteEvidence } from './verify-skill-graph-contract.mjs';
 
@@ -395,7 +395,7 @@ export function assertDiscoveryProjection({ observation, experiment }) {
       assert.equal(proof.outputSection, proof.inputSection, 'Full cards are byte-exact');
       assert.equal(proof.outputMessagesSha256, proof.inputMessagesSha256); assert.equal(proof.markerBytes, 0);
     } else {
-      assert.ok(!/<(?:skill|router)\b/.test(proof.outputSection), 'On-demand output cannot retain default cards');
+      assert.ok(!/<catalog-cards\b|<card\b|<(?:skill|router)\b/.test(proof.outputSection), 'On-demand output cannot retain default cards');
       assert.ok(proof.outputSection.endsWith('Notion cards are on demand; discover them with notion_list.'));
       assert.equal(proof.markerBytes, Buffer.byteLength('\nNotion cards are on demand; discover them with notion_list.'));
     }

@@ -16,7 +16,7 @@ import { createOwnedGraphProject, inspectOwnedGraphProject, retainGeneratedPlan,
 import { verifyRetainedSourceProof } from './notion-skill-retained-proof.mjs';
 import { createPiHelpBoundary } from './notion-pi-help.mjs';
 import { graphSourceViews, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
-import { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
+import { verifyConsumptionEffects, verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from './skill-preparation-evidence.mjs';
 
 const helper = fileURLToPath(import.meta.url);
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -40,7 +40,7 @@ export async function graphHarnessIdentity() {
 
 export function graphObserverModule(settings, referenceParser) {
   return "import * as fs from 'node:fs';\nimport * as crypto from 'node:crypto';\nimport * as path from 'node:path';\nimport { graphSourceViews } from " + JSON.stringify(new URL('./notion-skill-graph-model-evidence.mjs', import.meta.url).href)
-    + ';\nimport { verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
+    + ';\nimport { verifyConsumptionEffects, verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
     + ';\nimport { dailyRouteContract } from ' + JSON.stringify(new URL('./verify-skill-graph-contract.mjs', import.meta.url).href)
     + ';\nimport { parseNativeReference } from ' + JSON.stringify(referenceParser)
     + ';\nimport { validateResourceReadProjection } from ' + JSON.stringify(new URL('./resource-read-projection.ts', referenceParser).href)
@@ -138,6 +138,12 @@ export function observeGraphGate(api, settings) {
   const inside = (parent, child) => { const value = relative(parent, child); return value === '' || (!value.startsWith('../') && value !== '..' && !isAbsolute(value)); };
   const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']' : '{' + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
   const same = (a, b) => canonical(a) === canonical(b);
+  const directoryFiles = files => files.map(file => {
+    const { mode, ...publicFile } = file;
+    if (!same(Object.keys(publicFile).sort(), ['bytes', 'path', 'ref', 'sha256'])
+      || mode !== undefined && !['100644', '100755'].includes(mode)) throw new Error('Unknown source file directory shape');
+    return publicFile;
+  });
   const modelProfile = settings.modelProfile === undefined ? undefined : dailyRouteContract(settings.modelProfile);
   if (modelProfile && (!same(settings.modelProfile, modelProfile) || settings.model !== modelProfile.model))
     throw new Error('Daily observer requires the exact frozen model profile');
@@ -753,7 +759,7 @@ export function observeGraphGate(api, settings) {
       if (!node || !file || item.content !== file.content || !refMatchesFile(resolveMainReference(parseRef(item.ref)), file)
         || proof.bodySha256 !== file.sha256
         || proof.bytes !== file.bytes || proof.snapshotId !== file.snapshot || !same(proof.binding, node.binding)
-        || !same(proof.directory?.files, node.files)
+        || !same(proof.directory?.files, directoryFiles(node.files))
         || !['required', 'candidates', 'references'].every(key => same(proof.directory?.[key], node[key].map(({ id, ref, kind, name, description, availability }) => ({ id, ref, kind, name, description, availability }))))) throw new Error('Prepared main differs from its actual source, manifest or delivery span');
       verifyDirectoryRefs(item.directory, proof.directory);
       const explicitRoot = graph.roots.includes(owner);
@@ -857,18 +863,10 @@ export function observeGraphGate(api, settings) {
     const parsed = resolveMainReference(parseRef(record.ref));
     if (!/^sr:C[A-Za-z0-9_-]{22}$/u.test(record.ref) || !parsed || parsed.snapshot !== undefined
       || parsed.selector !== record.id || parsed.scope !== record.scope) return undefined;
-    const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-    const visible = '<skill><name>' + xml(record.name) + '</name><description>' + xml(record.description) + '</description><source>'
-      + xml(record.source) + '</source><location>' + record.ref + '</location></skill>';
-    const defaults = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
-      [...block[1].matchAll(/<skill>[\s\S]*?<\/skill>/gu)].filter(match => match[0] === visible));
-    if (record.kind === 'skill' && defaults.length === 1) return { origin: 'actual-default-card', ref: record.ref, description: record.description, system_sha256: digest(system) };
-    if (record.kind === 'router' && record.source === 'notion') {
-      const visibleRouter = '<router ref="' + record.ref + '"><name>' + xml(record.name) + '</name><description>' + xml(record.description) + '</description></router>';
-      const routers = [...system.matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(block =>
-        [...block[1].matchAll(/<router\b[^>]*>[\s\S]*?<\/router>/gu)].filter(match => match[0] === visibleRouter));
-      if (routers.length === 1) return { origin: 'actual-default-card', ref: record.ref, description: record.description, system_sha256: digest(system) };
-    }
+    const defaults = groupedCatalogCards(system).filter(card => card.kind === record.kind && card.name === record.name
+      && card.description === record.description && (card.location === record.ref || card.ref === record.ref)
+      && (record.kind === 'router' ? record.source === 'notion' : card.source === record.source));
+    if (defaults.length === 1) return { origin: 'actual-default-card', ref: record.ref, description: record.description, system_sha256: digest(system) };
     for (const message of messages) {
       if (message.toolCallId === excludedId) continue;
       let cards; try { cards = visibleDiscoveryCards(message); } catch { continue; }
@@ -881,27 +879,43 @@ export function observeGraphGate(api, settings) {
     const refs = [...new Set(originals.map(item => item.ref))];
     return refs.length === 1 ? generatedDescription(messages, { ...record, canonical_ref: refs[0] }, injectionContext) : undefined;
   };
+  const decodeCatalogAttribute = value => unescape(String(value ?? '').replaceAll('&#13;', '\r').replaceAll('&#10;', '\n').replaceAll('&#9;', '\t'));
+  const catalogAttributes = raw => Object.fromEntries([...String(raw ?? '').matchAll(/([a-z]+)="([^"]*)"/g)].map(match => [match[1], decodeCatalogAttribute(match[2])]));
+  const groupedCatalogCards = prompt => [...prompt.matchAll(/<catalog-cards>([\s\S]*?)<\/catalog-cards>/g)].flatMap(block =>
+    [...block[1].matchAll(/<group\b([^>]*)>([\s\S]*?)<\/group>/g)].flatMap(group => {
+      const header = catalogAttributes(group[1]);
+      return [...group[2].matchAll(/<card\b([^>]*?)\/>|<card\b([^>]*)>([\s\S]*?)<\/card>/g)].map(card => {
+        const self = card[1] !== undefined, fields = catalogAttributes(self ? card[1] : card[2]);
+        return { kind: header.kind, name: fields.name, location: fields.location, ref: fields.ref, source: fields.source ?? header.source,
+          description: self ? undefined : unescape(card[3]) };
+      });
+    }));
   const observeCatalog = (prompt, observation, admit = false, visibleMessages = [], injectionContext) => {
-    const skills = [...prompt.matchAll(/<skill>[\s\S]*?<name>\s*([^<]+)\s*<\/name>[\s\S]*?<location>\s*([^<]+)\s*<\/location>[\s\S]*?<\/skill>/g)].map(match => {
-      const file = unescape(match[2].trim());
+    const nativeSkills = [...prompt.matchAll(/<skill>[\s\S]*?<name>\s*([^<]+)\s*<\/name>[\s\S]*?<location>\s*([^<]+)\s*<\/location>[\s\S]*?<\/skill>/g)].map(match => ({
+      name: unescape(match[1].trim()), file: unescape(match[2].trim()), notion: true,
+      description: /<description>([\s\S]*?)<\/description>/.exec(match[0]) ? unescape(/<description>([\s\S]*?)<\/description>/.exec(match[0])[1]) : undefined,
+      sourceId: unescape(/<source>([^<]+)<\/source>/.exec(match[0])?.[1] ?? ''),
+    }));
+    const catalogSkills = groupedCatalogCards(prompt).flatMap(card => card.kind === 'skill' && card.location
+      ? [{ name: card.name, file: card.location, description: card.description, sourceId: card.source ?? '', notion: true }] : []);
+    const skills = [...nativeSkills, ...catalogSkills].map(match => {
+      const file = match.file;
       let provenance = null, sha256 = null;
       const selected = resolveMainReference(parseRef(file));
-      if (selected) {
+      if (selected && match.notion) {
         const matches = sourceViews().directories.flatMap(item => (item.value.records ?? []).map(record => ({ record, scope: item.value.scope })))
           .filter(item => item.record.id === selected.selector && item.record.kind === 'skill'
             && settings.parseNativeReference(item.record.ref).path === selected.path && (selected.scope === undefined || selected.scope === item.scope));
         const unique = [...new Map(matches.map(item => [item.scope + '/' + item.record.id, item])).values()];
-        const declared = /<description>([\s\S]*?)<\/description>/.exec(match[0]);
-        const sourceId = unescape(/<source>([^<]+)<\/source>/.exec(match[0])?.[1] ?? '');
         const expected = unique.length === 1 ? { ...unique[0].record, scope: unique[0].scope, ref: file,
-          canonical_ref: unique[0].record.ref, source: sourceId, availability: unique[0].record.enabled === false ? 'disabled' : 'available' } : undefined;
-        const reused = declared === null && expected ? generatedDescription(visibleMessages, expected, injectionContext) : undefined;
-        const description = declared ? unescape(declared[1]) : reused?.description;
-        if (expected && unescape(match[1].trim()) === expected.name && description === expected.description) provenance = { source: 'verified-notion-metadata',
+          canonical_ref: unique[0].record.ref, source: match.sourceId, availability: unique[0].record.enabled === false ? 'disabled' : 'available' } : undefined;
+        const reused = match.description === undefined && expected ? generatedDescription(visibleMessages, expected, injectionContext) : undefined;
+        const description = match.description !== undefined ? match.description : reused?.description;
+        if (expected && match.name === expected.name && description === expected.description) provenance = { source: 'verified-notion-metadata',
           ownerId: expected.id, scope: expected.scope, ref: expected.canonical_ref, loaded: false, ...(reused ? { descriptionReuse: reused } : {}) };
       }
       try {
-        if (selected) return { name: match[1].trim(), path: file, sha256, provenance };
+        if (selected) return { name: match.name, path: file, sha256, provenance };
         const actual = realpathSync(file), bytes = readFileSync(actual); sha256 = digest(bytes);
         let directory = settings.path.dirname(actual);
         for (let level = 0; level < 6; level++) {
@@ -926,9 +940,24 @@ export function observeGraphGate(api, settings) {
           } catch { directory = settings.path.dirname(directory); }
         }
       } catch { /* An unreadable or unbound catalog path is not a verified Notion advertisement. */ }
-      return { name: match[1].trim(), path: file, sha256, provenance };
+      return { name: match.name, path: file, sha256, provenance };
     });
-    const routers = [...prompt.matchAll(/<router\b[^>]*\bref="([^"]+)"[^>]*>([\s\S]*?)<\/router>/g)].map(match => {
+    const groupedRouters = groupedCatalogCards(prompt).flatMap(card => card.kind === 'router' && card.ref ? [card] : []).map(card => {
+      const ref = card.ref, parsed = resolveMainReference(parseRef(ref));
+      const candidates = sourceViews().directories.flatMap(item => (item.value.records ?? []).map(record => ({ record, scope: item.value.scope })))
+        .filter(item => item.record.kind === 'router' && item.record.id === parsed?.selector && settings.parseNativeReference(item.record.ref).path === parsed.path
+          && (parsed.scope === undefined || parsed.scope === item.scope));
+      const unique = [...new Map(candidates.map(item => [item.scope + '/' + item.record.id, item])).values()];
+      const source = unique.length === 1 ? unique[0] : undefined;
+      const name = card.name;
+      const reused = card.description === undefined && source ? generatedDescription(visibleMessages, { ...source.record, scope: source.scope,
+        ref, canonical_ref: source.record.ref, source: settings.sourceId ?? 'notion', availability: source.record.enabled === false ? 'disabled' : 'available' }, injectionContext) : undefined;
+      const description = card.description !== undefined ? card.description : reused?.description;
+      return { ref, ...(source && source.record.name === name && source.record.description === description
+        ? { canonicalRef: source.record.ref, provenance: { source: 'verified-notion-metadata', ownerId: source.record.id, scope: source.scope, loaded: false,
+          ...(reused ? { descriptionReuse: reused } : {}) } } : {}) };
+    });
+    const legacyRouters = [...prompt.matchAll(/<router\b[^>]*\bref="([^"]+)"[^>]*>([\s\S]*?)<\/router>/g)].map(match => {
       const ref = unescape(match[1]), parsed = resolveMainReference(parseRef(ref));
       const candidates = sourceViews().directories.flatMap(item => (item.value.records ?? []).map(record => ({ record, scope: item.value.scope })))
         .filter(item => item.record.kind === 'router' && item.record.id === parsed?.selector && settings.parseNativeReference(item.record.ref).path === parsed.path
@@ -944,6 +973,7 @@ export function observeGraphGate(api, settings) {
         ? { canonicalRef: source.record.ref, provenance: { source: 'verified-notion-metadata', ownerId: source.record.id, scope: source.scope, loaded: false,
           ...(reused ? { descriptionReuse: reused } : {}) } } : {}) };
     });
+    const routers = [...groupedRouters, ...legacyRouters];
     const state = /<ntn-skills-discovery\b[^>]*\bstatus="([^"]+)"/.exec(prompt)?.[1] ?? 'ready';
     if (admit) {
       for (const skill of skills) if (skill.provenance) { advertisedPaths.add(skill.path); discover(skill.path, 'actual provider catalog'); }
@@ -957,10 +987,17 @@ export function observeGraphGate(api, settings) {
   const restoreRemovedDescriptions = (messages, blocks) => {
     const key = card => JSON.stringify([card.source, card.ref, card.kind, card.name, card.description]);
     const removed = new Map();
-    for (const block of blocks) for (const group of block[0].matchAll(/<available_skills>([\s\S]*?)<\/available_skills>/gu)) {
-      for (const row of group[1].matchAll(/<skill><name>([^<]*)<\/name><description>([^<]*)<\/description><source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)) {
-        const card = { kind: 'skill', name: unescape(row[1]), description: unescape(row[2]), source: unescape(row[3]), ref: unescape(row[4]) };
-        if (/^sr:C[A-Za-z0-9_-]{22}$/u.test(card.ref)) removed.set(key(card), card);
+    for (const block of blocks) {
+      for (const card of groupedCatalogCards(block[0])) {
+        if (card.kind !== 'skill' || card.description === undefined || !card.source || !/^sr:C[A-Za-z0-9_-]{22}$/u.test(card.location ?? '')) continue;
+        const restoredCard = { kind: 'skill', name: card.name, description: card.description, source: card.source, ref: card.location };
+        removed.set(key(restoredCard), restoredCard);
+      }
+      for (const group of block[0].matchAll(/<available_skills>([\s\S]*?)<\/available_skills>/gu)) {
+        for (const row of group[1].matchAll(/<skill><name>([^<]*)<\/name><description>([^<]*)<\/description><source>([^<]+)<\/source><location>([^<]+)<\/location><\/skill>/gu)) {
+          const restoredCard = { kind: 'skill', name: unescape(row[1]), description: unescape(row[2]), source: unescape(row[3]), ref: unescape(row[4]) };
+          if (/^sr:C[A-Za-z0-9_-]{22}$/u.test(restoredCard.ref)) removed.set(key(restoredCard), restoredCard);
+        }
       }
     }
     const complete = new Set();
@@ -1031,7 +1068,8 @@ export function observeGraphGate(api, settings) {
       const marker = experiment.mode === 'on-demand-cards' ? '\n' + discoveryMarker : '';
       const output = experiment.mode === 'full-cards' ? input : input.replace(
         /<ntn-skills-view-catalog>[\s\S]*?<\/ntn-skills-view-catalog>/g,
-        block => block.replace(/<available_skills>[\s\S]*?<\/available_skills>/g, '')
+        block => block.replace(/<catalog-cards>[\s\S]*?<\/catalog-cards>/g, '')
+          .replace(/<available_skills>[\s\S]*?<\/available_skills>/g, '')
           .replace(/<available_routers>[\s\S]*?<\/available_routers>/g, '')) + marker;
       const relocated = experiment.mode === 'on-demand-cards' ? restoreRemovedDescriptions(event.messages, catalogBlocks)
         : { messages: event.messages, restored: [], changedIndexes: new Set() };
@@ -1252,7 +1290,7 @@ export function observeGraphGate(api, settings) {
         const views = sourceViews(), records = [...views.directories.flatMap(item => item.value.records ?? []), ...views.entries.map(item => item.value.record)];
         return records.some(record => record.id === parsed.selector && settings.parseNativeReference(record.ref).path === parsed.path && ['skill', 'router'].includes(record.kind));
       });
-    const allowed = toolSurface().tools.includes(event.toolName) && authored?.tool === event.toolName && (event.toolName === 'read' && (discoveredBefore || Boolean(project) || Boolean(help) || Boolean(validationAttempt)) || metadata || preparation);
+    const allowed = toolSurface().tools.includes(event.toolName) && authored?.tool === event.toolName && (event.toolName === 'read' && !Object.hasOwn(payload ?? {}, 'readOnly') && (discoveredBefore || Boolean(project) || Boolean(help) || Boolean(validationAttempt)) || metadata || preparation);
     const category = !allowed ? 'blocked' : validationAttempt ? 'invalid-short-ref' : help ? 'host-help' : project ? 'project' : metadata ? 'metadata' : preparation ? 'preparation' : batch ? 'resource-batch' : 'skill';
     const authoredProof = authored ? { authoredSequence: authored.sequence, authoredAt: authored.at, argumentsSha256: authored.argumentsSha256 } : {};
     calls.set(event.toolCallId, { toolCallId: event.toolCallId, input, projectPath, category, discovered: discoveredBefore, expected, claim, selectedRoots, validationAttempt, ...authoredProof, origin: authored ? 'model' : 'unknown', sequence: sequence + 1, allowed });
@@ -1336,14 +1374,35 @@ export function observeGraphGate(api, settings) {
     }
     let body = content, nativeProofError;
     const nativeProof = event.details?.contextBrokerRead;
-    if (nativeProof?.version === 3) {
-      const span = nativeProof.delivery;
-      if (span?.start !== 0 || span.encoding !== 'raw' || !Number.isSafeInteger(span.end) || span.end <= 0 || span.end > content.length) nativeProofError = 'Native main lacks its complete source span';
-      else body = content.slice(0, span.end);
-    }
+    const resourceProof = event.details?.contextBrokerResource;
+    const spanProof = nativeProof?.version === 3 ? nativeProof : resourceProof?.version === 2 ? resourceProof : undefined;
+    let suffix = '';
+    try {
+      if (spanProof) {
+        const span = spanProof.delivery;
+        if (span?.start !== 0 || span.encoding !== 'raw' || !Number.isSafeInteger(span.end) || span.end < 0 || span.end > content.length)
+          throw new Error('Native read lacks its complete source span');
+        body = content.slice(0, span.end); suffix = content.slice(span.end);
+        if (event.details.effects !== undefined) {
+          const effects = verifyConsumptionEffects(event.details.effects);
+          const footer = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
+          if (!suffix.endsWith(footer)) throw new Error('Native effects differ from the complete disclosed suffix');
+          suffix = suffix.slice(0, -footer.length);
+        }
+      } else if (resourceProof || event.details?.effects !== undefined) throw new Error('Native effects need an observed delivery span');
+      if (resourceProof && (spanProof !== resourceProof || resourceProof.toolCallId !== event.toolCallId
+        || resourceProof.delivered_complete_text !== true || resourceProof.loaded !== false
+        || digest(body) !== resourceProof.sha256 || Buffer.byteLength(body) !== resourceProof.bytes
+        || !['', '\n'].includes(suffix))) throw new Error('Native resource differs from its full source span');
+    } catch (error) { nativeProofError = error.message; }
     const claim = resolveSubmittedName(call?.claim);
     const named = call?.claim?.kind === 'submitted-name';
-    let target = call?.allowed && (!named || claim) ? targetFor(call.input, body, { expected: call.expected, selection: named ? claim : undefined }) : undefined;
+    let target = !nativeProofError && call?.allowed && (!named || claim) ? targetFor(call.input, body, { expected: call.expected, selection: named ? claim : undefined }) : undefined;
+    if (target && resourceProof && (target.role !== 'resource' || resourceProof.id !== target.ownerId || resourceProof.scope !== target.scope
+      || resourceProof.snapshot_id !== target.snapshot || resourceProof.version_id !== target.version || resourceProof.ref !== target.ref
+      || resourceProof.path !== target.path || resourceProof.file_id !== target.fileId)) {
+      nativeProofError = 'Native resource changed its selected owner, snapshot or file'; target = undefined;
+    }
     if (target && !call.expected && !matchesClaim(claim, target)) target = undefined;
     if (target?.role === 'entrypoint' && (settings.sourceMode === 'sdk' || nativeProof)) {
       try {
@@ -1353,11 +1412,11 @@ export function observeGraphGate(api, settings) {
           || nativeProof.snapshotId !== target.snapshot || nativeProof.bodySha256 !== target.sha256 || nativeProof.bytes !== target.bytes
           || !same(nativeProof.binding, node.binding) || nativeProof.loaded === true) throw new Error(nativeProofError ?? 'Native inspection receipt differs from the actual source entry');
         if (nativeProof.version === 3) {
-          const footer = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(content.slice(body.length));
+          const footer = /^\n{2,3}<skill-directory>\n([\s\S]*)\n<\/skill-directory>$/.exec(suffix);
           if (!footer) throw new Error('Native inspection has an unverified footer');
           const model = JSON.parse(footer[1]);
           if (!same(Object.keys(model).sort(), ['directory', 'ref']) || !refMatchesFile(resolveMainReference(parseRef(model.ref)), target)) throw new Error('Native inspection main reference changed');
-          const directory = { files: node.files, ...Object.fromEntries(['required', 'candidates', 'references'].map(key => [key,
+          const directory = { files: directoryFiles(node.files), ...Object.fromEntries(['required', 'candidates', 'references'].map(key => [key,
             node[key].map(({ id, ref, kind, name, description, availability }) => ({ id, ref, kind, name, description, availability }))])) };
           if (!same(nativeProof.directory, directory)) throw new Error('Native inspection lost the canonical directory');
           verifyDirectoryRefs(model.directory, directory);

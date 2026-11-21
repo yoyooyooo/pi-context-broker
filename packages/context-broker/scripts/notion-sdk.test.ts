@@ -7,17 +7,19 @@ import { channel } from "node:diagnostics_channel";
 
 // These fixtures exercise the loading/observation boundary only. Actual SDK
 // runtime, package and Pi proofs use independently installed ntn-skills builds.
-async function fixture(options: { sdk?: boolean; sdkVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; files?: boolean } = {}) {
+async function fixture(options: { sdk?: boolean; sdkVersion?: number; sdkManifestVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; resourceEffectsVersion?: number | null; resourceEffectsManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; effectsVersion?: number | null; effectsManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; files?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-sdk-boundary-"));
   await mkdir(join(root, "src")); await mkdir(join(root, "dist"));
   await copyFile(new URL("../src/notion-sdk.ts", import.meta.url), join(root, "src/notion-sdk.ts"));
   const module = join(root, "dist/ntn-skills-sdk.mjs");
   if (options.sdk !== false) await writeFile(module, `
-export const SDK_VERSION = ${options.sdkVersion ?? 1};
+export const SDK_VERSION = ${options.sdkVersion ?? 2};
 export const CONSUMER_CONTRACT_VERSION = 1;
 export const PACKAGE_VERSION = ${JSON.stringify(options.packageVersion ?? "fixture-1")};
 ${options.readProofVersion === undefined ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${options.readProofVersion};`}
 ${options.directoryVersion === undefined ? "" : `export const CATALOG_DIRECTORY_CONTRACT_VERSION = ${options.directoryVersion};`}
+${options.effectsVersion === null ? "" : `export const CONSUMPTION_EFFECTS_VERSION = ${options.effectsVersion ?? 1};`}
+${options.resourceEffectsVersion === null ? "" : `export const RESOURCE_READ_EFFECTS_VERSION = ${options.resourceEffectsVersion ?? 1};`}
 export const calls = [];
 export function parseDuration(value) { return value === '1s' ? 1000 : 0; }
 export function decodeConsumeResult() { throw new Error('consume already decoded; duplicate decoder invocation'); }
@@ -68,9 +70,11 @@ export async function readResources(input, options) {
 `}
 `);
   await writeFile(join(root, "dist/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills",
-    package_version: options.manifestVersion ?? options.packageVersion ?? "fixture-1", sdk_version: 1, consumer_contract_version: 1,
+    package_version: options.manifestVersion ?? options.packageVersion ?? "fixture-1", sdk_version: options.sdkManifestVersion ?? options.sdkVersion ?? 2, consumer_contract_version: 1,
     ...(options.resourceVersion === undefined ? {} : { resource_read_contract_version: options.resourceManifestVersion ?? options.resourceVersion }),
     ...(options.readProofVersion === undefined && options.readProofManifestVersion === undefined ? {} : { read_output_proof_version: options.readProofManifestVersion ?? options.readProofVersion }),
+    ...(options.effectsVersion === null && options.effectsManifestVersion === undefined ? {} : { consumption_effects_version: options.effectsManifestVersion ?? options.effectsVersion ?? 1 }),
+    ...(options.resourceEffectsVersion === null && options.resourceEffectsManifestVersion === undefined ? {} : { resource_read_effects_version: options.resourceEffectsManifestVersion ?? options.resourceEffectsVersion ?? 1 }),
     ...(options.directoryVersion === undefined && options.directoryManifestVersion === undefined ? {} : { catalog_directory_contract_version: options.directoryManifestVersion ?? options.directoryVersion }) }));
   const boundary = await import(pathToFileURL(join(root, "src/notion-sdk.ts")).href);
   return { root, boundary, module };
@@ -81,9 +85,22 @@ test("missing bundled SDK fails without selecting another CLI or SDK", async () 
   await expect(boundary.consumeNotionSdk({}, {})).rejects.toMatchObject({ code: "SOURCE_SDK_UNAVAILABLE" });
 });
 
-test("paired catalog discovery is feature-detected without an operation and stays one SDK call", async () => {
+test("all consumption requires matching effects capability without a readOnly option", async () => {
+  for (const options of [{ effectsVersion: null }, { effectsVersion: 1, effectsManifestVersion: 2 }, { effectsVersion: 2, effectsManifestVersion: 1 }]) {
+    const { boundary, module } = await fixture(options), sdk = await import(pathToFileURL(module).href);
+    await expect(boundary.consumeNotionSdk({}, {})).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    await expect(boundary.readNotionSdk("skill://fixed", {})).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    expect(sdk.calls).toHaveLength(0);
+  }
+  const { boundary, module } = await fixture({ effectsVersion: 1 });
+  await boundary.consumeNotionSdk({}, {});
+  await boundary.readNotionSdk("skill://fixed", {});
+  const sdk = await import(pathToFileURL(module).href);
+  for (const call of sdk.calls) expect(call.options).not.toHaveProperty("readOnly");
+});
+
+test("paired catalog discovery stays one SDK call", async () => {
   const { boundary, module } = await fixture({ catalog: true, directoryVersion: 1 });
-  expect(await boundary.supportsNotionSdkCatalogDirectory()).toBe(true);
   const sdk = await import(pathToFileURL(module).href);
   expect(sdk.calls).toHaveLength(0);
   const result = await boundary.listNotionCatalogSdk({ sourceId: "source", database: "db", directory: { view: "selected" }, env: { SDK_TEST_ID: "scope" } });
@@ -93,22 +110,40 @@ test("paired catalog discovery is feature-detected without an operation and stay
   expect(sdk.calls[0].options.sourceId).toBeUndefined();
 });
 
-test("old SDK catalog remains usable while mixed or unknown paired contracts fail before an operation", async () => {
+test("strict resource batches require their own SDK and manifest capability before dispatch", async () => {
+  for (const options of [{ resourceEffectsVersion: null }, { resourceEffectsVersion: 1, resourceEffectsManifestVersion: 2 }, { resourceEffectsVersion: 2, resourceEffectsManifestVersion: 1 }]) {
+    const { boundary, module } = await fixture({ resourceVersion: 1, effectsVersion: 1, ...options });
+    const sdk = await import(pathToFileURL(module).href);
+    await expect(boundary.readNotionResourcesSdk({ version: 1, refs: ["resource"] }, {})).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    expect(sdk.calls).toHaveLength(0);
+  }
+  const { boundary, module } = await fixture({ resourceVersion: 1, effectsVersion: 1, resourceEffectsVersion: 1 });
+  await boundary.readNotionResourcesSdk({ version: 1, refs: ["resource"] }, {});
+  const sdk = await import(pathToFileURL(module).href);
+  expect(sdk.calls).toHaveLength(1);
+  expect(sdk.calls[0]).toMatchObject({ operation: "read-resources" });
+  expect(sdk.calls[0].options).not.toHaveProperty("readOnly");
+});
+
+test("missing, mixed or unknown paired contracts fail before an operation", async () => {
   const old = await fixture({ catalog: true });
-  expect(await old.boundary.supportsNotionSdkCatalogDirectory()).toBe(false);
-  expect(await old.boundary.listNotionCatalogSdk({})).toMatchObject({ records: [], count: 0 });
   await expect(old.boundary.listNotionCatalogSdk({ directory: {} })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
-  expect((await import(pathToFileURL(old.module).href)).calls).toHaveLength(1);
+  expect((await import(pathToFileURL(old.module).href)).calls).toHaveLength(0);
   for (const versions of [{ directoryVersion: 2 }, { directoryVersion: 1, directoryManifestVersion: 2 }, { directoryManifestVersion: 1 }]) {
     const value = await fixture({ catalog: true, ...versions });
-    await expect(value.boundary.supportsNotionSdkCatalogDirectory()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
     await expect(value.boundary.listNotionCatalogSdk({ directory: {} })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
     expect((await import(pathToFileURL(value.module).href)).calls).toHaveLength(0);
   }
 });
 
 test("unsupported SDK protocol stops before its consume function", async () => {
-  const { boundary, module } = await fixture({ sdkVersion: 2 });
+  const { boundary, module } = await fixture({ sdkVersion: 1 });
+  await expect(boundary.consumeNotionSdk({}, {})).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+  expect((await import(pathToFileURL(module).href)).calls).toHaveLength(0);
+});
+
+test("current SDK v2 requires the same adjacent manifest version", async () => {
+  const { boundary, module } = await fixture({ sdkManifestVersion: 1 });
   await expect(boundary.consumeNotionSdk({}, {})).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
   expect((await import(pathToFileURL(module).href)).calls).toHaveLength(0);
 });
@@ -132,7 +167,7 @@ test("concurrent calls keep caller cwd, captured environment and cancellation se
 });
 
 test("passive metrics distinguish unobserved initialization from a measured zero", async () => {
-  const { boundary } = await fixture();
+  const { boundary } = await fixture({ readProofVersion: 1 });
   const observations: unknown[] = [];
   const topic = channel("context-broker.notion-sdk");
   const collect = (value: unknown) => observations.push(value);
@@ -303,19 +338,18 @@ test("one resource set enters one SDK operation and does not decode or loop scal
   expect((await import(pathToFileURL(module).href)).calls[0]).toMatchObject({ operation: "read-resources", input: request, options: { cwd: "/selected" } });
 });
 
-test("the resource version must match the adjacent manifest without disabling consume v1", async () => {
+test("the resource version must match the adjacent manifest without changing the current consume contract", async () => {
   const { boundary, module } = await fixture({ resourceVersion: 1, resourceManifestVersion: 2 });
   await expect(boundary.readNotionResourcesSdk({}, {})).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
   expect((await import(pathToFileURL(module).href)).calls).toHaveLength(0);
   expect(await boundary.consumeNotionSdk({}, {})).toMatchObject({ status: "ready" });
 });
 
-test("scalar output proof is detected without entering an older or current SDK runtime", async () => {
+test("scalar output requires the current proof contract before entering the SDK runtime", async () => {
   const older = await fixture();
-  expect(await older.boundary.supportsNotionSdkReadOutputProof()).toBe(false);
+  await expect(older.boundary.readNotionSdk("fixed-resource", { output: "/selected/output" })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
   expect((await import(pathToFileURL(older.module).href)).calls).toHaveLength(0);
   const current = await fixture({ readProofVersion: 1 });
-  expect(await current.boundary.supportsNotionSdkReadOutputProof()).toBe(true);
   expect((await import(pathToFileURL(current.module).href)).calls).toHaveLength(0);
   await current.boundary.readNotionSdk("fixed-resource", { output: "/selected/output" });
   expect((await import(pathToFileURL(current.module).href)).calls).toHaveLength(1);
@@ -324,7 +358,7 @@ test("scalar output proof is detected without entering an older or current SDK r
 test("advertised scalar output proof must agree with its bundled manifest", async () => {
   for (const options of [{ readProofVersion: 2 }, { readProofVersion: 1, readProofManifestVersion: 2 }, { readProofManifestVersion: 1 }]) {
     const { boundary, module } = await fixture(options);
-    await expect(boundary.supportsNotionSdkReadOutputProof()).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    await expect(boundary.readNotionSdk("fixed-resource", { output: "/selected/output" })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
     expect((await import(pathToFileURL(module).href)).calls).toHaveLength(0);
     expect(await boundary.consumeNotionSdk({}, {})).toMatchObject({ status: "ready" });
   }

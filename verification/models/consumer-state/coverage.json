@@ -1,0 +1,693 @@
+{
+  "version": 1,
+  "source_base": "fd7ebf718f26ec0a2b060cb8a968cb3f209061b2",
+  "correspondence": "Current consumer state contracts. SDK v2 acquisition is a read-only input port; these models do not represent Notion retention writes, remote history/version management, management completion or independent acceptance.",
+  "maintenance": {
+    "owner_skill": ".agents/skills/verify-notion-consumer-state/SKILL.md",
+    "routing": "Use the existing observations or consumer-state suite and its exact cases inventory. Current SDK, package pins and installation are checked by verify-notion-skills-integration.",
+    "source_review": "Review changed owner functions and their actual guards before updating any source hash. Hashes bind the reviewed bytes; they do not establish implementation refinement.",
+    "rule_inventory": "cases.expected_rules is the independent complete rule inventory. Missing, additional, unchecked or unexpected broken rules fail; do not regenerate expectations from changed configurations."
+  },
+  "files": {
+    "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
+    "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
+    "packages/context-broker/src/host-skills.ts": "bddd2b345c52df9ddd1bb83a6029258c14e628b4fc0025572a0820caa80bf81a",
+    "packages/context-broker/src/prepare-protocol.ts": "6c0229a5217726416e3bd719faaf7d922c40f479ca03d6a9ab0ef1275be903f4",
+    "packages/context-broker/src/session-graph.ts": "bf707af4ea21ef0084a128b80f6359f2e7ec75665cb43c0ee4f900ce72bb12b3",
+    "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
+    "packages/context-broker/src/session-source-snapshot.ts": "43ed85889a86b3e0a708469a7be24a9ce199b8d5575b08343e313a909b74a3c8",
+    "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
+    "packages/context-broker/scripts/host-prepare.test.ts": "ce17ea58dd60df728b1994142b62cf41d173c44ebf4f676905b856c2d8fd2876",
+    "packages/context-broker/scripts/session-active.test.ts": "8c028ee53bf86b253dee9a63ce6e15a8e27c811de25e4cc9936f37ab134e0e90",
+    "packages/context-broker/scripts/native-read-session.test.ts": "ef967d31fe6ea68167c548a75c8df69791a4001da874e0b2e034a415207a597b",
+    "packages/context-broker/scripts/skill-context-session.test.ts": "71b2d3ba5d5937e164a6fa08c8ebfd0fc183019d00a8495a220a7cdee4d9c897",
+    "packages/context-broker/scripts/consumer-state.test.ts": "97b19d0f3ac167bfb30cd9dd4aa6959924784dcb13c4644221334bba390c5799",
+    "scripts/check-consumer-state-mutations.mjs": "04b9145a777549dd074bd0902fa72318f192802ee013d842ec0ada6fdd0c862e",
+    "packages/context-broker/src/final-request.ts": "84f487e79db6b9362025b2f9dfda60bf872eea27a95d32e421d4f76deaff5037",
+    "packages/context-broker/scripts/final-request.test.ts": "f3036e401ee6f2be5fd4738a2d9be9bb134db731c0c99c102e679727def54380",
+    "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
+    "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
+    "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
+    "packages/context-broker/src/index.ts": "eec654c7df66d100c6731f736abe8c8f9db703c24401bacdfc3d7c7eba68fab3",
+    "packages/context-broker/src/session-recovery.ts": "88dc7824f28f473974250952288312464f4385812caa83232679f7c694121c99",
+    "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
+    "packages/context-broker/src/notion-source.ts": "f4d5f5778250dbc5335f5533cd7bc6cebb2f18acc9c9126f6eace6048f0347aa",
+    "packages/context-broker/src/pi-host-adapter.ts": "934605789805d5761451a0b4e694e7255dc08f6ef330c6682ccae68d321e9045",
+    "packages/context-broker/scripts/host-refresh.test.ts": "d25778872172ab5768b7bcc3de374ac48ae3b55e725cb118a32cd5c6f4faada5",
+    "packages/context-broker/scripts/session-refresh.test.ts": "9d00f8ecbe392dbd3367ef51dcaffa325cb709986f1128e90d3f542894175a89",
+    "packages/context-broker/scripts/session-recovery.test.ts": "af7ee971939db47dccb7fb107d6d3c80520cad66cc29b857aeae1d6233257931",
+    "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "858cf3fcf02255e49641af3cc4794445eaa85aca5a27c2e6fbee8dac38bd4dd1",
+    "packages/context-broker/scripts/resource-read-projection.test.ts": "e739a9e24612e40517934ac425fa33240db75303eea63b1a399e405f9d330cf0",
+    "packages/context-broker/scripts/notion-source-sdk.test.ts": "a9b4b8096f13d17fd8fcfcf6cb72bae3a3d4110e5d16cfb58742882d35c9d134",
+    "packages/context-broker/scripts/pi-read-adapter.test.ts": "5c8ff7848720a7f0e1b2205893d755addef1ed1220dc37ef3d660312b9abf128",
+    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "b92dfe89e5f86e93938639b9b07e1ea5859d68ecffc1e7651d7c32e5e8659d05",
+    "packages/context-broker/scripts/notion-entry.test.ts": "dfaac5e5d7d0ea7996dba91427cd16568d2933c94f5d4cd03ff3a1ad9a0c3c6f"
+  },
+  "models": {
+    "FreshnessPublication": {
+      "bounds": "Two abstract clock positions (2,3), original validation ticks (1,2,3), one pending request plus one cache return, two generations, two scopes and root/Requires failure targets. Initial prior evidence and the pending ticket are explicit bounded premises.",
+      "owners": [
+        "consumer-observation.ts currentEvidence/createConsumerObservations.begin/current/accept/observe/deny/canPublish",
+        "host-skills.ts observeFailure and graphPreparation",
+        "discovery-records.ts recordIdentity"
+      ],
+      "atomicity": "Receive represents synchronous evidence admission and map publication after asynchronous acquisition; original validation evidence is supplied by the CLI. Clock advances and lifecycle cancellation may interleave before either bounded return. This does not model remote acquisition as atomic.",
+      "replays": [
+        "consumer-observation.test.ts (original evidence, old cache, same scope, cancellation/generation, child failure)",
+        "host-prepare.test.ts F1-F7, exact dependency denial, older success after newer denial"
+      ]
+    },
+    "SelectionGraph": {
+      "bounds": "One prior root/Requires vector <1,2>, one replacement <2,1>, separate complete-closure and retained-plus-new working-set budget premises, one prepare, independent checks and one final commit. One generation change can be caused by explicit release while acquisition is pending.",
+      "owners": [
+        "host-skills.ts graphPreparation and its delayed commit",
+        "prepare-protocol.ts decodePreparedGraph/decodePreparationLock",
+        "session-graph.ts persistSessionSelection/reduceSessionSelection",
+        "session-working-set.ts assertWorkingSetBudget/releaseWorkingSetRoots; exact shared closure and ref matching are concrete replay obligations",
+        "host-skills.ts assertRefreshMain/currentRoot; canonical main File identity and multi-root replacement are concrete replay obligations"
+      ],
+      "atomicity": "Prepare, identity validation, output budget validation and final guarded commit are separate steps. Commit is synchronous. In deferred Pi the approved graph remains staged until the provider hook; this model's selected vector denotes the approved fixed selection, not provider acceptance or durable activation.",
+      "replays": [
+        "host-prepare.test.ts failed exact-file validation and output budget",
+        "session-active.test.ts pending refreshed projection and complete root/Requires vectors",
+        "skill-context-session.test.ts graph/projection identity mismatches",
+        "session-active.test.ts NXT12 complete union, shared Requires, stale fixed release; session-active-session.mjs independent installed Pi resume, compaction and branch ownership",
+        "host-refresh.test.ts issued sr:S and selected canonical main refresh; invalid File/path and failed refresh preserve prior pins; session-refresh.test.ts partial roots/shared dependency conflicts"
+      ]
+    },
+    "DeliveryBoundary": {
+      "bounds": "A previously validated selected root v2/Requires v1 graph; one initial request, at most one retry after discarded drafts, one lifecycle event among cancel/switch/rewind, and one current branch plus its rewind. Full/partial and exact/mismatched identity, response and turn outcomes are finite scenarios. Explicit release retires this root's effective projection and advances the request generation; the historical provider acceptance remains distinct.",
+      "owners": [
+        "host-skills.ts assertPiRun/before_provider_request/after_provider_response/turn_end/acknowledgeProjection",
+        "session-active.ts confirmActiveSources",
+        "session-source-snapshot.ts sourceBodyLoaded/deferredSourceEntries/withSessionSourceReceipts",
+        "final-request.ts assessFinalRequestPayload/createFinalRequestLedger; concrete request roles and entity digests outside finite variables",
+        "session-graph.ts applyRootRelease; host-skills.ts notion_ctl working_set release resets pending graphs/candidates and advances generation"
+      ],
+      "atomicity": "Headers, turn completion, draft return, host apply/drop and later public projection acknowledgement are separate transitions. A 2xx response proves request acceptance and may record active delivery before stream completion. A later failed turn does not erase that historical acceptance. No draft is a persisted projection until observed in the public branch.",
+      "replays": [
+        "session-active.test.ts selected/partial inactivity, discarded drafts, failed/aborted/late/rewound deliveries",
+        "native-read-session.test.ts complete body, scope/pin/hash mismatches",
+        "final-request.test.ts real deferred-drafts restoration and private role obligations",
+        "final-request-undici.test.ts actual Node entity positive/rewrite/concurrency",
+        "final-request.test.ts actual working_set report shape, session_effects separation, lost/modified management tool result and malformed consumption effects",
+        "notion-sdk-pi.mjs --scenario working-set: current SDK v2, actual public Pi tools, source HTTP and installed serializer; execution is separate evidence",
+        "final-request.test.ts: persisted management facts on three ordinary turns, exact wire protection and operation-owned consumption effects; actual 128-entry historical Pi branch replay remains separate execution evidence"
+      ]
+    },
+    "RecoveryClosure": {
+      "bounds": "Three sequential prompts; roots A and C share mandatory B, independent D; original bytes present or B missing; current authority revisions 1/2; business disablement, one observed access denial and one retired restore ticket. The model does not manufacture remote historical bytes.",
+      "owners": [
+        "session-recovery.ts fixed restoration, closure isolation and bounded retry",
+        "index.ts restoreActive source acquisition and original snapshot checks",
+        "host-skills.ts fixed-restoration observations and final context publication",
+        "session-graph.ts selectedClosure"
+      ],
+      "atomicity": "Restore start, SDK completion, final closure/permission projection and next prompt are separate transitions. Current Notion edits and observed denial may interleave before projection. An epoch change cancels this operation; it cannot publish old bytes. A failed fixed read becomes a local capability warning, not a persistent prompt abort.",
+      "fairness": "Weak fairness for local start/restore completion/projection and supplying the next prompt. Assumes every external acquisition terminates with bytes, failure, timeout or cancellation. ConversationCanContinue proves that all three prompts can reach a provider request or explicit cancellation under those assumptions; it does not prove arbitrary provider completion, model task quality, UI input, or eventual Notion availability.",
+      "replays": [
+        "session-recovery.test.ts: actual index hooks for missing snapshots, business-disabled originals, shared Requires and independent roots",
+        "session-recovery.test.ts: permission/cancellation during restore and repeated prompts",
+        "check-consumer-state-mutations.mjs: actual closure and isolation guards (bound after implementation review)",
+        "host-refresh.test.ts current main/resource inspection does not activate; scalar-resource-read-host.test.ts branch/file/authorization proofs for content-only inspection"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "model": "FreshnessPublication",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "renewal-negative",
+      "expected_broken": [
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "NewerEvidenceSurvives"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "expiry-negative",
+      "expected_broken": [
+        "ExpiredCacheCannotPublish"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "fixed-negative",
+      "expected_broken": [
+        "FixedContentIsNotCurrent"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "order-negative",
+      "expected_broken": [
+        "NewerEvidenceSurvives"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "generation-negative",
+      "expected_broken": [
+        "NoRetiredPublication"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "cancel-negative",
+      "expected_broken": [
+        "NoCancelledPublication"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "scope-negative",
+      "expected_broken": [
+        "ScopeIsExact"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "attribution-negative",
+      "expected_broken": [
+        "DependencyFailureIsLocal"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "FreshnessPublication",
+      "config": "unknown-negative",
+      "expected_broken": [
+        "UnknownIsNotPermission"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CacheValidationNotRenewed",
+        "ExpiredCacheCannotPublish",
+        "FixedContentIsNotCurrent",
+        "NewerEvidenceSurvives",
+        "NoRetiredPublication",
+        "NoCancelledPublication",
+        "ScopeIsExact",
+        "DependencyFailureIsLocal",
+        "UnknownIsNotPermission",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "unchecked-negative",
+      "expected_broken": [
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "identity-negative",
+      "expected_broken": [
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "budget-negative",
+      "expected_broken": [
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "closure-negative",
+      "expected_broken": [
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "lifecycle-negative",
+      "expected_broken": [
+        "NoRetiredSelection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SelectionGraph",
+      "config": "pins-negative",
+      "expected_broken": [
+        "EachMemberKeepsOwnPin"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "SelectionRequiresChecks",
+        "FailedRefreshPreservesSelection",
+        "NoRetiredSelection",
+        "EachMemberKeepsOwnPin",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "acceptance-negative",
+      "expected_broken": [
+        "ProviderAcceptanceBeforeProof"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "graph-negative",
+      "expected_broken": [
+        "CompleteBoundGraphForActive"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "completion-negative",
+      "expected_broken": [
+        "CompletionBeforePersistence"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "projection-negative",
+      "expected_broken": [
+        "PublicProjectionBeforePersistence"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "lifecycle-negative",
+      "expected_broken": [
+        "NoRetiredDeliveryProof"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "DeliveryBoundary",
+      "config": "branch-negative",
+      "expected_broken": [
+        "CurrentBranchOwnsProof"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "CompleteBoundGraphForActive",
+        "ProviderAcceptanceBeforeProof",
+        "CompletionBeforePersistence",
+        "PublicProjectionBeforePersistence",
+        "NoRetiredDeliveryProof",
+        "CurrentBranchOwnsProof",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "continuation-negative",
+      "expected_broken": [
+        "ConversationCanContinue"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "closure-negative",
+      "expected_broken": [
+        "MandatoryClosureAtRequest"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "pins-negative",
+      "expected_broken": [
+        "NoSilentVersionChange"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "disabled-negative",
+      "expected_broken": [
+        "DisabledOriginalsRemainUsable"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "denial-negative",
+      "expected_broken": [
+        "NoDeniedBodyAtRequest"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "RecoveryClosure",
+      "config": "epoch-negative",
+      "expected_broken": [
+        "NoRetiredRestoration"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "MandatoryClosureAtRequest",
+        "NoSilentVersionChange",
+        "NoDeniedBodyAtRequest",
+        "NoRetiredRestoration",
+        "DisabledOriginalsRemainUsable",
+        "IndependentRootSurvives",
+        "ConversationCanContinue",
+        "NoDeadlock"
+      ]
+    }
+  ],
+  "excluded": [
+    "SDK transport and decoder implementation, installed CLI/SDK version and package hashes, management command observation and catalog invalidation, prompt guidance and actual Pi/provider runs are outside the finite state model. Their existing integration and direct regression gates remain separate.",
+    "Selected content pins mean locally verified immutable content. They do not promise remote historical recovery, create Notion history, or extend current permission evidence.",
+    "Source/target identity, wall-clock behavior, HTTP consistency and serialized provider bytes retain their concrete test obligations; finite exploration does not prove arbitrary production interleavings."
+  ],
+  "current_source_review": {
+    "host_skills": "Current Notion materialization requires a complete entry manifest; older receipt scanning/fallback was removed. Pi use/read/resource inputs reject retired readOnly and internally always select no-write policy. Qualification, request ordering, cursor state, final graph commit, cancellation, provider acceptance, turn completion and public projection guards are unchanged.",
+    "host_prepare_tests": "The canonical-binding regression now uses the actual shared_skill record and keeps the physical-page substitution as a negative. It still observes one current use, complete source-body ownership and an unchanged injected message. Existing failure-attribution, incomplete-body, budget, cancellation, provider/turn and projection assertions remain in place.",
+    "transport_boundary": "The installed OpenAI serializer case was removed from final-request-undici.test.ts during host deferral; its real Node HTTP entity checks remain. No installed serializer or real Pi result is claimed by these finite models.",
+    "scope": "The exact TLA/config/view bytes, model bounds, cases and expected rules are unchanged. Build/pin, user guidance, historical driver scores and unrelated producer files are not formal premises.",
+    "identity_contract": "Reviewed the diff from fd7ebf718f26ec0a2b060cb8a968cb3f209061b2: remote preparation and catalog members accept only explicit shared_skill identities with current enablement. Implicit notion_page/subscription/upstream mapping is removed. Canonical raw page UUID input still qualifies against the current physical owner. Exact source, scope, locator and ref equality remain required; no changed request ordering, cancellation, graph commit, delivery or public projection guard.",
+    "compiled_preparation_fixture": "Current shared_skill fixtures declare Enabled explicitly. The unchanged complete-body, exact-span, deduplication and directory-reuse assertions pass with the current binding; deleting Enabled remains a negative in the existing malformed-projection matrix. No delivery algorithm or model rule changed.",
+    "current_effects_contract": "The current SDK and host effects contract now has exactly version, remote_writes and author_content. Retained-history outcomes and retention arrays are rejected. Existing cancellation, partial-source failure, source-span retirement, exact-body and receipt-preservation cases use current none/unknown observations; unknown remains dominant and absent observations are unknown. Final-request validation rejects explicit malformed effects before payload acceptance and combines top-level/preparation observations conservatively. Actual HTTP entity and delivery guards remain in place. The effects field schema and diagnostic aggregation are concrete regression obligations outside the finite models; no model, bound, case inventory, expected rule or mutation target changed. Working-set management now uses only session_effects, not the consumption effects field. Metadata and management results do not fabricate unknown source-body observations. Their complete actual tool results remain protected at the provider boundary; malformed consumption effects still fail. This schema separation has no legacy alias and is a concrete obligation outside the finite state variables. Current operation ownership also applies to persisted management results: generic management effects are not consumption observations. Presence of an explicit source-receipt field cancels that exemption; any effects present are strictly decoded. Lost, modified or duplicated management tool messages still fail. Historical results remain byte-for-byte unchanged."
+  },
+  "current_review": {
+    "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
+    "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
+    "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted.",
+    "selection": "Selected, pending and active state share applySelectionGraphs. Replacement is atomic and owns only requested roots. Retained closures are projected into newly validated locks; physical bindings and outgoing Requires must agree for shared nodes. These multi-root combinations are concrete session-refresh obligations, beyond the single-root SelectionGraph bound.",
+    "inspection": "Explicit current inspection has a verified purpose and source ownership, is excluded from active instruction pins, and may route only resources in its exact complete directory on the current branch. Main and resource inspection remain subject to authorization and final wire checks. Content-only comparison is outside RecoveryClosure NoSilentVersionChange, which concerns active instructions.",
+    "recovery": "RecoveryClosure adds three prompts, shared A/C->B and independent D. Production recovers exact missing members, isolates failed complete closures, keeps pins, limits the entire context recovery to the existing 30-second read budget and backs off repeated failures. Later provider hooks recheck closure, authorization and epoch. External termination and continued user submission remain explicit liveness premises.",
+    "public_reference": "Canonical fixed main references with a File ID are accepted for explicit refresh only when the verified branch selection exactly proves that main. Wrong File ID/path and resource refs fail before acquisition. The fixture now carries actual v2 main File IDs; opaque and canonical public paths are separately replayed.",
+    "management_effects": "Reviewed c68d980 to current operationEffectValues: metadata/management generic effects do not claim consumption. An explicit source-receipt field disables that exemption so any present consumption effects remain strictly validated. This does not introduce a general receipt-structure validator. Actual management tool messages still require exact, single wire delivery; no history rewrite, version branch or alternate schema decoder.",
+    "resource_path": "Reviewed the acquisition path change against the deterministic same-inode hardlink alias reproduction. Canonical parent directory plus the selected basename preserves logical resource identity; within-root and lstat.isFile remain mandatory. Leaf/parent symlink substitution, outer alias, content hash, cancellation and concurrent reads have concrete regressions. Filesystem/runtime behavior is outside the finite models; no model rule, bound or mutation target is changed.",
+    "natural_guidance": "Reviewed the change from bd3cb59: task application directly loads roots and automatic Requires, successful complete reads are reused, requested inspect/adopt updates remain distinct, and read(path) versus notion_use(ref) is explicit. The advertised native read schema excludes unknown fields; its execution boundary explicitly rejects a ref alias while continuing to delegate native options to the native reader. The full regression caught a too-broad option filter and that filter was removed rather than weakening the native passthrough fixture. No selection, freshness, authorization, cancellation, recovery, delivery or commit guard changed. Natural task quality and tool necessity are separate observed regression obligations outside these finite models.",
+    "latest_inspection_guidance": "Reviewed the description-only change from 9513596: read's latest-version cue now applies to requested inspection, while applying a chosen Skill routes directly to notion_use for the root and Requires. Explicit comparison remains available. The changed regression checks the actual advertised description; native option delegation, schemas, runtime guards, model rules, configurations and mutation targets are unchanged. The preceding natural read-refresh-before-use failure remains failed; this wording and its contract test do not establish a successful natural replay."
+  }
+}

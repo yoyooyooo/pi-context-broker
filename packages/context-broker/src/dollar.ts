@@ -156,7 +156,6 @@ export function scoreDollarSuggestion(record: DiscoveryRecord, query: string): n
     { value: recordToken(record), weight: 100 },
     ...(record.selectionToken && record.token ? [{ value: record.token, weight: 100 }] : []),
     { value: recordNormalizedName(record), weight: 100 },
-    ...(recordKind(record) === "skill" && record.upstream ? [{ value: `${record.upstream.repo}/${recordNormalizedName(record)}`, weight: 100 }] : []),
     ...recordNormalizedAliases(record).map((value) => ({ value, weight: 90 })),
     { value: recordNormalizedDescription(record), weight: 60 },
   ];
@@ -186,8 +185,7 @@ function autocompleteDescription(record: DiscoveryRecord): string | undefined {
     : isBundledBuiltin(record) ? "bundled builtin" : (record as SkillRecord).sourceId ?? skillSourceLabel(recordPath(record));
   const description = compactDescription(recordDescription(record));
   const details = description ? (label ? `${label} · ${description}` : description) : label;
-  return kind === "skill" && record.upstream
-    ? [`$${recordToken(record)}`, details].filter(Boolean).join(" · ") : details;
+  return details;
 }
 
 function matchedRouterNameOrAlias(record: DiscoveryRecord, query: string): boolean {
@@ -199,11 +197,8 @@ function matchedRouterNameOrAlias(record: DiscoveryRecord, query: string): boole
 }
 
 export function dollarAutocompleteItems(registry: DiscoveryRecord[], query: string, options: { precise?: boolean } = {}): Array<AutocompleteItem & { identity: string; kind: "skill" | "router" | "prompt"; source: "local" | "notion"; ref: string }> {
-  const slash = query.indexOf("/");
-  const namespace = slash < 0 ? undefined : query.slice(0, slash);
-  const upstreamOnly = namespace !== undefined && registry.some(record => recordKind(record) === "skill" && record.upstream?.repo === namespace);
   return registry
-    .map((record) => ({ record, score: upstreamOnly && (recordKind(record) !== "skill" || record.upstream?.repo !== namespace) ? 0 : scoreDollarSuggestion(record, query) }))
+    .map((record) => ({ record, score: scoreDollarSuggestion(record, query) }))
     .filter((item) => item.score > 0)
     .sort((a, b) =>
       b.score - a.score ||
@@ -217,7 +212,7 @@ export function dollarAutocompleteItems(registry: DiscoveryRecord[], query: stri
       source: record.source ?? "local",
       ref: record.ref ?? record.path,
       value: "$" + (options.precise ? preciseRecordToken(record) : recordToken(record)),
-      label: recordKind(record) === "skill" && record.upstream ? `${record.upstream.repo}/${recordName(record)} [skill]` : `$${recordToken(record)} [${recordKind(record)}]`,
+      label: `$${recordToken(record)} [${recordKind(record)}]`,
       description: autocompleteDescription(record),
     }));
 }

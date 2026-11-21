@@ -1005,11 +1005,6 @@ test('query POSTs are metadata but authoring POSTs/PATCHs remain writes', () => 
   const writing = [...sourceRequests, { kind: 'http', phase: 'attempt', request_kind: 'notion_write', method: 'POST', requestId: 'read' }];
   assert.throws(() => assertModelCase(good(), expected, { requestEvents: writing }), /must not mutate/);
 });
-test('ordinary model entry point isolates its source oracle before the real host launches', async () => {
-  const source = await readFile(new URL('./verify-notion-integration.mjs', import.meta.url), 'utf8');
-  assert.ok(source.includes("mode==='model'?verificationCliEnvironment(join(scratch,'model-oracle-cli'))"));
-  assert.ok(source.includes('cwd:scratch,env:oracleEnv'));
-});
 test('the actual observer distinguishes imported instructions from model-authored quotations', () => {
   const handlers = new Map(), events = [], marker = 'EXACT_SOURCE_MARKER';
   observe({ on(name, handler) { handlers.set(name, handler); } }, { fs: { appendFileSync(_path, line) { events.push(JSON.parse(line)); } }, crypto, path, model: 'magpie/group/worker', provider: 'magpie', id: 'group/worker', marker, alias: 'owned', selected: { physicalSelector: '00000000-0000-4000-8000-000000000001', selector: 'selected', id: 'selected' }, cache: '/owned/cache', output: '/owned/events' });

@@ -285,7 +285,7 @@ test("portable export includes exact source/version/File ID and excludes local h
   const f = fixture();
   f.record.name = "incidental-name-secret";
   f.record.description = "incidental-description-secret";
-  f.record.upstream = { repo: "incidental-upstream-secret" };
+  Object.assign(f.record, { incidental_metadata: "incidental-source-secret" });
   f.snapshot.token = "incidental-token-secret";
   const result = selectedResource(f), exported = exportSessionShortRef(result.state, result.resource.ref, scope);
   expect(exported).toMatchObject({ version: 1, kind: "fixed_skill_reference", ref: f.files[1]!.ref,
@@ -309,17 +309,20 @@ test("input mutation cannot silently change a saved identity or selected snapsho
   code(() => reduceSessionShortRefs([entry(extra)]), "SHORT_REF_INVALID");
 });
 
-test("canonical identity and locator agree for page, subscription and shared records; local is explicit unsupported", () => {
+test("retired page and subscription locators are rejected; current identity stays exact and local is unsupported", () => {
   const f = fixture();
-  const pageRecord: ContentRecord = { ...f.record, id: "notion_page:" + page("20"), ref: "skill://" + page("20") + "/SKILL.md",
+  const pageRecord = { ...f.record, id: "notion_page:" + page("20"), ref: "skill://" + page("20") + "/SKILL.md",
     locator: { type: "notion_page", page_id: page("20"), database_id: page("10"), data_source_id: page("11") } };
-  const subscription: ContentRecord = { ...f.record, kind: "router", id: "notion_subscription:" + page("30"), entrypoint: "ROUTER.md",
+  const subscription = { ...f.record, kind: "router", id: "notion_subscription:" + page("30"), entrypoint: "ROUTER.md",
     ref: "skill://" + encodeURIComponent("upstream:" + page("30")) + "/ROUTER.md",
     locator: { type: "notion_subscription", subscription_id: page("30"), database_id: page("10"), data_source_id: page("11"), target_database_id: page("31") } };
-  const first = bindCandidate(empty(), { record: pageRecord, scope });
-  const second = bindCandidate(first.state, { record: subscription, scope });
-  expect(second.state.bindings.size).toBe(2);
-  code(() => bindCandidate(second.state, { record: { ...f.record, id: pageRecord.id }, scope }), "SHORT_REF_INVALID");
-  code(() => bindCandidate(second.state, { record: { ...f.record, ref: pageRecord.ref }, scope }), "SHORT_REF_INVALID");
-  code(() => bindCandidate(second.state, { record: { ...f.record, locator: { type: "local", id: "/private/local", entry: "/private/local/SKILL.md" } }, scope }), "SHORT_REF_UNSUPPORTED");
+  for (const retired of [pageRecord, subscription]) {
+    const wire = JSON.parse(JSON.stringify(retired));
+    code(() => bindCandidate(empty(), { record: wire, scope }), "SHORT_REF_INVALID");
+  }
+  const current = bindCandidate(empty(), { record: f.record, scope });
+  expect(current.state.bindings.size).toBe(1);
+  code(() => bindCandidate(current.state, { record: { ...f.record, id: pageRecord.id }, scope }), "SHORT_REF_INVALID");
+  code(() => bindCandidate(current.state, { record: { ...f.record, ref: pageRecord.ref }, scope }), "SHORT_REF_INVALID");
+  code(() => bindCandidate(current.state, { record: { ...f.record, locator: { type: "local", id: "/private/local", entry: "/private/local/SKILL.md" } }, scope }), "SHORT_REF_UNSUPPORTED");
 });

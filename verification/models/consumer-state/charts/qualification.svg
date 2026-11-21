@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-state" viewBox="0 0 2109 835" width="2109" height="835" style="max-width:100%;height:auto;--_bg:var(--pele-bg,#fff);--_fg:var(--pele-fg,#1f1f1f);--_m:var(--pele-muted,#6e6e6e);--_l:var(--pele-line,#1f1f1f);--_s:var(--pele-surface,#f3f3f3);--_a:var(--pele-surface-alt,#e6e6e6);--_b:var(--pele-border,#8a8a8a);--_c:var(--pele-accent,#5b7bd5);color:var(--_fg);--_tw:var(--pele-title-weight,bold);--_fm:var(--pele-font-mono,monospace);font:16px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--pele-font,sans-serif)" fill="var(--_fg)" role="graphics-document document" aria-roledescription="state"><style>
+.pele {
+  --pele-bg: #ffffff;
+  --pele-fg: #1c1c1c;
+  --pele-muted: #656565;
+  --pele-line: #808080;
+  --pele-surface: #fcfcfc;
+  --pele-surface-alt: #f1f1f1;
+  --pele-border: #c9c9c9;
+}
+.pele .blue rect { fill: #c3e0ff; }
+.pele .orange rect { fill: #f0d3bf; }
+.pele .purple rect { fill: #e3d5ff; }
+.pele .yellow rect { fill: #f0dcbf; }
+.pele .teal rect { fill: #bfe3df; }
+.pele .tan rect { fill: #e5d9ce; }
+.pele .pink rect { fill: #ffcbe6; }
+.pele .breaks rect {
+  fill: #ffecee !important;
+  stroke: #e72e3b !important;
+  stroke-width: 2.5px !important;
+}
+.pele .breaks text {
+  fill: #cd2834 !important;
+}
+.pele .mayBreak rect {
+  fill: #fff3e6 !important;
+  stroke: #e8730c !important;
+  stroke-width: 2.5px !important;
+}
+.pele .mayBreak text {
+  fill: #b85a06 !important;
+}
+.pele .bugPath rect {
+  stroke: #1680f3 !important;
+  stroke-width: 2.5px !important;
+}
+.pele .repeats rect {
+  stroke: #9b35d6 !important;
+  stroke-width: 2.5px !important;
+  stroke-dasharray: 6 3;
+}
+@media (prefers-color-scheme: dark) {
+  .pele {
+    --pele-bg: #1f1f1f;
+    --pele-fg: #f5f5f5;
+    --pele-muted: #acacac;
+    --pele-line: #939393;
+    --pele-surface: #121212;
+    --pele-surface-alt: #2c2c2c;
+    --pele-border: #4e4e4e;
+  }
+  .pele .blue rect { fill: #1b3857; }
+  .pele .orange rect { fill: #573117; }
+  .pele .purple rect { fill: #3c2e57; }
+  .pele .yellow rect { fill: #573d17; }
+  .pele .teal rect { fill: #174641; }
+  .pele .tan rect { fill: #3d3127; }
+  .pele .pink rect { fill: #57233e; }
+  .pele .breaks rect {
+    fill: #2e2021 !important;
+    stroke: #cf2b35 !important;
+  }
+  .pele .breaks text {
+    fill: #ff6463 !important;
+  }
+  .pele .mayBreak rect {
+    fill: #2e2619 !important;
+    stroke: #d0700f !important;
+  }
+  .pele .mayBreak text {
+    fill: #ffa257 !important;
+  }
+  .pele .bugPath rect {
+    stroke: #116dd2 !important;
+  }
+  .pele .repeats rect {
+    stroke: #9a3fcf !important;
+  }
+}
+</style><text class="pele-title" font-weight="var(--_tw)" text-anchor="middle" xml:space="preserve"><tspan x="1054.5" y="25.6">消费者资格与原始证据发布</tspan></text><g transform="translate(0,36)"><g class="pele-edges" fill="none" stroke="var(--_l)" stroke-linecap="round"><g class="pele-edge pele-transition" data-id="edge0"><path d="M1222.58,22L1222.58,59"/><path class="pele-marker" d="M1222.58,66L1219.22,58L1225.94,58Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge1"><path d="M1146.58,110C1146.58,132.46 63,165.54 63,188L63,436.5C63,510.5 258.75,510.5 258.75,584.5L258.75,590.5"/><path class="pele-marker" d="M258.75,597.5L255.39,589.5L262.11,589.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge2"><path d="M1266.58,110C1266.58,127.36 1328.14,138 1428.58,138C1529.02,138 1590.58,157 1590.58,188L1590.58,342.75C1590.58,347.44 1150.25,356.81 1150.25,361.5L1150.25,367.5"/><path class="pele-marker" d="M1150.25,374.5L1146.89,366.5L1153.61,366.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge3"><path d="M1178.58,110C1178.58,127.36 1044.76,138 826.42,138C608.08,138 474.25,153.2 474.25,178L474.25,236.5"/><path class="pele-marker" d="M474.25,243.5L470.89,235.5L477.61,235.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge4"><path d="M1282.58,110C1282.58,149 1772.58,149 1772.58,188L1772.58,523.25C1772.58,558.38 1402.75,558.38 1402.75,593.5L1402.75,599.5"/><path class="pele-marker" d="M1402.75,606.5L1399.39,598.5L1406.11,598.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge5"><path d="M1250.58,110C1250.58,134.8 1279.84,150 1327.58,150C1375.32,150 1404.58,160.64 1404.58,178L1404.58,245.5"/><path class="pele-marker" d="M1404.58,252.5L1401.22,244.5L1407.94,244.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge6"><path d="M1162.58,110C1162.58,136.27 236.08,161.73 236.08,188L236.08,436.5C236.08,510.5 522.75,510.5 522.75,584.5L522.75,590.5"/><path class="pele-marker" d="M522.75,597.5L519.39,589.5L526.11,589.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge7"><path d="M1298.58,110C1298.58,144.87 1996.58,153.13 1996.58,188L1996.58,436.5C1996.58,515 1656.17,515 1656.17,593.5L1656.17,599.5"/><path class="pele-marker" d="M1656.17,606.5L1652.81,598.5L1659.53,598.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge8"><path d="M1194.58,110C1194.58,134.8 1176.34,150 1146.58,150C1116.82,150 1098.58,160.64 1098.58,178L1098.58,236.5"/><path class="pele-marker" d="M1098.58,243.5L1095.22,235.5L1101.94,235.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge9"><path d="M318.75,659.5L318.75,721.5"/><path class="pele-marker" d="M318.75,728.5L315.39,720.5L322.11,720.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge10"><path d="M1007.42,436.5C1007.42,453.86 975.53,464.5 923.5,464.5C871.47,464.5 839.58,479.7 839.58,504.5L839.58,529.5C839.58,546.86 753.55,557.5 613.17,557.5C472.79,557.5 386.75,567.76 386.75,584.5L386.75,590.5"/><path class="pele-marker" d="M386.75,597.5L383.39,589.5L390.11,589.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge11"><path d="M414.25,305.5C414.25,340 310.75,340 310.75,374.5L310.75,590.5"/><path class="pele-marker" d="M310.75,597.5L307.39,589.5L314.11,589.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge12"><path d="M548.17,305.5C548.17,314.75 616.08,314.75 616.08,324L616.08,349C616.08,352.47 1030.25,359.41 1030.25,362.88L1030.25,367.5"/><path class="pele-marker" d="M1030.25,374.5L1026.89,366.5L1033.61,366.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge13"><path d="M532.17,305.5C532.17,317.88 546.08,317.88 546.08,330.25L546.08,590.5"/><path class="pele-marker" d="M546.08,597.5L542.72,589.5L549.44,589.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge14"><path d="M1038.58,305.5C1038.58,313.42 729.08,322.33 729.08,330.25L729.08,436.5C729.08,510.5 370.75,510.5 370.75,584.5L370.75,590.5"/><path class="pele-marker" d="M370.75,597.5L367.39,589.5L374.11,589.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge15"><path d="M1090.25,305.5L1090.25,367.5"/><path class="pele-marker" d="M1090.25,374.5L1086.89,366.5L1093.61,366.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge16"><path d="M1158.58,305.5C1158.58,311.69 1574.58,324.06 1574.58,330.25L1574.58,599.5"/><path class="pele-marker" d="M1574.58,606.5L1571.22,598.5L1577.94,598.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge17"><path d="M1142.25,436.5C1142.25,461.3 1155.24,476.5 1176.42,476.5C1197.6,476.5 1210.58,487.14 1210.58,504.5L1210.58,529.5C1210.58,561.5 1314.75,561.5 1314.75,593.5L1314.75,599.5"/><path class="pele-marker" d="M1314.75,606.5L1311.39,598.5L1318.11,598.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge18"><path d="M1023.42,436.5L1023.42,464.5C1023.42,484.5 1000.58,484.5 1000.58,504.5L1000.58,529.5C1000.58,554.3 932.6,569.5 821.67,569.5C710.74,569.5 642.75,575.49 642.75,585.25L642.75,590.5"/><path class="pele-marker" d="M642.75,597.5L639.39,589.5L646.11,589.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge19"><path d="M1158.25,436.5C1158.25,453.86 1218.74,464.5 1317.42,464.5C1416.1,464.5 1476.58,479.7 1476.58,504.5L1476.58,529.5C1476.58,561.5 1558.58,561.5 1558.58,593.5L1558.58,599.5"/><path class="pele-marker" d="M1558.58,606.5L1555.22,598.5L1561.94,598.5Z" fill="var(--_l)" stroke="none"/></g></g><g class="pele-edge-labels" font-size="14"><g class="pele-edge-label" data-id="edge1"><rect x="10" y="264" width="106" height="21" rx="3" fill="var(--_bg)"/><text x="63" y="279.4" text-anchor="middle">取消或会话换代</text></g><g class="pele-edge-label" data-id="edge2"><rect x="1530.58" y="264" width="120" height="21" rx="3" fill="var(--_bg)"/><text x="1590.58" y="279.4" text-anchor="middle">到达原缓存有效期</text></g><g class="pele-edge-label" data-id="edge3"><rect x="372.25" y="180" width="204" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="474.25" y="193.9">缓存返回：不续期、不覆盖较新</tspan><tspan x="474.25" y="211.9">拒绝</tspan></text></g><g class="pele-edge-label" data-id="edge4"><rect x="1670.58" y="264" width="204" height="21" rx="3" fill="var(--_bg)"/><text x="1772.58" y="279.4" text-anchor="middle">固定、未知或身份不符：不发布</text></g><g class="pele-edge-label" data-id="edge5"><rect x="1316.58" y="187.5" width="176" height="21" rx="3" fill="var(--_bg)"/><text x="1404.58" y="202.9" text-anchor="middle">依赖失败：只更新精确目标</text></g><g class="pele-edge-label" data-id="edge6"><rect x="139.92" y="256.5" width="192.34" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="236.08" y="270.4">旧请求返回：保留较新观察 or</tspan><tspan x="236.08" y="288.4">合格远端证据到达：发布</tspan></text></g><g class="pele-edge-label" data-id="edge7"><rect x="1894.58" y="256.5" width="204" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="1996.58" y="270.4">验证时刻尚未到达：不发布 or</tspan><tspan x="1996.58" y="288.4">固定、未知或身份不符：不发布</tspan></text></g><g class="pele-edge-label" data-id="edge8"><rect x="996.58" y="180" width="204" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="1098.58" y="193.9">缓存返回：不续期、不覆盖较新</tspan><tspan x="1098.58" y="211.9">拒绝</tspan></text></g><g class="pele-edge-label" data-id="edge9"><rect x="258.75" y="680" width="120" height="21" rx="3" fill="var(--_bg)"/><text x="318.75" y="695.4" text-anchor="middle">失效票据：不发布</text></g><g class="pele-edge-label" data-id="edge10"><rect x="786.58" y="506.5" width="106" height="21" rx="3" fill="var(--_bg)"/><text x="839.58" y="521.9" text-anchor="middle">取消或会话换代</text></g><g class="pele-edge-label" data-id="edge11"><rect x="257.75" y="395" width="106" height="21" rx="3" fill="var(--_bg)"/><text x="310.75" y="410.4" text-anchor="middle">取消或会话换代</text></g><g class="pele-edge-label" data-id="edge12"><rect x="556.08" y="326" width="120" height="21" rx="3" fill="var(--_bg)"/><text x="616.08" y="341.4" text-anchor="middle">到达原缓存有效期</text></g><g class="pele-edge-label" data-id="edge13"><rect x="444.08" y="387.5" width="204" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="546.08" y="401.4">缓存返回：不续期、不覆盖较新</tspan><tspan x="546.08" y="419.4">拒绝</tspan></text></g><g class="pele-edge-label" data-id="edge14"><rect x="676.08" y="395" width="106" height="21" rx="3" fill="var(--_bg)"/><text x="729.08" y="410.4" text-anchor="middle">取消或会话换代</text></g><g class="pele-edge-label" data-id="edge15"><rect x="1030.25" y="326" width="120" height="21" rx="3" fill="var(--_bg)"/><text x="1090.25" y="341.4" text-anchor="middle">到达原缓存有效期</text></g><g class="pele-edge-label" data-id="edge16"><rect x="1472.58" y="387.5" width="204" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="1574.58" y="401.4">缓存返回：不续期、不覆盖较新</tspan><tspan x="1574.58" y="419.4">拒绝</tspan></text></g><g class="pele-edge-label" data-id="edge17"><rect x="1122.58" y="506.5" width="176" height="21" rx="3" fill="var(--_bg)"/><text x="1210.58" y="521.9" text-anchor="middle">过期缓存返回：保留原观察</text></g><g class="pele-edge-label" data-id="edge18"><rect x="912.58" y="506.5" width="176" height="21" rx="3" fill="var(--_bg)"/><text x="1000.58" y="521.9" text-anchor="middle">过期缓存返回：保留原观察</text></g><g class="pele-edge-label" data-id="edge19"><rect x="1388.58" y="506.5" width="176" height="21" rx="3" fill="var(--_bg)"/><text x="1476.58" y="521.9" text-anchor="middle">过期缓存返回：保留原观察</text></g></g><g class="pele-nodes"><g class="pele-node pele-state" data-id="s0" transform="translate(1222.58,88)"><rect x="-104" y="-22" width="208" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">等待原始证据与发布校验</text></g><g class="pele-node pele-state" data-id="s1" transform="translate(318.75,628.5)"><rect x="-112" y="-31" width="224" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">操作失效，等待丢弃后续结</tspan><tspan x="0" y="16.1">果</tspan></text></g><g class="pele-node pele-state" data-id="s2" transform="translate(1090.25,405.5)"><rect x="-112" y="-31" width="224" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">缓存已到原有效期，等待后</tspan><tspan x="0" y="16.1">续结果</tspan></text></g><g class="pele-node pele-state" data-id="s3" transform="translate(1358.75,628.5)"><rect x="-96" y="-22" width="192" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">结束：未新增当前证明</text></g><g class="pele-node pele-state" data-id="s4" transform="translate(474.25,274.5)"><rect x="-112" y="-31" width="224" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">缓存已接受，原验证时间不</tspan><tspan x="0" y="16.1">变</tspan></text></g><g class="pele-node pele-state" data-id="s5" transform="translate(1404.58,274.5)"><rect x="-96" y="-22" width="192" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">结束：拒绝只归到依赖</text></g><g class="pele-node pele-state" data-id="s6" transform="translate(582.75,628.5)"><rect x="-112" y="-31" width="224" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">结束：保留已接受的原始观</tspan><tspan x="0" y="16.1">察</tspan></text></g><g class="pele-node pele-state" data-id="s7" transform="translate(1612.17,628.5)"><rect x="-96" y="-22" width="192" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">结束：保留较新的拒绝</text></g><g class="pele-node pele-state" data-id="s8" transform="translate(1098.58,274.5)"><rect x="-112" y="-31" width="224" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">较新拒绝仍适用，等待剩余</tspan><tspan x="0" y="16.1">缓存结果</tspan></text></g><g class="pele-node pele-state" data-id="s9" transform="translate(318.75,759.5)"><rect x="-112" y="-31" width="224" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">结束：丢弃失效结果，保持</tspan><tspan x="0" y="16.1">既有观察</tspan></text></g><g class="pele-node pele-state-start" data-id="root_start" transform="translate(1222.58,15)"><circle r="7" fill="var(--_l)"/></g></g></g></svg>

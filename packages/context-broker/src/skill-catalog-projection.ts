@@ -1,8 +1,9 @@
-import { isSkillPreparationModel, type SkillPreparationModelRelation } from "./skill-context-projection";
+import { isSkillPreparationModel, isSkillPreparationDirectory, projectSkillDirectory, type SkillPreparationModelRelation } from "./skill-context-projection";
 import { validateSkillPrepareProjection } from "./skill-context-projection-proof";
 import { injectedSourceBodies, sessionSourceBindings } from "./session-source-snapshot";
-import type { PreparationBinding } from "./prepare-protocol";
+import { isPreparationDirectory, type PreparationBinding } from "./prepare-protocol";
 import type { AgentMessage } from "./types";
+import { isConsumptionEffects } from "./consumption-effects";
 
 export type CatalogDescription = SkillPreparationModelRelation & { source: string; scope: string };
 type Identify = (card: CatalogDescription, canonical?: { id: string; ref: string }) => string | undefined;
@@ -13,14 +14,15 @@ function text(message: AgentMessage): string | undefined {
 }
 
 function directoryCards(value: unknown, canonical: unknown, source: string, scope: string, identify: Identify): string[] {
-  if (!object(value) || !object(canonical) || Object.keys(value).some(key => !["files", "required", "candidates", "references"].includes(key))) return [];
+  if (!isSkillPreparationDirectory(value) || !isPreparationDirectory(canonical)) return [];
+  const normalized = projectSkillDirectory(canonical)!;
   const cards: string[] = [];
-  for (const group of ["files", "required", "candidates", "references"]) {
-    const actual = value[group], expected = canonical[group];
+  for (const group of ["files", "required", "candidates", "references"] as const) {
+    const actual = value[group], expected = normalized[group];
     if (!Array.isArray(actual) || !Array.isArray(expected) || actual.length !== expected.length) return [];
     for (const [index, item] of actual.entries()) {
-      const original: unknown = expected[index];
-      const fields = group === "files" ? ["path", "ref", "bytes"] : ["ref", "kind", "name", "description", "availability"];
+      const original: unknown = expected[index], sourceRow: unknown = canonical[group][index];
+      const fields = object(original) ? Object.keys(original) : [];
       if (!object(item) || !object(original) || Object.keys(item).length !== fields.length || fields.some(key => !Object.hasOwn(item, key))
         || typeof item.ref !== "string" || typeof original.ref !== "string"
         || fields.some(key => key !== "ref" && item[key] !== original[key])) return [];
@@ -28,10 +30,12 @@ function directoryCards(value: unknown, canonical: unknown, source: string, scop
         if (typeof item.path !== "string" || !Number.isSafeInteger(item.bytes) || Number(item.bytes) < 0) return [];
         continue;
       }
-      if (typeof original.id !== "string" || typeof item.kind !== "string" || typeof item.name !== "string"
+      if (group === "references" && Object.keys(item).length === 1) continue;
+      if (!object(sourceRow) || typeof sourceRow.id !== "string" || typeof sourceRow.ref !== "string"
+        || typeof item.kind !== "string" || typeof item.name !== "string"
         || typeof item.description !== "string" || typeof item.availability !== "string") return [];
       const key = identify({ ref: item.ref, kind: item.kind, name: item.name, description: item.description,
-        availability: item.availability, source, scope }, { id: original.id, ref: original.ref });
+        availability: item.availability, source, scope }, { id: sourceRow.id, ref: sourceRow.ref });
       if (key !== undefined) cards.push(key);
     }
   }
@@ -81,7 +85,13 @@ function nativeCards(message: AgentMessage, input: { identify: Identify; matches
     const [source, scope] = identity;
     const binding = sessionSourceBindings([message], scope).find(value => value.record.id === identity[4]);
     if (!binding || binding.body_sha256 !== proof.bodySha256) return [];
-    const suffix = content.slice(Number(proof.delivery.end)), prefix = (typeof message.content === "string" ? "\n\n" : "\n\n\n") + "<skill-directory>\n", end = "\n</skill-directory>";
+    let suffix = content.slice(Number(proof.delivery.end));
+    if (isConsumptionEffects(message.details.effects)) {
+      const effects = "\n\n<notion-effects>" + JSON.stringify(message.details.effects) + "</notion-effects>";
+      if (!suffix.endsWith(effects)) return [];
+      suffix = suffix.slice(0, -effects.length);
+    }
+    const prefix = (typeof message.content === "string" ? "\n\n" : "\n\n\n") + "<skill-directory>\n", end = "\n</skill-directory>";
     if (!suffix.startsWith(prefix) || !suffix.endsWith(end)) return [];
     const encoded = suffix.slice(prefix.length, -end.length), footer: unknown = JSON.parse(encoded);
     if (!object(footer) || Object.keys(footer).length !== 2 || typeof footer.ref !== "string"
