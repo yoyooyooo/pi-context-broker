@@ -316,12 +316,17 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       demand(payload.model === 'group/worker' && payload.reasoning_effort === 'high', 'WRONG_WIRE_MODEL', 'Actual wire payload must request worker/high');
       const bodies = inspectPayload(payload, bodyFiles);
       need(Array.isArray(bodies), 'BODY_ORACLE_INVALID', 'The body oracle returned no observations');
+      const bodyObservation = [];
       for (const body of bodies) {
         need(digest(body.sha256) && Number.isSafeInteger(body.occurrences) && body.occurrences >= 0, 'BODY_METRIC_MISSING', 'Body counts must be observed numbers');
-        const observer = task.bodies?.find(value => value.sha256 === body.sha256);
-        demand(observer?.occurrences === body.occurrences, 'BODY_OBSERVATION_MISMATCH', 'Independent payload read differs from the task observer');
+        const observer = task.bodies?.filter(value => value.sha256 === body.sha256) ?? [];
+        // A body created or published after process start cannot be known to the
+        // startup oracle. Its frozen bytes can still be counted independently in
+        // the exact payload whose hash was matched to the wire.
+        demand(observer.every(value => value.occurrences === body.occurrences), 'BODY_OBSERVATION_MISMATCH', 'Independent payload read differs from the task observer');
+        bodyObservation.push({ sha256: body.sha256, method: observer.length ? 'observer-and-independent-raw-payload-count' : 'independent-raw-payload-count-only' });
       }
-      payloads.push({ request: request.request, wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies,
+      payloads.push({ request: request.request, wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies, bodyObservation,
         verifiedBodies: request.payload.verifiedBodyOccurrences, usage: message.usage, completion: providerApplicationCompletion(end, message),
         selection: observed.selectionSnapshots?.find(row => row.payloadSha256 === task.sha256)?.selection });
     }
@@ -420,10 +425,16 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         const body = privateBindings.bodies[keys[0]];
         demand(bodyCount(keys[0], delivery.last) > 0, 'RESOURCE_BODY_MISSING', 'Required full resource is absent from the actual request');
         if (target.kind === 'notion') {
-          const matches = proofValues(tasks).filter(proof => proof.id === target.owner && proof.scope === target.scope && proof.snapshot_id === target.snapshot_id &&
+          const matches = proofValues(tasks).filter(proof => (
+            proof.id === target.owner && proof.scope === target.scope && proof.snapshot_id === target.snapshot_id &&
             proof.version_id === target.version_id && proof.path === expected.path && proof.sha256 === body.sha256 && proof.bytes === body.bytes &&
-            proof.delivered_complete_text === true);
-          demand(matches.length > 0, 'WRONG_RESOURCE_OWNER', 'No complete resource receipt for the chosen logical owner and version');
+            proof.delivered_complete_text === true
+          ) || (
+            expected.path === 'SKILL.md' && sameIdentity(proof.binding, target) && proof.binding.record.entrypoint === expected.path &&
+            proof.snapshotId === target.snapshot_id && proof.bodySha256 === body.sha256 && proof.bytes === body.bytes &&
+            nonempty(proof.toolCallId) && delivery.last.verifiedBodies?.some(value => value.sha256 === body.sha256 && value.occurrences > 0)
+          ));
+          demand(matches.length > 0, 'WRONG_RESOURCE_OWNER', 'No complete read receipt for the chosen logical owner and version');
         } else demand([...shared.attempts.values()].some(call => call.name === 'read' &&
           call.arguments?.path === target.path.replace(/SKILL\.md$/u, '') + expected.path && call.result?.isError === false),
         'LOCAL_RESOURCE_OWNER_UNPROVEN', 'Local resource was not read from the selected owner');
