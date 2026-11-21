@@ -142,7 +142,7 @@ function fixture({ calls = [], answerText = '合计：100 元', bodies = {}, sco
   const brokerRoot = '/owned/candidate/packages/context-broker';
   const brokerSource = { path: brokerRoot + '/src/index.ts', source: brokerRoot, scope: 'project', origin: 'package', baseDir: brokerRoot };
   const toolSource = name => ['read', 'grep', 'find', 'ls', 'tool_search', 'codemode'].includes(name)
-    ? { path: 'builtin:' + name, source: 'builtin' }
+    ? { path: name === 'tool_search' ? 'builtin:tool-search' : 'builtin:' + name, source: 'builtin' }
     : ['notion_list', 'notion_use', 'notion_ctl'].includes(name) ? { ...brokerSource } : undefined;
   const artifact = (path, value) => {
     const bytes = Buffer.from(typeof value === 'string' ? value : JSON.stringify(value));
@@ -354,6 +354,24 @@ test('a familiar read name without actual implementation provenance cannot prove
     const f = fixture({ calls: [{ name }] });
     delete f.observed.tasks.find(row => row.phase === 'tool_call').toolSource;
     assert.equal((await f.run([{ kind: 'no-semantic-writes' }])).status, 'blocked', name);
+  }
+});
+
+test('tool discovery binds the real hyphenated Pi builtin path and rejects same-name replacements', async () => {
+  const f = fixture({ calls: [{ name: 'tool_search', arguments: { query: 'notion_ctl' } }] });
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(result.assertions.find(row => row.kind === 'no-semantic-writes').details.implementations,
+    [{ toolCallId: 't0', owner: 'builtin', path: 'builtin:tool-search' }]);
+  for (const toolSource of [
+    { source: 'extension', path: 'builtin:tool-search' },
+    { source: '/another/package', path: '/another/package/tool-search.js', origin: 'package' },
+    { source: 'builtin', path: 'builtin:tool_search' },
+  ]) {
+    f.observed.tasks.find(row => row.phase === 'tool_call').toolSource = toolSource;
+    const rejected = await f.run([{ kind: 'no-semantic-writes' }]);
+    assert.equal(rejected.status, 'blocked');
+    assert.ok(rejected.assertions.some(row => row.code === 'TOOL_EFFECTS_UNKNOWN'));
   }
 });
 
