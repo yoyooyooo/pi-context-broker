@@ -129,6 +129,7 @@ export function validateAgentAssertion(assertion) {
   object(assertion, 'expect'); string(assertion.kind, 'expect.kind');
   const shape = {
     completed: [[], []],
+    'candidate-cli': [['min'], ['min']],
     'tool-attempts': [['tool', 'min', 'max'], ['tool']],
     'forbidden-tool-input': [['tool', 'facts'], ['tool', 'facts']],
     'source-network-attempts': [['min', 'max'], []],
@@ -144,6 +145,8 @@ export function validateAgentAssertion(assertion) {
   }[assertion.kind];
   assert.ok(shape, 'expect: unsupported assertion ' + assertion.kind);
   keys(assertion, ['kind', ...shape[0]], ['kind', ...shape[1]], 'expect.' + assertion.kind);
+  if (assertion.kind === 'candidate-cli')
+    assert.ok(Number.isSafeInteger(assertion.min) && assertion.min >= 1, 'candidate-cli.min must require at least one actual CLI process');
   if (assertion.kind === 'forbidden-tool-input') {
     string(assertion.tool, 'forbidden-tool-input.tool');
     strings(assertion.facts, 'forbidden-tool-input.facts');

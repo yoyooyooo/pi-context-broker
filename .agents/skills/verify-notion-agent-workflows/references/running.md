@@ -118,6 +118,7 @@ fork 从指定先前用户 turn 之前分叉；保留此前有效分支。compac
 | 类别 | 判定内容 |
 | --- | --- |
 | completed | 请求实际发送、provider 完成、非空有效响应 |
+| candidate-cli | 当前轮真实执行配对 CLI；以子进程入口、文件字节和父子关系核验，命令文本与已构建文件不能替代执行 |
 | visibility | 精确 native-discovery、当前 model-catalog 或真实 source-pending 时序 |
 | tool-attempts | 指定工具真实尝试的上下界，失败与撤回也计入 |
 | forbidden-tool-input | 实际工具参数不得触及声明的安装包路径或命令；失败尝试也计，不能按同名目录误伤合法 Notion Git 缓存 |
@@ -154,8 +155,10 @@ checkAgentContractCoverage 只读取配对 CLI 的当前索引，检查每个 C 
 
 全批报告逐项列出所有 required 场景/profile、所选 holdout、首败与复验。各自报告准备、发现、模型、CLI、当前实际交付与真实效果，保留 failed/blocked/not_run。记录哪一部分只是结构检查、作者实跑或独立 Agent 使用；未运行的真实入口不能从同一 hash、旧成绩或其他层级外推。
 
-### Body counts and logical delivery
+### 正文计数与实际交付
 
-A positive `body` assertion with the default `receiptRequired: true` counts complete deliveries of the exact bound owner, scope, snapshot, version and file path. For a local Skill it counts the exact successful local read response. Creation inputs retained in history and byte-identical files belonging to another owner or version do not count as that delivery. Two deliveries of the same logical file still fail an expected count of one.
+正数的 `body` 断言默认 `receiptRequired: true`，统计精确 owner、scope、snapshot、version 和文件路径的完整交付。本地 Skill 则统计对应文件成功读取后进入请求的真实工具结果。历史创建输入、其他 owner 或另一版本中相同的文字不充作该文件的交付；同一逻辑文件真的交付两次，仍不满足期望一次的约束。
 
-The report also retains independent whole-payload text counts for cost and exposure analysis. `occurrences: 0` always prohibits the complete bytes throughout all requests in the turn, regardless of receipt. Use `receiptRequired: false` when the contract specifically concerns raw text occurrence counts. Selection and resource assertions continue to require their own exact receipts and active task graph.
+报告另保留整个请求里的全文出现次数，供成本和暴露分析。`occurrences: 0` 始终检查该轮全部请求中的原始全文，无论是否有回执。只有约束本身针对原始文字计数时才使用 `receiptRequired: false`。selection 和 resource 仍各自需要精确回执及实际任务状态。
+
+管理写入轮使用 `candidate-cli` 要求实际执行冻结的配对 CLI。运行器只被动记录真实 Node 子进程入口，不改 PATH 或模型指令；检查入口实路径、SHA、字节数及进程归属。这个证明不代表任意 shell 的写入或网络效果都已覆盖，未知效果仍保留 blocked。已执行了别的 CLI，即使最后对象正确，也不能算当前候选通过。
