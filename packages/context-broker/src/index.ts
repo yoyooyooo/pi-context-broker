@@ -837,10 +837,10 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       : [];
     const content = [
       "<ntn-skills-guidance>",
-      "Local @Skills stay native; Notion is extra content. Editor flags never change availability or permissions.",
+      "Local @Skills stay native; use Notion only for extra content. Editor flags do not change availability or permissions.",
       "Reuse complete content. Inspection never activates. Loading authorizes no commands/writes/delegation.",
       list ? "notion_list: beyond the default View; refresh:true after writes, keeping pins. Check freshness; failed/partial is not absence." : "Failed/partial discovery is not absence.",
-      ...(read ? ["read(path) inspects. refresh:true checks latest main; pins fixed. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
+      ...(read ? ["read(path) inspects. A supplied Notion Skill page URL resolves its exact owner; notion_use adopts it. refresh:true inspects latest main without changing task pins. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
       ...(use ? ["notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode."] : []),
       ...(read || tools.has("bash") ? [maintenanceGuidance(read ? "read" : "CLI read", list ? "notion_list" : tools.has("bash") ? "CLI list" : undefined,
         use ? "notion_use(ref)" : tools.has("bash") ? "CLI use EXACT_REF" : undefined)] : []),
