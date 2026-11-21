@@ -30,6 +30,27 @@ async function fixture(t) {
   return { root, bindings, context, state: join(root, 'state') };
 }
 
+async function storeProbeFixture(t, { faultResponse = 'unavailable' } = {}) {
+  const value = await fixture(t), { root, state, context, bindings } = value, content = '# Exact selected rule\n';
+  await mkdir(join(root, 'commands'));
+  context.node = process.execPath; context.cli = join(root, 'public-read.mjs');
+  const selected = bindings.private.objects.selected, version = selected.versions.A;
+  selected.scope = 'a'.repeat(64); version.version_id = 'c'.repeat(64);
+  const digest = hash(content);
+  bindings.private.bodies['selected@A/SKILL.md'] = { path: join(state, 'objects', digest), sha256: digest, bytes: Buffer.byteLength(content), object: 'selected', resourcePath: 'SKILL.md' };
+  await writeFile(join(state, 'objects', digest), content); await writeFile(join(state, 'state.sqlite'), 'unit SQLite placeholder');
+  const result = { ok: true, record: { id: selected.owner }, scope: selected.scope, snapshot_id: version.snapshot_id, version_id: version.version_id,
+    path: 'SKILL.md', content, has_more: false, effects: { remote_writes: 'none' }, request_metrics: { total_requests: 0 } };
+  await writeFile(context.cli, "import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {join} from 'node:path';\n"
+    + 'assert.deepEqual(process.argv.slice(2),' + JSON.stringify(['read', version.snapshot_id, '--offline', '--json', '--metrics']) + ');\n'
+    + 'const success=' + JSON.stringify(result) + ';let value=success;try{await readFile(join(process.env.NTN_SKILLS_HOME,"state.sqlite"));}'
+    + 'catch(error){assert.equal(error.code,"ENOTDIR");if(' + JSON.stringify(faultResponse) + '!=="unexpected-success"){value={ok:false,error:{code:'
+    + JSON.stringify(faultResponse === 'wrong-error' ? 'AUTHENTICATION_FAILED' : 'STATE_UNAVAILABLE')
+    + ',details:{phase:"sqlite_state",native_code:"ENOTDIR"}}};process.exitCode=1;}}console.log(JSON.stringify(value));\n');
+  return { ...value, runtimeEnv: { NTN_SKILLS_HOME: state, NTN_SKILLS_CONFIG_HOME: join(root, 'runtime-config'),
+    NTN_SKILLS_CACHE_HOME: join(root, 'runtime-cache'), NTN_SKILLS_DATA_HOME: join(root, 'runtime-data'), NOTION_API_TOKEN: 'private-unit-test-secret' } };
+}
+
 test('projection comparison removes page identity while retaining nested text and links', () => {
   const source = [{ id: 'old', created_time: 'before', type: 'paragraph', paragraph: {
     rich_text: [{ type: 'text', text: { content: 'Read policy', link: { url: 'https://example.com/policy' } } }],
@@ -90,15 +111,56 @@ test('foreign Store ownership blocks fault injection without moving its manifest
   assert.deepEqual(await json(manifest), { preserved: true });
 });
 
-test('Store-unavailable event is reversible and cleanup requires exited subject', async t => {
-  const { bindings, state } = await fixture(t);
+test('Store-unavailable proves the same selected public read fails and recovers without exposing runtime secrets', async t => {
+  const { bindings, state, runtimeEnv } = await storeProbeFixture(t);
   await writeFile(join(state, 'objects', 'preserved'), 'bytes');
-  const result = await runAgentFixtureEvent({ kind: 'fault', object: 'selected', mode: 'store-unavailable' }, { bindings, ownedStateRoot: state });
+  const result = await runAgentFixtureEvent({ kind: 'fault', object: 'selected', mode: 'store-unavailable' }, { bindings, ownedStateRoot: state, runtimeEnv });
   assert.equal(result.status, 'passed'); assert.equal((await json(state)).fixtureFault, bindings.private.fixture.ownership.token);
+  const fault = bindings.private.fixture.faults[0];
+  assert.equal(fault.status, 'active'); assert.equal(fault.proof.before.status, 'passed'); assert.equal(fault.proof.after.status, 'failed');
+  assert.equal(fault.proof.after.code, 'STATE_UNAVAILABLE'); assert.equal(fault.proof.blocker.readError, 'ENOTDIR');
+  assert.equal(hash(await readFile(fault.proof.before.command.path)), fault.proof.before.command.sha256);
+  assert.equal(hash(await readFile(fault.proof.after.command.path)), fault.proof.after.command.sha256);
+  assert.equal(hash(await readFile(fault.proof.blocker.artifact.path)), fault.proof.blocker.artifact.sha256);
+  assert.doesNotMatch(JSON.stringify(bindings), /private-unit-test-secret/u);
+  const originalActiveBindings = structuredClone(bindings);
   await assert.rejects(cleanupAgentFixtures(bindings, { subjectExited: false }), /Stop the owned subject/u);
   if (!(await exists('/usr/bin/trash'))) return;
   await cleanupAgentFixtures(bindings, { subjectExited: true });
   assert.equal(await readFile(join(state, 'objects', 'preserved'), 'utf8'), 'bytes');
+  assert.equal(fault.status, 'restored'); assert.equal(fault.restoration.status, 'passed');
+  assert.equal(hash(await readFile(fault.restoration.command.path)), fault.restoration.command.sha256);
+  assert.equal(hash(await readFile(fault.proof.blocker.artifact.path)), fault.proof.blocker.artifact.sha256, 'Fault evidence must survive Store restoration');
+  assert.deepEqual(fault.restoration.observed, fault.proof.before.observed);
+  await cleanupAgentFixtures(originalActiveBindings, { subjectExited: true, preserveBindings: true });
+  assert.equal(originalActiveBindings.private.fixture.faults[0].status, 'restored', 'A repeated historical teardown must prove the already restored Store again');
+});
+
+test('Store outage refuses a different runtime root before moving owned state', async t => {
+  const { bindings, state, runtimeEnv } = await storeProbeFixture(t);
+  await assert.rejects(runAgentFixtureEvent({ kind: 'fault', object: 'selected', mode: 'store-unavailable' },
+    { bindings, ownedStateRoot: state, runtimeEnv: { ...runtimeEnv, NTN_SKILLS_HOME: state + '-other' } }), /actual subject Store environment/u);
+  assert.equal(await readFile(join(state, 'state.sqlite'), 'utf8'), 'unit SQLite placeholder');
+  assert.equal(bindings.private.fixture.faults, undefined);
+});
+
+test('an already unreadable selected body cannot establish a Store outage precondition', async t => {
+  const { bindings, state, runtimeEnv } = await storeProbeFixture(t);
+  bindings.private.bodies['selected@A/SKILL.md'].sha256 = 'f'.repeat(64);
+  await assert.rejects(runAgentFixtureEvent({ kind: 'fault', object: 'selected', mode: 'store-unavailable' }, { bindings, ownedStateRoot: state, runtimeEnv }));
+  assert.equal(await readFile(join(state, 'state.sqlite'), 'utf8'), 'unit SQLite placeholder');
+  assert.equal(bindings.private.fixture.faults, undefined);
+});
+
+for (const faultResponse of ['unexpected-success', 'wrong-error']) test('Store outage does not accept ' + faultResponse + ' as storage failure', async t => {
+  const { bindings, state, runtimeEnv } = await storeProbeFixture(t, { faultResponse });
+  await assert.rejects(runAgentFixtureEvent({ kind: 'fault', object: 'selected', mode: 'store-unavailable' }, { bindings, ownedStateRoot: state, runtimeEnv }));
+  const fault = bindings.private.fixture.faults[0];
+  assert.equal(fault.status, 'quarantined', 'An unverified fault must not admit the runtime recovery barrier');
+  assert.equal(fault.proof.after, undefined);
+  if (!(await exists('/usr/bin/trash'))) return;
+  await cleanupAgentFixtures(bindings, { subjectExited: true });
+  assert.equal(fault.status, 'restored'); assert.equal(await readFile(join(state, 'state.sqlite'), 'utf8'), 'unit SQLite placeholder');
 });
 
 test('external builtin bindings cannot be mutated or included in cleanup writes', async t => {

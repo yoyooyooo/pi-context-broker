@@ -809,7 +809,34 @@ async function resumeSourceWrite(bindings, event) {
   return { status: 'passed', operationId: owned.sourceOperation.id, command: resumed.artifact, readback };
 }
 
-async function injectFault(bindings, event, ownedStateRoot) {
+const runtimeStoreRoots = ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME', 'NTN_SKILLS_DATA_HOME'];
+
+async function storeFaultRead(context, probe, label, runtimeEnv, expectedFailure = false) {
+  assert.deepEqual(await artifact(probe.cli.path), probe.cli, 'The Store probe CLI changed');
+  assert.deepEqual(await artifact(probe.node.path), probe.node, 'The Store probe Node changed');
+  const selected = probe.selected;
+  assert.ok(/^s_[a-f0-9]{64}$/u.test(selected.snapshot_id) && digest(selected.version_id));
+  const result = await cli({ ...context, cli: probe.cli.path, node: probe.node.path,
+    env: { ...runtimeEnv, ...probe.roots } }, ['read', selected.snapshot_id, '--offline', '--json', '--metrics'], label,
+  expectedFailure ? { allowedFailure: 'STATE_UNAVAILABLE' } : {});
+  if (expectedFailure) {
+    assert.equal(result.value.ok, false, 'The faulted public read unexpectedly succeeded');
+    assert.equal(result.value.error.code, 'STATE_UNAVAILABLE');
+    assert.equal(result.value.error.details?.phase, 'sqlite_state');
+    assert.equal(result.value.error.details?.native_code, 'ENOTDIR');
+    return { status: 'failed', expected: true, code: result.value.error.code, details: result.value.error.details, command: result.artifact };
+  }
+  const value = result.value;
+  assert.equal(value.record?.id, selected.owner);
+  assert.equal(value.scope, selected.scope); assert.equal(value.snapshot_id, selected.snapshot_id); assert.equal(value.version_id, selected.version_id);
+  assert.equal(value.path, selected.main.path); assert.equal(typeof value.content, 'string'); assert.equal(value.has_more, false);
+  assert.equal(sha(value.content), selected.main.sha256); assert.equal(Buffer.byteLength(value.content), selected.main.bytes);
+  assert.equal(value.effects?.remote_writes, 'none');
+  assert.equal(value.request_metrics?.total_requests, 0, 'The fixed offline proof must not perform remote reads or writes');
+  return { status: 'passed', command: result.artifact, observed: { ...selected, totalRequests: 0, remoteWrites: 'none' } };
+}
+
+async function injectFault(bindings, event, ownedStateRoot, runtimeEnv) {
   const context = bindings.private.fixture, owned = context.objects[event.object], object = bindings.private.objects[event.object];
   assert.ok(owned && isAbsolute(ownedStateRoot), 'Fault injection requires an owned runtime Store');
   const actualRoot = await realpath(ownedStateRoot);
@@ -828,14 +855,51 @@ async function injectFault(bindings, event, ownedStateRoot) {
   assert.ok(await exists(source), 'The selected fault target is absent before injection');
   assert.ok(!(await lstat(source)).isSymbolicLink(), 'Do not fault a symlink');
   const target = join(context.root, 'quarantine', basename(source) + '-' + randomUUID());
+  assert.ok(source !== context.root && !inside(source, target), 'Keep quarantine and control evidence outside the faulted Store');
+  let probe, before;
+  if (event.mode === 'store-unavailable') {
+    assert.equal(runtimeEnv?.NTN_SKILLS_HOME, ownedStateRoot, 'Prove the actual subject Store environment before injecting an outage');
+    const roots = {};
+    for (const name of runtimeStoreRoots) {
+      const path = runtimeEnv[name];
+      assert.ok(typeof path === 'string' && isAbsolute(path) && inside(dirname(ownedStateRoot), path), 'Keep every runtime Store root inside its owned parent');
+      roots[name] = path;
+    }
+    assert.equal(new Set(Object.values(roots)).size, runtimeStoreRoots.length, 'Runtime state/config/cache/data roots must be separate');
+    const sqlite = await lstat(join(ownedStateRoot, 'state.sqlite'));
+    assert.ok(sqlite.isFile() && !sqlite.isSymbolicLink(), 'The subject must have an existing regular SQLite Store');
+    const main = version.bodyKeys.map(key => bindings.private.bodies[key]).find(body => body.resourcePath === 'SKILL.md');
+    assert.ok(main && digest(main.sha256) && Number.isSafeInteger(main.bytes) && main.bytes > 0);
+    probe = { cli: await artifact(context.cli), node: await artifact(context.node), roots,
+      selected: { owner: object.owner, scope: object.scope, snapshot_id: version.snapshot_id, version_id: version.version_id,
+        main: { path: 'SKILL.md', sha256: main.sha256, bytes: main.bytes } } };
+    before = await storeFaultRead(context, probe, 'fault-store-before', runtimeEnv);
+  }
   await rename(source, target);
-  if (event.mode === 'store-unavailable') await save(source, { fixtureFault: context.ownership.token, restoreFrom: target });
-  context.faults ??= []; context.faults.push({ mode: event.mode, source, target });
-  return { kind: event.mode, source, quarantine: target, verifiedAbsent: event.mode === 'store-unavailable' ? !(await lstat(source)).isDirectory() : !(await exists(source)) };
+  const fault = { mode: event.mode, object: event.object, source, target, status: 'quarantined', ...(probe ? { probe, proof: { before } } : {}) };
+  // Journal the completed rename before any proof can fail, so teardown can restore it.
+  context.faults ??= []; context.faults.push(fault);
+  if (event.mode === 'store-unavailable') {
+    await save(source, { fixtureFault: context.ownership.token, restoreFrom: target });
+    assert.ok((await lstat(source)).isFile());
+    let errorCode;
+    try { await readFile(join(source, 'state.sqlite')); } catch (error) { errorCode = error.code; }
+    assert.equal(errorCode, 'ENOTDIR', 'The actual subject Store path remained readable');
+    const blockerPath = join(context.root, 'readbacks', 'store-fault-marker-' + randomUUID() + '.json');
+    await writeFile(blockerPath, await readFile(source), { flag: 'wx', mode: 0o600 });
+    const blocker = await artifact(blockerPath);
+    assert.equal((await artifact(source)).sha256, blocker.sha256);
+    fault.proof.blocker = { kind: 'regular-file', observedPath: source, artifact: blocker, readPath: join(source, 'state.sqlite'), readError: errorCode };
+    fault.proof.after = await storeFaultRead(context, probe, 'fault-store-after', runtimeEnv, true);
+    fault.status = 'active';
+  }
+  return { kind: event.mode, source, quarantine: target, status: fault.status,
+    verifiedAbsent: event.mode === 'store-unavailable' ? (await lstat(source)).isFile() : !(await exists(source)),
+    ...(fault.proof ? { proof: fault.proof } : {}) };
 }
 
 /** Finite control-plane events. RPC lifecycle events belong to the existing Pi runner. */
-export async function runAgentFixtureEvent(event, { bindings, bindingsPath, ownedStateRoot }) {
+export async function runAgentFixtureEvent(event, { bindings, bindingsPath, ownedStateRoot, runtimeEnv }) {
   const context = bindings.private.fixture; await assertOwnership(context);
   assert.ok(event && typeof event === 'object' && !Array.isArray(event));
   const allowed = {
@@ -902,7 +966,7 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
       assert.deepEqual(readback.observed.files.map(file => [file.path, file.sha256, file.mode]), owned.projectionBeforeTrash.observed.files.map(file => [file.path, file.sha256, file.mode]));
       record.result = { command: result.artifact, readback };
     }
-    if (event.kind === 'fault') record.result = await injectFault(bindings, event, ownedStateRoot);
+    if (event.kind === 'fault') record.result = await injectFault(bindings, event, ownedStateRoot, runtimeEnv);
     record.status = 'passed';
   } catch (error) {
     record.status = 'failed'; record.error = { code: error.code, message: error.message, details: error.details };
@@ -931,13 +995,27 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
   };
   const viewCleanup = await cleanupFilteredView(context); if (viewCleanup) results.push(viewCleanup);
   for (const fault of [...(context.faults ?? [])].reverse()) {
-    if (!(await exists(fault.target))) continue;
-    if (await exists(fault.source)) {
-      const marker = await json(fault.source);
-      assert.equal(marker.fixtureFault, context.ownership.token);
-      await rename(fault.source, join(context.root, 'quarantine', 'fault-marker-' + randomUUID()));
+    if (await exists(fault.target)) {
+      if (await exists(fault.source)) {
+        const marker = await json(fault.source);
+        assert.equal(marker.fixtureFault, context.ownership.token);
+        await rename(fault.source, join(context.root, 'quarantine', 'fault-marker-' + randomUUID()));
+      }
+      await mkdir(dirname(fault.source), { recursive: true, mode: 0o700 }); await rename(fault.target, fault.source);
+    } else if (!(fault.mode === 'store-unavailable' && fault.probe && fault.status !== 'restored')) {
+      continue;
     }
-    await mkdir(dirname(fault.source), { recursive: true, mode: 0o700 }); await rename(fault.target, fault.source);
+    if (fault.mode === 'store-unavailable' && fault.probe) {
+      assert.equal(await realpath(fault.source), fault.source);
+      assert.ok((await lstat(fault.source)).isDirectory());
+      const marker = await json(join(fault.source, 'agent-workflow-owner.json'));
+      assert.equal(marker.runId, context.runId); assert.equal(marker.fixtureRoot, context.root); assert.equal(marker.token, context.ownership.token);
+      assert.equal(fault.probe.roots.NTN_SKILLS_HOME, fault.source);
+      const restored = await storeFaultRead(context, fault.probe, 'fault-store-restored', process.env);
+      fault.restoration = { ...restored, restoredAt: clock() }; fault.status = 'restored';
+      results.push({ object: fault.object, action: 'restore-owned-store', status: 'passed', readback: restored });
+    }
+    await persistCleanup();
   }
   for (const owned of Object.values(context.objects).reverse()) {
     if (owned.external) { assert.equal(owned.readOnly, true); results.push({ object: owned.id, action: 'external-read-only-preserved', status: 'passed' }); continue; }
