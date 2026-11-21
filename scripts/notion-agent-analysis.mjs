@@ -767,22 +767,47 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       case 'body': {
         const delivery = requireDelivery();
         const payloads = expected.scope === 'all' || expected.occurrences === 0 ? delivery.requests : [delivery.last];
-        for (const payload of payloads) {
-          demand(bodyCount(expected.body, payload) === expected.occurrences, 'BODY_OCCURRENCE_MISMATCH', 'Required full-body count differs in an actual request',
-            { body: expected.body, payloadSha256: payload.sha256, expected: expected.occurrences, actual: bodyCount(expected.body, payload) });
-          if (expected.occurrences > 0 && expected.receiptRequired !== false) {
-            const body = privateBindings.bodies[expected.body], localPath = localBodyPath(expected.body);
-            if (localPath) {
-              const proof = payload.nativeReadBodies.filter(row => row.body === expected.body && row.path === localPath);
-              need(proof.length === 1 && proof[0].occurrences === expected.occurrences, 'LOCAL_BODY_DELIVERY_MISSING',
-                'Full local bytes require their successful actual read response in this payload');
-            } else {
-              const proof = payload.verifiedBodies?.filter(row => row.sha256 === body.sha256);
-              need(proof?.length === 1 && proof[0].occurrences === expected.occurrences, 'BODY_RECEIPT_MISSING', 'Full bytes have no corresponding receipt-verified body');
-            }
-          }
+        // Zero is an exposure prohibition over every raw payload. A positive
+        // receipt assertion counts deliveries of this logical file, not matching
+        // text in creation inputs, unrelated owners or another retained version.
+        const owned = expected.occurrences > 0 && expected.receiptRequired !== false;
+        const body = privateBindings.bodies[expected.body], localPath = owned ? localBodyPath(expected.body) : undefined;
+        let target, resourcePath;
+        if (owned && !localPath) {
+          const owners = Object.entries(privateBindings.objects).flatMap(([alias, item]) =>
+            Object.entries(item.versions).filter(([, version]) => version.bodyKeys?.includes(expected.body))
+              .map(([label]) => resolveObject(privateBindings, alias, label)));
+          need(owners.length === 1 && owners[0].kind === 'notion', 'BODY_OWNER_MISSING',
+            'Receipt-required bytes need one independently bound logical owner and version');
+          target = owners[0];
+          resourcePath = body.resourcePath ?? (expected.body.endsWith('/SKILL.md') ? 'SKILL.md' : undefined);
+          need(nonempty(resourcePath), 'BODY_PATH_MISSING', 'A receipt-required body needs its exact logical file path');
         }
-        return { body: expected.body, payloads: payloads.map(row => row.sha256), occurrences: expected.occurrences };
+        const counts = [];
+        for (const payload of payloads) {
+          const rawOccurrences = bodyCount(expected.body, payload);
+          let actual = rawOccurrences;
+          if (owned && localPath) {
+            const proof = payload.nativeReadBodies.filter(row => row.body === expected.body && row.path === localPath);
+            need(proof.length === 1, 'LOCAL_BODY_DELIVERY_MISSING',
+              'Full local bytes require their successful actual read response in this payload');
+            actual = proof[0].occurrences;
+          } else if (owned) {
+            actual = payload.notionDeliveries.filter(proof => proof.owner === target.owner && proof.scope === target.scope &&
+              proof.snapshot_id === target.snapshot_id && proof.version_id === target.version_id &&
+              proof.path === resourcePath && proof.sha256 === body.sha256 && proof.bytes === body.bytes).length;
+          }
+          if (owned && rawOccurrences > 0) need(actual > 0, localPath ? 'LOCAL_BODY_DELIVERY_MISSING' : 'BODY_RECEIPT_MISSING',
+            'Matching text without the exact successful owner delivery cannot prove this body',
+            { body: expected.body, payloadSha256: payload.sha256, actual, rawOccurrences });
+          demand(actual === expected.occurrences, 'BODY_OCCURRENCE_MISMATCH',
+            owned ? 'Required logical file delivery count differs in an actual request' : 'Required full-text count differs in an actual request',
+            { body: expected.body, payloadSha256: payload.sha256, expected: expected.occurrences, actual, rawOccurrences,
+              counting: owned ? 'owner-bound-delivery' : 'payload-text' });
+          counts.push({ payloadSha256: payload.sha256, actual, rawOccurrences });
+        }
+        return { body: expected.body, payloads: payloads.map(row => row.sha256), occurrences: expected.occurrences,
+          counting: owned ? 'owner-bound-delivery' : 'payload-text', counts };
       }
       case 'selection':
         return targetSelection(resolveObject(privateBindings, expected.object, expected.version));
