@@ -595,9 +595,12 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
             nonempty(proof.toolCallId) && delivery.last.verifiedBodies?.some(value => value.sha256 === body.sha256 && value.occurrences > 0)
           ));
           demand(matches.length > 0, 'WRONG_RESOURCE_OWNER', 'No complete read receipt for the chosen logical owner and version');
-        } else demand([...shared.attempts.values()].some(call => call.name === 'read' &&
-          call.arguments?.path === target.path.replace(/SKILL\.md$/u, '') + expected.path && call.result?.isError === false),
-        'LOCAL_RESOURCE_OWNER_UNPROVEN', 'Local resource was not read from the selected owner');
+        } else {
+          const path = localBodyPath(keys[0]);
+          const proofs = delivery.last.nativeReadBodies.filter(row => row.body === keys[0] && row.path === path);
+          need(proofs.length === 1 && proofs[0].occurrences > 0, 'LOCAL_RESOURCE_DELIVERY_MISSING',
+            'The local resource needs its exact successful read result in the actual provider request');
+        }
         return { target, path: expected.path, body: keys[0], payloadSha256: delivery.last.sha256 };
       }
       case 'output': {
