@@ -410,7 +410,15 @@ export async function runAgentWorkflow(config) {
       }
       const turn = bindAgentTurn(declared, bindings), startedNs = process.hrtime.bigint().toString();
       Object.assign(receipt, { startedNs, segment: segment.index, sessionId: currentSession.sessionId, promptSha256: sha(turn.prompt) });
-      await rpc.prompt(turn.prompt);
+      const completionStart = rpc.frames.length;
+      try { await rpc.prompt(turn.prompt); }
+      finally {
+        const completionPath = join(evidence, 'turn-' + turn.id + '-rpc-completion.json');
+        await save(completionPath, { version: 1, sessionId: currentSession.sessionId, frames: rpc.frames.slice(completionStart)
+          .filter(frame => ['agent_start', 'agent_end', 'agent_settled', 'prompt_result', 'queue_update'].includes(frame.type)
+            || frame.type === 'response' && ['prompt', 'get_state'].includes(frame.command)) });
+        receipt.rpcCompletion = await identity(completionPath);
+      }
       const endedNs = process.hrtime.bigint().toString(), state = await rpc.command('get_state');
       assert.equal(state.isStreaming, false); assert.equal(state.sessionId, currentSession.sessionId);
       const entries = await rpc.command('get_entries');
