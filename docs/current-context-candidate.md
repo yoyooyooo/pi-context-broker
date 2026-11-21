@@ -61,7 +61,7 @@ The only current scenarios are:
 
 | Scenario | Main obligations |
 | --- | --- |
-| `default-view` | Default Context membership and Enabled eligibility changes remain metadata operations; no source body is fetched before use. |
+| `default-view` | Default Context off/on fetches no body before use; an active root/Requires keeps its fixed bytes across Default Context and Enabled changes, rejected refresh, ordinary continuation and compaction. |
 | `http-cache-recovery` | Ordinary continuation keeps the selected root/Requires after source edits and expired metadata TTL; read-refresh compares without adoption; use-refresh adopts a complete current closure; cache clear and missing fixed bytes after compaction do not prevent later prompts. |
 | `http-interruption` | Abort an actual held Notion body request, continue the same Pi session and explicitly retry without accepting cancelled delivery. |
 | `working-set` | Two roots share one Required node; release retains the surviving closure; compaction restores it; an over-budget addition fails without eviction. |

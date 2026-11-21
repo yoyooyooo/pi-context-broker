@@ -61,7 +61,7 @@ HTTP helper 与嵌入 SDK 来自同一 CLI revision。Pi entry、Node、包和�
 
 | 当前场景 | 真实控制点 |
 | --- | --- |
-| default-view | Default Context 和 Enabled 元数据变化，零 source body |
+| default-view | 激活前 Default Context off/on 零正文；激活后 Default/Enabled 变化、刷新拒绝与 ordinary/compact 保留原闭包 |
 | http-cache-recovery | 来源编辑、过期 metadata、同会话旧 pin、明确 inspect/adopt、cache clear、固定对象丢失及 compaction 后连续输入 |
 | http-interruption | 实际 Notion body hold、取消、同会话继续、明确重试 |
 | working-set | 共享 Requires、释放一个 root、compaction、完整工作集预算拒绝且不驱逐旧选择 |
