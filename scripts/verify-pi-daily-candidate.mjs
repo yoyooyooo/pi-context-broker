@@ -717,7 +717,7 @@ export function candidatePayloadBodies(value, expectedBodies) {
   });
 }
 
-export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, branchDirectory, hostOutput, projectRoot, inspectProject }) {
+export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, branchDirectory, toolResultDirectory, hostOutput, projectRoot, inspectProject }) {
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const oracleStarted = process.hrtime.bigint();
   const expectedBodies = bodyFiles.map(file => {
@@ -782,12 +782,30 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     const inspection = event.toolName === 'bash' && projectRoot && inspectProject?.(input, ctx?.cwd, projectRoot)
       ? { root: projectRoot, cwd: ctx.cwd, input } : undefined;
     const selectors = Object.fromEntries(['path', 'paths', 'ref', 'refs', 'query', 'id', 'ids', 'refresh'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
-    record('tool_call', { toolName: event.toolName, toolCallId: event.toolCallId, inputSha256: sha(JSON.stringify(input)), selectors,
+    const toolSource = typeof api.getAllTools === 'function' ? api.getAllTools().find(tool => tool.name === event.toolName)?.sourceInfo : undefined;
+    record('tool_call', { toolName: event.toolName, toolCallId: event.toolCallId,
+      ...(event.parentToolCallId === undefined ? {} : { parentToolCallId: event.parentToolCallId }),
+      ...(toolSource === undefined ? {} : { toolSource }),
+      inputSha256: sha(JSON.stringify(input)), selectors,
       executionTool: ['bash', 'powershell', 'codemode', 'execute', 'eval'].includes(event.toolName),
       reviewedReadTool: Boolean(inspection) || ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use'].includes(event.toolName),
       ...(inspection ? { ownedProjectInspection: inspection } : {}) });
   });
-  on('tool_result', event => { record('tool_result', { toolName: event.toolName, toolCallId: event.toolCallId, isError: event.isError === true }); receipt({ ...event, role: 'toolResult' }); });
+  on('tool_result', event => {
+    const content = JSON.stringify(event.content);
+    let contentArtifact;
+    if (content !== undefined && toolResultDirectory) {
+      const path = toolResultDirectory + '/' + sha(event.toolCallId) + '.json';
+      fs.writeFileSync(path, content, { flag: 'wx', mode: 0o600 });
+      contentArtifact = { path, sha256: sha(content), bytes: Buffer.byteLength(content) };
+    }
+    record('tool_result', { toolName: event.toolName, toolCallId: event.toolCallId, isError: event.isError === true,
+      ...(event.parentToolCallId === undefined ? {} : { parentToolCallId: event.parentToolCallId }),
+      ...(event.input === undefined ? {} : { inputSha256: sha(JSON.stringify(event.input)) }),
+      ...(content === undefined ? {} : { content: { sha256: sha(content), bytes: Buffer.byteLength(content) } }),
+      ...(contentArtifact === undefined ? {} : { contentArtifact }) });
+    receipt({ ...event, role: 'toolResult' });
+  });
   on('message_end', event => {
     const message = event.message;
     if (message?.role !== 'assistant' || !['stop', 'length', 'error', 'aborted'].includes(message.stopReason)) return;

@@ -101,6 +101,8 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
 
 cwd 来自 bindings.private.fixture.projectRoot；ownership 来自 fixtureRoot/ownership.json，不由调用者随意声明。不要把 token、正确答案、期望工具调用或私有字段塞入 prompt、system prompt、context 文件或模型环境提示。
 
+明确离线检查安装包的场景由运行器绑定 `paired-maintain@A/SKILL.md`：原件来自本轮 Broker 的实际配对包，并在观测目录冻结。这个私有绑定只用于核对真实 native read 和 provider 请求，不预加载正文；旧全局包的目录存在不能证明它属于当前候选。
+
 daily 正常加载全局与项目 native Skills、其他扩展/MCP；no-native-skills 只关闭默认 native 发现，仍需如实记录 Broker local 与可读路径。正式请求和响应必须证明实际 worker 路由；模型配置标签、RPC success 和进程退出零均不足以通过。
 
 ## 事件和私有判定
