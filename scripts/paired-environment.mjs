@@ -9,6 +9,7 @@ import { constants } from 'node:fs';
 import { access, chmod, copyFile, cp, lstat, mkdir, readFile, readdir, readlink, realpath, stat, symlink, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { captureRuntimeIdentity, compareRuntimeIdentity } from './paired-runtime-identity.mjs';
 
 const DEFAULTS = {
   cli: 'https://github.com/yoyooyooo/notion-skills-cli.git',
@@ -28,12 +29,14 @@ export const HELP = `Usage:
   node scripts/paired-environment.mjs create --root ABSOLUTE_NEW_DIRECTORY
     [--cli-repository URL --broker-repository URL --cli-ref next --broker-ref next]
     [--pi-entry ABSOLUTE_PI_JS]
-  node scripts/paired-environment.mjs build --root ROOT [--id BUILD_ID]
+  node scripts/paired-environment.mjs build --root ROOT [--id BUILD_ID] [--pass-env ENV_NAME ...]
   node scripts/paired-environment.mjs check --root ROOT --build BUILD_ID
   node scripts/paired-environment.mjs run --root ROOT --build BUILD_ID
     --target cli|pi|command [--id RUN_ID] [--cwd workspace|cli|broker]
     [--entry TEST_SKILLS_DATABASE_UUID | --parent TEST_PARENT_UUID]
     [--skills ABSOLUTE_DIRECTORY] [--models ABSOLUTE_MODELS_JSON]
+    [--pi-mode broker|native] [--native-skills ABSOLUTE_DIRECTORY]
+    [--pi-extension ABSOLUTE_ENTRY ...]
     [--pass-env ENV_NAME ...] [--timeout-ms MILLISECONDS]
     [--stdin inherit|ignore] -- ARGUMENTS
 
@@ -43,8 +46,13 @@ private dependencies, and seals complete CLI/Broker packages. No implicit latest
 build, global install, automatic pull, cleanup, or release is performed.
 
 run starts with private CLI/Broker config, cache, state, scheduler, Pi agent/session,
-skill, working and temporary directories. HOME is unchanged. Pi uses the explicit
-paired extension with -ne -ns -nc --no-mcp --no-prompt-templates. Credentials are
+skill, working and temporary directories. HOME is unchanged. Pi uses a single
+declared launch profile for both direct runs and the private pi wrapper. The
+default broker mode loads the paired Broker; native mode requires --native-skills
+and loads that copied root through Pi's own --skill path, without the Broker.
+Both disable automatic resource discovery. Declare common observers/extensions
+with repeatable --pi-extension; resource and session overrides after -- are rejected.
+Credentials are
 absent unless named by --pass-env. --models accepts environment variable references
 for credentials, never literal keys or shell commands. --skills copies a selected
 corpus for Broker discovery; local originals remain untouched. --entry records
@@ -55,8 +63,12 @@ help, such as ctl library init --entry ENTRY. Neither launcher option restricts 
 token's remote permissions.
 A default run has no remote source.
 
-Node and Pi are machine prerequisites, not installed per task. Their actual entry
-and version are recorded. create locates Pi from its executable or npm global root;
+Node, Pi and Bun are machine prerequisites, not installed per task. The selected
+entries, versions and declared file identities are observed in the run environment
+before and after execution. Drift or an unavailable check fails the run receipt,
+while retaining the command's own exit code, timeout and stdout/stderr separately.
+This bounded observation does not freeze the entire toolchain installation.
+create locates Pi from its executable or npm global root;
 use --pi-entry if your normal command is a custom shell wrapper. Upgrade the shared
 baseline normally; each build/run records and uses the current tool identities.
 Command stdout/stderr go to runs/<id>/*.log; the launcher prints a JSON result.
@@ -71,11 +83,12 @@ export function parseArgs(args) {
   const [command, ...rest] = args;
   const allowed = {
     create: ['root', 'cli-repository', 'broker-repository', 'cli-ref', 'broker-ref', 'pi-entry'],
-    build: ['root', 'id'], check: ['root', 'build'],
-    run: ['root', 'build', 'target', 'id', 'cwd', 'entry', 'parent', 'skills', 'models', 'pass-env', 'timeout-ms', 'stdin'],
+    build: ['root', 'id', 'pass-env'], check: ['root', 'build'],
+    run: ['root', 'build', 'target', 'id', 'cwd', 'entry', 'parent', 'skills', 'models', 'pass-env', 'timeout-ms', 'stdin',
+      'pi-mode', 'native-skills', 'pi-extension'],
   };
   assert.ok(allowed[command], 'Choose create, build, check, or run; see --help');
-  const options = { command, args: [], 'pass-env': [] };
+  const options = { command, args: [], 'pass-env': [], 'pi-extension': [] };
   for (let index = 0; index < rest.length; index++) {
     const arg = rest[index];
     if (arg === '--') { options.args = rest.slice(index + 1); break; }
@@ -83,7 +96,7 @@ export function parseArgs(args) {
     assert.ok(arg.startsWith('--') && allowed[command].includes(key), 'Unknown option: ' + arg);
     const value = rest[++index];
     assert.ok(value && !value.startsWith('--'), 'Missing value for ' + arg);
-    if (key === 'pass-env') options[key].push(value);
+    if (key === 'pass-env' || key === 'pi-extension') options[key].push(value);
     else { assert.equal(options[key], undefined, 'Repeated option: ' + arg); options[key] = value; }
   }
   assert.ok(options.root && isAbsolute(options.root), '--root must be an absolute path');
@@ -198,10 +211,11 @@ export function runtimeEnvironment(runRoot, buildRoot, inherited, passNames = []
   }
   for (const name of passNames) {
     assert.match(name, /^[A-Z][A-Z0-9_]*$/, 'Pass environment variable names, not values');
-    assert.ok(!/^(NTN_SKILLS_|CONTEXT_BROKER_|PI_|XDG_|PAIRED_|NODE_|BUN_|NPM_|NPM_CONFIG_|GIT_|SSH_|DYLD_|LD_)/.test(name) &&
+    assert.ok((name === 'NODE_EXTRA_CA_CERTS' || !/^(NTN_SKILLS_|CONTEXT_BROKER_|PI_|XDG_|PAIRED_|NODE_|BUN_|NPM_|NPM_CONFIG_|GIT_|SSH_|DYLD_|LD_)/.test(name)) &&
       !['PATH', 'HOME', 'USERPROFILE', 'BASH_ENV', 'ENV', 'TMP', 'TEMP', 'TMPDIR', 'SHELL'].includes(name),
     'Cannot override an isolation or executable setting: ' + name);
     assert.ok(inherited[name], 'Environment variable is not set: ' + name);
+    if (name === 'NODE_EXTRA_CA_CERTS') assert.ok(isAbsolute(inherited[name]), 'Additional CA certificates must use an absolute path');
     env[name] = inherited[name];
   }
   Object.assign(env, {
@@ -233,7 +247,7 @@ async function child(command, args, { cwd, env, log, timeout = 600_000, stdin = 
     proc.once('error', error => { spawnError = error.message; });
     proc.once('close', (code, signal) => {
       closed = true;
-      resolveChild({ exit_code: code ?? 1, signal, timed_out: timedOut, ...(spawnError ? { error: spawnError } : {}) });
+      resolveChild({ exit_code: code ?? 1, signal, timed_out: timedOut, spawned: Boolean(proc.pid), ...(spawnError ? { error: spawnError } : {}) });
     });
   });
   // A parent can exit while its descendants still own the pipes/process group.
@@ -337,7 +351,7 @@ export async function buildEnvironment(options) {
   const sources = {};
   try {
     for (const name of ['cli', 'broker']) sources[name] = await snapshot(join(options.root, name), join(root, 'source', name));
-    const env = runtimeEnvironment(join(root, 'build-state'), root, process.env, [], environment.tools.node.path);
+    const env = runtimeEnvironment(join(root, 'build-state'), root, process.env, options['pass-env'] ?? [], environment.tools.node.path);
     // Git authentication is not needed for the public locked dependency installs.
     for (const path of ['tmp', 'config']) await mkdir(join(root, 'build-state', path), { recursive: true });
     await writeFile(env.npm_config_userconfig, '', { flag: 'wx', mode: 0o600 });
@@ -368,6 +382,7 @@ export async function buildEnvironment(options) {
     await save(join(root, 'build.json'), { version: VERSION, kind: 'paired-build', environment_id: environment.environment_id,
       build_id: buildId, root, created_at: new Date().toISOString(), sources, packages,
       source_tree: sourceTree, selected_cli_sha256: brokerReceipt.selected_cli.sha256, tools: environment.tools,
+      passed_environment_names: options['pass-env'] ?? [],
       launcher: await toolIdentity(fileURLToPath(import.meta.url)) });
     return { status: 'built', root, build_id: buildId, selected_cli_sha256: brokerReceipt.selected_cli.sha256 };
   } catch (error) {
@@ -416,9 +431,71 @@ async function copyModels(path, destination, passNames) {
   inspect(models); await save(destination, models);
 }
 
-async function wrapper(path, node, entry, fixedArgs) {
+// Used by the direct target and embedded verbatim in its private wrapper.
+// An arbitrary command can still launch another executable; this is not a sandbox.
+export function validatePiArguments(args) {
+  const managed = new Set(['--session-dir', '--session', '-s', '--resume', '-r', '--continue', '-c', '--fork', '--session-id', '--no-session',
+    '--extension', '-e', '--skill', '--no-skills', '-ns', '--no-extensions', '-ne',
+    '--prompt-template', '--no-prompt-templates', '-np', '--theme', '--no-themes',
+    '--no-context-files', '-nc', '--no-mcp', '--approve', '-a', '--no-approve', '-na']);
+  for (const arg of args) {
+    if (arg === '--') break;
+    if (managed.has(arg.split('=')[0])) {
+      throw new Error('Pi resource and session selection belongs to the isolated launcher; use its declared Pi inputs: ' + arg.split('=')[0]);
+    }
+  }
+}
+
+async function piLaunchDefinition(options, root, buildRoot, pi) {
+  const mode = options['pi-mode'] ?? 'broker';
+  assert.ok(['broker', 'native'].includes(mode), '--pi-mode must be broker or native');
+  assert.ok(mode !== 'native' || options['native-skills'], 'Native Pi requires --native-skills');
+  assert.ok(mode !== 'native' || !options.skills, '--skills is for Broker discovery; use --native-skills in native mode');
+  assert.ok(mode !== 'broker' || !options['native-skills'], '--native-skills requires --pi-mode native');
+  const nativeRoots = [];
+  let nativeCorpus = null;
+  if (options['native-skills']) {
+    const source = options['native-skills'];
+    assert.ok(isAbsolute(source) && (await stat(source)).isDirectory(), '--native-skills must be an absolute directory');
+    const before = await inventory(source);
+    const destination = join(root, 'skills/native');
+    await copyTree(source, destination, before);
+    const copied = await inventory(destination);
+    for (const file of before.files) if (file.sha256) {
+      assert.equal(copied.files.find(copy => copy.path === file.path)?.sha256, file.sha256, 'Native Skill copy differs: ' + file.path);
+    }
+    assert.equal((await inventory(source)).sha256, before.sha256, 'Native Skill input changed while copying');
+    nativeRoots.push(destination);
+    nativeCorpus = { source, source_sha256: before.sha256, root: destination, copied_sha256: copied.sha256 };
+  }
+  const extensions = [];
+  const selectedBroker = join(buildRoot, 'broker/src/index.ts');
+  if (mode === 'broker') extensions.push({ ...await toolIdentity(selectedBroker), role: 'broker' });
+  for (const selected of options['pi-extension'] ?? []) {
+    assert.ok(isAbsolute(selected), '--pi-extension must be an absolute file or directory');
+    const path = await realpath(selected);
+    assert.ok(mode !== 'native' || !own(join(buildRoot, 'broker'), path), 'Native Pi cannot select the paired Broker as a common extension');
+    assert.ok(!extensions.some(extension => extension.path === path), 'Repeated Pi extension: ' + path);
+    const info = await stat(path);
+    assert.ok(info.isFile() || info.isDirectory(), 'Pi extension must be an ordinary file or directory');
+    const identity = info.isDirectory()
+      ? { path, sha256: (await inventory(path)).sha256, identity_scope: 'declared_directory' }
+      : { ...await toolIdentity(path), identity_scope: 'entry_file_only' };
+    extensions.push({ ...identity, role: 'common' });
+  }
+  const settings = { packages: [], enableSkillCommands: mode === 'native' };
+  const argv = ['--offline', '-ne', '-ns', '-nc', '--no-mcp', '--no-prompt-templates', '--no-approve',
+    ...extensions.flatMap(extension => ['-e', extension.path]),
+    ...nativeRoots.flatMap(path => ['--skill', path]), '--session-dir', join(root, 'sessions')];
+  return { version: 1, mode, entry: pi.path, argv, settings, extensions,
+    native_skill_roots: nativeRoots, native_corpus: nativeCorpus,
+    observation_scope: 'declared launch inputs; actual resource loading requires a host observer' };
+}
+
+async function wrapper(path, node, entry, fixedArgs, validator) {
   const text = '#!' + node + '\n' +
     'const {spawn}=require("node:child_process");\n' +
+    (validator ? '(' + validator.toString() + ')(process.argv.slice(2));\n' : '') +
     'const p=spawn(' + JSON.stringify(node) + ',' + JSON.stringify([entry, ...fixedArgs]) + '.concat(process.argv.slice(2)),{stdio:"inherit",env:process.env});\n' +
     'p.on("error",e=>{console.error(e.message);process.exitCode=1});p.on("exit",(code)=>{process.exitCode=code??1});\n';
   await writeFile(path, text, { mode: 0o700, flag: 'wx' });
@@ -434,10 +511,7 @@ export async function runEnvironment(options) {
   const cwdChoice = options.cwd ?? 'workspace';
   assert.ok(['workspace', 'cli', 'broker'].includes(cwdChoice), '--cwd must be workspace, cli, or broker');
   assert.ok(options.target === 'command' || cwdChoice === 'workspace', '--cwd is only for command tests');
-  if (options.target === 'pi') {
-    const managed = ['--session-dir', '--session', '-s', '--resume', '-r', '--continue', '-c'];
-    assert.ok(!options.args.some(arg => managed.includes(arg.split('=')[0])), 'Session selection belongs to the isolated launcher');
-  }
+  if (options.target === 'pi') validatePiArguments(options.args);
   const timeout = Number(options['timeout-ms'] ?? 600_000);
   assert.ok(Number.isSafeInteger(timeout) && timeout > 0 && timeout <= 3_600_000, 'Timeout must be 1..3600000 milliseconds');
   const stdin = options.stdin ?? 'ignore';
@@ -459,25 +533,20 @@ export async function runEnvironment(options) {
   }
   const sources = options.entry ? [{ id: 'notion', type: 'notion', namespace: 'notion', database: options.entry,
     cacheDir: join(root, 'cache/broker'), prefetch: false }] : [];
+  const pi = environment.tools.pi;
+  const piLaunch = await piLaunchDefinition(options, root, buildRoot, pi);
   await save(env.CONTEXT_BROKER_CONFIG, { sources, skillRoots, extraSkillRoots: [], ruleRoots: [], discoveryCatalogs: [], extraDiscoveryCatalogs: [], requireAutoload: false });
-  await save(join(root, 'pi-agent/settings.json'), { packages: [], enableSkillCommands: false });
+  await save(join(root, 'pi-agent/settings.json'), piLaunch.settings);
+  await save(join(root, 'pi-launch.json'), piLaunch);
   if (options.models) await copyModels(options.models, join(root, 'pi-agent/models.json'), options['pass-env']);
   if (options.entry) env.PAIRED_NOTION_ENTRY = options.entry;
   if (options.parent) env.PAIRED_NOTION_PARENT = options.parent;
-  const piArgs = ['--offline', '-ne', '-ns', '-nc', '--no-mcp', '--no-prompt-templates',
-    '-e', join(buildRoot, 'broker/src/index.ts'), '--session-dir', join(root, 'sessions')];
   await symlink(environment.tools.bun.path, join(root, 'bin/bun'));
   await wrapper(join(root, 'bin/ntn-skills'), environment.tools.node.path, env.PAIRED_CLI_ENTRY, []);
-  await wrapper(join(root, 'bin/pi'), environment.tools.node.path, environment.tools.pi.path, piArgs);
-  const pi = await findPi(environment.tools.pi.path, environment.tools.npm);
-  const runtime = { node: { ...await toolIdentity(environment.tools.node.path), version: process.version },
-    pi: { ...await toolIdentity(pi.path), version: pi.version,
-      package_manifest: await toolIdentity(join(pi.package_root, 'package.json')) } };
-  try { runtime.pi.runtime_module = await toolIdentity(join(dirname(pi.path), 'cli-runtime.js')); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  await wrapper(join(root, 'bin/pi'), environment.tools.node.path, piLaunch.entry, piLaunch.argv, validatePiArguments);
   let command = environment.tools.node.path, args;
   if (options.target === 'cli') args = [env.PAIRED_CLI_ENTRY, ...options.args];
-  else if (options.target === 'pi') args = [pi.path, ...piArgs, ...options.args];
+  else if (options.target === 'pi') args = [piLaunch.entry, ...piLaunch.argv, ...options.args];
   else {
     assert.ok(options.args.length, '--target command requires a command after --');
     [command, ...args] = options.args;
@@ -494,18 +563,29 @@ export async function runEnvironment(options) {
     env.NTN_SKILLS_BUILD_ENTRY = env.PAIRED_CLI_ENTRY;
   }
   const cwd = cwdChoice === 'workspace' ? join(root, 'workspace') : join(root, 'source', cwdChoice);
+  const runtimeSelection = { node: environment.tools.node.path, pi, bun: join(root, 'bin/bun'), env, cwd,
+    launchers: { pi: join(root, 'bin/pi'), cli: join(root, 'bin/ntn-skills') },
+    usage: { node: options.target === 'command' ? 'potential' : 'requested',
+      pi: options.target === 'pi' ? 'requested' : options.target === 'command' ? 'potential' : 'not_requested',
+      bun: options.target === 'command' ? 'potential' : 'not_requested' } };
+  const runtime = await captureRuntimeIdentity(runtimeSelection);
   await save(join(root, 'run.json'), { version: VERSION, kind: 'isolated-development-run', environment_id: environment.environment_id,
     run_id: runId, root, build_id: options.build, build_root: buildRoot, target: options.target, cwd,
-    runtime, launcher: await toolIdentity(fileURLToPath(import.meta.url)), stdin,
+    runtime, pi_launch: piLaunch, launcher: await toolIdentity(fileURLToPath(import.meta.url)),
+    runtime_observer: await toolIdentity(fileURLToPath(new URL('./paired-runtime-identity.mjs', import.meta.url))), stdin,
     argument_sha256: hash(JSON.stringify(args)), passed_environment_names: options['pass-env'],
     remote: { entry: options.entry ?? null, parent: options.parent ?? null },
     paths: Object.fromEntries(Object.entries(env).filter(([name, value]) => name !== 'PATH' && typeof value === 'string' && own(root, value))) });
   const result = await child(command, args, { cwd, env, log: join(root, 'command'), timeout, stdin: stdin === 'inherit' });
+  const runtimeAfter = await captureRuntimeIdentity(runtimeSelection);
+  const runtimeCheck = { ...compareRuntimeIdentity(runtime, runtimeAfter), before: runtime, after: runtimeAfter };
   let artifactStatus = 'passed';
   try { await checkEnvironment(options); } catch { artifactStatus = 'changed'; }
-  const receipt = { status: result.exit_code === 0 && !result.timed_out && artifactStatus === 'passed' ? 'passed' : 'failed',
+  const receipt = { status: result.exit_code === 0 && !result.timed_out && artifactStatus === 'passed' && runtimeCheck.status === 'unchanged' ? 'passed' : 'failed',
     scope: 'isolated-development-run', root, run_id: runId, build_id: options.build,
-    ...result, frozen_artifacts: artifactStatus, actual_pi_process: options.target === 'pi' ? 'launched' : 'not_asserted',
+    ...result, command_status: result.timed_out ? 'timed_out' : result.exit_code === 0 ? 'succeeded' : 'failed',
+    runtime_check: runtimeCheck, frozen_artifacts: artifactStatus,
+    actual_pi_process: options.target === 'pi' && result.spawned ? 'launched' : 'not_asserted',
     stdout: join(root, 'command.stdout.log'), stderr: join(root, 'command.stderr.log') };
   await save(join(root, 'result.json'), receipt);
   return receipt;
