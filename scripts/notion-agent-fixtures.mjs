@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { access, appendFile, chmod, lstat, mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { validateAgentFixtureRecipe } from './notion-agent-scenarios.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -212,9 +213,28 @@ export function blockShape(blocks) {
   });
 }
 
-/** Native text is compared after the CLI's documented Markdown normalization, never as original-byte proof. */
-export function fixtureTextMeaning(value) {
-  return withoutFrontmatter(value).replace(/\n{3,}/g, '\n\n');
+/** Use the same selected package's current-writer semantics, never a second Markdown normalizer. */
+async function nativeMarkdownComparator(context) {
+  const entry = await realpath(context.cli);
+  let root = dirname(entry);
+  while (!(await exists(join(root, 'package.json')))) {
+    const parent = dirname(root); assert.notEqual(parent, root, 'Selected fixture CLI has no package manifest'); root = parent;
+  }
+  const manifestPath = join(root, 'package.json'), manifest = await json(manifestPath);
+  assert.equal(manifest.name, 'ntn-skills', 'Native comparison requires the selected ntn-skills package');
+  assert.equal(typeof manifest.bin?.['ntn-skills'], 'string');
+  assert.equal(await realpath(resolve(root, manifest.bin['ntn-skills'])), entry, 'Selected fixture CLI differs from its public package bin');
+  const exported = manifest.exports?.['./sdk'], target = typeof exported === 'string' ? exported : exported?.import;
+  assert.equal(typeof target, 'string', 'Selected fixture CLI has no public SDK export');
+  const sdkPath = await realpath(resolve(root, target));
+  assert.ok(inside(root, sdkPath), 'Selected fixture SDK must stay inside its CLI package');
+  const binding = { cli: await artifact(entry), manifest: await artifact(manifestPath), sdk: await artifact(sdkPath) };
+  if (context.nativeMarkdownSdk) assert.deepEqual(binding, context.nativeMarkdownSdk, 'Selected fixture CLI/SDK build identity changed');
+  const sdk = await import(pathToFileURL(sdkPath).href);
+  if (sdk.SDK_VERSION !== 2 || sdk.PACKAGE_VERSION !== manifest.version || typeof sdk.compareNativeMarkdown !== 'function')
+    throw fail('AGENT_FIXTURE_NATIVE_COMPARISON_UNAVAILABLE', 'The selected CLI SDK must export its current Native Markdown comparator.', { sdk: binding.sdk });
+  context.nativeMarkdownSdk ??= binding;
+  return sdk.compareNativeMarkdown;
 }
 
 function fileBytes(file) { return Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8'); }
@@ -405,8 +425,11 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
     const expectedInput = versionFiles.find(item => item.path === resourcePath);
     if (expectedInput && !owned.wasUnmanaged) {
       const planned = await readFile(expectedInput.input);
-      if (/\.(md|markdown)$/iu.test(resourcePath) && owned.placement !== 'source')
-        assert.equal(fixtureTextMeaning(bytes.toString()), fixtureTextMeaning(planned.toString()), 'Native content changed meaning');
+      if (/\.(md|markdown)$/iu.test(resourcePath) && owned.placement !== 'source') {
+        const compare = await nativeMarkdownComparator(context);
+        const meaning = compare({ expected: withoutFrontmatter(planned.toString()), observed: withoutFrontmatter(bytes.toString()) });
+        assert.ok(meaning === 'exact' || meaning === 'normalized', 'Native content changed meaning');
+      }
       else assert.equal(sha(bytes), sha(planned), 'Exact source/resource bytes changed');
       if (owned.placement === 'source') assert.equal(file.mode, expectedInput.mode, 'Exact upstream file mode changed');
     }
@@ -628,6 +651,7 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
     objects: {}, projectRoot: join(root, 'project'), observedReadbacks: {}, ownership: { runId, root, token: randomUUID(), createdAt: new Date().toISOString(), globalDirectories: [], temporaryRoot: join(root, 'temporary') } };
   await save(join(root, 'ownership.json'), context.ownership);
   for (const path of ['commands', 'readbacks', 'inputs', 'quarantine', 'temporary', 'project/.agents/skills']) await mkdir(join(root, path), { recursive: true, mode: 0o700 });
+  if (recipe.objects.some(object => object.placement === 'notion')) await nativeMarkdownComparator(context);
   const inspect = await cli(context, ['ctl', 'library', 'inspect', entry], 'inspect-library'); context.library = inspect.value.library;
   assert.equal(context.library.skills.database_id.replaceAll('-', ''), entry.replaceAll('-', ''));
   const bindings = { version: 1, public: { ...(recipe.public ?? {}) }, private: { fixture: context, objects: {}, bodies: {}, facts: recipe.facts ?? {}, readbacks: structuredClone(recipe.readbacks ?? {}) } };

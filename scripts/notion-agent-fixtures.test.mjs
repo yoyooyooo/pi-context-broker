@@ -5,8 +5,9 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { access, mkdir, mkdtemp, realpath, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { blockShape, fixtureTextMeaning, readAgentFixture, runAgentFixtureEvent, cleanupAgentFixtures, prepareAgentFilteredView, prepareAgentFixtures } from './notion-agent-fixtures.mjs';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { blockShape, readAgentFixture, runAgentFixtureEvent, cleanupAgentFixtures, prepareAgentFilteredView, prepareAgentFixtures } from './notion-agent-fixtures.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const exists = path => access(path).then(() => true, () => false);
@@ -59,11 +60,6 @@ test('projection comparison removes page identity while retaining nested text an
   assert.deepEqual(blockShape(source), blockShape(restored));
   restored[0].children[0].code.rich_text[0].text.content = 'print(2)';
   assert.notDeepEqual(blockShape(source), blockShape(restored));
-});
-
-test('native meaning normalization permits line endings but keeps words and syntax', () => {
-  assert.equal(fixtureTextMeaning('---\nname: sample\n---\n# Title\r\n\r\nBody.\r\n'), '# Title\n\nBody.');
-  assert.notEqual(fixtureTextMeaning('# Title\n\nA [link](https://a.example)'), fixtureTextMeaning('# Title\n\nA [link](https://b.example)'));
 });
 
 test('fixture teardown retains temporary operation inputs and records their ownership with the evidence', async t => {
@@ -625,6 +621,12 @@ test('Source lifecycle events require an owned Source and a verified pending int
 // This finite process/API double checks fixture orchestration, not live Notion acceptance.
 async function preparationHarness(t) {
   const { root } = await fixture(t), statePath = join(root, 'public-cli-state.json'), cliPath = join(root, 'public-cli.mjs');
+  assert.ok(process.env.NTN_SKILLS_BUILD_ENTRY, 'Fixture regressions require the selected built CLI/SDK');
+  const selectedCli = await realpath(process.env.NTN_SKILLS_BUILD_ENTRY), selectedPackage = await json(join(dirname(dirname(selectedCli)), 'package.json'));
+  const sdkTarget = selectedPackage.exports['./sdk'].import, sdkPath = join(dirname(dirname(selectedCli)), sdkTarget);
+  // The process/API double uses the actual selected public SDK comparator, not a fake parser.
+  await writeJson(join(root, 'package.json'), { name: 'ntn-skills', version: selectedPackage.version, type: 'module', bin: { 'ntn-skills': './public-cli.mjs' }, exports: { './sdk': './sdk.mjs' } });
+  await writeFile(join(root, 'sdk.mjs'), 'export {SDK_VERSION,PACKAGE_VERSION,compareNativeMarkdown} from ' + JSON.stringify(pathToFileURL(sdkPath).href) + ';\n');
   const entry = '11111111-1111-4111-8111-111111111111';
   const ids = Object.fromEntries(['Name', 'Description', 'Skill ID', 'Current State', 'Operation', 'Enabled', 'Default Context', 'Requires', 'Members'].map(key => [key, key]));
   const library = { library_id: 'unit-library', skills: { database_id: entry, data_source_id: entry, property_ids: ids },
@@ -659,7 +661,7 @@ else if(args[0]==='ctl'&&args[2]==='skill'){
 }else if(args[0]==='read'){
   const record=state.records.find(row=>row.id===args[1]);assert.ok(record);assert.equal(record.enabled,true,'Disabled content cannot be consumed');
   if(state.failRead){value={ok:false,error:{code:'STATE_UNAVAILABLE'}};process.exitCode=1;}
-  else value={ok:true,has_more:false,path:'SKILL.md',content:record.content,ref:'unit:'+record.id,snapshot_id:'snapshot:'+record.id,version_id:'version:'+record.id,scope:'unit-scope',record:{id:record.skillId,locator:{page_id:record.id,skill_id:record.skillId}},effects:{remote_writes:'none'}};
+  else value={ok:true,has_more:false,path:'SKILL.md',content:state.observedContent??record.content,ref:'unit:'+record.id,snapshot_id:'snapshot:'+record.id,version_id:'version:'+record.id,scope:'unit-scope',record:{id:record.skillId,locator:{page_id:record.id,skill_id:record.skillId}},effects:{remote_writes:'none'}};
 }else if(args[0]==='files')value={ok:true,files:[{path:'SKILL.md',mode:'100644'}]};
 else throw Error('Unexpected CLI request '+JSON.stringify(args));
 await writeFile(path,JSON.stringify(state));process.stdout.write(JSON.stringify(value)+'\\n');
@@ -690,6 +692,45 @@ await writeFile(path,JSON.stringify(state));process.stdout.write(JSON.stringify(
 
 const managedObject = (id, relations = {}) => ({ id, name: id, description: 'Business instructions for ' + id,
   placement: 'notion', initial: 'A', versions: { A: { files: [{ path: 'SKILL.md', content: '# ' + id + '\n\nFollow the business rule.\n' }], ...relations } } });
+
+test('Native readback accepts canonical escapes through the selected public SDK and rejects changed complete content', async t => {
+  const expected = '# Invoice\n\nRead total_cents and `last_invoice_id`.\n\n[Policy](https://example.com/a)\n';
+  const canonical = expected.replace('total_cents', 'total\\_cents');
+  for (const [name, observed, passes] of [
+    ['canonical underscore', canonical, true],
+    ['changed text', canonical.replace('total\\_cents', 'total\\_dollars'), false],
+    ['changed link', canonical.replace('example.com/a', 'example.com/b'), false],
+    ['changed code', canonical.replace('`last_invoice_id`', '`last\\_invoice_id`'), false],
+    ['truncated document', '# Invoice\n', false],
+  ]) await t.test(name, async t => {
+    const harness = await preparationHarness(t), object = managedObject('invoice');
+    object.versions.A.files[0].content = expected;
+    const state = await json(harness.statePath); state.observedContent = observed; await writeJson(harness.statePath, state);
+    const preparing = prepareAgentFixtures({ ...harness.options, recipe: { kind: 'native-management', objects: [object] } });
+    if (!passes) { await assert.rejects(preparing, /Native content changed meaning/u); return; }
+    const bindings = await preparing, selected = bindings.private.fixture.nativeMarkdownSdk;
+    assert.equal(selected.sdk.sha256, hash(await readFile(selected.sdk.path)));
+    assert.equal(await readFile(bindings.private.bodies['invoice@A/SKILL.md'].path, 'utf8'), observed);
+    await writeFile(selected.sdk.path, '\n', { flag: 'a' });
+    await assert.rejects(readAgentFixture(bindings, 'invoice', { version: 'A' }), /build identity changed/u);
+  });
+});
+
+test('missing or mismatched SDK and wrapper inputs fail before fixture creation', async t => {
+  for (const kind of ['missing export', 'wrong SDK package', 'shell wrapper']) await t.test(kind, async t => {
+    const harness = await preparationHarness(t);
+    if (kind === 'missing export') await writeFile(join(harness.root, 'sdk.mjs'), 'export const SDK_VERSION=2,PACKAGE_VERSION="0.1.0";\n');
+    if (kind === 'wrong SDK package') {
+      const path = join(harness.root, 'package.json'), manifest = await json(path); manifest.version = '999.0.0'; await writeJson(path, manifest);
+    }
+    if (kind === 'shell wrapper') {
+      const path = join(harness.root, 'wrapper.sh'); await writeFile(path, '#!/bin/sh\nexit 1\n'); harness.options.cli = path;
+    }
+    await assert.rejects(prepareAgentFixtures({ ...harness.options, recipe: { kind: 'native-management', objects: [managedObject('missing')] } }), error => kind === 'shell wrapper'
+      ? /differs from its public package bin/u.test(error.message) : error.code === 'AGENT_FIXTURE_NATIVE_COMPARISON_UNAVAILABLE');
+    assert.deepEqual((await json(harness.statePath)).calls, []);
+  });
+});
 
 test('preparation and later readback keep config and scheduler in the owned fixture despite inherited roots', async t => {
   const harness = await preparationHarness(t);
