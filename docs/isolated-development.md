@@ -206,7 +206,7 @@ its evidence available. Every invocation allocates its own run ID and paths:
 | CLI operation state | Private `NTN_SKILLS_HOME` |
 | CLI cache and builtin data | Private `NTN_SKILLS_CACHE_HOME` and `NTN_SKILLS_DATA_HOME` |
 | Request scheduler | Private `NTN_SKILLS_SCHEDULER_ROOT` |
-| Node, Pi and Bun executables | Shared maintained toolchain; actual versions and entries recorded per run |
+| Node, Pi, Bun and Git executables | Shared maintained toolchain; actual versions and entries recorded per run |
 | Pi configuration and sessions | Private agent directory and session paths |
 | Broker configuration | Run-specific `CONTEXT_BROKER_CONFIG` |
 | Local Skills | A run-owned copy of the explicitly selected directory |
@@ -279,7 +279,7 @@ and one of these statuses:
 | `drifted` | At least one observed entry, version or file identity changed; additional unknown observations remain listed |
 | `unknown` | No known difference, but at least one required observation was unavailable |
 
-The scope covers selected Node/Bun entry files and versions, Pi's selected
+The scope covers selected Node/Bun/Git entry files and versions, Pi's selected
 entry/version, package manifest, optional `cli-runtime.js`, and the run-owned
 Pi/CLI wrappers. Version probes use the target's cwd/environment and have a
 five-second limit. Probe output is not retained. Usage states describe what the
@@ -287,6 +287,14 @@ launcher requested or made available; a version probe does not prove a tool was
 used by the task. An arbitrary command's child processes require their own
 observers. These endpoint checks do not inventory every installed dependency or
 prove that no file changed and changed back between observations.
+
+Git is selected from the launcher's current `PATH` and bound in the run's private
+`bin` directory. Builds use the same selection in their private build-state bin.
+This preserves a maintained Git when the isolated target drops inherited `PATH`;
+it does not install Git or fall back silently to `/usr/bin/git`. For pinned Git
+source reads, select a Git supporting `--no-lazy-fetch` before invoking the
+launcher. The CLI checks that capability; recording a version does not prove it.
+Git is recorded as available, which does not claim that the target used it.
 
 `command_status`, `exit_code`, `signal`, `spawned`, and `timed_out` retain the
 target process result. `frozen_artifacts` separately describes the selected

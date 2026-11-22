@@ -779,6 +779,9 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
       || !/^[a-f0-9]{64}$/u.test(ownerTarget.version_id ?? '') || !/^file-[a-f0-9]{64}$/u.test(ownerTarget.file_id ?? '')
       || !/^[a-f0-9]{64}$/u.test(ownerTarget.body_sha256 ?? '') || ownerTarget.entrypoint !== 'SKILL.md'
       || !fixed(ownerTarget.ref, 'SKILL.md', ownerTarget.snapshot_id, ownerTarget.file_id))) return;
+    if (pending.originalInput.path.startsWith('skill://') && (pending.target.ref !== pending.originalInput.path
+      || !fixed(pending.originalInput.path, resource ? pending.target.path : 'SKILL.md', ownerTarget.snapshot_id,
+        resource ? pending.target.file_id : ownerTarget.file_id))) return;
     if (resource) {
       const target = pending.target;
       if (ownerTarget.kind !== 'selected' || ownerTarget.snapshot_id !== snapshot || ownerTarget.version_id !== version
@@ -804,7 +807,7 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
       || typeof path !== 'string' || !path.startsWith('/') || !path.endsWith(tail('entries')) && !resourceStorage
       || path.split('/').some(part => part === '.' || part === '..') || pending.result.isError
       || pending.result.inputSha256 === pending.inputSha256) return;
-    // Probe only the immutable file authorized by the original native short-ref
+    // Probe only the immutable file authorized by the original native registration
     // chain and the same completed result. Resource-only storage has no entry
     // manifest; it must not cause a speculative main-file or manifest read.
     if (fs.realpathSync(path) !== path || !fs.lstatSync(path).isFile()) return;
@@ -887,8 +890,8 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     let toolImplementation;
     if (event.toolName === 'read' && toolResultDirectory && typeof input.path === 'string'
       && Object.keys(input).every(key => ['path', 'refresh'].includes(key))
-      && (input.refresh === undefined || typeof input.refresh === 'boolean') && !(input.path?.startsWith('sr:R') && input.refresh === true)
-      && /^sr:[CSR][A-Za-z0-9_-]{22}$/u.test(input.path ?? '') && event.parentToolCallId === undefined
+      && (input.refresh === undefined || typeof input.refresh === 'boolean')
+      && (/^sr:[CSR][A-Za-z0-9_-]{22}$/u.test(input.path) || input.path.startsWith('skill://')) && event.parentToolCallId === undefined
       && toolSource?.origin === 'package' && toolSource.source === 'npm:pi-compact-ui'
       && typeof toolSource.baseDir === 'string' && toolSource.path === toolSource.baseDir + '/index.ts') {
       const files = ['package.json', 'index.ts'].map(relativePath => {
@@ -901,9 +904,15 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
         const refs = branch.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref' && entry.data?.ref === ref);
         return refs.length === 1 && refs[0].data?.version === 1 ? refs[0].data.target : undefined;
       };
-      const target = targetFor(input.path), kind = input.path.startsWith('sr:R') ? 'resource' : input.path.startsWith('sr:S') ? 'selected' : 'candidate';
+      const canonical = input.path.startsWith('skill://');
+      const fixedRefs = canonical ? branch.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref'
+        && entry.data?.target?.ref === input.path) : [];
+      const registered = canonical ? fixedRefs.length === 1 && fixedRefs[0].data?.version === 1 ? fixedRefs[0].data.ref : undefined : input.path;
+      const prefix = /^sr:([CSR])[A-Za-z0-9_-]{22}$/u.exec(registered ?? '')?.[1];
+      const kind = { C: 'candidate', S: 'selected', R: 'resource' }[prefix], target = targetFor(registered);
       const ownerTarget = kind === 'resource' && /^sr:S[A-Za-z0-9_-]{22}$/u.test(target?.owner ?? '') ? targetFor(target.owner) : target;
-      if (registrations.length === 1 && target?.kind === kind && ownerTarget?.identity?.source === 'notion'
+      if (registrations.length === 1 && kind && target?.kind === kind && ownerTarget?.identity?.source === 'notion'
+        && (!canonical || kind !== 'candidate' && target.ref === input.path) && !(kind === 'resource' && input.refresh === true)
         && (kind !== 'resource' || ownerTarget.kind === 'selected')) pendingPreparedReads.set(event.toolCallId, {
         turn, inputSha256: sha(JSON.stringify(input)), originalInput: JSON.parse(JSON.stringify(input)),
         target: structuredClone(target), ownerTarget: structuredClone(ownerTarget), identity: structuredClone(ownerTarget.identity),
@@ -956,6 +965,9 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
   });
   on('message_end', event => {
     const message = event.message;
+    // The completed native result precedes provider-context reuse, which may
+    // replace its body and intentionally invalidate that projected receipt.
+    if (message?.role === 'toolResult') { receipt(message); return; }
     if (message?.role !== 'assistant' || !['stop', 'length', 'error', 'aborted'].includes(message.stopReason)) return;
     const value = text(message.content);
     record('assistant_final', { text: value, sha256: sha(value), bytes: Buffer.byteLength(value), stopReason: message.stopReason,

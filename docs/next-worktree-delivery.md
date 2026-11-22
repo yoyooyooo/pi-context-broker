@@ -67,7 +67,7 @@ plan 为 `prepared_not_executed`。run 在新普通 `pi -ns` 中检查实际注�
 
 Pi 的 `responseModel` 是可选响应信息。现役 cost observer 区分原始未报告、合法报告和非法值；分析器保留未报告为 unknown，不从请求 model 补值。HTTP/SSE 完成仍需真实传输和同请求的响应证据；缺少这项原始状态的旧观察不能按新规则补成通过。
 
-普通真实模型可能由现役 `pi-compact-ui` 注册 `read`。Broker 的公开 hook 将候选或已选主文（`sr:C…`、`sr:S…`）及单个资源（`sr:R…`）解析为不可变文件，再交给该包的内建读取委托。该有限 profile 只接受单路径完整文本读取；原始 `refresh` 布尔参数必须原样保留，显式刷新仍为查看，不改变已激活工作集。task observer 仅在同调用、同轮的当前 v3 主文或 v2 资源回执到达后，保全实际执行参数和完整文件字节。原始短引用必须已存在于实际 native 分支；资源还必须唯一关联此前已选 owner，并匹配其 scope、snapshot、version 和固定 File。entry 投影同时保全并核对完整 `.broker-entry.json`；独立 resource 投影没有该 manifest，不猜测或读取不存在的主文清单。分析器重新核验原始与 prepared 参数、当前 Broker 注册、不可变身份、实际 callback/回执顺序及交付的完整字节，并只接受已审阅 `pi-compact-ui@0.1.3` 的精确 package/index 字节。该 profile 不覆盖批量、部分读取、其他插件或其他工具。旧观察缺少原件时继续失败，不能据事后路径或回执补造证明；更新后用新真实模型运行取证。
+普通真实模型可能由现役 `pi-compact-ui` 注册 `read`。Broker 的公开 hook 将候选或已选主文（`sr:C…`、`sr:S…`）、单个资源（`sr:R…`）以及已登记的完整固定 File `skill://` 地址解析为不可变文件，再交给该包的内建读取委托。完整地址必须带 snapshot 和 File 身份，精确匹配实际 native 分支中此前唯一的已选主文或资源登记；缺少固定身份、额外 query 或歧义登记均不接受。该有限 profile 只接受单路径完整文本读取；原始 `refresh` 布尔参数必须原样保留，主文显式刷新可查看同 owner 新版，但不改变已激活工作集。task observer 仅在同调用、同轮的当前 v3 主文或 v2 资源回执到达后，保全实际执行参数和完整文件字节。原始引用必须已存在于实际 native 分支；资源还必须唯一关联此前已选 owner，并匹配其 scope、snapshot、version 和固定 File。entry 投影同时保全并核对完整 `.broker-entry.json`；独立 resource 投影没有该 manifest，不猜测或读取不存在的主文清单。分析器重新核验原始与 prepared 参数、当前 Broker 注册、不可变身份、实际 callback/回执顺序及交付的完整字节，并只接受已审阅 `pi-compact-ui@0.1.3` 的精确 package/index 字节。该 profile 不覆盖批量、部分读取、其他插件或其他工具。旧观察缺少原件时继续失败，不能据事后路径或回执补造证明；更新后用新真实模型运行取证。
 
 如果执行环境不允许读取该检查需要的日用配置，记录具体 blocked，不通过另一条文件路径绕读。可使用公开 Pi API 取得独立的部分证据，但不能把该部分回执标为完整 daily runner 通过。
 

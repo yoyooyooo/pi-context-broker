@@ -937,7 +937,7 @@ test('interaction provenance snapshots actual registered files without altering 
   handlers.get('session_shutdown')({}); assert.equal(writes.at(-1).complete, true);
 });
 
-function preparedObservationFixture({ kind = 'candidate', storage = 'entry', refresh = false } = {}) {
+function preparedObservationFixture({ kind = 'candidate', storage = 'entry', refresh = false, canonical = false } = {}) {
     const handlers = new Map(), rows = [], saved = new Map(), reads = [], baseDir = '/installed/pi-compact-ui';
     const probes = [], id = 'read-call', scope = 'a'.repeat(64), owner = 'shared_skill:library-test:skill-test', snapshot = 's_' + 'b'.repeat(64);
     const resource = kind === 'resource', relative = resource ? 'references/rates.md' : 'SKILL.md';
@@ -979,10 +979,11 @@ function preparedObservationFixture({ kind = 'candidate', storage = 'entry', ref
     }
     const target = resource ? { kind, owner: selectedRef, path: relative, ref: resourceRef,
       bytes: body.length, sha256: sha(body), file_id: resourceId } : kind === 'selected' ? selected : { kind, identity };
-    const original = { path: resource ? shortResource : kind === 'selected' ? selectedRef : 'sr:Cl_Zoi4sBM-mbsLglJeO1BA',
+    const shortRef = resource ? shortResource : kind === 'selected' ? selectedRef : 'sr:Cl_Zoi4sBM-mbsLglJeO1BA';
+    const original = { path: canonical ? target.ref : shortRef,
       ...(refresh ? { refresh: true } : {}) }, input = structuredClone(original);
     const registered = (ref, target) => ({ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref, target } });
-    const branch = [...(resource ? [registered(selectedRef, selected)] : []), registered(original.path, target)];
+    const branch = [...(resource ? [registered(selectedRef, selected)] : []), registered(shortRef, target)];
     const ctx = { mode: 'rpc', sessionManager: { getBranch: () => branch } };
     handlers.get('input')({});
     const event = { toolName: 'read', toolCallId: id, input };
@@ -1001,6 +1002,111 @@ function preparedObservationFixture({ kind = 'candidate', storage = 'entry', ref
       details: { [resource ? 'contextBrokerResource' : 'contextBrokerRead']: proof } };
     return { handlers, rows, reads, probes, originals, message, saved, path, manifestPath, input, original, proof, branch, fs, call, result, body };
 }
+
+test('canonical fixed File observation uses its prior registration for main and scalar resources', () => {
+  for (const options of [
+    { kind: 'selected' }, { kind: 'selected', refresh: true },
+    { kind: 'resource' }, { kind: 'resource', storage: 'resource' },
+  ]) {
+    const value = preparedObservationFixture({ ...options, canonical: true }); value.call(); value.result();
+    assert.deepEqual(value.probes, []);
+    value.handlers.get('context_with_system')({ messages: [value.message] });
+    const observation = value.rows.find(row => row.phase === 'prepared_read');
+    assert.ok(observation, JSON.stringify(options));
+    assert.deepEqual(JSON.parse(value.saved.get(observation.inputArtifact.path)), { ...value.original, path: value.path });
+    assert.deepEqual(value.saved.get(observation.file.artifact.path), value.body);
+    assert.equal(observation.originalInputSha256, sha(JSON.stringify(value.original)));
+    assert.deepEqual(value.reads.slice(2), options.storage === 'resource' ? [value.path] : [value.manifestPath, value.path]);
+  }
+});
+
+test('canonical File observation refuses absent, ambiguous, unfixed or changed authority before probing', () => {
+  for (const alter of [
+    value => { value.branch.shift(); },
+    value => { value.branch.pop(); },
+    value => { const row = structuredClone(value.branch[1]); row.data.ref = 'sr:R' + 'z'.repeat(22); value.branch.push(row); },
+    value => { value.branch[1].data.ref = 'unregistered-ref-kind'; },
+    value => { value.branch[1].data.target.owner = 'sr:S' + 'z'.repeat(22); },
+    value => { value.branch[0].data.target.identity.scope = 'f'.repeat(64); },
+    value => { value.input.path = value.input.path.split('?')[0]; value.branch[1].data.target.ref = value.input.path; value.proof.ref = value.input.path; },
+    value => { value.input.path += '&extra=unreviewed'; value.branch[1].data.target.ref = value.input.path; value.proof.ref = value.input.path; },
+    value => { value.input.path += '&snapshot=' + value.proof.snapshot_id; value.branch[1].data.target.ref = value.input.path; value.proof.ref = value.input.path; },
+    value => { value.input.refresh = true; },
+    value => { value.input.offset = 1; },
+    value => { value.proof.file_id = 'file-' + 'e'.repeat(64); },
+    value => { value.proof.version_id = 'e'.repeat(64); },
+  ]) {
+    const value = preparedObservationFixture({ kind: 'resource', storage: 'resource', canonical: true }); alter(value);
+    value.call(); value.result(); value.handlers.get('context_with_system')({ messages: [value.message] });
+    assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false);
+    assert.deepEqual(value.probes, []); assert.ok(value.reads.every(path => path.startsWith('/installed/')));
+    value.handlers.get('session_shutdown')({}); assert.equal(value.rows.at(-1).complete, true);
+  }
+  const value = preparedObservationFixture({ kind: 'selected', canonical: true, refresh: true });
+  value.branch[0].data.target.identity.scope = 'f'.repeat(64);
+  value.call(); value.result(); value.handlers.get('context_with_system')({ messages: [value.message] });
+  assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false);
+  assert.deepEqual(value.probes, []);
+});
+
+test('native tool-result completion seals a resource read before provider reuse changes its receipt', () => {
+  for (const options of [{ kind: 'resource' }, { kind: 'resource', storage: 'resource', canonical: true }]) {
+    const value = preparedObservationFixture(options); value.call(); value.result();
+    assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false);
+    const original = structuredClone(value.message);
+    assert.equal(value.handlers.get('message_end')({ message: value.message }), undefined);
+    const observation = value.rows.find(row => row.phase === 'prepared_read');
+    assert.ok(observation, JSON.stringify(options));
+    const receipt = value.rows.find(row => row.sequence === observation.receiptSequence);
+    assert.deepEqual(receipt.proofs.contextBrokerResource, original.details.contextBrokerResource);
+    assert.deepEqual(JSON.parse(value.saved.get(observation.inputArtifact.path)), { ...value.original, path: value.path });
+    assert.deepEqual(value.saved.get(observation.file.artifact.path), value.body);
+    assert.equal(observation.preparedInputSha256, sha(JSON.stringify(value.input)));
+    assert.deepEqual(value.message, original, 'the observer cannot change the native result');
+    const probeCount = value.probes.length;
+    const projected = structuredClone(value.message);
+    projected.content = [{ type: 'text', text: 'Previously delivered resource retained in context.' }];
+    projected.details.contextBrokerResource.delivered_complete_text = false;
+    value.handlers.get('context_with_system')({ messages: [projected] });
+    value.handlers.get('message_end')({ message: value.message });
+    assert.equal(value.rows.filter(row => row.phase === 'prepared_read').length, 1);
+    assert.equal(value.probes.length, probeCount, 'later copies do not repeat the immutable-file probe');
+    assert.equal(value.rows.at(-2).proofs.contextBrokerResource.delivered_complete_text, false);
+  }
+});
+
+test('native tool-result completion also observes a selected main read without changing assistant finalization', () => {
+  const value = preparedObservationFixture({ kind: 'selected', canonical: true, refresh: true }); value.call(); value.result();
+  value.handlers.get('message_end')({ message: value.message });
+  const observation = value.rows.find(row => row.phase === 'prepared_read');
+  assert.ok(observation);
+  assert.equal(value.rows.find(row => row.sequence === observation.receiptSequence).proofs.contextBrokerRead.purpose, 'inspect');
+  value.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'text', text: 'Finished.' }], stopReason: 'stop' } });
+  assert.equal(value.rows.at(-1).phase, 'assistant_final');
+  assert.equal(value.rows.at(-1).success, true);
+  assert.equal(value.rows.at(-1).text, 'Finished.');
+});
+
+test('native tool-result completion cannot replace missing, late, foreign or incomplete read evidence', () => {
+  for (const [label, beforeResult, alter] of [
+    ['missing callback', false, () => {}],
+    ['next turn', true, value => { value.handlers.get('input')({}); }],
+    ['wrong call', true, value => { value.message.toolCallId = 'other-call'; }],
+    ['wrong tool', true, value => { value.message.toolName = 'bash'; }],
+    ['wrong scope', true, value => { value.proof.scope = 'f'.repeat(64); }],
+    ['partial receipt', true, value => { value.proof.delivered_complete_text = false; }],
+    ['partial native body', true, value => { value.message.content = [{ type: 'text', text: 'partial' }]; }],
+    ['failed result', true, value => { value.message.isError = true; }],
+  ]) {
+    const value = preparedObservationFixture({ kind: 'resource' }); value.call();
+    if (beforeResult) value.result();
+    alter(value);
+    value.handlers.get('message_end')({ message: value.message });
+    assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false, label);
+    assert.equal([...value.saved.keys()].some(path => /prepared-(?:input|body)-/u.test(path)), false, label);
+    if (label !== 'partial native body') assert.deepEqual(value.probes, [], label);
+  }
+});
 
 test('prepared-read observation waits for the same current Notion receipt before reading its immutable entry', () => {
   const setup = () => { const value = preparedObservationFixture(); value.call(); value.result(); return value; };
