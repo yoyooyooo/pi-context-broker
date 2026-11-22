@@ -237,7 +237,8 @@ pending 的控制端只等到真实目录操作开始就提交自然输入，不
 
 fixture 的 `visible` 是自有过滤 View 的唯一成员，`target` 初始 Disabled、Default Context
 关闭；启用后仍不在默认 View。不能仅凭 Default Context=false 声称 View 已排除目标。
-第一轮必须有完整目录查询的空结果；这只证明当前可用目录未命中，不证明远端页面不存在。
+两轮都须由 Agent 自主选择带 refresh:true 的点名查询。第一轮必须有完整目录查询的空结果；
+这只证明当前可用目录未命中，不证明远端页面不存在。
 第二轮的 `metadata-lookup.afterTurn` 从前一轮分析原件核对同一会话、进程和原始分支，
 并按前次返回的 age/max_age 与实际单调时钟证明 TTL 尚未到期。若时间窗口已过，
 记录时序前提未达成，不将其算作强制刷新成功。

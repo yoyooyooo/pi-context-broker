@@ -664,6 +664,7 @@ export async function verifyNotionAgentMetadataLookup(expected, observed, bindin
     (call.arguments.source === undefined || call.arguments.source === sourceId) && call.result?.isError === false);
   demand(candidates.length > 0, 'NAMED_METADATA_LOOKUP_MISSING', 'The current turn did not search for the named Skill');
   const call = candidates.at(-1), native = observed.session.branchEntries.find(entry => entry.id === call.native?.resultEntryId);
+  demand(call.arguments.refresh === true, 'METADATA_REFRESH_NOT_REQUESTED', 'A named availability inquiry must explicitly request fresh metadata');
   need(native?.message?.role === 'toolResult' && native.message.toolCallId === call.id && native.message.isError === false,
     'METADATA_RESULT_MISSING', 'The lookup needs its completed native result');
   const content = JSON.parse((await verifiedArtifact(call.result.contentArtifact, readArtifact)).toString('utf8'));
@@ -733,6 +734,11 @@ export async function verifyNotionAgentMetadataLookup(expected, observed, bindin
     const rawEvent = JSON.parse((await verifiedArtifact(event.result.artifact, readArtifact)).toString('utf8'));
     const { artifact: _artifact, ...eventResult } = event.result;
     demand(isDeepStrictEqual(rawEvent, eventResult), 'METADATA_EVENT_CHANGED', 'The external event differs from its retained original');
+    const row = rawEvent.result?.row, enabledId = bindings.private.fixture?.library?.skills?.property_ids?.Enabled;
+    const enabledProperty = Object.values(row?.properties ?? {}).find(value => value.id === enabledId && enabledId !== undefined) ?? row?.properties?.Enabled;
+    need(nonempty(item.pageId), 'METADATA_PAGE_IDENTITY_MISSING', 'The external event needs the independently bound target page');
+    demand(row?.id === item.pageId && enabledProperty?.type === 'checkbox' && enabledProperty.checkbox === true,
+      'METADATA_ENABLE_READBACK_MISMATCH', 'The external event did not read back Enabled on the same target page');
     need(/^\d+$/u.test(event.finishedNs ?? '') && BigInt(event.finishedNs) < BigInt(callNs) &&
       Number.isFinite(Date.parse(completed?.at)), 'METADATA_EVENT_TIMING_MISSING', 'External enable must complete before the new lookup');
     demand(Date.parse(freshness.validated_at) > Date.parse(before.freshness.validated_at) &&
