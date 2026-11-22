@@ -63,7 +63,7 @@ help, such as ctl library init --entry ENTRY. Neither launcher option restricts 
 token's remote permissions.
 A default run has no remote source.
 
-Node, Pi and Bun are machine prerequisites, not installed per task. The selected
+Node, Pi, Bun and Git are machine prerequisites, not installed per task. The selected
 entries, versions and declared file identities are observed in the run environment
 before and after execution. Drift or an unavailable check fails the run receipt,
 while retaining the command's own exit code, timeout and stdout/stderr separately.
@@ -278,6 +278,7 @@ export async function createEnvironment(options) {
   const root = options.root;
   const environmentId = randomUUID();
   const node = await toolIdentity(process.execPath), bun = await toolIdentity(await executable('bun'));
+  const selectedGit = await toolIdentity(await executable('git'));
   // Use npm shipped with this Node, not a Volta/Proto executable shim as JavaScript.
   const npm = await realpath(join(dirname(node.path), 'npm'));
   assert.ok(npm.endsWith('.js'), 'The selected Node must provide its npm JavaScript entry');
@@ -304,7 +305,7 @@ export async function createEnvironment(options) {
   }
   const environment = { version: VERSION, kind: 'paired-development-environment', root,
     environment_id: environmentId, created_at: new Date().toISOString(), repositories,
-    tools: { node: { ...node, version: process.version }, bun, npm, pi } };
+    tools: { node: { ...node, version: process.version }, bun, git: selectedGit, npm, pi } };
   await save(join(root, 'environment.json'), environment);
   return { status: 'created', root, environment_id: environment.environment_id, repositories };
 }
@@ -339,7 +340,7 @@ async function currentTools(environment) {
   const bun = await toolIdentity(await executable('bun'));
   const npm = await realpath(join(dirname(node.path), 'npm'));
   assert.ok(npm.endsWith('.js'), 'The current Node must provide its npm JavaScript entry');
-  return { node, bun, npm, pi: await findPi(environment.tools.pi.path, npm) };
+  return { node, bun, git: await toolIdentity(await executable('git')), npm, pi: await findPi(environment.tools.pi.path, npm) };
 }
 
 export async function buildEnvironment(options) {
@@ -353,9 +354,10 @@ export async function buildEnvironment(options) {
     for (const name of ['cli', 'broker']) sources[name] = await snapshot(join(options.root, name), join(root, 'source', name));
     const env = runtimeEnvironment(join(root, 'build-state'), root, process.env, options['pass-env'] ?? [], environment.tools.node.path);
     // Git authentication is not needed for the public locked dependency installs.
-    for (const path of ['tmp', 'config']) await mkdir(join(root, 'build-state', path), { recursive: true });
+    for (const path of ['tmp', 'config', 'bin']) await mkdir(join(root, 'build-state', path), { recursive: true });
+    await symlink(environment.tools.git.path, join(root, 'build-state/bin/git'));
     await writeFile(env.npm_config_userconfig, '', { flag: 'wx', mode: 0o600 });
-    env.PATH = [dirname(environment.tools.node.path), dirname(environment.tools.bun.path), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(delimiter);
+    env.PATH = [join(root, 'build-state/bin'), dirname(environment.tools.node.path), dirname(environment.tools.bun.path), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(delimiter);
     for (const name of ['cli', 'broker']) {
       await step(environment.tools.bun.path, ['install', '--frozen-lockfile', '--ignore-scripts', '--backend', 'copyfile', '--cache-dir', join(root, 'cache', name)],
         { cwd: join(root, 'source', name), env, log: join(root, 'logs/install-source-' + name) });
@@ -542,6 +544,7 @@ export async function runEnvironment(options) {
   if (options.entry) env.PAIRED_NOTION_ENTRY = options.entry;
   if (options.parent) env.PAIRED_NOTION_PARENT = options.parent;
   await symlink(environment.tools.bun.path, join(root, 'bin/bun'));
+  await symlink(environment.tools.git.path, join(root, 'bin/git'));
   await wrapper(join(root, 'bin/ntn-skills'), environment.tools.node.path, env.PAIRED_CLI_ENTRY, []);
   await wrapper(join(root, 'bin/pi'), environment.tools.node.path, piLaunch.entry, piLaunch.argv, validatePiArguments);
   let command = environment.tools.node.path, args;
@@ -552,7 +555,7 @@ export async function runEnvironment(options) {
     [command, ...args] = options.args;
     if (command === 'node') command = environment.tools.node.path;
     else if (command === 'bun') command = environment.tools.bun.path;
-    else if (command === 'ntn-skills' || command === 'pi') command = join(root, 'bin', command);
+    else if (command === 'ntn-skills' || command === 'pi' || command === 'git') command = join(root, 'bin', command);
   }
   if (options.target === 'command') {
     const build = await json(join(buildRoot, 'build.json'));
@@ -563,11 +566,11 @@ export async function runEnvironment(options) {
     env.NTN_SKILLS_BUILD_ENTRY = env.PAIRED_CLI_ENTRY;
   }
   const cwd = cwdChoice === 'workspace' ? join(root, 'workspace') : join(root, 'source', cwdChoice);
-  const runtimeSelection = { node: environment.tools.node.path, pi, bun: join(root, 'bin/bun'), env, cwd,
+  const runtimeSelection = { node: environment.tools.node.path, pi, bun: join(root, 'bin/bun'), git: join(root, 'bin/git'), env, cwd,
     launchers: { pi: join(root, 'bin/pi'), cli: join(root, 'bin/ntn-skills') },
     usage: { node: options.target === 'command' ? 'potential' : 'requested',
       pi: options.target === 'pi' ? 'requested' : options.target === 'command' ? 'potential' : 'not_requested',
-      bun: options.target === 'command' ? 'potential' : 'not_requested' } };
+      bun: options.target === 'command' ? 'potential' : 'not_requested', git: 'available' } };
   const runtime = await captureRuntimeIdentity(runtimeSelection);
   await save(join(root, 'run.json'), { version: VERSION, kind: 'isolated-development-run', environment_id: environment.environment_id,
     run_id: runId, root, build_id: options.build, build_root: buildRoot, target: options.target, cwd,
