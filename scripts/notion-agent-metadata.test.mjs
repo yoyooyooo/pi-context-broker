@@ -80,12 +80,16 @@ test('metadata verifier rejects cached misses, partial results, wrong identities
     ['failed source', f => { f.value.failures = [{ source: 'notion' }]; }, 'METADATA_COVERAGE_INCOMPLETE'],
     ['stale metadata', f => { f.value.freshness.sources[0].stale = true; }, 'METADATA_RESULT_STALE'],
     ['unknown validation', f => { f.value.freshness.sources[0].validated_at = null; }, 'METADATA_FRESHNESS_UNKNOWN'],
+    ['cache policy', f => { f.value.freshness.sources[0].policy = 'max_age'; }, 'METADATA_REFRESH_POLICY_MISMATCH'],
+    ['offline policy', f => { f.value.freshness.sources[0].policy = 'offline'; }, 'METADATA_REFRESH_POLICY_MISMATCH'],
     ['wrong owner', f => { f.delivery.requests[0].selection.shortRefs[0].target.identity.id = 'other'; }, 'METADATA_WRONG_OWNER'],
     ['default View target', f => { f.value.records[0].in_default_view = true; }, 'METADATA_DEFAULT_VIEW_LEAK'],
     ['not delivered', f => f.skipDelivery(), 'METADATA_NOT_DELIVERED'],
     ['process restart', f => { f.call.event.pid = 43; }, 'METADATA_SESSION_REPLACED'],
     ['old TTL elapsed', f => { f.previous.analysis.assertions[0].details.freshness.age_ms = 50000; }, 'METADATA_TTL_PRECONDITION_MISSED'],
     ['missing enable', f => { f.event.event.enabled = false; }, 'METADATA_EXTERNAL_EVENT_UNPROVEN'],
+    ['enable before first lookup', f => { f.event.finishedNs = '1000000000'; }, 'METADATA_EVENT_TIMING_MISSING'],
+    ['enable at first result', f => { f.event.finishedNs = '2000000000'; }, 'METADATA_EVENT_TIMING_MISSING'],
     ['another page enabled', f => { f.eventResult.result.row.id = 'another-page'; }, 'METADATA_ENABLE_READBACK_MISMATCH'],
     ['enable did not land', f => { f.eventResult.result.row.properties.Enabled.checkbox = false; }, 'METADATA_ENABLE_READBACK_MISMATCH'],
     ['old validation reused', f => { f.value.freshness.sources[0].validated_at = new Date(Date.UTC(2026, 10, 22) + 1000).toISOString(); }, 'METADATA_NOT_REFRESHED'],
@@ -96,4 +100,12 @@ test('metadata verifier rejects cached misses, partial results, wrong identities
   for (const [name, change, code] of cases) await t.test(name, async () => {
     const f = fixture(); change(f); await assert.rejects(f.run(), error => error.code === code);
   });
+});
+
+
+test('the first complete miss also requires a fresh online observation', async () => {
+  const f = fixture(); delete f.expected.afterTurn; f.expected.state = 'absent';
+  Object.assign(f.value, { count: 0, total_count: 0, records: [] });
+  f.value.freshness.sources[0].policy = 'offline';
+  await assert.rejects(f.run(), error => error.code === 'METADATA_REFRESH_POLICY_MISMATCH');
 });

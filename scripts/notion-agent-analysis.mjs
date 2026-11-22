@@ -680,6 +680,7 @@ export async function verifyNotionAgentMetadataLookup(expected, observed, bindin
   'METADATA_FRESHNESS_UNKNOWN', 'The original validation time and finite TTL must be observed');
   demand(freshness.stale === false && freshness.age_ms < freshness.max_age_ms,
     'METADATA_RESULT_STALE', 'The lookup returned stale metadata');
+  demand(freshness.policy === 'refresh', 'METADATA_REFRESH_POLICY_MISMATCH', 'Offline or cache-eligible metadata cannot prove a current named inquiry');
   const deliveries = [];
   for (const payload of delivery.requests) {
     const task = observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === payload.sha256);
@@ -739,10 +740,10 @@ export async function verifyNotionAgentMetadataLookup(expected, observed, bindin
     need(nonempty(item.pageId), 'METADATA_PAGE_IDENTITY_MISSING', 'The external event needs the independently bound target page');
     demand(row?.id === item.pageId && enabledProperty?.type === 'checkbox' && enabledProperty.checkbox === true,
       'METADATA_ENABLE_READBACK_MISMATCH', 'The external event did not read back Enabled on the same target page');
-    need(/^\d+$/u.test(event.finishedNs ?? '') && BigInt(event.finishedNs) < BigInt(callNs) &&
-      Number.isFinite(Date.parse(completed?.at)), 'METADATA_EVENT_TIMING_MISSING', 'External enable must complete before the new lookup');
+    need(/^\d+$/u.test(event.finishedNs ?? '') && BigInt(event.finishedNs) > BigInt(before.resultMonotonicNs) && BigInt(event.finishedNs) < BigInt(callNs) &&
+      Number.isFinite(Date.parse(completed?.at)), 'METADATA_EVENT_TIMING_MISSING', 'External enable must complete strictly between the two lookups');
     demand(Date.parse(freshness.validated_at) > Date.parse(before.freshness.validated_at) &&
-      Date.parse(freshness.validated_at) >= Date.parse(completed.at) && freshness.policy === 'refresh',
+      Date.parse(freshness.validated_at) >= Date.parse(completed.at),
     'METADATA_NOT_REFRESHED', 'The returned metadata was not newly validated after the external change');
     const operations = source.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.operation === 'list' && row.source_id === sourceId &&
       /^\d+$/u.test(row.monotonicNs ?? '') && BigInt(row.monotonicNs) >= BigInt(callNs) && BigInt(row.monotonicNs) <= BigInt(resultNs));
