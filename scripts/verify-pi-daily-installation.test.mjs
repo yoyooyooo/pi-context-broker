@@ -275,6 +275,7 @@ test('daily plan and launched host receive -ns without replacing normal HOME or 
   await mkdir(join(f.cliRoot, 'skills'));
   await writeFile(join(f.cliRoot, 'skills/SKILL.md'), '# Controlled skill\n');
   await writeFile(join(f.cliRoot, 'dist/sdk.js'), embeddedSdk);
+  await writeFile(join(f.cliRoot, 'THIRD_PARTY_NOTICES.md'), 'controlled complete third-party notices\n');
   await writeFile(join(f.cliRoot, 'package.json'), '{"type":"module"}\n');
   for (const [name, pkg] of [['cli', f.cliRoot], ['broker', f.broker]]) {
     const root = dirname(dirname(pkg)), origin = join(f.root, name + '-origin.git');
@@ -283,7 +284,7 @@ test('daily plan and launched host receive -ns without replacing normal HOME or 
     await writeFile(join(root, 'src/current.ts'), 'export const fixture = true;\n');
     const build = { version: 1, kind: name + '-build', input_roots: ['src'], source: await fileInventory(root, ['src']),
       artifacts: await fileInventory(pkg, name === 'cli' ? ['dist/ntn-skills.js', 'dist/sdk.js', 'skills'] : ['dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json']) };
-    if (name === 'broker') build.selected_cli = await fileInventory(f.cliRoot, ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills']);
+    if (name === 'broker') build.selected_cli = await fileInventory(f.cliRoot, ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills', 'THIRD_PARTY_NOTICES.md']);
     await writeFile(join(pkg, 'dist/next-build.json'), JSON.stringify(build));
     git('init', '--initial-branch=next'); git('init', '--bare', '--initial-branch=next', origin); git('remote', 'add', 'origin', origin);
     git('add', '.'); git('-c', 'user.name=Daily launch fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'controlled daily inputs');

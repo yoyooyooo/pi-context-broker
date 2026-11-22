@@ -5,7 +5,19 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { verifyBundledRuntime } from './verify-package-closure.mjs';
+import { verifyBundledNotices, verifyBundledRuntime } from './verify-package-closure.mjs';
+
+test('packaged notices retain the complete selected CLI original and its frozen hash', () => {
+  const original = Buffer.from('# Third-party notices\nCopyright © Example\nAll conditions retained.\n');
+  const expectedSha256 = createHash('sha256').update(original).digest('hex');
+  const input = { selectedNoticesBytes: original, bundledNoticesBytes: Buffer.concat([Buffer.from('Other dependency license\n'), original]), expectedSha256 };
+  assert.equal(verifyBundledNotices(input).source_bytes, original.length);
+  assert.equal(verifyBundledNotices(input).source_sha256, expectedSha256);
+  for (const patch of [{ bundledNoticesBytes: original.subarray(0, original.length - 1) },
+    { bundledNoticesBytes: Buffer.from('Copyright © Example\n') }, { bundledNoticesBytes: Buffer.alloc(0) },
+    { selectedNoticesBytes: Buffer.alloc(0) }, { selectedNoticesBytes: Buffer.from('changed original') },
+    { expectedSha256: '0'.repeat(64) }]) assert.throws(() => verifyBundledNotices({ ...input, ...patch }));
+});
 
 test('a selected source build accepts its frozen version and rejects wrong packages or altered bundle bytes', () => {
   const hash = value => createHash('sha256').update(value).digest('hex');

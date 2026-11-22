@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { brokerInputs, fileInventory } from "./next-build-identity.mjs";
+import { brokerInputs, fileInventory, selectedCliInputs } from "./next-build-identity.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const sourceInputs = await fileInventory(root, brokerInputs);
@@ -45,7 +45,14 @@ async function findPackage(name, entry) {
   }
 }
 const selectedCli = await findPackage("ntn-skills", ntnEntry);
-const selectedInputs = await fileInventory(selectedCli.directory, ["package.json", "dist/ntn-skills.js", "dist/sdk.js", "skills"]);
+const selectedNotices = await readFile(join(selectedCli.directory, "THIRD_PARTY_NOTICES.md")).catch(error => {
+  if (error.code === "ENOENT") throw new Error("The selected ntn-skills package must include THIRD_PARTY_NOTICES.md; select a complete CLI package");
+  throw error;
+});
+if (selectedNotices.length === 0) throw new Error("The selected ntn-skills THIRD_PARTY_NOTICES.md must not be empty");
+const selectedInputs = await fileInventory(selectedCli.directory, selectedCliInputs);
+if (createHash("sha256").update(selectedNotices).digest("hex") !== selectedInputs.files.find(file => file.path === "THIRD_PARTY_NOTICES.md").sha256)
+  throw new Error("Selected CLI third-party notices changed while freezing the build input");
 const selectedRequire = createRequire(selectedCli.manifest);
 const sdkExport = selectedCli.metadata.exports?.["./sdk"];
 const sdkImport = typeof sdkExport === "string" ? sdkExport : sdkExport?.import;
@@ -148,6 +155,13 @@ async function collectLicenses(name, from) {
   for (const dependency of Object.keys(metadata.dependencies ?? {})) await collectLicenses(dependency, join(directory, "package.json"));
 }
 await collectLicenses("ntn-skills", join(broker, "package.json"));
+// The selected CLI already bundles dependencies absent from its public runtime
+// dependency graph. Preserve its complete notice file without rewriting it.
+const notices = Buffer.concat([
+  Buffer.from([...licenseFiles].map(([name, license]) => `Bundled dependency: ${name}\n${license.trim()}\n`).join("\n")),
+  Buffer.from("\nBundled dependency notices: ntn-skills / THIRD_PARTY_NOTICES.md\n"),
+  selectedNotices,
+]);
 if (brokerOutput !== broker) {
   await mkdir(dirname(brokerOutput), { recursive: true });
   // A separate package build never overwrites a prior artifact or checkout output.
@@ -184,7 +198,7 @@ for (const directory of [join(brokerOutput, "dist"), ...(buildTern ? [query] : [
   await writeFile(join(directory, "ntn-skills.mjs"), cliCode);
   await writeFile(join(directory, "ntn-skills-sdk.mjs"), sdkCode);
   await writeFile(join(directory, "ntn-skills-runtime.json"), JSON.stringify(runtimeManifest, null, 2) + "\n");
-  await writeFile(join(directory, "NOTICES.txt"), [...licenseFiles].map(([name, license]) => `Bundled dependency: ${name}\n${license.trim()}\n`).join("\n"));
+  await writeFile(join(directory, "NOTICES.txt"), notices);
   const builtinRoot = join(directory, "builtin-skills");
   try {
     await readdir(builtinRoot);
@@ -235,12 +249,12 @@ if (buildTern) {
 }
 if ((await fileInventory(root, brokerInputs)).sha256 !== sourceInputs.sha256)
   throw new Error("Broker inputs changed while building; rebuild before next delivery");
-if ((await fileInventory(selectedCli.directory, ["package.json", "dist/ntn-skills.js", "dist/sdk.js", "skills"])).sha256 !== selectedInputs.sha256)
+if ((await fileInventory(selectedCli.directory, selectedCliInputs)).sha256 !== selectedInputs.sha256)
   throw new Error("Selected CLI/SDK changed while building; rebuild the paired candidate");
 await writeFile(join(brokerOutput, "dist/next-build.json"), JSON.stringify({
   version: 1, kind: "broker-build", input_roots: brokerInputs, source: sourceInputs,
   selected_cli: selectedInputs,
-  artifacts: await fileInventory(brokerOutput, ["dist/ntn-skills.mjs", "dist/ntn-skills-sdk.mjs", "dist/ntn-skills-runtime.json", "dist/completion.mjs", "dist/builtin-skills"]),
+  artifacts: await fileInventory(brokerOutput, ["dist/ntn-skills.mjs", "dist/ntn-skills-sdk.mjs", "dist/ntn-skills-runtime.json", "dist/completion.mjs", "dist/builtin-skills", "dist/NOTICES.txt"]),
   toolchain: { bun: Bun.version, node: process.version },
 }, null, 2) + "\n");
 console.log(buildTern ? "Built standalone broker query and Tern plugin query" : `Built standalone broker package at ${brokerOutput}`);

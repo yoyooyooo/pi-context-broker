@@ -10,7 +10,7 @@ import { access, chmod, copyFile, cp, lstat, mkdir, readFile, readdir, readlink,
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captureRuntimeIdentity, compareRuntimeIdentity } from './paired-runtime-identity.mjs';
-import { verifyArchiveInstallation } from './verify-package-closure.mjs';
+import { verifyArchiveInstallation, verifyBundledNotices } from './verify-package-closure.mjs';
 
 const DEFAULTS = {
   cli: 'https://github.com/yoyooyooo/notion-skills-cli.git',
@@ -380,7 +380,10 @@ export async function installPackedPair(root, tools, env) {
     assert.ok(own(installed, sdk) && sdk !== installed, 'The installed CLI must export its SDK'); await toolIdentity(sdk);
     packages[role] = { name, version: actual.version, root: installed, entry, sdk, closure };
   }
-  return { mode: 'packed', root: installRoot, packages, tree: await inventory(installRoot), archives: await inventory(archives) };
+  const notices = verifyBundledNotices({ selectedNoticesBytes: await readFile(join(packages.cli.root, 'THIRD_PARTY_NOTICES.md')),
+    bundledNoticesBytes: await readFile(join(packages.broker.root, 'dist/NOTICES.txt')),
+    expectedSha256: packages.cli.closure.files.find(file => file.path === 'THIRD_PARTY_NOTICES.md')?.sha256 });
+  return { mode: 'packed', root: installRoot, packages, notices, tree: await inventory(installRoot), archives: await inventory(archives) };
 }
 
 export async function buildEnvironment(options) {
@@ -414,10 +417,10 @@ export async function buildEnvironment(options) {
       { cwd: join(root, 'source/broker'), env: { ...env, NTN_SKILLS_BUILD_ENTRY: join(root, 'cli/dist/ntn-skills.js') }, log: join(root, 'logs/build-broker') });
     await install('broker');
     const { verifyCurrentBuild } = await import(pathToFileURL(join(root, 'source/broker/scripts/verify-next-worktrees.mjs')));
-    const { fileInventory } = await import(pathToFileURL(join(root, 'source/broker/scripts/next-build-identity.mjs')));
+    const { fileInventory, selectedCliInputs } = await import(pathToFileURL(join(root, 'source/broker/scripts/next-build-identity.mjs')));
     await verifyCurrentBuild(join(root, 'source/cli'), join(root, 'cli'), 'cli-build');
     const brokerReceipt = await verifyCurrentBuild(join(root, 'source/broker'), join(root, 'broker'), 'broker-build');
-    assert.deepEqual(await fileInventory(join(root, 'cli'), ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills']), brokerReceipt.selected_cli,
+    assert.deepEqual(await fileInventory(join(root, 'cli'), selectedCliInputs), brokerReceipt.selected_cli,
       'The built Broker does not contain this generation\'s CLI/SDK');
     const candidate = installMode === 'packed' ? await installPackedPair(root, environment.tools, env) : { mode: 'directory' };
     const packages = {};

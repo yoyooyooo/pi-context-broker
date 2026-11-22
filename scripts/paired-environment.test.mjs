@@ -168,6 +168,8 @@ test('paired environments isolate writable state and detect artifact changes', a
       bin: { 'ntn-skills': './dist/ntn-skills.js' }, exports: { './sdk': { import: './dist/sdk.js' } } });
     await writeJson(join(root, 'broker/package.json'), { name: 'pi-context-broker', version: '0.0.0', type: 'module', pi: { extensions: ['./src/index.ts'] } });
     await writeFile(join(root, 'broker/dist/ntn-skills-sdk.mjs'), 'export const SDK_VERSION=2;\n');
+    await writeFile(join(root, 'cli/THIRD_PARTY_NOTICES.md'), 'Complete selected CLI notice fixture\n');
+    await writeFile(join(root, 'broker/dist/NOTICES.txt'), 'Other notices\nComplete selected CLI notice fixture\n');
     const selectedCli = await inventory(join(root, 'cli'));
     await writeJson(join(root, 'broker/dist/next-build.json'), { selected_cli: selectedCli });
     await mkdir(join(root, 'logs')); await mkdir(join(root, 'build-state/config'), { recursive: true }); await mkdir(join(root, 'build-state/tmp'));

@@ -32,6 +32,16 @@ export async function verifyArchiveInstallation(root, archive, expectedHash) {
   files.sort((a, b) => a.path.localeCompare(b.path));
   return { root, archive: archiveIdentity, file_count: files.length, files, sha256: hash(JSON.stringify(files)) };
 }
+export function verifyBundledNotices({ selectedNoticesBytes, bundledNoticesBytes, expectedSha256 }) {
+  assert.ok(selectedNoticesBytes instanceof Uint8Array && selectedNoticesBytes.length > 0, 'Selected CLI THIRD_PARTY_NOTICES.md must contain complete nonempty bytes');
+  assert.ok(bundledNoticesBytes instanceof Uint8Array, 'Bundled NOTICES.txt bytes are required');
+  assert.match(expectedSha256, /^[a-f0-9]{64}$/u);
+  const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+  const selected = Buffer.from(selectedNoticesBytes), bundled = Buffer.from(bundledNoticesBytes);
+  assert.equal(hash(selected), expectedSha256, 'Selected CLI third-party notices changed');
+  assert.ok(bundled.indexOf(selected) >= 0, 'Bundled NOTICES.txt must contain the complete selected CLI THIRD_PARTY_NOTICES.md unchanged');
+  return { source_sha256: expectedSha256, source_bytes: selected.length, bundled_sha256: hash(bundled), bundled_bytes: bundled.length };
+}
 export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, expectedVersion }) {
   assert.equal(manifest.version, 1, "Unknown bundled runtime manifest");
   assert.equal(manifest.package, "ntn-skills", "Unexpected bundled package identity");
