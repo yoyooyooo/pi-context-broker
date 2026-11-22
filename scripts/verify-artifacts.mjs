@@ -76,6 +76,8 @@ async function verifyDocumentLinks(directory, entries) {
     if (!entry.endsWith(".md") || visited.has(file)) continue;
     visited.add(file);
     const document = await readFile(file, "utf8");
+    assert.ok(!/(?:\/Users\/[^/\s]+\/|\/home\/[^/\s]+\/|https:\/\/(?:linear\.app|app\.notion\.com|(?:www\.)?notion\.so)\/)/u.test(document),
+      "Public package documentation contains a private workspace path or workspace-only link: " + entry);
     for (const match of document.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) {
       const [target, fragment] = match[1].split("#");
       if (/^[a-z][a-z\d+.-]*:/i.test(target)) continue;
@@ -118,7 +120,12 @@ try {
   assert.equal(sdk.SDK_VERSION, 2);
   for (const name of ["listCatalog", "consume", "readSkill", "readResources"])
     assert.equal(typeof sdk[name], "function", name + " must be exported by the actual installed SDK");
-  await verifyDocumentLinks(installed, ["README.md", "README.zh-CN.md", "docs/reference.md", "docs/reference.zh-CN.md", "CONTRIBUTING.md"]);
+  const currentDocs = ["README.md", "fixed-resource-batches.md", "reference.md", "reference.zh-CN.md", "skill-consumption-runtime.md"];
+  assert.deepEqual((await readdir(join(installed, "docs"))).sort(), currentDocs,
+    "The published documentation must contain only the current reference allowlist");
+  await verifyDocumentLinks(installed, ["README.md", "README.zh-CN.md", "CONTRIBUTING.md", "SECURITY.md",
+    ...currentDocs.map(name => "docs/" + name)]);
+  report.documentation = { status: "passed", files: currentDocs, privateReferences: 0 };
 
   // The pinned Pi package provides Jiti only. This does not start or validate a Pi host.
   const loader = join(base, "loader");

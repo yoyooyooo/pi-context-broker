@@ -38,8 +38,8 @@ Start at the [Broker verification Skill](https://github.com/yoyooyooo/pi-context
 - SDK pairing and independent installation use the [integration Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/SKILL.md).
 - Eligibility, request order, fixed selection and delivery state use the [consumer-state Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-consumer-state/SKILL.md) and its existing model/guard mapping.
 - Actual Pi SDK/provider/serializer scenarios use `scripts/notion-sdk-pi.mjs` with its explicit installed-package inputs.
-- Real Notion and the effective daily Pi installation use the public `scripts/verify-pi-daily-installation.mjs` actions under AH-1197/AH-637; `scripts/verify-pi-daily-candidate.mjs` is its internal implementation.
-- Natural user journeys, mixed local/Notion selection and management use the [workflow verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-agent-workflows/SKILL.md) under AH-1196/AH-1198. Daily and no-native-skills retain their normal-environment requirements. First use from an empty parent uses the separate `native-onboarding` profile through the same candidate entry, with a packed paired build and a fresh explicit-entry grader. See the [onboarding configuration](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-agent-workflows/references/running.md#空父页首次使用). All profiles run real `magpie/group/worker`; public tasks, private criteria and raw results stay separate.
+- Real Notion and the effective daily Pi installation use the public `scripts/verify-pi-daily-installation.mjs` actions; `scripts/verify-pi-daily-candidate.mjs` is its internal implementation.
+- Natural user journeys, mixed local/Notion selection and management use the [workflow verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-agent-workflows/SKILL.md). Daily and no-native-skills retain their normal-environment requirements. First use from an empty parent uses the separate `native-onboarding` profile through the same candidate entry, with a packed paired build and a fresh explicit-entry grader. See the [onboarding configuration](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-agent-workflows/references/running.md#空父页首次使用). All profiles run real `magpie/group/worker`; public tasks, private criteria and raw results stay separate.
 
 The old default dual-host controller, CLI-consumption fixtures and UI/PTY/model wrappers are retired. Do not restore `source.command`, old locators, `readOnly` or export fallback to make a test run. The controlled `ctl views` stub is only a management boundary; it cannot stand in for SDK consumption.
 
@@ -76,6 +76,24 @@ Build a new private generation when the selected CLI/SDK or Skill files change d
 - State-machine changes require reviewing the existing models and protected regressions. Hash changes alone do not prove preservation.
 
 Use owned temporary roots when a check needs empty state. Preserve unknown operations, failures and original input bytes. Never reset a user's cache or session to manufacture success. Stop only processes owned by that run, then move reviewed scratch to system Trash using an absolute path; do not use permanent deletion or bulk process-name cleanup.
+
+## Compatibility and documentation
+
+During 0.x, minor releases may change configuration, commands or host integration.
+Patch releases are intended to preserve those public contracts. Security fixes may
+narrow unsafe behavior; describe the affected behavior and upgrade steps in the
+changelog and current guides. There is no fixed deprecation grace period or
+commitment to maintain every previous minor. The optional `*` host peers avoid
+forcing another host installation; compatibility still needs actual host evidence.
+
+Keep public setup in README and current package references, implementation and
+verification constraints in the existing repository guides, and run status in the
+issue or PR. Before retiring a document, move unique current rules to their owner
+and update inbound links. Keep model inputs, tool locks, coverage maps and active
+fixtures. Generated charts use the existing runner with a fresh external output
+directory. Retain original failure inputs and useful run evidence; ordinary
+superseded documents remain available at their exact Git commit. Package docs are
+an explicit current-reference allowlist, not a copy of the repository history.
 
 ## Release
 

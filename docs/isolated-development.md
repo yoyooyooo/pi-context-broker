@@ -7,6 +7,7 @@ that exact build for each run. A checkout used by the normal CLI or Pi
 installation must not double as a scratch build directory.
 
 - [Create the pair](#create-the-pair)
+- [Move an existing session into a pair](#move-an-existing-session-into-a-pair)
 - [Build and select a generation](#build-and-select-a-generation)
 - [Run with separate state](#run-with-separate-state)
 - [Choose remote and model inputs](#choose-remote-and-model-inputs)
@@ -70,6 +71,26 @@ user's Pi settings. Each repository has its own Git metadata and task branch;
 the branch includes a unique environment suffix to avoid cross-machine collisions,
 so an index lock or branch change in one task does not affect another. Ordinary
 edits remain available in the task's source trees.
+
+## Move an existing session into a pair
+
+1. Have the current owner record both repositories' origin, branch, HEAD, working
+   status and actual CLI/Broker entries. Include unfinished runs and their remote
+   object scopes before moving any work.
+2. Transfer only that owner's committed changes, or an explicitly reviewed patch
+   with a list of untracked files. Do not collect another session's edits. Create
+   the new pair through the entry above, apply the selected changes and compare
+   the resulting source against the intended commits or patch.
+3. Build a new generation in the pair. Do not copy old `dist`, `node_modules`,
+   Store, scheduler or Pi Session state into it. A stateful recovery of an existing
+   remote operation requires its separately reviewed original-state procedure;
+   it is not a fresh isolated run.
+4. Start a new process with the new explicit generation and verify its identity.
+   Do not replace an entry used by a running process. Continue the same issue or
+   PR with the new pair, build and run coordinates.
+5. Keep the old directory until its owner, unpushed work, active processes and
+   unique evidence are accounted for. Retire only reviewed, owned material through
+   system Trash. A successful new run does not authorize removing the old state.
 
 ## Build and select a generation
 
