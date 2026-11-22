@@ -370,6 +370,13 @@ test("GitHub repair reconciles duplicate calls and refuses unknown or mismatched
   const errors = [];
   assert.throws(() => repairGitHubRelease({ ...input, run: args => { errors.push(args); return { status: 1, stderr: "503 timeout" }; } }), /unknown/);
   assert.equal(errors.length, 1);
+  for (const response of [null, [], {}, { tag_name: candidate.tag, draft: false }]) {
+    const malformed = [];
+    assert.throws(() => repairGitHubRelease({ ...input, run: args => {
+      malformed.push(args); return { status: 0, stdout: JSON.stringify(response) };
+    } }), /malformed/);
+    assert.equal(malformed.length, 1, "malformed success performs only the read");
+  }
 });
 
 test("release source binds one annotated version-only commit to current main and exact paired CLI", async t => {
