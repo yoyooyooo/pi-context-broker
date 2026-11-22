@@ -87,6 +87,9 @@ Preserve the first failing run, its raw output, tag, source inputs and archive
 identity. The workflow retains the installed SDK workspace, current fixture,
 candidate, registry observations and command output for seven days; keep the
 necessary incident evidence before that retention expires.
+The verified handoff archive has a distinct name for each workflow run and
+attempt. The release job consumes the producing job's artifact name; retrying
+the workflow does not overwrite an earlier attempt's inputs.
 
 | Observed state | Next action |
 | --- | --- |
