@@ -118,6 +118,8 @@ if (!worker) {
   const jiti = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
   const { discoverNotionSource, loadNotionSkill, prepareNotionSkills, loadNotionResource, readNotionResources } =
     await jiti.import(join(packageRoot, 'src/notion-source.ts'));
+  const { DEFAULT_RESOURCE_READ_BUDGET, normalizeResourceReadBudget } =
+    await jiti.import(join(packageRoot, 'src/resource-read-types.ts'));
   const source = { type: 'notion', id: 'current-sdk', namespace: 'current-sdk',
     database: fixture.database, cacheDir: join(out, 'host-cache'), prefetch: false };
   let directory, selected, loaded;
@@ -196,13 +198,22 @@ if (!worker) {
   await scenario('read-resource-batch', async () => {
     const paths = ['references/guide.txt', 'assets/raw.bin'];
     const refs = paths.map(path => loaded.entryManifest.files.find(file => file.path === path).ref);
-    const batch = await readNotionResources(loaded, refs, source, out);
-    assert.deepEqual(batch.effects, noWrites);
-    assert.deepEqual(batch.files.map(file => file.path), paths);
-    for (const file of batch.files) {
-      verified(Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8'), expectedFile(file.path));
-      if (file.encoding === 'base64') verified(await readFile(file.output), expectedFile(file.path));
+    const budgets = [DEFAULT_RESOURCE_READ_BUDGET, normalizeResourceReadBudget({ timeBudgetMs: 120_000 })];
+    assert.deepEqual(budgets, [
+      { maxFiles: 16, maxBytes: 1024 * 1024, timeBudgetMs: 30_000 },
+      { maxFiles: 16, maxBytes: 1024 * 1024, timeBudgetMs: 120_000 },
+    ]);
+    for (const budget of budgets) {
+      const batch = await readNotionResources(loaded, refs, budget, source, out);
+      assert.deepEqual(batch.effects, noWrites);
+      assert.deepEqual(batch.budget, budget);
+      assert.deepEqual(batch.files.map(file => file.path), paths);
+      for (const file of batch.files) {
+        verified(Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8'), expectedFile(file.path));
+        if (file.encoding === 'base64') verified(await readFile(file.output), expectedFile(file.path));
+      }
     }
+    return { budgets };
   });
   await scenario('reject-wrong-scope', async () => {
     await assert.rejects(prepareNotionSkills([{ ...selected, sourceScope: 'f'.repeat(64) }], source, out,
