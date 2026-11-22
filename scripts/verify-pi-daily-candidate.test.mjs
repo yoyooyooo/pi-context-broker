@@ -1049,6 +1049,65 @@ test('canonical File observation refuses absent, ambiguous, unfixed or changed a
   assert.deepEqual(value.probes, []);
 });
 
+test('native tool-result completion seals a resource read before provider reuse changes its receipt', () => {
+  for (const options of [{ kind: 'resource' }, { kind: 'resource', storage: 'resource', canonical: true }]) {
+    const value = preparedObservationFixture(options); value.call(); value.result();
+    assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false);
+    const original = structuredClone(value.message);
+    assert.equal(value.handlers.get('message_end')({ message: value.message }), undefined);
+    const observation = value.rows.find(row => row.phase === 'prepared_read');
+    assert.ok(observation, JSON.stringify(options));
+    const receipt = value.rows.find(row => row.sequence === observation.receiptSequence);
+    assert.deepEqual(receipt.proofs.contextBrokerResource, original.details.contextBrokerResource);
+    assert.deepEqual(JSON.parse(value.saved.get(observation.inputArtifact.path)), { ...value.original, path: value.path });
+    assert.deepEqual(value.saved.get(observation.file.artifact.path), value.body);
+    assert.equal(observation.preparedInputSha256, sha(JSON.stringify(value.input)));
+    assert.deepEqual(value.message, original, 'the observer cannot change the native result');
+    const probeCount = value.probes.length;
+    const projected = structuredClone(value.message);
+    projected.content = [{ type: 'text', text: 'Previously delivered resource retained in context.' }];
+    projected.details.contextBrokerResource.delivered_complete_text = false;
+    value.handlers.get('context_with_system')({ messages: [projected] });
+    value.handlers.get('message_end')({ message: value.message });
+    assert.equal(value.rows.filter(row => row.phase === 'prepared_read').length, 1);
+    assert.equal(value.probes.length, probeCount, 'later copies do not repeat the immutable-file probe');
+    assert.equal(value.rows.at(-2).proofs.contextBrokerResource.delivered_complete_text, false);
+  }
+});
+
+test('native tool-result completion also observes a selected main read without changing assistant finalization', () => {
+  const value = preparedObservationFixture({ kind: 'selected', canonical: true, refresh: true }); value.call(); value.result();
+  value.handlers.get('message_end')({ message: value.message });
+  const observation = value.rows.find(row => row.phase === 'prepared_read');
+  assert.ok(observation);
+  assert.equal(value.rows.find(row => row.sequence === observation.receiptSequence).proofs.contextBrokerRead.purpose, 'inspect');
+  value.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'text', text: 'Finished.' }], stopReason: 'stop' } });
+  assert.equal(value.rows.at(-1).phase, 'assistant_final');
+  assert.equal(value.rows.at(-1).success, true);
+  assert.equal(value.rows.at(-1).text, 'Finished.');
+});
+
+test('native tool-result completion cannot replace missing, late, foreign or incomplete read evidence', () => {
+  for (const [label, beforeResult, alter] of [
+    ['missing callback', false, () => {}],
+    ['next turn', true, value => { value.handlers.get('input')({}); }],
+    ['wrong call', true, value => { value.message.toolCallId = 'other-call'; }],
+    ['wrong tool', true, value => { value.message.toolName = 'bash'; }],
+    ['wrong scope', true, value => { value.proof.scope = 'f'.repeat(64); }],
+    ['partial receipt', true, value => { value.proof.delivered_complete_text = false; }],
+    ['partial native body', true, value => { value.message.content = [{ type: 'text', text: 'partial' }]; }],
+    ['failed result', true, value => { value.message.isError = true; }],
+  ]) {
+    const value = preparedObservationFixture({ kind: 'resource' }); value.call();
+    if (beforeResult) value.result();
+    alter(value);
+    value.handlers.get('message_end')({ message: value.message });
+    assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false, label);
+    assert.equal([...value.saved.keys()].some(path => /prepared-(?:input|body)-/u.test(path)), false, label);
+    if (label !== 'partial native body') assert.deepEqual(value.probes, [], label);
+  }
+});
+
 test('prepared-read observation waits for the same current Notion receipt before reading its immutable entry', () => {
   const setup = () => { const value = preparedObservationFixture(); value.call(); value.result(); return value; };
   const value = setup(), before = structuredClone(value.message);
