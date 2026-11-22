@@ -44,7 +44,8 @@ test("native Pi guidance is a bounded routing contract, not a duplicated CLI tut
   expect(guidance).toContain("refresh:true checks latest main; pins fixed");
   expect(guidance).toContain("refresh:true adopts latest on request");
   expect(guidance).toContain("Reuse complete content");
-  expect(guidance).toContain("refresh:true after writes");
+  expect(guidance).toContain("Named Notion existence/availability: always query:name, refresh:true");
+  expect(guidance).toContain("also after writes, keeping pins");
   expect(guidance).toContain("keeping pins");
   expect(guidance).toContain("Check freshness");
   expect(guidance).toContain("read(path) inspects");
@@ -104,12 +105,31 @@ test("read-only use and inspect-only requests remain user intent, without automa
   }
 });
 
+test("an existing conversation replaces old guidance before a named availability question without rewriting history", async () => {
+  const h = guidanceHarness();
+  h.tools(["read", "notion_list", "notion_use", "bash"]);
+  const oldGuidance: AgentMessage = { role: "custom", customType: "ntn-skills-guidance", content: "Old discovery instructions.", timestamp: 1 };
+  const local: AgentMessage = { role: "custom", customType: "local-context", content: "Use the explicitly chosen local source." };
+  const body: AgentMessage = { role: "custom", customType: "selected-content", content: "Previously selected complete root and Requires instructions." };
+  const question: AgentMessage = { role: "user", content: "Do you have that Skill available?" };
+  const history = [local, oldGuidance, body, question], original = structuredClone(history);
+  const projected = await h.project("context_with_system", history);
+  expect(history).toEqual(original);
+  for (const message of [local, body, question]) expect(projected).toContain(message);
+  expect(projected).not.toContain(oldGuidance);
+  expect(projected.filter(message => message.customType === "ntn-skills-guidance")).toHaveLength(1);
+  expect(guidanceText(projected)).toContain("Honor explicit source and prior choice");
+  expect(guidanceText(projected)).toContain("Named Notion existence/availability: always query:name, refresh:true");
+  expect(guidanceText(projected)).toContain("failed/partial/offline is not absence");
+  expect(await h.project("context_with_system", projected)).toBe(projected);
+});
+
 test("maintenance reads the connected Notion workflow before any management command", () => {
   const routed = text(["read", "notion_list", "notion_use", "bash"]);
   expect(routed).toContain("read ntn-skills-maintain's exact ref");
   expect(routed).toContain("task's source/library");
   expect(routed).toContain("absent/pending: notion_list there");
-  expect(routed).toContain("failed/partial is not absence");
+  expect(routed).toContain("failed/partial/offline is not absence");
   expect(routed).toContain("Edited item: inspect only.");
   expect(routed).toContain("Builtins: explicit offline/bootstrap only");
   expect(routed).toContain("To apply: notion_use(ref), same ref + Requires");

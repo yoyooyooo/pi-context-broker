@@ -6,6 +6,8 @@
 
 Pi 注册 `notion_list({query?, source?, limit?, cursor?, refresh?})`、`notion_use({ref, refresh?})` 和原生 `read`。list 只返回候选元数据，`count`/`has_more` 表示当前查询分页；`coverage` 报告来源完整性，`freshness.sources` 独立报告原始验证时间、当前年龄、时限、策略和过期状态，未知观察为 null。完整覆盖不代表刚验证过，不把空页解释为最新完整空目录。创建后验证发现或要求最新目录时可用 `refresh:true`：指定 source 只刷新该配置来源，省略则刷新全部已启用配置来源，离线策略不变。它不改变当前回合或已采用的 root/Requires 版本；分页游标跨刷新失效，不能与 `refresh:true` 合用。`ref` 可为一个返回引用或一起需要的多个根。use 一次准备根与完整 Requires，read 只检查主文或精确资源，未选 Members 不读正文。普通本地 Skill 保留 Pi 原生路径。
 
+用户点名询问某个 Notion Skill 是否存在或可用时，Agent 必须把名称作为 `query` 调用 `notion_list`，并设置 `refresh:true`。已有会话、先前查到或没查到、默认 View 已显示该名称，都不能省略这次核验；仍遵守用户明确指定的来源。查询只读元数据，保留已选 root/Requires 的固定版本。只有当前新鲜且完整的查询才能说明搜索范围内未找到可用项；离线、过期、失败或部分结果不能证明当前不存在。 未找到只针对可用目录，不能据此推断物理 Notion 页面不存在。普通关键词搜索继续遵守既有 TTL；此规则由模型判断用户意图，不在宿主里匹配自然语言关键词。
+
 完整目录与 Default View 通过随包 `listCatalog` SDK 复用 core 查询和缓存。Skill/Router、Prompt 及有预算的预取统一进入 `consume`；首次物化主文并保留完整 File 目录，子文件沿准确绑定按需读取。`source.command`、CLI prepare/read 与完整 export 消费路径已删除，旧 SDK capability 缺失直接失败。管理和 doctor 保留配对 CLI。OMP/Tern 延后；本文历史结果不代表其当前可用性。
 
 `notion_use` 使用 Pi 的 `exposure: model-only`、`defaultActive: true`，只允许模型顶层调用。`notion_ctl` 为 `deferred`、默认不激活，按需导出固定 canonical ref 或显式 CLI source。旧 `skill_prepare` 会话回执仍按原验证规则读取，历史 toolName 和正文不重写。内部返回、摘要、截断和只落盘不形成完整外层交付；正式边界仍由实际 provider 的完整正文和有效证明决定。

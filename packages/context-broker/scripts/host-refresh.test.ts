@@ -68,6 +68,45 @@ test("metadata refresh discovers a newly created Skill before TTL without replac
   } finally { await h.close(); }
 });
 
+test("a named metadata refresh discovers a just-enabled Skill outside the View before TTL and preserves the selected closure", async () => {
+  const start = Date.now(); setSystemTime(start);
+  const h = await activeNotionSession({ catalogMaxAgeMs: 300_000 });
+  try {
+    const target = h.record("independent");
+    h.f.state.catalog = { ...h.f.state.catalog, records: h.f.state.catalog.records.map(record =>
+      record.id === target.id ? { ...record, enabled: false } : record) };
+    const old = await h.seed(), root = old.records.find(record => record.name === "root")!, ref = h.fixedRef(root);
+    const selected = h.selected(), active = h.active();
+    const entries = structuredClone(h.branch.filter(entry => entry.customType === "context-broker-selected-graph"));
+    const list = async (input: Record<string, unknown>) => JSON.parse(sourceMessageText((await h.tool("notion_list")
+      .execute("named-availability", input, undefined, undefined, h.ctx)).content));
+    const initial = await list({ query: target.name, refresh: true });
+    expect(initial).toMatchObject({ count: 0, coverage: { exhaustive: true }, failures: [] });
+    setSystemTime(start + 1000);
+    h.f.state.catalog = { ...h.f.state.catalog,
+      records: h.f.state.catalog.records.map(record => record.id === target.id ? { ...record, enabled: true } : record),
+      freshness: { ...h.f.state.catalog.freshness, validated_at: new Date().toISOString() } };
+    const before = h.f.calls.length;
+    const cached = await list({ query: target.name });
+    expect(cached.count).toBe(0);
+    expect(cached.freshness.sources[0]).toMatchObject({ validated_at: initial.freshness.sources[0].validated_at,
+      age_ms: 1000, max_age_ms: 300_000, stale: false });
+    expect(h.f.calls).toHaveLength(before);
+    const current = await list({ query: target.name, refresh: true });
+    expect(current).toMatchObject({ count: 1, coverage: { exhaustive: true }, failures: [],
+      records: [{ name: target.name, source: "notion", in_default_view: false, availability: "available" }] });
+    expect(current.freshness.sources[0]).toMatchObject({ validated_at: h.f.state.catalog.freshness.validated_at, age_ms: 0, stale: false });
+    expect(h.f.calls.slice(before).map(call => call.operation)).toEqual(["list"]);
+    expect(h.f.calls.at(-1)?.options).toMatchObject({ refresh: true, database: h.f.source.database, directory: {} });
+    expect(h.selected()).toEqual(selected); expect(h.active()).toEqual(active);
+    expect(h.branch.filter(entry => entry.customType === "context-broker-selected-graph")).toEqual(entries);
+    expect(h.fixedRef(root)).toBe(ref);
+    const continued = payloadText(await h.turn("Continue the previously selected workflow.", old.records));
+    for (const record of old.records) expect(continued).toContain(record.body!.trim());
+    expect(continued).not.toContain(target.body!.trim());
+  } finally { setSystemTime(); await h.close(); }
+});
+
 test("a verified native create during a pending catalog read makes its first ordinary list follow the newer directory", async () => {
   const h = await activeNotionSession();
   const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();

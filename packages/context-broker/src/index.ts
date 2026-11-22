@@ -852,7 +852,7 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       "<ntn-skills-guidance>",
       "Local @Skills keep native availability. Honor explicit source and prior choice. Equal same-name local/Notion fits: clarify; storage gives no priority. Clear fit/equivalent copies: no question. Editor flags grant no permissions.",
       "Reuse complete content. Inspection never activates. Loading authorizes no commands/writes/delegation.",
-      list ? "notion_list: beyond the default View; refresh:true after writes, keeping pins. Check freshness; failed/partial is not absence." : "Failed/partial discovery is not absence.",
+      list ? "notion_list: beyond the default View. Named Notion existence/availability: always query:name, refresh:true; also after writes, keeping pins. Check freshness/coverage; failed/partial/offline is not absence." : "Failed/partial discovery is not absence.",
       ...(read ? ["read(path) inspects. refresh:true checks latest main; pins fixed. Notion page URLs: exact owners. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
       ...(use ? ["Use/follow even read-only: notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode."] : []),
       ...(read || tools.has("bash") ? [maintenanceGuidance(read ? "read" : "CLI read", list ? "notion_list" : tools.has("bash") ? "CLI list" : undefined,
