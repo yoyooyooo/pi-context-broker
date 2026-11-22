@@ -4,7 +4,7 @@
   "description": "Pi/OMP context broker that injects Skills, Routers and per-submission Prompts via explicit user commands.",
   "type": "module",
   "license": "MIT",
-  "packageManager": "bun@1.2.17",
+  "packageManager": "bun@1.4.3",
   "keywords": [
     "pi-package",
     "omp-package",
