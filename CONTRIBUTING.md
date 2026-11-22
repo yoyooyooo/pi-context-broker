@@ -1,5 +1,17 @@
 # Contributing
 
+## Choose an isolated development pair
+
+Start parallel work with the [isolated development guide](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/isolated-development.md).
+It uses `scripts/paired-environment.mjs` to create two task-owned clones from
+`next`, build private CLI/Broker generations and run an explicit generation with
+separate application state. Keep `next` for integration. Do not rebuild a
+checkout registered in the user's normal CLI or Pi installation for an experiment.
+
+The guide is the single command and isolation reference. Its environment entry
+does not replace the verification owners below, alter global settings or relax
+the normal-environment and current-`next` delivery checks.
+
 ## Current Broker workflow
 
 The current delivery target is Broker with the matching ntn-skills SDK v2. OMP and Tern product code remains available, but their acceptance work is deferred. The default check does not require either host.
@@ -52,7 +64,7 @@ Read the actual commands, result and HTTP log as well as the exit code. These re
 
 Full `bun run build` and the default pack can still build the Tern companion when that product is explicitly in scope. Tern keeps its self-contained query runtime, dependency notices and bilingual guides. Follow the [Tern development guide](https://github.com/yoyooyooo/pi-context-broker/blob/next/packages/tern-context-broker/README.md#local-development) when that deferred work resumes. The independent surface scripts are not a prerequisite for current Broker delivery.
 
-Rebuild the installed product when its selected CLI/SDK or Skill files change. A global CLI upgrade cannot replace the bytes already bundled in Broker. Preserve the configured installation identity and inspect the effective new process before claiming a daily switch.
+Build a new private generation when the selected CLI/SDK or Skill files change during development. A global CLI upgrade cannot replace the bytes already bundled in Broker. A daily installation update is a separate delivery step: preserve its configured identity and inspect the effective new process before claiming a daily switch.
 
 ## Development rules
 

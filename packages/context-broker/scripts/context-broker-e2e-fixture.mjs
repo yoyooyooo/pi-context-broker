@@ -5,7 +5,7 @@ import { access, open, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
 
-export const supportedPiVersions = Object.freeze(["1.4.0", "1.5.0", "1.5.2"]);
+export const supportedPiVersions = Object.freeze(["1.4.0", "1.5.0", "1.5.2", "1.6.0"]);
 export function assertSupportedPiVersion(version) {
   assert.ok(supportedPiVersions.includes(version), `Installed Pi must be exactly ${supportedPiVersions.join(" or ")}; received ${version}`);
 }
