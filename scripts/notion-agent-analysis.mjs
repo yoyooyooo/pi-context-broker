@@ -429,7 +429,7 @@ async function observedBrokerToolOwner(observed, readArtifact) {
 // All bytes cross the same artifact boundary as other observed tool results.
 // The pure lineage check still validates the original native call, exact
 // transformation, current-turn receipt and immutable owner/File relationship.
-async function observedPreparedReads(observed, readArtifact) {
+export async function observedPreparedReads(observed, readArtifact) {
   const reads = new Map(); let brokerOwner;
   for (const observation of observed.tasks.filter(row => row.phase === 'prepared_read')) {
     const event = observed.tasks.find(row => row.phase === 'tool_call' && row.toolCallId === observation.toolCallId);
