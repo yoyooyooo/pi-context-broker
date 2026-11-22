@@ -148,7 +148,9 @@ async function fixture({ clarifications = true, kind = 'publish-version', malfor
     budget: { max_duration_ms: 5000, max_model_requests: 0, max_http_attempts: 0, max_input_tokens: 0, max_output_tokens: 0 },
     expected, credential: { source_file: '/apparatus-no-credentials-read', provider: 'apparatus', api_key_env: 'BENCHMARK_TURN_TEST_KEY' } };
   return { root, runRoot, controlRoot, fixtureRoot, runId, binding, event, options, operations,
-    deps: { runEnvironment: launch, fixtureOperations: operations, resolveModelCredential: async () => ({}) },
+    deps: { runEnvironment: launch, fixtureOperations: operations, resolveModelCredential: async () => ({}),
+      verifyTurnRuntimeBuild: async () => ({ version: 1, required: true, status: 'apparatus_only',
+        scope: 'deterministic no-model runtime substitute; does not certify a production build' }) },
     counts: () => ({ apply: applyCalls, reconcile: reconcileCalls, child: childCalls }) };
 }
 async function run(f) {

@@ -116,6 +116,22 @@ must be established or retained as unknown. Never delete a run or its receipts.
 
 ## Setup fields and limits
 
+Cases with declared turn events require `episode_fixtures` in the setup. This
+explicit policy names the authorized synthetic Notion parent and any pinned
+sources. `configure` prepares one owned initial fixture for every scheduled
+condition/repeat, verifies material parity, and captures each slot with zero model
+sends before freezing the plan. Read-only cases may share their proven material.
+The physical entry, prompt, inventory and exact startup expectation are frozen
+per writable slot; dispatch and reanalysis cannot materialize a replacement or
+fall back to another case's expectation. The canonical sample identities and
+denominators remain unchanged.
+
+This automatic path supports `placement: "notion"`, including pinned source
+members; it rejects local/mixed placements before remote work. An ambiguous
+initial preparation is retained and re-entry only performs read-only reconciliation
+against the same owned scope. See [turn bridge and fixture ownership](benchmark-turn-bridge.md#writable-fixtures-for-every-scheduled-slot)
+for the setup shape, evidence binding and recovery boundary.
+
 The controller accepts model configuration, not a fixed model enumeration.
 `models.source_file`, `provider`, `ids`, and `api_key_env` select declared routes
 from an existing registry. The generated registry references an environment
