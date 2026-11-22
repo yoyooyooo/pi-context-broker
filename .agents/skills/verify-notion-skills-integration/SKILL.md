@@ -36,20 +36,34 @@ snapshot 指纹、完整 source_tree 与 runtime 清单。构建后修改一边�
 读回真实入口、退出和自有证据。重复 build/run ID 必须拒绝覆盖.
 具体命令和通过范围以规范及当前 `--help` 为准。
 
-隔离机制按规范执行两层检查：`node --test scripts/paired-environment.test.mjs`
-检查单元行为；`scripts/paired-environment.smoke.mjs` 接收两个独立环境和明确 build ID，
-启动实际 CLI/Pi 与各自配对 Broker，以受控 provider 核对同名 Skill 的唯一 marker
-不串入另一环境。读取首个环境 proofs/唯一目录中的 smoke.json 及原件；失败保留
+隔离机制按规范执行两层检查：`node --test scripts/paired-environment.test.mjs scripts/paired-runtime-identity.test.mjs`
+检查实际子进程、启动声明和运行时反例；`scripts/paired-environment.smoke.mjs` 接收两个独立环境和明确 build ID，
+执行两个真实 CLI，以及两环境 × Broker/原生模式 × direct/private wrapper 的八个真实 Pi。
+受控 provider 必须收到所选 Skill 完整正文，排除另一环境和未选择的发现 canary；
+实际观察 Pi 的 argv/settings、命令、工具及独立状态。原生侧必须没有 Broker 注册，
+显式 root 的原生命令与 reader 可用。读取首个环境 proofs/唯一目录中的 smoke.json 及原件；失败保留
 failure.json。smoke 不访问 Notion 或真模型，不能记作自然 onboarding 或日用通过。
 
 stdin 默认 ignore；RPC 或显式管道输入必须传 `--stdin inherit`，交互结束时关闭输入。
-Node/Pi 使用统一维护的机器基础环境，不为任务另装旧版；每个 run 记录真实版本
-与入口，实际 Node 使用本次启动脚本的 `process.execPath`。升级共享基础环境不要求
+Node/Pi/Bun 使用统一维护的机器基础环境，不为任务另装旧版；每个 run 在实际子进程环境
+中前后观察版本、选定入口和声明范围的文件身份，实际 Node 使用本次启动脚本的 `process.execPath`。升级共享基础环境不要求
 重建任务 clone，也不引入任务专用版本管理；按本次实际 runtime 解释验证结果。
 每个 run 核对 config/state/cache/data、`NTN_SKILLS_SCHEDULER_ROOT`、Pi agent
-目录、session、显式复制的 Skills 和 TMPDIR。Skills 副本只供 Broker discovery，
-Pi 保留 `-ns`，不改本地原件。HOME 保持不变；CLI wrapper 仅影响子进程树。
+目录、session、显式复制的 Skills 和 TMPDIR。默认 `--pi-mode broker` 的 `--skills`
+只供 Broker discovery。`--pi-mode native --native-skills ABS_DIR` 复制所选 root，
+经 Pi 原生 `--skill` 加载并启用 Skill 命令，实际不加载 Broker。两模式保留 `-ns`，
+不改本地原件；共同观察器用可重复的 `--pi-extension ABS_ENTRY` 显式声明。
+direct 与 private wrapper 复用 `pi-launch.json` 的同一固定 argv/settings，后置资源和会话覆盖拒绝。
+HOME 保持不变；CLI wrapper 仅影响子进程树。
+回读 run.runtime 与 result.runtime_check 的 before/after/changes/unknown；unchanged、drifted、
+unknown 分开。运行时不完整或漂移时整体失败，command_status/exit_code/timed_out 和 stdout/stderr
+仍保留原值。选定 Node/Bun 文件、Pi entry/manifest/可选 runtime module 和私有 wrappers 的
+端点检查不等于完整安装冻结，不证明任意 command 的子进程身份。跨 pair/batch 判断、实际
+资源装载握手和任务请求前阻断归 Benchmark AH-1220；公共 run 不代判业务成功。
 凭据变量只通过显式 `--pass-env NAME` 传入，models 的 apiKey 只能引用环境变量名。
+build 如需既有网络代理，同样显式按名称传入；代理的既有 CA 文件可通过
+`--pass-env NODE_EXTRA_CA_CERTS` 传入绝对路径，不能传 NODE_OPTIONS 或关闭 TLS 校验。
+不默认继承，回执仅记录变量名。
 无远端选择时核对 Notion token 不继承且 sources 为空，不能只看目录名推断隔离。
 launcher 的 entry 记录 scope、设置 PAIRED_NOTION_ENTRY 并配置 Broker source；parent
 记录 scope、设置 PAIRED_NOTION_PARENT，不自动创建库。CLI target 和私有 wrapper
