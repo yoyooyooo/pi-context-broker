@@ -214,7 +214,7 @@ function readPublishedVersions(config: Config): string[] {
   }
   const parsed: unknown = JSON.parse(result.stdout);
   const values: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
-  if (values.some((value) => typeof value !== "string" ||
+  if (values.length === 0 || values.some((value) => typeof value !== "string" ||
       !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value))) {
     fail(`Malformed npm version response for ${config.publishPackage}; registry state is unknown.`);
   }
