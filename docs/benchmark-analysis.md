@@ -15,10 +15,23 @@ repair the subject, or replace the shared daily verification gate.
 | `benchmark/analysis/metrics.mjs` | `METRIC_ENTRIES`, `evaluateMetric` |
 | `benchmark/analysis/report.mjs` | `reportTables`, `renderAnalysisMarkdown`, `renderMetricSvg`, `writeAnalysisReport` |
 
+Analysis/scoring implementation 1.1.0 corrects the formulas and interval outputs below.
+The metric definitions remain version 1.0.0; an analysis repair does not create
+a model observation or change a frozen protocol.
+
 All 18 logical `analysis_entry` identifiers in the metric dictionary resolve
 through `METRIC_ENTRIES` and `evaluateMetric`. Condition metrics require a
 `condition_id`; paired metrics require the oriented `candidate` and
-`reference`; interaction and frontier metrics use the experiment scope.
+`reference`; interaction and frontier metrics use the experiment scope. The
+primary condition quality result keeps `estimate` and `interval` in ratio units,
+with `unit: ratio`. `score_percent` contains the corresponding percentage
+estimate and interval, including a scaled radius. The logical
+`metric:quality.verified/v1` entry returns that percentage object and an explicit
+`quality_ratio` companion. Implementation 1.1.0 thereby repairs the old entry
+returning a ratio despite its declared percentage contract; it does not change
+the dictionary formula or the ratio-valued acceptance thresholds. Reports use
+the primary ratio once for percentage display. Callers must not multiply the
+logical percentage result or `score_percent` by 100 again.
 
 ```js
 const bundle = normalizeEpisode(normalizationInput);
@@ -224,6 +237,12 @@ draftProtocol.policies.analysis = {
       verified: true,
       evidence_sha256: independentlyVerifiedBoundReceiptSha256,
     },
+    currency_cost: {
+      upper: 2.5,
+      currency: 'USD',
+      verified: true,
+      evidence_sha256: independentlyVerifiedCurrencyBoundReceiptSha256,
+    },
   },
   success_budgets: {
     time_ms: [0, 15000, 30000, 60000],
@@ -235,7 +254,11 @@ draftProtocol.policies.analysis = {
 
 Budget cutoffs are strictly increasing nonnegative integers. Input bounds need
 a positive safe integer and the SHA256 of their independent verification
-evidence. Interaction entries bind four distinct declared conditions, their
+evidence. Optional `currency_cost` bounds require a positive finite `upper`,
+an explicit `currency`, `verified: true` and an independent evidence SHA256.
+The currency must match every cost observation used for inference. No budget
+or observed sample maximum substitutes for that population bound. Interaction
+entries bind four distinct declared conditions, their
 oriented protocol pairs and, for Code Mode, both environment pairs. Unknown
 fields and unsupported shapes are rejected. `createAnalysisPlan` copies these
 validated policies from the protocol; changing the returned plan is not a
@@ -260,7 +283,11 @@ the frozen family-weight table.
 
 Reanalysis deduplicates the same episode and rejects conflicting views.
 It never adds a model execution, independent material or cost. Indexes and
-reports retain raw hashes and actual-run IDs.
+reports retain raw hashes and actual-run IDs. Write a repaired analysis to a
+new directory and retain a `reanalysis_of` receipt identifying the prior report,
+its analysis hash and the unchanged normalized episode hashes. Historical
+public packages continue replaying with their included implementation; do not
+replace their source or results when publishing a repair.
 
 ## Metrics and inference
 
@@ -279,10 +306,17 @@ For fixed cluster weights \(w_k\), a bounded variable of range width \(R\)
 has conservative two-sided radius
 \(R\sqrt{\log(2/\alpha)\sum_k w_k^2/2}\).
 Quality uses range [0, 1]; paired quality differences use [-1, 1].
-The implementation applies Bonferroni to the declared primary family across
-condition and paired-comparison claims. Cluster independence and
-pre-outcome fixed weights are explicit assumptions. Within-cluster
-dependence is unrestricted.
+The implementation records an outcome-independent claim ledger before
+examining observations. It includes condition quality, unassisted quality,
+capped time and currency cost; every condition budget point; paired quality
+and resource ratios; all nine transition cells; shared paired budget points;
+and all three dimensions of every planned or protocol-derived interaction.
+The Bonferroni count is at least the registered primary-family count. Missing
+or unfavorable observations do not remove claims from that count. Each ratio
+divides its allocation between its two bounded means. Cluster independence
+and pre-outcome fixed weights are explicit assumptions; within-cluster
+dependence is unrestricted. Automatically enumerated interactions remain
+exploratory even when the protocol phase is confirmation.
 
 This is a conservative concentration bound, not a bootstrap interval.
 It remains nonzero for all-success or all-tie small samples. Small cluster
@@ -307,15 +341,33 @@ but input noninferiority remains inconclusive.
 Capped time is successful completion time up to the frozen cap; failure and
 unknown use the cap. Raw elapsed time remains separate. Population p95
 success time is `not_reached` when fewer than 95% of the fixed denominator
-succeed by that cap. Cost per success includes costs from failures; zero
-successes yield `not_reached`.
+succeed by that cap. Cost per success divides the sum of actual costs across
+all observed valid episodes, including failures and retries, by the number of
+verified successes. This is distinct from the ratio of family-weighted means.
+Its output identifies valid, planned and unresolved episode counts; invalid
+execution costs remain in the separate ledger. Zero successes yield
+`not_reached`; missing cost or mixed currencies prevent a complete monetary
+ratio. The separately named `currency_cost` is the fixed-weight mean used by
+the tested cost frontier.
 
-Success-by-budget curves use the fixed denominator and observed completion
-cutoffs. They do not claim that the subject would behave identically under
-a different enforced budget policy. Interface misuse uses an episode
-denominator. Adding harmless tools cannot dilute a misuse event.
+Success-by-budget curves keep case values, repeat counts, cluster intervals
+and identification bounds at every cutoff. Paired curves first subtract the
+two observations at the same case/repeat unit, then average repeats and apply
+the fixed weights. Valid unknown outcomes receive no verified credit but
+remain distinct from confirmed failure. Missing slots or a successful episode
+with unknown usage prevent a complete interval; identification bounds preserve
+the known contribution. These curves do not claim the subject would behave
+identically under another enforced budget policy. Interface misuse uses an
+episode denominator. Adding harmless tools cannot dilute a misuse event.
 
-All nine pass/fail/unknown migration cells are retained. Model-environment
+All nine pass/fail/unknown migration cells retain case/cluster intervals.
+For compatibility, descriptive `count` and `weight` assign unresolved sides to
+unknown and retain the full planned matrix. `observed_count`,
+`unresolved_assigned_count` and the paired-unit list distinguish that assignment
+from an actual valid unknown outcome. Missing pairs make sampling intervals
+unavailable; separate identification bounds show possible transition mass.
+
+Model-environment
 interactions require four observed cells with matching environment pairs,
 tasks, material/state/authorization, budgets, adoption mode and declared
 windows. They are differences of within-model environment differences.
@@ -325,11 +377,26 @@ entry with kind `code_mode`, four oriented `condition_ids` and
 required. Missing or incomparable cells return unavailable. A four-cell
 point estimate does not imply general model ability or causality.
 
+Each interaction separately reports `metrics.quality`, `metrics.time` and
+`metrics.cost`. The first two use verified quality and capped time. All four
+cells must share supported case/repeat units and pairing seeds. The interval
+applies to the within-unit four-cell contrast before case/cluster aggregation.
+Cost requires complete same-currency observations for a point estimate and the
+registered currency bound for an interval. Missing, mismatched or exceeded
+bounds leave that interval unavailable. The top-level interaction estimate and
+interval remain quality aliases for existing consumers.
+
 Absolute quality, unassisted quality and paired quality gates precede
 efficiency. Any confirmed critical-contract failure rejects the candidate.
 An interval overlapping a threshold is inconclusive. Tested cost frontiers
-include only comparable configurations satisfying the quality lower-bound
-requirement with known currency cost; confirmation status remains explicit.
+implement the minimum complete fixed-weight mean cost among tested
+model/policy configurations whose quality lower bound meets the requirement.
+Groups have the same environment version, task/material/weight scope, supported
+slot denominator and currency. This is a minimum-cost level, not a Pareto set
+and not cost per success; exact ties remain visible. No eligible configuration
+yields `not_reached`, never zero. Unknown cost is excluded with a reason.
+Selecting a winner on a report marked confirmation still does not independently
+confirm that selection; its state remains `requires_independent_confirmation`.
 
 ## Stored evidence and reproducible reports
 

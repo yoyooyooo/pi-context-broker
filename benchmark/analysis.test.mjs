@@ -136,9 +136,9 @@ test('misuse rate denominator is episodes and cannot improve by adding useless t
 });
 test('currency frontier excludes unknown cost and subthreshold quality',()=>{
   const quality={status:'available',estimate:.99,interval:{status:'available',lower:.98,upper:1}};
-  const result=costFrontier([{id:'a',quality,cost:{status:'available',estimate:2,currency:'USD'},confirmation:true,scope:'same'},
-    {id:'b',quality,cost:{status:'unknown',estimate:null},confirmation:true,scope:'same'},
-    {id:'c',quality:{...quality,interval:{status:'available',lower:.9}},cost:{status:'available',estimate:1,currency:'USD'},confirmation:false,scope:'same'}],.95);
+  const result=costFrontier([{id:'a',quality,cost:{status:'available',complete:true,estimate:2,currency:'USD'},confirmation:true,scope:{environment_id:'same',task_scope_sha256:fingerprint('same-tasks')}},
+    {id:'b',quality,cost:{status:'unknown',estimate:null},confirmation:true,scope:{environment_id:'same',task_scope_sha256:fingerprint('same-tasks')}},
+    {id:'c',quality:{...quality,interval:{status:'available',lower:.9}},cost:{status:'available',complete:true,estimate:1,currency:'USD'},confirmation:false,scope:{environment_id:'same',task_scope_sha256:fingerprint('same-tasks')}}],.95);
   assert.deepEqual(result.eligible,['a']);assert.equal(result.frontier[0].id,'a');
 });
 test('four-cell interactions reject missing cells and unverified common scope',()=>{
