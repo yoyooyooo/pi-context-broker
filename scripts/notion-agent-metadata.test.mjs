@@ -11,7 +11,7 @@ function fixture() {
     return { path, bytes: bytes.length, sha256: hash(bytes) };
   };
   const stamp = ms => new Date(Date.UTC(2026, 10, 22) + ms).toISOString();
-  const item = { kind: 'notion', name: 'shipment-review-fixture', owner: 'owner', scope: 'a'.repeat(64) };
+  const item = { kind: 'notion', name: 'shipment-review-fixture', owner: 'owner', pageId: 'target-page', scope: 'a'.repeat(64) };
   const records = [{ ref: 'sr:target', name: item.name, source: 'notion', availability: 'available', in_default_view: false }];
   const value = { ok: true, state: 'known', count: 1, total_count: 1, has_more: false, next_cursor: null,
     freshness: { sources: [{ source: 'notion', policy: 'refresh', validated_at: stamp(24000), age_ms: 2000, max_age_ms: 60000, stale: false }] },
@@ -73,6 +73,8 @@ test('metadata absence is a complete available-directory miss, with no body or p
 test('metadata verifier rejects cached misses, partial results, wrong identities and unproved refresh', async t => {
   const cases = [
     ['no named query', f => { f.call.arguments.query = 'another'; }, 'NAMED_METADATA_LOOKUP_MISSING'],
+    ['refresh omitted', f => { delete f.call.arguments.refresh; }, 'METADATA_REFRESH_NOT_REQUESTED'],
+    ['refresh false', f => { f.call.arguments.refresh = false; }, 'METADATA_REFRESH_NOT_REQUESTED'],
     ['cached miss', f => { f.value.records = []; }, 'METADATA_TARGET_MISSING'],
     ['partial coverage', f => { f.value.coverage.exhaustive = false; }, 'METADATA_COVERAGE_INCOMPLETE'],
     ['failed source', f => { f.value.failures = [{ source: 'notion' }]; }, 'METADATA_COVERAGE_INCOMPLETE'],
@@ -84,6 +86,8 @@ test('metadata verifier rejects cached misses, partial results, wrong identities
     ['process restart', f => { f.call.event.pid = 43; }, 'METADATA_SESSION_REPLACED'],
     ['old TTL elapsed', f => { f.previous.analysis.assertions[0].details.freshness.age_ms = 50000; }, 'METADATA_TTL_PRECONDITION_MISSED'],
     ['missing enable', f => { f.event.event.enabled = false; }, 'METADATA_EXTERNAL_EVENT_UNPROVEN'],
+    ['another page enabled', f => { f.eventResult.result.row.id = 'another-page'; }, 'METADATA_ENABLE_READBACK_MISMATCH'],
+    ['enable did not land', f => { f.eventResult.result.row.properties.Enabled.checkbox = false; }, 'METADATA_ENABLE_READBACK_MISMATCH'],
     ['old validation reused', f => { f.value.freshness.sources[0].validated_at = new Date(Date.UTC(2026, 10, 22) + 1000).toISOString(); }, 'METADATA_NOT_REFRESHED'],
     ['refresh without HTTP', f => { f.source.splice(1, 1); }, 'METADATA_REFRESH_HTTP_MISSING'],
     ['failed refresh HTTP', f => { f.source[1].outcome = 'failure'; }, 'METADATA_REFRESH_HTTP_MISSING'],
