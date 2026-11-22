@@ -30,6 +30,9 @@ transport. An expectation mismatch stops before submitting the business task.
 The example limit of two is a slice of the frozen batch, not an extra batch.
 Run the same plan again to continue its remaining slots. Completed slots are
 never silently repeated. Model retries are disabled in the initial policy.
+This continuation applies to an operator slice, not a retained core-evidence
+stop. A core stop remains in force on later invocations until an eligible,
+verified analysis revision resolves it or a new protocol declares the repair.
 
 ## Review the result
 
@@ -78,6 +81,9 @@ invalid runs and replacements. Its first 24 are a separately frozen comparison
 covering the three selected routes and both API families in native and Broker
 conditions. Successful business answers are not required to pass the apparatus
 gate; complete route, loading, transport and usage evidence is required.
+The shared ledger path is part of the frozen execution plan. An alternate path
+or symlink is rejected before dispatch; changing a CLI invocation cannot reset
+the first-24 gate or the campaign's scheduled-episode count.
 
 ```sh
 node benchmark/cli.mjs gate --root /absolute/task/first24 --out /absolute/task/route-gate.json

@@ -119,7 +119,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     const outcomes = await Promise.allSettled(Array.from({ length: Math.min(concurrency, jobs.length) }, worker));
     const rejected = outcomes.find(outcome => outcome.status === 'rejected'); if (rejected) throw rejected.reason;
   } finally { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } }
-  const runtimeIdentity = projection => ({ node: projection.node, node_version: projection.node_version, bun: projection.bun, pi: projection.pi });
+  const runtimeIdentity = projection => ({ node: projection.node, node_version: projection.node_version, bun: projection.bun, pi: projection.pi,
+    ...(projection.git ? { git: projection.git } : {}) });
   const captured = await Promise.all(results.map(result => readJson(result.expectation.path)));
   if (!setup.allowed_changes.includes('runtime')) for (const value of captured) assert.deepEqual(runtimeIdentity(value.projection), runtimeIdentity(captured[0].projection), 'Runtime changed during no-model setup');
   const expanded = results.flatMap(result => result.members.map(member => ({ ...member, raw: result.raw, expectation: result.expectation })));
@@ -133,7 +134,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   }));
   const protocol = preregisterComparison({ id: setup.id, phase: setup.phase, purpose: setup.purpose, environments, models,
     corpus: corpus.publicCorpus, cases, repetitions: setup.repetitions ?? 1, budget: setup.budget, decision: setup.decision,
-    allowedChanges: setup.allowed_changes, orderingSeed: setup.ordering_seed });
+    analysis: setup.analysis, allowedChanges: setup.allowed_changes, orderingSeed: setup.ordering_seed });
   const conditions = Object.fromEntries(protocol.conditions.map(condition => {
     const ei = environments.findIndex(environment => environment.id === condition.environment_id), candidate = setup.candidates[ei];
     const selected = expanded.filter(result => result.ei === ei && result.model.id === condition.model_id);

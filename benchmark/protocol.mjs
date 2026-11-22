@@ -547,6 +547,57 @@ function policyChecks(value, maps, pairCells, stage, errors) {
   });
 }
 
+/** Analysis additions are registered protocol policy, never post-outcome plan overrides. */
+export function validateAnalysisPolicy(protocol) {
+  const policy = protocol.policies?.analysis;
+  if (policy === undefined) return { valid: true, errors: [] };
+  const errors = [], root = '/policies/analysis';
+  try { canonicalJson(policy); }
+  catch (error) { issue(errors, root, 'analysis_policy_json', error.message); return { valid: false, errors }; }
+  validateShape(policy, protocolSchema.properties.policies.properties.analysis, root, errors);
+  if (errors.length) return { valid: false, errors };
+  for (const [name, cutoffs] of Object.entries(policy.success_budgets ?? {})) {
+    if (cutoffs.some((value, index) => index > 0 && value <= cutoffs[index - 1]))
+      issue(errors, root + '/success_budgets/' + name, 'analysis_budget_order', 'Registered budget cutoffs must be strictly increasing');
+  }
+  const conditions = new Map((protocol.conditions ?? []).map(condition => [condition.id, condition]));
+  const interactions = policy.interactions ?? [];
+  unique(interactions, root + '/interactions', errors, item => item.id);
+  for (const [index, interaction] of interactions.entries()) {
+    const path = root + '/interactions/' + index;
+    if (new Set(interaction.condition_ids).size !== 4) {
+      issue(errors, path + '/condition_ids', 'analysis_interaction_cells', 'An interaction requires four distinct frozen condition cells');
+      continue;
+    }
+    const cells = interaction.condition_ids.map(id => conditions.get(id));
+    if (cells.some(cell => !cell)) {
+      issue(errors, path + '/condition_ids', 'analysis_condition_reference', 'Interaction conditions must belong to this frozen protocol');
+      continue;
+    }
+    const [a, b, c, d] = cells;
+    for (const pair of [[a, b], [c, d]]) {
+      if (!(protocol.pairs ?? []).some(item => same(item.condition_ids, pair.map(cell => cell.id))))
+        issue(errors, path + '/condition_ids', 'analysis_oriented_pair', 'Both interaction pairs must use their preregistered candidate/reference orientation');
+    }
+    const expectedPairs = [[a.environment_id, b.environment_id], [c.environment_id, d.environment_id]];
+    if (interaction.environment_pairs && !same(interaction.environment_pairs, expectedPairs))
+      issue(errors, path + '/environment_pairs', 'analysis_environment_pairs', 'Environment pairs must match the declared condition cells');
+    if (interaction.kind === 'model_environment') {
+      if (!(a.model_id === b.model_id && c.model_id === d.model_id && a.model_id !== c.model_id
+          && a.environment_id === c.environment_id && b.environment_id === d.environment_id
+          && cells.every(cell => cell.code_mode === a.code_mode)))
+        issue(errors, path, 'analysis_interaction_axes', 'Model interaction requires the same two environments and Code Mode at each of two models');
+    } else {
+      if (!interaction.environment_pairs)
+        issue(errors, path + '/environment_pairs', 'analysis_environment_pairs', 'Code Mode interaction must register both environment pairs');
+      if (!(cells.every(cell => cell.model_id === a.model_id) && a.code_mode === b.code_mode
+          && c.code_mode === d.code_mode && a.code_mode !== c.code_mode))
+        issue(errors, path, 'analysis_interaction_axes', 'Code Mode interaction requires one model and two distinct matched Code Mode policies');
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
 export function validateProtocol(value, options = {}) {
   const { errors, stage } = boundary(value, options, protocolSchema);
   if (errors.length) return { valid: false, errors };
@@ -562,5 +613,6 @@ export function validateProtocol(value, options = {}) {
   const { maps, ref } = checkReferences(value, errors);
   const pairCells = comparisonChecks(value, maps, ref, errors);
   policyChecks(value, maps, pairCells, stage, errors);
+  errors.push(...validateAnalysisPolicy(value).errors);
   return { valid: errors.length === 0, errors, fingerprint: hash };
 }

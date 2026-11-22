@@ -76,7 +76,7 @@ export async function bindMaterializedCases({ cases, materialization }) {
 
 /** Freeze a concrete comparison, never a speculative future matrix. */
 export function preregisterComparison({ id, phase, purpose, environments, models, corpus, cases, repetitions = 1,
-  budget, decision, allowedChanges, orderingSeed = 0, registeredAt = new Date().toISOString() }) {
+  budget, decision, analysis, allowedChanges, orderingSeed = 0, registeredAt = new Date().toISOString() }) {
   assert.equal(environments.length, 2, 'Each comparison names candidate then reference');
   assert.ok(Number.isSafeInteger(repetitions) && repetitions > 0);
   assert.ok(models.length > 0 && cases.length > 0);
@@ -104,6 +104,7 @@ export function preregisterComparison({ id, phase, purpose, environments, models
     boundary_method: 'hoeffding-no-degenerate-bootstrap-v1', multiple_comparisons: 'bonferroni-primary-family-v1',
     family_weights: families.map(family => ({ family, weight: 1 / families.length })) };
   value.policies.decision = { ...value.policies.decision, ...decision };
+  if (analysis !== undefined) value.policies.analysis = structuredClone(analysis);
   value.policies.reruns.max_episodes = 0;
   value.policies.evidence = { ...value.policies.evidence, observer_version: 'benchmark-pi-sdk-1', normalizer_version: '1.0.0', scoring_version: '1.0.0' };
   value.protocol_sha256 = fingerprint({ ...value, protocol_sha256: null });

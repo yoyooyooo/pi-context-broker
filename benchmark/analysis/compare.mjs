@@ -1,4 +1,4 @@
-import { fingerprint } from '../protocol.mjs';
+import { fingerprint, validateAnalysisPolicy } from '../protocol.mjs';
 import { clusterInterval, differenceInterval, ratioInterval, weightedMean, weightedQuantile,
   INTERVAL_METHOD, BOUNDARY_METHOD, MULTIPLICITY_METHOD } from './statistics.mjs';
 
@@ -9,6 +9,9 @@ const mean = values => values.reduce((n,v)=>n+v,0)/values.length;
 const statusValue = (value, extra = {}) => value === null ? {status:'unknown',estimate:null,...extra} : {status:'available',estimate:value,...extra};
 
 export function createAnalysisPlan(protocol) {
+  const policyCheck = validateAnalysisPolicy(protocol);
+  if (!policyCheck.valid) throw new Error('Invalid preregistered analysis policy: ' + JSON.stringify(policyCheck.errors));
+  const policy = protocol.policies.analysis ?? {};
   const slots = new Map();
   for (const pair of protocol.pairs ?? []) for (const condition_id of pair.condition_ids) {
     const slot = { id: pair.id + '/' + condition_id, pair_id: pair.id, condition_id,
@@ -23,9 +26,14 @@ export function createAnalysisPlan(protocol) {
     slots.set(keyFor(slot),slot);
   }
   return {schema_version:1,id:protocol.id + '/analysis-plan',protocol_sha256:protocol.protocol_sha256,
-    slots:[...slots.values()],confirmation:protocol.phase === 'confirmation',resource_bounds:{}};
+    slots:[...slots.values()],confirmation:protocol.phase === 'confirmation',
+    resource_bounds:structuredClone(policy.resource_bounds ?? {}),
+    ...(policy.success_budgets ? {success_budgets:structuredClone(policy.success_budgets)} : {}),
+    ...(policy.interactions ? {interactions:structuredClone(policy.interactions)} : {})};
 }
 function validatePlan(protocol, plan) {
+  if (fingerprint(plan) !== fingerprint(createAnalysisPlan(protocol)))
+    throw new Error('Analysis plan must match the frozen protocol expansion, including every slot, support, confirmation and registered policy');
   const cases = new Map(protocol.corpus.cases.map(c=>[c.id,c]));
   const conditions = new Map(protocol.conditions.map(c=>[c.id,c]));
   if (!Array.isArray(plan.slots) || !plan.slots.length) throw new Error('Analysis needs an explicit nonempty batch plan');

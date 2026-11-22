@@ -93,6 +93,73 @@ function interactionFixture() {
   return seal(value);
 }
 
+test('optional analysis policy is frozen with verified bounds and ordered budget cutoffs', () => {
+  const value = frozenFixture();
+  assertValid(value);
+  value.policies.analysis = {
+    resource_bounds: { input_total: { upper: 50000, verified: true, evidence_sha256: digest('independent-input-bound') } },
+    success_budgets: { time_ms: [0, 10000, 60000], input_tokens: [0, 10000, 50000] },
+    interactions: [],
+  };
+  assertValid(seal(value));
+  value.policies.analysis.resource_bounds.input_total.upper++;
+  assertCode(value, 'fingerprint_mismatch');
+});
+
+for (const [name, change, code] of [
+  ['missing bound evidence', p => { delete p.resource_bounds.input_total.evidence_sha256; }, 'schema_required'],
+  ['unverified bound', p => { p.resource_bounds.input_total.verified = false; }, 'schema_const'],
+  ['zero bound', p => { p.resource_bounds.input_total.upper = 0; }, 'schema_range'],
+  ['unsafe integer bound', p => { p.resource_bounds.input_total.upper = Number.MAX_SAFE_INTEGER + 1; }, 'schema_type'],
+  ['fractional token cutoff', p => { p.success_budgets.input_tokens = [1.5]; }, 'schema_type'],
+  ['unordered cutoffs', p => { p.success_budgets.time_ms = [1000, 100]; }, 'analysis_budget_order'],
+  ['duplicate cutoffs', p => { p.success_budgets.time_ms = [100, 100]; }, 'analysis_budget_order'],
+  ['undeclared analysis field', p => { p.confirmation = true; }, 'schema_unknown_field'],
+]) test('analysis registration rejects ' + name, () => {
+  const value = frozenFixture();
+  value.policies.analysis = { resource_bounds: { input_total: { upper: 50000, verified: true, evidence_sha256: digest('bound') } },
+    success_budgets: { time_ms: [100, 1000], input_tokens: [100, 1000] } };
+  change(value.policies.analysis);
+  assertCode(seal(value), code);
+});
+
+test('registered interaction cells bind actual conditions and oriented protocol pairs', () => {
+  const value = interactionFixture();
+  value.policies.analysis = { interactions: [{ id: 'models', kind: 'model_environment',
+    condition_ids: value.pairs.flatMap(pair => pair.condition_ids) }] };
+  assertValid(seal(value));
+  const missing = clone(value); missing.policies.analysis.interactions[0].condition_ids[3] = 'unregistered-condition';
+  assertCode(seal(missing), 'analysis_condition_reference');
+  const duplicate = clone(value); duplicate.policies.analysis.interactions[0].condition_ids[3] = duplicate.conditions[0].id;
+  assertCode(seal(duplicate), 'analysis_interaction_cells');
+  const reversed = clone(value); reversed.policies.analysis.interactions[0].condition_ids.reverse();
+  assertCode(seal(reversed), 'analysis_oriented_pair');
+  const repeated = clone(value); repeated.policies.analysis.interactions.push(clone(repeated.policies.analysis.interactions[0]));
+  assertCode(seal(repeated), 'duplicate_identity');
+});
+
+test('registered Code Mode interaction retains both environment pairs through execute validation', () => {
+  const value = frozenFixture();
+  const addedEnvironments = value.environments.map(environment => ({ ...clone(environment), id: environment.id + '-code',
+    policies: { ...environment.policies, code_mode: 'required' } }));
+  value.environments.push(...addedEnvironments);
+  value.corpus.capabilities.forEach(capability => { capability.environment_ids.push(...addedEnvironments.map(environment => environment.id)); });
+  const added = value.conditions.map(condition => ({ ...clone(condition), id: condition.id + '-code',
+    environment_id: condition.environment_id + '-code', code_mode: 'required' }));
+  value.conditions.push(...added);
+  value.pairs.push(...value.pairs.map(pair => ({ ...clone(pair), id: pair.id + '-code', condition_ids: pair.condition_ids.map(id => id + '-code') })));
+  value.policies.ordering.condition_order = value.conditions.map(condition => condition.id);
+  value.allowed_changes = [...new Set([...value.allowed_changes, 'code_mode'])];
+  value.policies.analysis = { interactions: [{ id: 'code-mode', kind: 'code_mode',
+    condition_ids: value.pairs.flatMap(pair => pair.condition_ids),
+    environment_pairs: value.pairs.map(pair => pair.condition_ids.map(id => value.conditions.find(condition => condition.id === id).environment_id)) }] };
+  assertValid(seal(value));
+  const missing = clone(value); delete missing.policies.analysis.interactions[0].environment_pairs;
+  assertCode(seal(missing), 'analysis_environment_pairs');
+  const wrong = clone(value); wrong.policies.analysis.interactions[0].environment_pairs[0][0] = 'unregistered-environment';
+  assertCode(seal(wrong), 'analysis_environment_pairs');
+});
+
 test('canonical JSON is order-stable, pure, and binds array order', () => {
   assert.equal(canonicalJson({ z: 3, a: [true, null, { y: 'x', b: 1 }] }), '{"a":[true,null,{"b":1,"y":"x"}],"z":3}');
   assert.equal(fingerprint({ b: 2, a: 1 }), fingerprint({ a: 1, b: 2 }));
