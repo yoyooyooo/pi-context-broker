@@ -275,7 +275,9 @@ test("a fixed scalar resource delegates every native option and result without p
   const native = { content: [{ type: "text" as const, text: f.text }], details: { native: true }, nativeExtra: "preserved" };
   f.state.nativeResult = native;
   const result = await f.read(input);
-  expect(result).toBe(native); expect(f.state.nativeInputs).toEqual([{ ...input, path: f.files[0]!.output }]);
+  expect(result).toMatchObject(native); expect(result.content).toBe(native.content);
+  expect(native.details).toEqual({ native: true });
+  expect(f.state.nativeInputs).toEqual([{ ...input, path: f.files[0]!.output }]);
   expect(input.path).toBe(f.files[0]!.ref); expect(f.state.calls).toEqual([f.files[0]!.ref]);
   const delivered = await f.finish("scalar-call", input, result);
   expect(delivered.content.slice(0, native.content.length)).toEqual(native.content);
@@ -283,6 +285,8 @@ test("a fixed scalar resource delegates every native option and result without p
   expect(delivered.details).toMatchObject({ native: true, contextBrokerResource: { version: 2, loaded: false, delivered_complete_text: true,
     delivery: { start: 0, end: f.text.length, encoding: "raw" },
     id: f.metadata.id, scope: f.metadata.sourceScope, snapshot_id: f.selected.snapshotId, file_id: "guide", sha256: hash(f.text) } });
+  expect(delivered.details).toHaveProperty("contextBrokerReadDisplay", { version: 1, source: "notion", kind: "file",
+    name: "Owner", sourceId: "notion", scope: f.metadata.sourceScope, files: [{ ref: input.path, path: "references/guide.md" }] });
   const messages: AgentMessage[] = [{ role: "toolResult", toolName: "read", toolCallId: "scalar-call", ...delivered }];
   expect(sessionSourceSnapshot(messages, f.metadata)).toBeUndefined(); expect(sessionSourceBindings(messages, f.metadata.sourceScope!)).toEqual([]);
   expect(f.state.mainReads + f.state.graphReads + f.state.resourceReads + f.state.persisted).toBe(0);
@@ -299,7 +303,8 @@ test("native partial text, empty files and images retain their content and truth
     const input = { path: f.files[index]!.ref, offset: 2, limit: 1 };
     f.state.nativeResult = { ...native, content: [...native.content] };
     const result = await f.read(input), delivered = await f.finish("scalar-call", input, result);
-    expect(result).toBe(f.state.nativeResult); expect(delivered.content.slice(0, native.content.length)).toEqual(native.content);
+    expect(result).toMatchObject(f.state.nativeResult); expect(result.content).toBe(f.state.nativeResult.content);
+    expect(delivered.content.slice(0, native.content.length)).toEqual(native.content);
     expect(delivered.content.at(-1)).toEqual({ type: "text", text: '\n\n<notion-effects>{"version":1,"remote_writes":"unknown","author_content":"unknown"}</notion-effects>' });
     expect(delivered.details).toHaveProperty("contextBrokerResource.delivered_complete_text", complete);
     expect(delivered.details).toHaveProperty("contextBrokerResource.loaded", false);
@@ -310,7 +315,9 @@ test("native partial text, empty files and images retain their content and truth
 test("stable resource File IDs resolve old hints while main hints and main aliases retain preparation", async () => {
   const f = await fixture();
   for (const path of [f.ref("old.md", "guide"), f.ref("references/guide.md")]) {
-    expect((await f.read({ path })).content).toEqual([{ type: "text", text: f.text }]);
+    const result = await f.read({ path });
+    expect(result.content).toEqual([{ type: "text", text: f.text }]);
+    expect(result.details).toHaveProperty("contextBrokerReadDisplay.files", [{ ref: path, path: "references/guide.md" }]);
     expect(f.state.nativeInputs.at(-1)?.path).toBe(f.files[0]!.output);
   }
   expect(f.state.mainReads + f.state.graphReads).toBe(0);
@@ -321,6 +328,11 @@ test("stable resource File IDs resolve old hints while main hints and main alias
   const result = await main.read(input), delivered = await main.finish("scalar-call", input, result);
   expect(main.state.calls).toHaveLength(1); expect(main.state.mainReads).toBe(1); expect(result.content).toEqual([{ type: "text", text: main.body }]);
   expect(delivered.details).toHaveProperty("contextBrokerRead"); expect(delivered.details).not.toHaveProperty("contextBrokerResource");
+  main.metadata.name = "Renamed catalog owner"; main.selected.name = "Renamed selected owner";
+  expect(JSON.parse(JSON.stringify(delivered)).details).toHaveProperty("contextBrokerReadDisplay", {
+    version: 1, source: "notion", kind: "skill", name: "Owner", sourceId: "notion", scope: main.metadata.sourceScope, ref: input.path,
+  });
+  expect(main.state.calls).toHaveLength(1); expect(main.state.mainReads).toBe(1); expect(main.state.graphReads).toBe(0);
 });
 
 test("short scalar resources retain independent owner and file commitments without new branch bindings", async () => {
@@ -482,5 +494,12 @@ test("a branch rewind after native return cannot attach a late resource receipt"
   const f = await fixture(), short = f.short.resource(f.ctx, f.selected, f.files[0]!.ref), input = { path: short };
   const result = await f.read(input); f.state.entries = [];
   const delivered = await f.finish("scalar-call", input, result);
-  expect(delivered.details).toEqual({ native: true });
+  expect(delivered.details).toEqual(result.details);
+  expect(delivered.details).toHaveProperty("native", true);
+  expect(delivered.details).toHaveProperty("contextBrokerReadDisplay", { version: 1, source: "notion", kind: "file",
+    name: "Owner", sourceId: "notion", scope: f.metadata.sourceScope, files: [{ ref: short, path: "references/guide.md" }] });
+  expect(delivered.details).not.toHaveProperty("contextBrokerResource");
+  const messages: AgentMessage[] = [{ role: "toolResult", toolName: "read", toolCallId: "scalar-call", ...delivered }];
+  expect(sessionSourceSnapshot(messages, f.metadata)).toBeUndefined();
+  expect(sessionSourceBindings(messages, f.metadata.sourceScope!)).toEqual([]);
 });

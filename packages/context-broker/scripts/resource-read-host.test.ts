@@ -258,6 +258,12 @@ test("every Pi batch forbids writes and preserves complete issued-resource recei
   expect(proof?.files.map(file => file.delivered_complete_text)).toEqual([true, true, false]);
   expect(JSON.parse(text)).toMatchObject({ effects, files: [{ content: f.files[0]!.content }, { content: "" }, { kind: "binary" }] });
   expect(result.details).toHaveProperty("effects", effects);
+  expect(result.details).toHaveProperty("contextBrokerReadDisplay", { version: 1, source: "notion", kind: "file",
+    name: "Owner", sourceId: "notion", scope: f.metadata.sourceScope,
+    files: f.files.map((file, index) => ({ ref: paths[index], path: file.path })) });
+  f.metadata.name = "Renamed catalog owner";
+  expect(JSON.parse(JSON.stringify(result)).details.contextBrokerReadDisplay.name).toBe("Owner");
+  expect(f.state.calls).toEqual([f.files.map(file => file.ref)]);
   expect(f.state.entries).toHaveLength(entries);
   expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
 });

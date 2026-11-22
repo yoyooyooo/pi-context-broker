@@ -272,6 +272,19 @@ OMP 保留既有宿主协议的 `skill_search`、`skill_prepare({roots,purpose})
 
 绑定先写入分支记录，再对外显示，并在 resume 时重放。当前分支没有的引用明确失败。每次使用仍校验当前授权来源、完整 owner 身份及固定快照。未知、格式错误、scope 不符或 owner 不匹配的引用不能回退为文件系统读取或当前内容。分配引用本身不读取或激活正文；`sr:S`、`sr:R` 也不证明已经投递。
 
+### Pi 读取标题
+
+Notion 主文在收起时沿用 Pi 原生 Skill 标题：
+`[skill@notion] repo-docs-governance (ctrl+o to expand)`。支持文件显示
+`[file@notion] repo-docs-governance / references/guide.md`，批量读取显示第一个路径和其余文件数。
+展开提示跟随 Pi 配置的快捷键。展开后保留原始读取引用与原生结果；本地 Skill 继续显示 `[skill]`，
+错误、图片提示、读取行号与工具背景沿用 Pi 的行为。
+
+`@notion` 标识提供该 Skill 的 Notion 目录，其中的文件也可以由 Git 或其他资源提供字节。
+已知重名条目会附上来源信息。标题直接使用本次准备或资源读取取得的元数据，不额外查询或读取正文。
+显示元数据随工具结果保存，重放会话保留当时的名称与实际文件路径。缺少有效显示元数据的旧结果或未知版本使用原生标题。
+名称不改变工具参数、准确引用、授权、选择状态或投递回执。
+
 ### 宿主发现与选中激活
 
 Notion 用法指引由 Broker 在运行时负责，不在全局 `AGENTS.md` 或 `CLAUDE.md` 重复常驻；这些文件只保留跨 Agent 的偏好与行为规范。正常 Pi 指引只讲选路和授权边界，分页、刷新与参数细节留在工具定义中，具体工作流留在选定的 Skill 正文中。原生能力不足时才补充对应来源的 CLI 后备路径。没有启用 Notion source 时，不注入 Notion 指引、目录或工具。

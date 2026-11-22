@@ -12,6 +12,7 @@ import { recordIdentity } from "../src/discovery-records";
 import { compileResourceRead } from "../src/resource-read-projection";
 import { SourceError, SourceReferenceAmbiguity } from "../src/notion-source";
 import { noConsumptionWrites, unknownConsumptionEffects, type ConsumptionEffects } from "../src/consumption-effects";
+import type { ReadDisplaySnapshot } from "../src/read-display";
 import type { AgentMessage, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "../src/types";
 const a = "s_" + "a".repeat(64), b = "s_" + "b".repeat(64);
 const record = { kind: "skill", sourceId: "notion", sourceScope: "scope", source: "notion", id: "record", name: "example", token: "notion/example", path: "/immutable/SKILL.md", metadataIndexPath: "/metadata/SKILL.md", description: "Example", aliases: [], normalizedName: "example", normalizedDescription: "example", normalizedAliases: [], autoloadEnabled: false, body: "---\nname: example\n---\nExact native instructions.\n", snapshotId: a, locator: { type: "shared_skill", library_id: "lib", skill_id: "skill", page_id: "p", database_id: "d", data_source_id: "ds" } } satisfies SkillRecord;
@@ -66,6 +67,15 @@ test("the pinned snapshot comes from effective tool bytes rather than today's me
   expect(sessionSourceSnapshot([result()], { ...record, snapshotId: b, body: "new upstream" })).toBe(a);
   const second = { ...result(), details: { contextBrokerRead: nativeReadReceipt({ ...record, snapshotId: b }, "read-1", record.body) } };
   expect(() => sessionSourceSnapshot([result(), second], record)).toThrow("Conflicting");
+});
+test("read display snapshots never establish loading, source bindings or a selected snapshot", () => {
+  const display = { version: 1, source: "notion", kind: "skill", name: record.name,
+    sourceId: record.sourceId, scope: record.sourceScope, ref: "sr:C" + "a".repeat(22) } satisfies ReadDisplaySnapshot;
+  const message: AgentMessage = { ...result(), details: { contextBrokerReadDisplay: display } };
+  expect(hasLoadedSkill([message], record)).toBe(false);
+  expect(nativeReadSnapshot([message], record)).toBeUndefined();
+  expect(sessionSourceSnapshot([message], record)).toBeUndefined();
+  expect(sessionSourceBindings([message], record.sourceScope)).toEqual([]);
 });
 test("native command receipts require their actual user body, and dollar receipts require their content", () => {
   const text = "<skill>" + record.body + "</skill>", proof = { role: "custom", customType: "context-broker", content: [], details: { nativePromptSha256: createHash("sha256").update(text).digest("hex"), records: [sourceDeliveryReceipt(record, text)] } } as AgentMessage;

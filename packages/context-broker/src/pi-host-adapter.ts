@@ -4,6 +4,7 @@ import type { ExtensionAPI, PiReadDefinition, SkillRecord } from "./types";
 import { installPiDollarAutocompleteEditor } from "./pi-dollar-editor";
 import { DEFAULT_RESOURCE_READ_BUDGET, MAX_RESOURCE_READ_BUDGET, normalizeResourceReadBudget } from "./resource-read-types";
 import { consumptionEffectsJsonSchema } from "./consumption-effects";
+import { createPiReadRenderers } from "./pi-read-renderer";
 
 const escapeText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const PI_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
@@ -37,7 +38,7 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
     paths: { host: "pi" },
     submission: { mode: "transform", receipt: "input-digest" },
     metadataDiscovery: "deferred",
-    registerReadExecutor(execute) {
+    registerReadExecutor(execute, displayForCall) {
       const register = api.registerTool, allTools = api.getAllTools, activeTools = api.getActiveTools;
       if (!register || !allTools || !activeTools) return undefined;
       let installedParameters: Record<string, unknown> | undefined;
@@ -87,8 +88,7 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
             return execute(input, context, signal,
               (updated, preparedSignal) => native.execute(id, updated, preparedSignal ?? signal, onUpdate, context), id);
           },
-          ...(native.renderCall ? { renderCall: (input, theme, context) => native.renderCall!(
-            Array.isArray(input.paths) ? { path: input.paths.join(", ") } : input, theme, context) } : {}),
+          ...createPiReadRenderers({ native, getDisplay: displayForCall ? ({ toolCallId }) => displayForCall(toolCallId) : undefined }),
         };
         register(definition);
         installedParameters = parameters;

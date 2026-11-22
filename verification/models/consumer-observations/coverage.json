@@ -11,13 +11,13 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "93320851194148b3dc369940a51b2a32673812b500bcf5af27cc03bc047fe26e",
+    "packages/context-broker/src/host-skills.ts": "24bab24a5f83274dfca522d562d780b9acb77f515b6755eb804389d584b3873a",
     "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
     "packages/context-broker/scripts/host-prepare.test.ts": "15e3a446dd94371bd47ac5ab34fc14d4d1f5b81d167b4d08645cf7fc68ce0631",
     "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51",
     "packages/context-broker/scripts/host-refresh.test.ts": "e057ab9627a606f67d00b890c12691bc75dfe82d6ed366b3fde975b5f314a9c8",
-    "packages/context-broker/scripts/resource-read-host.test.ts": "0f32949d65e924beb5762c461ef9c4f53348f64dd4cfd7114cb90181881b3e25",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "c7448e39a6727559b4613589e0324ab256ba84d14e2ddb1c73494314eb671faa",
     "packages/context-broker/scripts/fixtures/active-notion-session.ts": "a14eb538b7abbb4d3cc112be8fbab48918f83303684f30a8d80b3cd979a841c7"
   },
   "models": {
@@ -301,6 +301,12 @@
       "scope": "The only production changes are the notion_list description in host-skills.ts and the named-availability routing string in index.ts. Removing those exact changed lines leaves both files byte-identical to the reviewed base. Removing the single added 39-line host-refresh regression restores that test file exactly.",
       "unchanged_guards": "Metadata acquisition, original validation time, scoped eligibility, request ordering, cancellation, session generation, complete graph commit, selected/active pins, fixed references, recovery and provider delivery guards are unchanged. The new controlled-clock regression checks the same disabled identity becoming enabled outside the default View before TTL, metadata-only refresh and unchanged root/Requires selection.",
       "proof_limit": "Named-query intent, metadata-only answers and real model compliance are outside the finite state variables and require natural-session evidence. TLA/config/view bytes, finite bounds, cases, independent expected_rules, tool locks and every production mutation target remain unchanged. Whole-file hashes bind these reviewed bytes; they do not prove instruction compliance or refinement."
+    },
+    "native_read_presentation": {
+      "reviewed_from": "7ada5b5765ab1722fadc59a1b1c2132c51dbda6a",
+      "scope": "Names and resolved relative file paths are copied from already validated read metadata into a separate per-result presentation snapshot. Native execution, content, identity and consumption receipts remain intact. Renderer lookup reads only existing pending maps and historical results; it adds no source resolution or I/O.",
+      "guards": "Reviewed source availability, owner/scope/snapshot/File/hash, graph commit, original observation order/time, cancellation/generation, provider acceptance and projection/recovery guards are unchanged. Display-only metadata cannot establish loaded state, selection or source bindings. Branch rewind still rejects a late resource receipt while retaining presentation of the completed read.",
+      "proof_limit": "UI titles, keyboard hints and persistence formatting are implementation regressions outside finite variables. Models, configs, views, bounds, cases, expected_rules, tool lock and guard mutation targets are unchanged. These hashes bind reviewed bytes and do not prove UI behavior or implementation refinement."
     }
   }
 }

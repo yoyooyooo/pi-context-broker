@@ -285,6 +285,25 @@ OMP retains `skill_search`, `skill_prepare({roots,purpose})` and `skill_graph` f
 
 Bindings persist in branch entries before they are advertised and replay on resume. A reference absent from the current branch fails explicitly. Each use still checks the current authorized source, full owner identity and fixed snapshot. Unknown, malformed, wrong-scope or mismatched-owner references cannot fall back to filesystem reads or current content. Allocating a reference does not read or activate its body; `sr:S` and `sr:R` also do not prove delivery.
 
+### Pi read titles
+
+Collapsed Notion main reads use Pi's native Skill title style:
+`[skill@notion] repo-docs-governance (ctrl+o to expand)`. Supporting files show
+`[file@notion] repo-docs-governance / references/guide.md`; a batch shows its
+first path and the number of additional files. The expand hint follows Pi's
+configured keybinding. Expanding shows the original read references and native
+result. Local Skills keep Pi's `[skill]` title, and native errors, image notices,
+line ranges and tool backgrounds retain their usual behavior.
+
+`@notion` identifies the Notion catalog that supplied the Skill, including files
+whose bytes come from Git or another resource. Known duplicate names include a
+source qualifier. Titles use metadata from the existing preparation or resource
+read and add no lookup or content request. Display metadata is saved in the tool
+result so replay keeps the name and resolved paths from that read. An older or
+unrecognized result without valid display metadata uses the native title.
+Names do not change the tool arguments, exact references, authorization,
+selection or delivery receipts.
+
 ### Host discovery and selected activation
 
 Broker owns Notion usage guidance at runtime. Do not duplicate it in global `AGENTS.md` or `CLAUDE.md`; those files should contain cross-agent preferences and policies. The normal Pi guidance is a short routing and authority contract. Tool schemas own pagination, refresh parameters and detailed arguments; selected content owns its workflow. Missing native capabilities add only the corresponding scoped CLI fallback. No enabled Notion source means no Notion guidance, catalog or tools.

@@ -33,7 +33,8 @@ test("Pi scalar read preserves the public native executor, images, settings and 
   const result = await f.current().execute("scalar-id", { path: "image.png", offset: 2, limit: 3 }, signal, value => updates.push(value), f.ctx);
   expect(result).toBe(f.content); expect(updates).toEqual([f.content]); expect(ids).toEqual(["scalar-id"]);
   expect(f.calls[0]).toMatchObject({ id: "scalar-id", input: { path: "/resolved/image.png", offset: 2, limit: 3 }, signal, ctx: f.ctx });
-  expect(f.current().renderResult).toBe(f.native.renderResult);
+  expect(f.current().renderResult?.(result, { expanded: true }, {}, {})).toBe("native rendering");
+  expect(f.current().renderCall?.({ path: "local/SKILL.md" }, {}, {})).toMatchObject({ args: { path: "local/SKILL.md" } });
   expect(f.current().promptGuidelines).toEqual(f.native.promptGuidelines);
   expect(f.current().outputSchema).toMatchObject({ anyOf: [f.native.outputSchema, { type: "object" }] });
   f.replace(); expect(owns()).toBe(false);
