@@ -8,6 +8,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 const PROBE_TIMEOUT_MS = 5_000;
 const PROBE_MAX_BYTES = 4_096;
 const VERSION = /^v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/;
+const GIT_VERSION = /^git version \d+\.\d+(?:\.\d+)?(?:[.+-][A-Za-z0-9.-]+)?(?: \(Apple Git-\d+\))?$/;
 const USAGES = new Set(['requested', 'launched', 'available', 'potential', 'not_requested', 'unknown']);
 
 function problem(error) {
@@ -40,7 +41,7 @@ async function fileIdentity(invocationPath, cwd, { optional = false } = {}) {
   }
 }
 
-function probeVersion(command, args, { env, cwd }) {
+function probeVersion(command, args, { env, cwd, versionPattern = VERSION }) {
   if (typeof command !== 'string' || !command) {
     return Promise.resolve({ status: 'unknown', reason: 'NO_SELECTED_PATH', version: null });
   }
@@ -102,7 +103,7 @@ function probeVersion(command, args, { env, cwd }) {
         ...(typeof code === 'number' ? { exit_code: code } : {}), ...(signal ? { signal } : {}),
       }));
       const version = Buffer.concat(stdout).toString('utf8').trim();
-      finish(VERSION.test(version)
+      finish(versionPattern.test(version)
         ? { status: 'observed', version }
         : unknown('INVALID_VERSION_OUTPUT'));
     });
@@ -116,7 +117,9 @@ function usageOf(usage, tool) {
 
 async function executableIdentity(path, tool, options) {
   const [file, probe] = await Promise.all([
-    fileIdentity(path, options.cwd), probeVersion(path, ['--version'], options),
+    fileIdentity(path, options.cwd), probeVersion(path, ['--version'], {
+      ...options, versionPattern: tool === 'git' ? GIT_VERSION : VERSION,
+    }),
   ]);
   return { ...file, version: probe.version, version_source: 'subprocess --version',
     version_probe: probe, usage: usageOf(options.usage, tool), scope: 'selected-entry-file',
@@ -170,7 +173,7 @@ async function piIdentity(pi, node, options) {
  * Usage is a caller assertion. Executing a version probe never implies target use.
  * Failures become unknown observations so they cannot suppress a target receipt.
  */
-export async function captureRuntimeIdentity({ node, pi, bun, env, cwd, usage, launchers } = {}) {
+export async function captureRuntimeIdentity({ node, pi, bun, git, env, cwd, usage, launchers } = {}) {
   const options = { env: env ?? {}, cwd: cwd ?? process.cwd(), usage };
   const [nodeIdentity, piIdentityResult, bunIdentity] = await Promise.all([
     executableIdentity(node, 'node', options), piIdentity(pi, node, options),
@@ -181,6 +184,7 @@ export async function captureRuntimeIdentity({ node, pi, bun, env, cwd, usage, l
       { ...await fileIdentity(path, options.cwd), scope: 'selected-launcher-file' }]),
   ));
   return { node: nodeIdentity, pi: piIdentityResult, bun: bunIdentity,
+    ...(git === undefined ? {} : { git: await executableIdentity(git, 'git', options) }),
     ...(declaredLaunchers === undefined ? {} : { launchers: declaredLaunchers }) };
 }
 
@@ -208,6 +212,7 @@ export function compareRuntimeIdentity(before, after) {
   }
   const fields = ['invocation_path', 'path', 'sha256', 'version'];
   for (const tool of ['node', 'pi', 'bun']) compare(tool, before?.[tool], after?.[tool], fields);
+  if (before?.git !== undefined || after?.git !== undefined) compare('git', before?.git, after?.git, fields);
   compare('pi.package_manifest', before?.pi?.package_manifest, after?.pi?.package_manifest,
     ['invocation_path', 'path', 'sha256', 'name', 'version']);
   compare('pi.runtime_module', before?.pi?.runtime_module, after?.pi?.runtime_module,
