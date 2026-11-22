@@ -212,6 +212,7 @@ fork 从指定先前用户 turn 之前分叉；保留此前有效分支。compac
 | candidate-cli | 当前轮真实执行配对 CLI；以子进程入口、文件字节和父子关系核验，命令文本与已构建文件不能替代执行 |
 | single-projection-restore | 当前轮只有一次公开投影恢复命令且自然退出 0；失败后另启恢复、额外投影写入均失败。帮助与已知只读命令另计；未知命令形态保持 blocked，恢复内容仍须独立业务读回 |
 | visibility | 精确 native-discovery、当前 model-catalog 或真实 source-pending 时序 |
+| metadata-lookup | 点名查询的原始工具结果和实际 provider 投递；同会话外部启用还核首轮完整未命中、原 TTL 未到、独立事件、真实元数据 HTTP 与固定选择不变 |
 | tool-attempts | 指定工具真实尝试的上下界，失败与撤回也计入 |
 | forbidden-tool-input | 实际工具参数不得触及声明的安装包路径或命令；失败尝试也计，不能按同名目录误伤合法 Notion Git 缓存 |
 | source-network-attempts | 完整 source 观测中的实际 Notion HTTP 尝试；未知 CLI 子进程流量保持 blocked，不能以语义写为零推断没有联网 |
@@ -226,6 +227,25 @@ fork 从指定先前用户 turn 之前分叉；保留此前有效分支。compac
 pending 的控制端只等到真实目录操作开始就提交自然输入，不等待目录完成，也不额外调用 list。最终仍核首个真实模型请求处在该操作完成之前。若窗口已结束，记录时序前提未达成；不得伪造 pending 或把该样本当作产品失败。启动期间的泛化 pending 提示不能单独证明某个 Source 的排队状态。
 
 输出必要事实来自业务规则。例如报销金额格式是被测 Skill 自身的业务约定；私有判据只检查关键金额，不把完整答案给模型。语义等价选择不能掩盖用户明确指定的来源或管理对象。
+
+### 已有会话中新启用的 Skill
+
+`discovery-enabled-in-existing-session` 与对应 `holdout-` 场景保持同一 Pi 进程和 session，
+两轮只询问同名 Skill 是否可用及用途。外层控制器在两轮之间用既有 `set-enabled`
+事件启用自有目标并独立读回；自然输入不提示刚启用、刷新或工具。准备器与被测 Pi
+使用独立状态，控制端的公共 CLI 写入不经过被测会话的工具事件。
+
+fixture 的 `visible` 是自有过滤 View 的唯一成员，`target` 初始 Disabled、Default Context
+关闭；启用后仍不在默认 View。不能仅凭 Default Context=false 声称 View 已排除目标。
+第一轮必须有完整目录查询的空结果；这只证明当前可用目录未命中，不证明远端页面不存在。
+第二轮的 `metadata-lookup.afterTurn` 从前一轮分析原件核对同一会话、进程和原始分支，
+并按前次返回的 age/max_age 与实际单调时钟证明 TTL 尚未到期。若时间窗口已过，
+记录时序前提未达成，不将其算作强制刷新成功。
+
+命中还须将实际工具文本关联到真实 provider 请求，用当次短引用表核对独立 owner/scope，
+并观察外部事件完成后的新验证时间与真实 SDK 元数据 HTTP。单有 refresh 参数或最后一句
+正确答案均不足以通过。两轮只作元数据发现，不采用或暴露目标正文；刷新前后的任务选择
+保持一致。本场景没有预先采用其他 Skill，已有完整 root/Requires 的保护另由对应状态回归验证。
 
 ## 读回与清理
 

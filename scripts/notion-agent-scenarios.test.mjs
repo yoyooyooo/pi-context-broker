@@ -186,3 +186,24 @@ test('C/T coverage comes from the paired current index rather than a second cont
   assert.throws(() => checkAgentContractCoverage(declared,
     { ...paired, contracts: [...paired.contracts, { id: 'C01' }] }), /no current T mapping/u);
 });
+
+
+test('enabled discovery uses a repeated natural query, real filtered View and controller-only event', async () => {
+  const { loadAgentCorpus } = await import('./notion-agent-scenarios.mjs');
+  const corpus = await loadAgentCorpus(new URL('./notion-agent-scenarios.json', import.meta.url).pathname);
+  for (const id of ['discovery-enabled-in-existing-session', 'holdout-discovery-enabled-in-existing-session']) {
+    const scenario = corpus.scenarios.find(row => row.id === id), recipe = corpus.fixtures[scenario.fixture];
+    assert.equal(recipe.environment.catalog, 'filtered-view');
+    assert.equal(recipe.objects[0].id, 'visible');
+    assert.equal(recipe.objects.find(row => row.id === 'target').versions.A.enabled, false);
+    assert.equal(recipe.objects.find(row => row.id === 'target').versions.A.defaultContext, false);
+    assert.equal(scenario.turns.length, 2);
+    assert.equal(scenario.turns[0].prompt, scenario.turns[1].prompt);
+    assert.doesNotMatch(scenario.turns[1].prompt, /刷新|启用|最新|refresh|notion_list/u);
+    assert.deepEqual(scenario.turns[1].before, [{ kind: 'set-enabled', object: 'target', enabled: true, defaultContext: false }]);
+    assert.ok(scenario.turns[1].expect.some(row => row.kind === 'metadata-lookup' && row.afterTurn === 'disabled' && row.outsideDefaultView));
+    const broken = structuredClone(corpus), target = broken.scenarios.find(row => row.id === id);
+    target.turns[1].expect.find(row => row.kind === 'metadata-lookup').afterTurn = 'future';
+    assert.throws(() => validateAgentCorpus(broken), /earlier turn/u);
+  }
+});

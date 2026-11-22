@@ -653,6 +653,105 @@ function mainBodyKey(target, bodies) {
   return selected[0];
 }
 
+/** Prove an explicit metadata lookup from its native result, provider payload and
+ * observed SDK requests. A continuation also proves the old complete miss was
+ * still inside its original TTL when the same process asked again. */
+export async function verifyNotionAgentMetadataLookup(expected, observed, bindings, { attempts, delivery, source, readArtifact = readFile }) {
+  const item = bindings.private.objects[expected.object], sourceId = observed.visibility?.source?.sourceId;
+  need(item?.kind === 'notion' && nonempty(item.name) && nonempty(sourceId),
+    'METADATA_IDENTITY_MISSING', 'Metadata lookup requires the independently bound name and configured source');
+  const candidates = attempts.filter(call => call.name === 'notion_list' && call.arguments?.query?.trim() === item.name &&
+    (call.arguments.source === undefined || call.arguments.source === sourceId) && call.result?.isError === false);
+  demand(candidates.length > 0, 'NAMED_METADATA_LOOKUP_MISSING', 'The current turn did not search for the named Skill');
+  const call = candidates.at(-1), native = observed.session.branchEntries.find(entry => entry.id === call.native?.resultEntryId);
+  need(native?.message?.role === 'toolResult' && native.message.toolCallId === call.id && native.message.isError === false,
+    'METADATA_RESULT_MISSING', 'The lookup needs its completed native result');
+  const content = JSON.parse((await verifiedArtifact(call.result.contentArtifact, readArtifact)).toString('utf8'));
+  demand(isDeepStrictEqual(content, native.message.content), 'METADATA_RESULT_CHANGED', 'Observed and native metadata results differ');
+  const text = textOf(content), value = JSON.parse(text), freshness = value.freshness?.sources?.find(row => row.source === sourceId);
+  need(value.ok === true && value.state === 'known' && Array.isArray(value.records) && Array.isArray(value.failures),
+    'METADATA_RESULT_UNKNOWN', 'Lookup failure or pending state cannot prove presence or absence');
+  demand(value.failures.length === 0 && value.coverage?.exhaustive === true &&
+    value.coverage.sources?.find(row => row.source === sourceId)?.exhaustive === true,
+  'METADATA_COVERAGE_INCOMPLETE', 'A partial directory cannot establish a complete named lookup');
+  need(freshness && Number.isFinite(Date.parse(freshness.validated_at)) && Number.isFinite(freshness.age_ms) &&
+    freshness.age_ms >= 0 && Number.isFinite(freshness.max_age_ms) && freshness.max_age_ms > 0,
+  'METADATA_FRESHNESS_UNKNOWN', 'The original validation time and finite TTL must be observed');
+  demand(freshness.stale === false && freshness.age_ms < freshness.max_age_ms,
+    'METADATA_RESULT_STALE', 'The lookup returned stale metadata');
+  const deliveries = [];
+  for (const payload of delivery.requests) {
+    const task = observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === payload.sha256);
+    const raw = JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8'));
+    if ((raw.messages ?? []).some(message => message.role === 'tool' && message.tool_call_id === call.deliveryToolCallId && textOf(message.content) === text))
+      deliveries.push(payload);
+  }
+  demand(deliveries.length > 0, 'METADATA_NOT_DELIVERED', 'The completed lookup was not sent to the actual model');
+  const matches = value.records.filter(row => row.name === item.name && row.source === sourceId);
+  if (expected.state === 'absent') {
+    demand(value.records.length === 0 && value.count === 0 && value.total_count === 0 && value.has_more === false && value.next_cursor === null,
+      'METADATA_EXPECTED_EMPTY', 'The initial lookup must be a complete empty result');
+  } else {
+    demand(matches.length === 1 && matches[0].availability === 'available', 'METADATA_TARGET_MISSING', 'The enabled target is not available in the returned metadata');
+    need(nonempty(item.owner) && digest(item.scope), 'METADATA_OWNER_MISSING', 'The enabled target needs its independently read identity');
+    demand(deliveries.some(payload => payload.selection?.shortRefs?.some(row => row.ref === matches[0].ref &&
+      ['candidate', 'selected'].includes(row.target?.kind) && row.target.identity?.source === 'notion' &&
+      row.target.identity.id === item.owner && row.target.identity.scope === item.scope)),
+    'METADATA_WRONG_OWNER', 'The returned reference resolves to another Skill or source scope');
+    if (expected.outsideDefaultView) demand(matches[0].in_default_view === false &&
+      delivery.requests.every(payload => !catalogCards(payload.metadataText).some(card => card.name === item.name)),
+    'METADATA_DEFAULT_VIEW_LEAK', 'This target must remain outside the actual default View');
+  }
+  const resultNs = call.result.monotonicNs, callNs = call.event.monotonicNs;
+  need(/^\d+$/u.test(resultNs ?? '') && /^\d+$/u.test(callNs ?? '') && Number.isSafeInteger(call.event.pid),
+    'METADATA_CALL_TIMING_MISSING', 'Lookup boundaries and the actual process must be observed');
+  const proof = { object: expected.object, state: expected.state, toolCallId: call.id, resultEntryId: native.id,
+    query: item.name, source: sourceId, sessionId: observed.session.sessionId, pid: call.event.pid,
+    resultMonotonicNs: resultNs, freshness, records: matches.map(row => ({ ref: row.ref, name: row.name, availability: row.availability,
+      in_default_view: row.in_default_view })), payloads: deliveries.map(payload => payload.sha256) };
+  if (expected.afterTurn) {
+    const continuation = observed.metadataContinuation;
+    need(continuation?.previous && Array.isArray(continuation.events), 'METADATA_CONTINUATION_MISSING', 'Keep the earlier turn and external event originals');
+    const previous = JSON.parse((await verifiedArtifact(continuation.previous, readArtifact)).toString('utf8'));
+    const before = previous.analysis?.assertions?.find(row => row.kind === 'metadata-lookup' && row.status === 'passed' &&
+      row.details?.object === expected.object && row.details.state === 'absent')?.details;
+    need(previous.analysis?.turnId === expected.afterTurn && before, 'METADATA_PRIOR_MISS_UNPROVEN', 'The same target needs a proved earlier complete miss');
+    demand(before.sessionId === observed.session.sessionId && before.pid === call.event.pid &&
+      isDeepStrictEqual(previous.observed.session.branchEntries, observed.session.branchEntries.slice(0, previous.observed.session.branchEntries.length)),
+    'METADATA_SESSION_REPLACED', 'The lookup must continue the same native session and process');
+    const elapsedMs = Number(BigInt(callNs) - BigInt(before.resultMonotonicNs)) / 1e6;
+    need(elapsedMs >= 0 && before.freshness.age_ms + elapsedMs < before.freshness.max_age_ms,
+      'METADATA_TTL_PRECONDITION_MISSED', 'The second query occurred after the old directory TTL; it cannot prove forced discovery',
+      { priorAgeMs: before.freshness.age_ms, elapsedMs, maxAgeMs: before.freshness.max_age_ms });
+    const events = await Promise.all(continuation.events.map(async artifact =>
+      JSON.parse((await verifiedArtifact(artifact, readArtifact)).toString('utf8'))));
+    const enabled = events.filter(event => event.afterTurn === expected.afterTurn && event.event?.kind === 'set-enabled' &&
+      event.event.object === expected.object && event.event.enabled === true);
+    need(enabled.length === 1 && events.length === 1 && enabled[0].result?.actor === 'fixture-controller' && enabled[0].result.status === 'passed',
+      'METADATA_EXTERNAL_EVENT_UNPROVEN', 'Only the independent successful enable event may occur between these turns');
+    const event = enabled[0], completed = event.result.completed;
+    const rawEvent = JSON.parse((await verifiedArtifact(event.result.artifact, readArtifact)).toString('utf8'));
+    const { artifact: _artifact, ...eventResult } = event.result;
+    demand(isDeepStrictEqual(rawEvent, eventResult), 'METADATA_EVENT_CHANGED', 'The external event differs from its retained original');
+    need(/^\d+$/u.test(event.finishedNs ?? '') && BigInt(event.finishedNs) < BigInt(callNs) &&
+      Number.isFinite(Date.parse(completed?.at)), 'METADATA_EVENT_TIMING_MISSING', 'External enable must complete before the new lookup');
+    demand(Date.parse(freshness.validated_at) > Date.parse(before.freshness.validated_at) &&
+      Date.parse(freshness.validated_at) >= Date.parse(completed.at) && freshness.policy === 'refresh',
+    'METADATA_NOT_REFRESHED', 'The returned metadata was not newly validated after the external change');
+    const operations = source.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.operation === 'list' && row.source_id === sourceId &&
+      /^\d+$/u.test(row.monotonicNs ?? '') && BigInt(row.monotonicNs) >= BigInt(callNs) && BigInt(row.monotonicNs) <= BigInt(resultNs));
+    const refreshed = operations.filter(start => source.some(row => row.requestId === start.requestId && row.phase === 'completed' && row.status === 'completed') &&
+      source.some(row => row.requestId === start.requestId && row.phase === 'attempt' && row.request_kind === 'notion_metadata' && row.outcome === 'success'));
+    demand(refreshed.length > 0, 'METADATA_REFRESH_HTTP_MISSING', 'A refresh flag or cache hit cannot replace actual fresh metadata requests');
+    demand(isDeepStrictEqual(observed.selection.scopes, previous.observed.selection.scopes) &&
+      isDeepStrictEqual(observed.selection.active, previous.observed.selection.active),
+    'METADATA_CHANGED_SELECTION', 'Metadata discovery must preserve existing task selections');
+    proof.continuation = { afterTurn: expected.afterTurn, previous: continuation.previous, event: event.result.artifact,
+      priorAgeMs: before.freshness.age_ms, elapsedMs, maxAgeMs: before.freshness.max_age_ms, requests: refreshed.map(row => row.requestId), pinsUnchanged: true };
+  }
+  return proof;
+}
+
 /** Analyze one real turn. Only the outside controller receives private bindings.
  * readArtifact and inspectPayload are injected I/O/pure helpers, never model tools. */
 export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspectPayload, readArtifact = readFile } = {}) {
@@ -1050,6 +1149,12 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         }
         demand(matches.length > 0, 'CATALOG_TARGET_NOT_VISIBLE', 'The exact target was absent from the actual model-visible catalog');
         return { object: expected.object, matches };
+      }
+      case 'metadata-lookup': {
+        const delivery = requireDelivery(), { source } = await sourceRequests();
+        return verifyNotionAgentMetadataLookup(expected, observed, bindings, {
+          attempts: [...shared.attempts.values()], delivery, source, readArtifact,
+        });
       }
       case 'forbidden-tool-input': {
         need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Forbidden inputs require complete actual tool observations');
