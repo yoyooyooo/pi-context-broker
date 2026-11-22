@@ -65,6 +65,8 @@ daily config 需要配对 worktrees 以及本次归档、CLI/SDK、package 来�
 
 plan 为 `prepared_not_executed`。run 在新普通 `pi -ns` 中检查实际注册入口与 metadata 路径，并在结束后重验机器、真实远端、worktrees 和构建。回执记录本次开始/结束时间、实际机器、注册入口与进程退出。它不替代正文、真实模型或时间线任务。
 
+Pi 的 `responseModel` 是可选响应信息。现役 cost observer 区分原始未报告、合法报告和非法值；分析器保留未报告为 unknown，不从请求 model 补值。HTTP/SSE 完成仍需真实传输和同请求的响应证据；缺少这项原始状态的旧观察不能按新规则补成通过。
+
 普通真实模型可能由现役 `pi-compact-ui` 注册 `read`，Broker 的公开 hook 将 `sr:C…` 解析为不可变主文件，再交给该包的内建读取委托。现有 task observer 只在同调用、同轮的 v3 Notion 主文件回执到达后，保存实际执行参数、对应 `.broker-entry.json` 和正文文件身份；原始短引用必须已存在于实际 native 分支。分析器逐项核对原始参数、prepared 参数、scope/owner/snapshot/File、完整正文及当前 Broker 注册，并只接受已审阅 `pi-compact-ui@0.1.3` 的精确 package/index 字节。该有限 profile 仅证明单文件主文的 `read` 委托，不覆盖其他插件或其他工具。旧观察缺少这段原件时继续失败，不能据事后路径诊断补成通过；更新后用新真实模型运行取证。
 
 如果执行环境不允许读取该检查需要的日用配置，记录具体 blocked，不通过另一条文件路径绕读。可使用公开 Pi API 取得独立的部分证据，但不能把该部分回执标为完整 daily runner 通过。

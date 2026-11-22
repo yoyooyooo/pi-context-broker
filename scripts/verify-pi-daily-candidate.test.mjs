@@ -655,7 +655,10 @@ test('proof matching cannot combine owner and snapshot from different records', 
 
 function observed() {
   return {
-    costs: [{ phase: 'provider_request', payload: { sha256: 'payload', bytes: 100, verifiedBodyOccurrences: [{ sha256: file.sha256, occurrences: 1 }] } }],
+    costs: [{ phase: 'provider_request', request: 1, payload: { sha256: 'payload', bytes: 100, verifiedBodyOccurrences: [{ sha256: file.sha256, occurrences: 1 }] } },
+      { phase: 'message_end', request: 1, message: { role: 'assistant', provider: 'magpie', model: 'group/worker',
+        responseModel: null, responseModelStatus: 'unreported', stopReason: 'stop',
+        usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12 } } }],
     transport: [{ phase: 'request_start', id: 1, category: 'model' }, { phase: 'request_sent', id: 1, requestBodySha256: 'payload', requestBodyBytes: 100 }, { phase: 'request_end', id: 1, category: 'model', status: 200, outcome: 'completed' }],
     tasks: [{ phase: 'provider_payload', sha256: 'payload', bytes: 100, bodies: [{ sha256: file.sha256, occurrences: 1 }] }, { phase: 'receipt', proofs: { one: { owner: 'right', snapshot: 'pin' } } }, { phase: 'assistant_final', success: true, sha256: 'answer', bytes: 10 }],
   };
@@ -667,6 +670,8 @@ test('a positive verdict binds full body, receipt, final answer, and the actual 
   for (const change of [
     value => { value.transport[1].requestBodySha256 = 'different'; },
     value => { value.transport.at(-1).outcome = 'failure'; },
+    value => { value.costs.pop(); },
+    value => { delete value.costs[1].message.responseModelStatus; },
     value => { value.costs[0].payload.verifiedBodyOccurrences = []; },
     value => { value.tasks[0].bodies[0].occurrences = 2; },
     value => { value.tasks[1].proofs.one.snapshot = 'new-pin'; },
