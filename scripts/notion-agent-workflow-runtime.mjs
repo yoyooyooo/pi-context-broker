@@ -17,7 +17,7 @@ import { observeGraphSdk } from './notion-skill-graph-model-evidence.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
 import { candidateSourceConfig, inspectCandidatePackageRegistration, candidatePayloadBodies, candidateTaskExtensionSource, candidateTransportCoverage } from './verify-pi-daily-candidate.mjs';
-import { dailyObserverPreloadSource, observedDailyHostProcess, observedRows, ownedPiProcesses } from './verify-pi-daily-installation.mjs';
+import { dailyObserverPreloadSource, observedDailyHostProcess, observedRows, ownedPiProcesses } from './pi-host-observation.mjs';
 
 // This is an implementation of the existing candidate entry, not another host
 // driver. Pi is always started and controlled by the shared native RPC helper.
