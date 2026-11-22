@@ -189,7 +189,11 @@ export function repairGitHubRelease({ candidate, archive, notes, run }) {
   assert.equal(basename(archive), name, 'Release asset name must match the checked package');
   const query = run(['api', `repos/${repo}/releases/tags/${candidate.tag}`]);
   let existing;
-  if (query.status === 0) existing = JSON.parse(query.stdout);
+  if (query.status === 0) {
+    existing = JSON.parse(query.stdout);
+    assert.ok(existing && typeof existing === 'object' && !Array.isArray(existing)
+      && Array.isArray(existing.assets), 'GitHub Release state is malformed; do not change it');
+  }
   else assert.match(query.stderr, /\(HTTP 404\)/, 'GitHub Release state is unknown; do not create another release');
   const checked = args => {
     const result = run(args);
