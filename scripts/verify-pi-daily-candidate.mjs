@@ -736,13 +736,57 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
   const oracleReadMs = Number(process.hrtime.bigint() - oracleStarted) / 1e6;
   let turn = 0, sequence = 0, previous = null, errors = 0, closed = false, observerWorkNs = 0n, payloadNumber = 0;
   let awaitingRebind = false, hostRecorded = false;
+  const pendingPreparedReads = new Map();
   const handlers = [];
   const record = (phase, fields = {}) => {
     const row = { sequence: ++sequence, previousSha256: previous, pid: process.pid, monotonicNs: process.hrtime.bigint().toString(), turn, phase, ...fields };
     row.eventSha256 = sha(JSON.stringify(row)); previous = row.eventSha256;
     fs.writeSync(fd, JSON.stringify(row) + '\n');
+    return row;
   };
   const text = content => typeof content === 'string' ? content : (Array.isArray(content) ? content : []).filter(part => part?.type === 'text').map(part => part.text).join('\n');
+  const retain = (kind, bytes) => {
+    const sha256 = sha(bytes), path = toolResultDirectory + '/' + kind + '-' + sha256;
+    if (!fs.existsSync(path)) fs.writeFileSync(path, bytes, { flag: 'wx', mode: 0o600 });
+    return { path, bytes: Buffer.byteLength(bytes), sha256 };
+  };
+  const preparedRead = (message, proof, receiptSequence) => {
+    const pending = pendingPreparedReads.get(message.toolCallId), binding = proof?.binding;
+    if (!pending || pending.turn !== turn || !pending.result || message.toolName !== 'read' || proof?.version !== 3
+      || proof.toolCallId !== message.toolCallId || !/^[a-f0-9]{64}$/u.test(binding?.scope ?? '')
+      || !/^s_[a-f0-9]{64}$/u.test(binding?.snapshot_id ?? '') || binding.record?.entrypoint !== 'SKILL.md'
+      || typeof binding.record.id !== 'string' || binding.snapshot_id !== proof.snapshotId
+      || pending.identity?.source !== 'notion' || pending.identity.scope !== binding.scope
+      || pending.identity.id !== binding.record.id || pending.identity.kind !== binding.record.kind
+      || pending.identity.ref !== 'skill://' + encodeURIComponent(binding.record.id)
+      || !pending.identity.locator || !binding.record.locator
+      || Object.keys(pending.identity.locator).length !== Object.keys(binding.record.locator).length
+      || Object.entries(pending.identity.locator).some(([key, value]) => binding.record.locator[key] !== value)) return;
+    const input = pending.result.input, path = input?.path;
+    const tail = '/scopes/' + binding.scope + '/records/' + sha(binding.record.id) + '/entries/' + binding.snapshot_id + '/tree/SKILL.md';
+    if (Object.keys(input ?? {}).length !== 1 || typeof path !== 'string' || !path.startsWith('/') || !path.endsWith(tail)
+      || path.split('/').some(part => part === '.' || part === '..') || pending.result.isError
+      || pending.result.inputSha256 === pending.inputSha256) return;
+    // Read only an identified whole-entry Notion result. Arbitrary read paths,
+    // other tools and late retained receipts never authorize filesystem probes.
+    const manifestPath = path.slice(0, -'/tree/SKILL.md'.length) + '/.broker-entry.json';
+    if (fs.realpathSync(path) !== path || fs.realpathSync(manifestPath) !== manifestPath
+      || !fs.lstatSync(path).isFile() || !fs.lstatSync(manifestPath).isFile()) return;
+    const manifestBytes = fs.readFileSync(manifestPath), manifest = JSON.parse(manifestBytes.toString('utf8'));
+    const file = manifest.files?.find(file => file.path === 'SKILL.md');
+    if (manifest.version !== 1 || manifest.projection !== 'entry' || manifest.manifest_complete !== true
+      || manifest.scope !== binding.scope || manifest.id !== binding.record.id || manifest.snapshot_id !== proof.snapshotId
+      || manifest.version_id !== binding.version_id || manifest.ref !== binding.ref || manifest.entrypoint !== 'SKILL.md'
+      || file?.sha256 !== proof.bodySha256 || file.bytes !== proof.bytes) return;
+    const bytes = fs.readFileSync(path);
+    if (sha(bytes) !== proof.bodySha256 || bytes.length !== proof.bytes || !text(message.content).startsWith(bytes.toString('utf8'))) return;
+    record('prepared_read', { version: 1, toolName: 'read', toolCallId: message.toolCallId, receiptSequence,
+      originalInputSha256: pending.inputSha256, preparedInputSha256: pending.result.inputSha256,
+      brokerSource: pending.brokerSource, inputArtifact: retain('prepared-input', JSON.stringify(input)),
+      file: { path, realpath: path, artifact: retain('prepared-body', bytes) },
+      manifest: { path: manifestPath, realpath: manifestPath, artifact: retain('prepared-manifest', manifestBytes) } });
+    pendingPreparedReads.delete(message.toolCallId);
+  };
   const receipt = message => {
     if (!message || message.isError === true) return;
     const details = message.details;
@@ -752,8 +796,9 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     if (message.role === 'custom' && ['context-broker', 'skill-prompt-message'].includes(message.customType)) proofs.custom = details;
     if (!Object.keys(proofs).length) return;
     const body = text(message.content);
-    record('receipt', { toolName: message.toolName, toolCallId: message.toolCallId, customType: message.customType,
+    const row = record('receipt', { toolName: message.toolName, toolCallId: message.toolCallId, customType: message.customType,
       content: { bytes: Buffer.byteLength(body), sha256: sha(body) }, proofs });
+    preparedRead(message, proofs.contextBrokerRead, row.sequence);
   };
   const attach = (target, name, fn) => target.on(name, (event, ctx) => {
     if (closed || api !== target) return;
@@ -772,7 +817,7 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     if (!hostRecorded) { fs.writeFileSync(hostOutput, JSON.stringify(host) + '\n', { flag: 'wx', mode: 0o600 }); hostRecorded = true; }
     else record('host_session_start', host);
   });
-  on('input', () => { turn++; record('input'); });
+  on('input', () => { pendingPreparedReads.clear(); turn++; record('input'); });
   on('context_with_system', event => { for (const message of event.messages ?? []) receipt(message); });
   on('before_provider_request', (event, ctx) => {
     const payload = JSON.stringify(event.payload), toolNames = (event.payload?.tools ?? []).map(tool => tool.function?.name ?? tool.name).filter(name => typeof name === 'string');
@@ -797,6 +842,22 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     const selectors = Object.fromEntries(['path', 'paths', 'ref', 'refs', 'query', 'id', 'ids', 'refresh'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
     const toolSource = typeof api.getAllTools === 'function' ? api.getAllTools().find(tool => tool.name === event.toolName)?.sourceInfo : undefined;
     let toolImplementation;
+    if (event.toolName === 'read' && toolResultDirectory && Object.keys(input).length === 1
+      && /^sr:C[A-Za-z0-9_-]{22}$/u.test(input.path ?? '') && event.parentToolCallId === undefined
+      && toolSource?.origin === 'package' && toolSource.source === 'npm:pi-compact-ui'
+      && typeof toolSource.baseDir === 'string' && toolSource.path === toolSource.baseDir + '/index.ts') {
+      const files = ['package.json', 'index.ts'].map(relativePath => {
+        const path = toolSource.baseDir + '/' + relativePath;
+        return { relativePath, path, artifact: retain('implementation', fs.readFileSync(path)) };
+      });
+      toolImplementation = { version: 1, runtimeMode: ctx?.mode, files };
+      const registrations = api.getCommands().filter(command => command.name === 'context-broker');
+      const refs = ctx.sessionManager.getBranch().filter(entry => entry.type === 'custom'
+        && entry.customType === 'context-broker-short-ref' && entry.data?.ref === input.path);
+      if (registrations.length === 1 && refs.length === 1 && refs[0].data?.version === 1 && refs[0].data.target?.kind === 'candidate') pendingPreparedReads.set(event.toolCallId, {
+        turn, inputSha256: sha(JSON.stringify(input)), identity: structuredClone(refs[0].data.target.identity), brokerSource: registrations[0].sourceInfo,
+      });
+    }
     if (event.toolName === 'ask_user' && toolResultDirectory && toolSource?.origin === 'package' &&
       typeof toolSource.baseDir === 'string' && toolSource.path === toolSource.baseDir + '/src/index.ts') {
       try {
@@ -831,6 +892,9 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
       fs.writeFileSync(path, content, { flag: 'wx', mode: 0o600 });
       contentArtifact = { path, sha256: sha(content), bytes: Buffer.byteLength(content) };
     }
+    const pending = pendingPreparedReads.get(event.toolCallId);
+    if (pending && event.toolName === 'read') pending.result = { input: JSON.parse(JSON.stringify(event.input ?? {})),
+      inputSha256: sha(JSON.stringify(event.input ?? {})), isError: event.isError === true };
     record('tool_result', { toolName: event.toolName, toolCallId: event.toolCallId, isError: event.isError === true,
       ...(event.parentToolCallId === undefined ? {} : { parentToolCallId: event.parentToolCallId }),
       ...(event.input === undefined ? {} : { inputSha256: sha(JSON.stringify(event.input)) }),
@@ -846,7 +910,7 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
       success: message.stopReason === 'stop' && value.trim().length > 0 });
   });
   on('session_shutdown', event => {
-    if (event?.reason === 'fork') { record('task_observer_fork'); awaitingRebind = true; return; }
+    if (event?.reason === 'fork') { pendingPreparedReads.clear(); record('task_observer_fork'); awaitingRebind = true; return; }
     record('task_observer_end', { errors, complete: errors === 0 && !awaitingRebind, observerWorkMs: Number(observerWorkNs) / 1e6 }); closed = true; fs.closeSync(fd);
   });
   return { bind(next) {

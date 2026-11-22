@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer } from './notion-agent-tool-lineage.mjs';
+import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation } from './notion-agent-tool-lineage.mjs';
+import { analyzeNotionAgentTurn } from './notion-agent-analysis.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
 const argsHash = value => sha(JSON.stringify(value));
@@ -27,6 +28,107 @@ function fixture() {
 }
 const inspect = value => correlateNotionAgentToolAttempts(value);
 const codes = value => inspect(value).diagnostics.map(problem => problem.code);
+
+function preparedFixture() {
+  const id = 'actual-read', scope = 'a'.repeat(64), owner = 'shared_skill:library-test:skill-test';
+  const snapshot = 's_' + 'b'.repeat(64), version = 'c'.repeat(64), fileId = 'file-' + 'd'.repeat(64);
+  const original = { path: 'sr:Cl_Zoi4sBM-mbsLglJeO1BA' }, body = Buffer.from('完整正文\n');
+  const path = '/cache/notion/scopes/' + scope + '/records/' + sha(owner) + '/entries/' + snapshot + '/tree/SKILL.md';
+  const input = { path }, ref = 'skill://' + encodeURIComponent(owner), fixed = ref + '/SKILL.md?snapshot=' + snapshot + '&file_id=' + fileId;
+  const locator = { type: 'shared_skill', database_id: 'database', data_source_id: 'source', page_id: 'page', library_id: 'library-test', skill_id: 'skill-test' };
+  const record = { id: owner, kind: 'skill', locator, entrypoint: 'SKILL.md', ref: ref + '/SKILL.md' };
+  const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: sha(body), ref: fixed };
+  const rendered = body.toString() + '\n<notion-effects>readonly</notion-effects>';
+  const proof = { version: 3, identity: JSON.stringify(['notion', scope, 'skill', 'shared_skill', owner]), contentIdentity: JSON.stringify([scope, owner]),
+    toolCallId: id, snapshotId: snapshot, bodySha256: sha(body), bytes: body.length, binding,
+    delivery: { start: 0, end: body.toString().length, encoding: 'raw' }, rendered: { bytes: Buffer.byteLength(rendered), sha256: sha(rendered) } };
+  const baseDir = '/installed/pi-compact-ui';
+  const toolSource = { path: baseDir + '/index.ts', baseDir, source: 'npm:pi-compact-ui', scope: 'user', origin: 'package' };
+  const reviewed = [['package.json', 567, 'a5f319f04fcc0ddeb47c0da5bdd08240598404f96b38dc1fe1baaaab14428f98'],
+    ['index.ts', 66369, 'bac76ae9ed99a3790d8a728cc6e9b5463927ac427a1462ffe59c6adf9e4d4509']];
+  const toolImplementation = { version: 1, runtimeMode: 'rpc', files: reviewed.map(([relativePath, bytes, sha256]) =>
+    ({ relativePath, path: baseDir + '/' + relativePath, artifact: { path: '/sealed/' + sha256, bytes, sha256 } })) };
+  const brokerSource = { path: '/current/broker/src/index.ts', baseDir: '/current/broker', source: '/current/broker', scope: 'user', origin: 'package' };
+  const observation = { phase: 'prepared_read', version: 1, toolName: 'read', toolCallId: id, receiptSequence: 3,
+    originalInputSha256: argsHash(original), preparedInputSha256: argsHash(input), brokerSource,
+    file: { path, realpath: path }, manifest: { path: path.replace('/tree/SKILL.md', '/.broker-entry.json'), realpath: path.replace('/tree/SKILL.md', '/.broker-entry.json') } };
+  const tasks = [
+    { phase: 'tool_call', toolName: 'read', toolCallId: id, inputSha256: argsHash(original), selectors: original, toolSource, toolImplementation },
+    { phase: 'tool_result', toolName: 'read', toolCallId: id, inputSha256: argsHash(input), isError: false },
+    { phase: 'receipt', toolName: 'read', toolCallId: id, proofs: { contextBrokerRead: proof }, content: proof.rendered },
+    observation, { phase: 'provider_payload' },
+  ];
+  tasks.forEach((row, index) => Object.assign(row, { pid: 100, turn: 1, sequence: index + 1 }));
+  const native = { id, name: 'read', arguments: original, active: true, userEntryId: 'user', callLine: 4, resultLine: 5,
+    assistantEntryId: 'assistant', resultEntryId: 'result', isError: false };
+  const session = { supported: true, currentUserId: 'user', attempts: [native], branchEntries: [
+    { type: 'custom', id: 'short-ref', customType: 'context-broker-short-ref', data: { version: 1, ref: original.path,
+      target: { kind: 'candidate', identity: { source: 'notion', scope, id: owner, kind: 'skill', locator, ref } } } },
+    { type: 'message', id: 'assistant' },
+    { type: 'message', id: 'result', message: { role: 'toolResult', toolCallId: id, toolName: 'read', isError: false,
+      content: [{ type: 'text', text: rendered }], details: { contextBrokerRead: proof } } },
+  ] };
+  const manifest = { version: 1, projection: 'entry', manifest_complete: true, scope, id: owner, snapshot_id: snapshot,
+    version_id: version, entrypoint: 'SKILL.md', ref: fixed,
+    files: [{ path: 'SKILL.md', bytes: body.length, sha256: sha(body), ref: fixed }],
+    file_bindings: [{ path: 'SKILL.md', file_id: fileId, page_id: locator.page_id }] };
+  // Artifact I/O is the analyzer's existing verifiedArtifact boundary. These
+  // are its verified byte values, not a caller-supplied 'passed' declaration.
+  const evidence = { observation, input, body, manifest, content: [{ type: 'text', text: body.toString() }],
+    brokerOwner: { source: structuredClone(brokerSource), commit: 'e'.repeat(40) } };
+  return { tasks, session, preparedReads: new Map([[id, evidence]]), evidence, native, proof };
+}
+
+test('a verified ordinary compact-ui read proves original short ref, prepared input, owner and full file delivery', () => {
+  const value = preparedFixture(), result = inspect(value);
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostics));
+  assert.equal(result.attempts[0].preparedRead.profile, 'pi-compact-ui:0.1.3:native-read-delegate');
+  assert.equal(result.attempts[0].preparedRead.bodySha256, sha(value.evidence.body));
+  assert.deepEqual(result.attempts[0].arguments, value.native.arguments);
+  value.preparedReads.clear();
+  assert.ok(codes(value).includes('TOOL_RESULT_INPUT_MISMATCH'), 'a receipt alone cannot repair old observations');
+});
+
+test('prepared read proof rejects wrong original, path, bytes, owner, implementation and late cross-call evidence', () => {
+  const cases = [
+    value => { value.native.arguments = { path: 'sr:CAAAAAAAAAAAAAAAAAAAAAA' }; value.tasks[0].inputSha256 = argsHash(value.native.arguments); value.tasks[0].selectors = value.native.arguments; value.evidence.observation.originalInputSha256 = value.tasks[0].inputSha256; },
+    value => { value.evidence.input.path = value.evidence.input.path.replace('/records/', '/elsewhere/'); value.tasks[1].inputSha256 = argsHash(value.evidence.input); value.evidence.observation.preparedInputSha256 = value.tasks[1].inputSha256; value.evidence.observation.file = { path: value.evidence.input.path, realpath: value.evidence.input.path }; },
+    value => { value.evidence.body = Buffer.from('different bytes'); },
+    value => { value.evidence.manifest.file_bindings[0].page_id = 'different-owner'; },
+    value => { value.tasks[0].toolSource.source = 'npm:unreviewed-reader'; },
+    value => { value.tasks[0].toolImplementation.files[1].artifact.sha256 = 'f'.repeat(64); },
+    value => { value.tasks[3].brokerSource = { ...value.tasks[3].brokerSource, path: '/other/broker/src/index.ts' }; },
+    value => { value.tasks[2].toolCallId = 'another-call'; },
+    value => { value.tasks[2].turn = 2; value.tasks[3].turn = 2; },
+    value => { for (const row of value.tasks) delete row.pid; },
+    value => { [value.tasks[3], value.tasks[4]] = [value.tasks[4], value.tasks[3]]; },
+    value => { const binding = value.session.branchEntries.shift(); value.session.branchEntries.push(binding); },
+    value => { value.evidence.content = [{ type: 'text', text: 'same receipt but wrong actual result' }]; },
+  ];
+  for (const [index, change] of cases.entries()) {
+    const value = preparedFixture(); change(value);
+    assert.equal(inspect(value).status, 'failed', 'case ' + index);
+    assert.ok(codes(value).includes('TOOL_RESULT_INPUT_MISMATCH'), 'case ' + index);
+  }
+});
+
+test('reviewed read delegation requires the observed complete package files and actual registration', () => {
+  const value = preparedFixture(), event = value.tasks[0];
+  assert.ok(inspectedCompactReadImplementation(event));
+  event.toolImplementation.files.pop(); assert.equal(inspectedCompactReadImplementation(event), undefined);
+  const other = preparedFixture().tasks[0]; other.toolSource.path = '/somewhere/index.ts';
+  assert.equal(inspectedCompactReadImplementation(other), undefined);
+});
+
+test('analysis reads the actual sealed implementation bytes before admitting a claimed reviewed rewrite', async () => {
+  const value = preparedFixture();
+  const bindings = { version: 1, public: {}, private: { objects: {}, bodies: {}, facts: {}, readbacks: {} } };
+  const observed = { tasks: value.tasks, session: value.session, costs: [], transport: [], source: [], sourceCoverage: true };
+  const result = await analyzeNotionAgentTurn({ id: 'sealed-read', expect: [{ kind: 'no-semantic-writes' }] }, observed, bindings,
+    { inspectPayload: () => [], readArtifact: async () => Buffer.from('a different implementation despite the claimed hash') });
+  assert.equal(result.assertions.find(row => row.kind === 'tool-attempt-observation').code, 'ARTIFACT_CHANGED');
+  assert.notEqual(result.status, 'passed');
+});
 
 test('opaque child IDs correlate through complete native census and direct structure, without ID parsing', () => {
   const value = fixture(), result = inspect(value);
