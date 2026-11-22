@@ -307,6 +307,7 @@ export async function runAgentWorkflow(config) {
   const sourceObservation = { sourceId: config.sourceId, database: config.database, configArtifact: await identity(sourceConfigPath) };
   const env = { ...inheritedEnv, CONTEXT_BROKER_CONFIG: sourceConfigPath, NTN_SKILLS_HOME: ownedStateRoot,
     NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'config'), NTN_SKILLS_CACHE_HOME: join(stateRoot, 'cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'data'),
+    NTN_SKILLS_SCHEDULER_ROOT: join(stateRoot, 'scheduler'),
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', BROKER_E2E_PROCESS_LEDGER: join(evidence, 'owned-processes.jsonl') };
   delete env.NTN_SKILLS_DEV_ROOT;
   if (scenario.fixture.environment?.catalog === 'unauthorized') env.NOTION_API_TOKEN = 'secret_owned_agent_workflow_invalid_identity';
@@ -325,7 +326,7 @@ export async function runAgentWorkflow(config) {
       temporaryRoot: env.TMPDIR, projectContext, temporaryFiles: 'environment-convention-not-sandbox', model: 'magpie/group/worker', thinkingLevel: 'high' },
     segments: [], events: [], turns: scenario.turns.map(turn => ({ id: turn.id, status: 'not_run' })), retestOf: config.retestOf ?? null };
   await save(join(evidence, 'config.json'), config); await save(join(evidence, 'initial-bindings.json'), bindings); await save(join(evidence, 'initial-state.json'), {
-    cache: 'cold', stateRoot, ownedStateRoot, sourceCache, temporaryRoot: env.TMPDIR, projectContext,
+    cache: 'cold', stateRoot, ownedStateRoot, sourceCache, schedulerRoot: env.NTN_SKILLS_SCHEDULER_ROOT, temporaryRoot: env.TMPDIR, projectContext,
     temporaryFiles: 'environment-convention-not-sandbox', oracle: 'independent', createdAt: result.startedAt });
   await save(join(evidence, 'started.json'), result);
   const implementation = { version: 1, candidateArtifact: await identity(join(evidence, 'started.json')),

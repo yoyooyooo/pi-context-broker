@@ -638,6 +638,7 @@ const path=${JSON.stringify(statePath)},state=JSON.parse(await readFile(path,'ut
 const one=key=>args[args.indexOf(key)+1],many=key=>args.flatMap((arg,i)=>arg===key?[args[i+1]]:[]);
 state.calls.push(args);
 state.stores??=[];state.stores.push(process.env.NTN_SKILLS_HOME);
+state.environments??=[];state.environments.push(Object.fromEntries(['NTN_SKILLS_HOME','NTN_SKILLS_CONFIG_HOME','NTN_SKILLS_CACHE_HOME','NTN_SKILLS_DATA_HOME','NTN_SKILLS_SCHEDULER_ROOT'].map(key=>[key,process.env[key]])));
 let value;
 if(args[0]==='ctl'&&args[2]==='inspect')value={ok:true,library:state.library};
 else if(args[0]==='ctl'&&args[2]==='skill'){
@@ -689,6 +690,23 @@ await writeFile(path,JSON.stringify(state));process.stdout.write(JSON.stringify(
 
 const managedObject = (id, relations = {}) => ({ id, name: id, description: 'Business instructions for ' + id,
   placement: 'notion', initial: 'A', versions: { A: { files: [{ path: 'SKILL.md', content: '# ' + id + '\n\nFollow the business rule.\n' }], ...relations } } });
+
+test('preparation and later readback keep config and scheduler in the owned fixture despite inherited roots', async t => {
+  const harness = await preparationHarness(t);
+  const directories = { NTN_SKILLS_HOME: 'state', NTN_SKILLS_CONFIG_HOME: 'config', NTN_SKILLS_CACHE_HOME: 'cache', NTN_SKILLS_DATA_HOME: 'data', NTN_SKILLS_SCHEDULER_ROOT: 'scheduler' };
+  const inherited = Object.fromEntries(Object.keys(directories).map(key => [key, process.env[key]]));
+  t.after(() => { for (const [key, value] of Object.entries(inherited)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  for (const [key, directory] of Object.entries(directories)) process.env[key] = join(harness.root, 'inherited-' + directory);
+  const caller = Object.fromEntries(Object.keys(directories).map(key => [key, process.env[key]]));
+  const bindings = await prepareAgentFixtures({ ...harness.options, recipe: { kind: 'versioned-graph', objects: [managedObject('owned')] } });
+  await readAgentFixture(bindings, 'owned', { version: 'A', key: 'later-owned-readback' });
+  const expected = Object.fromEntries(Object.entries(directories).map(([key, directory]) => [key, join(harness.options.root, directory)]));
+  const observed = (await json(harness.statePath)).environments;
+  assert.ok(observed.length > 1, 'Observe preparation and the later public CLI readback subprocesses');
+  for (const environment of observed) assert.deepEqual(environment, expected);
+  assert.deepEqual(bindings.private.fixture.env, expected, 'Retained bindings keep the same private scheduler for later events');
+  for (const [key, value] of Object.entries(caller)) assert.equal(process.env[key], value, 'Do not mutate the caller environment');
+});
 
 test('preparation creates a forward Member and Requires before their consumer through public CLI arguments', async t => {
   const harness = await preparationHarness(t);

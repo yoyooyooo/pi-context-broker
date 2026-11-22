@@ -623,7 +623,8 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
   assert.ok(!(await exists(root)), 'Use a fresh fixture root; resume from its bindings instead');
   await mkdir(root, { recursive: true, mode: 0o700 }); root = await realpath(root);
   const context = { version: 1, runId, root, entry, cli: await realpath(cliPath), node: await realpath(node), apiVersion, recipe, preparationPlan,
-    env: { NTN_SKILLS_HOME: join(root, 'state'), NTN_SKILLS_CACHE_HOME: join(root, 'cache'), NTN_SKILLS_DATA_HOME: join(root, 'data') },
+    env: { NTN_SKILLS_HOME: join(root, 'state'), NTN_SKILLS_CONFIG_HOME: join(root, 'config'),
+      NTN_SKILLS_CACHE_HOME: join(root, 'cache'), NTN_SKILLS_DATA_HOME: join(root, 'data'), NTN_SKILLS_SCHEDULER_ROOT: join(root, 'scheduler') },
     objects: {}, projectRoot: join(root, 'project'), observedReadbacks: {}, ownership: { runId, root, token: randomUUID(), createdAt: new Date().toISOString(), globalDirectories: [], temporaryRoot: join(root, 'temporary') } };
   await save(join(root, 'ownership.json'), context.ownership);
   for (const path of ['commands', 'readbacks', 'inputs', 'quarantine', 'temporary', 'project/.agents/skills']) await mkdir(join(root, path), { recursive: true, mode: 0o700 });
