@@ -207,7 +207,7 @@ Pi 注册扩展和编辑器后在后台发现元数据。交互式和 RPC 的普
 
 当前目录作为一份临时目录数据消息加入最终请求，只包含名称、描述、来源身份和准确引用，不包含未选正文。其他扩展提供精确系统提示时，这份目录仍然可用，安全规则和工具声明保持不变。重复投影只替换 Broker 自己的目录，不追加目录历史或改写原生会话。目录仍在等待或暂不可用时提供 `notion_list` 入口；pending 不表示目录为空。后台请求仍计入发现成本。显式 `$`、精确 `/skill:` 输入、`notion_list`、`notion_use` 和 Notion read 继续检查所需目录、权限、身份和固定快照。选择失败阻断部分指令派发，已替换会话的旧准备不能迟到发布。普通续接保留已经 active 的指令及其选中快照。
 
-当前有效请求中，同一身份、同一版本的完整 Skill 与资源正文只保留一份。重复 `read` 或 `notion_use` 仍执行用户明确要求的操作，但模型投影可复用已存在的完整正文和生成目录，只保留必要确认与各次 effects。只有同一请求中存在可信完整副本时才能省略，摘要或历史 loaded 标记不能替代全文。原始会话和工具结果保持完整。撤下旧正文也不抹掉已经发生或尚未确认的操作结果。详见[正文与模型投影](skill-consumption-projection.md)。
+当前有效请求中，同一身份、同一版本的完整 Skill 与资源正文只保留一份。重复 `read` 或 `notion_use` 仍执行用户明确要求的操作，但模型投影可复用已存在的完整正文和生成目录，只保留必要确认与各次 effects。只有同一请求中存在可信完整副本时才能省略，摘要或历史 loaded 标记不能替代全文。原始会话和工具结果保持完整。撤下旧正文也不抹掉已经发生或尚未确认的操作结果。详见[正文与模型投影](skill-consumption-runtime.md#presentation-and-proof)。
 
 Notion 网页修改发生在 CLI 缓存之外。精确引用固定身份，不承诺每次联网：当前读取可以复用仍合格的观察，固定读取保留历史。Broker 保留 SDK 原始验证时间和 remote/cache 来源，metadata、read 与 use 共用同一 scoped 资格观察；旧缓存或历史 pin 不能清除较新的拒绝。精确依赖失败只更新实际依赖，不猜成根节点禁用。取消、旧代次与同代次迟到旧请求均不能覆盖已经接受的新验证。
 
@@ -262,9 +262,9 @@ Pi 为 Notion 记录提供归属当前会话分支的不透明引用。它们是
 
 `notion_use({ref:REF})` 接受返回的 `sr:C`、`sr:S` 或 canonical 主入口 `skill://` 引用；`ref` 也可以是本次需要一起使用的多个根。它加载根与完整 Requires 闭包，以应用其指令。介绍、摘要或检查 Skill 使用原生 `read({path:REF})`，不启用 Requires。资源复制系统返回的准确引用。按需发现的 `notion_ctl({refs:[REF]})` 可导出固定 `sr:S`、`sr:R` 的 canonical 证明，未固定的 `sr:C` 不能提供该证明。
 
-Pi 的正常 use 结果呈现所选根引用、完整正文和精简资源/关系目录。完整 hash、graph lock、规范身份与物化证明保留在工具 details 和显式证明导出中。确定性编译器逐字保留作者正文，用版本化回执将源 hash、渲染 hash 与实际内容位置绑定；重复读取和显式新选择只派生新的 provider 投影，不编辑会话原件。OMP 保留既有结果形状。[投影历史](skill-consumption-projection.md) 保留早期工具名与证据；当前公开消费合同是 list/read/use。
+Pi 的正常 use 结果呈现所选根引用、完整正文和精简资源/关系目录。完整 hash、graph lock、规范身份与物化证明保留在工具 details 和显式证明导出中。确定性编译器逐字保留作者正文，用版本化回执将源 hash、渲染 hash 与实际内容位置绑定；重复读取和显式新选择只派生新的 provider 投影，不编辑会话原件。OMP 保留既有结果形状。[呈现与证明合同](skill-consumption-runtime.md#presentation-and-proof) 定义当前回执和完整内容边界；公开消费使用 list/read/use。
 
-`notion_list` 保留完整名称、说明、来源、可用状态和分页，重复 `id/scope` 留在宿主 details。复制 `next_cursor` 继续同一查询；覆盖不完整或来源失败不等于空目录。当前 Notion 选择只注入固定引用、可用资源目录和完整正文，通用规则由宿主集中提供。恢复选择使用 canonical 固定引用，不把重启后的目录宣称为已注册资源入口。完整原生主文 read 保留精确正文前缀并复用精简目录，完整目录留在 `contextBrokerRead.directory`。源内容和 Notion 管理数据保持完整。详见[跨入口投影与实际请求对照](skill-model-surfaces-verification-2026-11-05.md)。
+`notion_list` 保留完整名称、说明、来源、可用状态和分页，重复 `id/scope` 留在宿主 details。复制 `next_cursor` 继续同一查询；覆盖不完整或来源失败不等于空目录。当前 Notion 选择只注入固定引用、可用资源目录和完整正文，通用规则由宿主集中提供。恢复选择使用 canonical 固定引用，不把重启后的目录宣称为已注册资源入口。完整原生主文 read 保留精确正文前缀并复用精简目录，完整目录留在 `contextBrokerRead.directory`。源内容和 Notion 管理数据保持完整。详见[呈现与证明合同](skill-consumption-runtime.md#presentation-and-proof)。
 
 `notion_ctl` 注册为 deferred，默认未启用。需要管理或导出证明时，可通过 Pi 可选的 `tool_search` 按需发现；禁用了工具发现的宿主需显式启用该工具。`notion_ctl({cli_source:"SOURCE_ID"})` 请求一个已启用 Notion source 的本机 CLI 调用元数据，要求 `bash` 已启用，且与 `refs` 互斥。返回 `{kind:"host_cli_scope", sourceId, command, database?, executed:false}`，解析真实配置命令或随包入口，不假设全局 CLI 已安装，不访问网络或执行命令。未知或禁用来源明确失败。取得元数据不授予执行权限，也不证明连通性。图与 `refs` 导出保持可移植且不含机器路径。
 

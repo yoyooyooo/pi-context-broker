@@ -1,7 +1,6 @@
 # Fixed resource batches in Pi
 
-SC07 / [AH-626](https://linear.app/yoyooyooo/issue/AH-626) adds a resource-only
-batch to Pi's existing `read` tool. The owner and snapshot are fixed before
+Pi's existing `read` tool accepts a resource-only batch. The owner and snapshot are fixed before
 reading. A batch does not prepare a Skill graph, reread its main instructions,
 or activate its workflow.
 
@@ -150,23 +149,15 @@ same identity-based deduplication.
 
 ## Verification boundaries
 
-The existing CLI package fixture adds a separate `resources` Skill containing
-ordinary UTF-8, BOM/CRLF, empty and binary files plus an unselected resource.
-It stays warm and does not prove cold download behavior. Core controlled-source
-tests check selected object IDs, shared-chunk deduplication and unselected/main
-zero reads. Independent npm SDK smoke checks real exports, decoder rejection and
-request cleanup. Installed Pi uses the existing `scripts/notion-sdk-pi.mjs`
-`resource-batch` scenario with actual native tool schema/results, provider
-payloads, local binary bytes, source observations, and repeat projection. The
-separate `resource-batch-short-refs` variant explicitly inspects the owner first,
-then batches the four actual `sr:R` handles from that directory. Its one inspect
-consume is counted separately from the two resource reads.
+Current source regressions cover fixed owner/snapshot/File identity, complete
+text, binary bytes, budgets, cancellation and rejected mixed batches. The existing
+independent package gate checks the installed SDK over controlled current Notion
+HTTP, including scalar/batch resources and zero semantic writes.
 
-The scalar variants and their baseline/candidate source and provider costs are
-recorded separately in [fixed scalar verification](scalar-resource-consumption-verification-2026-11-05.md).
-
-Launch, Doctor, Drive, Evidence and Cleanup remain in the existing
-[consumption map](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/skill-consumption.md).
-Controlled provider success, live source behavior, real model choice, pro/mini
-recovery and daily installation remain distinct evidence. The original SC07
-introduction/execution journeys and SC21 gates are not closed by a batch fixture.
+Actual Pi checks follow the current SDK v2 driver and its
+[consumption map](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/features/skill-consumption.md).
+Use its currently declared scenarios rather than a retired scenario name. Compare
+actual tool schema/results, complete provider-visible content, original binary
+bytes and per-operation observations. A fixture, installed SDK or controlled Pi
+result does not establish live service behavior, natural model choice, native UI
+or normal installation. Keep those results and their package identities separate.

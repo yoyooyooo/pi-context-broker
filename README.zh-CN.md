@@ -28,7 +28,9 @@ Broker 找到 `design-review`，把指令交给模型；正文仍在当前会话
 pi install npm:pi-context-broker
 ```
 
-包要求 Node.js `^22.22.3 || >=24.20.0`，内含配对的 Notion CLI、SDK 和随包 Skills；在 Pi 中使用无需另外全局安装 `ntn-skills`。Bun 是构建依赖。
+包要求 Node.js `^22.23.5 || ^24.22.3 || ^26.13.1`，内含配对的 Notion CLI、SDK 和随包 Skills；在 Pi 中使用无需另外全局安装 `ntn-skills`。Bun 是构建依赖。
+
+当前真实 Pi 验证使用 Pi 1.6.0。可选 peer 的 `*` 范围允许宿主管理安装依赖，不表示所有 Pi 或 OMP 版本都已验证。升级宿主后按[现有验证入口](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/verification-routing.md)检查；Node 范围只覆盖列出的维护中 LTS 版本线。
 
 npm 发布包与当前 `next` 源码可能不同。开发或试用未发布改动请遵循[隔离开发指南](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/isolated-development.md)，源码配对、构建和独立应用状态统一由该入口说明。
 

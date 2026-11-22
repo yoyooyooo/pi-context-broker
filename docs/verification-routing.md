@@ -86,4 +86,4 @@ C10/T21 的 entrypoints.required_inputs 列出各动作必需配置。`/absolute
 
 每个自然 case 是所声明 C/T 的明确切片。checkAgentContractCoverage 从配对 CLI 单一索引检查映射；一个真实运行可被多个 T 薄回执引用，详细 scope 放原始证据，不能重复计成本或将局部通过扩成整个 T。必选组合、留出输入、首败、复验与独立 Skill 使用评价分别保留。
 
-本批实施与逐场景证据见 [2026-11-21 自然工作流验收记录](notion-agent-workflows-acceptance-2026-11-21.md)。报告保留真实候选、首失败与修订解释，日用双机安装仍按 AH-1197 的独立范围验收。
+每次逐场景结果保留在对应 Issue/PR 的运行证据中，绑定实际候选并保留首失败与修订解释。日用双机安装仍按 [交付合同](next-worktree-delivery.md) 单独验收。
