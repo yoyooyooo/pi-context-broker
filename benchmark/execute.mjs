@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runEnvironment } from '../scripts/paired-environment.mjs';
 import { resolveModelCredential } from './models.mjs';
 import { createTurnBridgeController, readTurnBridgeJournal } from './turn-bridge.mjs';
@@ -9,6 +10,68 @@ import { createFixtureTurnAdapter, freezeClarificationPolicy, selectFrozenClarif
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+
+/** Common Benchmark instrumentation must implement the controller's turn
+ * contract before any fixture preparation, credential read or subject dispatch.
+ * This check does not compare the candidate/reference product tools. */
+export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding }) {
+  assert.ok(isAbsolute(environmentRoot));
+  assert.ok(typeof buildId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(buildId));
+  const required = (binding.public_case?.turns?.length ?? 0) > 1 ||
+    (binding.events?.length ?? 0) > 0 || (binding.clarification?.length ?? 0) > 0;
+  const result = { version: 1, required, status: required ? 'unverified' : 'not_required', build_id: buildId,
+    scope: 'exact common Benchmark turn instrumentation; product tool implementations are outside this comparison', files: [] };
+  if (!required) return result;
+  async function file(path) {
+    const info = await lstat(path);
+    assert.ok(info.isFile() && !info.isSymbolicLink() && info.size <= 16 * 1024 * 1024, 'TURN_RUNTIME_ORDINARY_FILE');
+    assert.equal(await realpath(path), path, 'TURN_RUNTIME_SOURCE_SYMLINK');
+    const bytes = await readFile(path);
+    return { path, sha256: sha(bytes), bytes: bytes.length };
+  }
+  try {
+    assert.equal(await realpath(environmentRoot), environmentRoot, 'TURN_RUNTIME_ENVIRONMENT_ALIAS');
+    const environmentFile = join(environmentRoot, 'environment.json'); result.environment = await file(environmentFile);
+    const environment = JSON.parse(await readFile(environmentFile, 'utf8'));
+    assert.equal(environment.kind, 'paired-development-environment'); assert.equal(environment.root, environmentRoot);
+    assert.ok(typeof environment.environment_id === 'string' && environment.environment_id.length > 0, 'TURN_RUNTIME_ENVIRONMENT_IDENTITY');
+    const buildRoot = join(environmentRoot, 'builds', buildId);
+    assert.equal(await realpath(buildRoot), buildRoot, 'TURN_RUNTIME_BUILD_ALIAS');
+    const buildFile = join(buildRoot, 'build.json'); result.build = await file(buildFile);
+    const manifest = JSON.parse(await readFile(buildFile, 'utf8'));
+    assert.equal(manifest.version, 1); assert.equal(manifest.kind, 'paired-build', 'TURN_RUNTIME_COMPLETED_BUILD_REQUIRED');
+    assert.equal(manifest.build_id, buildId, 'TURN_RUNTIME_BUILD_IDENTITY');
+    assert.equal(manifest.root, buildRoot); assert.equal(manifest.environment_id, environment.environment_id, 'TURN_RUNTIME_BUILD_OWNER');
+    assert.match(manifest.selected_cli_sha256, /^[a-f0-9]{64}$/, 'TURN_RUNTIME_SELECTED_CLI_IDENTITY');
+    const inventory = (value, name) => {
+      assert.ok(value && Array.isArray(value.files) && value.files.length > 0, 'TURN_RUNTIME_BUILD_INVENTORY:' + name);
+      assert.match(value.sha256, /^[a-f0-9]{64}$/); assert.equal(sha(JSON.stringify(value.files)), value.sha256, 'TURN_RUNTIME_BUILD_INVENTORY_IDENTITY:' + name);
+    };
+    for (const name of ['cli', 'broker']) inventory(manifest.packages?.[name], name);
+    inventory(manifest.source_tree, 'source');
+    result.selected_cli_sha256 = manifest.selected_cli_sha256;
+    result.packages = Object.fromEntries(['cli', 'broker'].map(name => [name, manifest.packages[name].sha256]));
+    result.product_artifacts_verification = 'full package/source bytes remain subject to the shared frozen-artifact check';
+    for (const name of ['subject.mjs', 'turn-bridge.mjs', 'runtime/episode-runner.mjs']) {
+      const path = 'benchmark/' + name;
+      const current = await file(fileURLToPath(new URL('./' + name, import.meta.url)));
+      const selected = await file(join(buildRoot, 'source/broker', path));
+      const frozen = manifest.source_tree?.files?.filter(item => item.path === 'broker/' + path) ?? [];
+      result.files.push({ path, current, build: selected, frozen_sha256: frozen[0]?.sha256 ?? null });
+      assert.equal(frozen.length, 1, 'TURN_RUNTIME_BUILD_SOURCE_NOT_FROZEN:' + path);
+      assert.equal(selected.sha256, frozen[0].sha256, 'TURN_RUNTIME_BUILD_SOURCE_CHANGED:' + path);
+      assert.equal(selected.sha256, current.sha256, 'TURN_RUNTIME_INSTRUMENTATION_MISMATCH:' + path);
+    }
+    assert.equal((await file(buildFile)).sha256, result.build.sha256, 'TURN_RUNTIME_BUILD_CHANGED_DURING_CHECK');
+    assert.equal((await file(environmentFile)).sha256, result.environment.sha256, 'TURN_RUNTIME_ENVIRONMENT_CHANGED_DURING_CHECK');
+    for (const item of result.files) assert.equal((await file(item.current.path)).sha256, item.current.sha256, 'TURN_RUNTIME_CONTROLLER_SOURCE_CHANGED');
+    result.status = 'verified'; return result;
+  } catch (error) {
+    throw Object.assign(new Error('Selected build cannot implement the current Benchmark turn contract: ' + error.message), {
+      code: 'BENCHMARK_TURN_RUNTIME_BUILD_MISMATCH', details: { ...result, status: 'rejected', reason: error.message }, cause: error,
+    });
+  }
+}
 
 /** Parent readback for stop decisions. Incomplete controller evidence never
  * changes actual model accounting and never authorizes another dispatch. */
@@ -77,6 +140,7 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
   for (const path of [environmentRoot, modelsFile, controlRoot]) assert.ok(isAbsolute(path));
   assert.ok(['native', 'broker'].includes(mode));
   assert.ok(['free', 'off', 'required'].includes(codeMode));
+  const turnRuntimeBuild = await (apparatus.verifyTurnRuntimeBuild ?? verifyTurnRuntimeBuild)({ environmentRoot, buildId, binding });
   if (!captureOnly) {
     assert.ok(expected && isAbsolute(expected.path), 'Paid execution requires the exact frozen expectation');
     assert.equal(sha(await readFile(expected.path)), expected.sha256, 'Frozen expectation bytes changed');
@@ -152,10 +216,10 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
   try { episode = JSON.parse(await readFile(resultPath, 'utf8')); }
   catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    return { version: 1, status: 'invalid', run_id: runId, root, shared, episode: null, turn_control: turnControl, dispatch_error: dispatchError,
+    return { version: 1, status: 'invalid', run_id: runId, root, shared, episode: null, turn_control: turnControl, turn_runtime_build: turnRuntimeBuild, dispatch_error: dispatchError,
       error: 'No terminal runtime receipt; actual request/cost status remains unknown', stop_batch: true };
   }
-  return { version: 1, status: episode.status, run_id: runId, root, shared, episode, result_path: resultPath, turn_control: turnControl, dispatch_error: dispatchError,
+  return { version: 1, status: episode.status, run_id: runId, root, shared, episode, result_path: resultPath, turn_control: turnControl, turn_runtime_build: turnRuntimeBuild, dispatch_error: dispatchError,
     stop_batch: dispatchError !== null || turnControl !== null && turnControl.status !== 'completed'
       || shared?.runtime_check?.status !== 'unchanged' || shared?.frozen_artifacts !== 'passed'
       || ['invalid', 'admission_rejected', 'failed', 'cancelled'].includes(episode.status) };

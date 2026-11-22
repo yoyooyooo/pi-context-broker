@@ -223,6 +223,64 @@ retained `blocked` / `unsupported_native` receipt before any fixture mutation.
 These events can be assessed as extension capabilities in a suitable condition;
 they are not counted as common native capabilities.
 
+## Writable fixtures for every scheduled slot
+
+`configure` accepts `setup.episode_fixtures` when a selected case declares events.
+It uses the same pair generator and balanced schedule as the final protocol to
+assign each condition/repeat its eventual run ID. Before any model execution,
+each writable slot receives an independent fixture through the existing
+`planBenchmarkFixture` / `prepareBenchmarkFixture` APIs. Preparation is sequential
+and uses the selected immutable CLI build and the existing Notion credential.
+
+```json
+{
+  "episode_fixtures": {
+    "version": 1,
+    "project_page_id": "owned-synthetic-parent-uuid",
+    "placement": "notion",
+    "source_bindings": {},
+    "git": "/absolute/maintained/git"
+  }
+}
+```
+
+The parent must be the explicitly authorized synthetic-material parent. This
+configuration path currently supports a complete remote catalog, including
+explicit pinned source bindings. `project` and `mixed` placement are rejected
+before preparation; the lower-level fixture APIs retain their separate scopes.
+Read-only cases keep their existing shared material path.
+
+Actual Notion entries, physical Skill names and bound prompts can differ between
+owned slots. They are not substituted after freezing. Every writable slot gets
+its own zero-model startup capture and expectation. The candidate's complete
+expectation set includes the slot and its materialization hash; one capture is
+never extrapolated to another writable slot or repeat. `captureOnly` itself
+applies no turn event and sends no model request. Explicit initial material
+preparation happens before these captures.
+
+`execution.episode_fixtures.slot_bindings` freezes private binding file references
+with byte hashes. Each record binds the canonical case, full slot identity,
+exact run ID, build, actual public case and prompt hashes, complete initial file
+inventory hash, authorization, entry, fixture plan and materialization proof.
+Canonical case/pair/repeat/cluster identities and the planned denominator stay
+unchanged. Physical names are a verified mapping of the same logical business
+material, not new cases. The fixture plan and oracle stay outside the subject.
+
+Dispatch, interrupted-episode recovery and raw-evidence reanalysis only read this
+mapping. Missing or crossed slots, changed files and missing per-slot startup
+expectations are rejected; no case-level fallback can authorize a writable slot.
+Initial binding reconstruction uses `prepared_bindings`, the immutable snapshot,
+so a later version event cannot rewrite the initial state through the mutable
+fixture provider's `objects/bindings.json`.
+
+A retained preparation intent is written before the first API call. If that call
+returns unknown or loses its ready acknowledgement, another `configure` invocation
+uses only `reconcileBenchmarkFixture` for the same scope. It never calls preparation
+again, allocates a replacement scope or applies an event to make the setup pass.
+An unresolved readback stops configuration and preserves the receipts. Once a
+binding record exists, configuration re-entry validates it without remote work.
+Already frozen batch plans never prepare fixtures again.
+
 ## Integration verification
 
 `turn-integration.test.mjs` runs the production controller, subject wrapper,
@@ -279,6 +337,7 @@ the need for durable decisions. The bridge leaves the shared launcher unchanged.
 
 ```sh
 node --test benchmark/turn-bridge.test.mjs
+node --test benchmark/fixture-dispatch.test.mjs
 ```
 
 The tests spawn real owned Node processes, exchange actual immutable packets, read

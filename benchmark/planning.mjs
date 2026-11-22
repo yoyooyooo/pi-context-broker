@@ -74,6 +74,17 @@ export async function bindMaterializedCases({ cases, materialization }) {
   });
 }
 
+/** Use the same canonical pairs for pre-registration fixture ownership and the
+ * final protocol. Physical material bindings never add or remove a sample. */
+export function comparisonPairs({ models, cases, repetitions = 1, orderingSeed = 0 }) {
+  assert.ok(Number.isSafeInteger(repetitions) && repetitions > 0);
+  const pairs = [];
+  for (let mi = 0; mi < models.length; mi++) for (const item of cases) for (let repeat = 0; repeat < repetitions; repeat++)
+    pairs.push({ id: 'm' + mi + '-' + item.id + '-r' + repeat, case_id: item.id,
+      condition_ids: ['m' + mi + '-e0', 'm' + mi + '-e1'], repeat, seed: orderingSeed + repeat });
+  return pairs;
+}
+
 /** Freeze a concrete comparison, never a speculative future matrix. */
 export function preregisterComparison({ id, phase, purpose, environments, models, corpus, cases, repetitions = 1,
   budget, decision, analysis, allowedChanges, orderingSeed = 0, registeredAt = new Date().toISOString() }) {
@@ -94,9 +105,7 @@ export function preregisterComparison({ id, phase, purpose, environments, models
     environment_id: environment.id, environment_sha256: environment.manifest_sha256, model_id: model.id,
     corpus_id: corpus.id, corpus_sha256: corpus.content_sha256, case_ids: cases.map(item => item.id),
     initial_state_sha256: state, authorization_sha256: permissions, budget_id: budget.id, code_mode: environment.policies.code_mode })));
-  for (let mi = 0; mi < models.length; mi++) for (const item of cases) for (let repeat = 0; repeat < repetitions; repeat++) {
-    value.pairs.push({ id: 'm' + mi + '-' + item.id + '-r' + repeat, case_id: item.id, condition_ids: ['m' + mi + '-e0', 'm' + mi + '-e1'], repeat, seed: orderingSeed + repeat });
-  }
+  value.pairs = comparisonPairs({ models, cases, repetitions, orderingSeed });
   value.policies.budgets = [budget];
   value.policies.ordering = { method: 'balanced', seed: orderingSeed, concurrency: 1, condition_order: value.conditions.map(c => c.id) };
   const families = [...new Set(cases.map(item => item.protocol_case.family))];
