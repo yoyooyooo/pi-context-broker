@@ -38,7 +38,7 @@
     "packages/context-broker/scripts/session-recovery.test.ts": "b247e1a41ad21b2a0b124ec22cc8da4487adcf3eb0d9ad883bff5bbbc70ece88",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "02c770dde0a9af085c5608ad935420d4edeab2e945e8ab20c9d3d231132a326f",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "e739a9e24612e40517934ac425fa33240db75303eea63b1a399e405f9d330cf0",
-    "packages/context-broker/scripts/notion-source-sdk.test.ts": "be8c85a033320f919c4e81b9950663ebff113e28910425856d6e6ab9211cd181",
+    "packages/context-broker/scripts/notion-source-sdk.test.ts": "0636102c4488963fd06eb8ef806e4eb401a6c0321e706d32befbad9d86772ebc",
     "packages/context-broker/scripts/pi-read-adapter.test.ts": "e5b4bdeb7649dca02d356d642deede1bbee89faf7e72689b9783c15ce030286d",
     "packages/context-broker/scripts/fixtures/active-notion-session.ts": "c33bd5a2d5c4fb321eb116e1522ed9739447d62c47bcea198325b6a70fc3a8c3",
     "packages/context-broker/scripts/notion-entry.test.ts": "dfaac5e5d7d0ea7996dba91427cd16568d2933c94f5d4cd03ff3a1ad9a0c3c6f",
@@ -815,6 +815,13 @@
       "scope": "Only sourceFailureMessage SOURCE_COMMAND_UNAVAILABLE changes its diagnostic Node range to ^22.23.5, ^24.22.3, or ^26.13.1. Removing that exact changed line leaves notion-source.ts byte-identical to the reviewed base.",
       "unchanged_guards": "No SDK acquisition, authorization, scope, snapshot, owner/File identity, cancellation, selection, commit, recovery or provider-delivery logic changes. TLA/config/view bytes, finite bounds, cases, expected_rules and mutation targets are unchanged.",
       "proof_limit": "The updated whole-file hash binds the reviewed diagnostic wording. Runtime dependency safety and supported Node versions require source/consumer audit and runtime checks; this hash does not prove them or model refinement."
+    },
+    "metadata_snapshot_identity_fixture": {
+      "reviewed_from": "a66c066b0d19d2a13b01a92fd7334d168070368e",
+      "cli_source": "205355bd1e64ac4ae8a0155b093c98a29a0de64c",
+      "scope": "Paired current-Notion SDK fixtures derive their opaque snapshot identity from the selected CLI producer and its complete observed record. Existing source, graph and host assertions are preserved. An explicit legacy content-only identity from a current SDK result is rejected before a cache tree is published.",
+      "guards": "No production decoder, source admission, graph commit, delivery, recovery, authorization or fixed-binding guard changes. Legacy local snapshot recovery is owned by the CLI and is not introduced for current Notion observations.",
+      "proof_limit": "Only the exact changed SDK test hash is rebound. Models, cases, expected rules, tool locks and guard mutation targets are unchanged; these tests exercise the actual paired decoder outside the finite model."
     }
   }
 }

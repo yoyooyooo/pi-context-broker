@@ -18,7 +18,7 @@ type Call = { operation: string; input?: Input; target?: string; options: Runtim
 
 // Only the external SDK operation is controlled. The source adapter, graph
 // decoder, entry/file manifest checks and materialization run unchanged.
-export async function currentNotionFixture(kind: ContentKind = "skill", fixture: { identity?: number; name?: string; body?: string; boundPaths?: readonly string[] } = {}) {
+export async function currentNotionFixture(kind: ContentKind = "skill", fixture: { identity?: number; name?: string; body?: string; boundPaths?: readonly string[]; legacySnapshot?: boolean } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "broker-current-source-")));
   await cp(new URL("../../src", import.meta.url), join(root, "src"), { recursive: true });
   await symlink(fileURLToPath(new URL("../../node_modules", import.meta.url)), join(root, "node_modules"), "dir");
@@ -44,10 +44,17 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
   const offset = (fixture.identity ?? 0) * 100, library = fixture.identity === undefined ? "current-source" : "current-source-" + fixture.identity;
   const scope = hash("authorized source"), id = "shared_skill:" + library + ":entry", main = { skill: "SKILL.md", router: "ROUTER.md", prompt: "PROMPT.md" }[kind];
   const body = fixture.body ?? "\ufeff# Current " + kind + "\r\nKeep all author bytes.\r\n";
-  const version = hash(body), snapshot = "s_" + hash(JSON.stringify([scope, id, version]));
+  const version = hash(body), core = process.env.CONTEXT_BROKER_GRAPH_CORE;
   const record: ContentRecord = { id, kind, name: fixture.name ?? "entry", alias: fixture.name ?? "entry", description: "Current source", default_context: false, enabled: true,
     entrypoint: main, ref: "skill://" + encodeURIComponent(id) + "/" + main,
     locator: { type: "shared_skill", library_id: library, skill_id: "entry", page_id: uuid(offset + 1), database_id: uuid(offset + 10), data_source_id: uuid(offset + 11) } };
+  const selection = { scope, record, version_id: version };
+  // Paired checks use the actual current producer. Standalone host tests treat
+  // this as an opaque record-bound ID; the old formula is only a negative case.
+  const snapshotInput = fixture.legacySnapshot ? JSON.stringify([scope, id, version])
+    : core ? (await import(pathToFileURL(join(core, "snapshot-identity.ts")).href)).selectionSnapshotIdentityInput(selection)
+      : canonical(selection);
+  const snapshot = "s_" + hash(snapshotInput);
   const bytes = new Map([[main, Buffer.from(body)], ["references/guide.md", Buffer.from("完整参考正文。\r\n")], ["assets/data.bin", Buffer.from([0, 255, 13, 10])]]);
   const bindings = [...bytes.keys()].map((path, index) => ({ path, file_id: "file-" + index, page_id: uuid(offset + index + 1) }))
     .filter(binding => fixture.boundPaths === undefined || fixture.boundPaths.includes(binding.path));
@@ -82,7 +89,6 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
       export: { status: "not_requested" }, delivery: { status: "not_observed" }, activation: { status: "not_evaluated" } };
   }
   let decoder: ((value: unknown, input: Input) => Promise<unknown>) | undefined;
-  const core = process.env.CONTEXT_BROKER_GRAPH_CORE;
   if (core) {
     const require = createRequire(join(core, "consumer.ts"));
     const { Effect } = await import(pathToFileURL(require.resolve("effect")).href);
