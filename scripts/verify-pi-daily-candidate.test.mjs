@@ -806,7 +806,7 @@ test('owned project inspection admits only its finite inventory vocabulary and e
   const root = '/private/tmp/notion-candidate-print-abc123';
   for (const command of ['pwd', 'ls -la', 'ls -la ' + root, "ls -la '" + root + "'", 'find . -maxdepth 3 -type f', 'ls -la && pwd && find . -maxdepth 3 -type d -o -type f | head -200'])
     assert.equal(candidateProjectInspection({ command }, root, root), true, command);
-  for (const command of ['ls /Users/yoyo/.agents/skills', 'find .. -maxdepth 3 -type f', 'ls -la; pwd', 'pwd || ls', 'ls $(pwd)', 'ls `pwd`', 'ls . > output', 'ls -R', 'find . -maxdepth 5 -type f', 'find . -maxdepth 3 -type f -exec node {} \\;', 'find . -maxdepth 3 -type f | head -301', 'node src/server.mjs', 'npm test', 'ntn-skills read target', 'cat README.md', 'pwd\nls', 'ls -la && pwd && pwd && pwd',
+  for (const command of ['ls /outside-owned-project/skills', 'find .. -maxdepth 3 -type f', 'ls -la; pwd', 'pwd || ls', 'ls $(pwd)', 'ls `pwd`', 'ls . > output', 'ls -R', 'find . -maxdepth 5 -type f', 'find . -maxdepth 3 -type f -exec node {} \\;', 'find . -maxdepth 3 -type f | head -301', 'node src/server.mjs', 'npm test', 'ntn-skills read target', 'cat README.md', 'pwd\nls', 'ls -la && pwd && pwd && pwd',
     'ls -L src', 'ls -la src ../..', 'ls -la src test .pi .', 'find . -maxdepth 3 -type f -delete',
     "find . -maxdepth 3 -type f -not -path '../*'", "echo '---FILES---'", "echo '$(id)' && ls", "echo '`id`' && ls",
     "echo 'first' && echo 'second' && ls", "echo '" + 'x'.repeat(41) + "' && ls"])
