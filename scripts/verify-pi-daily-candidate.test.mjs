@@ -937,43 +937,75 @@ test('interaction provenance snapshots actual registered files without altering 
   handlers.get('session_shutdown')({}); assert.equal(writes.at(-1).complete, true);
 });
 
-test('prepared-read observation waits for the same current Notion receipt before reading its immutable entry', () => {
-  const setup = () => {
+function preparedObservationFixture({ kind = 'candidate', storage = 'entry', refresh = false } = {}) {
     const handlers = new Map(), rows = [], saved = new Map(), reads = [], baseDir = '/installed/pi-compact-ui';
-    const id = 'read-call', scope = 'a'.repeat(64), owner = 'shared_skill:library-test:skill-test', snapshot = 's_' + 'b'.repeat(64);
-    const body = Buffer.from('完整正文\n'), path = '/cache/notion/scopes/' + scope + '/records/' + sha(owner) + '/entries/' + snapshot + '/tree/SKILL.md';
-    const manifestPath = path.replace('/tree/SKILL.md', '/.broker-entry.json'), ref = 'skill://' + encodeURIComponent(owner);
+    const probes = [], id = 'read-call', scope = 'a'.repeat(64), owner = 'shared_skill:library-test:skill-test', snapshot = 's_' + 'b'.repeat(64);
+    const resource = kind === 'resource', relative = resource ? 'references/rates.md' : 'SKILL.md';
+    const mainBody = Buffer.from('完整正文\n'), resourceBody = Buffer.from('精确资源\n'), body = resource ? resourceBody : mainBody;
+    const path = '/cache/notion/scopes/' + scope + '/records/' + sha(owner) + '/' +
+      (storage === 'resource' ? 'resources' : 'entries') + '/' + snapshot + '/tree/' + relative;
+    const manifestPath = path.slice(0, -('/tree/' + relative).length) + '/.broker-entry.json', ref = 'skill://' + encodeURIComponent(owner);
+    const mainId = 'file-' + 'd'.repeat(64), resourceId = 'file-' + 'f'.repeat(64);
+    const mainRef = ref + '/SKILL.md?snapshot=' + snapshot + '&file_id=' + mainId;
+    const resourceRef = ref + '/references/rates.md?snapshot=' + snapshot + '&file_id=' + resourceId;
     const locator = { type: 'shared_skill', page_id: 'page', database_id: 'db' };
     const binding = { record: { id: owner, kind: 'skill', locator, entrypoint: 'SKILL.md', ref: ref + '/SKILL.md' },
-      scope, snapshot_id: snapshot, version_id: 'c'.repeat(64), ref: ref + '/SKILL.md?snapshot=' + snapshot };
+      scope, snapshot_id: snapshot, version_id: 'c'.repeat(64), body_sha256: sha(mainBody), ref: mainRef };
     const manifest = { version: 1, projection: 'entry', manifest_complete: true, scope, id: owner, snapshot_id: snapshot,
-      version_id: binding.version_id, ref: binding.ref, entrypoint: 'SKILL.md', files: [{ path: 'SKILL.md', sha256: sha(body), bytes: body.length }] };
+      version_id: binding.version_id, ref: binding.ref, entrypoint: 'SKILL.md',
+      files: [{ path: 'SKILL.md', sha256: sha(mainBody), bytes: mainBody.length, ref: mainRef },
+        { path: 'references/rates.md', sha256: sha(resourceBody), bytes: resourceBody.length, ref: resourceRef }],
+      file_bindings: [{ path: 'SKILL.md', file_id: mainId, page_id: locator.page_id },
+        { path: 'references/rates.md', file_id: resourceId, page_id: 'resource-page' }] };
     const originals = new Map([[baseDir + '/package.json', Buffer.from('{"name":"pi-compact-ui"}')],
-      [baseDir + '/index.ts', Buffer.from('public implementation')], [path, body], [manifestPath, Buffer.from(JSON.stringify(manifest))]]);
+      [baseDir + '/index.ts', Buffer.from('public implementation')], [path, body]]);
+    if (storage !== 'resource') originals.set(manifestPath, Buffer.from(JSON.stringify(manifest)));
     const fs = { openSync: () => 1, writeSync: (_fd, line) => rows.push(JSON.parse(line)), closeSync: () => {},
       readFileSync: path => { reads.push(path); assert.ok(originals.has(path), 'no unrelated files'); return originals.get(path); },
-      existsSync: path => saved.has(path), realpathSync: path => path, lstatSync: () => ({ isFile: () => true }),
+      existsSync: path => saved.has(path), realpathSync: path => { probes.push(path); return path; }, lstatSync: () => ({ isFile: () => true }),
       writeFileSync: (path, bytes) => { assert.ok(path.startsWith('/owned/results/')); saved.set(path, Buffer.from(bytes)); } };
     const source = { origin: 'package', scope: 'user', source: 'npm:pi-compact-ui', baseDir, path: baseDir + '/index.ts' };
     const api = { on: (name, fn) => handlers.set(name, fn), getAllTools: () => [{ name: 'read', sourceInfo: source }],
       getCommands: () => [{ name: 'context-broker', sourceInfo: { origin: 'package', baseDir: '/broker', path: '/broker/src/index.ts' } }] };
     observeCandidateTask(api, { fs, crypto: { createHash }, output: '/owned/task.jsonl', bodyFiles: [],
       inspectPayload: candidatePayloadBodies, toolResultDirectory: '/owned/results' });
-    const input = { path: 'sr:Cl_Zoi4sBM-mbsLglJeO1BA' }, original = structuredClone(input);
-    const ctx = { mode: 'rpc', sessionManager: { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref',
-      data: { version: 1, ref: original.path, target: { kind: 'candidate', identity: { source: 'notion', scope, id: owner,
-        kind: 'skill', locator: { database_id: 'db', page_id: 'page', type: 'shared_skill' }, ref } } } }] } };
+    const selectedRef = 'sr:S' + 'o'.repeat(22), shortResource = 'sr:R' + 'r'.repeat(22);
+    const identity = { source: 'notion', scope, id: owner, kind: 'skill', locator, ref };
+    const selected = { kind: 'selected', identity, snapshot_id: snapshot, version_id: binding.version_id,
+      body_sha256: sha(mainBody), entrypoint: 'SKILL.md', ref: mainRef, file_id: mainId };
+    if (refresh) {
+      selected.snapshot_id = 's_' + 'e'.repeat(64); selected.version_id = 'f'.repeat(64);
+      selected.ref = mainRef.replace(snapshot, selected.snapshot_id);
+    }
+    const target = resource ? { kind, owner: selectedRef, path: relative, ref: resourceRef,
+      bytes: body.length, sha256: sha(body), file_id: resourceId } : kind === 'selected' ? selected : { kind, identity };
+    const original = { path: resource ? shortResource : kind === 'selected' ? selectedRef : 'sr:Cl_Zoi4sBM-mbsLglJeO1BA',
+      ...(refresh ? { refresh: true } : {}) }, input = structuredClone(original);
+    const registered = (ref, target) => ({ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref, target } });
+    const branch = [...(resource ? [registered(selectedRef, selected)] : []), registered(original.path, target)];
+    const ctx = { mode: 'rpc', sessionManager: { getBranch: () => branch } };
     handlers.get('input')({});
     const event = { toolName: 'read', toolCallId: id, input };
-    assert.equal(handlers.get('tool_call')(event, ctx), undefined); assert.deepEqual(input, original);
-    input.path = path; // The product hook, never the observer, prepares this input.
-    handlers.get('tool_result')({ ...event, isError: false, content: [{ type: 'text', text: body.toString() }] });
-    assert.deepEqual(reads, [baseDir + '/package.json', baseDir + '/index.ts']);
+    const call = () => {
+      const before = structuredClone(event);
+      assert.equal(handlers.get('tool_call')(event, ctx), undefined); assert.deepEqual(event, before);
+      input.path = path; // The product hook, never the observer, prepares this input.
+    };
+    const result = () => handlers.get('tool_result')({ ...event, isError: false, content: [{ type: 'text', text: body.toString() }] });
+    const proof = resource ? { version: 2, toolCallId: id, id: owner, scope, snapshot_id: snapshot, version_id: binding.version_id,
+      path: relative, ref: resourceRef, file_id: resourceId, sha256: sha(body), bytes: body.length,
+      loaded: false, delivered_complete_text: true, ...(storage === 'resource' ? { purpose: 'inspect' } : {}) }
+      : { version: 3, toolCallId: id, snapshotId: snapshot, bodySha256: sha(body), bytes: body.length, binding,
+        ...(refresh ? { purpose: 'inspect' } : {}) };
     const message = { role: 'toolResult', toolName: 'read', toolCallId: id, content: [{ type: 'text', text: body.toString() + '\nfooter' }],
-      details: { contextBrokerRead: { version: 3, toolCallId: id, snapshotId: snapshot, bodySha256: sha(body), bytes: body.length, binding } } };
-    return { handlers, rows, reads, message, saved, path, manifestPath, input };
-  };
+      details: { [resource ? 'contextBrokerResource' : 'contextBrokerRead']: proof } };
+    return { handlers, rows, reads, probes, originals, message, saved, path, manifestPath, input, original, proof, branch, fs, call, result, body };
+}
+
+test('prepared-read observation waits for the same current Notion receipt before reading its immutable entry', () => {
+  const setup = () => { const value = preparedObservationFixture(); value.call(); value.result(); return value; };
   const value = setup(), before = structuredClone(value.message);
+  assert.equal(value.reads.length, 2); assert.deepEqual(value.probes, []);
   value.handlers.get('context_with_system')({ messages: [value.message] });
   assert.deepEqual(value.message, before); assert.deepEqual(value.reads.slice(-2), [value.manifestPath, value.path]);
   const proof = value.rows.find(row => row.phase === 'prepared_read'); assert.ok(proof);
@@ -991,6 +1023,83 @@ test('prepared-read observation waits for the same current Notion receipt before
     other.handlers.get('context_with_system')({ messages: [other.message] });
     assert.equal(other.rows.some(row => row.phase === 'prepared_read'), false);
     assert.equal(other.reads.length, 2, 'unrelated or retained evidence must not probe a file');
+    assert.deepEqual(other.probes, []);
+  }
+});
+
+test('prepared observations seal selected refresh and scalar resource inputs without probing unrelated files', () => {
+  for (const options of [
+    { kind: 'selected' }, { kind: 'selected', refresh: true },
+    { kind: 'resource' }, { kind: 'resource', storage: 'resource' },
+  ]) {
+    const value = preparedObservationFixture(options); value.call(); value.result();
+    assert.equal(value.reads.length, 2); assert.deepEqual(value.probes, []);
+    value.handlers.get('context_with_system')({ messages: [value.message] });
+    const observation = value.rows.find(row => row.phase === 'prepared_read');
+    assert.ok(observation, JSON.stringify(options));
+    assert.deepEqual(JSON.parse(value.saved.get(observation.inputArtifact.path)), { ...value.original, path: value.path });
+    assert.deepEqual(value.saved.get(observation.file.artifact.path), value.body);
+    assert.equal(observation.originalInputSha256, sha(JSON.stringify(value.original)));
+    assert.equal(observation.preparedInputSha256, sha(JSON.stringify(value.input)));
+    assert.deepEqual(value.reads.slice(2), options.storage === 'resource' ? [value.path] : [value.manifestPath, value.path]);
+    if (options.storage === 'resource') {
+      assert.equal(observation.projection, 'resource'); assert.equal(observation.manifest, undefined);
+      assert.deepEqual(value.probes, [value.path]);
+    } else assert.ok(observation.manifest);
+    value.handlers.get('session_shutdown')({}); assert.equal(value.rows.at(-1).complete, true);
+  }
+});
+
+test('resource observation requires an unambiguous prior selected owner before any immutable file probe', () => {
+  for (const alter of [
+    value => { value.branch.shift(); },
+    value => { value.branch.push(structuredClone(value.branch[0])); },
+    value => { value.branch[0].data.target.kind = 'candidate'; },
+    value => { value.branch[1].data.target.owner = 'sr:S' + 'z'.repeat(22); },
+    value => { value.branch[0].data.target.identity.scope = 'f'.repeat(64); },
+    value => { value.branch[0].data.target.ref += '&extra=unreviewed'; },
+    value => { value.input.refresh = true; },
+    value => { value.input.offset = 1; },
+  ]) {
+    const value = preparedObservationFixture({ kind: 'resource', storage: 'resource' }); alter(value);
+    value.call(); value.result(); value.handlers.get('context_with_system')({ messages: [value.message] });
+    assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false);
+    assert.deepEqual(value.probes, []); assert.ok(value.reads.every(path => path.startsWith('/installed/')));
+    value.handlers.get('session_shutdown')({}); assert.equal(value.rows.at(-1).complete, true);
+  }
+});
+
+test('prepared observations reject changed flags, versions, File identities and partial scalar receipts before probing', () => {
+  const selected = { kind: 'selected', refresh: true }, resource = { kind: 'resource', storage: 'resource' };
+  for (const [options, alter] of [
+    [selected, value => { delete value.input.refresh; }],
+    [selected, value => { value.input.refresh = false; }],
+    [selected, value => { delete value.proof.purpose; }],
+    [resource, value => { value.proof.file_id = 'file-' + 'e'.repeat(64); }],
+    [resource, value => { value.proof.version_id = 'e'.repeat(64); }],
+    [resource, value => { value.proof.ref += '&unexpected=value'; }],
+    [resource, value => { value.proof.sha256 = 'e'.repeat(64); }],
+    [resource, value => { value.proof.delivered_complete_text = false; }],
+    [resource, value => { value.proof.files = []; }],
+  ]) {
+    const value = preparedObservationFixture(options); value.call(); alter(value); value.result();
+    value.handlers.get('context_with_system')({ messages: [value.message] });
+    assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false);
+    assert.deepEqual(value.probes, []); assert.equal(value.reads.length, 2);
+  }
+});
+
+test('resource observation seals neither a symlink nor mismatched or partial immutable bytes', () => {
+  for (const alter of [
+    value => { value.fs.realpathSync = path => path + '-different'; },
+    value => { value.originals.set(value.path, Buffer.from('wrong bytes')); },
+    value => { value.message.content = [{ type: 'text', text: 'partial' }]; },
+  ]) {
+    const value = preparedObservationFixture({ kind: 'resource', storage: 'resource' }); value.call(); value.result(); alter(value);
+    value.handlers.get('context_with_system')({ messages: [value.message] });
+    assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false);
+    assert.ok(value.reads.every(path => path.startsWith('/installed/') || path === value.path));
+    assert.equal([...value.saved.keys()].some(path => /prepared-(?:input|body|manifest)-/u.test(path)), false);
   }
 });
 
