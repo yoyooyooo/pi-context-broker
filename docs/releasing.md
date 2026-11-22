@@ -32,11 +32,21 @@ tags. Repository placeholder versions are not instructions to overwrite or
 roll back a newer registry release. Tags are immutable; no release command
 replaces or deletes them.
 
-CI covers Node `22.23.5`, `24.22.3` and `26.13.1`. Publish uses Node
+CI covers Node `24.22.3` and `26.13.1`. Publish uses Node
 `26.13.1`, Bun `1.4.3` and npm `12.2.3`. Workflows pin actions by full commit
 with the corresponding upstream release in a comment. Update these inputs
 together and retain the checks for the supported Node range
-`^22.23.5 || ^24.22.3 || ^26.13.1`.
+`^24.22.3 || ^26.13.1`.
+
+This is a product requirement, not only a verification-tool minimum. Broker's
+normal `openai-completions` request check hashes the bytes reported by
+`undici:request:bodyChunkSent`. [Node 22's built-in Undici](https://github.com/nodejs/node/blob/v22.23.5/deps/undici/src/lib/core/request.js)
+does not emit this event; a real request therefore cannot satisfy the current
+wire contract. [Node 24](https://github.com/nodejs/node/blob/v24.22.3/deps/undici/src/lib/core/request.js)
+and [Node 26](https://github.com/nodejs/node/blob/v26.13.1/deps/undici/src/lib/core/request.js)
+provide it. Keep the original wire assertions in both CI jobs;
+do not substitute an expected payload digest or skip the transport test.
+The standalone Notion CLI has its own independently verified Node range.
 
 ## What the workflow proves
 

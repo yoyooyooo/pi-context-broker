@@ -587,7 +587,9 @@ async function bundledRuntimeAt(extension) {
   return {cli,sdk,manifest:{path:await realpath(manifestPath),sha256:hash(manifestBytes),packageVersion:manifest.package_version}};
 }
 async function doctor(config) {
-  assert.ok(Number(process.versions.node.split('.')[0]) >= 24 && !process.versions.bun, 'Use supported Node runtime');
+  const [major, minor, patch] = process.versions.node.split('.').map(Number);
+  assert.ok(!process.versions.bun && ((major === 24 && (minor > 22 || minor === 22 && patch >= 3)) ||
+    (major === 26 && (minor > 13 || minor === 13 && patch >= 1))), 'Use Node ^24.22.3 or ^26.13.1');
   const host = await resolveHost('pi');
   const version = await runCommand('pi', ['--version'], { cwd: root, env: process.env, timeoutMs: 10000 });
   const comparison = await modelBaselineComparison(config, host);

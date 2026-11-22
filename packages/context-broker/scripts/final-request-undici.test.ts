@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import { createFinalRequestLedger } from "../src/final-request.ts";
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 const payload = (content: string) => ({ model: "fixture", stream: true, messages: [{ role: "user", content }] });
 
-function listen(statuses: number[] = [200]) {
+function listen(t: TestContext, statuses: number[] = [200]) {
   const bodies: Buffer[] = [];
   const server = http.createServer((request, response) => {
     const chunks: Buffer[] = [];
@@ -19,6 +19,10 @@ function listen(statuses: number[] = [200]) {
       response.end("{}");
     });
   });
+  t.after(() => new Promise<void>((resolve, reject) => {
+    server.close(error => error ? reject(error) : resolve());
+    server.closeAllConnections();
+  }));
   return new Promise<{ server: http.Server; url: string; bodies: Buffer[] }>(resolve => {
     server.listen(0, "127.0.0.1", () => {
       const address = server.address() as AddressInfo;
@@ -36,9 +40,10 @@ async function post(url: string, body: unknown): Promise<void> {
   await response.arrayBuffer();
 }
 
-test("Node Undici localhost bytes confirm the bound entity and a later mutation does not", async () => {
-  const endpoint = await listen();
+test("Node Undici localhost bytes confirm the bound entity and a later mutation does not", { timeout: 10_000 }, async t => {
+  const endpoint = await listen(t);
   const ledger = createFinalRequestLedger();
+  t.after(() => ledger.close());
   const signal = new AbortController().signal;
   const body = payload("hello wire");
   assert.equal(ledger.inspect({
@@ -73,13 +78,12 @@ test("Node Undici localhost bytes confirm the bound entity and a later mutation 
   assert.notEqual(mismatch.logicalProviderStatus, 0);
   assert.equal(mismatch.sentEntitySha256, sha(JSON.stringify(rewritten)));
   assert.ok(mismatch.errors.includes("PAYLOAD_REWRITTEN"));
-  ledger.close();
-  endpoint.server.close();
 });
 
-test("same-endpoint concurrent dispatches stay unknown", async () => {
-  const endpoint = await listen();
+test("same-endpoint concurrent dispatches stay unknown", { timeout: 10_000 }, async t => {
+  const endpoint = await listen(t);
   const ledger = createFinalRequestLedger();
+  t.after(() => ledger.close());
   const left = new AbortController();
   const right = new AbortController();
   const shared = payload("same entity");
@@ -94,6 +98,4 @@ test("same-endpoint concurrent dispatches stay unknown", async () => {
   assert.equal(ledger.observeProvider(left.signal, 200, 1).blocked, true);
   assert.equal(ledger.observeProvider(right.signal, 200, 1).blocked, true);
   assert.equal(ledger.recent().every(row => row.wireConfirmed === false && row.errors.includes("CONCURRENT_UNBOUND")), true);
-  ledger.close();
-  endpoint.server.close();
 });

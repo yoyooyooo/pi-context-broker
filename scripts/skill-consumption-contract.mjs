@@ -44,7 +44,7 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
       'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ' must build and decode with one pinned current CLI.');
     revisions.push(source[1]);
     const nodePinned = workflow.name === 'ci'
-      ? text.includes('node: [22.23.5, 24.22.3, 26.13.1]') && text.includes('node-version: ${{ matrix.node }}')
+      ? text.includes('node: [24.22.3, 26.13.1]') && text.includes('node-version: ${{ matrix.node }}')
       : text.includes('node-version: 26.13.1');
     check(text.includes('bun-version: 1.4.3') && nodePinned,
       'GATE_TOOLCHAIN_VERSION', workflow.name + ' must use the pinned toolchain.');

@@ -126,7 +126,8 @@ async function inspect(options) {
   const runtimeHashes = verifyBundledRuntime({ manifest: runtime, expectedVersion: runtime.package_version,
     cliBytes: await readFile(join(packageRoot, 'dist/ntn-skills.mjs')), sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')) });
   const [major, minor, patch] = process.versions.node.split('.').map(Number);
-  assert.ok(major === 22 && (minor > 22 || minor === 22 && patch >= 3) || major === 24 && minor >= 20 || major > 24, 'A supported explicit Node runtime is required');
+  assert.ok((major === 24 && (minor > 22 || minor === 22 && patch >= 3)) ||
+    (major === 26 && (minor > 13 || minor === 13 && patch >= 1)), 'Use Node ^24.22.3 or ^26.13.1');
   const fixture = validateCurrentFixture(JSON.parse(await readFile(options['--fixture'], 'utf8')));
   const fixtureEnv = JSON.parse(await readFile(fixture.env, 'utf8'));
   assert.equal(fixtureEnv.NOTION_API_TOKEN, 'current-sdk-controlled-token', 'Only the declared controlled source token is accepted');
