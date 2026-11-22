@@ -56,7 +56,10 @@ async function observedDispatch({ policyFirst, laterChange } = {}) {
   const sent = JSON.stringify(current), captured = records.find(event => event.phase === 'provider_payload');
   assert.equal(files.get(captured.payloadFile), JSON.stringify(JSON.parse(files.get(captured.payloadFile))));
   return { sent, current, captured, capturedPayload: JSON.parse(files.get(captured.payloadFile)), observations: {
-    costs: [{ phase: 'provider_request', payload: { sha256: captured.sha256, bytes: captured.bytes, verifiedBodyOccurrences: [] } }],
+    costs: [{ phase: 'provider_request', request: 1, payload: { sha256: captured.sha256, bytes: captured.bytes, verifiedBodyOccurrences: [] } },
+      { phase: 'message_end', request: 1, message: { role: 'assistant', provider: 'magpie', model: 'group/worker',
+        responseModel: null, responseModelStatus: 'unreported', stopReason: 'stop',
+        usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12 } } }],
     transport: [{ phase: 'request_start', id: 1, category: 'model' }, { phase: 'request_sent', id: 1, requestBodySha256: hash(sent), requestBodyBytes: Buffer.byteLength(sent) },
       { phase: 'request_end', id: 1, category: 'model', status: 200, outcome: 'completed' }],
     tasks: [captured, { phase: 'assistant_final', success: true, sha256: 'final', bytes: 5 }],
