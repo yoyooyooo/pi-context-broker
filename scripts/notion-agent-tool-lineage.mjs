@@ -39,12 +39,14 @@ function preparedReadTransition(call, tasks, session, evidence) {
   const observation = observations[0], event = call.event, result = call.result;
   require(evidence && observations.length === 1 && evidence.observation === observation && observation.version === 1,
     'Missing unique verified prepared-read observation');
-  const original = call.arguments, resource = /^sr:R[A-Za-z0-9_-]{22}$/u.test(original?.path ?? '');
+  const original = call.arguments, short = /^sr:[CSR][A-Za-z0-9_-]{22}$/u.test(original?.path ?? '');
+  const canonical = !short && typeof original?.path === 'string' ? parseNativeReference(original.path) : undefined;
+  const resource = short ? original.path.startsWith('sr:R') : canonical?.path !== 'SKILL.md';
   require(call.provenance.kind === 'native-tool-call' && call.name === 'read' && result.isError === false
     && object(original) && Object.keys(original).every(key => ['path', 'refresh'].includes(key))
-    && /^sr:[CSR][A-Za-z0-9_-]{22}$/u.test(original.path ?? '')
+    && (short || canonical?.path && /^s_[a-f0-9]{64}$/u.test(canonical.snapshot ?? '') && /^file-[a-f0-9]{64}$/u.test(canonical.fileId ?? ''))
     && (original.refresh === undefined || typeof original.refresh === 'boolean') && !(resource && original.refresh === true),
-  'Only a completed top-level whole-file short-reference read has a reviewed rewrite');
+  'Only a completed top-level whole-file registered short or fixed File read has a reviewed rewrite');
   const reader = inspectedCompactReadImplementation(event);
   require(reader && evidence.brokerOwner?.source && observation.brokerSource
     && ['path', 'source', 'scope', 'origin', 'baseDir'].every(key => observation.brokerSource[key] === evidence.brokerOwner.source[key]),
@@ -70,9 +72,18 @@ function preparedReadTransition(call, tasks, session, evidence) {
     require(refs.length === 1 && refs[0].data.version === 1, 'The exact short reference must be unique and precede this native call');
     return refs[0].data.target;
   };
-  const target = targetFor(original.path);
-  require(target?.kind === (resource ? 'resource' : original.path.startsWith('sr:S') ? 'selected' : 'candidate'),
-    'The original short reference must retain its registered kind');
+  const registered = short ? original.path : (() => {
+    const refs = prior.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref'
+      && entry.data?.target?.ref === original.path);
+    require(refs.length === 1 && refs[0].data.version === 1,
+      'The complete fixed File reference must have one exact prior native registration');
+    return refs[0].data.ref;
+  })();
+  require(new RegExp('^sr:' + (resource ? 'R' : canonical ? 'S' : '[CS]') + '[A-Za-z0-9_-]{22}$', 'u').test(registered ?? ''),
+    'The prior registration must retain its selected or resource short-reference kind');
+  const target = targetFor(registered);
+  require(target?.kind === (resource ? 'resource' : registered.startsWith('sr:S') ? 'selected' : 'candidate')
+    && (!canonical || target.ref === original.path), 'The original reference must retain its registered kind and exact fixed target');
   if (resource) require(/^sr:S[A-Za-z0-9_-]{22}$/u.test(target.owner ?? ''), 'A resource needs its selected owner reference');
   const ownerTarget = resource ? targetFor(target.owner) : target, identity = ownerTarget?.identity;
   require(identity?.source === 'notion' && digest(identity.scope) && nonempty(identity.id) && identity.kind === 'skill'
@@ -87,6 +98,8 @@ function preparedReadTransition(call, tasks, session, evidence) {
     && /^file-[a-f0-9]{64}$/u.test(ownerTarget.file_id ?? '')
     && fixed(ownerTarget.ref, 'SKILL.md', ownerTarget.snapshot_id, ownerTarget.file_id),
   'The selected owner must retain its complete fixed main-File binding');
+  if (canonical) require(fixed(original.path, resource ? target.path : 'SKILL.md', ownerTarget.snapshot_id,
+    resource ? target.file_id : ownerTarget.file_id), 'The original complete reference must bind the prior fixed File before any explicit inspection');
   const binding = resource ? undefined : proof.binding, record = binding?.record;
   const scope = resource ? proof.scope : binding?.scope, owner = resource ? proof.id : record?.id;
   const snapshot = resource ? proof.snapshot_id : binding?.snapshot_id, version = resource ? proof.version_id : binding?.version_id;
