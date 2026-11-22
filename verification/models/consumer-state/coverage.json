@@ -11,7 +11,7 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "bb92d152b2de0dc661e762cc6be5398313fbc8a8dff7c206aa39ee9d12caf2e5",
+    "packages/context-broker/src/host-skills.ts": "93320851194148b3dc369940a51b2a32673812b500bcf5af27cc03bc047fe26e",
     "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
@@ -28,12 +28,12 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
-    "packages/context-broker/src/index.ts": "73bc1789be778ee92199668e60f00047e9f1754715ec666e4e88a946d78c1b4b",
+    "packages/context-broker/src/index.ts": "185a25c2d0b69c998c456f6eacbe843dcf76d7dc5d7d14dd10b774fbe0a400c3",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
     "packages/context-broker/src/notion-source.ts": "22aad41bed6b78d9c37954d9304da7089898914539920cbcdbfb7b92dfd10ba5",
     "packages/context-broker/src/pi-host-adapter.ts": "d76e42642f3edfce33cf922363324fbe5d03ae805c77c71d0044078471ac870a",
-    "packages/context-broker/scripts/host-refresh.test.ts": "540cab768397d38cccfc57b4bff9d26e3c17dcb9518ec0a9b061c77ddd35eeff",
+    "packages/context-broker/scripts/host-refresh.test.ts": "e057ab9627a606f67d00b890c12691bc75dfe82d6ed366b3fde975b5f314a9c8",
     "packages/context-broker/scripts/session-refresh.test.ts": "9d00f8ecbe392dbd3367ef51dcaffa325cb709986f1128e90d3f542894175a89",
     "packages/context-broker/scripts/session-recovery.test.ts": "b247e1a41ad21b2a0b124ec22cc8da4487adcf3eb0d9ad883bff5bbbc70ece88",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "858cf3fcf02255e49641af3cc4794445eaa85aca5a27c2e6fbee8dac38bd4dd1",
@@ -783,6 +783,13 @@
         "fixed-resource-source.test.ts: actual SDK request budget and response/cancellation checks"
       ],
       "proof_limit": "Time allowance, filesystem resource acquisition and schema fields are concrete implementation boundaries outside the finite model variables. TLA/config/view bytes, finite bounds, cases and independent expected_rules are unchanged; these source hashes do not prove timing, live transport or natural model retry behavior."
+    },
+    "named_metadata_queries": {
+      "reviewed_from": "4967c162753dcf509d18ae7e3082843672ca3282",
+      "reviewed_through": "561382e6f23240d35d06870dfd95928f537ebb7f",
+      "scope": "The only production changes are the notion_list description in host-skills.ts and the named-availability routing string in index.ts. Removing those exact changed lines leaves both files byte-identical to the reviewed base. Removing the single added 39-line host-refresh regression restores that test file exactly.",
+      "unchanged_guards": "Metadata acquisition, original validation time, scoped eligibility, request ordering, cancellation, session generation, complete graph commit, selected/active pins, fixed references, recovery and provider delivery guards are unchanged. The new controlled-clock regression checks the same disabled identity becoming enabled outside the default View before TTL, metadata-only refresh and unchanged root/Requires selection.",
+      "proof_limit": "Named-query intent, metadata-only answers and real model compliance are outside the finite state variables and require natural-session evidence. TLA/config/view bytes, finite bounds, cases, independent expected_rules, tool locks and every production mutation target remain unchanged. Whole-file hashes bind these reviewed bytes; they do not prove instruction compliance or refinement."
     }
   }
 }
