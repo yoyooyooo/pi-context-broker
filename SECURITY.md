@@ -4,7 +4,7 @@
 
 Security fixes target the latest patch in the current 0.x minor series. Earlier
 patches and previous minor series are not maintained security branches. Runtime
-support is Node.js 22.23.5+ in 22.x, 24.22.3+ in 24.x and 26.13.1+ in 26.x.
+support is Node.js 24.22.3+ in 24.x and 26.13.1+ in 26.x.
 Keep a maintained patch within one of these lines. Current real-host verification
 uses Pi 1.6.0; the optional peer ranges are not a universal host-support promise.
 

@@ -28,7 +28,9 @@ Install the published package into Pi:
 pi install npm:pi-context-broker
 ```
 
-The package requires Node.js `^22.23.5 || ^24.22.3 || ^26.13.1`. It includes the matching Notion CLI, SDK, and packaged Skills, so Pi use does not require a separate global `ntn-skills` installation. Bun is a build dependency.
+The package requires Node.js `^24.22.3 || ^26.13.1`. It includes the matching Notion CLI, SDK, and packaged Skills, so Pi use does not require a separate global `ntn-skills` installation. Bun is a build dependency.
+
+Broker's request verification needs Undici's sent-body chunk diagnostics, which Node 22's built-in transport does not provide. This is a Broker runtime requirement; the standalone Notion CLI maintains its own supported Node range.
 
 Current real Pi verification uses Pi 1.6.0. The optional `*` peer ranges allow a
 host-managed installation; they do not certify every Pi or OMP version. Check a
