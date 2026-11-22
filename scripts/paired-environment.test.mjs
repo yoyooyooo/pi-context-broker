@@ -30,15 +30,19 @@ async function sourceRepository(root, name) {
 // This is a sealed artifact fixture, not a mock of the checker. It contains
 // executable CLI content, a Broker source entry, a binding receipt and real Git
 // clones, so mutations exercise the public check/run contract end to end.
-async function sealedBuild(root, buildId = 'fixture') {
+async function sealedBuild(root, buildId = 'fixture', realCliEntry) {
   const environment = await readJson(join(root, 'environment.json'));
   const buildRoot = join(root, 'builds', buildId);
   for (const path of ['cli/dist', 'cli/skills', 'broker/dist', 'broker/src', 'source/cli', 'source/broker']) {
     await mkdir(join(buildRoot, path), { recursive: true });
   }
   await writeJson(join(buildRoot, 'cli/package.json'), { name: 'paired-cli-fixture', version: '0.0.0', type: 'module' });
-  await writeFile(join(buildRoot, 'cli/dist/ntn-skills.js'),
-    'console.log(JSON.stringify({fixture:"cli",args:process.argv.slice(2)}));\n');
+  await writeFile(join(buildRoot, 'cli/dist/ntn-skills.js'), realCliEntry
+    ? 'import {spawnSync} from "node:child_process";\n' +
+      'const result=spawnSync(process.execPath,[' + JSON.stringify(realCliEntry) +
+      ',...process.argv.slice(2)],{stdio:"inherit",env:process.env});\n' +
+      'if(result.error)console.error(result.error.message);process.exitCode=result.status??1;\n'
+    : 'console.log(JSON.stringify({fixture:"cli",args:process.argv.slice(2)}));\n');
   await writeFile(join(buildRoot, 'cli/dist/sdk.js'), 'export const fixture = true;\n');
   await writeFile(join(buildRoot, 'cli/skills/SKILL.md'), '# Fixture\n');
   await writeJson(join(buildRoot, 'broker/package.json'), { name: 'paired-broker-fixture', version: '0.0.0', type: 'module' });
@@ -306,15 +310,60 @@ process.exit(0);`;
     assert.equal((await readJson(join(receipt.root, 'run.json'))).target, 'command');
   });
 
-  await t.test('explicit remote binding and Pi flags stay within the selected run', async () => {
+  await t.test('remote declarations preserve CLI arguments and configure the selected Broker source', async () => {
     const entry = '11111111-2222-3333-4444-555555555555';
     const receipt = await runEnvironment({ root: rootA, build: 'fixture', target: 'cli',
       id: 'entry', entry, 'pass-env': [], args: ['--help'] });
     assert.equal(receipt.status, 'passed');
-    assert.deepEqual((await readJson(receipt.stdout)).args, ['--database', entry, '--help']);
+    assert.deepEqual((await readJson(receipt.stdout)).args, ['--help']);
     const broker = await readJson(join(receipt.root, 'config/broker.json'));
     assert.equal(broker.sources[0].database, entry);
     assert.ok(inside(receipt.root, broker.sources[0].cacheDir));
+    assert.equal((await readJson(join(receipt.root, 'run.json'))).remote.entry, entry);
+    for (const [name, args] of [
+      ['consume', ['list', '--database', entry, '--json']],
+      ['manage', ['ctl', 'library', 'init', '--entry', entry]],
+    ]) {
+      for (const target of ['cli', 'command']) {
+        const result = await runEnvironment({ root: rootA, build: 'fixture', target,
+          id: 'entry-' + name + '-' + target, entry, 'pass-env': [],
+          args: target === 'cli' ? args : ['ntn-skills', ...args] });
+        assert.equal(result.status, 'passed');
+        assert.deepEqual((await readJson(result.stdout)).args, args);
+      }
+    }
+    const declared = await runEnvironment({ root: rootA, build: 'fixture', target: 'command',
+      id: 'entry-declaration', entry, 'pass-env': [], args: ['node', '-e',
+        'console.log(JSON.stringify({entry:process.env.PAIRED_NOTION_ENTRY}));'] });
+    assert.equal((await readJson(declared.stdout)).entry, entry);
+  });
+
+  await t.test('a selected real CLI accepts consumption and management flags through both targets', {
+    skip: !process.env.NTN_SKILLS_BUILD_ENTRY && 'Set NTN_SKILLS_BUILD_ENTRY to the selected packaged CLI entry',
+  }, async () => {
+    const entry = '11111111-2222-3333-4444-555555555555';
+    const realCliEntry = await realpath(process.env.NTN_SKILLS_BUILD_ENTRY);
+    const before = await readFile(realCliEntry);
+    await sealedBuild(rootA, 'real-cli-parser', realCliEntry);
+    // The fixture adapter calls the supplied product CLI with the run's empty
+    // credentials and private state; the real parser, not argv echo, decides.
+    for (const [name, args, help] of [
+      ['help', ['--help'], /ntn-skills/],
+      ['consume', ['list', '--database', entry, '--help'], /--database/],
+      ['manage', ['ctl', 'library', 'init', '--entry', entry, '--help'], /--entry/],
+    ]) {
+      for (const target of ['cli', 'command']) {
+        const result = await runEnvironment({ root: rootA, build: 'real-cli-parser', target,
+          id: 'real-entry-' + name + '-' + target, entry, 'pass-env': [],
+          args: target === 'cli' ? args : ['ntn-skills', ...args] });
+        assert.equal(result.status, 'passed', await readFile(result.stderr, 'utf8'));
+        assert.match(await readFile(result.stdout, 'utf8'), help);
+      }
+    }
+    assert.deepEqual(await readFile(realCliEntry), before, 'The selected product entry must stay unchanged');
+  });
+
+  await t.test('Pi flags stay within the selected run', async () => {
     const pi = await runEnvironment({ root: rootB, build: 'fixture', target: 'pi',
       id: 'pi-flags', 'pass-env': [], args: ['--version'] });
     const args = (await readJson(pi.stdout)).args;

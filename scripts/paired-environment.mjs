@@ -47,9 +47,13 @@ skill, working and temporary directories. HOME is unchanged. Pi uses the explici
 paired extension with -ne -ns -nc --no-mcp --no-prompt-templates. Credentials are
 absent unless named by --pass-env. --models accepts environment variable references
 for credentials, never literal keys or shell commands. --skills copies a selected
-corpus for Broker discovery; local originals remain untouched. --entry selects a
-Notion library; --parent records PAIRED_NOTION_PARENT for explicit initialization.
-Neither restricts a token's remote permissions. A default run has no remote source.
+corpus for Broker discovery; local originals remain untouched. --entry records
+PAIRED_NOTION_ENTRY and adds that Broker source; --parent records
+PAIRED_NOTION_PARENT for explicit initialization. CLI arguments are unchanged:
+pass --database ENTRY after a consumption command; follow each management command's
+help, such as ctl library init --entry ENTRY. Neither launcher option restricts a
+token's remote permissions.
+A default run has no remote source.
 
 Node and Pi are machine prerequisites, not installed per task. Their actual entry
 and version are recorded. create locates Pi from its executable or npm global root;
@@ -434,7 +438,6 @@ export async function runEnvironment(options) {
     const managed = ['--session-dir', '--session', '-s', '--resume', '-r', '--continue', '-c'];
     assert.ok(!options.args.some(arg => managed.includes(arg.split('=')[0])), 'Session selection belongs to the isolated launcher');
   }
-  if (options.target === 'cli' && options.entry) assert.ok(!options.args.some(arg => arg.split('=')[0] === '--database'), 'Use --entry once; do not override its database binding');
   const timeout = Number(options['timeout-ms'] ?? 600_000);
   assert.ok(Number.isSafeInteger(timeout) && timeout > 0 && timeout <= 3_600_000, 'Timeout must be 1..3600000 milliseconds');
   const stdin = options.stdin ?? 'ignore';
@@ -461,11 +464,10 @@ export async function runEnvironment(options) {
   if (options.models) await copyModels(options.models, join(root, 'pi-agent/models.json'), options['pass-env']);
   if (options.entry) env.PAIRED_NOTION_ENTRY = options.entry;
   if (options.parent) env.PAIRED_NOTION_PARENT = options.parent;
-  const cliArgs = options.entry ? ['--database', options.entry] : [];
   const piArgs = ['--offline', '-ne', '-ns', '-nc', '--no-mcp', '--no-prompt-templates',
     '-e', join(buildRoot, 'broker/src/index.ts'), '--session-dir', join(root, 'sessions')];
   await symlink(environment.tools.bun.path, join(root, 'bin/bun'));
-  await wrapper(join(root, 'bin/ntn-skills'), environment.tools.node.path, env.PAIRED_CLI_ENTRY, cliArgs);
+  await wrapper(join(root, 'bin/ntn-skills'), environment.tools.node.path, env.PAIRED_CLI_ENTRY, []);
   await wrapper(join(root, 'bin/pi'), environment.tools.node.path, environment.tools.pi.path, piArgs);
   const pi = await findPi(environment.tools.pi.path, environment.tools.npm);
   const runtime = { node: { ...await toolIdentity(environment.tools.node.path), version: process.version },
@@ -474,7 +476,7 @@ export async function runEnvironment(options) {
   try { runtime.pi.runtime_module = await toolIdentity(join(dirname(pi.path), 'cli-runtime.js')); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   let command = environment.tools.node.path, args;
-  if (options.target === 'cli') args = [env.PAIRED_CLI_ENTRY, ...cliArgs, ...options.args];
+  if (options.target === 'cli') args = [env.PAIRED_CLI_ENTRY, ...options.args];
   else if (options.target === 'pi') args = [pi.path, ...piArgs, ...options.args];
   else {
     assert.ok(options.args.length, '--target command requires a command after --');
