@@ -1,5 +1,9 @@
 # Benchmark pilot status — 2026-11-22
 
+This is the historical three-route snapshot. The later user-authorized
+[two-model pilot report](benchmark-two-model-pilot-2026-11-22.md) records the new
+GPT-6.2 Sol and Grok-4.6 observations and their separate stopping boundary.
+
 **Status: blocked pilot; Benchmark completion and release acceptance remain open.** The first-24 route gate did not pass. Two current-plan episodes reached the real model route, and the second stopped on an external Cline OAuth error with missing usage. The evidence below supports accounting and apparatus conclusions; it does not support a model-quality or environment-efficiency ranking.
 
 ## Recorded results

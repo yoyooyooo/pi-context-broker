@@ -1,0 +1,424 @@
+{
+  "schema_version": 1,
+  "kind": "public-material-parity-summary",
+  "status": "passed",
+  "source_proof_sha256": "7b326451db563a8768f58c84600c9db1ac12b13076466791e474346bc383d328",
+  "public_corpus_sha256": "15f804ee3e6d9a74398eb0bc60b1845c5d0e2e2a7ad2859909baed43e898df19",
+  "immutable_fixture_pin": {
+    "tag": "benchmark-fixtures-20261122-d1c699be",
+    "commit": "c8b49c1c1dfac65257b07e8d249f187405e0e7f4",
+    "verification": "Remote tag checked by the coordinating controller; material parity remains separately identified by source_proof_sha256"
+  },
+  "evidence_scope": "Derived projection of a privately verified materialization proof; no model results and no public remote-parity replay",
+  "candidates": 16,
+  "remote_candidates": 16,
+  "native_remote_candidates": 14,
+  "source_remote_candidates": 2,
+  "local_only_candidates": 0,
+  "case_count": 12,
+  "families": [
+    "ambiguity",
+    "complementary",
+    "continuation",
+    "equivalent",
+    "explicit",
+    "implicit",
+    "no-skill",
+    "references",
+    "scripts-assets",
+    "task-switch"
+  ],
+  "cases": [
+    {
+      "id": "no-skill-01-a",
+      "family": "no-skill",
+      "cluster_id": "no-skill-01",
+      "split": "development"
+    },
+    {
+      "id": "no-skill-02-a",
+      "family": "no-skill",
+      "cluster_id": "no-skill-02",
+      "split": "development"
+    },
+    {
+      "id": "no-skill-03-a",
+      "family": "no-skill",
+      "cluster_id": "no-skill-03",
+      "split": "development"
+    },
+    {
+      "id": "explicit-01-a",
+      "family": "explicit",
+      "cluster_id": "explicit-01",
+      "split": "development"
+    },
+    {
+      "id": "implicit-01-a",
+      "family": "implicit",
+      "cluster_id": "implicit-01",
+      "split": "development"
+    },
+    {
+      "id": "ambiguity-01-a",
+      "family": "ambiguity",
+      "cluster_id": "ambiguity-01",
+      "split": "development"
+    },
+    {
+      "id": "equivalent-01-a",
+      "family": "equivalent",
+      "cluster_id": "equivalent-01",
+      "split": "development"
+    },
+    {
+      "id": "references-01-a",
+      "family": "references",
+      "cluster_id": "references-01",
+      "split": "development"
+    },
+    {
+      "id": "scripts-assets-01-a",
+      "family": "scripts-assets",
+      "cluster_id": "scripts-assets-01",
+      "split": "development"
+    },
+    {
+      "id": "complementary-01-a",
+      "family": "complementary",
+      "cluster_id": "complementary-01",
+      "split": "development"
+    },
+    {
+      "id": "continuation-01-a",
+      "family": "continuation",
+      "cluster_id": "continuation-01",
+      "split": "development"
+    },
+    {
+      "id": "task-switch-01-a",
+      "family": "task-switch",
+      "cluster_id": "task-switch-01",
+      "split": "development"
+    }
+  ],
+  "parity": {
+    "status": "valid",
+    "expected_files": 31,
+    "observed_files": 31,
+    "differences": []
+  },
+  "model_calls": 0,
+  "files": [
+    {
+      "skill_id": "ambiguity-01-a-delivery",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "a9a7ff20c726ed869fa39d3501fdf0a885e80286184b3b823ba3fa9960c517b5",
+      "actual_sha256": "ca27827ffd962ee5bd261a4d4a1f5c7f4bb206456f17e1e9cd6e8168b3836a4c",
+      "actual_bytes": 449,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "ambiguity-01-a-delivery",
+      "resource_path": "references/delivery.json",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "106f67ed497b58969da41c9fea576590135c2ed2e94618b9e90a8f4ea5ac6229",
+      "actual_sha256": "106f67ed497b58969da41c9fea576590135c2ed2e94618b9e90a8f4ea5ac6229",
+      "actual_bytes": 40,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "continuation-01-a-routing",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "ad30c367a96d1185cb0bafec4895734513bf4fd3149587d12a4abe937f1f77de",
+      "actual_sha256": "2d9d2a3f7eb06e8e55e8071f151ebceb07c2d2a72c9eb910d01cfe55b0e5649a",
+      "actual_bytes": 605,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "continuation-01-a-routing",
+      "resource_path": "references/routing.json",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "1d46e96b8220404c560818741a1df560beba46346f65f6f4d4f5c48c115c63f1",
+      "actual_sha256": "1d46e96b8220404c560818741a1df560beba46346f65f6f4d4f5c48c115c63f1",
+      "actual_bytes": 115,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "equivalent-01-a-tax-invoice",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "337447a8cbf7e11a898220974c7dbfaa5df9bcc4ed3cc8b166ed2610fde383d5",
+      "actual_sha256": "c4ae433546eaec408e69594428a0062bb1366307d26baa8c25512730a469c064",
+      "actual_bytes": 420,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "equivalent-01-a-tax-invoice",
+      "resource_path": "references/tax.json",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "fb2eadf9b6e5a4d25c84f1a35cf800a4ec6eae5022c6d13d1714a504fdb68c7c",
+      "actual_sha256": "fb2eadf9b6e5a4d25c84f1a35cf800a4ec6eae5022c6d13d1714a504fdb68c7c",
+      "actual_bytes": 56,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "equivalent-01-a-tax-ledger",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "667c055bd7bca9dd082a9c8f89801ae2834b56ba2f051ab551683755c094c6db",
+      "actual_sha256": "2ac8c02b84c56186894752da2ec226c20fb72f8b1bad6980ee5944adacba4fd0",
+      "actual_bytes": 415,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "equivalent-01-a-tax-ledger",
+      "resource_path": "references/tax.json",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "fb2eadf9b6e5a4d25c84f1a35cf800a4ec6eae5022c6d13d1714a504fdb68c7c",
+      "actual_sha256": "fb2eadf9b6e5a4d25c84f1a35cf800a4ec6eae5022c6d13d1714a504fdb68c7c",
+      "actual_bytes": 56,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "complementary-01-a-reconcile",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "41d28510bf5474b9a7ef146477e436492856fdf161eeba79d663f0ebddd359ef",
+      "actual_sha256": "e1bf3a6b152acd2ca8a5eec76b485351506613dbd2cb910b8e189280788e87b0",
+      "actual_bytes": 459,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "complementary-01-a-reconcile",
+      "resource_path": "references/reconcile.json",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "75872fcbf3f8a4ee2d4efeb8e7a3acd0a4e30e0a6b2f5fd85af9bbdee20425eb",
+      "actual_sha256": "75872fcbf3f8a4ee2d4efeb8e7a3acd0a4e30e0a6b2f5fd85af9bbdee20425eb",
+      "actual_bytes": 27,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "shared-catalog-002",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "63c7694a6819a165c35f1eb8ff6d230c17e35e5b493e7464c769b0d89b533998",
+      "actual_sha256": "b4d612eba752823c3631815baaa7c9d25cbb3bf444b47f7a81accf7e06a08415",
+      "actual_bytes": 348,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "explicit-01-a-refund",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "10113e4e96017d055b01c16ba1a3892c1d26de591585ca6c591de742e06fc7b2",
+      "actual_sha256": "39c0c4a09a3d7e42e96b7ad4595c715037066a46cc62abdde1d1e3c5f48524ed",
+      "actual_bytes": 480,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "explicit-01-a-refund",
+      "resource_path": "references/refund.json",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "b02d3da1f3a0e037409c99a8e0681d4e6cf1baaac9f3ec3c12262d86f742f1f3",
+      "actual_sha256": "b02d3da1f3a0e037409c99a8e0681d4e6cf1baaac9f3ec3c12262d86f742f1f3",
+      "actual_bytes": 51,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "shared-catalog-005",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "22a9839456c060c505831b741f65eaa463f282e76f8e180182819543d8aa8dad",
+      "actual_sha256": "80669d804f54ceadae0fd2ece1740fda14786e02a698ae8b634a08fe2e25cecc",
+      "actual_bytes": 339,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "shared-catalog-004",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "1edea4542146d97e84b04b044912f571a284cf3670567cfdfdaeadac151f97b4",
+      "actual_sha256": "ba581938277b1adeefef13aad5030b74279872353d341979232593998fceecb7",
+      "actual_bytes": 339,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "references-01-a-grant",
+      "resource_path": "SKILL.md",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "86cfea4561e6497229615e24fdf3facb60b2638c2c92f35c8a59ed1352296a3b",
+      "actual_sha256": "86cfea4561e6497229615e24fdf3facb60b2638c2c92f35c8a59ed1352296a3b",
+      "actual_bytes": 433,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "references-01-a-grant",
+      "resource_path": "references/eligibility.md",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "3c7bac1a48f27dd0e59a8f015cedf3b88013fbb1473d554e3ffb6d73ced2f3be",
+      "actual_sha256": "3c7bac1a48f27dd0e59a8f015cedf3b88013fbb1473d554e3ffb6d73ced2f3be",
+      "actual_bytes": 164,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "references-01-a-grant",
+      "resource_path": "references/tables/regions.json",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "bf92a718007a8d2721a0a39e4d61ab504fa2cfcf8957ee7a25f9f066531f16e2",
+      "actual_sha256": "bf92a718007a8d2721a0a39e4d61ab504fa2cfcf8957ee7a25f9f066531f16e2",
+      "actual_bytes": 12,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "references-01-a-grant",
+      "resource_path": "references/tables/caps.json",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "1ab0c0e2856b1f0f9d777cd9363abc2e0990c6a58b0e985274115de69064d2fd",
+      "actual_sha256": "1ab0c0e2856b1f0f9d777cd9363abc2e0990c6a58b0e985274115de69064d2fd",
+      "actual_bytes": 28,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "task-switch-01-a-replenish",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "cc3958a344d9adc94e9b3394d847caae16438e23df0d45af09bf51dc3fd42ca1",
+      "actual_sha256": "ce4d175b8ddad5822ab295caa169ccd9b0562fd510def60fd7fb8e2205644b8d",
+      "actual_bytes": 442,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "task-switch-01-a-replenish",
+      "resource_path": "references/stock.json",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "6ec6c67c498af9e9e7af8b8c344d8fe647ff153896511ac79328b051106c992d",
+      "actual_sha256": "6ec6c67c498af9e9e7af8b8c344d8fe647ff153896511ac79328b051106c992d",
+      "actual_bytes": 48,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "shared-catalog-001",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "8bf1e389f9c3d923d3c3f6b5c2c8bf42e9523c5e3b297ce75137d60ba71e4fff",
+      "actual_sha256": "608196d799e85e824e33f26f4138847588102fc7fd4d0f61ab239ef32058eb23",
+      "actual_bytes": 339,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "scripts-assets-01-a-manifest",
+      "resource_path": "SKILL.md",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "dbeeb4d1a91d765b1a171745782e2abb692d8dfb81fd1252ecc131b0ec242e54",
+      "actual_sha256": "dbeeb4d1a91d765b1a171745782e2abb692d8dfb81fd1252ecc131b0ec242e54",
+      "actual_bytes": 709,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "scripts-assets-01-a-manifest",
+      "resource_path": "assets/depots.json",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "11291195845b08b8d302a5cb606a88832617fa606ec5b981d55197473fd5c586",
+      "actual_sha256": "11291195845b08b8d302a5cb606a88832617fa606ec5b981d55197473fd5c586",
+      "actual_bytes": 41,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "scripts-assets-01-a-manifest",
+      "resource_path": "scripts/normalize.mjs",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "d3735629cb830366820993cdbb6b666f5ec5d28885f1e80a61f068e2a5a5d496",
+      "actual_sha256": "d3735629cb830366820993cdbb6b666f5ec5d28885f1e80a61f068e2a5a5d496",
+      "actual_bytes": 634,
+      "mode": "100755"
+    },
+    {
+      "skill_id": "scripts-assets-01-a-manifest",
+      "resource_path": "assets/format-marker.bin",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "72ee7e95938b82284a312ea248777aad5e5220a20242ccf98d103d33427fc681",
+      "actual_sha256": "72ee7e95938b82284a312ea248777aad5e5220a20242ccf98d103d33427fc681",
+      "actual_bytes": 6,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "scripts-assets-01-a-manifest",
+      "resource_path": "assets/empty.txt",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "actual_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "actual_bytes": 0,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "complementary-01-a-privacy",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "e309dc353c0919fbc3eb19d1b7d390f54a2e62a4932a22eb55d0c0ca7349e2dd",
+      "actual_sha256": "1dd40477b57e52f6aeeb03fe1c5487faca058a1f50d37b3de4ceab6a69e7319b",
+      "actual_bytes": 470,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "shared-catalog-003",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "5d75ee6f90423db252b62fc0bff33583c74f3fed440469ff37c9b35b7723a80f",
+      "actual_sha256": "a9f72f655ffe8e6e56a8e370d9a350c30c4823a098b6f8ed72e1864f10d0b0dd",
+      "actual_bytes": 339,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "implicit-01-a-routing",
+      "resource_path": "SKILL.md",
+      "method": "public-sdk-native-structural-equivalence",
+      "matched": true,
+      "canonical_sha256": "5a1d2ebd79961749fcc5a99445352980bc2543114e7f5d6884659b5c62c6d12c",
+      "actual_sha256": "3484db14368cfef9dbdb83530841d314e6acd34c4c910bd2fca6b58639b01099",
+      "actual_bytes": 601,
+      "mode": "100644"
+    },
+    {
+      "skill_id": "implicit-01-a-routing",
+      "resource_path": "references/routing.json",
+      "method": "exact-bytes",
+      "matched": true,
+      "canonical_sha256": "c317597f96488f0128ad7f41a7028ab0568e78d1f02d677d98eb424316bc6316",
+      "actual_sha256": "c317597f96488f0128ad7f41a7028ab0568e78d1f02d677d98eb424316bc6316",
+      "actual_bytes": 115,
+      "mode": "100644"
+    }
+  ]
+}

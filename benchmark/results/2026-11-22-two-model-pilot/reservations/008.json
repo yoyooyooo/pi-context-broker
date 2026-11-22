@@ -1,0 +1,11 @@
+{
+  "at": "2026-11-22T16:04:16.832Z",
+  "experiment_id": "benchmark-two-model-admission-3",
+  "run_id": "benchmark-two-model-admission-3-003",
+  "slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+  "scope_id": "two-models-20261122-route1",
+  "scope_amendment_sha256": "f4de8483e5cea8f098de3b6dc7748416470d6526987d0cc4b32b824db59cd1fc",
+  "scope_role": "gate",
+  "source_plan_file_sha256": "e504f0e987cf5bda860264b95a305202c85ef85c47058629f73cf88161859c4f",
+  "plan_sha256": "3a2629d4dbd4e0fdf0d620afaab90dc22ed2c5965bab40f0b62eb144f45e54a2"
+}

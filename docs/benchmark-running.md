@@ -5,6 +5,11 @@ run state. It adds public business cases, private grading, actual Pi SDK episode
 and evidence analysis. Use the maintained runtime and an explicitly named frozen
 build. The ordinary daily `next` verification gate remains separate.
 
+The [2026-11-22 two-model pilot report](benchmark-two-model-pilot-2026-11-22.md)
+records the actual GPT-6.2 Sol and Grok-4.6 results, the retained local-budget
+classification repair, and the later Notion-startup stop. Its frozen plan is
+stopped; it is evidence for review, not a ready-to-resume setup.
+
 ## Start from an existing setup
 
 Read the task's setup JSON, its purpose and total budget before running anything.
@@ -102,6 +107,14 @@ Later pilot setups bind the resulting gate path and hash. The controller verifie
 all referenced episodes and their raw artifacts before reserving slot 25 onward.
 Core failures stop expansion. Repairing apparatus creates a new identity and
 retains the failed evidence; do not edit a frozen plan or fabricate a gate.
+
+For an explicitly authorized two-model scope, use the
+[prospective scope amendment](benchmark-pilot-scope.md). Its sixteen-episode
+apparatus gate retains the original first24 as incomplete and keeps every old
+reservation in the shared 144 cap. A verified zero-send apparatus repair and a
+single explicitly registered same-variant route replacement have separate
+evidence requirements. They create new plans; stopped plans and unknown usage
+remain in the history. A route error never enables automatic fallback.
 
 A rejected zero-send startup still occupies its pilot reservation. A narrowly
 documented repair may preserve that invalid slot externally while a new frozen

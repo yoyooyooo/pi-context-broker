@@ -1430,6 +1430,50 @@
             },
             "invalid_and_reruns_included": {
               "const": true
+            },
+            "scope": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "const": 1
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+                },
+                "role": {
+                  "enum": [
+                    "gate",
+                    "expansion"
+                  ]
+                },
+                "gate_episodes": {
+                  "const": 16
+                },
+                "minimum_valid_real_per_condition": {
+                  "const": 4
+                },
+                "history_quality": {
+                  "const": "excluded_retained_in_campaign_costs"
+                },
+                "legacy_first24": {
+                  "const": "incomplete_not_satisfied"
+                },
+                "new_unknown_usage": {
+                  "const": "stop_scope"
+                }
+              },
+              "required": [
+                "version",
+                "id",
+                "role",
+                "gate_episodes",
+                "minimum_valid_real_per_condition",
+                "history_quality",
+                "legacy_first24",
+                "new_unknown_usage"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [

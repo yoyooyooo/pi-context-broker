@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path, { dirname, isAbsolute, join, resolve } from 'node:path';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { observeProviderTransport, readProviderTransport } from '../../scripts/skill-consumption-provider.mjs';
 import { bindReferences, candidateDifferences, createEpisodeRecorder, exists, fileIdentity, inside, inventory, normalizeCandidate, observeSharedGit, readJson, sha256 } from './episode-evidence.mjs';
@@ -18,7 +19,59 @@ const selectedModel = model => Object.fromEntries(['id', 'name', 'provider', 'ap
 const errorData = error => ({ name: error?.name ?? 'Error', code: error?.code ?? null, message: String(error?.message ?? error), details: error?.details ?? null });
 const bounded = async (promise, milliseconds, fallback) => { let timer; try { return await Promise.race([promise, new Promise(resolve => { timer = setTimeout(() => resolve(fallback), milliseconds); })]); } finally { clearTimeout(timer); } };
 
-export function requestContract(payload, api, prompt, prefixes) {
+/** A blocked SDK stream call has no request identity and cannot replace the
+ * previous assistant receipt. Preserve its local exception before SDK wrapping. */
+export function reserveEpisodeRequest({ budget, captureOnly, clearRequest, onStop }) {
+  clearRequest();
+  try { return captureOnly ? 1 : budget.request(); }
+  catch (error) { onStop(error); throw error; }
+}
+
+/** Candidate handles are random per branch. Resolve them with the actual product
+ * reducer, then bind them to the independently observed complete catalog. */
+export function catalogCandidateReferences({ shortRefs, catalogs }) {
+  assert.ok(shortRefs?.bindings instanceof Map, 'BENCHMARK_CATALOG_REFERENCE_STATE_REQUIRED');
+  assert.ok(Array.isArray(catalogs?.catalogs), 'BENCHMARK_CATALOG_REFERENCE_CATALOG_REQUIRED');
+  const records = catalogs.catalogs.flatMap(catalog => catalog.facets
+    .filter(facet => facet.facet === 'catalog' && facet.ok === true)
+    .flatMap(facet => facet.value.records.map(record => ({ scope: facet.value.scope, record }))));
+  const references = [];
+  for (const [ref, target] of shortRefs.bindings) {
+    if (target.kind !== 'candidate') continue;
+    assert.ok(/^sr:C[A-Za-z0-9_-]{22}$/.test(ref), 'BENCHMARK_CATALOG_REFERENCE_KIND');
+    const identity = target.identity;
+    const matches = records.filter(({ scope, record }) => identity.source === 'notion' && identity.scope === scope
+      && identity.id === record.id && identity.kind === record.kind && record.enabled === true
+      && JSON.stringify(normalizeCandidate(identity.locator, {})) === JSON.stringify(normalizeCandidate(record.locator, {}))
+      && record.ref === identity.ref + '/' + record.entrypoint.split('/').map(encodeURIComponent).join('/'));
+    assert.equal(matches.length, 1, 'BENCHMARK_CATALOG_REFERENCE_IDENTITY_MISMATCH');
+    const binding = { identity: structuredClone(identity), record: structuredClone(matches[0].record) };
+    references.push({ ref, ...binding, canonical: 'benchmark-candidate:' + sha256(JSON.stringify(normalizeCandidate(binding, {}))) });
+  }
+  return references;
+}
+
+function catalogLocations(content, references) {
+  const bindings = new Map(references.map(reference => [reference.ref, reference]));
+  assert.equal(bindings.size, references.length, 'BENCHMARK_CATALOG_REFERENCE_DUPLICATE');
+  const canonicalize = text => {
+    const result = text.replace(/<ntn-skills-view-catalog\b[^>]*>[\s\S]*?<\/ntn-skills-view-catalog>/g, catalog =>
+      catalog.replace(/(<card\b[^>]*\blocation=")([^"]+)(")/g, (match, before, ref, after) => {
+        if (!ref.startsWith('sr:')) return match;
+        const binding = bindings.get(ref);
+        assert.ok(binding, 'BENCHMARK_CATALOG_REFERENCE_UNOBSERVED');
+        return before + binding.canonical + after;
+      }));
+    assert.ok(!/sr:[CSR][A-Za-z0-9_-]{22}(?![A-Za-z0-9_-])/.test(result), 'BENCHMARK_CATALOG_REFERENCE_OUTSIDE_LOCATION');
+    return result;
+  };
+  if (typeof content === 'string') return canonicalize(content);
+  if (Array.isArray(content)) return content.map(item => ['text', 'input_text'].includes(item.type) && typeof item.text === 'string'
+    ? { ...item, text: canonicalize(item.text) } : item);
+  return content;
+}
+
+export function requestContract(payload, api, prompt, prefixes, catalogReferences = []) {
   assert.ok(payload && typeof payload === 'object' && !Array.isArray(payload), 'BENCHMARK_PROVIDER_PAYLOAD_INVALID');
   const copy = structuredClone(payload), key = api === 'openai-responses' ? 'input' : 'messages';
   const text = content => typeof content === 'string' ? content : Array.isArray(content) ? content.filter(item => ['text', 'input_text'].includes(item.type)).map(item => item.text).join('') : null;
@@ -29,6 +82,10 @@ export function requestContract(payload, api, prompt, prefixes) {
     return true;
   });
   assert.equal(removed, 1, 'BENCHMARK_PUBLIC_PROMPT_NOT_UNIQUELY_LOCATED');
+  // Only the comparison copy changes; the retained and transmitted payload keep
+  // the product's actual handles. Other metadata, text and field order remain.
+  copy[key] = copy[key].map(message => Object.hasOwn(message, 'content')
+    ? { ...message, content: catalogLocations(message.content, catalogReferences) } : message);
   // Cache identity is session-specific. Its presence/type is retained; its random
   // value is not a candidate difference. All prompt, tool and sampling fields stay.
   if (copy.prompt_cache_key !== undefined) copy.prompt_cache_key = { present: true, type: typeof copy.prompt_cache_key };
@@ -96,10 +153,24 @@ async function sdkInstallation(piSelection) {
   }
   assert.ok(manifest, 'BENCHMARK_MAINTAINED_PI_PACKAGE_NOT_FOUND');
   const module = join(directory, 'dist/index.js');
-  const files = [cli, join(directory, 'package.json'), module, ...['core/sdk.js', 'core/agent-session.js', 'core/resource-loader.js', 'core/extensions/loader.js', 'core/extensions/runner.js', 'core/system-prompt.js', 'extensions/codemode/index.js', 'extensions/codemode/tool.js', 'extensions/codemode/execute.js', 'extensions/tool-search/index.js'].map(name => join(directory, 'dist', name)),
+  const files = [cli, join(directory, 'package.json'), module, ...['core/sdk.js', 'core/agent-session.js', 'core/session-manager.js', 'core/resource-loader.js', 'core/extensions/loader.js', 'core/extensions/runner.js', 'core/system-prompt.js', 'extensions/codemode/index.js', 'extensions/codemode/tool.js', 'extensions/codemode/execute.js', 'extensions/tool-search/index.js'].map(name => join(directory, 'dist', name)),
     ...['agent.js', 'agent-loop.js'].map(name => join(directory, 'node_modules/@earendil-works/pi-agent-core/dist', name)),
     ...['api/openai-completions.js', 'api/openai-responses.js', 'api/openai-responses-shared.js'].map(name => join(directory, 'node_modules/@earendil-works/pi-ai/dist', name))];
   return { root: directory, module, version: manifest.version, files: await Promise.all(files.map(file => fileIdentity(file))) };
+}
+
+async function catalogReferenceReader({ config, profile, installation }) {
+  if (config.mode !== 'broker') return null;
+  const brokers = profile.extensions.filter(extension => extension.role === 'broker');
+  assert.equal(brokers.length, 1, 'BENCHMARK_CATALOG_REFERENCE_BROKER_REQUIRED');
+  const entry = join(dirname(brokers[0].path), 'session-short-ref.ts');
+  assert.ok(inside(config.buildRoot, await realpath(entry)), 'BENCHMARK_CATALOG_REFERENCE_REDUCER_NOT_PAIRED');
+  const require = createRequire(installation.module), { createJiti } = require('jiti');
+  assert.equal(typeof createJiti, 'function', 'BENCHMARK_CATALOG_REFERENCE_LOADER_REQUIRED');
+  const jiti = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
+  const { reduceSessionShortRefs } = await jiti.import(entry);
+  assert.equal(typeof reduceSessionShortRefs, 'function', 'BENCHMARK_CATALOG_REFERENCE_REDUCER_REQUIRED');
+  return { reduce: reduceSessionShortRefs, identity: { reducer: await fileIdentity(entry), loader: await fileIdentity(require.resolve('jiti')) } };
 }
 
 function assertModel(config, model, thinkingLevel) {
@@ -107,7 +178,7 @@ function assertModel(config, model, thinkingLevel) {
   if (thinkingLevel !== undefined) assert.equal(thinkingLevel, config.model.parameters.thinkingLevel, 'BENCHMARK_THINKING_LEVEL_DRIFT');
 }
 
-async function captureCandidate({ config, profile, session, installation, visibility, notifications, prefixes, scrub, notion }) {
+async function captureCandidate({ config, profile, session, installation, visibility, notifications, prefixes, scrub, notion, referenceReader }) {
   const loaded = session.resourceLoader.getExtensions();
   assert.equal(loaded.errors.length, 0, 'BENCHMARK_EXTENSION_LOAD_ERROR');
   const extensions = await Promise.all(loaded.extensions.map(async extension => ({
@@ -140,6 +211,7 @@ async function captureCandidate({ config, profile, session, installation, visibi
     ...(selectedGit ? { git: selectedGit } : {}),
     build: await fileIdentity(join(config.buildRoot, 'build.json')), cli: await fileIdentity(cliEntry),
     mode: config.mode, launch_profile: profile, model: selectedModel(session.model), thinking_level: session.thinkingLevel,
+    catalog_reference_reader: referenceReader?.identity ?? null,
     model_parameters: config.model.parameters, model_configuration: { file: await fileIdentity(join(config.agentDir, 'models.json')), definition: await readJson(join(config.agentDir, 'models.json')) },
     settings: session.settingsManager.getSettings(), code_mode: config.codeMode,
     factories: { codemode: 'public createCodemodeExtension, models:false', tool_search: 'public createToolSearchExtension', mcp: 'disabled by the shared --no-mcp profile' },
@@ -166,7 +238,7 @@ export async function runEpisode(input, hooks = {}) {
   const recorder = await createEpisodeRecorder(config.controlDir, config.correlation, [config.model.apiKeyEnv && process.env[config.model.apiKeyEnv], process.env.NOTION_API_TOKEN]);
   const prefixes = { RUN: config.runRoot, BUILD: config.buildRoot };
   const requests = [], turns = [], interventions = [], notifications = [], extensionErrors = [];
-  let session, installation, transport, notion, notionResult, timer, onSigTerm, onSigInt, terminalError, captureContract, currentRequest, currentTurn, admitted = false, expected, capture, unsubscribe, originalStream;
+  let session, installation, referenceReader, transport, notion, notionResult, timer, onSigTerm, onSigInt, terminalError, captureContract, currentRequest, currentTurn, admitted = false, expected, capture, unsubscribe, originalStream;
   let stage = 'prepare';
   const activeTools = new Set();
   const enterStage = next => { stage = next; recorder.bind({ stage }); recorder.record('runtime_stage', { stage }); };
@@ -198,6 +270,7 @@ export async function runEpisode(input, hooks = {}) {
     installation = await sdkInstallation(config.runtime.pi);
     assert.equal(await realpath(profile.entry), await realpath(selectionPath(config.runtime.pi)), 'BENCHMARK_PI_SELECTION_DRIFT');
     const sdk = await import(pathToFileURL(installation.module).href);
+    referenceReader = await catalogReferenceReader({ config, profile, installation });
     const settingsManager = sdk.SettingsManager.create(config.workspace, config.agentDir);
     settingsManager.applyOverrides({ compaction: { enabled: false }, retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } }, cacheWarming: 'off', transport: 'sse', sessionDir: join(config.runRoot, 'sessions') });
     const modelRuntime = await sdk.ModelRuntime.create({ authPath: join(config.agentDir, 'auth.json'), modelsPath: join(config.agentDir, 'models.json'), modelsStorePath: join(config.agentDir, 'model-store.json'), allowModelNetwork: false, refreshOnCreate: false });
@@ -258,7 +331,7 @@ export async function runEpisode(input, hooks = {}) {
       assert.equal(preflightModelAttempt, false, 'BENCHMARK_DIAGNOSTIC_STARTED_MODEL');
     }
     assert.equal(extensionErrors.length, 0, 'BENCHMARK_EXTENSION_STARTUP_ERROR');
-    capture = await captureCandidate({ config, profile, session, installation, visibility, notifications: [...notifications], prefixes, scrub: recorder.scrub, notion });
+    capture = await captureCandidate({ config, profile, session, installation, visibility, notifications: [...notifications], prefixes, scrub: recorder.scrub, notion, referenceReader });
     admission.refs.push(await recorder.save('candidate-observed', capture));
     admission.refs.push(await recorder.save('workspace-before-task', await inventory(config.workspace)));
     if (!config.admission.captureOnly) {
@@ -272,7 +345,12 @@ export async function runEpisode(input, hooks = {}) {
     }
     session.agent.streamFunction = async (requestModel, context, options = {}) => {
       assertModel(config, requestModel, session.thinkingLevel);
-      const sequence = config.admission.captureOnly ? 1 : budget.request();
+      const sequence = reserveEpisodeRequest({ budget, captureOnly: config.admission.captureOnly,
+        clearRequest: () => { currentRequest = undefined; recorder.bind({ request_id: null }); },
+        onStop: error => {
+          terminalError ??= error;
+          recorder.record('model_request_blocked', { error: errorData(error), budget: budget.state });
+        } });
       const request = { id: config.correlation.episode_id + '/request-' + sequence, sequence, turn_id: currentTurn?.id ?? null, attempts: [], usage: null, accounted: false };
       requests.push(request); currentRequest = request; recorder.bind({ request_id: request.id });
       request.context_ref = await recorder.save('request-' + sequence + '-context', context);
@@ -295,7 +373,14 @@ export async function runEpisode(input, hooks = {}) {
               const catalogDifferences = candidateDifferences(capture.projection.notion_catalogs, normalizeCandidate(actualCatalogs.projection, prefixes));
               request.catalog_contract_ref = await recorder.save('first-request-catalog-comparison', { actual: actualCatalogs, differences: catalogDifferences });
               if (catalogDifferences.length) throw new EpisodeStop('BENCHMARK_FINAL_CATALOG_CONTRACT_DRIFT', { differences: catalogDifferences.map(item => item.path) });
-              const contract = requestContract(final, requestModel.api, prompt, prefixes);
+              const branch = session.sessionManager.getBranch();
+              const catalogReferences = catalogCandidateReferences({ shortRefs: referenceReader ? referenceReader.reduce(branch) : { bindings: new Map() },
+                catalogs: actualCatalogs.projection });
+              request.catalog_reference_ref = await recorder.save('first-request-catalog-references', { version: 1,
+                scope: 'current product branch bindings matched to independently observed catalog; comparison-only canonical locations',
+                session_id: session.sessionId, leaf_id: session.sessionManager.getLeafId(), branch,
+                reducer: referenceReader?.identity ?? null, bindings: catalogReferences });
+              const contract = requestContract(final, requestModel.api, prompt, prefixes, catalogReferences);
               if (config.admission.captureOnly) { request.input_preflight = budget.payload(requestModel.api, final); captureContract = contract; throw new EpisodeStop('BENCHMARK_ADMISSION_CAPTURE_COMPLETE'); }
               const differences = candidateDifferences(expected.request_contract, contract);
               request.contract_ref = await recorder.save('first-request-contract-comparison', { contract, differences });
@@ -347,7 +432,7 @@ export async function runEpisode(input, hooks = {}) {
         currentTurn.end_ref = recorder.record('user_turn_end', { id: turn.id, settled, is_idle: session.isIdle, session_id: session.sessionId, final_text: currentTurn.final_text, budget: budget.state });
         if (terminalError) throw terminalError;
         if (!settled || !session.isIdle) throw new EpisodeStop('BENCHMARK_TURN_NOT_SETTLED');
-        if (budget.state.usage_unknown) throw new EpisodeStop('BENCHMARK_USAGE_UNKNOWN');
+        budget.available();
         if (currentRequest?.assistant?.stop_reason === 'error' || currentRequest?.assistant?.stop_reason === 'aborted') throw new EpisodeStop('BENCHMARK_PROVIDER_TERMINAL_ERROR', { assistant: currentRequest.assistant });
         if (hooks.afterTurn) {
           enterStage('controller_pause');

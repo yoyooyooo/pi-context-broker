@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "kind": "public-analysis-revision",
+  "source_file_sha256": "0a5591f7d725ba3b0ad1a72ea2f3889eb7eedc46ba243a2ed79bd7a4bb486500",
+  "source_file_bytes": 135544,
+  "original_revision_sha256": "e924e5f24cf2297f68613fcbb5c603713810a74846474cb36a1038f99923fb03",
+  "created_at": "2026-11-22T16:19:11.515Z",
+  "reason": "Correct only the controller interpretation of a fully metered local request-limit stop using the same raw evidence; retain the failed outcome, selection unknown, ten-request budget, original ledger and all costs; no model rerun or route change.",
+  "scope": "one analysis repair of the same observed runs; no execution, replacement sample or plan override",
+  "experiment_id": "benchmark-two-model-admission-3",
+  "scope_id": "two-models-20261122-route1",
+  "plan_source_file_sha256": "e504f0e987cf5bda860264b95a305202c85ef85c47058629f73cf88161859c4f",
+  "plan_source_sha256": "3a2629d4dbd4e0fdf0d620afaab90dc22ed2c5965bab40f0b62eb144f45e54a2",
+  "implementation_sha256": "f0cae6a240991218415906561291c45c9c7d55bea066d1c738c92e69e80d6d75",
+  "runtime_subject_changed": false,
+  "new_model_requests": 0,
+  "source_changes": [
+    {
+      "path": "batch.mjs",
+      "before_source_sha256": "f993d02741eb9dff7ec37fb7f073996474d7dcc60286113dd6fcc6ea6a365144",
+      "after_source_sha256": "4a992358c4538a5f169528e34c690e963f1b10bba8740a7e40105e4ad8a82524"
+    },
+    {
+      "path": "controller.mjs",
+      "before_source_sha256": "59de1c19e6cbae54eda00e6cb4e9b51c59a9b4f9eba4037921c9fc3da272f55b",
+      "after_source_sha256": "9d86b9fa93cecd73c226aea1194ecb2376b8d86caf3f408953f36a4e4ba0d6f7"
+    },
+    {
+      "path": "gate.mjs",
+      "before_source_sha256": "35f743c6f3ba1951594de202669b7389dc2edb5f4af0a5bc6599a0d552992944",
+      "after_source_sha256": "ed68b8673509f6dbb5d8af458d387cf5cc53f27f4c75f908595d16b80659f9e2"
+    },
+    {
+      "path": "pilot-scope.mjs",
+      "before_source_sha256": "5cda7472305d860f018d910fcec6af4e4a9ccb33a7167d36f7163b269ecad1f5",
+      "after_source_sha256": "154db61b74d23d09f9a96c7a9461fcd9ffa8befd98f50678ae55243a7a2d02bc"
+    },
+    {
+      "path": "revision.mjs",
+      "before_source_sha256": "3257c5cc41cdf2975a4df6f56b227a9b141e5d0d13d121f16d3a9528e9bef3b3",
+      "after_source_sha256": "dd4c632cc693e4d69c6221a280dd49c83a148e5254d455fc5396ad907b3395b4"
+    }
+  ],
+  "registration": {
+    "sequence": 18,
+    "at": "2026-11-22T16:20:27.935Z",
+    "model_execution": false,
+    "source_revision_file_sha256": "0a5591f7d725ba3b0ad1a72ea2f3889eb7eedc46ba243a2ed79bd7a4bb486500",
+    "replacement_run_ids": [
+      "benchmark-two-model-admission-3-006"
+    ],
+    "source_implementation_sha256": "f0cae6a240991218415906561291c45c9c7d55bea066d1c738c92e69e80d6d75",
+    "source_ledger_prefix_sha256": "5277eef1e21a405798170c9c2621ff1b5010a77540c24392c05212741e43ab13",
+    "source_ledger_prefix_bytes": 10584
+  },
+  "replacements": [
+    {
+      "run_id": "benchmark-two-model-admission-3-006",
+      "slot_id": "m0-e1--no-skill-03-a-n16-r1--r0",
+      "condition_id": "m0-e1",
+      "case_id": "no-skill-03-a-n16-r1",
+      "original_episode_sha256": "ed6b986baf2c65335479569d3839ce7b7e6933c3a61644fd7f3485d14428e962",
+      "new_episode_sha256": "29c472536594eac2ef6361f09204dbb3a7db852cd25119694778ee4a87126378",
+      "source_subject_identity_sha256": "061a741408f3671ea4f06592cff6fc148d1b0628b08bff642eaaf72332435337",
+      "original_controller": {
+        "status": "failed",
+        "stop_batch": true,
+        "stop_reason": "subject_requested_stop"
+      },
+      "effective_controller": {
+        "status": "failed",
+        "stop_batch": false,
+        "stop_reason": null
+      },
+      "original_facts": {
+        "admission": "valid",
+        "result": {
+          "critical_failures": [
+            "business-decision"
+          ],
+          "outcome": "fail",
+          "unassisted_success": false,
+          "verified_success": false
+        },
+        "business_status": "fail",
+        "actual_model_requests": 10,
+        "input_tokens": 39784,
+        "output_tokens": 292,
+        "duration_ms": 25144.1835
+      },
+      "revised_facts": {
+        "admission": "valid",
+        "result": {
+          "critical_failures": [
+            "business-decision"
+          ],
+          "outcome": "fail",
+          "unassisted_success": false,
+          "verified_success": false
+        },
+        "business_status": "fail",
+        "actual_model_requests": 10,
+        "input_tokens": 39784,
+        "output_tokens": 292,
+        "duration_ms": 25144.1835
+      },
+      "stop_classification": {
+        "kind": "verified-local-request-limit-before-send",
+        "max_model_requests": 10,
+        "actual_model_requests": 10,
+        "original_runtime_status": "failed",
+        "business_outcome": "fail",
+        "model_execution": false,
+        "change": "retain_failed_episode_and_costs_without_escalating_local_budget_stop_to_batch"
+      },
+      "selection_evidence": {
+        "original_coverage": {
+          "artifacts": "complete",
+          "clarifications": "unavailable",
+          "resource_reads": "partial",
+          "selections": "partial",
+          "state_events": "unavailable"
+        },
+        "revised_coverage": {
+          "artifacts": "complete",
+          "clarifications": "unavailable",
+          "resource_reads": "partial",
+          "selections": "partial",
+          "state_events": "unavailable"
+        },
+        "original_readback_source_sha256": "f60e3d32cdc81b46bc2edabd24ac388f999a380fb7fde53c48ccaeaf93628c69",
+        "revised_readback_source_sha256": "49df9d1463cd5c2e9f1ba27112ef2d1e0508a15576552ba87b2d2059e09dbc4f",
+        "interpretation": "Partial selection coverage remains unknown; this correction does not resolve it"
+      },
+      "retained_raw_sources": [
+        {
+          "artifact_id": "events",
+          "source_sha256": "fbcfb3255fa74eb8e75cee2d67aae69519652e5987d2f238c91e5aea00c110a8",
+          "source_bytes": 720495,
+          "kind": "jsonl"
+        },
+        {
+          "artifact_id": "transport",
+          "source_sha256": "c5b8056d9051f3708a00c2092d682e87ead7f59dc68695796a9d6f2fb12ab9ca",
+          "source_bytes": 22864,
+          "kind": "jsonl"
+        },
+        {
+          "artifact_id": "collection-runtime-result",
+          "source_sha256": "27fb344de51e39f5a2ce6a8d21c06f361b0524de7fe42cda03b43174f3f1c621",
+          "source_bytes": 78138,
+          "kind": "json"
+        },
+        {
+          "artifact_id": "collection-launcher-result",
+          "source_sha256": "a7a891711201445e5845aa4fe13c57b092c21a21d47b504113d4ab180544659e",
+          "source_bytes": 10014,
+          "kind": "json"
+        }
+      ],
+      "original_collector_sha256": "a7a245050c0eb57ac4d14f8688ab5baeeecdd77bdb518b7135d516624debeb25",
+      "revised_collector_sha256": "a7a245050c0eb57ac4d14f8688ab5baeeecdd77bdb518b7135d516624debeb25",
+      "revised_collection_source_sha256": "1d372862d3e0d1ecf78be82bc25779802456a7d2102cfd5006ab1b43005a5fcf",
+      "same_physical_execution": true,
+      "additional_executions": 0
+    }
+  ],
+  "verification_boundary": "The private verifier checked original raw hashes, frozen limits and unchanged facts. Public replay checks this safe projection, the released new episode and original-to-public raw mappings; it does not reproduce the private original verification."
+}

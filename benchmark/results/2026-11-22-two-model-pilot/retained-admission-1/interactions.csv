@@ -1,0 +1,4 @@
+"kind","id","metric","unit","currency","status","estimate","interval_status","lcb","ucb","reason","origin","confirmation"
+"model_environment_interaction","m0-e0--m1-e0","quality","ratio_difference","","unknown","","unavailable","","","Incomplete matched four-cell observations","protocol-derived-exploratory","false"
+"model_environment_interaction","m0-e0--m1-e0","time","milliseconds","","unknown","","unavailable","","","Incomplete matched four-cell observations","protocol-derived-exploratory","false"
+"model_environment_interaction","m0-e0--m1-e0","cost","currency","","unknown","","unavailable","","","Missing or incompatible currency cost","protocol-derived-exploratory","false"

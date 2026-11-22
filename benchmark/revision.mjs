@@ -6,12 +6,13 @@ import { fileURLToPath } from 'node:url';
 import { fingerprint, validateProtocol } from './protocol.mjs';
 import { readEvidenceBundle } from './evidence/store.mjs';
 import { executionImplementation, instrumentationIdentity } from './implementation.mjs';
+import { readProviderTransport, providerApplicationCompletion } from '../scripts/skill-consumption-provider.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const inside = (root, file) => { const part = relative(root, file); return part === '' || part !== '..' && !part.startsWith('../') && !isAbsolute(part); };
 const derivedIds = new Set(['collection-readback', 'collection-grade']);
-const sourceChangeAllowlist = new Set(['implementation.mjs', 'cli.mjs', 'controller.mjs', 'batch.mjs', 'gate.mjs', 'collect.mjs', 'revision.mjs']);
+const sourceChangeAllowlist = new Set(['implementation.mjs', 'cli.mjs', 'controller.mjs', 'batch.mjs', 'gate.mjs', 'pilot-scope.mjs', 'collect.mjs', 'revision.mjs']);
 // This one reviewed preparation-only change cannot authorize another corpus edit.
 const preparationChange = { path: 'corpus/index.mjs', before: '3f54344d045bdd38798ca6c2cb03991013969e6d7ad2e7fec13fc83d0f2f65cb',
   after: 'cabe4e478fbf566f89b9d3c71384bbf138cee153856497a5773902d259302f03' };
@@ -230,6 +231,87 @@ function deriveBudget(oldEpisode, episode, runtime, eventRows, model) {
   assert.equal(duration, known(oldEpisode.timing.duration_ms, 'OLD_DURATION', false)); assert.equal(duration, runtime.timing.duration_ms);
   return { model_requests: count, input_tokens: input, output_tokens: output, duration_ms: duration };
 }
+/** A local request guard was wrapped by the SDK as a provider error. This proof
+ * changes only the controller's stop interpretation, never the paid observation. */
+export function assertWrappedRequestLimitRepair({ original, old, next, runtime, shared, budget, model, eventRows, transport }) {
+  const code = 'BENCHMARK_REQUEST_LIMIT', limit = budget.max_model_requests;
+  assert.ok(Number.isSafeInteger(limit) && limit > 0);
+  assert.equal(budget.max_http_attempts, limit); assert.equal(budget.max_retries, 0);
+  assert.equal(original.result.stop_batch, true); assert.equal(original.result.stop_reason, 'subject_requested_stop');
+  assert.equal(original.result.dispatch_error, undefined); assert.equal(original.result.turn_control, undefined);
+  assert.equal(runtime.status, 'failed'); assert.equal(runtime.error?.code, 'BENCHMARK_PROVIDER_TERMINAL_ERROR');
+  assert.equal(runtime.error.details?.assistant?.error, code); assert.equal(runtime.error.details.assistant.stop_reason, 'error');
+  assert.equal(runtime.budget.stop?.code, code); assert.equal(runtime.budget.usage_unknown, false);
+  assert.equal(runtime.budget.requests, limit); assert.equal(runtime.budget.attempts, limit);
+  assert.equal(runtime.requests.length, limit); assert.equal(runtime.turns.length, 1); assert.equal(runtime.turns[0].final_text, null);
+  assert.equal(shared.runtime_check?.status, 'unchanged'); assert.equal(shared.frozen_artifacts, 'passed');
+  for (const episode of [old, next]) {
+    assert.equal(episode.admission.status, 'valid');
+    for (const key of ['attempts', 'tools', 'interventions']) assert.equal(episode.admission.completeness[key], 'complete');
+    assert.equal(known(episode.measurements.actual_attempts, 'BUDGET_GUARD_SENDS'), limit);
+    assert.equal(episode.attempts.length, limit);
+    assert.ok(episode.attempts.every(attempt => attempt.sent === true && attempt.adapter.verified === true));
+  }
+  assert.deepEqual(next.result, old.result, 'ANALYSIS_REVISION_BUDGET_OUTCOME_CHANGED');
+  assert.equal(old.result.outcome, 'fail'); assert.equal(old.result.verified_success, false);
+  // Reanalysis may append new derived readback/grade bytes. Only those reference
+  // hashes may differ; values, statuses, locators and every raw reference remain.
+  const derivedReferenceIdentity = value => {
+    if (Array.isArray(value)) return value.map(derivedReferenceIdentity);
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value).map(([key, item]) =>
+      [key, key === 'sha256' && derivedIds.has(value.artifact_id) ? 'derived:' + value.artifact_id : derivedReferenceIdentity(item)]));
+  };
+  for (const key of ['admission', 'business', 'contracts', 'measurements', 'attempts', 'timing', 'tools', 'interventions'])
+    assert.deepEqual(derivedReferenceIdentity(next[key]), derivedReferenceIdentity(old[key]), 'ANALYSIS_REVISION_BUDGET_FACTS_CHANGED: ' + key);
+  const payloads = old.artifacts.filter(artifact => /^request-\d+-payload$/.test(artifact.id));
+  assert.equal(payloads.length, limit, 'ANALYSIS_REVISION_BUDGET_EXTRA_PAYLOAD');
+  const requestStarts = eventRows.filter(row => row.type === 'model_request_start');
+  assert.equal(requestStarts.length, limit);
+  assert.equal(new Set(requestStarts.map(row => row.request_id)).size, limit);
+  assert.equal(transport.at(-1)?.complete, true);
+  const starts = transport.filter(row => row.phase === 'request_start' && row.category === 'model');
+  assert.equal(starts.length, limit, 'ANALYSIS_REVISION_BUDGET_EXTRA_SEND');
+  let finalPaidLine = -1;
+  for (const request of runtime.requests) {
+    assert.equal(request.attempts.length, 1); const attempt = request.attempts[0];
+    assert.equal(attempt.sent, true); assert.equal(attempt.status, 200);
+    assert.equal(starts.filter(row => row.id === attempt.transport_id).length, 1);
+    const ends = transport.filter(row => row.phase === 'request_end' && row.id === attempt.transport_id);
+    assert.equal(ends.length, 1); assert.equal(ends[0].requestSent, true);
+    const paid = eventRows.filter(row => row.type === 'session_event' && row.request_id === request.id
+      && row.data?.type === 'message_end' && row.data.message?.role === 'assistant' && row.data.message.usage?.totalTokens > 0);
+    assert.equal(paid.length, 1, 'ANALYSIS_REVISION_BUDGET_PAID_TERMINAL_AMBIGUOUS');
+    const observations = eventRows.filter(row => row.type === 'provider_stream_event' && row.data?.request_id === request.id);
+    const usageEvents = observations.filter(row => (model.api === 'openai-completions' ? row.data.event?.usage : row.data.event?.response?.usage) != null);
+    assert.equal(usageEvents.length, 1);
+    const responseModel = model.api === 'openai-completions' ? usageEvents[0].data.event.model : usageEvents[0].data.event.response.model;
+    assert.equal(responseModel, model.route);
+    for (const row of observations) {
+      const reported = model.api === 'openai-completions' ? row.data.event?.model : row.data.event?.response?.model;
+      if (reported != null) assert.equal(reported, responseModel);
+    }
+    const message = { ...paid[0].data.message, responseModelStatus: 'reported', responseModel };
+    assert.equal(message.model, model.route); assert.equal(message.api, model.api);
+    assert.ok(providerApplicationCompletion(ends[0], message), 'ANALYSIS_REVISION_BUDGET_INCOMPLETE_RESPONSE');
+    finalPaidLine = Math.max(finalPaidLine, eventRows.indexOf(paid[0]));
+  }
+  const rejected = eventRows.filter(row => row.type === 'session_event' && row.data?.type === 'message_end'
+    && row.data.message?.role === 'assistant' && row.data.message.stopReason === 'error');
+  assert.equal(rejected.length, 1); assert.equal(rejected[0].data.message.errorMessage, code);
+  assert.equal(rejected[0].data.message.usage.totalTokens, 0);
+  assert.ok(eventRows.indexOf(rejected[0]) > finalPaidLine, 'ANALYSIS_REVISION_BUDGET_REJECTION_ORDER');
+  const settled = eventRows.filter(row => row.type === 'user_turn_end');
+  assert.equal(settled.length, 1); assert.equal(settled[0].data.settled, true); assert.equal(settled[0].data.is_idle, true);
+  const terminal = eventRows.filter(row => row.type === 'runtime_end');
+  assert.equal(terminal.length, 1); assert.equal(terminal[0].data.status, 'failed');
+  for (const key of ['abort_settled', 'shutdown_emitted', 'dispose_called']) assert.equal(terminal[0].data.cleanup[key], true);
+  for (const key of ['attempts', 'tools', 'interventions']) assert.equal(terminal[0].data.coverage[key], 'complete');
+  return { kind: 'verified-local-request-limit-before-send', max_model_requests: limit, actual_model_requests: limit,
+    original_runtime_status: 'failed', business_outcome: old.result.outcome, model_execution: false,
+    change: 'retain_failed_episode_and_costs_without_escalating_local_budget_stop_to_batch' };
+}
+
 async function replacementFor({ request, plan, bindings, rows, instrumentation }) {
   const completed = rows.filter(row => row.type === 'episode_completed' && row.run_id === request.run_id);
   assert.equal(completed.length, 1, 'ANALYSIS_REVISION_COMPLETED_RUN_REQUIRED');
@@ -292,8 +374,19 @@ async function replacementFor({ request, plan, bindings, rows, instrumentation }
   assert.equal(collection.run_id, request.run_id); assert.equal(collection.episode_sha256, next.episode_sha256);
   assert.equal(collection.stop_batch, false, 'ANALYSIS_REVISION_STILL_STOPPED'); assert.equal(collection.validity, 'valid');
   assert.equal(collection.paths.bundle, directory); assert.deepEqual(collection.budget_usage, budgetUsage, 'ANALYSIS_REVISION_COLLECTION_BUDGET_MISMATCH');
+  let stopClassification;
+  if (runtime.status === 'failed') {
+    assert.equal(binding.public_case.turns.length, 1); assert.equal((binding.events ?? []).length, 0);
+    assert.equal((binding.clarification ?? []).length, 0);
+    const budget = plan.protocol.policies.budgets.find(item => item.id === condition.budget_id).episode;
+    stopClassification = assertWrappedRequestLimitRepair({ original, old, next, runtime,
+      shared: await artifactJson(nextArtifacts, 'collection-launcher-result'), budget, model, eventRows: events,
+      transport: await readProviderTransport(nextArtifacts.get('transport').path) });
+    assert.deepEqual(original.result.budget_usage, budgetUsage, 'ANALYSIS_REVISION_BUDGET_LEDGER_CHANGED');
+  }
   return { run_id: request.run_id, slot_id: slot.slot_id, original_episode_sha256: old.episode_sha256, new_episode_sha256: next.episode_sha256,
     directory, budget_usage: budgetUsage, status: runtime.status, stop_batch: false,
+    ...(stopClassification ? { stop_classification: stopClassification } : {}),
     evidence: { original_directory: oldDirectory, completed_ledger_seq: original.seq, subject_identity_sha256: fingerprint(stableIdentity(next.identity)),
       oracle: readback.oracle, substrate: protectedArtifacts.sort((a, b) => a.id.localeCompare(b.id)),
       collection: { path: collectionPath, sha256: sha(collectionBytes) }, original_collector: old.identity.analysis_implementation.sha256,

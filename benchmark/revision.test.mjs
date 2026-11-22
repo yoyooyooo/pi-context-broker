@@ -10,7 +10,7 @@ import { createPreregistrationTemplate } from './templates/preregistration.mjs';
 import { freezeBatchPlan } from './batch.mjs';
 import { executionImplementation, instrumentationIdentity } from './implementation.mjs';
 import { writeEvidenceBundle } from './evidence/store.mjs';
-import { createAnalysisRevision, verifyAnalysisRevision } from './revision.mjs';
+import { createAnalysisRevision, verifyAnalysisRevision, assertWrappedRequestLimitRepair } from './revision.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const sourceRoot = dirname(fileURLToPath(import.meta.url));
@@ -168,10 +168,92 @@ test('same raw usage is restored once, all old bytes retained, and the new sourc
     'schemas/environment-manifest.schema.json', 'schemas/protocol.schema.json']) {
     await mkdir(dirname(join(isolated, file)), { recursive: true }); await copyFile(join(sourceRoot, file), join(isolated, file));
   }
+  await mkdir(join(isolated, '../scripts'), { recursive: true });
+  await copyFile(join(sourceRoot, '../scripts/skill-consumption-provider.mjs'), join(isolated, '../scripts/skill-consumption-provider.mjs'));
   await save(join(isolated, 'implementation.mjs'), "export function executionImplementation(){throw Error('live source must not be consulted')}\nexport function instrumentationIdentity(){throw Error('live source must not be consulted')}\n");
   const offline = await import(pathToFileURL(join(isolated, 'revision.mjs')).href);
   assert.equal((await offline.verifyAnalysisRevision({ reference: result.reference, plan: f.plan })).revision_sha256, checked.revision_sha256);
   await assert.rejects(create(f), /EEXIST/);
+});
+
+function wrappedRequestLimitProof() {
+  const code = 'BENCHMARK_REQUEST_LIMIT', request = 'synthetic/request-1';
+  const model = { provider: 'synthetic', route: 'synthetic-model', api: 'openai-completions' };
+  const fact = value => ({ status: 'known', value, refs: [{ artifact_id: 'events', line: 1 }] });
+  const old = { admission: { status: 'valid', completeness: { attempts: 'complete', tools: 'complete', interventions: 'complete' } },
+    measurements: { actual_attempts: fact(1), input_total: { value: fact(20) }, output_total: { value: fact(2) } },
+    attempts: [{ sent: true, adapter: { verified: true } }],
+    business: { status: 'fail', refs: [{ artifact_id: 'collection-readback', pointer: '', sha256: 'a'.repeat(64) }] },
+    contracts: [{ id: 'legal-selection', kind: 'selection', critical: false, status: 'unknown', reason: 'Incomplete evidence',
+      refs: [{ artifact_id: 'collection-grade', pointer: '/contracts/1', sha256: 'b'.repeat(64) }] }],
+    result: { outcome: 'fail', verified_success: false, unassisted_success: false, critical_failures: ['business-output'] },
+    artifacts: [{ id: 'request-1-payload' }] };
+  const budgetState = { requests: 1, attempts: 1, usage_unknown: false, stop: { code } };
+  const runtime = { status: 'failed', error: { code: 'BENCHMARK_PROVIDER_TERMINAL_ERROR',
+    details: { assistant: { error: code, stop_reason: 'error' } } }, budget: budgetState,
+    requests: [{ id: request, attempts: [{ sent: true, status: 200, transport_id: 7 }] }], turns: [{ final_text: null }] };
+  const usage = { input: 20, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 22 };
+  const paid = { type: 'session_event', request_id: request, data: { type: 'message_end',
+    message: { role: 'assistant', provider: model.provider, model: model.route, api: model.api, stopReason: 'toolUse', usage } } };
+  const rejected = { type: 'session_event', request_id: request, data: { type: 'message_end',
+    message: { role: 'assistant', stopReason: 'error', errorMessage: code, usage: { totalTokens: 0 } } } };
+  return { original: { result: { stop_batch: true, stop_reason: 'subject_requested_stop' } }, old, next: structuredClone(old),
+    runtime, shared: { runtime_check: { status: 'unchanged' }, frozen_artifacts: 'passed' },
+    budget: { max_model_requests: 1, max_http_attempts: 1, max_retries: 0 }, model,
+    eventRows: [
+      { type: 'model_request_start', request_id: request },
+      { type: 'provider_stream_event', data: { request_id: request, event: { model: model.route, usage: { prompt_tokens: 20, completion_tokens: 2 } } } },
+      paid, rejected,
+      { type: 'user_turn_end', data: { settled: true, is_idle: true } },
+      { type: 'runtime_end', data: { status: 'failed',
+        cleanup: { abort_settled: true, shutdown_emitted: true, dispose_called: true },
+        coverage: { attempts: 'complete', tools: 'complete', interventions: 'complete' } } },
+    ],
+    transport: [
+      { phase: 'request_start', category: 'model', id: 7 },
+      { phase: 'request_end', category: 'model', id: 7, requestSent: true, status: 200, outcome: 'failure',
+        errorName: 'AbortError', errorCode: 20, modelApi: model.api, contentEncoding: 'identity', contentType: 'text/event-stream',
+        sseCompletion: { method: 'bounded-sse-data-done-v1', doneEvents: 1 } },
+      { phase: 'transport_end', complete: true },
+    ] };
+}
+
+test('a local pre-send request cap preserves the failed sample and original transport failure bytes', () => {
+  const value = wrappedRequestLimitProof(), before = structuredClone(value);
+  const proof = assertWrappedRequestLimitRepair(value);
+  assert.equal(proof.kind, 'verified-local-request-limit-before-send');
+  assert.equal(proof.actual_model_requests, 1); assert.equal(proof.business_outcome, 'fail');
+  assert.equal(proof.model_execution, false); assert.deepEqual(value, before);
+  assert.equal(value.transport[1].outcome, 'failure');
+  value.next.business.refs[0].sha256 = 'c'.repeat(64);
+  value.next.contracts[0].refs[0].sha256 = 'd'.repeat(64);
+  assertWrappedRequestLimitRepair(value);
+});
+
+test('a budget repair rejects extra sends, incomplete streams, invented success and unrelated stops', () => {
+  const cases = [
+    value => { value.runtime.budget.stop = null; },
+    value => { value.runtime.budget.usage_unknown = true; },
+    value => { value.original.result.dispatch_error = { message: 'lost launcher acknowledgement' }; },
+    value => { value.shared.runtime_check.status = 'drifted'; },
+    value => { value.transport.splice(1, 0, { phase: 'request_start', category: 'model', id: 8 }); },
+    value => { value.transport[1].sseCompletion.doneEvents = 0; },
+    value => { value.transport[1].sseCompletion.doneEvents = 2; },
+    value => { value.transport[1].errorCode = 21; },
+    value => { value.eventRows[2].data.message.usage.totalTokens = 0; },
+    value => { value.eventRows[3].data.message.errorMessage = 'provider unauthorized'; },
+    value => { [value.eventRows[2], value.eventRows[3]] = [value.eventRows[3], value.eventRows[2]]; },
+    value => { value.eventRows.at(-1).data.cleanup.abort_settled = false; },
+    value => { value.next.result.outcome = 'pass'; value.next.result.verified_success = true; },
+    value => { value.next.contracts[0].status = 'pass'; },
+    value => { value.next.contracts[0].refs[0].pointer = '/contracts/0'; },
+    value => { value.next.measurements.input_total.value.value = 19; },
+    value => { value.next.admission.completeness.tools = 'partial'; },
+  ];
+  for (const mutate of cases) {
+    const value = wrappedRequestLimitProof(); mutate(value);
+    assert.throws(() => assertWrappedRequestLimitRepair(value));
+  }
 });
 
 test('appending later ledger rows preserves verification, but another applied revision is rejected', async () => {

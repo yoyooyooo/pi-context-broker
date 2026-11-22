@@ -11,7 +11,7 @@ const HELP = `Benchmark: frozen comparisons, actual episodes, and offline eviden
   node benchmark/cli.mjs configure --setup ABS_SETUP_JSON
   node benchmark/cli.mjs run --plan ABS_FROZEN_PLAN [--limit NONNEGATIVE_INTEGER] [--analysis-revision ABS_JSON]
   node benchmark/cli.mjs status --root ABS_BATCH_DIRECTORY
-  node benchmark/cli.mjs gate --root ABS_FIRST24_BATCH --out ABS_NEW_GATE_JSON
+  node benchmark/cli.mjs gate --root ABS_GATE_BATCH --out ABS_NEW_GATE_JSON
   node benchmark/cli.mjs reconcile --root ABS_BATCH_DIRECTORY --lease OBSERVED_DEAD_LEASE_ID
   node benchmark/cli.mjs analyze --root ABS_BATCH_DIRECTORY --out ABS_NEW_REPORT
   node benchmark/cli.mjs reanalysis --root ABS_BATCH_DIRECTORY --out ABS_NEW_REPORT
@@ -30,7 +30,9 @@ configure uses the shared paired environment and maintained Pi SDK, performs
 zero provider sends, checks actual loading and final serialization, and freezes
 the concrete bounded plan. run accepts that plan only; no arbitrary prompt or
 silent model fallback is accepted. Invalid, unknown and failed evidence stays.
-The first 24 pilot episodes are a hard evidence gate inside the 144 attempt cap.
+The legacy first24 gate and explicit prospective scope gates retain the same
+144 scheduled-episode campaign cap. See docs/benchmark-pilot-scope.md for the
+two-model gate, verified zero-send repair and single manual route amendment.
 analyze replays normalized observations; reanalysis re-reads original artifacts
 and the private oracle before scoring. Both perform zero model requests.
 

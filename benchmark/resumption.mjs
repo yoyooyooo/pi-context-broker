@@ -29,10 +29,11 @@ function withoutQueryLease(projection) {
   return result;
 }
 
-export async function assertZeroSendInvalid({ episode, runtime, shared }) {
+export async function assertZeroSendInvalid({ episode, runtime, shared, rejection = 'startup_admission', environmentRoot }) {
   assert.equal(episode.admission.status, 'invalid');
   assert.equal(runtime.status, 'admission_rejected');
-  assert.equal(runtime.error.code, 'BENCHMARK_ADMISSION_MISMATCH');
+  assert.ok(['startup_admission', 'final_request_contract'].includes(rejection));
+  assert.equal(runtime.error.code, rejection === 'startup_admission' ? 'BENCHMARK_ADMISSION_MISMATCH' : 'BENCHMARK_FINAL_REQUEST_CONTRACT_DRIFT');
   assert.equal(shared.runtime_check.status, 'unchanged'); assert.equal(shared.frozen_artifacts, 'passed');
   for (const key of ['attempts', 'tools', 'interventions']) assert.equal(episode.admission.completeness[key], 'complete');
   assert.equal(episode.measurements.actual_attempts.status, 'known'); assert.equal(episode.measurements.actual_attempts.value, 0);
@@ -40,7 +41,29 @@ export async function assertZeroSendInvalid({ episode, runtime, shared }) {
     assert.equal(episode.measurements[key].value.status, 'known'); assert.equal(episode.measurements[key].value.value, 0);
   }
   assert.equal(episode.timing.duration_ms.status, 'known');
-  assert.equal(runtime.requests.length, 0); assert.equal(runtime.turns.length, 0);
+  if (rejection === 'startup_admission') {
+    assert.equal(runtime.requests.length, 0); assert.equal(runtime.turns.length, 0);
+  } else {
+    assert.ok(environmentRoot);
+    assert.equal(runtime.correlation.run_id, episode.identity.run_id); assert.equal(runtime.correlation.episode_id, episode.identity.episode_id);
+    assert.equal(runtime.correlation.candidate_id, episode.identity.condition_id); assert.equal(runtime.correlation.task_id, episode.identity.case_id);
+    assert.equal(shared.run_id, episode.identity.run_id); assert.equal(shared.build_id, episode.identity.build_id);
+    assert.equal(runtime.requests.length, 1); assert.equal(runtime.turns.length, 1);
+    assert.equal(runtime.requests[0].attempts.length, 0); assert.equal(runtime.requests[0].accounted, true);
+    assert.equal(runtime.requests[0].usage, null); assert.equal(runtime.turns[0].final_text, null);
+    assert.equal(episode.attempts.length, 0); assert.equal(episode.tools.length, 0);
+    for (const key of ['attempts', 'tools', 'input_tokens', 'output_tokens', 'tokens']) assert.equal(runtime.budget[key], 0);
+    const artifacts = await verifyArtifactFiles(runtime.artifacts, { root: environmentRoot });
+    const admission = JSON.parse(artifacts.get('admission-comparison').bytes);
+    const catalog = JSON.parse(artifacts.get('first-request-catalog-comparison').bytes);
+    const contract = JSON.parse(artifacts.get('first-request-contract-comparison').bytes);
+    assert.deepEqual(admission.differences, [], 'The original startup admission must have passed');
+    assert.deepEqual(catalog.differences, [], 'The original canonical catalog must have matched');
+    assert.deepEqual(contract.differences.map(item => item.path), ['/messages'], 'Only the observed final-message contract rejection is repairable');
+    const transport = await readProviderTransport(artifacts.get('transport').path);
+    assert.equal(transport.at(-1).complete, true);
+    assert.ok(!transport.some(event => event.phase === 'request_start' && event.category === 'model'), 'A model HTTP attempt is not a zero-send repair');
+  }
   assert.equal(runtime.budget.usage_unknown, false);
 }
 

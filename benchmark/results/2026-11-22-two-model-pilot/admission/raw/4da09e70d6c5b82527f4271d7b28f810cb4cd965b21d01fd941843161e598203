@@ -1,0 +1,1 @@
+{"entries":[{"id":"0c38d8a8","modelId":"grok/grok-4.6","parentId":null,"provider":"[REDACTED_CREDENTIAL]","timestamp":"2026-11-22T16:23:14.302Z","type":"model_change"},{"id":"3c49c9a7","parentId":"0c38d8a8","thinkingLevel":"medium","timestamp":"2026-11-22T16:23:14.302Z","type":"thinking_level_change"}],"session_id":"[id:74396a85d23cea20c31d]"}

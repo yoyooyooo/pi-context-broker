@@ -4,11 +4,20 @@ import { appendFile, mkdir, readFile, realpath, rename, writeFile } from 'node:f
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fingerprint, validateProtocol } from './protocol.mjs';
 import { verifyGateReference } from './gate.mjs';
+import { verifyPilotScope, acquirePilotScopeLease, checkCampaignScope, scopeReservationFields, reconcilePilotScopeLease } from './pilot-scope.mjs';
 
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 const safe = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(value);
 
 function validatePilotLedger(protocol, execution) {
+  if (execution.pilot_ledger_root) assert.equal(protocol.phase, 'pilot', 'A shared pilot ledger cannot be used as a development bypass');
+  assert.equal(Boolean(protocol.policies.pilot.scope), Boolean(execution.pilot_scope), 'Pilot scope policy and execution registration must agree');
+  if (execution.pilot_scope) {
+    assert.equal(protocol.phase, 'pilot');
+    assert.equal(execution.pilot_scope.id, protocol.policies.pilot.scope.id);
+    assert.equal(execution.pilot_scope.role, protocol.policies.pilot.scope.role);
+    assert.ok(isAbsolute(execution.pilot_scope.amendment?.path ?? '') && /^[a-f0-9]{64}$/.test(execution.pilot_scope.amendment.sha256));
+  }
   if (protocol.phase !== 'pilot') return;
   const path = execution.pilot_ledger_root;
   assert.ok(typeof path === 'string' && isAbsolute(path), 'Pilot plans must freeze their shared pilot ledger');
@@ -65,10 +74,17 @@ export function validateBatchPlan(plan) {
   return plan;
 }
 
-export async function verifyRouteGate(plan) {
+export async function verifyRouteGate(plan, revisionOptions = {}) {
   const reference = plan.execution.route_gate;
   if (!reference || !isAbsolute(reference.path ?? '')) return { passed: false, reason: 'route_gate_pending' };
   const gate = await verifyGateReference({ reference, environmentRoot: plan.execution.environment_root });
+  if (plan.execution.pilot_scope) {
+    await verifyPilotScope(plan, revisionOptions);
+    assert.equal(gate.version, 3, 'The prospective scope requires its own v3 gate');
+    assert.deepEqual(gate.amendment, plan.execution.pilot_scope.amendment, 'Route gate belongs to another scope amendment');
+    assert.equal(gate.scope_id, plan.execution.pilot_scope.id);
+    return { passed: true, sha256: reference.sha256 };
+  }
   assert.ok(gate.scheduled_episodes >= plan.protocol.policies.pilot.route_gate_episodes);
   assert.ok(gate.episode_evidence.length >= plan.protocol.policies.pilot.route_gate_episodes);
   assert.equal(gate.observer_version, plan.protocol.policies.evidence.observer_version);
@@ -119,6 +135,23 @@ export async function batchStatus(controlRoot) {
 /** Restart is read/reconcile only for a started run. It never guesses whether a model call happened. */
 export async function runBatch({ plan, executeEpisode, maximumNewEpisodes = Infinity, reconcileEpisode, pilotLedgerRoot,
   analysisRevisionReference, analysisRevision }) {
+  validateBatchPlan(plan);
+  await checkCampaignScope(plan);
+  const scopeAmendment = await verifyPilotScope(plan, { analysisRevisionReference, analysisRevision });
+  if (scopeAmendment && plan.execution.pilot_scope.role === 'expansion') {
+    const gate = await verifyRouteGate(plan, { analysisRevisionReference, analysisRevision });
+    assert.ok(gate.passed, 'PILOT_SCOPE_GATE_REQUIRED: expansion cannot start before the prospective gate passes');
+  }
+  const release = scopeAmendment ? await acquirePilotScopeLease(plan, scopeAmendment) : null;
+  try {
+    await checkCampaignScope(plan, { activate: true });
+    return await runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconcileEpisode, pilotLedgerRoot,
+      analysisRevisionReference, analysisRevision, scopeAmendment });
+  } finally { if (release) await release(); }
+}
+
+async function runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconcileEpisode, pilotLedgerRoot,
+  analysisRevisionReference, analysisRevision, scopeAmendment }) {
   validateBatchPlan(plan);
   assert.ok(typeof executeEpisode === 'function');
   assert.ok(maximumNewEpisodes === Infinity || Number.isSafeInteger(maximumNewEpisodes) && maximumNewEpisodes >= 0);
@@ -185,14 +218,17 @@ export async function runBatch({ plan, executeEpisode, maximumNewEpisodes = Infi
     if (plan.protocol.phase !== 'pilot') return;
     assert.equal(pilotLedgerRoot, plan.execution.pilot_ledger_root, 'Pilot ledger must remain bound to the frozen plan');
     assert.equal(await realpath(pilotLedgerRoot), pilotLedgerRoot, 'Pilot ledger cannot change to a symlink');
+    if (scopeAmendment) await verifyPilotScope(plan);
+    const scopeFields = scopeAmendment ? scopeReservationFields(plan, scopeAmendment,
+      { path: planPath, sha256: createHash('sha256').update(await readFile(planPath)).digest('hex') }) : {};
     // O_EXCL reservations make the cap independent of retries, batch names and concurrent controllers.
     for (let n = 1; n <= plan.protocol.policies.pilot.max_scheduled_episodes; n++) {
-      if (n > plan.protocol.policies.pilot.route_gate_episodes && !verifiedPilotGate) {
+      if (!scopeAmendment && n > plan.protocol.policies.pilot.route_gate_episodes && !verifiedPilotGate) {
         const gate = await verifyRouteGate(plan);
         if (!gate.passed) throw Object.assign(new Error('Route evidence gate must pass before expanding beyond the first 24 scheduled episodes'), { code: 'ROUTE_GATE' });
         verifiedPilotGate = true;
       }
-      try { await save(join(pilotLedgerRoot, String(n).padStart(3, '0') + '.json'), { run_id: runId, experiment_id: plan.id, slot_id: slot.slot_id, at: new Date().toISOString() }); return n; }
+      try { await save(join(pilotLedgerRoot, String(n).padStart(3, '0') + '.json'), { run_id: runId, experiment_id: plan.id, slot_id: slot.slot_id, at: new Date().toISOString(), ...scopeFields }); return n; }
       catch (error) { if (error.code !== 'EEXIST') throw error; }
     }
     throw Object.assign(new Error('Pilot scheduling cap reached including invalid and replacements'), { code: 'PILOT_CAP' });
@@ -250,7 +286,15 @@ export async function runBatch({ plan, executeEpisode, maximumNewEpisodes = Infi
 export async function reconcileBatchLease({ controlRoot, leaseId }) {
   assert.ok(isAbsolute(controlRoot));
   const path = join(controlRoot, 'lease.json');
-  const lease = JSON.parse(await readFile(path, 'utf8'));
+  let lease;
+  try { lease = JSON.parse(await readFile(path, 'utf8')); }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    const plan = validateBatchPlan(JSON.parse(await readFile(join(controlRoot, 'plan.json'), 'utf8')));
+    const recovered = await reconcilePilotScopeLease({ plan, leaseId });
+    assert.ok(recovered, 'No matching interrupted batch or scope lease');
+    return { ...await batchStatus(controlRoot), scope_recovery: recovered };
+  }
   assert.equal(lease.id, leaseId, 'Recovery must name the observed interrupted lease');
   let live = false;
   try { process.kill(lease.pid, 0); live = true; } catch (error) { if (error.code !== 'ESRCH') throw error; }
@@ -258,6 +302,8 @@ export async function reconcileBatchLease({ controlRoot, leaseId }) {
   const status = await batchStatus(controlRoot);
   await save(join(controlRoot, 'lease-recovery-' + leaseId + '.json'), { lease, at: new Date().toISOString(), unresolved_runs: status.unresolved_runs,
     action: 'release_dead_owner_only', model_execution: false });
+  const plan = validateBatchPlan(JSON.parse(await readFile(join(controlRoot, 'plan.json'), 'utf8')));
+  await reconcilePilotScopeLease({ plan, leaseId, batchLease: lease });
   await rename(path, join(controlRoot, 'lease-interrupted-' + leaseId + '.json'));
   return status;
 }

@@ -440,6 +440,16 @@ function policyChecks(value, maps, pairCells, stage, errors) {
   if (value.metrics.dictionary_sha256 !== fingerprint(metricDictionary))
     issue(errors, '/metrics/dictionary_sha256', 'metric_dictionary_mismatch', 'Metric dictionary content must match this versioned implementation');
   const totalScheduled = value.pairs.length * 2 + value.assessments.filter(a => a.expected_support === 'supported').length;
+  if (policies.pilot.scope) {
+    const scope = policies.pilot.scope;
+    if (value.phase !== 'pilot') issue(errors, '/policies/pilot/scope', 'pilot_scope_phase', 'A prospective scope remains inside the pilot campaign');
+    if (value.models.length !== 2 || value.environments.length !== 2 || !setSame(value.environments.map(e => e.pi.mode), ['broker', 'native']))
+      issue(errors, '/policies/pilot/scope', 'pilot_scope_conditions', 'The registered scope requires two selected models in Broker and native');
+    if (value.conditions.length !== 4 || new Set(value.conditions.map(c => c.model_id + '/' + c.environment_id)).size !== 4)
+      issue(errors, '/conditions', 'pilot_scope_cells', 'Every selected model/environment cell must occur exactly once');
+    if (scope.role === 'gate' && (totalScheduled !== 16 || value.conditions.some(c => value.pairs.reduce((n, pair) => n + pair.condition_ids.filter(id => id === c.id).length, 0) !== 4)))
+      issue(errors, '/policies/pilot/scope', 'pilot_scope_gate_schedule', 'The prospective gate requires sixteen new episodes, four per condition');
+  }
   if (value.phase === 'pilot' && totalScheduled + (policies.reruns.max_episodes ?? 0) > policies.pilot.max_scheduled_episodes)
     issue(errors, '/pairs', 'pilot_episode_limit', 'Pilot planned attempts plus reserved replacements cannot exceed 144 including the first 24');
   for (const [i, budget] of policies.budgets.entries()) {
