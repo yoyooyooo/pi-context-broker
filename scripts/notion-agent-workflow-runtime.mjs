@@ -217,6 +217,7 @@ async function input(config) {
 }
 
 export async function planAgentWorkflow(config) {
+  if (config.profile === 'native-onboarding') return (await import('./notion-agent-onboarding.mjs')).planOnboardingWorkflow(config);
   const { scenario } = await input(config);
   const projectOverrides = agentWorkflowProjectSettings({}, scenario);
   return { version: 1, scope: config.scope, status: 'prepared_not_executed', scenario: scenario.id,
@@ -273,6 +274,7 @@ async function writeObservers(control, config, sourceCache, bodies, index) {
 
 /** Invoke through candidate-run --live. All private event handling stays here. */
 export async function runAgentWorkflow(config) {
+  if (config.profile === 'native-onboarding') return (await import('./notion-agent-onboarding.mjs')).runOnboardingWorkflow(config);
   const { corpus, bindings, scenario } = await input(config);
   const { analyzeNotionAgentTurn, inspectNotionAgentSession, captureNotionAgentSelection } = await import('./notion-agent-analysis.mjs');
   const { runAgentFixtureEvent } = await import('./notion-agent-fixtures.mjs');

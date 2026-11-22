@@ -77,6 +77,28 @@ edits remain available in the task's source trees.
 node scripts/paired-environment.mjs build --root /absolute/owned/feature-env
 ```
 
+For a candidate that must come from a published package shape, select the explicit
+packed installation mode:
+
+```sh
+node scripts/paired-environment.mjs build --root /absolute/owned/feature-env \
+  --id onboarding-packed --install-mode packed
+```
+
+This uses the existing npm pack and clean consumer installation convention. It
+packs both built packages with lifecycle scripts disabled, installs each archive
+in its own new consumer, and uses the same archive-to-installed byte check as
+the daily verifier. Every packed file must also match its selected build input.
+`build.json.candidate` records package versions, archives, installed bin/SDK/Broker
+entries and the complete installed dependency inventory. The archives and consumer
+trees are frozen alongside the original source and package inventories.
+
+`run` selects those recorded installed entries for the direct CLI target, private
+CLI wrapper and Broker extension. Do not overwrite a wrapper or edit a frozen
+package to select a candidate. The default `directory` mode keeps the existing
+build layout and behavior. Packed installation is package identity evidence;
+controlled HTTP, actual model behavior and daily acceptance keep their own gates.
+
 If dependency installation requires the machine's configured network proxy,
 name those existing variables explicitly, for example `--pass-env HTTPS_PROXY`.
 If that proxy requires an existing CA bundle, also pass
@@ -462,8 +484,12 @@ The [next delivery gate](next-worktree-delivery.md) still requires clean `next`
 checkouts, exact current remote commits, matching builds and actual normal Pi
 processes. Its branch and freshness checks must not be weakened for task
 branches or dirty development sources. The existing natural workflow
-`candidate-plan` / `candidate-run` path retains its normal-environment contract;
-an isolated run cannot be relabelled as a daily or natural acceptance result.
+`candidate-plan` / `candidate-run` path retains its normal-environment contract
+for daily/no-native-skills. The explicit
+[native-onboarding profile](../.agents/skills/verify-notion-agent-workflows/references/running.md#空父页首次使用)
+uses a packed build, an empty parent and a fresh independent grader through that
+same candidate entry. An isolation smoke cannot be relabelled as a natural result,
+and native onboarding cannot be relabelled as daily acceptance.
 
 Retain run state needed by unfinished operations. Once the task no longer needs
 its owned directories, follow the existing system-Trash cleanup policy. Do not

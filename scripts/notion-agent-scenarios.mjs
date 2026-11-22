@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 
-export const AGENT_PROFILES = Object.freeze(['daily', 'no-native-skills']);
-export const AGENT_FIXTURE_KINDS = Object.freeze(['mixed-rules', 'native-management', 'versioned-graph', 'upstream-projection']);
+export const AGENT_PROFILES = Object.freeze(['daily', 'no-native-skills', 'native-onboarding']);
+export const AGENT_FIXTURE_KINDS = Object.freeze(['mixed-rules', 'native-management', 'versioned-graph', 'upstream-projection', 'empty-parent']);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const identifier = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,119}$/u.test(value);
 const logicalVersion = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/u.test(value);
@@ -48,6 +48,10 @@ export function validateAgentFixtureRecipe(recipe) {
   keys(recipe, ['kind', 'objects', 'public', 'facts', 'readbacks', 'environment'], ['kind', 'objects'], 'fixture');
   assert.ok(AGENT_FIXTURE_KINDS.includes(recipe.kind), 'fixture: unsupported kind ' + recipe.kind);
   assert.ok(Array.isArray(recipe.objects), 'fixture.objects must be an array');
+  if (recipe.kind === 'empty-parent') {
+    assert.equal(recipe.objects.length, 0, 'Empty-parent onboarding cannot pre-create objects');
+    assert.equal(recipe.environment, undefined, 'Empty-parent onboarding has no daily source configuration');
+  }
   const aliases = new Set();
   for (const item of recipe.objects) {
     keys(item, ['id', 'name', 'description', 'placement', 'initial', 'versions', 'source'],
@@ -263,6 +267,13 @@ export function validateAgentCorpus(corpus) {
     assert.ok(own(corpus.fixtures, scenario.fixture), scenario.id + ': unknown fixture ' + scenario.fixture);
     assert.ok(Array.isArray(scenario.turns) && scenario.turns.length > 0, scenario.id + ': missing turns');
     const recipe = corpus.fixtures[scenario.fixture], aliases = new Map(recipe.objects.map(item => [item.id, item])), turns = new Set();
+    if (scenario.profiles.includes('native-onboarding') || recipe.kind === 'empty-parent') {
+      assert.deepEqual(scenario.profiles, ['native-onboarding'], 'Empty-parent onboarding is separate from daily');
+      assert.equal(recipe.kind, 'empty-parent', 'Native onboarding requires an empty parent');
+      assert.ok(scenario.turns.every(turn => turn.before === undefined), 'One onboarding episode cannot pre-seed, restart or repair subject state');
+      assert.ok(scenario.turns.every(turn => turn.expect.every(expected => ['completed', 'candidate-cli', 'business-readback'].includes(expected.kind))),
+        'Onboarding uses native completion/CLI and independent readback assertions');
+    }
     for (const turn of scenario.turns) {
       validateTurn(turn, scenario.id + '.turn');
       assert.ok(!turns.has(turn.id), scenario.id + ': duplicate turn ' + turn.id);

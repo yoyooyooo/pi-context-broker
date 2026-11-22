@@ -3567,6 +3567,10 @@
           ]
         }
       }
+    },
+    "empty-parent": {
+      "kind": "empty-parent",
+      "objects": []
     }
   },
   "scenarios": [
@@ -6209,6 +6213,36 @@
             {
               "kind": "business-readback",
               "receipt": "ready"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "onboarding-empty-parent",
+      "fixture": "empty-parent",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "native-onboarding"
+      ],
+      "turns": [
+        {
+          "id": "first-use",
+          "prompt": "我第一次使用 Notion Skills。可用的命令行工具是 ntn-skills，公开说明在 {{readme.path}}。我授权你在这个空父页创建并使用我的技能库：{{parent.url}}。{{business.goal}} 最后请给出新库入口链接、保存的技能和支持文件，以及实际使用结果。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "candidate-cli",
+              "min": 1
+            },
+            {
+              "kind": "business-readback",
+              "receipt": "onboarding"
             }
           ]
         }

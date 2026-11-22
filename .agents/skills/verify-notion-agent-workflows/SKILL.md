@@ -9,7 +9,9 @@ description: "用真实 Pi 和 magpie/group/worker 验证自然用户怎样发�
 
 先读[验证交接表](../../../docs/verification-routing.md)。本入口负责 C08 自然工作流和 Agent 行为；沿现役候选入口验证 C01–C07 的实际用户表现。CLI 字段、关系和 writer 由管理领域负责；状态实现归 consumer-state，配对安装归 integration。使用配对 CLI 的 verification/skill-domains.json 和 docs/verification-contracts.md，不建立第二合同索引。
 
-只用当前 next。正式模型固定为真实 magpie/group/worker、thinking high。将普通 Pi 的 daily 作为主环境：保留真实 HOME、全局与项目 Skills、正常扩展和 MCP。no-native-skills 只增加 -ns；它不清除 Broker local 或显式可读文件。不得用 -ne、显式预加载 maintain、工具指定提示或受控 provider 代填自然结果。
+从当前 next 开始。正式模型固定为真实 magpie/group/worker、thinking high。日用旅程以普通 Pi 的 daily 为主环境：保留真实 HOME、全局与项目 Skills、正常扩展和 MCP。no-native-skills 只增加 -ns；它不清除 Broker local 或显式可读文件。日用结果不得用 -ne、显式预加载 maintain、工具指定提示或受控 provider 代填。
+
+首次建库另选 native-onboarding，不继承日用配置或已有 database。沿同一 candidate-plan / candidate-run 入口，使用 paired build 的 packed 安装和授权空 parent；详见[空父页首次使用](references/running.md#空父页首次使用)。Pi 只作原生宿主，维护说明由 Agent 自己沿公开 README、help、bootstrap 发现。单个私有 run 内保持一个连续 episode，独立 grader 在 fresh run 中按实际产出的 entry 完整读回。它不填作 daily 或双机安装通过。
 
 ## 选择最小充分旅程
 
@@ -19,6 +21,7 @@ description: "用真实 Pi 和 magpie/group/worker 验证自然用户怎样发�
 | --- | --- |
 | 目录、描述、同名选路或提示词 | mixed-explicit-global、mixed-explicit-notion；再选对应 URL、歧义、语义匹配、等价、互补或原生 slash 场景 |
 | 冷启动、builtin 维护说明 | cold-maintenance-consultation、connected-maintenance-filtered-view；明确离线诉求另跑 explicit-offline-bootstrap |
+| 空父页首次建库、公开 CLI onboarding | onboarding-empty-parent / native-onboarding；独立保存业务 oracle，禁止预植维护 Skill、库、Store 或日用缓存 |
 | 版本、支持文件、会话恢复 | lifecycle-inspect-adopt；再选依赖共享、来源切换、fork/compact/resume 或故障后三轮 |
 | 原生管理 | management-native-crud、management-register-existing、management-description-flags-resource |
 | 上游投影与完整资源树 | management-upstream-delete-restore、management-source-applying-resume；再跑 holdout-upstream-scripts-restore |
@@ -45,7 +48,7 @@ holdout- 前缀是保留到修复后使用的输入；它们改变业务材料�
     node scripts/verify-pi-daily-installation.mjs candidate-plan --config /absolute/owned/workflow-config.json
     node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/owned/workflow-config.json --live
 
-配置使用 scope:"notion-agent-workflow"。一次执行一个场景/profile，沿同一公开入口选择完整语料；不建立另一个总 runner。计划只表示输入可准备，不是模型成绩。
+配置使用 scope:"notion-agent-workflow"。一次执行一个场景/profile，沿同一公开入口选择完整语料；不建立另一个总 runner。计划只表示输入可准备，不是模型成绩。native-onboarding 的 packed 入口、运行时声明与装载观察由 integration 交接；result 分开保存 process、validity、episodeStatus、business 和 hardContracts。drift/unknown 不能通过；无法取得唯一 entry 或完整读回时先对账父页，不把失败解释为零副作用，也不重跑初始化碰运气。
 
 让运行器等待每轮模型与工具真正结束，再执行声明的 before 事件并独立读回，之后提交下一条原始自然输入。普通继续不重启 Pi；restart、fork 和 compact 必须各有真实 RPC 与 session 证据。fork.turn 指从那条用户输入**之前**分叉，不能误算成保留该轮之后的状态。
 
@@ -88,4 +91,4 @@ Store 故障先用同一固定 snapshot 的公开离线读取证明正文可读�
 
 报告实际执行的场景/profile、候选身份、修复和复验关系，以及仍缺的证据。每个自然 case 是它所声明 C/T 的明确切片；同一原始运行可被多张薄回执引用，但不得重复计成本，不能因某个切片通过就宣称整个 T 或整批通过。
 
-新 Skill/路由或语料变动后运行对应 scripts/notion-agent-scenarios.test.mjs、scripts/verification-skill-routing.test.mjs 与既有合同检查；真实 Agent 结论仍由本次实跑产生。
+新 Skill/路由或语料变动后运行对应 scripts/notion-agent-scenarios.test.mjs、scripts/notion-agent-onboarding.test.mjs、scripts/verification-skill-routing.test.mjs 与既有合同检查；真实 Agent 结论仍由本次实跑产生。

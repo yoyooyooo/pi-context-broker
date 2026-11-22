@@ -1,12 +1,47 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const official = ["effect", "@effect/platform-node", "@effect/platform-node-shared", "@effect/sql-sqlite-node"];
+
+/** The same archive-to-installed byte check is used by daily and isolated candidates. */
+export async function verifyArchiveInstallation(root, archive, expectedHash) {
+  const hash = value => createHash('sha256').update(value).digest('hex');
+  const inside = (base, path) => { const local = relative(base, path); return local === '' || local !== '..' && !local.startsWith('..' + sep) && !isAbsolute(local); };
+  const identity = async path => { const bytes = await readFile(path); return { path, realpath: await realpath(path), bytes: bytes.length, sha256: hash(bytes) }; };
+  assert.ok(isAbsolute(root) && isAbsolute(archive));
+  const canonicalRoot = await realpath(root), archiveIdentity = await identity(archive);
+  assert.equal(archiveIdentity.sha256, expectedHash, 'Final package archive SHA mismatch');
+  const entries = execFileSync('tar', ['-tf', archive], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }).split('\n').filter(value => value && !value.endsWith('/'));
+  assert.ok(entries.length > 0, 'A package archive must contain files');
+  const files = [];
+  for (const entry of entries) {
+    assert.ok(entry.startsWith('package/'));
+    const local = entry.slice('package/'.length), path = resolve(root, local);
+    assert.ok(inside(root, path), 'Unsafe package member');
+    assert.ok(inside(canonicalRoot, await realpath(path)), 'A package member escapes the installed package');
+    const packed = execFileSync('tar', ['-xOf', archive, entry], { maxBuffer: 32 * 1024 * 1024 });
+    const actual = await identity(path);
+    assert.equal(actual.sha256, hash(packed), `Installed package differs: ${local}`);
+    files.push({ path: local, sha256: actual.sha256, bytes: actual.bytes, runtime: /^(?:src|dist)\//u.test(local) || local === 'package.json' });
+  }
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  return { root, archive: archiveIdentity, file_count: files.length, files, sha256: hash(JSON.stringify(files)) };
+}
+export function verifyBundledNotices({ selectedNoticesBytes, bundledNoticesBytes, expectedSha256 }) {
+  assert.ok(selectedNoticesBytes instanceof Uint8Array && selectedNoticesBytes.length > 0, 'Selected CLI THIRD_PARTY_NOTICES.md must contain complete nonempty bytes');
+  assert.ok(bundledNoticesBytes instanceof Uint8Array, 'Bundled NOTICES.txt bytes are required');
+  assert.match(expectedSha256, /^[a-f0-9]{64}$/u);
+  const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+  const selected = Buffer.from(selectedNoticesBytes), bundled = Buffer.from(bundledNoticesBytes);
+  assert.equal(hash(selected), expectedSha256, 'Selected CLI third-party notices changed');
+  assert.ok(bundled.indexOf(selected) >= 0, 'Bundled NOTICES.txt must contain the complete selected CLI THIRD_PARTY_NOTICES.md unchanged');
+  return { source_sha256: expectedSha256, source_bytes: selected.length, bundled_sha256: hash(bundled), bundled_bytes: bundled.length };
+}
 export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, expectedVersion }) {
   assert.equal(manifest.version, 1, "Unknown bundled runtime manifest");
   assert.equal(manifest.package, "ntn-skills", "Unexpected bundled package identity");

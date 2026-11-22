@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from "no
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { verifyPackageClosure, verifyBundledRuntime } from "./verify-package-closure.mjs";
+import { verifyPackageClosure, verifyBundledNotices, verifyBundledRuntime } from "./verify-package-closure.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
@@ -61,7 +61,8 @@ async function selectedBuildInput(entry) {
       const exported = metadata.exports?.["./sdk"];
       const sdk = typeof exported === "string" ? exported : exported?.import;
       return { package: metadata.name, version: metadata.version, manifest: await identity(path),
-        cli: await identity(entry), sdk: await identity(await runtimePath(directory, sdk)) };
+        cli: await identity(entry), sdk: await identity(await runtimePath(directory, sdk)),
+        notices: await identity(await runtimePath(directory, "THIRD_PARTY_NOTICES.md")) };
     }
     const parent = dirname(directory);
     assert.notEqual(parent, directory, "Explicit build entry must belong to an ntn-skills package");
@@ -107,6 +108,8 @@ try {
   const installed = closure.installed;
   const metadata = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
   report.package = { name: metadata.name, version: metadata.version, installed, archive: await identity(archive) };
+  report.notices = verifyBundledNotices({ selectedNoticesBytes: await readFile(selected.notices.path),
+    bundledNoticesBytes: await readFile(join(installed, "dist/NOTICES.txt")), expectedSha256: selected.notices.sha256 });
   const runtime = JSON.parse(await readFile(join(installed, "dist/ntn-skills-runtime.json"), "utf8"));
   report.runtime = { ...runtime, hashes: verifyBundledRuntime({ manifest: runtime, expectedVersion: selected.version,
     cliBytes: await readFile(join(installed, "dist/ntn-skills.mjs")),

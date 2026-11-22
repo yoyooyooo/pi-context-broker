@@ -28,6 +28,8 @@ snapshot 与依赖复制到自己的 run/source；`--cwd cli|broker` 及 PAIRED_
 PAIRED_BROKER_SOURCE 指向本 run 副本，默认 workspace 为 run 自有目录。
 command 可修改自己的副本，不能改 build 内冻结目录；CLI/Pi 纯运行不复制源码。
 
+首次初始化候选使用 `build --install-mode packed`。该模式沿现有 npm pack / 空 consumer install 合同，复用 daily 的 archive-to-installed 字节核对，并比较打包前源码产物。检查 build.json.candidate 的 package/version、archive、实际 bin/SDK/Broker entry、完整 installed 与 archive inventory。run 的直接入口和私有 wrapper 必须选同一安装候选；冻结后不能改 wrapper、包或依赖来绕过检查。默认 directory build 不变。针对这一选择运行 scripts/paired-environment.test.mjs 的实际归档安装与篡改反例。
+
 修改隔离机制时，实际创建两个环境并检查 Git 元数据与目录互不共享；核对 create
 没有安装依赖，各 generation 的源码、依赖、完整产物目录独立，build 记录原仓 HEAD、
 snapshot 指纹、完整 source_tree 与 runtime 清单。构建后修改一边源码并生成新 build，
@@ -77,7 +79,7 @@ launcher 不替 CLI 选择或校验这些参数，裸 list 不会因 launcher en
 
 隔离 smoke 不等于自然旅程或正常日用验收。不要为让任务分支通过而放宽
 `verify-next-worktrees.mjs` 的 branch、clean、真实远端和构建检查，也不要绕过
-candidate/daily 对正常 HOME、agentDir 与配置的要求。
+candidate/daily 对正常 HOME、agentDir 与配置的要求。现有 candidate 入口的明确 native-onboarding profile 单独使用隔离初态，交给工作流 Skill 判自然业务结果；它不满足 daily 的正常环境要求。
 
 ## 1. 绑定同一份 CLI/SDK
 
@@ -126,6 +128,7 @@ node scripts/verify-artifacts.mjs --fixture /absolute/new/current-fixture/fixtur
 它复用 `scripts/verify-notion-sdk-installed.mjs`，不预植 snapshot/cache，不运行旧多根 fixture。
 核对分页目录、完整 Files、主文、warm cache、use、标量/批量资源、错误 owner/scope 与两处取消。
 安装包同时检查 runtime 版本/hash、随包资源、消费 schema 和 `ctl library import` 必需参数。
+所选 CLI 的完整 THIRD_PARTY_NOTICES.md 必须按原始字节包含在 Broker dist/NOTICES.txt 中；检查冻结原件 hash、安装包中的完整内容及产物 inventory，不能只匹配依赖名称或版权关键词。
 读取本次 `manifest.json`、`commands.json`、`current-sdk/result.json` 与 HTTP 账本；不能只看退出码。
 确认普通消费语义写入为零、CLI 正文读取子进程为零，且实际加载的是所选包的 CLI/SDK 字节。
 该入口只在自有临时目录安装 loader 依赖，不启动真实 Pi 会话，也不更改现有日用安装。
