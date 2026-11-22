@@ -248,6 +248,47 @@ export async function createTurnBridgeController(input) {
           if (performance.now() - began > config.limits.waitMs) throw new TurnBridgeError('TURN_BRIDGE_CHECKPOINT_TIMEOUT');
           await delay(config.limits.pollMs); }
       };
+      // The shared launcher creates run.json before its initial write has
+      // completed. Existence is not publication; use one fixed deadline while
+      // waiting for stable, parseable bytes. Parsed identity errors are terminal.
+      const awaitRunManifest = async () => {
+        const file = join(config.runRoot, 'run.json'), began = performance.now();
+        let last = null, attempts = 0, recordedPending = false;
+        for (;;) {
+          const reason = stopReason() ?? (performance.now() - began >= config.limits.waitMs ? 'TURN_BRIDGE_RUN_MANIFEST_TIMEOUT' : null);
+          if (reason) {
+            if (last) await log.append('run_manifest_unavailable', { reason, elapsed_ms: performance.now() - began, attempts, last_observation: last });
+            throw new TurnBridgeError(reason);
+          }
+          if (await exists(file)) {
+            let content;
+            attempts++;
+            try { content = await readOwned(file, [config.runRoot], config.limits.maxPacketBytes); }
+            catch (error) {
+              if (error.code !== 'ERR_ASSERTION' || !error.message.includes('TURN_BRIDGE_FILE_CHANGED')) throw error;
+              last = { path: file, status: 'changed_during_read' };
+            }
+            if (content !== undefined) {
+              let parsed, incomplete = false;
+              try { parsed = JSON.parse(content); }
+              catch (error) { if (!(error instanceof SyntaxError)) throw error; incomplete = true; }
+              const observed = { path: file, sha256: hash(content), bytes: content.length };
+              if (!incomplete) {
+                if (recordedPending) await log.append('run_manifest_observed', { ...observed, elapsed_ms: performance.now() - began, attempts });
+                return parsed;
+              }
+              // Do not put JSON parser excerpts (which can contain arbitrary
+              // file text) in the journal. The retained path/hash owns the fact.
+              last = { ...observed, status: 'json_incomplete_or_invalid' };
+            }
+            if (!recordedPending) {
+              await log.append('run_manifest_pending', { deadline_ms: config.limits.waitMs, observation: last });
+              recordedPending = true;
+            }
+          }
+          await delay(Math.min(config.limits.pollMs, Math.max(1, config.limits.waitMs - (performance.now() - began))));
+        }
+      };
       const eventState = id => log.rows.filter(row => row.data?.event_id === id && ['event_started', 'event_result'].includes(row.type)).at(-1);
       const applyEvent = async event => {
         const prior = eventState(event.id), idempotencyKey = hash(canonical({ ...ids, plan_sha256: planSha256, event_id: event.id }));
@@ -270,8 +311,8 @@ export async function createTurnBridgeController(input) {
         await log.append('event_result', { event_id: event.id, idempotency_key: idempotencyKey, result: value }); return value;
       };
       try {
-        await awaitPath(join(config.runRoot, 'run.json')); await ownedDirectory(config.runRoot);
-        const shared = await readPacket(join(config.runRoot, 'run.json'), config.runRoot, config.limits.maxPacketBytes);
+        const shared = await awaitRunManifest(); await ownedDirectory(config.runRoot);
+        assert.ok(shared && typeof shared === 'object' && !Array.isArray(shared), 'TURN_BRIDGE_SHARED_RUN_ID');
         assert.equal(shared.run_id, config.runId, 'TURN_BRIDGE_SHARED_RUN_ID');
         await ownedDirectory(root, { create: true });
         await ownedDirectory(join(root, 'requests'), { create: true }); await ownedDirectory(join(root, 'receipts'), { create: true });

@@ -221,3 +221,51 @@ test('closing a subject with a pending checkpoint cancels its wait without a fab
   assert.equal(observed.at(-1).stopped, 'TURN_BRIDGE_CANCELLED'); assert.ok(!observed.some(row => row.id === 'turn-2'));
   await retainProof(f, result, exited, { actual_fixture_writes: 0 });
 });
+
+test('initial empty or partial run manifest waits for complete publication before the real child connects', { timeout: 15000 }, async () => {
+  for (const initial of ['', '{"run_id":']) {
+    const f = await setup(initial ? 'partial-run-publication' : 'empty-run-publication', { events: [] });
+    const path = join(f.config.runRoot, 'run.json'); await writeFile(path, initial);
+    const controller = await createTurnBridgeController(f.config), subject = await launchSubject(f);
+    const serving = controller.serve({ subject: subject.done });
+    const began = performance.now();
+    for (;;) {
+      const rows = await readTurnBridgeJournal(join(f.config.controllerRoot, 'controller.jsonl'));
+      if (rows.some(row => row.type === 'run_manifest_pending')) break;
+      assert.ok(performance.now() - began < 2000, 'Controller must actually observe the incomplete publication');
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    await writeFile(path, JSON.stringify({ run_id: f.config.runId }) + '\n');
+    const result = await serving, exited = await subject.done;
+    assert.equal(result.status, 'completed'); assert.equal(exited.code, 0, exited.stderr);
+    const rows = await readTurnBridgeJournal(result.journal.path), pending = rows.find(row => row.type === 'run_manifest_pending');
+    assert.equal(pending.data.observation.sha256, sha(initial)); assert.equal(pending.data.observation.bytes, Buffer.byteLength(initial));
+    assert.ok(rows.some(row => row.type === 'run_manifest_observed'));
+    await retainProof(f, result, exited, { initial_manifest_sha256: sha(initial), initial_manifest_bytes: Buffer.byteLength(initial) });
+  }
+});
+
+test('persistently invalid run manifest stops at its fixed deadline with retained corruption evidence', async () => {
+  const f = await setup('invalid-run-publication', { events: [], limits: { wallMs: 2000, waitMs: 100, eventMs: 50, pollMs: 5 } });
+  const invalid = '{ invalid owned test manifest', path = join(f.config.runRoot, 'run.json'); await writeFile(path, invalid);
+  const controller = await createTurnBridgeController(f.config), began = performance.now();
+  const result = await controller.serve({ subject: new Promise(() => {}) });
+  assert.equal(result.status, 'stopped'); assert.equal(result.reason, 'TURN_BRIDGE_RUN_MANIFEST_TIMEOUT');
+  assert.ok(performance.now() - began >= 100); assert.ok(performance.now() - began < 1500);
+  const rows = await readTurnBridgeJournal(result.journal.path), unavailable = rows.find(row => row.type === 'run_manifest_unavailable');
+  assert.equal(unavailable.data.last_observation.sha256, sha(invalid)); assert.equal(await readFile(path, 'utf8'), invalid);
+  await assert.rejects(readFile(join(f.config.runRoot, 'benchmark/turn-bridge/ready.json')), { code: 'ENOENT' });
+  await retainProof(f, result, { scope: 'subject not launched; readiness never published' }, { invalid_manifest_sha256: sha(invalid) });
+});
+
+test('complete wrong run identity fails immediately and is never treated as a pending publication', async () => {
+  const f = await setup('wrong-run-publication', { events: [], limits: { wallMs: 15000, waitMs: 8000, eventMs: 2000, pollMs: 5 } });
+  const path = join(f.config.runRoot, 'run.json'); await writeFile(path, JSON.stringify({ run_id: 'another-run' }) + '\n');
+  const controller = await createTurnBridgeController(f.config), began = performance.now();
+  const result = await controller.serve({ subject: new Promise(() => {}) });
+  assert.equal(result.status, 'stopped'); assert.match(result.reason, /TURN_BRIDGE_SHARED_RUN_ID/);
+  assert.ok(performance.now() - began < 2000);
+  const rows = await readTurnBridgeJournal(result.journal.path);
+  assert.equal(rows.some(row => row.type === 'run_manifest_pending'), false);
+  await retainProof(f, result, { scope: 'subject not launched; wrong identity rejected' });
+});
