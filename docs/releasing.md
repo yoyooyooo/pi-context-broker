@@ -103,6 +103,46 @@ Repair never unpublishes a package, moves a tag, resets a channel or overwrites
 a release asset. If policy or source code needs changing, deliver that change
 through main and use a new version.
 
+## Security fixes, deprecation and channel rollback
+
+Published version bytes and Git tags remain immutable. Prefer a reviewed higher
+patch release and an actionable upgrade notice. Report and coordinate security
+issues through [SECURITY.md](../SECURITY.md); the maintainer chooses the affected
+version range and replacement from actual evidence.
+
+Registry metadata changes need explicit incident authorization. Before changing
+anything, retain the current dist-tags, the affected version's metadata and the
+known-good version's integrity/provenance. Verify a fresh independent install of
+that exact known-good version. Replace every uppercase version placeholder below
+with the reviewed exact version.
+
+```sh
+npm view pi-context-broker dist-tags --json --registry https://registry.npmjs.org
+npm view pi-context-broker@BAD_VERSION version deprecated dist --json --registry https://registry.npmjs.org
+npm view pi-context-broker@KNOWN_GOOD_VERSION version dist --json --registry https://registry.npmjs.org
+```
+
+If an incident requires temporarily steering new default installs to an older
+verified release before a fix is ready, an authorized maintainer may run
+`npm dist-tag add pi-context-broker@KNOWN_GOOD_VERSION latest --registry https://registry.npmjs.org`,
+then read `npm view pi-context-broker dist-tags --json --registry https://registry.npmjs.org`
+and confirm the exact expected latest value. This is an explicit incident
+operation outside the forward-only publication/repair workflow. It leaves
+existing installations in place, so give those users a concrete upgrade or pin
+instruction.
+
+To mark a specific bad version, use
+`npm deprecate pi-context-broker@BAD_VERSION "Affected by ISSUE; upgrade to FIXED_VERSION." --registry https://registry.npmjs.org`.
+Read that exact version's `deprecated` field back and preserve the result. A
+deprecation notice does not replace the archive or select a new channel.
+
+Unpublish is reserved for an independently authorized incident, such as an
+exposed secret or compromised archive, under npm's current unpublish policy.
+It is not routine rollback. Rotate exposed credentials separately. Neither
+withdrawal nor deprecation makes a published version number or tag reusable.
+These instructions define an available response path; preparing or testing this
+repository does not execute these registry mutations.
+
 ## Verify the release mechanism without publishing
 
 ```sh

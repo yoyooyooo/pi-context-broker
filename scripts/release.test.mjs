@@ -233,6 +233,15 @@ test("a local commit ahead of main and a side branch cannot release", t => {
   f.assertRemoteUnchanged();
 });
 
+test("--no-push still requires a current authoritative remote", t => {
+  const f = fixture(t);
+  f.git("remote", "remove", "origin");
+  const result = f.release("patch", "--no-push");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Every mode requires current origin\/main/);
+  f.assertNoRelease();
+});
+
 const candidate = {
   name: "pi-context-broker", packageVersion: "1.0.1", tag: "v1.0.1", mode: "new",
   brokerCommit: "a".repeat(40), cliCommit: "b".repeat(40), sha256: "c".repeat(64),
