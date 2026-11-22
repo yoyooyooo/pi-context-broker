@@ -321,7 +321,7 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
     }
     for (const operation of starts.filter(event => event.kind === 'sdk')) {
       assert.ok(hostPids.has(operation.pid), 'SDK operation belongs to another process');
-      assert.ok(['list', 'files', 'consume', 'read', 'read-resources'].includes(operation.operation));
+      assert.ok(['list', 'files', 'consume', 'read', 'read-resources', 'resolve'].includes(operation.operation));
       const terminal = events.filter(event => event.phase === 'completed' && event.requestId === operation.requestId);
       assert.equal(terminal.length, 1, 'SDK operation needs one actual terminal');
       assert.equal(terminal[0].pid, operation.pid);

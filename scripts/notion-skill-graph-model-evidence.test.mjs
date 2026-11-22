@@ -195,25 +195,38 @@ for (const representation of ['flat', 'combined']) test('SDK observer retains ac
   const responses = path.join(root, 'responses'), ledger = path.join(root, 'source.jsonl'); await mkdir(responses); await writeFile(ledger, '');
   const observer = observeGraphSdk({ channel, fs, paths: { ledger, responses, outputRoot: root }, safeMetrics: safeRequestMetrics });
   const fixture = sourceFixture();
-  const publish = (id, operation, value) => {
+  const publish = (id, operation, value, requestMetrics = emptyMetrics) => {
     channel('context-broker.notion-sdk').publish({ version: 1, event: 'start', id, operation, pid: process.pid });
     channel('context-broker.notion-sdk-result').publish({ version: 1, id, operation, value });
-    channel('context-broker.notion-sdk').publish({ version: 1, event: 'end', id, operation, pid: process.pid, status: 'completed', sdk_started: true, metrics_observed: true, request_metrics: emptyMetrics });
+    channel('context-broker.notion-sdk').publish({ version: 1, event: 'end', id, operation, pid: process.pid, status: 'completed', sdk_started: true, metrics_observed: true, request_metrics: requestMetrics });
   };
   publish('catalog', 'list', representation === 'flat' ? { scope: fixture.scope, records: [fixture.record] } : pairedCatalogReceipt().value);
   publish('manifest', 'files', fixture.value.entries[0].manifest);
-  publish('consumption', 'consume', fixture.value); observer.close();
-  const receipts = await Promise.all(['catalog', 'manifest', 'consumption'].map(async id => JSON.parse(await readFile(path.join(responses, id + '.json'), 'utf8'))));
+  publish('consumption', 'consume', fixture.value);
+  const resolution = { scope: fixture.scope, record: fixture.record, ref: fixture.files[1].ref };
+  publish('resolution', 'resolve', resolution, { ...emptyMetrics, total_requests: 1, trace: [{ event: 'attempt', attempt: 1,
+    kind: 'notion_metadata', method: 'POST', started_ms: 0, duration_ms: 1, outcome: 'success',
+    request_bytes: 2, response_bytes: 37, http_status: 200, request_id: 'resolve-metadata', rate_limit_reason: null, retry_after_seconds: null }] });
+  observer.close();
+  const receipts = await Promise.all(['catalog', 'manifest', 'consumption', 'resolution'].map(async id => JSON.parse(await readFile(path.join(responses, id + '.json'), 'utf8'))));
   assert.deepEqual(receipts[2].value, fixture.value);
   assert.deepEqual(graphSourceViews([receipts[1]]), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'File metadata is not a directory, prepared graph or delivered body');
+  assert.deepEqual(receipts[3].value, resolution);
+  assert.deepEqual(graphSourceViews([receipts[3]]), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'Resolving an identity does not read a body, prepare a graph or deliver a resource');
   const events = await lines(ledger), accounting = graphSourceAccounting(events, receipts, { sourceMode: 'sdk', requireConsumption: true });
-  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0 }); assert.equal(accounting.actual_http_attempts, 0);
+  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0, resolve: 1 }); assert.equal(accounting.actual_http_attempts, 1);
+  assert.equal(accounting.source_results_observed, 4);
+  assert.throws(() => graphSourceAccounting(events.filter(event => event.requestId !== 'consumption'),
+    receipts.filter(item => item.requestId !== 'consumption'), { sourceMode: 'sdk', requireConsumption: true }), /real consumer/);
   assert.throws(() => graphSourceAccounting(events.map(event => event.requestId === 'manifest' ? { ...event, operation: 'future-operation' } : event),
     receipts.map(item => item.requestId === 'manifest' ? { ...item, operation: 'future-operation' } : item), { sourceMode: 'sdk' }), /Unknown SDK operation/);
   assert.throws(() => graphSourceAccounting([], receipts, { sourceMode: 'sdk' }), /missing source observer/);
   assert.throws(() => graphSourceAccounting(events, receipts.map(item => ({ ...item, metrics: null })), { sourceMode: 'sdk' }), /metrics/);
+  assert.throws(() => graphSourceAccounting(events, receipts.map(item => item.operation === 'resolve' ? { ...item, metrics: null } : item), { sourceMode: 'sdk' }), /metrics/);
+  assert.throws(() => graphSourceAccounting(events, receipts.map(item => item.operation === 'resolve' ? { ...item, resultObserved: false, value: null } : item), { sourceMode: 'sdk' }), /actual return value/);
   assert.throws(() => graphSourceAccounting([...events, { phase: 'alternate-child-api', source: true }], receipts, { sourceMode: 'sdk' }), /CLI child/);
   assert.throws(() => graphSourceAccounting(events.filter(event => event.phase !== 'sdk-end'), receipts, { sourceMode: 'sdk' }), /must finish/);
+  assert.throws(() => graphSourceAccounting(events.filter(event => event.phase !== 'sdk-end' || event.operation !== 'resolve'), receipts, { sourceMode: 'sdk' }), /must finish/);
 });
 
 test('Pi observer verifies source modes and effect-bearing native main and scalar resource delivery', async () => {

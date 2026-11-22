@@ -497,7 +497,7 @@ const sdkHttp = [
   { event: 'http_end', pid: 10, id: '10:1', status: 200, response_request_id: sdkRequestId },
 ];
 
-for (const operation of ['list', 'files']) test(operation + ' host SDK HTTP needs an exact complete operation and independent response request ID', () => {
+for (const operation of ['list', 'files', 'resolve']) test(operation + ' host SDK HTTP needs an exact complete operation and independent response request ID', () => {
   const observation = sdkObservation();
   observation.events = observation.events.map(event => event.operation ? { ...event, operation } : event);
   const result = classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: observation });
