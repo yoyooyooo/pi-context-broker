@@ -246,6 +246,18 @@ test('SSE protocol targets preserve HTTP failure and distinguish DONE cancellati
   }
 });
 
+test('SSE completion accepts an unreported response model without inventing one', () => {
+  const directory = fs.mkdtempSync(path.join(tmpdir(), 'consumption-provider-unknown-model-'));
+  const end = protocolTrace(directory, 'done', { chunks: ['data: [DONE]\n\n'] }).rows.find(row => row.phase === 'request_end');
+  for (const stopReason of ['stop', 'toolUse']) for (const responseModel of [undefined, null]) {
+    const reply = { ...normalProtocolReply(), stopReason, responseModel };
+    if (responseModel === undefined) delete reply.responseModel;
+    const before = structuredClone(reply);
+    assert.equal(providerObserver.providerApplicationCompletion(end, reply), 'sse-done-before-http-cancel');
+    assert.deepEqual(reply, before, 'An absent response model remains unknown');
+  }
+});
+
 test('SSE completion requires an independent complete single data event across byte and line boundaries', () => {
   const directory = fs.mkdtempSync(path.join(tmpdir(), 'consumption-provider-sse-framing-'));
   const cases = [
@@ -287,7 +299,8 @@ test('SSE application completion rejects unsupported transport, error, API and a
   const end = protocolTrace(directory, 'valid', { chunks: ['data: [DONE]\n\n'] }).rows.find(row => row.phase === 'request_end');
   for (const mutate of [reply => { reply.stopReason = 'length'; }, reply => { reply.stopReason = 'aborted'; },
     reply => { reply.stopReason = 'error'; }, reply => { delete reply.stopReason; }, reply => { reply.role = 'toolResult'; },
-    reply => { delete reply.provider; }, reply => { delete reply.model; }, reply => { delete reply.responseModel; },
+    reply => { delete reply.provider; }, reply => { delete reply.model; },
+    ...['', ' ', 1, false, {}, []].map(value => reply => { reply.responseModel = value; }),
     reply => { reply.usage.input = null; }, reply => { reply.usage.totalTokens = 0; }]) {
     const reply = normalProtocolReply(); mutate(reply);
     assert.equal(providerObserver.providerApplicationCompletion(end, reply), null);
