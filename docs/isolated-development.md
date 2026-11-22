@@ -94,6 +94,16 @@ edits remain available in the task's source trees.
 
 ## Build and select a generation
 
+Private source, build and run directories still share the host's disk capacity.
+Before a large build or a command run that copies dependencies, check free space
+on the destination volume, for example `df -h /absolute/owned/feature-env`.
+If space is insufficient, stop starting new writes and preserve source, run state
+and first-failure evidence. Continue on another machine in a new owned pair,
+transferring only reviewed commits or patches and checking their commit, tree
+and file hashes before building. Moving files to Trash on the same volume does
+not release capacity. Do not clear another task's directories or permanently
+delete files to make room.
+
 ```sh
 node scripts/paired-environment.mjs build --root /absolute/owned/feature-env
 ```
