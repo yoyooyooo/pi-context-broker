@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "version": "1.0.0",
-  "implementation_status": "analysis_pending_AH-1223",
+  "implementation_status": "implemented",
   "precision_labels": [
     "observed",
     "reported",
@@ -257,5 +257,6 @@
       "supported",
       "unsupported"
     ]
-  }
+  },
+  "analysis_module": "benchmark/analysis/metrics.mjs#evaluateMetric"
 }

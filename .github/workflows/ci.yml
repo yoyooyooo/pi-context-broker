@@ -50,6 +50,9 @@ jobs:
         run: bun run check:broker
       - name: Release policy regression
         run: node --test scripts/release.test.mjs
+      - name: Benchmark protocol, corpus and offline analysis
+        if: github.base_ref == 'benchmark' || github.ref == 'refs/heads/benchmark'
+        run: node --test benchmark/*.test.mjs benchmark/runtime/*.test.mjs
       - name: Create current SDK fixture
         run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-current-fixture" --catalog
       - name: Installed current SDK consumption

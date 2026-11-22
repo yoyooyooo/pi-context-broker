@@ -6,6 +6,7 @@ import { createPreregistrationTemplate } from './templates/preregistration.mjs';
 import metricDictionary from './metrics.json' with { type: 'json' };
 import environmentSchema from './schemas/environment-manifest.schema.json' with { type: 'json' };
 import protocolSchema from './schemas/protocol.schema.json' with { type: 'json' };
+import { METRIC_ENTRIES } from './analysis/metrics.mjs';
 
 const digest = label => fingerprint({ synthetic_test_identity: label });
 const clone = value => structuredClone(value);
@@ -263,13 +264,14 @@ test('runtime entry and frozen endpoint digests are bound', () => {
   assert(result.errors.some(e => e.code === 'pi_entry_mismatch'));
   assert(result.errors.some(e => e.code === 'unresolved_policy'));
 });
-test('dictionary names formulas, evidence, missing behavior and future analysis contracts', () => {
+test('dictionary names formulas, evidence, missing behavior and implemented analysis contracts', () => {
   assert.equal(new Set(metricDictionary.metrics.map(m => m.id)).size, metricDictionary.metrics.length);
   for (const metric of metricDictionary.metrics) {
     assert(metric.formula.length > 0); assert(metric.evidence.length > 0);
     assert.match(metric.analysis_entry, /^metric:.*\/v1$/); assert(metric.missing.length > 0);
   }
-  assert.equal(metricDictionary.implementation_status, 'analysis_pending_AH-1223');
+  assert.equal(metricDictionary.implementation_status, 'implemented');
+  for (const metric of metricDictionary.metrics) assert.equal(METRIC_ENTRIES[metric.analysis_entry]?.id, metric.id);
 });
 test('validation leaves input unchanged and rejects unsupported stages', () => {
   const value = frozenFixture(); const before = clone(value); assertValid(value); assert.deepEqual(value, before);

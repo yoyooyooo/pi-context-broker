@@ -1,6 +1,6 @@
 ---
 name: verify-notion-skills-integration
-description: "验证双仓开发隔离、配对 CLI/SDK 与 Broker 的消费合同、完整目录、资源和独立安装包。修改隔离入口、Notion source、随包运行时或消费边界时使用；live Notion、真模型与两机 next 日用沿 AH-1197/AH-637/AH-1198 验收。"
+description: "验证双仓开发隔离、配对 CLI/SDK 与 Broker 的消费合同、完整目录、资源和独立安装包。修改隔离入口、Notion source、随包运行时或消费边界时使用；Benchmark 候选回归、模型筛查和证据重分析转专用入口；live Notion、真模型与两机 next 日用沿 AH-1197/AH-637/AH-1198 验收。"
 ---
 
 # Verify Notion Skills Integration
@@ -13,6 +13,22 @@ OMP/Tern 延期；不恢复 `source.command`、CLI 正文消费、完整 export 
 本 Skill 检查跨仓消费和安装包，不复制作者操作验收。自然用户旅程、混合来源选路与日常管理闭环交给 [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md)。当前feature地图直接指向现役SDK、安装与实际Pi入口。
 
 项目级自然旅程沿工作流入口 candidate-plan → candidate-run：plan 校验输入与合同，run 在启动 Pi 前自动核对所选 CLI/SDK 与随包产物身份。无需为这条路径自行导入预检函数或执行正式双机交付；单独诊断包边界时才使用下文的现有检查。
+
+### Benchmark 候选与证据
+
+比较环境版本、筛查配置中的新模型、运行有界回归或重算旧证据时，先读
+[Benchmark 运行入口](../../../docs/benchmark-running.md)。在独立双仓环境选择明确 build，
+复用已登记的 setup/plan；沿 `node benchmark/cli.mjs configure` 做零模型装载核对并冻结计划，
+再用 `run` 执行该计划。用 `status` 和 `journey` 独立回读结果；`analyze` 重算既有规范化证据，
+观察或判定修正用 `reanalysis` 从原件重新适配与评分，两者均不调用模型。
+实际参数以同一构建的 `--help` 为准，不手工维护远端表关系或改日用配置。
+
+Benchmark 专用变更合入小写 `benchmark`；共享产品和隔离修复先合入 `next` 再吸收。
+保留每次 invalid、预算停止、unknown、失败及成本；中断执行先对账，不覆盖或盲重跑。
+同一证据重分析不增加样本；行为变化另起 retest 身份。付费运行只执行已冻结的有界计划，
+不建定时付费任务。原生/Broker 的实际装载、私有判定未注入、关键原件和业务回读分别确认；
+没有完整证据就保留 unknown，不能用旧功能验收替代模型比较。
+本入口负责找到隔离与 Benchmark 流程，日用 `next` 的双机和真实入口检查继续按原合同执行。
 
 ## 0. 准备和核对隔离环境
 
