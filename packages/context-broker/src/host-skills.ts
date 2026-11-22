@@ -9,7 +9,7 @@ import { assertSourceAvailable, formatSourceFailures, hasEnabledNotionSource } f
 import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage, sourceFailureDiagnostic } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
 import { checkPreparationSignal, createPreparationGate, preparationCancelled, type ActivePreparation } from "./skill-preparation";
-import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceFailure, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
+import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceFailure, NotionListObservation, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
 import type { HostCapabilities } from "./host-adapter";
 import { invocationText } from "./invocation-text";
 import { viewSystemPrompt, withoutViewMetadata } from "./view-prompt";
@@ -25,7 +25,7 @@ import { compileSkillPreparation, projectSkillDirectory } from "./skill-context-
 import { projectCatalogDescriptions, type CatalogDescription } from "./skill-catalog-projection";
 import { reduceSessionShortRefs, resolveSessionShortRef } from "./session-short-ref";
 import { compileResourceRead } from "./resource-read-projection";
-import { DEFAULT_RESOURCE_READ_BUDGET, RESOURCE_READ_MAX_CONTEXT_BYTES, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity } from "./resource-read-types";
+import { normalizeResourceReadBudget, RESOURCE_READ_MAX_CONTEXT_BYTES, type ResourceReadBudget, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity } from "./resource-read-types";
 import { createConsumerObservations, type ObservationTicket } from "./consumer-observation";
 import { notionCatalogAction, notionCatalogRetryGapMs, notionListFreshness } from "./catalog-menu";
 import { combineConsumptionEffects, consumptionEffects, errorConsumptionEffects, noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "./consumption-effects";
@@ -44,7 +44,7 @@ export type HostSkillOptions = {
   loadRecord(record: SkillRecord, signal?: AbortSignal, snapshotId?: string, policy?: ConsumptionPolicy): Promise<SkillRecord>;
   loadResource?(record: SkillRecord, path: string, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<string>;
   readFixedResource?(record: SkillRecord, ref: string, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<FixedResourceRead | undefined>;
-  readResources?(record: SkillRecord, refs: readonly string[], ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<ResourceReadBatch>;
+  readResources?(record: SkillRecord, refs: readonly string[], budget: ResourceReadBudget, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<ResourceReadBatch>;
   prepareGraph?(records: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal | undefined, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, bindings?: readonly PreparationBinding[], mode?: SelectionMode, policy?: ConsumptionPolicy): Promise<PreparedHostGraph[]>;
   persistGraphs?(graphs: readonly PreparedHostGraph[], ctx: ExtensionContext, mode: SelectionMode): void;
   sessionGraph?(ctx: ExtensionContext): unknown;
@@ -338,7 +338,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (!options.resolveCurrentRoot || record.source !== "notion" || record.kind === "prompt") throw hostError("PREPARE_ROOT_NOT_MAIN");
     let selected: { record: SkillRecord; ref: string };
     try { selected = await options.resolveCurrentRoot(record, ctx, signal); }
-    catch (error) { current(); observeFailure(error, ticket, [record]); throw error; }
+    catch (error) { current(); observeFailure(error, ticket, [record], undefined, ctx); throw error; }
     current();
     const next = selected.record, reference = parseNativeReference(selected.ref);
     if (next.source !== "notion" || next.sourceId !== record.sourceId || next.sourceScope !== record.sourceScope || next.id !== record.id
@@ -628,24 +628,25 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
   }
 
-  function observeFailure(error: unknown, ticket: ObservationTicket, selected: readonly SkillRecord[], fixed: ReadonlySet<string> = new Set()): void {
+  function observeFailure(error: unknown, ticket: ObservationTicket, selected: readonly SkillRecord[], fixed: ReadonlySet<string> = new Set(), ctx?: ExtensionContext): void {
     if (!(error instanceof SourceError) || !observations.current(ticket)) return;
+    const known = [...selected, ...(ctx ? contextRecords(ctx) : hostRecords.values())];
     if (error.code === "AUTH_REQUIRED") {
       const scopes = new Set(selected.filter(record => record.sourceId === error.sourceId).map(record => record.sourceScope));
-      for (const record of [...selected, ...hostRecords.values()])
+      for (const record of known)
         if (record.sourceId === error.sourceId && scopes.has(record.sourceScope)) observations.deny(record, ticket, "AUTH_REQUIRED");
     }
     for (const denial of error.details?.denials ?? []) {
       let reference: ExactNativeReference;
       try { reference = parseNativeReference(denial.ref); } catch { continue; }
-      const target = [...selected, ...hostRecords.values()].find(record => {
+      const targets = known.filter(record => {
         if (record.sourceId !== error.sourceId || record.sourceScope !== denial.scope || !record.ref) return false;
         const page = record.locator?.type === "shared_skill" ? record.locator.page_id.replaceAll("-", "") : undefined;
         const selector = reference.selector.replaceAll("-", "");
         return (record.id === denial.id || page !== undefined && selector === page)
           && (reference.selector === parseNativeReference(record.ref).selector || page !== undefined && selector === page);
       });
-      if (target && !(denial.code === "CONTENT_DISABLED" && (reference.snapshot || fixed.has(recordIdentity(target)))))
+      for (const target of targets) if (!(denial.code === "CONTENT_DISABLED" && (reference.snapshot || fixed.has(recordIdentity(target)))))
         observations.deny(target, ticket, denial.code);
     }
   }
@@ -661,7 +662,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         || ctx && options.sessionBinding?.(record, ctx)))).map(recordIdentity));
     let graphs: PreparedHostGraph[];
     try { graphs = await options.prepareGraph!(selected, ctx, signal, purpose, pins, bindings, mode, policy); }
-    catch (error) { observeFailure(error, ticket, selected, fixed); throw error; }
+    catch (error) { observeFailure(error, ticket, selected, fixed, ctx); throw error; }
     checkPreparationSignal(signal);
     if (generation !== observedGeneration || observedSession !== ctx?.sessionManager?.getSessionId?.()) throw preparationCancelled();
     if (owner) gate.assertCurrent(owner, ctx ?? owner.ctx);
@@ -1634,24 +1635,32 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
     return { messages: finalMessages };
   });
-  async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution, resolved?: SkillRecord): Promise<SkillRecord> {
+  type ExactRecordLookup = { status: "found"; record: SkillRecord }
+    | { status: "missing"; scopes: ReadonlyMap<string, ReadonlySet<string>>;
+      failures: readonly SourceFailure[]; lists: readonly NotionListObservation[]; failure: SourceFailure | undefined };
+  async function lookupExactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution, resolved?: SkillRecord): Promise<ExactRecordLookup> {
     const selector = reference.selector;
     const matches = (record: SkillRecord) => record.ref?.startsWith("skill://") && parseNativeReference(record.ref).selector === selector
       && (!short || matchesShortRefSource(short.assertion, record));
     let candidates = (resolved ? [resolved] : [...hostRecords.values()]).filter(matches);
     if (resolved && !candidates.length) throw hostError("SOURCE_IDENTITY_MISMATCH");
-    let lookupFailures: readonly SourceFailure[] = [];
+    let lookupFailures: readonly SourceFailure[] = [], lookupLists: readonly NotionListObservation[] = [];
+    let missingFailure: SourceFailure | undefined;
+    const lookupScopes = new Map<string, Set<string>>();
     if (!candidates.length && options.lookupReference) {
       const observedGeneration = generation;
       const fresh = await options.lookupReference(ctx, signal);
       checkPreparationSignal(signal);
       if (observedGeneration !== generation) throw preparationCancelled();
-      lookupFailures = fresh.failures;
+      lookupFailures = fresh.failures; lookupLists = fresh.lists ?? [];
+      const observeScope = (sourceId: string, scope: string) => {
+        const scopes = lookupScopes.get(sourceId) ?? new Set<string>();
+        scopes.add(scope); lookupScopes.set(sourceId, scopes);
+      };
+      for (const list of fresh.lists ?? []) if (list.scope) observeScope(list.sourceId, list.scope);
+      for (const record of fresh.records) if (record.sourceId && record.sourceScope) observeScope(record.sourceId, record.sourceScope);
       candidates = fresh.records.filter(record => record.source === "notion" && matches(record));
-      if (!candidates.length && fresh.failures.some(item => item.blocking !== false)) {
-        const failed = fresh.failures.find(item => item.blocking !== false)!;
-        throw new SourceError(failed.code, failed.sourceId);
-      }
+      if (!candidates.length) missingFailure = fresh.failures.find(item => item.blocking !== false);
     }
     // Without an independent lookup, failed discovery cannot establish absence.
     if (!candidates.length && !options.lookupReference && discoveryError) throw discoveryError;
@@ -1660,7 +1669,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (!short && scopes.length) candidates = candidates.filter(record => scopes.some(scope => scope.sourceId === record.sourceId && scope.sourceScope === record.sourceScope));
     if (candidates.length > 1) throw new InvocationError(selector, "ambiguous", candidates);
     const selected = candidates[0];
-    if (!selected) throw hostError("SOURCE_REFERENCE_MISSING");
+    if (!selected) return { status: "missing", scopes: lookupScopes, failures: lookupFailures, lists: lookupLists, failure: missingFailure };
     // A canonical selector is an identity, not a source namespace prefix.
     // Unrelated directory failures do not veto this exact owner; its own
     // recorded failure and the normal source read/prepare checks still apply.
@@ -1668,7 +1677,60 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     assertRecordSourceAvailable(selected, lookupFailures);
     if (short) assertShortRefSource(short, selected);
     hostRecords.set(recordIdentity(selected), selected);
-    return selected;
+    return { status: "found", record: selected };
+  }
+  function missingExactRecord(failure?: SourceFailure): never {
+    if (failure) throw new SourceError(failure.code, failure.sourceId);
+    throw hostError("SOURCE_REFERENCE_MISSING");
+  }
+  async function exactRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal, short?: HostShortRefResolution, resolved?: SkillRecord): Promise<SkillRecord> {
+    const found = await lookupExactRecord(reference, ctx, signal, short, resolved);
+    if (found.status === "missing") return missingExactRecord(found.failure);
+    return found.record;
+  }
+  function hasExactFixedReference(record: SkillRecord, reference: ExactNativeReference): boolean {
+    const refs = [record.preparationBinding?.ref, ...(record.entryManifest?.manifest_complete ? record.entryManifest.files.map(file => file.ref) : [])];
+    return refs.some(ref => ref !== undefined && isDeepStrictEqual(parseNativeReference(ref), reference));
+  }
+  function confirmedFixedReadRecord(reference: ExactNativeReference, ctx: ExtensionContext, observedScopes: ReadonlyMap<string, ReadonlySet<string>>, short?: HostShortRefResolution): SkillRecord | undefined {
+    if (!reference.snapshot || !reference.path || short?.kind === "candidate") return undefined;
+    const selection = sessionSelection(ctx);
+    const matches = [...activeSources(ctx).sources.values()].map(source => source.record).filter(record => {
+      const binding = record.preparationBinding;
+      const selected = record.sourceScope && record.id ? selection.scopes.get(record.sourceScope)?.bindings.get(record.id) : undefined;
+      if (record.source !== "notion" || !record.sourceId || !binding || !selected || !samePreparationBinding(selected, binding)
+        || short && !matchesShortRefSource(short.assertion, record)) return false;
+      return hasExactFixedReference(record, reference);
+    });
+    if (matches.length !== 1) return undefined;
+    const record = matches[0]!;
+    // A current branch's exact selected + confirmed delivery locates historical
+    // bytes; it does not renew source authorization or revive a released root.
+    const source = options.config.sources?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
+    if (!source) throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId!);
+    const currentScope = catalogScopes.get(source.id), freshScopes = observedScopes.get(source.id);
+    if (currentScope !== record.sourceScope) throw new SourceError(currentScope ? "SOURCE_IDENTITY_MISMATCH" : "SOURCE_UNAVAILABLE", source.id);
+    if (freshScopes && (freshScopes.size !== 1 || !freshScopes.has(record.sourceScope!))) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+    if (short) assertShortRefSnapshot(short, record);
+    return record;
+  }
+  async function exactReadRecord(reference: ExactNativeReference, ctx: ExtensionContext, signal: AbortSignal,
+    short?: HostShortRefResolution, resolved?: SkillRecord): Promise<{ record: SkillRecord; routing: "directory" | "confirmed-fixed" }> {
+    const ticket = observations.begin(signal);
+    const found = await lookupExactRecord(reference, ctx, signal, short, resolved);
+    if (found.status === "found") return { record: found.record, routing: "directory" };
+    checkPreparationSignal(signal);
+    const record = confirmedFixedReadRecord(reference, ctx, found.scopes, short);
+    if (!record) return missingExactRecord(found.failure);
+    const authentication = found.failures.find(failure => failure.sourceId === record.sourceId && failure.blocking !== false && failure.code === "AUTH_REQUIRED");
+    if (authentication) observeFailure(new SourceError(authentication.code, authentication.sourceId), ticket, [record], undefined, ctx);
+    assertRecordSourceAvailable(record, found.failures);
+    assertCanRestore(record);
+    // A separate source's failed discovery cannot veto an exact owner whose
+    // own lookup completed with the same scope. No list proof means no bypass.
+    if (found.failure && !found.lists.some(list => list.sourceId === record.sourceId && list.scope === record.sourceScope
+      && list.policy !== "offline" && list.policy !== "pinned" && list.stale !== true)) return missingExactRecord(found.failure);
+    return { record, routing: "confirmed-fixed" };
   }
   function modelFiles(record: SkillRecord, ctx: ExtensionContext) {
     const files = record.preparationDirectory?.files;
@@ -1936,7 +1998,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return { snapshot: reference.snapshot, binding: inspection.binding, inspection };
   }
 
-  function assertFixedResourceSnapshot(resource: FixedResourceRead, reference: ExactNativeReference, snapshot: SkillRecord): void {
+  function assertFixedResourceSnapshot(resource: Omit<FixedResourceRead, "file"> & { file: Omit<FixedResourceRead["file"], "output"> }, reference: ExactNativeReference, snapshot: SkillRecord): void {
     if (!snapshot.preparationBinding || !snapshot.entryManifest?.manifest_complete) throw hostError("SOURCE_PREPARATION_INVALID");
     assertFixedOwnerBinding(resource.ownerBinding, snapshot.preparationBinding);
     if (resource.selection.scope !== snapshot.sourceScope || resource.selection.owner !== snapshot.id || resource.selection.snapshot_id !== snapshot.snapshotId
@@ -1983,7 +2045,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     let effects: ConsumptionEffects | undefined;
     const ticket = observations.begin(signal);
     try { resource = await options.readFixedResource(record, ref, ctx, signal, { readOnly: piConsumption || event.input.readOnly === true, observeEffects: value => { effects = value; } }); }
-    catch (error) { observeFailure(error, ticket, [record], new Set([recordIdentity(record)])); throw error; }
+    catch (error) { observeFailure(error, ticket, [record], new Set([recordIdentity(record)]), ctx); throw error; }
     current();
     // A main File alias uses entry preparation. Source validation failures never fall back.
     if (!resource) return undefined;
@@ -2040,12 +2102,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     let exactReference: ExactNativeReference | undefined;
     let canonicalRef: string | undefined;
     let short: HostShortRefResolution | undefined;
+    let confirmedFixedRead = false;
     if (explicit) {
       try {
         let resolved = await resolveToolReference(requested, ctx, signal, refresh);
         exactReference = resolved.reference; short = resolved.short;
         canonicalRef = resolved.canonicalRef;
-        selected = await exactRecord(exactReference, ctx, signal, short, resolved.record);
+        const located = await exactReadRecord(exactReference, ctx, signal, short, resolved.record);
+        selected = located.record; confirmedFixedRead = located.routing === "confirmed-fixed";
         if (refresh) {
           assertRefreshMain(exactReference, selected, ctx, short);
           resolved = await currentRoot(selected, ctx, signal);
@@ -2150,7 +2214,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       }
       stage = "admission";
       checkPreparationSignal(signal);
-      graphSelectionCommits.get(snapshot)?.();
+      // A fixed inspection outside the current directory must not republish an
+      // old record as a current candidate or alter its task role.
+      if (confirmedFixedRead) graphSelectionCommits.delete(snapshot);
+      else graphSelectionCommits.get(snapshot)?.();
       if (event.toolCallId && snapshot.entryManifest && reference && reference !== snapshot.entrypoint) {
         const file = snapshot.entryManifest.files.find(file => file.path === reference);
         if (!file) throw hostError("FILE_NOT_FOUND");
@@ -2165,7 +2232,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         // while the same immutable entry retains its original /tmp spelling.
         // The result hook still requires exact complete source bytes.
         pendingNativeReads.set(event.toolCallId, { record: snapshot, generation, signal, effects: observedEffects.length ? combineConsumptionEffects(observedEffects) : consumptionEffects(undefined),
-          ...(refresh ? { purpose: "inspect" as const } : {}) });
+          ...(refresh || confirmedFixedRead ? { purpose: "inspect" as const } : {}) });
       }
       const updated = { ...event.input, path: path + suffix };
       return { input: updated, effects: observedEffects.length ? combineConsumptionEffects(observedEffects) : consumptionEffects(undefined) };
@@ -2174,12 +2241,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       return blocked(error, effects);
     }
   }
-  async function readResourceBatch(input: Record<string, unknown>, ctx: ExtensionContext, signal: AbortSignal, toolCallId: string, policy: ConsumptionPolicy) {
+  async function readResourceBatch(input: Record<string, unknown>, budget: ResourceReadBudget, ctx: ExtensionContext, signal: AbortSignal, toolCallId: string, policy: ConsumptionPolicy) {
     if (adapter.paths.host !== "pi" || !options.readResources) throw hostError("SOURCE_RESOURCE_BATCH_UNAVAILABLE");
-    if (Object.keys(input).some(key => key !== "paths")
+    if (Object.keys(input).some(key => key !== "paths" && key !== "budget")
       || !Array.isArray(input.paths) || !input.paths.length
       || input.paths.some(value => typeof value !== "string" || !value)) throw hostError("INVALID_ARGUMENT");
-    if (input.paths.length > DEFAULT_RESOURCE_READ_BUDGET.maxFiles) throw hostError("RESOURCE_FILE_BUDGET");
+    if (input.paths.length > budget.maxFiles) throw hostError("RESOURCE_FILE_BUDGET");
     const requested = input.paths as string[], observedGeneration = generation;
     const sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
     const current = () => {
@@ -2205,9 +2272,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const asserted = resolved.find(value => value.short)?.short;
     const named = resolved.find(value => value.record)?.record;
     if (named && resolved.some(value => value.record && recordIdentity(value.record) !== recordIdentity(named))) throw hostError("RESOURCE_SELECTION_CONFLICT");
-    const record = await exactRecord(first, ctx, signal, asserted, named); current();
+    const located = await exactReadRecord(first, ctx, signal, asserted, named); current();
+    const record = located.record;
     if (record.source !== "notion" || !record.sourceScope || !record.id) throw hostError("SOURCE_IDENTITY_MISMATCH");
     for (const value of resolved) {
+      if (located.routing === "confirmed-fixed" && !hasExactFixedReference(record, value.reference)) throw hostError("SOURCE_REFERENCE_MISSING");
       if (value.short) assertShortRefSource(value.short, record);
       if (value.reference.fileId === undefined && value.reference.path === record.entrypoint) throw hostError("RESOURCE_MAIN_NOT_ALLOWED");
     }
@@ -2215,9 +2284,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const selections = resolved.map(value => resourceSelection(record, value.reference, ctx));
     const ticket = observations.begin(signal);
     let batch: ResourceReadBatch;
-    try { batch = await options.readResources(record, refs, ctx, signal, policy); }
-    catch (error) { observeFailure(error, ticket, [record], new Set([recordIdentity(record)])); throw error; }
+    try { batch = await options.readResources(record, refs, budget, ctx, signal, policy); }
+    catch (error) { observeFailure(error, ticket, [record], new Set([recordIdentity(record)]), ctx); throw error; }
     current();
+    if (!isDeepStrictEqual(batch.budget, budget)) throw hostError("SOURCE_RESPONSE_INVALID");
     for (const [index, value] of resolved.entries()) {
       const selected = resourceSelection(record, value.reference, ctx), initial = selections[index]!;
       if (initial.binding) assertFixedOwnerBinding(batch.ownerBinding, initial.binding);
@@ -2235,6 +2305,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         || value.reference.fileId === undefined && value.reference.path !== actual.path) throw hostError("SOURCE_IDENTITY_MISMATCH");
       const identity = file.file_id === undefined ? "path:" + file.path : "file:" + file.file_id;
       if (files.has(identity) || filePaths.has(file.path)) throw hostError("RESOURCE_SELECTION_CONFLICT");
+      if (located.routing === "confirmed-fixed") assertFixedResourceSnapshot({
+        selection: batch.selection, ownerBinding: batch.ownerBinding, entrypoint: record.preparationBinding!.record.entrypoint, file,
+      }, value.reference, record);
       const inspected = selections[index]!.inspection?.file;
       if (inspected && (file.bytes !== inspected.bytes || file.sha256 !== inspected.sha256
         || !isDeepStrictEqual(actual, parseNativeReference(inspected.ref)))) throw hostError("SOURCE_IDENTITY_MISMATCH");
@@ -2256,9 +2329,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const readRunsInTool = sourceToolsEnabled ? adapter.registerReadExecutor?.(async (input, ctx, signal, read, toolCallId) => {
     const executionSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
     if (Object.hasOwn(input, "paths")) {
-      const deadline = AbortSignal.timeout(DEFAULT_RESOURCE_READ_BUDGET.timeBudgetMs);
+      const budget = normalizeResourceReadBudget(input.budget);
+      const deadline = AbortSignal.timeout(budget.timeBudgetMs);
       const observedEffects: ConsumptionEffects[] = [];
-      try { return await readResourceBatch(input, ctx, AbortSignal.any([executionSignal, deadline]), toolCallId,
+      try { return await readResourceBatch(input, budget, ctx, AbortSignal.any([executionSignal, deadline]), toolCallId,
         { readOnly: true, observeEffects: effects => observedEffects.push(effects) }); }
       catch (error) {
         const cause = executionSignal.aborted ? hostError("SOURCE_CANCELLED") : deadline.aborted ? hostError("RESOURCE_TIME_BUDGET") : error;

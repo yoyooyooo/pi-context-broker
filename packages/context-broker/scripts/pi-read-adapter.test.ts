@@ -171,3 +171,42 @@ test("explicit latest inspection is scalar Notion-only and never leaks refresh t
   }
   expect(requests).toHaveLength(1);
 });
+
+test("explicit resource batch time budget reaches the same public read executor", async () => {
+  const f = fixture(), ref = "sr:R" + "a".repeat(22);
+  const calls: unknown[] = [], result = { content: [{ type: "text" as const, text: "ready" }] };
+  f.adapter.registerReadExecutor!(async (input) => { calls.push(input); return result; });
+  await f.start();
+  const input = { paths: [ref], budget: { timeBudgetMs: 120000 } };
+  let actual: unknown, failure: unknown;
+  try { actual = await f.current().execute("explicit-wait", input, undefined, undefined, f.ctx); } catch (error) { failure = error; }
+  expect(failure).toBeUndefined();
+  expect(actual).toBe(result); expect(calls).toEqual([input]); expect(f.calls).toHaveLength(0);
+});
+
+test("Pi resource batch advertises one bounded timeBudgetMs field without increasing file or byte limits", async () => {
+  const f = fixture();
+  f.adapter.registerReadExecutor!(async () => ({ content: [] })); await f.start();
+  expect(f.current().parameters).toMatchObject({ properties: {
+    paths: { maxItems: 16 },
+    budget: { type: "object", additionalProperties: false, required: ["timeBudgetMs"],
+      properties: { timeBudgetMs: { type: "integer", minimum: 1, maximum: 120000 } } },
+  } });
+});
+
+test("Pi rejects invalid or non-batch time budgets before preparation or native I/O", async () => {
+  const f = fixture(), ref = "sr:R" + "a".repeat(22), calls: unknown[] = [];
+  f.adapter.registerReadExecutor!(async input => { calls.push(input); return { content: [] }; }); await f.start();
+  for (const budget of [null, 120000, "120000", [], {}, { timeout: 120000 },
+    { timeBudgetMs: 0 }, { timeBudgetMs: -1 }, { timeBudgetMs: 1.5 }, { timeBudgetMs: 120001 },
+    { timeBudgetMs: Number.NaN }, { timeBudgetMs: Number.POSITIVE_INFINITY }, { timeBudgetMs: "120000" },
+    { timeBudgetMs: 120000, maxFiles: 64 }, { timeBudgetMs: 120000, maxBytes: 16777216 }]) {
+    await expect(f.current().execute("invalid-budget", { paths: [ref], budget }, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  }
+  for (const input of [{ path: "local.md", budget: { timeBudgetMs: 120000 } },
+    { path: ref, budget: { timeBudgetMs: 120000 } }, { paths: [ref], timeBudgetMs: 120000 },
+    { paths: [ref], timeout: 120000 }]) {
+    await expect(f.current().execute("invalid-budget-route", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  }
+  expect(calls).toHaveLength(0); expect(f.calls).toHaveLength(0);
+});

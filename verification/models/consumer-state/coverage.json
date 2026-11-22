@@ -11,39 +11,42 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "0e48e94a13a07991a8635d4e157c22c297e8ecb06563ddbdb30a0d821ceb4c5f",
+    "packages/context-broker/src/host-skills.ts": "bb92d152b2de0dc661e762cc6be5398313fbc8a8dff7c206aa39ee9d12caf2e5",
     "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "6ac7c29f29ecc5aca851c836cbb113d5a1f611d1856b2fe268570efcd056c3b1",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "e1b4a080907c52dd666cccca0049143cd0dfa1965ceb54257745c50f1355c6af",
+    "packages/context-broker/scripts/host-prepare.test.ts": "15e3a446dd94371bd47ac5ab34fc14d4d1f5b81d167b4d08645cf7fc68ce0631",
     "packages/context-broker/scripts/session-active.test.ts": "8c028ee53bf86b253dee9a63ce6e15a8e27c811de25e4cc9936f37ab134e0e90",
     "packages/context-broker/scripts/native-read-session.test.ts": "ef967d31fe6ea68167c548a75c8df69791a4001da874e0b2e034a415207a597b",
     "packages/context-broker/scripts/skill-context-session.test.ts": "71b2d3ba5d5937e164a6fa08c8ebfd0fc183019d00a8495a220a7cdee4d9c897",
     "packages/context-broker/scripts/consumer-state.test.ts": "97b19d0f3ac167bfb30cd9dd4aa6959924784dcb13c4644221334bba390c5799",
-    "scripts/check-consumer-state-mutations.mjs": "04b9145a777549dd074bd0902fa72318f192802ee013d842ec0ada6fdd0c862e",
+    "scripts/check-consumer-state-mutations.mjs": "5f1fa0c0a174d747488c282fe5fd8d0ea03bb6e20e30a18c703bb41feaa88994",
     "packages/context-broker/src/final-request.ts": "84f487e79db6b9362025b2f9dfda60bf872eea27a95d32e421d4f76deaff5037",
     "packages/context-broker/scripts/final-request.test.ts": "f3036e401ee6f2be5fd4738a2d9be9bb134db731c0c99c102e679727def54380",
     "packages/context-broker/scripts/final-request-undici.test.ts": "df1417ddf319180c89725f188107dde9b0eb8089aa12759b17d539bfd2bd7555",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
-    "packages/context-broker/src/index.ts": "0882647f4f1b22a5f07e9736f75c612697435d77344a6a71b1de3c290e3cd8c3",
+    "packages/context-broker/src/index.ts": "73bc1789be778ee92199668e60f00047e9f1754715ec666e4e88a946d78c1b4b",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
-    "packages/context-broker/src/notion-source.ts": "fa418e1c641b2c0a1a6ba26bd6f9a72d55561901c93656dabd30d50ea2c01d65",
-    "packages/context-broker/src/pi-host-adapter.ts": "1e9250bb6bc47510863e42d71564e238fcd5a4ffebbf072f783fd6f2b9a0ba21",
-    "packages/context-broker/scripts/host-refresh.test.ts": "9fa1c0d79ab375e386a582e77c363f277b5e0ff2b6b0828f327fe90f1036b2e5",
+    "packages/context-broker/src/notion-source.ts": "22aad41bed6b78d9c37954d9304da7089898914539920cbcdbfb7b92dfd10ba5",
+    "packages/context-broker/src/pi-host-adapter.ts": "d76e42642f3edfce33cf922363324fbe5d03ae805c77c71d0044078471ac870a",
+    "packages/context-broker/scripts/host-refresh.test.ts": "540cab768397d38cccfc57b4bff9d26e3c17dcb9518ec0a9b061c77ddd35eeff",
     "packages/context-broker/scripts/session-refresh.test.ts": "9d00f8ecbe392dbd3367ef51dcaffa325cb709986f1128e90d3f542894175a89",
     "packages/context-broker/scripts/session-recovery.test.ts": "b247e1a41ad21b2a0b124ec22cc8da4487adcf3eb0d9ad883bff5bbbc70ece88",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "858cf3fcf02255e49641af3cc4794445eaa85aca5a27c2e6fbee8dac38bd4dd1",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "e739a9e24612e40517934ac425fa33240db75303eea63b1a399e405f9d330cf0",
     "packages/context-broker/scripts/notion-source-sdk.test.ts": "be8c85a033320f919c4e81b9950663ebff113e28910425856d6e6ab9211cd181",
-    "packages/context-broker/scripts/pi-read-adapter.test.ts": "5c8ff7848720a7f0e1b2205893d755addef1ed1220dc37ef3d660312b9abf128",
-    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "49bea83c93c4d291923bf317e7358bdd8c2a44f5ee0fc523916974e734c2ee96",
+    "packages/context-broker/scripts/pi-read-adapter.test.ts": "3419f995caa81b2f40cedd58579fed6d8aab5b0da151bb229825d62e40041ae2",
+    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "a14eb538b7abbb4d3cc112be8fbab48918f83303684f30a8d80b3cd979a841c7",
     "packages/context-broker/scripts/notion-entry.test.ts": "dfaac5e5d7d0ea7996dba91427cd16568d2933c94f5d4cd03ff3a1ad9a0c3c6f",
     "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
-    "packages/context-broker/scripts/read-intent-status.test.ts": "a7f9efed5d60515cfa667c1baf40d6e4dc289bd0a57731189c48d31c1a941393"
+    "packages/context-broker/scripts/read-intent-status.test.ts": "a7f9efed5d60515cfa667c1baf40d6e4dc289bd0a57731189c48d31c1a941393",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "0f32949d65e924beb5762c461ef9c4f53348f64dd4cfd7114cb90181881b3e25",
+    "packages/context-broker/scripts/fixed-resource-source.test.ts": "5679a5b9ed73f0ec5c10722d1b37ec139cfbaab5a0f7b1d124e5b28d69f2b645",
+    "packages/context-broker/src/resource-read-types.ts": "83bbf31109482048a472e58d580d6a09dcc605435db71528e33343570cbbeebd"
   },
   "models": {
     "FreshnessPublication": {
@@ -115,7 +118,8 @@
         "check-consumer-state-mutations.mjs: actual closure and isolation guards (bound after implementation review)",
         "host-refresh.test.ts current main/resource inspection does not activate; scalar-resource-read-host.test.ts branch/file/authorization proofs for content-only inspection",
         "session-recovery.test.ts: restored root/Requires ownership follows active plus pending use, not an undelivered newer selected graph; original bodies remain exact",
-        "notion-page-url.test.ts: authorized exact owner from physical page URLs, same fixed pins and explicit current refresh; URL parsing is outside finite-model variables"
+        "notion-page-url.test.ts: authorized exact owner from physical page URLs, same fixed pins and explicit current refresh; URL parsing is outside finite-model variables",
+        "host-refresh.test.ts and resource-read-host.test.ts: confirmed scalar/batch originals after directory omission; scope, physical/stable denial and lookup AUTH continuation. Exact identity relationships are concrete obligations, not modeled alias states."
       ]
     }
   },
@@ -758,6 +762,27 @@
       "scope": "Only buildCliGuidance/buildToolGuidance instruction text changes. Explicit use/follow selects complete Requires even for read-only tasks; no scripts/writes constrains effects, not selection. Inspection without adoption keeps pins. Other named functions, tool schemas and state guards are unchanged.",
       "replays": "skill-guidance, notion-consumption-tools and read-intent-status: 47 tests / 784 assertions passed. Natural model compliance is checked by fresh fixed-input candidate journeys.",
       "proof_limit": "Guidance wording is outside finite model variables. These reviewed hashes do not prove natural compliance or implementation refinement. Models, configurations, cases, bounds and guard mutation targets are unchanged."
+    },
+    "confirmed_fixed_reads": {
+      "fixed_read": "Directory absence does not erase exact selected and provider-confirmed fixed content on the current branch. Scalar and batch fallback require an enabled configured source, matching old and newly observed authorization scopes, exact selection binding, and every requested file in the same complete original manifest. Released, selected-but-undelivered, foreign-branch, candidate and altered-owner proofs remain invalid. The read does not select a root, revive current discovery or replace pins.",
+      "failure_ownership": "Lookup authentication refusal is admitted with the observation ticket captured before lookup, for the proven source/scope, and blocks loaded as well as restored bytes on later ordinary turns. Exact physical denial affects every known same-source/scope binding at that locator; stable-only denial remains identity-local. Unrelated source failure is bypassed only with the owner source same-scope successful current list proof. Query access failure does not manufacture physical denial. Original cancellation, generation and newer-observation guards remain unchanged.",
+      "body_and_batch": "The original fixed snapshot checks validate exact physical owner, file identity, size and hash after acquisition for every batch member. Missing original bytes remain an explicit local capability failure; no current substitution or new use activation is introduced. Business Disabled alone still permits intact confirmed originals.",
+      "replays": "host-refresh.test.ts covers omission, current scope change within old TTL, configured source disablement, physical/stable denial boundaries, lookup AUTH followed by loaded/restored continuation, missing bytes and branch cancellation. resource-read-host.test.ts covers both short and canonical batch refs, exact bytes/owner, release, multi-source failure and query-denial attribution. The formal controller now runs that resource batch regression file. Two additional real-guard mutants prove the all-known-binding denial loop and lookup AUTH admission are detected; the existing dependency-target mutant is migrated to the reviewed loop without weakening its child-only assertion.",
+      "proof_limit": "These are concrete replay obligations. Physical-to-stable aliases, directory membership, exact manifests and cross-source lookup attribution are not finite model variables. TLA/config/view bytes, bounds, case inventories and independent expected_rules are unchanged. Hashes bind the reviewed implementation; they do not prove refinement, real SDK/SQLite alias rebinding, live HTTP denial or natural Pi behavior.",
+      "imported_from": "59e966576ab6d378f116a1638589d28d5c87c875",
+      "reviewed_from": "a13dfcafc20de45faed682e150d9e18ee66b0a96",
+      "integration": "Integrated the preserved Mini product changes onto the completed natural-workflow candidate. Retained exact Notion URL resolution, explicit metadata refresh, current source guidance and the latest workflow runner. Reviewed both changed source owners and all corresponding new scalar/batch, source/scope and delayed-lookup assertions before updating hashes. The natural workflow draft is superseded by the existing scenario, runtime, fixture and analysis modules; it is not added as a parallel entry. Restored the two notion_use refresh descriptions and their original host-refresh regression assertions verbatim from a13dfca after the integration review; the Mini wording is unrelated to these state/resource fixes. No accepted PR14 natural guidance or workflow file changes."
+    },
+    "per_call_resource_budget": {
+      "reviewed_from": "a13dfcafc20de45faed682e150d9e18ee66b0a96",
+      "scope": "The public Pi paths branch accepts only an optional positive integer timeBudgetMs up to 120000; scalar/local branches reject it. Defaults remain 30000 ms, 16 files and 1 MiB. The validated budget is passed through index and notion-source into the single SDK operation, compared on its response, and used for one lookup-plus-acquisition host deadline. No automatic retry or session selection change is introduced.",
+      "guards": "Caller cancellation, lifecycle generation, exact owner/scope/snapshot/file binding, complete original bytes, no-write policy and provider projection remain enforced. Resource replays retain the original task pins, cancel noncooperative late results and reject mismatched SDK budgets before publication.",
+      "replays": [
+        "pi-read-adapter.test.ts: public schema, valid propagation, invalid values and scalar/local rejection",
+        "resource-read-host.test.ts: per-call default restoration, lookup/acquisition deadline, cancellation and exact returned budget",
+        "fixed-resource-source.test.ts: actual SDK request budget and response/cancellation checks"
+      ],
+      "proof_limit": "Time allowance, filesystem resource acquisition and schema fields are concrete implementation boundaries outside the finite model variables. TLA/config/view bytes, finite bounds, cases and independent expected_rules are unchanged; these source hashes do not prove timing, live transport or natural model retry behavior."
     }
   }
 }

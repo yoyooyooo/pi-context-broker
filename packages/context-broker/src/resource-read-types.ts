@@ -6,6 +6,18 @@ export const DEFAULT_RESOURCE_READ_BUDGET: ResourceReadBudget = Object.freeze({ 
 export const MAX_RESOURCE_READ_BUDGET: ResourceReadBudget = Object.freeze({ maxFiles: 64, maxBytes: 16 * 1024 * 1024, timeBudgetMs: 120_000 });
 export const RESOURCE_READ_MAX_CONTEXT_BYTES = 1024 * 1024;
 
+/** The public batch override changes only this operation's time allowance. */
+export function normalizeResourceReadBudget(value: unknown): ResourceReadBudget {
+  if (value === undefined) return DEFAULT_RESOURCE_READ_BUDGET;
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).length !== 1 || Object.keys(value)[0] !== "timeBudgetMs" || !("timeBudgetMs" in value)
+    || typeof value.timeBudgetMs !== "number" || !Number.isSafeInteger(value.timeBudgetMs)
+    || value.timeBudgetMs <= 0 || value.timeBudgetMs > MAX_RESOURCE_READ_BUDGET.timeBudgetMs) {
+    throw Object.assign(new Error("Batch budget requires only timeBudgetMs: a positive integer up to " + MAX_RESOURCE_READ_BUDGET.timeBudgetMs), { code: "INVALID_ARGUMENT" });
+  }
+  return Object.freeze({ ...DEFAULT_RESOURCE_READ_BUDGET, timeBudgetMs: value.timeBudgetMs });
+}
+
 export type ResourceReadFileIdentity = Readonly<{
   requested_ref: string; ref: string; path: string; file_id?: string; bytes: number; sha256: string;
 }>;

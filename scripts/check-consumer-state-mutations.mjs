@@ -86,12 +86,34 @@ const cases = [
   {
     "name": "dependency-target",
     "file": "src/host-skills.ts",
-    "old": "const target = [...selected, ...hostRecords.values()].find(record => {",
-    "replacement": "const target = selected[0] ?? [...selected, ...hostRecords.values()].find(record => {",
+    "old": "for (const target of targets) if",
+    "replacement": "for (const target of [...selected.slice(0, 1), ...targets]) if",
     "test": "host-prepare.test.ts",
     "pattern": "dependency denial changes only the exact child",
     "properties": [
       "DependencyFailureIsLocal"
+    ]
+  },
+  {
+    "name": "physical-denial-all-known-bindings",
+    "file": "src/host-skills.ts",
+    "old": "for (const target of targets) if",
+    "replacement": "for (const target of targets.slice(0, 1)) if",
+    "test": "host-refresh.test.ts",
+    "pattern": "physical owner rebind preserves the exact physical denial boundary for old active content",
+    "properties": [
+      "NoDeniedBodyAtRequest"
+    ]
+  },
+  {
+    "name": "lookup-authentication-continuation",
+    "file": "src/host-skills.ts",
+    "old": "if (authentication) observeFailure(new SourceError(authentication.code, authentication.sourceId), ticket, [record], undefined, ctx);",
+    "replacement": "void authentication;",
+    "test": "host-refresh.test.ts",
+    "pattern": "a fresh lookup authentication refusal withholds loaded and restored fixed content on ordinary continuation",
+    "properties": [
+      "NoDeniedBodyAtRequest"
     ]
   },
   {

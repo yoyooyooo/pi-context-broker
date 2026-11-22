@@ -38,7 +38,7 @@ node .agents/skills/verify-notion-consumer-state/scripts/control.mjs run --out "
 node .agents/skills/verify-notion-consumer-state/scripts/control.mjs evidence --out "$CONSUMER_STATE_EVIDENCE"
 ```
 
-输出须为仓库外新建或预建的空绝对目录。run 串行执行 observations、consumer-state、实际函数/宿主 hooks 回归、两组真实守卫破坏。失败即停止，保留本次原始输出供诊断；evidence 只查保存完整性，不代替行为通过。
+输出须为仓库外新建或预建的空绝对目录。run 先检查现役形式结果和证据合同，再串行执行 observations、consumer-state、实际函数/宿主 hooks 回归、两组真实守卫破坏。失败即停止，保留本次原始输出供诊断。当前 manifest 为 v2：evidence 核对完整步骤、退出状态、日志和四份原始结果 summary 的哈希；只保留 complete 字段但修改 summary 也必须失败。历史 v1 回执保持历史身份，不能升级或填成当前通过。evidence 只查保存完整性，不代替行为通过。
 
 ```sh
 node scripts/verify-consumer-observations.mjs --suite consumer-state --model DeliveryBoundary --out "$(mktemp -d /tmp/consumer-delivery.XXXXXX)"

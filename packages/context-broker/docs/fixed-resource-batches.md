@@ -7,6 +7,7 @@ or activate its workflow.
 
 ```ts
 read({ paths: ["sr:R…", "sr:R…"] })
+read({ paths: ["sr:R…"], budget: { timeBudgetMs: 120000 } })
 ```
 
 Use actual resource handles returned by the selected Skill directory. Canonical
@@ -24,6 +25,7 @@ image handling/settings, structured output and renderers. The adapter forwards
 the real `toolCallId`; existing single-file/main receipts remain linked to their
 actual tool results. A third-party extension that already owns `read` is not
 replaced. OMP receives the call-ID plumbing but this batch slice is Pi-specific.
+The optional `budget` belongs only to `paths`; scalar and local reads reject it.
 
 ### Fixed scalar resources
 
@@ -43,6 +45,20 @@ Native content, pagination, images and structured results remain native; the
 v1 resource receipt compares the actual returned text with the whole file and
 always has `loaded: false`. A direct resource has no prepared entry manifest.
 
+A current catalog can omit a previously confirmed task dependency. Its exact
+fixed reference remains readable only when the current branch retains both its
+selected binding and confirmed delivery, the configured source is enabled, and
+old and newly observed scopes agree. Every batch member must match the original
+complete file manifest. This read neither republishes a current candidate nor
+changes task roots or pins. Released, unconfirmed, foreign-branch and altered
+references cannot reuse that proof. Missing original bytes remain a failure.
+
+Authentication and exact owner authorization refusals still apply to loaded and
+restored content. A physical-page refusal reaches all known bindings for that
+page in the same source and scope; a stable-identity refusal stays on that
+identity. A business `Enabled` change alone does not revoke intact confirmed
+bytes. A directory query failure does not establish a physical-page refusal.
+
 The paired SDK must advertise this capability. Missing capability fails before
 dispatch; there is no custom command or old SDK route. OMP/Tern are deferred.
 Canonical paths naming the main entrypoint use the existing main
@@ -61,8 +77,9 @@ a batch explicitly.
 
 Pi `read` and `notion_use` do not expose a write-policy switch. Supplying the
 retired `readOnly` key fails with `INVALID_ARGUMENT` before source or native I/O.
-Every Notion consumption passes `readOnly: true` internally to the paired SDK.
-The policy reaches `readResources` in one operation. Before dispatch, Broker
+Broker enforces the internal no-write policy for every Notion consumption.
+The SDK request omits the retired `readOnly` option. The batch still uses one
+`readResources` operation. Before dispatch, Broker
 requires both the SDK export
 `RESOURCE_READ_EFFECTS_VERSION = 1` and the matching runtime manifest field
 `resource_read_effects_version: 1`. Scalar effects support does not imply batch
@@ -87,6 +104,14 @@ budget is checked before runtime acquisition; selected bytes are checked after
 manifest/identity admission and before object acquisition. Metadata requests can
 therefore precede a byte-budget failure. Valid immutable cached chunks can remain
 after an error, but the result is never partially ready.
+
+Pi exposes only `budget: { timeBudgetMs }` as a per-call override for `paths`.
+It accepts a positive integer up to 120000 and keeps the 16-file and 1 MiB byte
+limits. A user-requested bounded wait can extend a later explicit call; the
+Broker does not retry automatically or change subsequent calls' 30-second
+default. One host deadline covers metadata lookup and acquisition, and the same
+budget reaches the SDK. A returned budget mismatch is rejected before delivery.
+Caller cancellation and session changes still take precedence over the wait.
 
 The Broker separately checks the complete serialized model result against its
 context-byte budget. JSON escapes and wrapper bytes count. No source text is

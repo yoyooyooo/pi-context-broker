@@ -2,7 +2,7 @@ import { dirname } from "node:path";
 import type { HostCapabilities } from "./host-adapter";
 import type { ExtensionAPI, PiReadDefinition, SkillRecord } from "./types";
 import { installPiDollarAutocompleteEditor } from "./pi-dollar-editor";
-import { DEFAULT_RESOURCE_READ_BUDGET } from "./resource-read-types";
+import { DEFAULT_RESOURCE_READ_BUDGET, MAX_RESOURCE_READ_BUDGET, normalizeResourceReadBudget } from "./resource-read-types";
 import { consumptionEffectsJsonSchema } from "./consumption-effects";
 
 const escapeText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -60,6 +60,9 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
         // Providers may reject root combinators. Enforce the two exclusive modes
         // before shared preparation or native I/O, including direct tool callers.
         const parameters: Record<string, unknown> = { type: "object", additionalProperties: false, properties: { ...scalarProperties, paths,
+          budget: { type: "object", additionalProperties: false, required: ["timeBudgetMs"],
+            properties: { timeBudgetMs: { type: "integer", minimum: 1, maximum: MAX_RESOURCE_READ_BUDGET.timeBudgetMs } },
+            description: "For a user-requested bounded wait on a resource paths batch only. timeBudgetMs covers the complete operation, including lookup and acquisition; default 30000, maximum 120000. File and byte limits stay unchanged. No automatic retry." },
           refresh: { type: "boolean", description: "Use only for a user-requested current-version inspection; a successful complete read needs no follow-up refresh. Keeps the active selection unchanged. Only for a supplied Notion Skill ref in path; fixed resources and local files keep their versions." } } };
         const definition: PiReadDefinition = {
           ...native,
@@ -74,12 +77,13 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
             if (Object.hasOwn(input, "ref") || hasPath === hasPaths
               || input.refresh !== undefined && typeof input.refresh !== "boolean"
               || input.refresh === true && (typeof input.path !== "string" || !/^(?:skill:\/\/|sr:[CS][A-Za-z0-9_-]{22}$)/.test(input.path))
-              || hasPath && (typeof input.path !== "string" || [input.offset, input.limit].some(value => value !== undefined && (typeof value !== "number" || !Number.isFinite(value))))
-              || hasPaths && (Object.keys(input).some(key => key !== "paths") || !Array.isArray(input.paths)
+              || hasPath && (Object.hasOwn(input, "budget") || typeof input.path !== "string" || [input.offset, input.limit].some(value => value !== undefined && (typeof value !== "number" || !Number.isFinite(value))))
+              || hasPaths && (Object.keys(input).some(key => key !== "paths" && key !== "budget") || !Array.isArray(input.paths)
                 || input.paths.length < 1 || input.paths.length > DEFAULT_RESOURCE_READ_BUDGET.maxFiles
                 || input.paths.some(value => typeof value !== "string" || !resourceRef.test(value)))) {
               throw Object.assign(new Error("Choose one file path or an explicit resource paths array"), { code: "INVALID_ARGUMENT" });
             }
+            if (hasPaths) normalizeResourceReadBudget(input.budget);
             return execute(input, context, signal,
               (updated, preparedSignal) => native.execute(id, updated, preparedSignal ?? signal, onUpdate, context), id);
           },

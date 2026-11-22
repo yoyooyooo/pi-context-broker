@@ -19,8 +19,9 @@ const environmentKeys = ["CONTEXT_BROKER_CONFIG", "CONTEXT_BROKER_ROOTS", "CONTE
 
 /** Production index, adapter, graph decoder and delivery hooks. Only the external
  * SDK and Pi session manager are controlled; this is not a live Pi/Notion test. */
-export async function activeNotionSession(options: { catalogMaxAgeMs?: number; sourceScope?: string } = {}) {
+export async function activeNotionSession(options: { catalogMaxAgeMs?: number; sourceScope?: string; sourceEnabled?: boolean } = {}) {
   const f = await currentNotionFixture("skill", { name: "root", body: "Complete root instructions A.\n" });
+  if (options.sourceEnabled !== undefined) f.source.enabled = options.sourceEnabled;
   const scope = options.sourceScope ?? f.selected.sourceScope;
   assert.ok(scope);
   assert.equal(f.record.locator.type, "shared_skill");
@@ -119,11 +120,12 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   const { confirmActiveSources, activeSources }: typeof import("../../src/session-active") = await import(moduleAt("session-active"));
   const { sourceDeliveryReceipt, sourceMessageText }: typeof import("../../src/session-source-snapshot") = await import(moduleAt("session-source-snapshot"));
   const handlers = new Map<string, Array<(event: never, context: ExtensionContext) => unknown>>();
+  const commands = new Map<string, Parameters<NonNullable<ExtensionAPI["registerCommand"]>>[1]>();
   const tools: Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0][] = [], branch: SessionEntry[] = [];
   let visible: AgentMessage[] = [], controller = new AbortController(), aborts = 0;
   const api: ExtensionAPI = {
     on(name, handler) { handlers.set(name, [...handlers.get(name) ?? [], handler]); },
-    registerTool(tool) { tools.push(tool); }, registerCommand() {},
+    registerTool(tool) { tools.push(tool); }, registerCommand(name, command) { commands.set(name, command); },
     appendEntry(customType, data) { branch.push({ type: "custom", customType, data, id: "entry-" + branch.length }); },
     getActiveTools: () => ["read", "notion_list", "notion_use"],
   };
@@ -141,7 +143,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
     details: { records: [sourceDeliveryReceipt(item, item.body!)] } }));
   await contextBroker(api);
   await emit("session_start");
-  await tool("notion_list").execute("catalog", {}, undefined, undefined, ctx);
+  if (options.sourceEnabled !== false) await tool("notion_list").execute("catalog", {}, undefined, undefined, ctx);
   const seed = async (roots = ["root"]) => {
     const graph: PreparedHostGraph = await f.boundary.prepareNotionSkills(roots.map(record), f.source, f.root, { purpose: "use" });
     persistSessionSelection(api, ctx, [graph], "extend");
@@ -201,7 +203,8 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
     const event = { toolName: "read", toolCallId, content }, result = (await emit("tool_result", event)).find(value => value !== undefined);
     return { role: "toolResult", ...event, ...(result as Record<string, unknown> ?? {}) } as AgentMessage;
   };
-  return { f, record, ready, failed, revise, seed, seedLocal, turn, close, emit, ctx, tool, branch, read,
+  const command = (name: string) => { const found = commands.get(name); assert.ok(found); return found; };
+  return { f, record, ready, failed, revise, seed, seedLocal, turn, close, emit, ctx, tool, command, branch, read,
     fixedRef: (record: SkillRecord) => createSessionShortRefHost(api).selected(ctx, record),
     selected: () => sessionSelection(ctx), active: () => activeSources(ctx), delivered };
 }

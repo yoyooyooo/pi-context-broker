@@ -1,4 +1,5 @@
 import { expect, setSystemTime, test } from "bun:test";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { activeNotionSession } from "./fixtures/active-notion-session";
@@ -565,5 +566,310 @@ test("current inspection of a Required-only node remains read-only and preserves
     expect(sourceMessageText(result.content)).toContain(required.body!);
     expect(h.selected()).toEqual(before); expect(h.active()).toEqual(active);
     expect([...h.selected().scopes.get(required.sourceScope!)!.roots]).not.toContain(required.id!);
+  } finally { await h.close(); }
+});
+
+
+async function confirmedTaskWithOmittedRequired() {
+  const h = await activeNotionSession({ catalogMaxAgeMs: 0 });
+  const initial = await h.turn("Apply only root; Required remains its dependency.", [], undefined, undefined, [], {
+    beforeContext: async () => {
+      const result = await h.tool("notion_use").execute("initial-root", { ref: h.record("root").ref! }, undefined, undefined, h.ctx);
+      return [{ role: "toolResult", toolName: "notion_use", toolCallId: "initial-root", ...result }];
+    }, status: 200,
+  });
+  expect(initial.error).toBeUndefined(); expect(initial.provider).toBe(true);
+  const root = h.record("root"), required = h.record("required");
+  const rootRef = h.fixedRef(root), requiredRef = h.fixedRef(required);
+  expect(h.active().selection.scopes.get(root.sourceScope!)?.roots).toEqual(new Set([root.id!]));
+  expect([...h.active().sources.values()].find(source => source.record.id === required.id)?.record.preparationBinding).toEqual(required.preparationBinding);
+  const rows = h.f.state.catalog.records.filter(record => record.id !== required.id);
+  h.f.state.catalog = { ...h.f.state.catalog, records: rows, count: rows.length };
+  await h.command("context-broker").handler("refresh", h.ctx);
+  const listed = await h.tool("notion_list").execute("omitted-directory", {}, undefined, undefined, h.ctx);
+  expect(sourceMessageText(listed.content)).not.toContain('"name":"required"');
+  return { h, root, required, rootRef, requiredRef };
+}
+
+for (const spelling of ["short", "canonical"] as const) test("confirmed " + spelling + " fixed read survives current metadata omission without creating a current candidate or task root", async () => {
+  const { h, root, required, rootRef, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    const selection = h.selected(), active = h.active();
+    const read = await h.read(spelling === "short" ? requiredRef : required.preparationBinding!.ref);
+    expect(sourceMessageText(read.content)).toContain(required.body!);
+    expect(read.details).toMatchObject({ contextBrokerRead: { purpose: "inspect", snapshotId: required.snapshotId } });
+    expect(h.selected()).toEqual(selection); expect(h.active()).toEqual(active);
+    const directory = await h.tool("notion_list").execute("after-fixed-inspection", {}, undefined, undefined, h.ctx);
+    expect(sourceMessageText(directory.content)).not.toContain('"name":"required"');
+    const start = h.f.calls.length;
+    const use = await h.tool("notion_use").execute("ordinary-use-still-missing", { ref: [rootRef, requiredRef] }, undefined, undefined, h.ctx).catch(error => error);
+    expect(use.code).toBe("SOURCE_REFERENCE_MISSING");
+    expect(h.f.calls.slice(start).filter(call => call.operation === "consume")).toHaveLength(0);
+    expect(h.selected()).toEqual(selection); expect(h.active()).toEqual(active);
+    const continued = await h.turn("Continue the original complete task.", [root, required], undefined, undefined, [read], { status: 200 });
+    const text = payloadText(continued);
+    expect(text).toContain(root.body!.trim()); expect(text).toContain(required.body!.trim());
+    expect([...h.active().selection.scopes.get(root.sourceScope!)!.roots]).toEqual([root.id!]);
+  } finally { await h.close(); }
+});
+
+test("fixed read after directory omission cannot revive a publicly released closure", async () => {
+  const { h, root, required, rootRef, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    await h.tool("notion_ctl").execute("release-original-root", { working_set: "release", roots: [rootRef] }, undefined, undefined, h.ctx);
+    expect(h.selected().scopes.get(root.sourceScope!)?.bindings.has(required.id!) ?? false).toBe(false);
+    expect([...h.active().sources.values()].some(source => source.record.id === required.id)).toBe(false);
+    for (const ref of [requiredRef, required.preparationBinding!.ref]) await expect(h.read(ref)).rejects.toThrow("SOURCE_REFERENCE_MISSING");
+  } finally { await h.close(); }
+});
+
+test("fixed read cannot borrow another branch's prior active or loaded records", async () => {
+  const { h, required, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    h.branch.splice(0);
+    h.ctx.sessionManager!.getSessionId = () => "another-session";
+    h.ctx.sessionManager!.getSessionFile = () => h.f.root + "/another-session.jsonl";
+    await h.emit("session_switch");
+    expect(h.selected().scopes.size).toBe(0); expect(h.active().sources.size).toBe(0);
+    await expect(h.read(requiredRef)).rejects.toThrow("SHORT_REF_UNKNOWN");
+    await expect(h.read(required.preparationBinding!.ref)).rejects.toThrow("SOURCE_REFERENCE_MISSING");
+  } finally { await h.close(); }
+});
+
+test("fixed read requires confirmed delivery as well as a selected graph", async () => {
+  const h = await activeNotionSession();
+  try {
+    const root = h.record("root"), required = h.record("required");
+    await h.tool("notion_use").execute("selected-only", { ref: root.ref! }, undefined, undefined, h.ctx);
+    expect(h.selected().scopes.get(root.sourceScope!)?.bindings.has(required.id!)).toBe(true);
+    expect(h.active().sources.size).toBe(0);
+    const rows = h.f.state.catalog.records.filter(record => record.id !== required.id);
+    h.f.state.catalog = { ...h.f.state.catalog, records: rows, count: rows.length };
+    await h.command("context-broker").handler("refresh", h.ctx);
+    await expect(h.read(required.preparationBinding!.ref)).rejects.toThrow("SOURCE_REFERENCE_MISSING");
+  } finally { await h.close(); }
+});
+
+test("restored branch receipts cannot authorize a fixed read when its source is disabled", async () => {
+  const original = await confirmedTaskWithOmittedRequired();
+  let disabled: Session | undefined;
+  try {
+    disabled = await activeNotionSession({ sourceEnabled: false });
+    disabled.branch.push(...structuredClone(original.h.branch));
+    expect([...disabled.active().sources.values()].some(source => source.record.id === original.required.id)).toBe(true);
+    const before = disabled.f.calls.length;
+    for (const ref of [original.requiredRef, original.required.preparationBinding!.ref])
+      await expect(disabled.read(ref)).rejects.toThrow("SOURCE_UNAVAILABLE");
+    expect(disabled.f.calls.slice(before).filter(call => call.operation === "consume")).toHaveLength(0);
+  } finally { await disabled?.close(); await original.h.close(); }
+});
+
+test("a changed authorization scope cannot reuse another scope's confirmed fixed record", async () => {
+  const original = await confirmedTaskWithOmittedRequired();
+  let current: Session | undefined;
+  try {
+    current = await activeNotionSession({ sourceScope: "b".repeat(64) });
+    current.branch.push(...structuredClone(original.h.branch));
+    const rows = current.f.state.catalog.records.filter(record => record.id !== original.required.id);
+    current.f.state.catalog = { ...current.f.state.catalog, records: rows, count: rows.length };
+    await current.command("context-broker").handler("refresh", current.ctx);
+    const before = current.f.calls.length;
+    await expect(current.read(original.requiredRef)).rejects.toThrow("SOURCE_IDENTITY_MISMATCH");
+    expect(current.f.calls.slice(before).filter(call => call.operation === "consume")).toHaveLength(0);
+  } finally { await current?.close(); await original.h.close(); }
+});
+
+for (const code of ["AUTH_REQUIRED", "ACCESS_DENIED"] as const) test(code + " blocks the historical fixed read and ordinary continuation after metadata omission", async () => {
+  const { h, root, required, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    h.f.state.consume = async () => h.failed(code, code === "AUTH_REQUIRED" ? root : required);
+    await expect(h.read(root.ref!, true)).rejects.toThrow(code);
+    h.f.state.consume = async input => h.ready(input);
+    const before = h.f.calls.length;
+    await expect(h.read(requiredRef)).rejects.toThrow(code);
+    expect(h.f.calls.slice(before).filter(call => call.operation === "consume")).toHaveLength(0);
+    const continued = await h.turn("Continue without inaccessible content.", [root, required]);
+    const text = payloadText(continued);
+    expect(text).not.toContain(root.body!.trim()); expect(text).not.toContain(required.body!.trim());
+  } finally { await h.close(); }
+});
+
+test("current and forged owner snapshot or File references gain no historical read proof", async () => {
+  const { h, required, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    const exact = required.preparationBinding!.ref;
+    const rejected = [
+      required.ref!,
+      exact.replace(required.snapshotId!, "s_" + "d".repeat(64)),
+      exact.replace("file_id=main-required", "file_id=another-file"),
+      exact.replace(encodeURIComponent(required.id!), encodeURIComponent("shared_skill:current-source:another-owner")),
+      exact.replace(encodeURIComponent(required.id!), "required"),
+    ];
+    const before = h.f.calls.filter(call => call.operation === "consume").length;
+    for (const ref of rejected) {
+      const error = await h.read(ref).catch(error => error);
+      expect(error).toBeInstanceOf(Error);
+    }
+    expect(h.f.calls.filter(call => call.operation === "consume")).toHaveLength(before);
+    expect(sourceMessageText((await h.read(requiredRef)).content)).toContain(required.body!);
+  } finally { await h.close(); }
+});
+
+test("fixed read after metadata omission keeps SDK missing bytes failure instead of substituting current", async () => {
+  const { h, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    // Resume keeps the real branch receipts but clears process-local loaded bodies.
+    await h.emit("session_switch");
+    h.f.state.consume = async () => h.failed("SNAPSHOT_MISSING");
+    const before = h.selected();
+    await expect(h.read(requiredRef)).rejects.toThrow("SNAPSHOT_MISSING");
+    expect(h.selected()).toEqual(before);
+  } finally { await h.close(); }
+});
+
+
+test("an observed business-disabled Required still permits its exact confirmed fixed read", async () => {
+  const { h, root, required, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    h.f.state.consume = async () => h.failed("CONTENT_DISABLED", required);
+    await expect(h.read(root.ref!, true)).rejects.toThrow("CONTENT_DISABLED");
+    h.f.state.consume = async input => h.ready(input);
+    const before = h.selected(), active = h.active();
+    const result = await h.read(requiredRef);
+    expect(sourceMessageText(result.content)).toContain(required.body!);
+    expect(h.selected()).toEqual(before); expect(h.active()).toEqual(active);
+    const continued = await h.turn("Use the original confirmed task without requesting latest.", [root, required]);
+    const text = payloadText(continued);
+    expect(text).toContain(root.body!.trim()); expect(text).toContain(required.body!.trim());
+  } finally { await h.close(); }
+});
+
+test("session switch rejects a late fixed read without borrowing the previous branch's proof", async () => {
+  const { h, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    await h.emit("session_switch");
+    const pending = Promise.withResolvers<void>(), entered = Promise.withResolvers<void>();
+    h.f.state.consume = async input => { entered.resolve(); await pending.promise; return h.ready(input); };
+    const read = h.read(requiredRef).then(value => ({ value }), error => ({ error }));
+    expect(await Promise.race([entered.promise.then(() => "entered"), read])).toBe("entered");
+    h.branch.splice(0);
+    h.ctx.sessionManager!.getSessionId = () => "new-session-after-start";
+    h.ctx.sessionManager!.getSessionFile = () => h.f.root + "/new-session-after-start.jsonl";
+    await h.emit("session_switch");
+    pending.resolve();
+    expect(await read).toMatchObject({ error: { message: expect.stringMatching(/CANCELLED/) } });
+    expect(h.selected().scopes.size).toBe(0); expect(h.active().sources.size).toBe(0);
+  } finally { await h.close(); }
+});
+
+
+test("a complete empty current directory does not erase confirmed fixed main identities", async () => {
+  const { h, root, required, rootRef, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    h.f.state.catalog = { ...h.f.state.catalog, records: [], count: 0 };
+    await h.command("context-broker").handler("refresh", h.ctx);
+    const before = h.selected(), active = h.active();
+    for (const [ref, record] of [[rootRef, root], [requiredRef, required]] as const)
+      expect(sourceMessageText((await h.read(ref)).content)).toContain(record.body!);
+    expect(h.selected()).toEqual(before); expect(h.active()).toEqual(active);
+    const directory = await h.tool("notion_list").execute("still-empty", {}, undefined, undefined, h.ctx);
+    expect(JSON.parse(sourceMessageText(directory.content)).records).toEqual([]);
+  } finally { await h.close(); }
+});
+
+
+test("a fresh reference lookup cannot hide changed scope behind an unexpired earlier directory", async () => {
+  const { h, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    const freshness = { policy: "max_age", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: 1_000_000, stale: false };
+    h.f.state.catalog = { ...h.f.state.catalog, freshness };
+    h.f.state.directory = { ...h.f.state.directory, freshness };
+    await h.command("context-broker").handler("refresh", h.ctx);
+    h.f.state.catalog = { ...h.f.state.catalog, scope: "b".repeat(64) };
+    h.f.state.directory = { ...h.f.state.directory, scope: "b".repeat(64) };
+    const before = h.f.calls.length;
+    await expect(h.read(requiredRef)).rejects.toThrow("SOURCE_IDENTITY_MISMATCH");
+    expect(h.f.calls.slice(before).filter(call => call.operation === "consume")).toHaveLength(0);
+  } finally { await h.close(); }
+});
+
+
+for (const denial of ["physical", "stable"] as const) test("physical owner rebind preserves the exact " + denial + " denial boundary for old active content", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(["root", "independent"]), root = old.records.find(record => record.name === "root")!;
+    const independent = old.records.find(record => record.name === "independent")!, ref = h.fixedRef(root);
+    if (root.locator?.type !== "shared_skill") throw new Error("Expected physical shared owner");
+    const id = "shared_skill:current-source:rebound", current = { ...root.preparationBinding!.record, id, name: "rebound", alias: "rebound",
+      ref: "skill://" + encodeURIComponent(id) + "/SKILL.md", locator: { ...root.locator, skill_id: "rebound" } };
+    h.f.state.catalog = { ...h.f.state.catalog, records: h.f.state.catalog.records.map(record => record.id === root.id ? current : record) };
+    await h.command("context-broker").handler("refresh", h.ctx);
+    const target = { ...root, ...current, ref: denial === "physical" ? "skill://" + root.locator.page_id + "/SKILL.md" : current.ref };
+    h.f.state.consume = async () => h.failed("ACCESS_DENIED", target);
+    await expect(h.read(current.ref, true)).rejects.toThrow("ACCESS_DENIED");
+    h.f.state.consume = async input => h.ready(input);
+    const fixed = await h.read(ref).then(value => ({ value }), error => ({ error }));
+    const continued = await h.turn("Continue the previously confirmed task without changing its selection.", old.records);
+    const text = payloadText(continued);
+    if (denial === "physical") {
+      expect(fixed).toMatchObject({ error: { message: expect.stringContaining("ACCESS_DENIED") } });
+      expect(text).not.toContain(root.body!.trim());
+    } else {
+      expect(fixed).toHaveProperty("value");
+      expect(text).toContain(root.body!.trim());
+    }
+    expect(text).toContain(independent.body!.trim());
+    expect(h.selected().scopes.get(root.sourceScope!)!.bindings.get(root.id!)).toEqual(root.preparationBinding);
+  } finally { await h.close(); }
+});
+
+
+test("a fresh lookup authentication refusal withholds loaded and restored fixed content on ordinary continuation", async () => {
+  const { h, root, required, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    const freshness = { policy: "max_age", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: 1_000_000, stale: false };
+    h.f.state.catalog = { ...h.f.state.catalog, freshness };
+    h.f.state.directory = { ...h.f.state.directory, freshness };
+    await h.command("context-broker").handler("refresh", h.ctx);
+    const list = h.f.state.list;
+    h.f.state.list = () => { throw Object.assign(new Error("Controlled SDK authentication refusal"), { code: "AUTH_REQUIRED" }); };
+    await expect(h.read(requiredRef)).rejects.toThrow("AUTH_REQUIRED");
+    h.f.state.list = list;
+    const visible = await h.turn("Continue without updating the original instructions.", [root, required]);
+    const missing = await h.turn("Continue while original instructions are no longer in context.");
+    const texts = [payloadText(visible), payloadText(missing)];
+    const evidence = process.env.CONTEXT_BROKER_FIXED_READ_EVIDENCE;
+    if (evidence) await writeFile(join(evidence, "lookup-auth-continuation.json"), JSON.stringify({
+      schema: 1, level: "production index/host/source adapter/provider hooks; controlled SDK authentication failure and Pi session manager",
+      source: { id: root.sourceId, scope: root.sourceScope }, original: [root.preparationBinding, required.preparationBinding],
+      visible: { provider: visible.provider, payload: visible.payload, restore_calls: visible.calls },
+      missing: { provider: missing.provider, payload: missing.payload, restore_calls: missing.calls },
+    }, null, 2) + "\n", { flag: "wx" });
+    for (const text of texts) {
+      expect(text).not.toContain(root.body!.trim());
+      expect(text).not.toContain(required.body!.trim());
+    }
+  } finally { await h.close(); }
+});
+
+
+test("a late older lookup authentication refusal cannot replace a newer exact denial", async () => {
+  const { h, root, requiredRef } = await confirmedTaskWithOmittedRequired();
+  try {
+    const freshness = { policy: "max_age", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: 1_000_000, stale: false };
+    h.f.state.catalog = { ...h.f.state.catalog, freshness };
+    h.f.state.directory = { ...h.f.state.directory, freshness };
+    await h.command("context-broker").handler("refresh", h.ctx);
+    const list = h.f.state.list, entered = Promise.withResolvers<void>(), pending = Promise.withResolvers<unknown>();
+    let requests = 0;
+    h.f.state.list = options => { if (requests++ === 0) { entered.resolve(); return pending.promise; } return list(options); };
+    const older = h.read(requiredRef).then(value => ({ value }), error => ({ error }));
+    expect(await Promise.race([entered.promise.then(() => "entered"), older])).toBe("entered");
+    h.f.state.consume = async () => h.failed("ACCESS_DENIED", root);
+    await expect(h.read(root.ref!, true)).rejects.toThrow("ACCESS_DENIED");
+    pending.reject(Object.assign(new Error("Older SDK authentication refusal"), { code: "AUTH_REQUIRED" }));
+    expect(await older).toMatchObject({ error: { message: expect.stringContaining("AUTH_REQUIRED") } });
+    h.f.state.consume = async input => h.ready(input);
+    await expect(h.read(h.fixedRef(root))).rejects.toThrow("ACCESS_DENIED");
   } finally { await h.close(); }
 });

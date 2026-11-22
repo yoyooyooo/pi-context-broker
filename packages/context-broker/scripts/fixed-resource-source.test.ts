@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ContentRecord, SkillRecord, SourceConfig } from "../src/types";
 import { noConsumptionWrites, type ConsumptionEffects, type ConsumptionPolicy } from "../src/consumption-effects";
-import { DEFAULT_RESOURCE_READ_BUDGET } from "../src/resource-read-types";
+import { DEFAULT_RESOURCE_READ_BUDGET, type ResourceReadBudget } from "../src/resource-read-types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 const exists = (path: string) => stat(path).then(() => true, () => false);
@@ -37,7 +37,8 @@ export function decodeConsumeResult() { throw new Error('main decoder must not r
 export function decodeResourceReadResult() { throw new Error('resource decoder must not run twice'); }
 export async function readResources(input, options) {
   calls.push({ input, options });
-  return state.batchResponse;
+  state.afterBatch?.();
+  return state.batchBudgetOverride === undefined ? state.batchResponse : { ...state.batchResponse, budget: state.batchBudgetOverride };
 }
 export async function readSkill(target, options) {
   calls.push({ target, options });
@@ -69,21 +70,23 @@ export async function readSkill(target, options) {
     bytes: bytes.length, sha256: hash(bytes), entrypoint_sha256: hash("independent main commitment"),
     file_bindings: [{ file_id: "main", path: main, page_id: "00000000-0000-4000-8000-000000000001" },
       { file_id: "guide", path, page_id: "00000000-0000-4000-8000-000000000002" }] };
-  const state = { bytes, response, overrides: {} as Record<string, unknown>, afterWrite: undefined as (() => void) | undefined, symlink: undefined as string | undefined, batchResponse: undefined as unknown };
+  const state = { bytes, response, overrides: {} as Record<string, unknown>, afterWrite: undefined as (() => void) | undefined,
+    afterBatch: undefined as (() => void) | undefined, symlink: undefined as string | undefined, batchResponse: undefined as unknown,
+    batchBudgetOverride: undefined as ResourceReadBudget | undefined };
   sdk.configure(state);
   const resourceRoot = join(source.cacheDir!, "scopes", scope, "records", hash(id), "resources", snapshot, "tree");
   const read = (fixedRef = ref, signal?: AbortSignal) => boundary.readFixedNotionResource(record, fixedRef, source, root, signal);
-  const readBatch = (policy?: ConsumptionPolicy) => {
+  const readBatch = (policy?: ConsumptionPolicy, budget: ResourceReadBudget = DEFAULT_RESOURCE_READ_BUDGET, signal?: AbortSignal) => {
     const manifest = { complete: true, scope, snapshot_id: snapshot, version_id: version, record: content, entrypoint: main,
       file_bindings: response.file_bindings, files: [
         { path: main, bytes: Buffer.byteLength("independent main commitment"), sha256: response.entrypoint_sha256 },
         { path, bytes: bytes.length, sha256: hash(bytes) },
       ] };
     state.batchResponse ??= { version: 1, status: "ready", manifest, manifest_sha256: hash(JSON.stringify(manifest)),
-      selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, budget: DEFAULT_RESOURCE_READ_BUDGET,
+      selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, budget,
       files: [{ requested_ref: ref, ref, path, file_id: "guide", bytes: bytes.length, sha256: hash(bytes), encoding: "utf8", content: bytes.toString("utf8") }],
       ...(resourceEffectsVersion === null ? {} : { effects: noConsumptionWrites() }) };
-    return boundary.readNotionResources(record, [ref], source, root, undefined, policy);
+    return boundary.readNotionResources(record, [ref], budget, source, root, signal, policy);
   };
   return { root, sdk, boundary, source, record, content, response, state, ref, prefix, snapshot, path, main, bytes, resourceRoot, read, readBatch };
 }
@@ -101,6 +104,41 @@ test("batch source keeps zero-write effects and omits retired SDK options with e
   f.state.batchResponse = { version: 1, status: "failed", effects,
     error: Object.freeze({ code: "NOTION_READ_ONLY", message: "semantic write forbidden", details: { effects } }) };
   await expect(f.readBatch({ readOnly: true })).rejects.toMatchObject({ code: "NOTION_READ_ONLY", details: { effects } });
+});
+
+test("the source boundary sends and verifies the same per-call resource budget", async () => {
+  for (const timeBudgetMs of [30000, 120000]) {
+    const f = await fixture(), budget = { ...DEFAULT_RESOURCE_READ_BUDGET, timeBudgetMs };
+    const result = await f.readBatch({ readOnly: true }, budget);
+    expect(f.sdk.calls).toHaveLength(1);
+    expect(f.sdk.calls[0].input).toEqual({ version: 1, refs: [f.ref], budget });
+    expect(result.budget).toEqual(budget);
+    expect(result.files[0]).toMatchObject({ ref: f.ref, sha256: hash(f.bytes), bytes: f.bytes.length });
+    expect(result.selection.snapshot_id).toBe(f.snapshot);
+  }
+});
+
+test("a mismatched SDK resource budget never publishes files", async () => {
+  const budget = { ...DEFAULT_RESOURCE_READ_BUDGET, timeBudgetMs: 120000 };
+  for (const changed of [{ timeBudgetMs: 30000 }, { maxFiles: 17 }, { maxBytes: 1048577 }]) {
+    const f = await fixture(); f.state.batchBudgetOverride = { ...budget, ...changed };
+    await expect(f.readBatch({ readOnly: true }, budget)).rejects.toMatchObject({ code: "SOURCE_RESPONSE_INVALID" });
+    expect(f.sdk.calls).toHaveLength(1); expect(f.sdk.calls[0].input.budget).toEqual(budget);
+    expect(await exists(f.resourceRoot)).toBe(false);
+  }
+});
+
+test("an explicit resource time budget preserves cancellation and SDK timeout failures", async () => {
+  const budget = { ...DEFAULT_RESOURCE_READ_BUDGET, timeBudgetMs: 120000 };
+  const f = await fixture(), controller = new AbortController();
+  f.state.afterBatch = () => controller.abort();
+  await expect(f.readBatch({ readOnly: true }, budget, controller.signal)).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
+  expect(await exists(f.resourceRoot)).toBe(false); expect(f.sdk.calls).toHaveLength(1);
+  const timed = await fixture(), effects = noConsumptionWrites();
+  timed.state.batchResponse = { version: 1, status: "failed", effects,
+    error: { code: "RESOURCE_TIME_BUDGET", message: "Complete resource operation timed out", details: { time_budget_ms: 120000 } } };
+  await expect(timed.readBatch({ readOnly: true }, budget)).rejects.toMatchObject({ code: "RESOURCE_TIME_BUDGET" });
+  expect(await exists(timed.resourceRoot)).toBe(false); expect(timed.sdk.calls).toHaveLength(1);
 });
 
 test("a producer missing the current effects contract is rejected before any batch dispatch", async () => {

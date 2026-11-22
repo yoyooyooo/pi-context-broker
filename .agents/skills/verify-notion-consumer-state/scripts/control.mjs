@@ -6,6 +6,8 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 const repository = path.resolve(import.meta.dirname, "../../../..");
+const taskNames = ["contracts", "observations", "models", "regressions", "observation-mutations", "mutations"];
+const summaryNames = ["observations", "models", "observation-mutations", "mutations"];
 const args = process.argv.slice(2);
 const command = args[0], option = args[1], output = args[2];
 if (!command || ["--help", "help"].includes(command)) {
@@ -41,11 +43,20 @@ assert.equal(option, "--out"); assert.equal(args.length, 3); assert.ok(path.isAb
 const out = path.resolve(output), manifestFile = path.join(out, "manifest.json");
 if (command === "evidence") {
   const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
+  assert.equal(manifest.version, 2, "Current evidence requires a version 2 manifest from run; historical receipts are not upgraded");
   assert.equal(manifest.complete, true, "Run did not finish");
+  assert.deepEqual(manifest.steps.map(step => step.name), taskNames, "Evidence step inventory changed");
+  for (const step of manifest.steps) {
+    assert.equal(step.exitCode, 0, "Evidence contains a failed step");
+    assert.ok(!step.signal, "Evidence contains a terminated step");
+  }
   for (const step of manifest.steps) for (const stream of ["stdout", "stderr"]) {
     assert.equal(hashFile(path.join(out, step[stream])), step[stream + "Sha256"], "Evidence transcript changed");
   }
-  for (const name of ["observations", "models", "observation-mutations", "mutations"]) {
+  assert.ok(Array.isArray(manifest.summaryProofs), "Evidence summary proofs missing");
+  assert.deepEqual(manifest.summaryProofs.map(proof => proof.name), summaryNames, "Evidence summary inventory changed");
+  for (const { name, sha256 } of manifest.summaryProofs) {
+    assert.equal(hashFile(path.join(out, name, "summary.json")), sha256, "Evidence summary changed: " + name);
     assert.equal(JSON.parse(fs.readFileSync(path.join(out, name, "summary.json"), "utf8")).complete, true, name + " incomplete");
   }
   console.log(JSON.stringify({ status: "preserved", complete: true, manifest: manifestFile, manifestSha256: hashFile(manifestFile) }, null, 2));
@@ -54,7 +65,7 @@ if (command === "evidence") {
 assert.ok(path.relative(repository, out).startsWith(".." + path.sep), "Keep evidence outside the repository");
 if (fs.existsSync(out)) assert.equal(fs.readdirSync(out).length, 0, "Use a new or pre-created empty output directory");
 else fs.mkdirSync(out, { recursive: true, mode: 0o700 });
-const state = { version: 1, skill: "verify-notion-consumer-state", checkout: repository, startedAt: new Date().toISOString(), steps: [], complete: false };
+const state = { version: 2, skill: "verify-notion-consumer-state", checkout: repository, startedAt: new Date().toISOString(), steps: [], summaryProofs: [], complete: false };
 const save = () => fs.writeFileSync(manifestFile, JSON.stringify(state, null, 2) + "\n");
 save();
 try {
@@ -64,7 +75,7 @@ try {
   const inputs = new Set([
     ".agents/skills/verify-notion-consumer-state/SKILL.md", ".agents/skills/verify-notion-consumer-state/references/contracts.md",
     ".agents/skills/verify-notion-consumer-state/scripts/control.mjs", "scripts/verify-consumer-observations.mjs",
-    "scripts/formal-result-contract.mjs", "scripts/check-consumer-observation-mutations.mjs",
+    "scripts/formal-result-contract.mjs", "scripts/formal-result-contract.test.mjs", "scripts/check-consumer-observation-mutations.mjs",
     "scripts/check-consumer-state-mutations.mjs", "verification/models/consumer-observations/tool-lock.json",
   ]);
   for (const directory of ["consumer-observations", "consumer-state"]) {
@@ -78,9 +89,10 @@ try {
   state.inputHashes = Object.fromEntries([...inputs].sort().map(file => [file, hashFile(path.join(repository, file))]));
   save();
   const tasks = [
+    ["contracts", process.execPath, ["--test", "scripts/formal-result-contract.test.mjs"]],
     ["observations", process.execPath, ["scripts/verify-consumer-observations.mjs", "--suite", "observations", "--out", path.join(out, "observations")]],
     ["models", process.execPath, ["scripts/verify-consumer-observations.mjs", "--suite", "consumer-state", "--out", path.join(out, "models")]],
-    ["regressions", "bun", ["test", ...["consumer-observation", "consumer-state", "host-prepare", "host-refresh", "session-active", "session-refresh", "session-recovery", "native-read-session", "skill-context-session"].map(name => "packages/context-broker/scripts/" + name + ".test.ts"), "--timeout", "30000"]],
+    ["regressions", "bun", ["test", ...["consumer-observation", "consumer-state", "host-prepare", "host-refresh", "resource-read-host", "session-active", "session-refresh", "session-recovery", "native-read-session", "skill-context-session"].map(name => "packages/context-broker/scripts/" + name + ".test.ts"), "--timeout", "30000"]],
     ["observation-mutations", process.execPath, ["scripts/check-consumer-observation-mutations.mjs", "--out", path.join(out, "observation-mutations")]],
     ["mutations", process.execPath, ["scripts/check-consumer-state-mutations.mjs", "--out", path.join(out, "mutations")]],
   ];
@@ -93,6 +105,11 @@ try {
     Object.assign(step, { exitCode: result.status, signal: result.signal, endedAt: new Date().toISOString(),
       stdoutSha256: hash(result.stdout ?? ""), stderrSha256: hash(result.stderr ?? "") }); save();
     assert.ok(!result.error && !result.signal && result.status === 0, name + " failed; inspect retained transcripts");
+    if (summaryNames.includes(name)) {
+      const summaryFile = path.join(out, name, "summary.json");
+      assert.equal(JSON.parse(fs.readFileSync(summaryFile, "utf8")).complete, true, name + " incomplete");
+      state.summaryProofs.push({ name, sha256: hashFile(summaryFile) }); save();
+    }
     console.log("Completed " + name);
   }
   for (const [file, expected] of Object.entries(state.inputHashes))

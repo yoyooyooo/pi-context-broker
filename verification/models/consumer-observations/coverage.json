@@ -11,11 +11,14 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "0e48e94a13a07991a8635d4e157c22c297e8ecb06563ddbdb30a0d821ceb4c5f",
+    "packages/context-broker/src/host-skills.ts": "bb92d152b2de0dc661e762cc6be5398313fbc8a8dff7c206aa39ee9d12caf2e5",
     "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "e1b4a080907c52dd666cccca0049143cd0dfa1965ceb54257745c50f1355c6af",
-    "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51"
+    "packages/context-broker/scripts/host-prepare.test.ts": "15e3a446dd94371bd47ac5ab34fc14d4d1f5b81d167b4d08645cf7fc68ce0631",
+    "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51",
+    "packages/context-broker/scripts/host-refresh.test.ts": "540cab768397d38cccfc57b4bff9d26e3c17dcb9518ec0a9b061c77ddd35eeff",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "0f32949d65e924beb5762c461ef9c4f53348f64dd4cfd7114cb90181881b3e25",
+    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "a14eb538b7abbb4d3cc112be8fbab48918f83303684f30a8d80b3cd979a841c7"
   },
   "models": {
     "Availability": {
@@ -203,6 +206,14 @@
         "notion-consumption-tools.test.ts"
       ],
       "contract": "An authorized exact physical page maps to its shared logical owner without changing current evidence or fixed pins. Natural source choice and explicit offline package guidance require separate real model evidence."
+    },
+    {
+      "name": "confirmed fixed reads after directory omission",
+      "tests": [
+        "host-refresh.test.ts",
+        "resource-read-host.test.ts"
+      ],
+      "contract": "Use exact current-branch selected plus confirmed bytes without acquiring new current authority. Current source/scope failure gates loaded and restored continuations. Physical/stable alias matching and batch manifest identity are concrete obligations beyond the single-record and two-read model bounds."
     }
   ],
   "current_review": {
@@ -262,6 +273,27 @@
       "scope": "Only buildCliGuidance/buildToolGuidance instruction text changes. Explicit use/follow selects complete Requires even for read-only tasks; no scripts/writes constrains effects, not selection. Inspection without adoption keeps pins. Other named functions, tool schemas and state guards are unchanged.",
       "replays": "skill-guidance, notion-consumption-tools and read-intent-status: 47 tests / 784 assertions passed. Natural model compliance is checked by fresh fixed-input candidate journeys.",
       "proof_limit": "Guidance wording is outside finite model variables. These reviewed hashes do not prove natural compliance or implementation refinement. Models, configurations, cases, bounds and guard mutation targets are unchanged."
+    },
+    "confirmed_fixed_reads": {
+      "fixed_read": "Directory absence does not erase exact selected and provider-confirmed fixed content on the current branch. Scalar and batch fallback require an enabled configured source, matching old and newly observed authorization scopes, exact selection binding, and every requested file in the same complete original manifest. Released, selected-but-undelivered, foreign-branch, candidate and altered-owner proofs remain invalid. The read does not select a root, revive current discovery or replace pins.",
+      "failure_ownership": "Lookup authentication refusal is admitted with the observation ticket captured before lookup, for the proven source/scope, and blocks loaded as well as restored bytes on later ordinary turns. Exact physical denial affects every known same-source/scope binding at that locator; stable-only denial remains identity-local. Unrelated source failure is bypassed only with the owner source same-scope successful current list proof. Query access failure does not manufacture physical denial. Original cancellation, generation and newer-observation guards remain unchanged.",
+      "body_and_batch": "The original fixed snapshot checks validate exact physical owner, file identity, size and hash after acquisition for every batch member. Missing original bytes remain an explicit local capability failure; no current substitution or new use activation is introduced. Business Disabled alone still permits intact confirmed originals.",
+      "replays": "host-refresh.test.ts covers omission, current scope change within old TTL, configured source disablement, physical/stable denial boundaries, lookup AUTH followed by loaded/restored continuation, missing bytes and branch cancellation. resource-read-host.test.ts covers both short and canonical batch refs, exact bytes/owner, release, multi-source failure and query-denial attribution. The formal controller now runs that resource batch regression file. Two additional real-guard mutants prove the all-known-binding denial loop and lookup AUTH admission are detected; the existing dependency-target mutant is migrated to the reviewed loop without weakening its child-only assertion.",
+      "proof_limit": "These are concrete replay obligations. Physical-to-stable aliases, directory membership, exact manifests and cross-source lookup attribution are not finite model variables. TLA/config/view bytes, bounds, case inventories and independent expected_rules are unchanged. Hashes bind the reviewed implementation; they do not prove refinement, real SDK/SQLite alias rebinding, live HTTP denial or natural Pi behavior.",
+      "imported_from": "59e966576ab6d378f116a1638589d28d5c87c875",
+      "reviewed_from": "a13dfcafc20de45faed682e150d9e18ee66b0a96",
+      "integration": "Integrated the preserved Mini product changes onto the completed natural-workflow candidate. Retained exact Notion URL resolution, explicit metadata refresh, current source guidance and the latest workflow runner. Reviewed both changed source owners and all corresponding new scalar/batch, source/scope and delayed-lookup assertions before updating hashes. The natural workflow draft is superseded by the existing scenario, runtime, fixture and analysis modules; it is not added as a parallel entry. Restored the two notion_use refresh descriptions and their original host-refresh regression assertions verbatim from a13dfca after the integration review; the Mini wording is unrelated to these state/resource fixes. No accepted PR14 natural guidance or workflow file changes."
+    },
+    "per_call_resource_budget": {
+      "reviewed_from": "a13dfcafc20de45faed682e150d9e18ee66b0a96",
+      "scope": "The public Pi paths branch accepts only an optional positive integer timeBudgetMs up to 120000; scalar/local branches reject it. Defaults remain 30000 ms, 16 files and 1 MiB. The validated budget is passed through index and notion-source into the single SDK operation, compared on its response, and used for one lookup-plus-acquisition host deadline. No automatic retry or session selection change is introduced.",
+      "guards": "Caller cancellation, lifecycle generation, exact owner/scope/snapshot/file binding, complete original bytes, no-write policy and provider projection remain enforced. Resource replays retain the original task pins, cancel noncooperative late results and reject mismatched SDK budgets before publication.",
+      "replays": [
+        "pi-read-adapter.test.ts: public schema, valid propagation, invalid values and scalar/local rejection",
+        "resource-read-host.test.ts: per-call default restoration, lookup/acquisition deadline, cancellation and exact returned budget",
+        "fixed-resource-source.test.ts: actual SDK request budget and response/cancellation checks"
+      ],
+      "proof_limit": "Time allowance, filesystem resource acquisition and schema fields are concrete implementation boundaries outside the finite model variables. TLA/config/view bytes, finite bounds, cases and independent expected_rules are unchanged; these source hashes do not prove timing, live transport or natural model retry behavior."
     }
   }
 }

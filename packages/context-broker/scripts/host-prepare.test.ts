@@ -1527,3 +1527,36 @@ test("a unique resolved owner in multiple current scopes still rejects promotion
   expect(f.calls).toEqual([]);
   expect(sessionSelection(f.ctx)).toEqual(before);
 });
+
+
+for (const code of ["AUTH_REQUIRED", "ACCESS_DENIED"] as const) for (const boundary of ["source", "scope"] as const)
+test(code + " does not taint tracked inspection content in another " + boundary, async () => {
+  const f = await fixture(true), other = await fixture(true, false, "pi", boundary === "scope" ? "b".repeat(64) : scope);
+  const sourceId = boundary === "source" ? "other-source" : "controlled";
+  if (boundary === "source") f.sources.push({ id: sourceId, type: "notion", prefetch: false });
+  for (const record of other.records) record.sourceId = sourceId;
+  let showingOther = true, deny = false;
+  const { host } = await f.install(async purpose => {
+    if (deny) {
+      if (code === "AUTH_REQUIRED") throw new SourceError(code, "controlled");
+      if (f.root.locator?.type !== "shared_skill") throw new Error("Expected physical shared owner");
+      throw exactDenial({ ...f.root, ref: "skill://" + f.root.locator.page_id + "/SKILL.md" }, code);
+    }
+    return [{ ...(showingOther ? other : f).graph(purpose), sourceId: showingOther ? sourceId : "controlled" }];
+  }, { getRecords: async () => ({ records: (showingOther ? other : f).records.map(record => ({
+    ...record, body: undefined, preparationBinding: undefined,
+  })), failures: [] }) });
+  await host.refresh(f.ctx);
+  expect(sourceMessageText((await nativeRead(f, other.root.ref!, "other-inspection")).content)).toContain(other.root.body!);
+  showingOther = false;
+  await host.refresh(f.ctx);
+  deny = true;
+  const admission = await f.emit("tool_call", { toolName: "read", toolCallId: "denied-current-source", input: { path: f.root.ref!, refresh: true } }, f.ctx);
+  expect(admission).toContainEqual(expect.objectContaining({ block: true, admission: expect.objectContaining({ code }) }));
+  expect(() => host.assertCanRestore(f.root)).toThrow(code);
+  showingOther = true; deny = false;
+  await host.refresh(f.ctx);
+  // Metadata contains no new currentObservation. This checks the original
+  // scoped denial, without a successful body acquisition clearing it first.
+  expect(() => host.assertCanRestore(other.root)).not.toThrow();
+});
