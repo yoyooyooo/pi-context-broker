@@ -10,6 +10,7 @@ import { fileInventory } from './next-build-identity.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { readSourceObservation, sourceObserverPreloadSource } from './skill-consumption-source-observer.mjs';
 import { aggregateDailyDeliveries, classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, observedDailyHostProcess, validateDailyDoctor, validateDailyFind, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
+import { workflowHostLoader } from './notion-agent-workflow-runtime.mjs';
 
 test('daily aggregate requires an explicit new delivery and both machine receipts before any source or Pi operation', async () => {
   for (const config of [{}, { delivery: { id: 'old-label', startedAt: new Date().toISOString() } },
@@ -31,6 +32,9 @@ async function observedHostFixture(kind, packageName = '@earendil-works/pi-codin
   await Promise.all([dirname(entry), directory].map(path => mkdir(path, { recursive: true })));
   await writeFile(join(packageRoot, 'package.json'), JSON.stringify({ name: packageName, version: '1.6.0', bin: { pi: binEntry } }));
   await writeFile(entry, '#!/usr/bin/env node\nprocess.stdout.write("controlled host only\\n");\n', { mode: 0o755 });
+  const loader = join(packageRoot, 'node_modules/jiti/index.js');
+  await mkdir(dirname(loader), { recursive: true });
+  await writeFile(loader, 'exports.createJiti=()=>({origin:__filename});\n');
   if (kind === 'native') await symlink(entry, launcher);
   else await writeFile(launcher, kind === 'wrapper'
     ? '#!/bin/sh\nexec ' + [process.execPath, entry].map(value => "'" + value.replaceAll("'", "'\\''") + "'").join(' ') + ' "$@"\n'
@@ -49,7 +53,7 @@ async function observedHostFixture(kind, packageName = '@earendil-works/pi-codin
   const owned = [{ pid: child.pid, file: host.file, args: [...host.prefix, ...args], observed_close: true, exit_code: child.status, signal: child.signal }];
   const observed = (await Promise.all((await readdir(directory)).map(file => readFile(join(directory, file), 'utf8'))))
     .flatMap(text => text.trim().split('\n').filter(Boolean).map(JSON.parse));
-  return { host, args, owned, observed, sourceLedger, entry };
+  return { host, args, owned, observed, sourceLedger, entry, loader };
 }
 
 for (const kind of ['native', 'wrapper']) test('ordinary ' + kind + ' binds the actual Pi package, Node and source observer to one exited process', async () => {
@@ -61,6 +65,10 @@ for (const kind of ['native', 'wrapper']) test('ordinary ' + kind + ' binds the 
   assert.equal(proof.package.version, '1.6.0'); assert.equal(proof.observed_exit, true);
   assert.equal(proof.pid, f.owned[0].pid);
   assert.equal(f.host.launcher.realpath === proof.entry.realpath, kind === 'native');
+  const loader = await workflowHostLoader(f.host, f.owned, f.observed, f.args);
+  assert.deepEqual(loader.hostProcess, proof);
+  assert.equal(loader.loaderArtifact.realpath, await realpath(f.loader));
+  assert.equal(loader.createJiti().origin, f.loader, 'Workflow loading must follow the observed Pi package, including through a shell launcher');
   const source = await readSourceObservation(f.sourceLedger);
   assert.equal(source.complete, true);
   assert.equal(source.events.find(row => row.phase === 'source_observer_start').pid, proof.pid);
@@ -70,12 +78,16 @@ for (const kind of ['native', 'wrapper']) test('ordinary ' + kind + ' binds the 
     rows => rows.map(row => row.event === 'process_start' ? { ...row, pid: row.pid + 1 } : row),
     rows => rows.map(row => row.event === 'process_start' ? { ...row, args_sha256: '0'.repeat(64) } : row),
   ]) assert.throws(() => observedDailyHostProcess(f.host, f.owned, change(f.observed), f.args));
+  await assert.rejects(workflowHostLoader(f.host, f.owned.map(child => ({ ...child, pid: child.pid + 1 })), f.observed, f.args));
+  await writeFile(f.entry, '# Changed after the observed launch\n');
+  await assert.rejects(workflowHostLoader(f.host, f.owned, f.observed, f.args), /observed Pi entry or package changed/);
 });
 
 test('fake wrappers, unrelated packages and a mismatched public bin cannot establish host identity', async () => {
   for (const f of [await observedHostFixture('fake'), await observedHostFixture('wrapper', 'unrelated-package'),
     await observedHostFixture('wrapper', '@earendil-works/pi-coding-agent', 'dist/other.cjs')]) {
     assert.throws(() => observedDailyHostProcess(f.host, f.owned, f.observed, f.args));
+    await assert.rejects(workflowHostLoader(f.host, f.owned, f.observed, f.args));
     assert.equal((await readSourceObservation(f.sourceLedger)).complete, false);
   }
 });

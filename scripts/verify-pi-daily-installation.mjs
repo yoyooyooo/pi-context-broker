@@ -462,11 +462,11 @@ async function configurationSnapshot(config) {
   };
 }
 
-async function observedRows(directory) {
+export async function observedRows(directory) {
   const names = (await readdir(directory)).filter(name => /^observer-[0-9]+\.jsonl$/u.test(name));
   return (await Promise.all(names.map(async name => (await readFile(join(directory, name), 'utf8')).split('\n').filter(Boolean).map(JSON.parse)))).flat();
 }
-async function ownedPiProcesses(path) {
+export async function ownedPiProcesses(path) {
   const rows = (await readFile(path, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);
   return rows.filter(row => row.event === 'spawn').map(row => {
     const end = rows.find(end => end.event === 'close' && end.pid === row.pid && end.observedExit);

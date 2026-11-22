@@ -14,6 +14,8 @@
 
 准备器将 CLI config/state/cache/data 和 request scheduler 绑定到 fixture 自有根；被测 Pi 使用另一个本轮 state 根及 scheduler。`NTN_SKILLS_HOME` 不会改变 scheduler 的默认位置，必须同时设置 `NTN_SKILLS_SCHEDULER_ROOT`。运行初态回执记录实际 scheduler 路径，正常用户 scheduler 不作为 fixture 或模型验收的共享账本。
 
+正常 `pi` 可以是保留的 shell launcher。运行器先启动该入口，再用现役进程 observer 核对 owned PID、父进程、参数、实际 Pi package bin、manifest 和 Node；Jiti 只从已观察的 Pi entry 加载。每个重启段都保留 launcher、真实进程和 loader 的身份，并在自然退出后核对终态；不从 launcher 的文本或所在目录猜依赖路径。
+
 先读取 [loader](../../../../scripts/notion-agent-scenarios.mjs) 导出的选择函数，按场景 ID 选择；不要把完整语料发给被测模型。对象准备复用 scripts/notion-agent-fixtures.mjs：
 
     prepareAgentFixtures({

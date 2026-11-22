@@ -17,6 +17,7 @@ import { observeGraphSdk } from './notion-skill-graph-model-evidence.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
 import { candidateSourceConfig, inspectCandidatePackageRegistration, candidatePayloadBodies, candidateTaskExtensionSource, candidateTransportCoverage } from './verify-pi-daily-candidate.mjs';
+import { dailyObserverPreloadSource, observedDailyHostProcess, observedRows, ownedPiProcesses } from './verify-pi-daily-installation.mjs';
 
 // This is an implementation of the existing candidate entry, not another host
 // driver. Pi is always started and controlled by the shared native RPC helper.
@@ -155,6 +156,16 @@ export function agentWorkflowEnvironment(inherited, { stateRoot, sourceConfigPat
   return env;
 }
 
+export async function workflowHostLoader(host, owned, observed, args) {
+  const hostProcess = observedDailyHostProcess(host, owned, observed, args, { complete: false });
+  for (const file of [hostProcess.entry, hostProcess.package.manifest])
+    assert.deepEqual(await identity(file.path), file, 'The observed Pi entry or package changed before loading its dependencies');
+  const require = createRequire(hostProcess.entry.realpath), loaderArtifact = await identity(require.resolve('jiti'));
+  const { createJiti } = require('jiti');
+  assert.equal(typeof createJiti, 'function', 'The actual Pi package must provide its Jiti loader');
+  return { hostProcess, loaderArtifact, createJiti };
+}
+
 export function agentWorkflowProjectSettings(settings, scenario) {
   const budgets = new Set(scenario.turns.flatMap(turn => (turn.before ?? [])
     .filter(event => event.kind === 'compact' && event.keepRecentTokens !== undefined).map(event => event.keepRecentTokens)));
@@ -234,7 +245,7 @@ async function sourceIdentity(path, repository) {
   return { repository, commit, dirty: status.length > 0, tree_sha256: sha(JSON.stringify(hashes)) };
 }
 
-async function writeObservers(control, config, host, sourceCache, bodies, index) {
+async function writeObservers(control, config, sourceCache, bodies, index) {
   await mkdir(control, { recursive: true, mode: 0o700 });
   const payloads = join(control, 'payloads'), branches = join(control, 'branches'), responses = join(control, 'sdk-responses'), toolResults = join(control, 'tool-results');
   for (const path of [payloads, branches, responses, toolResults]) await mkdir(path, { mode: 0o700 });
@@ -246,14 +257,18 @@ async function writeObservers(control, config, host, sourceCache, bodies, index)
   await writeFile(extensions[1], providerTransportExtensionSource({ output: files.transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(extensions[2], candidateTaskExtensionSource({ output: files.tasks, bodyFiles: bodies.filter(body => body.bytes > 0),
     payloadDirectory: payloads, branchDirectory: branches, toolResultDirectory: toolResults }), { flag: 'wx', mode: 0o600 });
-  const sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
+  const sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs'), hostPreload = join(control, 'host.cjs');
+  const hostDirectory = join(control, 'host-process'); await mkdir(hostDirectory, { mode: 0o700 });
+  await writeFile(hostPreload, dailyObserverPreloadSource({ directory: hostDirectory,
+    cliEntry: await realpath(join(config.brokerRoot, 'dist/ntn-skills.mjs')), ownerParentPid: process.pid }), { flag: 'wx', mode: 0o600 });
   await writeFile(sourcePreload, sourceObserverPreloadSource({ output: files.source, checkoutRoot: root, clockId, processDirectory,
-    cliPath: join(config.brokerRoot, 'dist/ntn-skills.mjs'), ownerParentPid: process.pid, ownerEntry: host.path }), { flag: 'wx', mode: 0o600 });
+    cliPath: join(config.brokerRoot, 'dist/ntn-skills.mjs'), ownerParentPid: process.pid,
+    ownerPackage: { packageName: '@earendil-works/pi-coding-agent', binName: 'pi' } }), { flag: 'wx', mode: 0o600 });
   await writeFile(sdkPreload, "import fs from 'node:fs';import {channel} from 'node:diagnostics_channel';import {createHash} from 'node:crypto';import {isMainThread} from 'node:worker_threads';const hash=value=>createHash('sha256').update(value).digest('hex');\n"
     + safeRequestMetrics.toString() + '\nif(isMainThread&&process.ppid===' + process.pid + '){const sdk=(' + observeGraphSdk.toString()
     + ')({channel,fs,safeMetrics:safeRequestMetrics,paths:' + JSON.stringify({ ledger: files.sdk, responses, outputRoot: sourceCache })
     + '});let done=false;const finish=()=>{if(!done){done=true;sdk.close();}};process.once("beforeExit",finish);process.once("exit",finish);}\n', { flag: 'wx', mode: 0o600 });
-  return { files, extensions, processDirectory, preloads: [sourcePreload, sdkPreload] };
+  return { files, extensions, processDirectory, hostDirectory, preloads: [hostPreload, sourcePreload, sdkPreload] };
 }
 
 /** Invoke through candidate-run --live. All private event handling stays here. */
@@ -317,13 +332,8 @@ export async function runAgentWorkflow(config) {
   const env = agentWorkflowEnvironment(inheritedEnv, { stateRoot, sourceConfigPath, evidence });
   if (scenario.fixture.environment?.catalog === 'unauthorized') env.NOTION_API_TOKEN = 'secret_owned_agent_workflow_invalid_identity';
   if (scenario.fixture.environment?.catalog === 'filtered-view') assert.ok(fixture.viewId, 'A filtered-view scenario requires a real owned Notion View binding');
-  const host = await resolveHost('pi'), { createJiti } = createRequire(host.identity)('jiti');
-  const jiti = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
-  const { reduceSessionSelection } = await jiti.import(join(config.brokerRoot, 'src/session-graph.ts'));
-  const { reduceActiveSources } = await jiti.import(join(config.brokerRoot, 'src/session-active.ts'));
-  const { reduceSessionShortRefs } = await jiti.import(join(config.brokerRoot, 'src/session-short-ref.ts'));
-  const selection = value => captureNotionAgentSelection({ sessionId: value.sessionId, leafId: value.leafId, branchSha256: sha(JSON.stringify(value.entries)),
-    selection: reduceSessionSelection(value.entries), active: reduceActiveSources(value.entries), shortRefs: reduceSessionShortRefs(value.entries) });
+  const selectedHost = await resolveHost('pi'), host = { ...selectedHost, parent_pid: process.pid, launcher: await identity(selectedHost.path) };
+  let selection;
   const result = { version: 1, scope: config.scope, status: 'running', runId, evidence, startedAt: new Date().toISOString(), plan,
     sourceTuple: await Promise.all([sourceIdentity(config.brokerRoot, 'broker'), sourceIdentity(config.cliRoot, 'cli')]),
     baseline, cliFiles, loadedPackageFiles, runtime, build, host, hostArtifact: await identity(host.identity), before, registration,
@@ -340,22 +350,33 @@ export async function runAgentWorkflow(config) {
   const forkBindings = new Map();
   const start = async resume => {
     const control = join(evidence, 'observation-' + (++segmentIndex));
-    const observer = await writeObservers(control, { ...config, runId }, host, sourceCache, Object.values(bindings.private.bodies), segmentIndex);
+    const observer = await writeObservers(control, { ...config, runId }, sourceCache, Object.values(bindings.private.bodies), segmentIndex);
     const args = agentWorkflowArgs(config, sessions, observer.extensions);
     if (resume) args.push('--session', resume);
     const actualEnv = { ...env, NODE_OPTIONS: [process.env.NODE_OPTIONS, ...observer.preloads.map(path => '--import=' + JSON.stringify(path))].filter(Boolean).join(' ') };
+    assert.deepEqual(await identity(host.path), host.launcher, 'The ordinary Pi launcher changed before this segment');
     // A public management command already has a ten-minute finite budget. A
     // natural turn may inspect, execute and read it back before responding.
     rpc = await startRpc({ host: 'pi', cwd, env: actualEnv, args, timeoutMs: plan.limits.promptTimeoutMs });
     const state = await rpc.command('get_state');
+    const pid = rpc.lifecycle[0].pid;
+    segment = { index: segmentIndex, control, observer, sessionId: state.sessionId, sessionFile: state.sessionFile, args, cwd, pid, lifecycle: rpc.lifecycle };
+    result.segments.push(segment); currentSession = state;
+    const loader = await workflowHostLoader(host, (await ownedPiProcesses(env.BROKER_E2E_PROCESS_LEDGER)).filter(child => child.pid === pid),
+      await observedRows(observer.hostDirectory), ['--mode', 'rpc', ...args]);
+    Object.assign(segment, { hostProcess: loader.hostProcess, loaderArtifact: loader.loaderArtifact });
+    const jiti = loader.createJiti(import.meta.url, { fsCache: false, moduleCache: false });
+    const { reduceSessionSelection } = await jiti.import(join(config.brokerRoot, 'src/session-graph.ts'));
+    const { reduceActiveSources } = await jiti.import(join(config.brokerRoot, 'src/session-active.ts'));
+    const { reduceSessionShortRefs } = await jiti.import(join(config.brokerRoot, 'src/session-short-ref.ts'));
+    selection = value => captureNotionAgentSelection({ sessionId: value.sessionId, leafId: value.leafId, branchSha256: sha(JSON.stringify(value.entries)),
+      selection: reduceSessionSelection(value.entries), active: reduceActiveSources(value.entries), shortRefs: reduceSessionShortRefs(value.entries) });
     assert.equal(state.model?.provider, 'magpie'); assert.equal(state.model?.id, 'group/worker'); assert.equal(state.thinkingLevel, 'high');
     assert.ok(inside(sessions, resolve(state.sessionFile)), 'Pi must persist the owned session');
     const commands = (await rpc.command('get_commands')).commands;
     const brokers = commands.filter(item => item.name === 'context-broker'); assert.equal(brokers.length, 1);
     assert.ok(inside(await realpath(config.brokerRoot), await realpath(brokers[0].sourceInfo.path)), 'Pi loaded a different Broker');
-    segment = { index: segmentIndex, control, observer, sessionId: state.sessionId, sessionFile: state.sessionFile, args, cwd, pid: rpc.lifecycle[0].pid,
-      commands: commands.map(item => ({ name: item.name, source: item.source, sourceInfo: item.sourceInfo })), lifecycle: rpc.lifecycle };
-    result.segments.push(segment); currentSession = state;
+    segment.commands = commands.map(item => ({ name: item.name, source: item.source, sourceInfo: item.sourceInfo }));
     for (const [file, phase] of [[observer.files.cost, 'observer_start'], [observer.files.transport, 'transport_start'], [observer.files.tasks, 'task_observer_start'], [observer.files.source, 'source_observer_start'], [observer.files.sdk, 'sdk-observer-start']])
       assert.equal((await rows(file))[0]?.phase, phase, 'A required observer did not start');
     await save(join(control, 'commands.json'), segment.commands);
@@ -372,6 +393,10 @@ export async function runAgentWorkflow(config) {
   const close = async () => {
     if (!rpc) return;
     await rpc.closeInput();
+    assert.deepEqual(await identity(host.path), host.launcher, 'The ordinary Pi launcher changed during this segment');
+    segment.hostProcess = observedDailyHostProcess(host,
+      (await ownedPiProcesses(env.BROKER_E2E_PROCESS_LEDGER)).filter(child => child.pid === segment.pid),
+      await observedRows(segment.observer.hostDirectory), ['--mode', 'rpc', ...segment.args]);
     segment.cost = await readConsumptionCostEvents(segment.observer.files.cost);
     segment.transport = await readProviderTransport(segment.observer.files.transport);
     segment.source = await readSourceObservation(segment.observer.files.source);
