@@ -167,9 +167,10 @@ Arguments after `--` belong to the target. The CLI path and any command wrapper
 added to `PATH` apply only to this process tree. They do not replace a global
 `ntn-skills` executable, rewrite shell startup files or change another session.
 Direct Pi runs reject session-directory, session-file and resume overrides; the
-launcher owns session selection. A CLI run with `--entry` rejects a second
-`--database` binding. These checks prevent accidental scope changes, not deliberate
-filesystem access by an arbitrary command or extension.
+launcher owns session selection. CLI arguments pass through unchanged, including
+those supplied to the process-local `ntn-skills` wrapper. Select the remote object
+in the actual CLI command with its documented flags or positional arguments.
+The launcher's remote declaration does not add or validate CLI arguments.
 
 The launcher prints a JSON result with `run_id`, its `root` and `exit_code`.
 Target stdout and stderr are retained as `command.stdout.log` and
@@ -224,14 +225,29 @@ not accept a secret value. Selecting an entry or parent alone does not pass a
 Notion credential.
 
 To read an authorized test library, provide its canonical Skills database UUID
-as `--entry`. The launcher binds the selected CLI and its process-local wrapper
-to that database and adds the matching Broker source:
+as the launcher's `--entry`. This records the intended scope, sets
+`PAIRED_NOTION_ENTRY`, and adds the matching Broker source. Also select that
+database in the public CLI command. Consumption commands use `--database`:
 
 ```sh
 node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
   --build BUILD_ID --target cli --entry TEST_ENTRY_UUID \
-  --pass-env NOTION_API_TOKEN -- list --json
+  --pass-env NOTION_API_TOKEN -- list --database TEST_ENTRY_UUID --json
 ```
+
+For management, follow the selected command's help. For example, validate an
+existing library with `ctl library init --entry`:
+
+```sh
+node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
+  --build BUILD_ID --target cli --entry TEST_ENTRY_UUID \
+  --pass-env NOTION_API_TOKEN -- ctl library init --entry TEST_ENTRY_UUID
+```
+
+The same rule applies inside a command run. For example, a harness can invoke
+`ntn-skills list --database "$PAIRED_NOTION_ENTRY" --json`. The wrapper only
+selects the private executable; it does not choose command flags. A bare `list`
+does not become database-scoped because the launcher received `--entry`.
 
 For a new-library scenario, select an authorized test parent explicitly.
 `--parent` records the scope and sets `PAIRED_NOTION_PARENT`; it leaves Broker
@@ -280,6 +296,13 @@ Run the environment unit tests first:
 ```sh
 node --test scripts/paired-environment.test.mjs
 ```
+
+To include the real CLI argument contract, set `NTN_SKILLS_BUILD_ENTRY` to the
+chosen installed CLI's absolute `dist/ntn-skills.js` path for that test command.
+CI already supplies its built pinned CLI. This checks both the direct CLI target
+and command wrapper against consumption and management help, without Notion
+credentials or requests. Without that input, the real CLI subtest reports skipped;
+the sealed fixture tests alone do not prove compatibility with the product parser.
 
 Then run the smoke check with two independently created environments and their
 explicit build IDs:

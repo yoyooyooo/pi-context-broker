@@ -51,8 +51,14 @@ Node/Pi 使用统一维护的机器基础环境，不为任务另装旧版；每
 Pi 保留 `-ns`，不改本地原件。HOME 保持不变；CLI wrapper 仅影响子进程树。
 凭据变量只通过显式 `--pass-env NAME` 传入，models 的 apiKey 只能引用环境变量名。
 无远端选择时核对 Notion token 不继承且 sources 为空，不能只看目录名推断隔离。
-entry 绑定 CLI database 与 Broker source；parent 只记录 scope 并供显式 init 使用，
-不自动创建库。明确 entry/parent 不缩小 API 权限；同 token 仍受共享远端限流.
+launcher 的 entry 记录 scope、设置 PAIRED_NOTION_ENTRY 并配置 Broker source；parent
+记录 scope、设置 PAIRED_NOTION_PARENT，不自动创建库。CLI target 和私有 wrapper
+原样传递参数；消费命令显式传 --database，管理命令按各自帮助传 flag 或位置参数，
+例如 ctl library init --entry ENTRY，ctl library inspect ENTRY。
+launcher 不替 CLI 选择或校验这些参数，裸 list 不会因 launcher entry 而限定到该库。
+用 NTN_SKILLS_BUILD_ENTRY 指定真实配套 CLI 运行环境测试，核对 direct/wrapper 的消费
+与管理参数；缺少该输入时 real CLI 子测试 skipped，不能把 fixture argv 检查当成通过。
+明确 entry/parent 不缩小 API 权限；同 token 仍受共享远端限流.
 只记录凭据是否存在，不输出内容。结束后复核未改变日用来源与全局配置。
 
 隔离 smoke 不等于自然旅程或正常日用验收。不要为让任务分支通过而放宽
