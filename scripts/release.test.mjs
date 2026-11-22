@@ -174,6 +174,7 @@ for (const response of [
   { status: 1, stdout: '{"error":{"code":"E503"}}' },
   { status: 1, stderr: "connection timeout including misleading 404 text" },
   { status: 0, stdout: "{}" }, { status: 0, stdout: "" }, { status: 0, stdout: '[null]' },
+  { status: 0, stdout: "[]" },
 ]) {
   test("unknown registry state cannot create a release: " + JSON.stringify(response), t => {
     const f = fixture(t, 0, {}, response);
