@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { access, mkdir, mkdtemp, readFile, realpath, rename, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { agentWorkflowArgs, agentWorkflowProjectSettings, prepareWorkflowTemporaryEnvironment, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
+import { agentWorkflowArgs, agentWorkflowEnvironment, agentWorkflowProjectSettings, prepareWorkflowTemporaryEnvironment, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
 import { validateCandidateTurn } from './verify-pi-daily-candidate.mjs';
 
 const execute = promisify(execFile);
@@ -37,6 +37,23 @@ test('explicit TMPDIR shell templates and Node temporary APIs retain inputs with
     await writeFile(join(path, 'operation-input.md'), '# Preserve exact retry input\n');
     assert.equal(await readFile(join(path, 'operation-input.md'), 'utf8'), '# Preserve exact retry input\n');
   }
+});
+
+test('the subject process receives all five owned roots instead of inherited config and scheduler state', async t => {
+  const fixture = await temporaryFixture(t), stateRoot = join(fixture.root, 'owned-state'), sourceConfigPath = join(fixture.root, 'source-config.json');
+  const directories = { NTN_SKILLS_HOME: 'state', NTN_SKILLS_CONFIG_HOME: 'config', NTN_SKILLS_CACHE_HOME: 'cache', NTN_SKILLS_DATA_HOME: 'data', NTN_SKILLS_SCHEDULER_ROOT: 'scheduler' };
+  const inherited = { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: fixture.ownership.temporaryRoot,
+    NTN_SKILLS_DEV_ROOT: join(fixture.root, 'inherited-dev'),
+    ...Object.fromEntries(Object.entries(directories).map(([key, directory]) => [key, join(fixture.root, 'inherited-' + directory)])) };
+  const before = { ...inherited }, env = agentWorkflowEnvironment(inherited, { stateRoot, sourceConfigPath, evidence: fixture.root });
+  const keys = [...Object.keys(directories), 'CONTEXT_BROKER_CONFIG', 'NTN_SKILLS_DEV_ROOT', 'HOME', 'TMPDIR'];
+  const child = await execute(process.execPath, ['-e', 'process.stdout.write(JSON.stringify(Object.fromEntries(' + JSON.stringify(keys) + '.map(key=>[key,process.env[key]]))))'], { env });
+  const observed = JSON.parse(child.stdout);
+  for (const [key, directory] of Object.entries(directories)) assert.equal(observed[key], join(stateRoot, directory));
+  assert.equal(observed.CONTEXT_BROKER_CONFIG, sourceConfigPath);
+  assert.equal(observed.NTN_SKILLS_DEV_ROOT, undefined);
+  assert.equal(observed.HOME, inherited.HOME); assert.equal(observed.TMPDIR, inherited.TMPDIR);
+  assert.deepEqual(inherited, before, 'The launch environment must not mutate the caller');
 });
 
 test('temporary evidence rejects missing ownership, a foreign token, an escaped path and a symlink', async t => {

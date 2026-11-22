@@ -146,6 +146,15 @@ export async function prepareWorkflowTemporaryEnvironment(fixture, env) {
   return { env: { ...env, TMPDIR: ownership.temporaryRoot }, projectContext: await identity(path) };
 }
 
+export function agentWorkflowEnvironment(inherited, { stateRoot, sourceConfigPath, evidence }) {
+  const env = { ...inherited, CONTEXT_BROKER_CONFIG: sourceConfigPath, NTN_SKILLS_HOME: join(stateRoot, 'state'),
+    NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'config'), NTN_SKILLS_CACHE_HOME: join(stateRoot, 'cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'data'),
+    NTN_SKILLS_SCHEDULER_ROOT: join(stateRoot, 'scheduler'),
+    NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', BROKER_E2E_PROCESS_LEDGER: join(evidence, 'owned-processes.jsonl') };
+  delete env.NTN_SKILLS_DEV_ROOT;
+  return env;
+}
+
 export function agentWorkflowProjectSettings(settings, scenario) {
   const budgets = new Set(scenario.turns.flatMap(turn => (turn.before ?? [])
     .filter(event => event.kind === 'compact' && event.keepRecentTokens !== undefined).map(event => event.keepRecentTokens)));
@@ -305,11 +314,7 @@ export async function runAgentWorkflow(config) {
   }
   await save(sourceConfigPath, candidateSource);
   const sourceObservation = { sourceId: config.sourceId, database: config.database, configArtifact: await identity(sourceConfigPath) };
-  const env = { ...inheritedEnv, CONTEXT_BROKER_CONFIG: sourceConfigPath, NTN_SKILLS_HOME: ownedStateRoot,
-    NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'config'), NTN_SKILLS_CACHE_HOME: join(stateRoot, 'cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'data'),
-    NTN_SKILLS_SCHEDULER_ROOT: join(stateRoot, 'scheduler'),
-    NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', BROKER_E2E_PROCESS_LEDGER: join(evidence, 'owned-processes.jsonl') };
-  delete env.NTN_SKILLS_DEV_ROOT;
+  const env = agentWorkflowEnvironment(inheritedEnv, { stateRoot, sourceConfigPath, evidence });
   if (scenario.fixture.environment?.catalog === 'unauthorized') env.NOTION_API_TOKEN = 'secret_owned_agent_workflow_invalid_identity';
   if (scenario.fixture.environment?.catalog === 'filtered-view') assert.ok(fixture.viewId, 'A filtered-view scenario requires a real owned Notion View binding');
   const host = await resolveHost('pi'), { createJiti } = createRequire(host.identity)('jiti');
