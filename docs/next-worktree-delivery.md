@@ -89,3 +89,32 @@ aggregate config 使用相同的 `version:1`、`delivery`、`worktrees`、`cliRo
 联合 `passed` 的范围是 `two-machine-ordinary-pi-startup-and-metadata`。它仍将 provider/model 与正文消费标为 `not_run`；真实模型与时间线任务沿各自现有验收入口单独取得证据。
 
 本合同不自动发布 npm、不合并 main，也不在每次启动时隐式拉代码或改变已有会话版本。新代码通过下一次已核对的新进程生效；既有任务的内容 pin 仍由消费合同管理。
+
+
+## 普通模型观察中的包归属
+
+模型和正文证据仍单独采集，不加入上面的 metadata aggregate。复用现役
+`analyzeNotionAgentTurn` 分析普通安装时，原始 `get_commands.sourceInfo.source`
+可能是用户 settings 中的相对路径，不能将它改写为绝对路径来冒充观测。
+
+分析输入可明确提供 `implementation.ordinaryInstallationArtifact`，指向本次冻结的
+JSON 原件（仍用 `path/bytes/sha256` 身份）。内容为：
+
+```json
+{
+  "version": 1,
+  "kind": "ordinary-pi-package-binding",
+  "settingsDirectory": "/absolute/user/.pi/agent",
+  "settings": {"path": "/absolute/user/.pi/agent/settings.json", "bytes": 1234, "sha256": "ACTUAL_SETTINGS_SHA256"},
+  "package": {"index": 1, "count": 2, "source": "../../actual/broker/packages/context-broker"}
+}
+```
+
+这些字段必须从实际普通 settings 读取。`settings` 与启动原件的 `before.settings`
+精确相同（有 `realpath` 等字段时也完整保留）。分析器读回并核对该 settings 原件的字节哈希，
+从真实 `packages` 核总数和唯一目标 slot；index 与本次配置的 `packageIndex` 相同，
+source 与实际 settings slot 及 user scope 注册原样相同。
+分析器只从这个冻结的 settings 目录解析本地来源；包自身的 `sourceInfo.baseDir`
+不是解析基准。解析结果、真实注册的 entry/baseDir、干净提交和冻结 package/entry 字节
+必须仍属于同一 Broker。原先候选绝对来源的判定不变；缺绑定、改动过的原件、错误目录、
+其他来源或包均不能借用归属证明。该可选分析输入不创建新的执行入口，也不修改日用配置。

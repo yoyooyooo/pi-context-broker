@@ -480,6 +480,102 @@ test('read effects bind the actual Broker override to its frozen candidate and h
   assert.equal(proof[0].commit, 'c'.repeat(40));
 });
 
+function ordinaryPackageFixture() {
+  const f = fixture({ calls: [{ name: 'notion_list' }] });
+  const save = (reference, value) => {
+    const bytes = Buffer.from(JSON.stringify(value)); f.files.set(reference.path, bytes);
+    Object.assign(reference, { sha256: hash(bytes), bytes: bytes.length }); return reference;
+  };
+  const source = '../../candidate/packages/context-broker';
+  const settings = save({ path: '/owned/.pi/agent/settings.json' }, { packages: ['another-package', source] });
+  const started = JSON.parse(f.files.get(f.observed.implementation.candidateArtifact.path));
+  started.before = { settings }; save(f.observed.implementation.candidateArtifact, started);
+  save(f.observed.implementation.configArtifact, { brokerRoot: '/owned/candidate/packages/context-broker', packageIndex: 1 });
+  const commands = JSON.parse(f.files.get(f.observed.visibility.nativeCommands.path));
+  Object.assign(commands[0].sourceInfo, { scope: 'user', source });
+  save(f.observed.visibility.nativeCommands, commands);
+  f.observed.tasks.find(row => row.phase === 'tool_call').toolSource = { ...commands[0].sourceInfo };
+  const binding = { version: 1, kind: 'ordinary-pi-package-binding', settingsDirectory: '/owned/.pi/agent', settings,
+    package: { index: 1, count: 2, source } };
+  const artifact = save({ path: '/owned/evidence/ordinary-installation.json' }, binding);
+  f.observed.implementation.ordinaryInstallationArtifact = artifact;
+  return { ...f, binding, artifact, save };
+}
+
+test('ordinary relative package source resolves from frozen user settings and keeps its original spelling', async () => {
+  const f = ordinaryPackageFixture();
+  const result = await f.run([{ kind: 'no-semantic-writes' }, { kind: 'source-network-attempts', max: 0 }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  const proof = result.assertions.find(row => row.kind === 'no-semantic-writes').details.implementations[0];
+  assert.equal(proof.path, '/owned/candidate/packages/context-broker/src/index.ts');
+  assert.equal(proof.ordinaryInstallation.settingsDirectory, '/owned/.pi/agent');
+  assert.equal(proof.ordinaryInstallation.packageIndex, 1);
+  assert.equal(JSON.parse(f.files.get(f.observed.visibility.nativeCommands.path))[0].sourceInfo.source,
+    '../../candidate/packages/context-broker');
+});
+
+test('ordinary relative source cannot borrow another directory, slot, source, package or settings identity', async () => {
+  for (const mutate of [
+    f => { delete f.observed.implementation.ordinaryInstallationArtifact; },
+    f => { f.binding.settingsDirectory = '/owned/candidate/packages/context-broker'; },
+    f => { f.binding.settings.sha256 = '0'.repeat(64); },
+    f => { f.binding.package.index = 0; },
+    f => { f.binding.package.count = 1; },
+    f => { f.binding.package.count = 3; },
+    f => {
+      f.save(f.binding.settings, { packages: ['another-package', '../../different-package'] });
+      const started = JSON.parse(f.files.get(f.observed.implementation.candidateArtifact.path));
+      started.before.settings = f.binding.settings; f.save(f.observed.implementation.candidateArtifact, started);
+    },
+    f => {
+      f.save(f.binding.settings, { packages: [f.binding.package.source, { source: f.binding.package.source }] });
+      const started = JSON.parse(f.files.get(f.observed.implementation.candidateArtifact.path));
+      started.before.settings = f.binding.settings; f.save(f.observed.implementation.candidateArtifact, started);
+    },
+    f => { f.binding.package.source = '../../other/packages/context-broker'; },
+    f => {
+      const commands = JSON.parse(f.files.get(f.observed.visibility.nativeCommands.path));
+      commands[0].sourceInfo.source = f.binding.package.source = '../../../outside/context-broker';
+      f.save(f.observed.visibility.nativeCommands, commands);
+      f.observed.tasks.find(row => row.phase === 'tool_call').toolSource = { ...commands[0].sourceInfo };
+    },
+    f => {
+      const started = JSON.parse(f.files.get(f.observed.implementation.candidateArtifact.path));
+      f.save(started.baseline[1], { name: 'another-package', pi: { extensions: ['./src/index.ts'] } });
+      f.save(f.observed.implementation.candidateArtifact, started);
+    },
+  ]) {
+    const f = ordinaryPackageFixture(); mutate(f); f.save(f.artifact, f.binding);
+    const result = await f.run([{ kind: 'no-semantic-writes' }]);
+    assert.equal(result.status, 'blocked', JSON.stringify(result.assertions));
+    assert.ok(result.assertions.some(row => row.code === 'TOOL_IMPLEMENTATION_UNKNOWN'));
+  }
+});
+
+test('a changed raw user settings file cannot borrow its frozen package identity', async () => {
+  const f = ordinaryPackageFixture();
+  f.files.set(f.binding.settings.path, Buffer.from(JSON.stringify({ packages: ['another-package', '../../different-package'] })));
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'failed');
+  assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_CHANGED'));
+});
+
+test('ordinary object package entries retain their explicit source and filters', async () => {
+  const f = ordinaryPackageFixture();
+  f.save(f.binding.settings, { packages: ['another-package', { source: f.binding.package.source, extensions: ['./src/index.ts'] }] });
+  const started = JSON.parse(f.files.get(f.observed.implementation.candidateArtifact.path));
+  started.before.settings = f.binding.settings; f.save(f.observed.implementation.candidateArtifact, started);
+  f.save(f.artifact, f.binding);
+  assert.equal((await f.run([{ kind: 'no-semantic-writes' }])).status, 'passed');
+});
+
+test('changed ordinary installation binding bytes cannot retain their proof', async () => {
+  const f = ordinaryPackageFixture(); f.files.set(f.artifact.path, Buffer.from('{}'));
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'failed');
+  assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_CHANGED'));
+});
+
 test('a familiar read name without actual implementation provenance cannot prove zero effects', async () => {
   for (const name of ['read', 'notion_list', 'notion_use', 'tool_search']) {
     const f = fixture({ calls: [{ name }] });

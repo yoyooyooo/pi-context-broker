@@ -391,10 +391,39 @@ async function observedBrokerToolOwner(observed, readArtifact) {
   need(Array.isArray(commands), 'TOOL_IMPLEMENTATION_UNKNOWN', 'Broker effects require the observed host command registration');
   const registrations = commands.filter(command => command.name === 'context-broker');
   const source = registrations[0]?.sourceInfo;
+  let resolvedSource = source?.source, ordinaryInstallation;
+  if (implementation.ordinaryInstallationArtifact !== undefined) {
+    const artifact = implementation.ordinaryInstallationArtifact;
+    const binding = JSON.parse((await verifiedArtifact(artifact, readArtifact)).toString('utf8'));
+    const settings = candidate.before?.settings;
+    need(binding?.version === 1 && binding.kind === 'ordinary-pi-package-binding' && source?.scope === 'user'
+      && isAbsolute(binding.settingsDirectory ?? '') && isAbsolute(settings?.path ?? '')
+      && settings.path === join(binding.settingsDirectory, 'settings.json')
+      && digest(settings.sha256) && Number.isSafeInteger(settings.bytes) && settings.bytes > 0
+      && isDeepStrictEqual(binding.settings, settings),
+    'TOOL_IMPLEMENTATION_UNKNOWN', 'Ordinary package resolution needs the frozen user settings directory and identity');
+    const selectedPackage = binding.package;
+    const rawSettings = JSON.parse((await verifiedArtifact(settings, readArtifact)).toString('utf8'));
+    const packages = rawSettings.packages;
+    const sourceSpec = value => typeof value === 'string' ? value : value?.source;
+    const localSource = value => typeof value === 'string' && (isAbsolute(value) || /^\.{1,2}\//u.test(value));
+    need(Array.isArray(packages) && Number.isSafeInteger(selectedPackage?.index) && selectedPackage.index >= 0
+      && selectedPackage.index < packages.length && selectedPackage.count === packages.length
+      && selectedPackage.index === config.packageIndex && localSource(selectedPackage.source)
+      && selectedPackage.source === source.source && sourceSpec(packages[selectedPackage.index]) === source.source
+      && packages.filter(value => localSource(sourceSpec(value))
+        && resolve(binding.settingsDirectory, sourceSpec(value)) === root).length === 1,
+    'TOOL_IMPLEMENTATION_UNKNOWN', 'The ordinary binding must retain the unique actual settings package slot and source');
+    // Pi resolves a user package relative to settings.json, not the package's
+    // own sourceInfo.baseDir. Keep the original source spelling as evidence.
+    resolvedSource = resolve(binding.settingsDirectory, selectedPackage.source);
+    ordinaryInstallation = { artifact, settingsDirectory: binding.settingsDirectory, packageIndex: selectedPackage.index };
+  }
   need(registrations.length === 1 && source?.origin === 'package' && ['project', 'user'].includes(source.scope) &&
-    source.baseDir === root && source.source === root && source.path === entry[0].path,
+    source.baseDir === root && resolvedSource === root && source.path === entry[0].path,
   'TOOL_IMPLEMENTATION_UNKNOWN', 'The live host must register this exact frozen Broker package');
-  return { source, commit: selected[0].commit, entrySha256: entry[0].sha256 };
+  return { source, commit: selected[0].commit, entrySha256: entry[0].sha256,
+    ...(ordinaryInstallation ? { ordinaryInstallation } : {}) };
 }
 
 // This reviewed package has a non-TUI early return before its optional network
@@ -882,7 +911,8 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         need(source && ['path', 'source', 'scope', 'origin', 'baseDir'].every(key => source[key] === expected.source[key]),
           'TOOL_IMPLEMENTATION_UNKNOWN', 'A familiar tool name cannot impersonate the frozen Broker owner', { tool: call.name, toolCallId: call.id });
         toolOwners.set(call.id, { toolCallId: call.id, owner: 'broker', path: source.path,
-          commit: expected.commit, entrySha256: expected.entrySha256 });
+          commit: expected.commit, entrySha256: expected.entrySha256,
+          ...(expected.ordinaryInstallation ? { ordinaryInstallation: expected.ordinaryInstallation } : {}) });
       }
     }
     const readOnly = call => interactionProofs.has(call.id) || toolOwners.has(call.id) &&
