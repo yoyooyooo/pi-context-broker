@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import { isAbsolute, resolve } from 'node:path';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const nonempty = value => typeof value === 'string' && value.length > 0;
@@ -7,6 +8,102 @@ const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(valu
 const sha = value => createHash('sha256').update(value).digest('hex');
 const statusOf = diagnostics => diagnostics.some(item => item.status === 'failed') ? 'failed'
   : diagnostics.length ? 'blocked' : 'passed';
+
+// Reviewed 0.1.3 read execution: the registered delegate forwards the unchanged
+// arguments to the running Pi API's createReadTool(cwd). This says nothing about
+// this package's other tools, UI hooks or background traffic.
+const compactReadProfile = Object.freeze({ id: 'pi-compact-ui:0.1.3:native-read-delegate', files: {
+  'package.json': { bytes: 567, sha256: 'a5f319f04fcc0ddeb47c0da5bdd08240598404f96b38dc1fe1baaaab14428f98' },
+  'index.ts': { bytes: 66369, sha256: 'bac76ae9ed99a3790d8a728cc6e9b5463927ac427a1462ffe59c6adf9e4d4509' },
+} });
+export function inspectedCompactReadImplementation(event) {
+  const source = event?.toolSource, implementation = event?.toolImplementation;
+  if (event?.toolName !== 'read' || source?.origin !== 'package' || source.scope !== 'user'
+    || source.source !== 'npm:pi-compact-ui' || !isAbsolute(source.baseDir ?? '')
+    || source.path !== resolve(source.baseDir, 'index.ts') || implementation?.version !== 1
+    || !Array.isArray(implementation.files) || implementation.files.length !== 2) return undefined;
+  const seen = new Set();
+  for (const file of implementation.files) {
+    const expected = compactReadProfile.files[file.relativePath];
+    if (!expected || seen.has(file.relativePath) || file.path !== resolve(source.baseDir, file.relativePath)
+      || file.artifact?.sha256 !== expected.sha256 || file.artifact.bytes !== expected.bytes) return undefined;
+    seen.add(file.relativePath);
+  }
+  return { profile: compactReadProfile.id, files: implementation.files, source };
+}
+
+function preparedReadTransition(call, tasks, session, evidence) {
+  const require = (condition, message) => { if (!condition) throw new Error(message); };
+  const observations = tasks.filter(row => row.phase === 'prepared_read' && row.toolCallId === call.id);
+  const observation = observations[0], event = call.event, result = call.result;
+  require(evidence && observations.length === 1 && evidence.observation === observation && observation.version === 1,
+    'Missing unique verified prepared-read observation');
+  require(call.provenance.kind === 'native-tool-call' && call.name === 'read' && result.isError === false
+    && Object.keys(call.arguments).length === 1 && /^sr:C[A-Za-z0-9_-]{22}$/u.test(call.arguments.path ?? ''),
+  'Only a completed top-level candidate whole-entry read has a reviewed rewrite');
+  const reader = inspectedCompactReadImplementation(event);
+  require(reader && evidence.brokerOwner?.source && observation.brokerSource
+    && ['path', 'source', 'scope', 'origin', 'baseDir'].every(key => observation.brokerSource[key] === evidence.brokerOwner.source[key]),
+  'The actual read delegate and current frozen Broker owner are required');
+  const receipt = tasks.find(row => row.phase === 'receipt' && row.sequence === observation.receiptSequence);
+  const native = session.branchEntries.find(entry => entry.id === call.native.resultEntryId)?.message;
+  const proof = native?.details?.contextBrokerRead, binding = proof?.binding, record = binding?.record;
+  require(receipt?.toolCallId === call.id && receipt.toolName === 'read' && proof?.version === 3 && proof.toolCallId === call.id
+    && isDeepStrictEqual(receipt.proofs?.contextBrokerRead, proof), 'The receipt must be the same actual native result');
+  const at = row => tasks.indexOf(row), nextPayload = tasks.find((row, index) => index > at(result) && row.phase === 'provider_payload');
+  require(Number.isSafeInteger(event.turn) && event.turn > 0 && Number.isSafeInteger(event.pid) && event.pid > 0
+    && Number.isSafeInteger(observation.receiptSequence) && observation.receiptSequence > 0
+    && event.turn === result.turn && result.turn === receipt.turn && receipt.turn === observation.turn
+    && event.pid === result.pid && result.pid === receipt.pid && receipt.pid === observation.pid
+    && at(result) < at(receipt) && at(receipt) < at(observation) && nextPayload && at(observation) < at(nextPayload),
+  'A late, cross-turn, cross-process or cross-call receipt cannot justify a rewrite');
+  require(digest(binding?.scope) && nonempty(record?.id) && record.kind === 'skill' && object(record.locator)
+    && /^s_[a-f0-9]{64}$/u.test(binding.snapshot_id ?? '') && digest(binding.version_id)
+    && digest(proof.bodySha256) && binding.body_sha256 === proof.bodySha256 && binding.snapshot_id === proof.snapshotId
+    && record.entrypoint === 'SKILL.md' && Number.isSafeInteger(proof.bytes) && proof.bytes > 0,
+  'The receipt needs the complete immutable owner identity');
+  const prefix = 'skill://' + encodeURIComponent(record.id) + '/SKILL.md';
+  require(record.ref === prefix && proof.identity === JSON.stringify(['notion', binding.scope, 'skill', record.locator.type, record.id])
+    && proof.contentIdentity === JSON.stringify([binding.scope, record.id]), 'The receipt identity must name this exact Notion owner');
+  const callIndex = session.branchEntries.findIndex(entry => entry.id === call.native.assistantEntryId);
+  const refs = session.branchEntries.slice(0, callIndex).filter(entry => entry.type === 'custom'
+    && entry.customType === 'context-broker-short-ref' && entry.data?.ref === call.arguments.path);
+  const target = refs[0]?.data?.target, identity = target?.identity;
+  require(callIndex >= 0 && refs.length === 1 && refs[0].data.version === 1 && target.kind === 'candidate'
+    && identity?.source === 'notion' && identity.scope === binding.scope && identity.id === record.id
+    && identity.kind === record.kind && identity.ref === 'skill://' + encodeURIComponent(record.id) && isDeepStrictEqual(identity.locator, record.locator),
+  'The original short reference must already bind this owner on the actual native branch');
+  const { input, manifest, body, content } = evidence, path = input?.path;
+  const tail = '/scopes/' + binding.scope + '/records/' + sha(record.id) + '/entries/' + binding.snapshot_id + '/tree/SKILL.md';
+  require(object(input) && Object.keys(input).length === 1 && isAbsolute(path ?? '') && resolve(path) === path && path.endsWith(tail)
+    && observation.originalInputSha256 === event.inputSha256 && observation.preparedInputSha256 === result.inputSha256
+    && sha(JSON.stringify(input)) === result.inputSha256 && observation.file?.path === path && observation.file.realpath === path,
+  'The exact executed parameters must change only to the owned immutable entry path');
+  const manifestPath = path.slice(0, -'/tree/SKILL.md'.length) + '/.broker-entry.json';
+  const file = manifest.files?.[0], fileBinding = manifest.file_bindings?.[0];
+  require(manifest.version === 1 && manifest.projection === 'entry' && manifest.manifest_complete === true
+    && manifest.scope === binding.scope && manifest.id === record.id && manifest.snapshot_id === binding.snapshot_id
+    && manifest.version_id === binding.version_id && manifest.entrypoint === 'SKILL.md' && manifest.ref === binding.ref
+    && observation.manifest?.path === manifestPath && observation.manifest.realpath === manifestPath
+    && manifest.files?.length === 1 && manifest.file_bindings?.length === 1 && file.path === 'SKILL.md'
+    && file.bytes === proof.bytes && file.sha256 === proof.bodySha256 && file.ref === binding.ref
+    && fileBinding.path === 'SKILL.md' && fileBinding.page_id === record.locator.page_id
+    && /^file-[a-f0-9]{64}$/u.test(fileBinding.file_id ?? '')
+    && binding.ref === prefix + '?snapshot=' + binding.snapshot_id + '&file_id=' + fileBinding.file_id,
+  'The materialized entry manifest must retain the exact owner, snapshot and File');
+  const text = value => typeof value === 'string' ? value : Array.isArray(value) && value.every(part => part?.type === 'text')
+    ? value.map(part => part.text).join('\n') : undefined;
+  const bodyText = body.toString('utf8'), rendered = text(native.content), delivered = text(content);
+  require(body.length === proof.bytes && sha(body) === proof.bodySha256 && Buffer.from(bodyText).equals(body)
+    && typeof rendered === 'string' && rendered.startsWith(bodyText) && [bodyText, rendered].includes(delivered)
+    && proof.delivery?.start === 0 && proof.delivery.end === bodyText.length && proof.delivery.encoding === 'raw'
+    && proof.rendered?.sha256 === sha(rendered) && proof.rendered.bytes === Buffer.byteLength(rendered)
+    && receipt.content?.sha256 === sha(rendered) && receipt.content.bytes === Buffer.byteLength(rendered),
+  'The actual callback, immutable file and native receipt must deliver identical whole-entry bytes');
+  return { profile: reader.profile, originalRef: call.arguments.path, path, bodySha256: proof.bodySha256,
+    snapshotId: proof.snapshotId, owner: record.id, scope: binding.scope, receiptSequence: receipt.sequence,
+    brokerCommit: evidence.brokerOwner.commit };
+}
 
 /**
  * Correlate actual tool callbacks with Pi's persisted native records.
@@ -17,9 +114,12 @@ const statusOf = diagnostics => diagnostics.some(item => item.status === 'failed
  * codemode result's structured direct-call census. IDs are always opaque.
  *
  * The caller must validate the native session tree and callback stream first.
+ * preparedReads contains only artifact bytes verified by the analyzer, plus
+ * its independently verified current Broker owner. Raw receipt claims alone
+ * cannot populate it or bypass the original argument and identity checks.
  * This function does not infer execution from proposals or from script text.
  */
-export function correlateNotionAgentToolAttempts({ tasks, session, currentUserId = session?.currentUserId }) {
+export function correlateNotionAgentToolAttempts({ tasks, session, currentUserId = session?.currentUserId, preparedReads = new Map() }) {
   const diagnostics = [], attempts = [], containers = [], retractedProposals = [];
   const note = (code, message, details, status = 'blocked') => diagnostics.push({ status, code, message, ...(details ? { details } : {}) });
   if (!Array.isArray(tasks) || session?.supported !== true || !Array.isArray(session.attempts)
@@ -163,8 +263,11 @@ export function correlateNotionAgentToolAttempts({ tasks, session, currentUserId
         note('TOOL_RESULT_STATUS_MISMATCH', 'The terminal callback contradicts its native result', { toolCallId: id }, 'failed');
       if (positions.get(result) <= positions.get(event))
         note('TOOL_RESULT_ORDER_INVALID', 'A result precedes its actual start', { toolCallId: id }, 'failed');
-      if (result.inputSha256 !== undefined && result.inputSha256 !== event.inputSha256)
-        note('TOOL_RESULT_INPUT_MISMATCH', 'The executed result input differs from the observed start', { toolCallId: id }, 'failed');
+      if (result.inputSha256 !== undefined && result.inputSha256 !== event.inputSha256) {
+        try { call.preparedRead = preparedReadTransition(call, tasks, session, preparedReads.get(id)); }
+        catch (error) { note('TOOL_RESULT_INPUT_MISMATCH', 'The executed result input differs without a proven Broker preparation',
+          { toolCallId: id, reason: error.message }, 'failed'); }
+      }
     }
   }
   const byId = new Map(attempts.map(call => [call.id, call]));

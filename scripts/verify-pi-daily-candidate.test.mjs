@@ -932,6 +932,63 @@ test('interaction provenance snapshots actual registered files without altering 
   handlers.get('session_shutdown')({}); assert.equal(writes.at(-1).complete, true);
 });
 
+test('prepared-read observation waits for the same current Notion receipt before reading its immutable entry', () => {
+  const setup = () => {
+    const handlers = new Map(), rows = [], saved = new Map(), reads = [], baseDir = '/installed/pi-compact-ui';
+    const id = 'read-call', scope = 'a'.repeat(64), owner = 'shared_skill:library-test:skill-test', snapshot = 's_' + 'b'.repeat(64);
+    const body = Buffer.from('完整正文\n'), path = '/cache/notion/scopes/' + scope + '/records/' + sha(owner) + '/entries/' + snapshot + '/tree/SKILL.md';
+    const manifestPath = path.replace('/tree/SKILL.md', '/.broker-entry.json'), ref = 'skill://' + encodeURIComponent(owner);
+    const locator = { type: 'shared_skill', page_id: 'page', database_id: 'db' };
+    const binding = { record: { id: owner, kind: 'skill', locator, entrypoint: 'SKILL.md', ref: ref + '/SKILL.md' },
+      scope, snapshot_id: snapshot, version_id: 'c'.repeat(64), ref: ref + '/SKILL.md?snapshot=' + snapshot };
+    const manifest = { version: 1, projection: 'entry', manifest_complete: true, scope, id: owner, snapshot_id: snapshot,
+      version_id: binding.version_id, ref: binding.ref, entrypoint: 'SKILL.md', files: [{ path: 'SKILL.md', sha256: sha(body), bytes: body.length }] };
+    const originals = new Map([[baseDir + '/package.json', Buffer.from('{"name":"pi-compact-ui"}')],
+      [baseDir + '/index.ts', Buffer.from('public implementation')], [path, body], [manifestPath, Buffer.from(JSON.stringify(manifest))]]);
+    const fs = { openSync: () => 1, writeSync: (_fd, line) => rows.push(JSON.parse(line)), closeSync: () => {},
+      readFileSync: path => { reads.push(path); assert.ok(originals.has(path), 'no unrelated files'); return originals.get(path); },
+      existsSync: path => saved.has(path), realpathSync: path => path, lstatSync: () => ({ isFile: () => true }),
+      writeFileSync: (path, bytes) => { assert.ok(path.startsWith('/owned/results/')); saved.set(path, Buffer.from(bytes)); } };
+    const source = { origin: 'package', scope: 'user', source: 'npm:pi-compact-ui', baseDir, path: baseDir + '/index.ts' };
+    const api = { on: (name, fn) => handlers.set(name, fn), getAllTools: () => [{ name: 'read', sourceInfo: source }],
+      getCommands: () => [{ name: 'context-broker', sourceInfo: { origin: 'package', baseDir: '/broker', path: '/broker/src/index.ts' } }] };
+    observeCandidateTask(api, { fs, crypto: { createHash }, output: '/owned/task.jsonl', bodyFiles: [],
+      inspectPayload: candidatePayloadBodies, toolResultDirectory: '/owned/results' });
+    const input = { path: 'sr:Cl_Zoi4sBM-mbsLglJeO1BA' }, original = structuredClone(input);
+    const ctx = { mode: 'rpc', sessionManager: { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref',
+      data: { version: 1, ref: original.path, target: { kind: 'candidate', identity: { source: 'notion', scope, id: owner,
+        kind: 'skill', locator: { database_id: 'db', page_id: 'page', type: 'shared_skill' }, ref } } } }] } };
+    handlers.get('input')({});
+    const event = { toolName: 'read', toolCallId: id, input };
+    assert.equal(handlers.get('tool_call')(event, ctx), undefined); assert.deepEqual(input, original);
+    input.path = path; // The product hook, never the observer, prepares this input.
+    handlers.get('tool_result')({ ...event, isError: false, content: [{ type: 'text', text: body.toString() }] });
+    assert.deepEqual(reads, [baseDir + '/package.json', baseDir + '/index.ts']);
+    const message = { role: 'toolResult', toolName: 'read', toolCallId: id, content: [{ type: 'text', text: body.toString() + '\nfooter' }],
+      details: { contextBrokerRead: { version: 3, toolCallId: id, snapshotId: snapshot, bodySha256: sha(body), bytes: body.length, binding } } };
+    return { handlers, rows, reads, message, saved, path, manifestPath, input };
+  };
+  const value = setup(), before = structuredClone(value.message);
+  value.handlers.get('context_with_system')({ messages: [value.message] });
+  assert.deepEqual(value.message, before); assert.deepEqual(value.reads.slice(-2), [value.manifestPath, value.path]);
+  const proof = value.rows.find(row => row.phase === 'prepared_read'); assert.ok(proof);
+  assert.deepEqual(JSON.parse(value.saved.get(proof.inputArtifact.path)), value.input);
+  assert.equal(proof.file.artifact.sha256, value.message.details.contextBrokerRead.bodySha256);
+  value.handlers.get('context_with_system')({ messages: [value.message] });
+  assert.equal(value.rows.filter(row => row.phase === 'prepared_read').length, 1);
+  for (const alter of [
+    value => { value.message.toolCallId = 'unrelated-call'; },
+    value => { value.message.details.contextBrokerRead.binding.record.id = 'wrong-owner'; },
+    value => { value.handlers.get('input')({}); },
+    value => { value.message.details.contextBrokerRead.version = 2; },
+  ]) {
+    const other = setup(); alter(other);
+    other.handlers.get('context_with_system')({ messages: [other.message] });
+    assert.equal(other.rows.some(row => row.phase === 'prepared_read'), false);
+    assert.equal(other.reads.length, 2, 'unrelated or retained evidence must not probe a file');
+  }
+});
+
 test('normal-management state reuses only the existing process roots and never transfers cleanup or resume ownership', async t => {
   const scratch = await mkdtemp('/tmp/notion-existing-state-proof-');
   t.diagnostic(JSON.stringify({ ownedScratch: [scratch], cleanup: 'Retained for evidence-first system Trash cleanup.' }));

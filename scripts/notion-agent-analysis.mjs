@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
 import { providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { validateAgentAssertion, validateAgentBindings } from './notion-agent-scenarios.mjs';
-import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer } from './notion-agent-tool-lineage.mjs';
+import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation } from './notion-agent-tool-lineage.mjs';
 import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
 import { parseSourceObservation } from './skill-consumption-source-observer.mjs';
 import { verifyNotionAgentCliProcesses, verifyNotionAgentSingleProjectionRestore } from './notion-agent-cli-process.mjs';
@@ -426,6 +426,32 @@ async function observedBrokerToolOwner(observed, readArtifact) {
     ...(ordinaryInstallation ? { ordinaryInstallation } : {}) };
 }
 
+// All bytes cross the same artifact boundary as other observed tool results.
+// The pure lineage check still validates the original native call, exact
+// transformation, current-turn receipt and immutable owner/File relationship.
+async function observedPreparedReads(observed, readArtifact) {
+  const reads = new Map(); let brokerOwner;
+  for (const observation of observed.tasks.filter(row => row.phase === 'prepared_read')) {
+    const event = observed.tasks.find(row => row.phase === 'tool_call' && row.toolCallId === observation.toolCallId);
+    const result = observed.tasks.find(row => row.phase === 'tool_result' && row.toolCallId === observation.toolCallId);
+    const reader = inspectedCompactReadImplementation(event);
+    need(reader && result && !reads.has(observation.toolCallId), 'TOOL_IMPLEMENTATION_UNKNOWN',
+      'Prepared read evidence needs the exact reviewed actual reader implementation');
+    for (const file of reader.files) await verifiedArtifact(file.artifact, readArtifact);
+    brokerOwner ??= await observedBrokerToolOwner(observed, readArtifact);
+    const inputBytes = await verifiedArtifact(observation.inputArtifact, readArtifact);
+    const body = await verifiedArtifact(observation.file?.artifact, readArtifact);
+    const manifest = JSON.parse((await verifiedArtifact(observation.manifest?.artifact, readArtifact)).toString('utf8'));
+    const contentBytes = await verifiedArtifact(result.contentArtifact, readArtifact);
+    demand(hash(inputBytes) === result.inputSha256 && hash(contentBytes) === result.content?.sha256
+      && contentBytes.length === result.content.bytes, 'PREPARED_READ_ARTIFACT_CHANGED',
+    'The sealed prepared input and tool result must match their actual callback hashes');
+    reads.set(observation.toolCallId, { observation, brokerOwner, input: JSON.parse(inputBytes.toString('utf8')),
+      manifest, body, content: JSON.parse(contentBytes.toString('utf8')) });
+  }
+  return reads;
+}
+
 // This reviewed package has a non-TUI early return before its optional network
 // notification. A name, a claimed "read-only" result, or a matching source path
 // alone cannot establish that the branch ran. Changed implementations need a new
@@ -648,8 +674,9 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
   if (!configValid) return { version: 1, turnId: turn.id, status: statusOf(assertions), assertions };
   const { costs, transport, tasks } = observed, privateBindings = bindings.private;
   shared.attempts = new Map(); shared.proposals = [];
-  shared.toolObservation = await check('tool-attempt-observation', () => {
-    const correlation = correlateNotionAgentToolAttempts({ tasks, session: observed.session });
+  shared.toolObservation = await check('tool-attempt-observation', async () => {
+    const preparedReads = await observedPreparedReads(observed, readArtifact);
+    const correlation = correlateNotionAgentToolAttempts({ tasks, session: observed.session, preparedReads });
     shared.correlation = correlation;
     shared.attempts = new Map(correlation.attempts.map(call => [call.id, call]));
     shared.proposals = [...correlation.attempts, ...correlation.retractedProposals];
@@ -902,7 +929,10 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         interactionProofs.set(call.id, await proveAskUserNoUi(call, observed.session, readArtifact));
       const source = call.event.toolSource;
       const builtinPath = call.name === 'tool_search' ? 'builtin:tool-search' : 'builtin:' + call.name;
-      if (['read', 'grep', 'find', 'ls', 'tool_search'].includes(call.name) &&
+      if (call.preparedRead) {
+        toolOwners.set(call.id, { toolCallId: call.id, owner: 'reviewed-native-read-delegate', path: source.path,
+          preparation: call.preparedRead });
+      } else if (['read', 'grep', 'find', 'ls', 'tool_search'].includes(call.name) &&
         source?.source === 'builtin' && source.path === builtinPath) {
         toolOwners.set(call.id, { toolCallId: call.id, owner: 'builtin', path: source.path });
       } else if (['read', 'notion_list', 'notion_use', 'notion_ctl'].includes(call.name)) {
