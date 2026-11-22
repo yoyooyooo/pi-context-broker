@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { isAbsolute, resolve } from 'node:path';
+import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const nonempty = value => typeof value === 'string' && value.length > 0;
@@ -38,18 +39,22 @@ function preparedReadTransition(call, tasks, session, evidence) {
   const observation = observations[0], event = call.event, result = call.result;
   require(evidence && observations.length === 1 && evidence.observation === observation && observation.version === 1,
     'Missing unique verified prepared-read observation');
+  const original = call.arguments, resource = /^sr:R[A-Za-z0-9_-]{22}$/u.test(original?.path ?? '');
   require(call.provenance.kind === 'native-tool-call' && call.name === 'read' && result.isError === false
-    && Object.keys(call.arguments).length === 1 && /^sr:C[A-Za-z0-9_-]{22}$/u.test(call.arguments.path ?? ''),
-  'Only a completed top-level candidate whole-entry read has a reviewed rewrite');
+    && object(original) && Object.keys(original).every(key => ['path', 'refresh'].includes(key))
+    && /^sr:[CSR][A-Za-z0-9_-]{22}$/u.test(original.path ?? '')
+    && (original.refresh === undefined || typeof original.refresh === 'boolean') && !(resource && original.refresh === true),
+  'Only a completed top-level whole-file short-reference read has a reviewed rewrite');
   const reader = inspectedCompactReadImplementation(event);
   require(reader && evidence.brokerOwner?.source && observation.brokerSource
     && ['path', 'source', 'scope', 'origin', 'baseDir'].every(key => observation.brokerSource[key] === evidence.brokerOwner.source[key]),
   'The actual read delegate and current frozen Broker owner are required');
   const receipt = tasks.find(row => row.phase === 'receipt' && row.sequence === observation.receiptSequence);
   const native = session.branchEntries.find(entry => entry.id === call.native.resultEntryId)?.message;
-  const proof = native?.details?.contextBrokerRead, binding = proof?.binding, record = binding?.record;
-  require(receipt?.toolCallId === call.id && receipt.toolName === 'read' && proof?.version === 3 && proof.toolCallId === call.id
-    && isDeepStrictEqual(receipt.proofs?.contextBrokerRead, proof), 'The receipt must be the same actual native result');
+  const proofKey = resource ? 'contextBrokerResource' : 'contextBrokerRead', proof = native?.details?.[proofKey];
+  require(receipt?.toolCallId === call.id && receipt.toolName === 'read' && proof?.version === (resource ? 2 : 3)
+    && proof.toolCallId === call.id && isDeepStrictEqual(receipt.proofs?.[proofKey], proof),
+  'The receipt must be the same actual native result');
   const at = row => tasks.indexOf(row), nextPayload = tasks.find((row, index) => index > at(result) && row.phase === 'provider_payload');
   require(Number.isSafeInteger(event.turn) && event.turn > 0 && Number.isSafeInteger(event.pid) && event.pid > 0
     && Number.isSafeInteger(observation.receiptSequence) && observation.receiptSequence > 0
@@ -57,51 +62,106 @@ function preparedReadTransition(call, tasks, session, evidence) {
     && event.pid === result.pid && result.pid === receipt.pid && receipt.pid === observation.pid
     && at(result) < at(receipt) && at(receipt) < at(observation) && nextPayload && at(observation) < at(nextPayload),
   'A late, cross-turn, cross-process or cross-call receipt cannot justify a rewrite');
-  require(digest(binding?.scope) && nonempty(record?.id) && record.kind === 'skill' && object(record.locator)
-    && /^s_[a-f0-9]{64}$/u.test(binding.snapshot_id ?? '') && digest(binding.version_id)
-    && digest(proof.bodySha256) && binding.body_sha256 === proof.bodySha256 && binding.snapshot_id === proof.snapshotId
-    && record.entrypoint === 'SKILL.md' && Number.isSafeInteger(proof.bytes) && proof.bytes > 0,
-  'The receipt needs the complete immutable owner identity');
-  const prefix = 'skill://' + encodeURIComponent(record.id) + '/SKILL.md';
-  require(record.ref === prefix && proof.identity === JSON.stringify(['notion', binding.scope, 'skill', record.locator.type, record.id])
-    && proof.contentIdentity === JSON.stringify([binding.scope, record.id]), 'The receipt identity must name this exact Notion owner');
   const callIndex = session.branchEntries.findIndex(entry => entry.id === call.native.assistantEntryId);
-  const refs = session.branchEntries.slice(0, callIndex).filter(entry => entry.type === 'custom'
-    && entry.customType === 'context-broker-short-ref' && entry.data?.ref === call.arguments.path);
-  const target = refs[0]?.data?.target, identity = target?.identity;
-  require(callIndex >= 0 && refs.length === 1 && refs[0].data.version === 1 && target.kind === 'candidate'
-    && identity?.source === 'notion' && identity.scope === binding.scope && identity.id === record.id
-    && identity.kind === record.kind && identity.ref === 'skill://' + encodeURIComponent(record.id) && isDeepStrictEqual(identity.locator, record.locator),
-  'The original short reference must already bind this owner on the actual native branch');
+  require(callIndex >= 0, 'The call needs its actual native branch position');
+  const prior = session.branchEntries.slice(0, callIndex);
+  const targetFor = ref => {
+    const refs = prior.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref' && entry.data?.ref === ref);
+    require(refs.length === 1 && refs[0].data.version === 1, 'The exact short reference must be unique and precede this native call');
+    return refs[0].data.target;
+  };
+  const target = targetFor(original.path);
+  require(target?.kind === (resource ? 'resource' : original.path.startsWith('sr:S') ? 'selected' : 'candidate'),
+    'The original short reference must retain its registered kind');
+  if (resource) require(/^sr:S[A-Za-z0-9_-]{22}$/u.test(target.owner ?? ''), 'A resource needs its selected owner reference');
+  const ownerTarget = resource ? targetFor(target.owner) : target, identity = ownerTarget?.identity;
+  require(identity?.source === 'notion' && digest(identity.scope) && nonempty(identity.id) && identity.kind === 'skill'
+    && object(identity.locator) && identity.ref === 'skill://' + encodeURIComponent(identity.id),
+  'The prior native branch must bind the exact Notion owner and scope');
+  const fixed = (ref, path, snapshot, fileId) => {
+    const parsed = parseNativeReference(ref);
+    return parsed.selector === identity.id && parsed.path === path && parsed.snapshot === snapshot && parsed.fileId === fileId;
+  };
+  if (ownerTarget.kind === 'selected') require(/^s_[a-f0-9]{64}$/u.test(ownerTarget.snapshot_id ?? '')
+    && digest(ownerTarget.version_id) && digest(ownerTarget.body_sha256) && ownerTarget.entrypoint === 'SKILL.md'
+    && /^file-[a-f0-9]{64}$/u.test(ownerTarget.file_id ?? '')
+    && fixed(ownerTarget.ref, 'SKILL.md', ownerTarget.snapshot_id, ownerTarget.file_id),
+  'The selected owner must retain its complete fixed main-File binding');
+  const binding = resource ? undefined : proof.binding, record = binding?.record;
+  const scope = resource ? proof.scope : binding?.scope, owner = resource ? proof.id : record?.id;
+  const snapshot = resource ? proof.snapshot_id : binding?.snapshot_id, version = resource ? proof.version_id : binding?.version_id;
+  const bodyHash = resource ? proof.sha256 : proof.bodySha256, relative = resource ? proof.path : 'SKILL.md';
+  const fileId = resource ? proof.file_id : parseNativeReference(binding?.ref ?? '').fileId;
+  require(scope === identity.scope && owner === identity.id && /^s_[a-f0-9]{64}$/u.test(snapshot ?? '') && digest(version)
+    && digest(bodyHash) && /^file-[a-f0-9]{64}$/u.test(fileId ?? '') && Number.isSafeInteger(proof.bytes) && proof.bytes >= (resource ? 0 : 1),
+  'The receipt needs the complete immutable owner and File identity');
+  if (resource) {
+    require(ownerTarget.kind === 'selected' && snapshot === ownerTarget.snapshot_id && version === ownerTarget.version_id
+      && target.path === relative && relative !== 'SKILL.md' && target.ref === proof.ref && target.file_id === fileId
+      && target.bytes === proof.bytes && target.sha256 === bodyHash && fixed(proof.ref, relative, snapshot, fileId)
+      && proof.loaded === false && proof.delivered_complete_text === true && !('files' in proof)
+      && (proof.purpose === undefined || proof.purpose === 'inspect'),
+    'The scalar receipt must match the prior resource-to-selected-owner binding, not a batch or another version');
+  } else {
+    require(record.kind === identity.kind && isDeepStrictEqual(record.locator, identity.locator) && record.entrypoint === 'SKILL.md'
+      && record.ref === identity.ref + '/SKILL.md' && binding.body_sha256 === bodyHash && binding.snapshot_id === proof.snapshotId
+      && fixed(binding.ref, 'SKILL.md', snapshot, fileId)
+      && proof.identity === JSON.stringify(['notion', scope, 'skill', record.locator.type, owner])
+      && proof.contentIdentity === JSON.stringify([scope, owner]), 'The main receipt must retain the original exact Notion owner');
+    if (original.refresh === true) require(proof.purpose === 'inspect' && proof.readStatus?.purpose === 'inspect'
+      && proof.readStatus.activation_effect === 'unchanged' && proof.readStatus.requires_acquisition === 'not_performed'
+      && proof.readStatus.use_selection?.status === 'inspection_only', 'Explicit refresh must remain an inspection, without adopting a new task');
+    else if (ownerTarget.kind === 'selected') require(snapshot === ownerTarget.snapshot_id && version === ownerTarget.version_id
+      && bodyHash === ownerTarget.body_sha256 && binding.ref === ownerTarget.ref,
+    'A fixed selected read cannot silently advance to another version');
+  }
   const { input, manifest, body, content } = evidence, path = input?.path;
-  const tail = '/scopes/' + binding.scope + '/records/' + sha(record.id) + '/entries/' + binding.snapshot_id + '/tree/SKILL.md';
-  require(object(input) && Object.keys(input).length === 1 && isAbsolute(path ?? '') && resolve(path) === path && path.endsWith(tail)
+  const tail = projection => '/scopes/' + scope + '/records/' + sha(owner) + '/' + projection + '/' + snapshot + '/tree/' + relative;
+  const resourceStorage = resource && typeof path === 'string' && path.endsWith(tail('resources'));
+  require(object(input) && isDeepStrictEqual(input, { ...original, path }) && isAbsolute(path ?? '') && resolve(path) === path
+    && (path.endsWith(tail('entries')) || resourceStorage)
     && observation.originalInputSha256 === event.inputSha256 && observation.preparedInputSha256 === result.inputSha256
     && sha(JSON.stringify(input)) === result.inputSha256 && observation.file?.path === path && observation.file.realpath === path,
-  'The exact executed parameters must change only to the owned immutable entry path');
-  const manifestPath = path.slice(0, -'/tree/SKILL.md'.length) + '/.broker-entry.json';
-  const file = manifest.files?.[0], fileBinding = manifest.file_bindings?.[0];
-  require(manifest.version === 1 && manifest.projection === 'entry' && manifest.manifest_complete === true
-    && manifest.scope === binding.scope && manifest.id === record.id && manifest.snapshot_id === binding.snapshot_id
-    && manifest.version_id === binding.version_id && manifest.entrypoint === 'SKILL.md' && manifest.ref === binding.ref
-    && observation.manifest?.path === manifestPath && observation.manifest.realpath === manifestPath
-    && manifest.files?.length === 1 && manifest.file_bindings?.length === 1 && file.path === 'SKILL.md'
-    && file.bytes === proof.bytes && file.sha256 === proof.bodySha256 && file.ref === binding.ref
-    && fileBinding.path === 'SKILL.md' && fileBinding.page_id === record.locator.page_id
-    && /^file-[a-f0-9]{64}$/u.test(fileBinding.file_id ?? '')
-    && binding.ref === prefix + '?snapshot=' + binding.snapshot_id + '&file_id=' + fileBinding.file_id,
-  'The materialized entry manifest must retain the exact owner, snapshot and File');
+  'The executed parameters must preserve every original flag and change only the exact immutable file path');
+  if (resourceStorage) require(observation.projection === 'resource' && observation.manifest === undefined && manifest === undefined,
+    'Independent resource storage must not invent an entry manifest');
+  else {
+    const manifestPath = path.slice(0, -('/tree/' + relative).length) + '/.broker-entry.json';
+    require(object(manifest) && manifest.version === 1 && manifest.projection === 'entry' && manifest.manifest_complete === true
+      && manifest.scope === scope && manifest.id === owner && manifest.snapshot_id === snapshot && manifest.version_id === version
+      && manifest.entrypoint === 'SKILL.md' && manifest.ref === (resource ? ownerTarget.ref : binding.ref)
+      && observation.manifest?.path === manifestPath && observation.manifest.realpath === manifestPath
+      && Array.isArray(manifest.files) && manifest.files.length > 0 && Array.isArray(manifest.file_bindings)
+      && manifest.files.length === manifest.file_bindings.length, 'The complete entry manifest must retain this owner and snapshot');
+    const paths = new Set(), ids = new Set(), pages = new Set();
+    for (const file of manifest.files) {
+      const bindings = manifest.file_bindings.filter(value => value.path === file.path), fileBinding = bindings[0];
+      require(bindings.length === 1 && nonempty(file.path) && !paths.has(file.path) && digest(file.sha256)
+        && Number.isSafeInteger(file.bytes) && file.bytes >= 0 && /^file-[a-f0-9]{64}$/u.test(fileBinding.file_id ?? '')
+        && nonempty(fileBinding.page_id) && !ids.has(fileBinding.file_id) && !pages.has(fileBinding.page_id)
+        && fixed(file.ref, file.path, snapshot, fileBinding.file_id), 'Every manifest member needs its unique fixed File identity');
+      paths.add(file.path); ids.add(fileBinding.file_id); pages.add(fileBinding.page_id);
+    }
+    const mainBinding = manifest.file_bindings.find(value => value.path === 'SKILL.md');
+    const file = manifest.files.find(value => value.path === relative), fileBinding = manifest.file_bindings.find(value => value.path === relative);
+    require(mainBinding?.page_id === identity.locator.page_id && file?.bytes === proof.bytes && file.sha256 === bodyHash
+      && file.ref === (resource ? proof.ref : binding.ref) && fileBinding?.file_id === fileId,
+    'The materialized file must retain its complete bytes and physical File binding');
+    if (!resource && proof.directory !== undefined) require(isDeepStrictEqual(proof.directory.files, manifest.files),
+      'The inspected complete directory cannot be replaced by a smaller materialization manifest');
+  }
   const text = value => typeof value === 'string' ? value : Array.isArray(value) && value.every(part => part?.type === 'text')
     ? value.map(part => part.text).join('\n') : undefined;
   const bodyText = body.toString('utf8'), rendered = text(native.content), delivered = text(content);
-  require(body.length === proof.bytes && sha(body) === proof.bodySha256 && Buffer.from(bodyText).equals(body)
+  require(body.length === proof.bytes && sha(body) === bodyHash && Buffer.from(bodyText).equals(body)
     && typeof rendered === 'string' && rendered.startsWith(bodyText) && [bodyText, rendered].includes(delivered)
     && proof.delivery?.start === 0 && proof.delivery.end === bodyText.length && proof.delivery.encoding === 'raw'
-    && proof.rendered?.sha256 === sha(rendered) && proof.rendered.bytes === Buffer.byteLength(rendered)
+    && (resource || proof.rendered?.sha256 === sha(rendered) && proof.rendered.bytes === Buffer.byteLength(rendered))
     && receipt.content?.sha256 === sha(rendered) && receipt.content.bytes === Buffer.byteLength(rendered),
-  'The actual callback, immutable file and native receipt must deliver identical whole-entry bytes');
-  return { profile: reader.profile, originalRef: call.arguments.path, path, bodySha256: proof.bodySha256,
-    snapshotId: proof.snapshotId, owner: record.id, scope: binding.scope, receiptSequence: receipt.sequence,
+  'The actual callback, immutable file and native receipt must deliver identical complete text');
+  return { profile: reader.profile, originalRef: original.path, path, bodySha256: bodyHash,
+    snapshotId: snapshot, owner, scope, receiptSequence: receipt.sequence,
+    ...(resource ? { resourcePath: relative } : {}), ...(proof.purpose ? { purpose: proof.purpose } : {}),
     brokerCommit: evidence.brokerOwner.commit };
 }
 
