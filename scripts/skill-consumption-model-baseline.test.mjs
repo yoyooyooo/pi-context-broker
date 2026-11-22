@@ -64,7 +64,7 @@ function dailyEvidenceFixture() {
   const events = [{ phase: 'provider_request', turn: 2, request: 3, provider: 'magpie', model: 'group/flash',
     requestModel: 'group/flash', reasoningEffort: 'high', payload },
   { phase: 'message_end', turn: 2, request: 3, message: { role: 'assistant', provider: 'magpie', model: 'group/flash',
-    responseModel: 'actual-upstream-model', thinkingLevel: 'high', providerThinkingLevel: 'high',
+    responseModel: 'actual-upstream-model', responseModelStatus: 'reported', thinkingLevel: 'high', providerThinkingLevel: 'high',
     usage: { input: 20, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 25 } } }];
   const transport = [{ phase: 'request_start', id: 7, category: 'model', monotonicNs: '20' },
     { phase: 'request_sent', id: 7, requestBodySha256: payload.sha256, requestBodyBytes: 4 },

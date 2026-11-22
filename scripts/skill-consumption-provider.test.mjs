@@ -222,7 +222,7 @@ function protocolTrace(directory, name, { chunks, api = 'openai-completions', st
 }
 
 const normalProtocolReply = () => ({ role: 'assistant', provider: 'fixture', model: 'model',
-  responseModel: 'controlled/actual-route', stopReason: 'stop',
+  responseModel: 'controlled/actual-route', responseModelStatus: 'reported', stopReason: 'stop',
   usage: { input: 17, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 22 } });
 
 test('SSE protocol targets preserve HTTP failure and distinguish DONE cancellation from finish and usage without DONE', () => {
@@ -249,9 +249,8 @@ test('SSE protocol targets preserve HTTP failure and distinguish DONE cancellati
 test('SSE completion accepts an unreported response model without inventing one', () => {
   const directory = fs.mkdtempSync(path.join(tmpdir(), 'consumption-provider-unknown-model-'));
   const end = protocolTrace(directory, 'done', { chunks: ['data: [DONE]\n\n'] }).rows.find(row => row.phase === 'request_end');
-  for (const stopReason of ['stop', 'toolUse']) for (const responseModel of [undefined, null]) {
-    const reply = { ...normalProtocolReply(), stopReason, responseModel };
-    if (responseModel === undefined) delete reply.responseModel;
+  for (const stopReason of ['stop', 'toolUse']) {
+    const reply = { ...normalProtocolReply(), stopReason, responseModel: null, responseModelStatus: 'unreported' };
     const before = structuredClone(reply);
     assert.equal(providerObserver.providerApplicationCompletion(end, reply), 'sse-done-before-http-cancel');
     assert.deepEqual(reply, before, 'An absent response model remains unknown');
@@ -300,7 +299,9 @@ test('SSE application completion rejects unsupported transport, error, API and a
   for (const mutate of [reply => { reply.stopReason = 'length'; }, reply => { reply.stopReason = 'aborted'; },
     reply => { reply.stopReason = 'error'; }, reply => { delete reply.stopReason; }, reply => { reply.role = 'toolResult'; },
     reply => { delete reply.provider; }, reply => { delete reply.model; },
-    ...['', ' ', 1, false, {}, []].map(value => reply => { reply.responseModel = value; }),
+    ...['', ' ', 1, false, {}, [], null].map(value => reply => { reply.responseModel = value; }),
+    reply => { delete reply.responseModelStatus; }, reply => { reply.responseModelStatus = 'invalid'; },
+    reply => { reply.responseModelStatus = 'unreported'; },
     reply => { reply.usage.input = null; }, reply => { reply.usage.totalTokens = 0; }]) {
     const reply = normalProtocolReply(); mutate(reply);
     assert.equal(providerObserver.providerApplicationCompletion(end, reply), null);
