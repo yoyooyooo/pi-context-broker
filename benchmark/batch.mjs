@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { appendFile, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fingerprint, validateProtocol } from './protocol.mjs';
 import { verifyGateReference } from './gate.mjs';
 
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 const safe = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(value);
+
+function validatePilotLedger(protocol, execution) {
+  if (protocol.phase !== 'pilot') return;
+  const path = execution.pilot_ledger_root;
+  assert.ok(typeof path === 'string' && isAbsolute(path), 'Pilot plans must freeze their shared pilot ledger');
+  assert.equal(path, resolve(path), 'Pilot ledger must use a canonical absolute path');
+}
 
 /** A stable schedule is separate from comparison orientation and model outcomes. */
 export function scheduleProtocol(protocol) {
@@ -31,6 +38,7 @@ export function freezeBatchPlan({ protocol, execution, registeredAt = new Date()
   assert.ok(execution && isAbsolute(execution.environment_root) && isAbsolute(execution.control_root));
   assert.ok(safe(protocol.id));
   assert.equal(protocol.policies.ordering.concurrency, 1, 'The first implementation dispatches one subject at a time');
+  validatePilotLedger(protocol, execution);
   const value = { version: 1, kind: 'benchmark-batch-plan', id: protocol.id, registered_at: registeredAt,
     protocol, execution, slots: scheduleProtocol(protocol), plan_sha256: null };
   value.plan_sha256 = fingerprint(value);
@@ -52,6 +60,7 @@ export function validateBatchPlan(plan) {
     assert.equal(plan.execution.resumption.gate_policy.minimum_valid_real_per_model_mode, 3);
   }
   assert.ok(isAbsolute(plan.execution.environment_root) && isAbsolute(plan.execution.control_root));
+  validatePilotLedger(plan.protocol, plan.execution);
   assert.equal(plan.protocol.policies.ordering.concurrency, 1);
   return plan;
 }
@@ -113,6 +122,14 @@ export async function runBatch({ plan, executeEpisode, maximumNewEpisodes = Infi
   validateBatchPlan(plan);
   assert.ok(typeof executeEpisode === 'function');
   assert.ok(maximumNewEpisodes === Infinity || Number.isSafeInteger(maximumNewEpisodes) && maximumNewEpisodes >= 0);
+  if (plan.protocol.phase === 'pilot') {
+    const frozen = plan.execution.pilot_ledger_root;
+    assert.ok(pilotLedgerRoot === undefined || pilotLedgerRoot === frozen, 'Pilot ledger override differs from the frozen plan');
+    assert.equal(await realpath(dirname(frozen)), dirname(frozen), 'Pilot ledger parent must be canonical');
+    await mkdir(frozen, { recursive: true });
+    assert.equal(await realpath(frozen), frozen, 'Pilot ledger cannot be a symlink');
+    pilotLedgerRoot = frozen;
+  }
   const root = plan.execution.control_root;
   await mkdir(root, { recursive: true });
   const planPath = join(root, 'plan.json');
@@ -143,6 +160,9 @@ export async function runBatch({ plan, executeEpisode, maximumNewEpisodes = Infi
       replacement_run_ids: analysisRevision.replacements.map(item => item.run_id), source_implementation_sha256: analysisRevision.implementation.sha256 });
   }
   let newCount = 0, stopReason = null;
+  const retainedStop = ledger.find(event => event.type === 'episode_completed' && event.result?.stop_batch
+    && !analysisRevision?.replacements.some(item => item.run_id === event.run_id && item.stop_batch === false));
+  if (retainedStop) stopReason = retainedStop.result.stop_reason ?? 'retained_core_evidence_failure';
   const startedAt = performance.now();
   const limits = plan.protocol.policies.budgets;
   function usageFor(budgetId) {
@@ -163,8 +183,8 @@ export async function runBatch({ plan, executeEpisode, maximumNewEpisodes = Infi
   let verifiedPilotGate = false;
   async function reservePilot(runId, slot) {
     if (plan.protocol.phase !== 'pilot') return;
-    assert.ok(pilotLedgerRoot && isAbsolute(pilotLedgerRoot), 'Pilot batches require the shared capped pilot ledger');
-    await mkdir(pilotLedgerRoot, { recursive: true });
+    assert.equal(pilotLedgerRoot, plan.execution.pilot_ledger_root, 'Pilot ledger must remain bound to the frozen plan');
+    assert.equal(await realpath(pilotLedgerRoot), pilotLedgerRoot, 'Pilot ledger cannot change to a symlink');
     // O_EXCL reservations make the cap independent of retries, batch names and concurrent controllers.
     for (let n = 1; n <= plan.protocol.policies.pilot.max_scheduled_episodes; n++) {
       if (n > plan.protocol.policies.pilot.route_gate_episodes && !verifiedPilotGate) {
@@ -178,6 +198,7 @@ export async function runBatch({ plan, executeEpisode, maximumNewEpisodes = Infi
     throw Object.assign(new Error('Pilot scheduling cap reached including invalid and replacements'), { code: 'PILOT_CAP' });
   }
   for (const slot of plan.slots) {
+    if (stopReason) break;
     if (plan.execution.resumption?.excluded_slot_ids.includes(slot.slot_id)) {
       if (!ledger.some(event => event.type === 'episode_not_dispatched' && event.slot_id === slot.slot_id))
         await append('episode_not_dispatched', { ...slot, reason: 'retained_prior_zero_send_invalid',

@@ -204,10 +204,10 @@ test('declared Code Mode interaction uses four actual paired cells',()=>{
   const added=p.conditions.map(c=>({...c,id:c.id+'-code',environment_id:c.environment_id+'-code',code_mode:'required'}));
   p.conditions.push(...added);
   p.pairs.push(...p.pairs.map(pair=>({...pair,id:pair.id+'-code',condition_ids:pair.condition_ids.map(id=>id+'-code')})));
+  p.policies.analysis={interactions:[{id:'code-interaction',kind:'code_mode',condition_ids:['candidate','reference','candidate-code','reference-code'],
+    environment_pairs:[['candidate-environment','reference-environment'],['candidate-environment-code','reference-environment-code']]}]};
   p.protocol_sha256=fingerprint({...p,protocol_sha256:null});
   const plan=createAnalysisPlan(p);
-  plan.interactions=[{id:'code-interaction',kind:'code_mode',condition_ids:['candidate','reference','candidate-code','reference-code'],
-    environment_pairs:[['candidate-environment','reference-environment'],['candidate-environment-code','reference-environment-code']]}];
   const result=score(p,exampleEpisodes(p),plan).code_mode_interaction;
   assert.equal(result.status,'descriptive');assert.equal(result.comparisons[0].estimate,0);
   assert.ok(result.comparisons[0].interval.lower<0);
@@ -224,4 +224,78 @@ test('semantic normalizer versions cannot silently share one frozen analysis str
   p.policies.evidence={normalizer_version:'1.0.0'};p.protocol_sha256=fingerprint({...p,protocol_sha256:null});
   episodes[0].normalizer_version='2.0.0';episodes[0].episode_sha256=fingerprint({...episodes[0],episode_sha256:null});
   assert.throws(()=>scoreExperiment({protocol:p,episodes}),/separate explicit analysis stratum/);
+});
+
+test('an explicit analysis plan is only the unchanged expansion of its frozen protocol',()=>{
+  const p=exampleProtocol(),episodes=exampleEpisodes(p),plan=createAnalysisPlan(p);
+  assert.deepEqual(score(p,episodes,structuredClone(plan)),score(p,episodes));
+  const changes=[
+    value=>{value.slots.pop();},
+    value=>{value.slots.push({...value.slots[0],id:'extra-repeat',repeat:1});},
+    value=>{value.slots[0].condition_id='reference';},
+    value=>{value.slots[0].case_id='c2';},
+    value=>{value.slots[0].repeat=1;},
+    value=>{value.slots[0].seed=99;},
+    value=>{value.slots[0].pair_id='different-pair';},
+    value=>{value.slots[0].cluster_id='independent-cluster';},
+    value=>{value.slots[0].expected_support='unsupported';},
+    value=>{delete value.protocol_sha256;},
+    value=>{value.resource_bounds={input_total:{upper:100,verified:true,evidence_sha256:fingerprint('unregistered')}};},
+    value=>{value.success_budgets={time_ms:[100]};},
+    value=>{value.interactions=[];},
+  ];
+  for(const change of changes){const altered=structuredClone(plan);change(altered);assert.throws(()=>score(p,episodes,altered),/frozen protocol expansion/);}
+});
+
+test('missing cases and known failures cannot be removed from the fixed denominator',()=>{
+  const p=exampleProtocol(),episodes=exampleEpisodes(p),missing=episodes.filter(e=>e.identity.case_id!=='c2');
+  const incomplete=score(p,missing);
+  assert.equal(incomplete.conditions[0].metrics.verified_quality.estimate,null);
+  assert.equal(incomplete.completeness.unresolved_slots.length,2);
+  const subset=createAnalysisPlan(p);subset.slots=subset.slots.filter(slot=>slot.case_id!=='c2');
+  assert.throws(()=>score(p,missing,subset),/frozen protocol expansion/);
+  const failed=episodes.map(e=>e.identity.condition_id==='candidate'&&e.identity.case_id==='c2'?exampleEpisode({caseId:'c2',outcome:'fail'}):e);
+  assert.equal(score(p,failed).conditions[0].metrics.verified_quality.estimate,.75);
+  const unsupported=createAnalysisPlan(p);unsupported.slots.find(slot=>slot.condition_id==='candidate'&&slot.case_id==='c2').expected_support='unsupported';
+  assert.throws(()=>score(p,failed,unsupported),/frozen protocol expansion/);
+});
+
+test('analysis cannot promote pilot or regression observations to independent confirmation',()=>{
+  for(const phase of ['pilot','regression','confirmation']){
+    const p=exampleProtocol();p.phase=phase;p.protocol_sha256=fingerprint({...p,protocol_sha256:null});
+    const plan=createAnalysisPlan(p),episodes=exampleEpisodes(p);
+    assert.equal(plan.confirmation,phase==='confirmation');
+    assert.deepEqual(score(p,episodes,structuredClone(plan)),score(p,episodes));
+    plan.confirmation=!plan.confirmation;
+    assert.throws(()=>score(p,episodes,plan),/frozen protocol expansion/);
+  }
+});
+
+test('registered resource bounds and budget curves are derived before analysis and stay immutable',()=>{
+  const p=exampleProtocol();
+  p.policies.analysis={resource_bounds:{input_total:{upper:100,verified:true,evidence_sha256:fingerprint('independent-bound-proof')}},
+    success_budgets:{time_ms:[0,100,1000],input_tokens:[0,100,1000]},interactions:[]};
+  p.protocol_sha256=fingerprint({...p,protocol_sha256:null});
+  const plan=createAnalysisPlan(p),episodes=exampleEpisodes(p),analysis=score(p,episodes,plan);
+  assert.deepEqual(plan.resource_bounds,p.policies.analysis.resource_bounds);
+  assert.deepEqual(analysis.conditions[0].metrics.success_by_budget.time_ms.map(row=>row.budget),[0,100,1000]);
+  assert.deepEqual(analysis.conditions[0].metrics.success_by_budget.input_tokens.map(row=>row.budget),[0,100,1000]);
+  assert.equal(analysis.comparisons[0].input_ratio.interval.numerator.status,'available');
+  plan.resource_bounds.input_total.upper=200;
+  assert.throws(()=>score(p,episodes,plan),/frozen protocol expansion/);
+  p.policies.analysis.success_budgets.time_ms=[0,200,1000];
+  assert.throws(()=>score(p,episodes),/Frozen protocol fingerprint/);
+});
+
+test('invalid registered inference policy is rejected even at the pure analysis boundary',()=>{
+  for(const policy of [
+    {resource_bounds:{input_total:{upper:100,verified:true}}},
+    {resource_bounds:{input_total:{upper:0,verified:true,evidence_sha256:fingerprint('proof')}}},
+    {success_budgets:{time_ms:[100,50]}},
+    {success_budgets:{input_tokens:[100,100]}},
+    {interactions:[{id:'missing',kind:'code_mode',condition_ids:['candidate','reference','unknown-a','unknown-b']}]},
+  ]){
+    const p=exampleProtocol();p.policies.analysis=policy;p.protocol_sha256=fingerprint({...p,protocol_sha256:null});
+    assert.throws(()=>score(p,exampleEpisodes(p)),/Invalid preregistered analysis policy/);
+  }
 });

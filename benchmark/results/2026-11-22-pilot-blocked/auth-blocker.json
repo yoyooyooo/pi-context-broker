@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "kind": "public-authorization-blocker-diagnostic",
+  "run_id": "benchmark-route-gate-3-003",
+  "request_id": "benchmark-route-gate-3-003/request-1",
+  "request_window_utc": {
+    "start": "2026-11-22T12:24:19.321Z",
+    "end": "2026-11-22T12:24:24.493Z"
+  },
+  "observed_error": "token refresh: http 400: {\"data\":\"\",\"error\":\"failed to refresh token: invalid_grant\",\"success\":false}\n",
+  "public_runtime_ref": {
+    "path": "current-plan/raw/772cc3b257769c124f60c063f28f79002519ccafcce6f261cd5569e85cfe2486",
+    "sha256": "772cc3b257769c124f60c063f28f79002519ccafcce6f261cd5569e85cfe2486",
+    "pointer": "/requests/0/assistant/error"
+  },
+  "service_correlation": {
+    "method": "Same request time window, requested route, endpoint and exact refresh error; no end-to-end response request identifier was available",
+    "requested_route": "group/flash",
+    "observed_upstream_route": "cline-free/deepseek-v4.1-flash",
+    "authorization_provider": "cline",
+    "authorization_type": "OAuth",
+    "source_observations": [
+      {
+        "source_kind": "retained proxy usage ledger",
+        "source_line": 517347,
+        "source_line_sha256": "5c038c1d998e25667cd389223acdafd86f9557c6f957ddfa7e83140f16ba3eab",
+        "observed_status": 400,
+        "reported_input": 0,
+        "reported_output": 0,
+        "interpretation": "Failure-record zeros have no accompanying native provider usage or authoritative charge evidence; they do not establish zero consumption"
+      },
+      {
+        "source_kind": "retained upstream proxy application log",
+        "source_line": 40877,
+        "source_line_sha256": "d7cfa3a4a4e10f7df6f773d67a43fc2388e904949a9bca47af6d422dd4a1896a",
+        "safe_excerpt": "Use OAuth provider=cline auth_file=[REDACTED_ACCOUNT_FILE] for model cline-free/deepseek-v4.1-flash",
+        "transformation": "Account-file identity removed; original service log is retained privately"
+      }
+    ]
+  },
+  "accounting_resolution": "unknown",
+  "authorization_recovery": "human_required",
+  "recovery_entry": "On Mini, open the local CLIProxyAPI management console and restore the Cline plugin OAuth authorization",
+  "diagnosis_actions": "Read-only route and scoped log inspection; no login, credential refresh, configuration change, rerouting or model retry",
+  "limitation": "Authorization repair alone cannot reconstruct this request usage or satisfy the frozen route gate"
+}

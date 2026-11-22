@@ -185,7 +185,10 @@ boundary, not merely an early tool return or model assertion.
 ## Frozen plan and denominator
 
 The default plan expands the protocol's pairs and assessments into slots.
-An explicit plan has:
+An explicit plan must equal `createAnalysisPlan(protocol)` in full. It cannot
+drop an unresolved slot, change support or seed, add a cluster override, or
+promote pilot/regression observations to independent confirmation. The derived
+shape is:
 
 ```js
 {
@@ -205,6 +208,40 @@ An explicit plan has:
   resource_bounds: {},
 }
 ```
+
+Optional inference policies belong in `protocol.policies.analysis` before
+registration. They participate in the protocol fingerprint and execute-stage
+validation. With the configure entry point, set the optional `setup.analysis`
+object before registration; configure passes it to `preregisterComparison`,
+which clones it into `protocol.policies.analysis`. For a directly constructed
+protocol draft, the equivalent is:
+
+```js
+draftProtocol.policies.analysis = {
+  resource_bounds: {
+    input_total: {
+      upper: 50000,
+      verified: true,
+      evidence_sha256: independentlyVerifiedBoundReceiptSha256,
+    },
+  },
+  success_budgets: {
+    time_ms: [0, 15000, 30000, 60000],
+    input_tokens: [0, 10000, 25000, 50000],
+  },
+  interactions: [],
+};
+```
+
+Budget cutoffs are strictly increasing nonnegative integers. Input bounds need
+a positive safe integer and the SHA256 of their independent verification
+evidence. Interaction entries bind four distinct declared conditions, their
+oriented protocol pairs and, for Code Mode, both environment pairs. Unknown
+fields and unsupported shapes are rejected. `createAnalysisPlan` copies these
+validated policies from the protocol; changing the returned plan is not a
+registration mechanism. Protocols without this optional field retain the
+existing defaults. Adding or changing a policy requires a new frozen protocol
+identity, with its ordinary material and confirmation checks.
 
 Only this batch's slots belong in the denominator. Future confirmation plans
 do not belong in a completed pilot's denominator. Per slot, at most one
@@ -261,7 +298,8 @@ Cumulative input includes every actual attempt, including retries and failed
 episodes. Ratios use ratios of fixed-weight means. Zero reference means
 produce an undefined ratio and an absolute difference. Input-ratio interval
 inference additionally needs a predeclared independently verified upper
-bound in `plan.resource_bounds.input_total = { upper, verified: true }`.
+bound in `protocol.policies.analysis.resource_bounds.input_total`, with
+`upper`, `verified: true` and `evidence_sha256` recorded before freezing.
 An observed maximum or a nominal budget that can be overshot does not prove
 a distribution bound. Without that bound, point estimates remain useful
 but input noninferiority remains inconclusive.
@@ -281,7 +319,7 @@ All nine pass/fail/unknown migration cells are retained. Model-environment
 interactions require four observed cells with matching environment pairs,
 tasks, material/state/authorization, budgets, adoption mode and declared
 windows. They are differences of within-model environment differences.
-Code Mode interactions additionally require a frozen `plan.interactions`
+Code Mode interactions additionally require a frozen `protocol.policies.analysis.interactions`
 entry with kind `code_mode`, four oriented `condition_ids` and
 `environment_pairs`; one model and two matched Code Mode policies are
 required. Missing or incomparable cells return unavailable. A four-cell

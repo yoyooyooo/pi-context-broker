@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -8,6 +8,7 @@ import { createPreregistrationTemplate } from './templates/preregistration.mjs';
 import { freezeBatchPlan, runBatch } from './batch.mjs';
 import { snapshotModels } from './models.mjs';
 import { ensureRemoteParent } from './remote.mjs';
+import { preregisterComparison } from './planning.mjs';
 
 // These identities exist only to test the controller. No synthetic test result is a Benchmark score.
 function protocol() {
@@ -39,6 +40,21 @@ async function plan() {
 }
 const knownResult = () => ({ status: 'completed', budget_usage: { model_requests: 1, input_tokens: 30, output_tokens: 10, duration_ms: 50 } });
 
+test('comparison registration freezes optional analysis policy before execution', () => {
+  const p = protocol();
+  const analysis = { success_budgets: { time_ms: [0, 500, 1000], input_tokens: [0, 500, 1000] } };
+  const args = { id: p.id, phase: p.phase, purpose: p.purpose, environments: p.environments, models: p.models,
+    corpus: p.corpus, cases: p.corpus.cases.map(protocol_case => ({ id: protocol_case.id, protocol_case })),
+    budget: p.policies.budgets[0], decision: p.policies.decision, allowedChanges: p.allowed_changes, registeredAt: p.registered_at };
+  const frozen = preregisterComparison({ ...args, analysis });
+  assert.deepEqual(frozen.policies.analysis, analysis);
+  analysis.success_budgets.time_ms.push(2000);
+  assert.deepEqual(frozen.policies.analysis.success_budgets.time_ms, [0, 500, 1000]);
+  assert.equal(frozen.protocol_sha256, fingerprint({ ...frozen, protocol_sha256: null }));
+  assert.equal(Object.hasOwn(preregisterComparison(args).policies, 'analysis'), false);
+  assert.throws(() => preregisterComparison({ ...args, analysis: { success_budgets: { input_tokens: [100, 10] } } }), /increasing/);
+});
+
 test('partial batch resume executes each scheduled slot exactly once', async () => {
   const p = await plan(), calls = [];
   const executeEpisode = async ({ runId }) => { calls.push(runId); return knownResult(); };
@@ -60,9 +76,40 @@ test('incomplete cost observation stops enlargement and cannot become free', asy
   const result = await runBatch({ plan: p, executeEpisode: async () => { calls++; return { budget_usage: { model_requests: 1, duration_ms: 1 } }; } });
   assert.equal(calls, 1); assert.equal(result.last.reason, 'unknown_budget_usage');
 });
+
+test('a retained core stop remains stopped on a later invocation even when its usage is complete', async () => {
+  const p = await plan(); let calls = 0;
+  const executeEpisode = async () => { calls++; return { ...knownResult(), stop_batch: true, stop_reason: 'controller_unknown_write' }; };
+  const first = await runBatch({ plan: p, executeEpisode });
+  assert.equal(first.last.reason, 'controller_unknown_write'); assert.equal(calls, 1);
+  const resumed = await runBatch({ plan: p, executeEpisode });
+  assert.equal(resumed.last.reason, 'controller_unknown_write'); assert.equal(resumed.last.new_episodes, 0);
+  assert.equal(calls, 1); assert.equal(resumed.completed, 1);
+});
 test('post-registration budget edits fail before any dispatcher is called', async () => {
   const p = await plan(); p.protocol.policies.budgets[0].episode.max_model_requests++;
   await assert.rejects(runBatch({ plan: p, executeEpisode: async () => { throw new Error('must not run'); } }), /modified/);
+});
+
+test('the pilot first-24 gate cannot be bypassed with a different ledger or a symlink', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-pilot-ledger-binding-')));
+  const p = protocol(); p.phase = 'pilot'; p.protocol_sha256 = fingerprint({ ...p, protocol_sha256: null });
+  const frozenLedger = join(root, 'pilot-ledger'); await mkdir(frozenLedger);
+  for (let i = 1; i <= 24; i++) await writeFile(join(frozenLedger, String(i).padStart(3, '0') + '.json'), JSON.stringify({ reserved: i }));
+  const frozen = freezeBatchPlan({ protocol: p, execution: { environment_root: root, control_root: join(root, 'batch'), pilot_ledger_root: frozenLedger } });
+  let dispatched = 0;
+  const executeEpisode = async () => { dispatched++; return knownResult(); };
+  await assert.rejects(runBatch({ plan: frozen, pilotLedgerRoot: join(root, 'empty-alternate'), executeEpisode }), /differs from the frozen plan/);
+  await assert.rejects(readFile(join(frozen.execution.control_root, 'lease.json')), { code: 'ENOENT' });
+  const result = await runBatch({ plan: frozen, executeEpisode });
+  assert.equal(result.last.reason, 'route_gate_pending'); assert.equal(dispatched, 0);
+  assert.equal((await readdir(frozenLedger)).length, 24);
+  const empty = join(root, 'empty'); await mkdir(empty);
+  const alias = join(root, 'alias'); await symlink(empty, alias);
+  const aliased = freezeBatchPlan({ protocol: p, execution: { environment_root: root, control_root: join(root, 'aliased-batch'), pilot_ledger_root: alias } });
+  await assert.rejects(runBatch({ plan: aliased, executeEpisode }), /cannot be a symlink/);
+  assert.equal(dispatched, 0); assert.deepEqual(await readdir(empty), []);
+  assert.throws(() => freezeBatchPlan({ protocol: p, execution: { environment_root: root, control_root: join(root, 'undeclared') } }), /must freeze/);
 });
 test('selected model snapshot excludes credentials and unrelated routes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'benchmark-model-evidence-')), sourceFile = join(root, 'source.json'), outputFile = join(root, 'models.json');

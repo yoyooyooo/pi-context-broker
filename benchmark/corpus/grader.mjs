@@ -82,8 +82,10 @@ export function validateOracle(oracle) {
 }
 
 function gradeArtifact(contract, evidence) {
-  const observed = (evidence.artifacts ?? []).filter(item => item.path === contract.path
-    && (!contract.turn_id || !item.turn_id || item.turn_id === contract.turn_id));
+  const candidates = (evidence.artifacts ?? []).filter(item => item.path === contract.path);
+  const observed = candidates.filter(item => !contract.turn_id || item.turn_id === contract.turn_id);
+  if (!observed.length && contract.turn_id && candidates.some(item => !item.turn_id))
+    return result(contract, 'unknown', candidates.filter(item => !item.turn_id), 'Deliverable bytes lack the required turn identity');
   if (!observed.length) return missing(contract, evidence, 'artifacts', 'Required deliverable was not observed');
   const artifact = observed.at(-1);
   if (typeof artifact.content !== 'string') return result(contract, 'unknown', [artifact], 'Artifact bytes were not retained');
@@ -115,10 +117,12 @@ function gradeSelection(contract, evidence) {
   const forbidden = rows.filter(item => !allowed.has(item.skill_id));
   if (forbidden.length) return result(contract, 'fail', forbidden, 'Observed a selection outside all legal candidate sets');
   const matches = contract.allowed_sets.some(set => set.length === selected.length && set.every(id => selected.includes(id)));
-  if (matches && (selected.length > 0 || coverage(evidence, 'selections') === 'complete'))
-    return result(contract, 'pass', rows, selected.length ? 'Observed selection is one of the legal sets' : 'Complete evidence shows no Skill was selected');
+  if (!contract.allowed_sets.some(set => selected.every(id => set.includes(id))))
+    return result(contract, 'fail', rows, 'Observed selections cannot belong to any single legal candidate set');
   if (coverage(evidence, 'selections') !== 'complete')
     return result(contract, 'unknown', rows, 'Selection evidence is incomplete');
+  if (matches)
+    return result(contract, 'pass', rows, selected.length ? 'Complete evidence establishes one legal selection set' : 'Complete evidence shows no Skill was selected');
   return result(contract, 'fail', rows, 'Observed selection does not satisfy any legal candidate set');
 }
 
@@ -144,6 +148,8 @@ function gradeClarification(contract, evidence) {
     return result(contract, 'fail', matching, 'Clarification was observed after completion');
   if (contract.before_artifact && matching.some(item => item.before_completion !== true))
     return result(contract, 'unknown', matching, 'Clarification timing before completion was not proven');
+  if (coverage(evidence, 'clarifications') !== 'complete')
+    return result(contract, 'unknown', all, 'Incomplete clarification evidence cannot establish the declared maximum');
   return result(contract, 'pass', matching, 'Required bounded clarification was observed');
 }
 

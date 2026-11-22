@@ -291,7 +291,39 @@ test('no-Skill and clarification contracts require actual negative coverage and 
   const rows = [{ topic_id: 'currency', turn_id: 'turn-1', evidence_id: 'question-1' }];
   assert.equal(gradeEpisode({ oracle: clarify, capabilities: ['workspace-files'], evidence: { ...evidence, clarifications: rows } }).contracts[1].status, 'unknown');
   rows[0].before_completion = true;
-  assert.equal(gradeEpisode({ oracle: clarify, capabilities: ['workspace-files'], evidence: { ...evidence, clarifications: rows } }).verified_success, true);
+  assert.equal(gradeEpisode({ oracle: clarify, capabilities: ['workspace-files'], evidence: { ...evidence, clarifications: rows, coverage: complete } }).verified_success, true);
+});
+
+test('positive selections and bounded clarification require complete coverage, while observed violations still fail', () => {
+  const artifacts = [artifact('output/result.json', [{ id: 'fresh', score: 17 }])];
+  const selection = plainOracle([business, { id: 'exact-set', kind: 'selection', critical: true, allowed_sets: [['a'], ['b']] }]);
+  const observe = evidence => gradeEpisode({ oracle: selection, capabilities: ['workspace-files'], evidence: { artifacts, ...evidence } });
+  for (const coverage of ['partial', 'unavailable']) {
+    const legal = observe({ selections: [{ skill_id: 'a', evidence_id: 'observed-a' }], coverage: { selections: coverage } });
+    assert.equal(legal.contracts[1].status, 'unknown'); assert.equal(legal.verified_success, false);
+    const illegal = observe({ selections: [{ skill_id: 'a', evidence_id: 'observed-a' }, { skill_id: 'b', evidence_id: 'observed-b' }], coverage: { selections: coverage } });
+    assert.equal(illegal.contracts[1].status, 'fail');
+  }
+  assert.equal(observe({ selections: [{ skill_id: 'a', evidence_id: 'observed-a' }], coverage: complete }).verified_success, true);
+  for (const limit of [0, 1]) {
+    const oracle = plainOracle([business, { id: 'bounded', kind: 'clarification', critical: true, topic_id: 'currency', min: limit, max: limit, before_artifact: true }]);
+    const clarifications = limit ? [{ topic_id: 'currency', before_completion: true, evidence_id: 'observed-question' }] : [];
+    for (const coverage of ['partial', 'unavailable']) {
+      const verdict = gradeEpisode({ oracle, capabilities: ['workspace-files'], evidence: { artifacts, clarifications, coverage: { clarifications: coverage } } });
+      assert.equal(verdict.contracts[1].status, 'unknown'); assert.equal(verdict.verified_success, false);
+    }
+    assert.equal(gradeEpisode({ oracle, capabilities: ['workspace-files'], evidence: { artifacts, clarifications, coverage: complete } }).verified_success, true);
+  }
+});
+
+test('a turn-scoped deliverable cannot borrow an artifact with missing or different turn identity', () => {
+  const oracle = plainOracle([{ ...business, turn_id: 'turn-2' }]);
+  const output = artifact('output/result.json', [{ id: 'fresh', score: 17 }]);
+  const check = item => gradeEpisode({ oracle, capabilities: ['workspace-files'], evidence: { artifacts: [item], coverage: complete } });
+  assert.equal(check(output).business_outcome, 'unknown');
+  assert.equal(check(output).verified_success, false);
+  assert.equal(check({ ...output, turn_id: 'turn-1' }).business_outcome, 'fail');
+  assert.equal(check({ ...output, turn_id: 'turn-2' }).verified_success, true);
 });
 
 test('unsupported and undeclared capabilities remain separate from business failures', () => {
