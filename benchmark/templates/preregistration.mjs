@@ -1,0 +1,101 @@
+import { fingerprint } from '../protocol.mjs';
+import metricDictionary from '../metrics.json' with { type: 'json' };
+
+const placeholderHash = label => fingerprint({ placeholder: label });
+const placeholderCommit = '0'.repeat(40);
+
+/**
+ * A machine-readable draft, not a run authorization or an accepted baseline.
+ * The one placeholder case shows structure; AH-1219 supplies the real corpus.
+ */
+export function createPreregistrationTemplate() {
+  const environment = (id, toolName) => ({
+    schema_version: 1, id, status: 'draft', paired_environment_id: 'REPLACE-paired-environment',
+    build: { id: 'REPLACE-build-id', receipt_sha256: null,
+      cli: { commit: placeholderCommit, source_sha256: null, package_sha256: null, sdk_sha256: null },
+      broker: { commit: placeholderCommit, source_sha256: null, package_sha256: null } },
+    runtime: Object.fromEntries(['node', 'pi', 'bun'].map(name => [name,
+      { version: null, entry: '/REPLACE/maintained/' + name, sha256: null }])),
+    pi: { mode: 'broker', entry: '/REPLACE/maintained/pi', config_sha256: null,
+      extensions: [
+        { id: 'candidate-broker', role: 'broker', path: '${BUILD_ROOT}/broker/dist/pi/index.js', sha256: null },
+        { id: 'common-observer', role: 'observer', path: '${RUN_ROOT}/benchmark/observer.mjs', sha256: null },
+      ],
+      tools: [{ name: toolName, description: 'Example candidate-specific interface; replace from its real manifest.',
+        parameters: { type: 'object', properties: {}, additionalProperties: false } }],
+      active_tools: [toolName], catalog_sha256: null, sources: [], native_root: null,
+      guidance_sha256: null, injection_sha256: null, return_contract_sha256: null, error_contract_sha256: null },
+    policies: { cache: 'cold', session: 'episode_private', recovery: 'none', code_mode: 'free' },
+    manifest_sha256: null,
+  });
+  const environments = [environment('candidate', 'example_lookup'), environment('reference', 'example_search')];
+  const model = {
+    id: 'selected-model', family: 'REPLACE-model-family', provider: 'magpie', route: 'auto/grok-4.7',
+    api: 'openai-responses', adapter: { id: 'REPLACE-verified-adapter', version: 'REPLACE',
+      verification: 'unverified', evidence_sha256: null },
+    parameters: {}, backend: { identity: null, observability: 'opaque_alias',
+      window: { start: '2026-11-22T00:00:00Z', end: '2026-11-23T00:00:00Z' } },
+    adoption: { mode: 'as_is', development_budget_id: null, development_material_ids: [], confirmation_material_ids: [] },
+  };
+  const corpus = {
+    id: 'REPLACE-canonical-corpus', version: 'REPLACE', content_sha256: placeholderHash('corpus'),
+    license: 'REPLACE-public-synthetic-license',
+    capabilities: [{ id: 'example-common-business', scope: 'common', environment_ids: ['candidate', 'reference'] }],
+    cases: [{ id: 'example-case', family: 'example-family', material_id: 'example-material',
+      cluster_id: 'example-independent-cluster', split: 'development',
+      content_sha256: placeholderHash('material'), prompt_sha256: placeholderHash('public-task'),
+      contract_sha256: placeholderHash('external-oracle-contract'),
+      initial_state_sha256: placeholderHash('case-initial-state'), authorization_sha256: placeholderHash('case-authorization'),
+      capability_ids: ['example-common-business'] }],
+  };
+  const conditions = environments.map(e => ({
+    id: e.id + '-condition', environment_id: e.id,
+    environment_sha256: fingerprint({ ...e, manifest_sha256: null }),
+    model_id: model.id, corpus_id: corpus.id, corpus_sha256: corpus.content_sha256,
+    case_ids: ['example-case'], initial_state_sha256: placeholderHash('condition-initial-state'),
+    authorization_sha256: placeholderHash('condition-authorization'), budget_id: 'required-budget', code_mode: 'free',
+  }));
+  return {
+    schema_version: 1, id: 'REPLACE-experiment-id', status: 'draft', phase: 'phase0',
+    purpose: 'environment_iteration', registered_at: null, allowed_changes: ['tools'],
+    environments, models: [model], corpus, conditions,
+    pairs: [{ id: 'example-pair', case_id: 'example-case', condition_ids: conditions.map(c => c.id), repeat: 0, seed: 0 }],
+    assessments: [],
+    policies: {
+      budgets: [{ id: 'required-budget',
+        episode: { max_duration_ms: null, max_model_requests: null, max_input_tokens: null,
+          max_output_tokens: null, max_http_attempts: null, max_retries: null },
+        batch: { max_episodes: null, max_model_requests: null, max_input_tokens: null,
+          max_output_tokens: null, max_duration_ms: null, max_concurrency: null },
+        monetary: { policy: 'unpriced', currency: null, max_amount: null, pricing_sha256: null },
+      }],
+      ordering: { method: 'balanced', seed: 0, concurrency: null, condition_order: conditions.map(c => c.id) },
+      statistics: { confidence: 0.95, interval_method: null, boundary_method: null,
+        missing: 'retain_unknown_fixed_denominator', multiple_comparisons: null,
+        case_aggregation: 'mean_repeats', cluster_unit: 'cluster_id', quality_unknown_credit: 0,
+        invalid: 'retain_separate_costs', family_weights: [{ family: 'example-family', weight: 1 }] },
+      decision: { mode: 'descriptive', absolute_quality_required: null, unassisted_quality_required: null,
+        quality_delta_min: null, input_ratio_max: null, capped_time_ratio_max: null,
+        efficiency_ratio_max: null, critical_contracts: ['business-source-content-permissions-effects'], allow_inconclusive: true },
+      stopping: { on_manifest_mismatch: 'stop_before_task', on_core_evidence_failure: 'stop_batch',
+        on_budget_exhaustion: 'stop_and_record', on_runtime_drift: 'invalidate_and_stop_batch', on_product_failure: 'retain_result' },
+      reruns: { max_episodes: null, count_invalid: true, count_replacements: true, retain_originals: true, link_retest_of: true },
+      evidence: {
+        required: ['runtime_identity', 'loaded_manifest', 'visible_materials', 'model_requests', 'usage',
+          'tool_lineage', 'business_readback', 'completion_boundary', 'interventions'],
+        observer_version: null, normalizer_version: null, metric_version: '1.0.0', scoring_version: null,
+        raw_hashes: 'sha256', locators: 'line_or_json_pointer', missing: 'unknown', oracle_location: 'external',
+        business_contracts: 'tool_neutral', usage_accounting: 'verified_adapter_semantics',
+      },
+      state: { unit: 'episode', cross_episode: 'isolated', checkpoint_linkage: true },
+      model_fallback: 'forbidden', auxiliary_model_ids: [], scheduled_paid_runs: false,
+      pilot: { max_scheduled_episodes: 144, route_gate_episodes: 24, gate_included: true, invalid_and_reruns_included: true },
+      metric_contract: { unsupported: 'separate_capability_scope', unknown: 'no_success_credit_not_confirmed_failure',
+        retest: 'new_model_execution', reanalysis: 'same_raw_evidence' },
+    },
+    metrics: { dictionary_sha256: fingerprint(metricDictionary),
+      primary: ['verified_quality', 'input_ratio', 'time_ratio', 'unassisted_quality'],
+      secondary: ['known_failure', 'evidence_coverage', 'input_first', 'input_peak', 'input_total', 'version_transition'] },
+    protocol_sha256: null,
+  };
+}
