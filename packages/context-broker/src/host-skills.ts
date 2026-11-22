@@ -482,7 +482,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
 
   if (sourceToolsEnabled) host.registerTool?.({
     name: listToolName, label: piConsumption ? "List Notion Skills" : "Skill search",
-    description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.${piConsumption ? " Use refresh:true to verify discovery after a write or request the latest directory; selected Skill versions stay fixed. Check freshness separately from coverage." : ""}`,
+    description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.${piConsumption ? " For named Notion Skill existence or availability questions, set query to the name and refresh:true, even when already listed or previously absent. Also refresh after writes or to request the latest directory; selected Skill versions stay fixed. Report matching availability. Only fresh online results with exhaustive coverage and no failures establish that no available match was found in the searched scope; stale, offline, failed or partial results cannot establish current absence." : ""}`,
     parameters: { type: "object", properties: {
       query: { type: "string", description: "A short name or description keyword; empty lists the directory." },
       source: { type: "string", description: "Optional configured source ID to disambiguate directories." },

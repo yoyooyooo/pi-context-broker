@@ -162,6 +162,8 @@ Pi 按需发现的 `notion_ctl` 还管理当前 Notion 工作集。`working_set:
 
 已有会话在 Notion 编辑和元数据过期后保留已选根与 Requires 的版本。显式 `read` 配合 `refresh: true` 检查当前主文，不改变任务的固定选择；`notion_use` 配合 `refresh: true` 为指定根采用完整当前版本。固定字节缺失时，系统给出明确能力提示并暂不交付受影响的指令闭包，其他独立对话仍可继续。详见[刷新与恢复](./packages/context-broker/docs/skill-consumption-runtime.md#内容变更明确刷新与管理开关)及[配对 next 工作树交付合同](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/next-worktree-delivery.md)。
 
+用户点名询问某个 Notion Skill 是否存在或可用时，Agent 必须把名称作为 `query` 调用 `notion_list`，并设置 `refresh:true`。已有会话、先前查到或没查到、默认 View 已显示该名称，都不能省略这次核验；仍遵守用户明确指定的来源。查询只读元数据，保留已选 root/Requires 的固定版本。只有当前新鲜且完整的查询才能说明搜索范围内未找到可用项；离线、过期、失败或部分结果不能证明当前不存在。
+
 | 记录 | 来源 | 模型收到的内容 |
 | --- | --- | --- |
 | Skill | 发现到的 `SKILL.md` 或 filesystem/Notion source record | 选中的完整 Skill 内容；source 资源共用选中的 snapshot |
