@@ -488,6 +488,8 @@ export async function runEnvironment(options) {
     await copyTree(join(buildRoot, 'source'), join(root, 'source'), build.source_tree);
     env.PAIRED_CLI_SOURCE = join(root, 'source/cli');
     env.PAIRED_BROKER_SOURCE = join(root, 'source/broker');
+    env.CONTEXT_BROKER_GRAPH_CORE = join(env.PAIRED_CLI_SOURCE, 'packages/core/src');
+    env.NTN_SKILLS_BUILD_ENTRY = env.PAIRED_CLI_ENTRY;
   }
   const cwd = cwdChoice === 'workspace' ? join(root, 'workspace') : join(root, 'source', cwdChoice);
   await save(join(root, 'run.json'), { version: VERSION, kind: 'isolated-development-run', environment_id: environment.environment_id,

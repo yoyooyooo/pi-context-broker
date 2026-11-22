@@ -27,6 +27,19 @@ runtime through a shell shim. Node, Pi and Bun remain shared maintained
 prerequisites; upgrading them does not require recreating task clones or a
 per-task runtime manager. Results record the runtime used for that invocation.
 
+Check the versions in the shell or Agent process that will launch the command:
+
+```sh
+node --version
+pi --version
+bun --version
+```
+
+The selected Node must satisfy the repositories' `engines.node` requirement.
+A long-running Agent can retain an older PATH after the machine was upgraded.
+Use a fresh shell or invoke the maintained Node by its absolute path when those
+versions differ; updating the machine does not replace an existing process's environment.
+
 ```sh
 node scripts/paired-environment.mjs create --root /absolute/owned/feature-env
 ```
@@ -140,6 +153,16 @@ to these copies. Checks can change their own source or dependencies without
 changing the selected build or another run. CLI and Pi targets use the selected
 runtime packages without copying source trees.
 
+Command runs also bind the existing `CONTEXT_BROKER_GRAPH_CORE` to the private
+CLI source and `NTN_SKILLS_BUILD_ENTRY` to the selected private CLI package.
+For example, run the existing verification suite without borrowing another
+checkout's dependencies or skipping its cross-repository route:
+
+```sh
+node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
+  --build BUILD_ID --target command --cwd broker -- bun run test:verification
+```
+
 Arguments after `--` belong to the target. The CLI path and any command wrapper
 added to `PATH` apply only to this process tree. They do not replace a global
 `ntn-skills` executable, rewrite shell startup files or change another session.
@@ -156,6 +179,9 @@ Target stdout and stderr are retained as `command.stdout.log` and
 Stdin defaults to `--stdin ignore`, so headless commands do not wait for the
 launcher's input stream to close. For RPC or explicit piped input, set
 `--stdin inherit` and close the input stream when the interaction is complete.
+For an RPC harness that exchanges messages interactively, launch the harness with
+`--target command` and let it spawn the private `pi` command with its own pipes.
+The launcher's stdout is a result receipt, not a transparent RPC stream.
 
 `--timeout-ms` controls the run deadline. The default is 10 minutes and the
 maximum is 1 hour. A timeout stops only that run's owned process group and leaves
