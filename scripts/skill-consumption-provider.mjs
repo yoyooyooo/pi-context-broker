@@ -185,8 +185,11 @@ export function providerApplicationCompletion(end, message) {
   if (end.outcome !== 'failure' || end.errorName !== 'AbortError' || end.errorCode !== 20
     || end.modelApi !== 'openai-completions' || end.contentEncoding !== 'identity' || end.contentType !== 'text/event-stream'
     || end.sseCompletion?.method !== 'bounded-sse-data-done-v1' || end.sseCompletion.doneEvents !== 1) return null;
+  // Pi's optional responseModel is null in observer rows when unreported.
+  // Keep it unknown; a reported value must still be a nonempty string.
   if (message?.role !== 'assistant' || !['stop', 'toolUse'].includes(message.stopReason)
-    || !['provider', 'model', 'responseModel'].every(key => typeof message[key] === 'string' && message[key].trim())
+    || !['provider', 'model'].every(key => typeof message[key] === 'string' && message[key].trim())
+    || (message.responseModel != null && (typeof message.responseModel !== 'string' || !message.responseModel.trim()))
     || !['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens'].every(key => Number.isFinite(message.usage?.[key]) && message.usage[key] >= 0)
     || message.usage.totalTokens <= 0) return null;
   return 'sse-done-before-http-cancel';

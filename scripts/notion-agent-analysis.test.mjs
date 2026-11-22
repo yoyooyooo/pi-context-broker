@@ -276,6 +276,37 @@ test('completed real-evidence shape passes facts and zero tool attempts', async 
   assert.equal(result.efficiency.usage.totalTokens, 16);
 });
 
+test('unreported response models retain wire, native response and SSE completion requirements', async t => {
+  const make = () => {
+    const f = fixture({ calls: [{ name: 'read', arguments: { path: '/owned/data.txt' } }] });
+    for (const row of f.observed.costs.filter(row => row.phase === 'message_end')) delete row.message.responseModel;
+    for (const row of f.observed.transport.filter(row => row.phase === 'request_end')) Object.assign(row, {
+      outcome: 'failure', errorName: 'AbortError', errorCode: 20, contentEncoding: 'identity', contentType: 'text/event-stream',
+      sseCompletion: { method: 'bounded-sse-data-done-v1', doneEvents: 1 },
+    });
+    return f;
+  };
+  for (const responseModel of [undefined, null]) await t.test(String(responseModel), async () => {
+    const f = make();
+    if (responseModel === null) for (const row of f.observed.costs.filter(row => row.phase === 'message_end')) row.message.responseModel = null;
+    const before = structuredClone(f.observed.costs), result = await f.run([{ kind: 'completed' }]);
+    assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+    assert.deepEqual(result.delivery.requests.map(row => row.completion), ['sse-done-before-http-cancel', 'sse-done-before-http-cancel']);
+    assert.deepEqual(f.observed.costs, before, 'Do not fill responseModel from the requested model');
+  });
+  for (const [name, change, code] of [
+    ['invalid response model', f => { f.observed.costs[1].message.responseModel = {}; }, 'APPLICATION_COMPLETION_MISSING'],
+    ['missing DONE', f => { f.observed.transport[2].sseCompletion.doneEvents = 0; }, 'APPLICATION_COMPLETION_MISSING'],
+    ['empty response entity', f => { f.observed.transport[2].responseEntityBytes = 0; }, 'APPLICATION_COMPLETION_MISSING'],
+    ['wrong native response', f => { f.observed.costs[1].message.content.sha256 = 'e'.repeat(64); }, 'NATIVE_RESPONSE_CORRELATION_MISSING'],
+  ]) await t.test(name, async () => {
+    const f = make(); change(f);
+    const result = await f.run([{ kind: 'completed' }]);
+    assert.equal(result.status, 'blocked', JSON.stringify(result.assertions));
+    assert.ok(result.assertions.some(item => item.code === code), JSON.stringify(result.assertions));
+  });
+});
+
 test('an unnecessary failed tool attempt fails even after a correct final answer', async () => {
   const f = fixture({ calls: [{ name: 'notion_use', arguments: { ref: 'missing' }, isError: true }] });
   const result = await f.run([{ kind: 'tool-attempts', tool: 'notion_use', max: 0 }, { kind: 'output', all: ['total'] }]);
