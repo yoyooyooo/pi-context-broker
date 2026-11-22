@@ -30,6 +30,14 @@ async function retainPlan(plan) {
   await writeFile(join(plan.control_root, 'plan.json'), JSON.stringify(plan));
 }
 async function scratch() { return realpath(await mkdtemp(join(tmpdir(), 'benchmark-fixture-test-'))); }
+function offlineWorkerCredential(t) {
+  const previous = process.env.NOTION_API_TOKEN;
+  process.env.NOTION_API_TOKEN = 'synthetic-offline-fixture-test-with-no-authority';
+  t.after(() => {
+    if (previous === undefined) delete process.env.NOTION_API_TOKEN;
+    else process.env.NOTION_API_TOKEN = previous;
+  });
+}
 
 test('all forty cases have complete plans and mutable journeys require independent episodes', () => {
   for (const item of corpus.publicCorpus.cases) {
@@ -114,7 +122,8 @@ test('events are finite, owned and bound to one frozen episode', () => {
   assert.deepEqual(plan.events[0].logical_operation, { skill_id: 'continuation-02-a-routing', path: 'SKILL.md', intent: 'publish-version' });
 });
 
-test('an interrupted preparation never invokes a new public create or init', async () => {
+test('an interrupted preparation never invokes a new public create or init', async t => {
+  offlineWorkerCredential(t);
   const root = await scratch(), controlRoot = join(root, 'control'), buildRoot = join(root, 'build');
   const plan = planBenchmarkFixture(options(['explicit-01-a'], { controlRoot, buildRoot }));
   await retainPlan(plan);
@@ -173,7 +182,8 @@ test('operation not_found cannot substitute for independently observed owner abs
 });
 
 
-test('source runtime preflight creates private temp roots and stops before remote allocation without selected Git', async () => {
+test('source runtime preflight creates private temp roots and stops before remote allocation without selected Git', async t => {
+  offlineWorkerCredential(t);
   const root=await scratch(), controlRoot=join(root,'control'), buildRoot=join(root,'build');
   const plan=planBenchmarkFixture(options(['scripts-assets-01-a'],{controlRoot,buildRoot,
     sourceBindings:{'scripts-assets-01-a-manifest':sourceBinding('scripts-assets-01-a-manifest')}}));
