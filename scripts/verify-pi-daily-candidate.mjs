@@ -965,6 +965,9 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
   });
   on('message_end', event => {
     const message = event.message;
+    // The completed native result precedes provider-context reuse, which may
+    // replace its body and intentionally invalidate that projected receipt.
+    if (message?.role === 'toolResult') { receipt(message); return; }
     if (message?.role !== 'assistant' || !['stop', 'length', 'error', 'aborted'].includes(message.stopReason)) return;
     const value = text(message.content);
     record('assistant_final', { text: value, sha256: sha(value), bytes: Buffer.byteLength(value), stopReason: message.stopReason,
