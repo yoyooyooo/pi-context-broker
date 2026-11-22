@@ -42,23 +42,23 @@ jobs:
       PSTACK_STATECHART_ROOT: ${{ github.workspace }}/.formal-tools/pstack/pstack/skills/statechart
       TLA2TOOLS: ${{ github.workspace }}/.formal-tools/tla2tools-1.7.4.jar
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Checkout the frozen statechart implementation
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: cursor/plugins
           ref: c742dd61706fbacc1b95f1a20b7b988cf096ce6c
           path: .formal-tools/pstack
           sparse-checkout: pstack/skills/statechart
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.22.3
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.3
       - run: bun install --frozen-lockfile
@@ -87,7 +87,7 @@ jobs:
           esac
       - name: Retain summaries, exact inputs, reports, TLC output and generated diagrams
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: formal-${{ matrix.suite }}-${{ github.sha }}
           path: ${{ runner.temp }}/formal-${{ matrix.suite }}/

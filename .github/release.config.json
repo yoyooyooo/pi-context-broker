@@ -22,6 +22,5 @@
   "publishMode": "npm",
   "publishPackage": "pi-context-broker",
   "publishRegistry": "https://registry.npmjs.org",
-  "reuseFailedVersion": true,
   "releaseBranchPrefix": "release/"
 }

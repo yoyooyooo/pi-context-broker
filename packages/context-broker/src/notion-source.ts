@@ -152,7 +152,7 @@ export function sourceFailureDiagnostic(code: string, details?: SourceError["det
 
 export function sourceFailureMessage(code: string, details?: SourceError["details"]): string {
   switch (code) {
-    case "SOURCE_COMMAND_UNAVAILABLE": return "Cannot start the bundled management CLI. Reinstall the complete paired pi-context-broker package and check Node.js 22.22.3+ within 22.x or 24.20.0+.";
+    case "SOURCE_COMMAND_UNAVAILABLE": return "Cannot start the bundled management CLI. Reinstall the complete paired pi-context-broker package and check Node.js ^22.23.5, ^24.22.3, or ^26.13.1.";
     case "SOURCE_COMMAND_UNSUPPORTED": return "Notion source.command is no longer supported. Remove that override and upgrade the complete paired CLI/SDK and pi-context-broker package; keep the source database and access configuration.";
     case "SOURCE_CACHE_VERSION_UNSUPPORTED":
     case "SNAPSHOT_MISSING":

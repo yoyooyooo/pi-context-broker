@@ -16,28 +16,32 @@ concurrency:
 
 jobs:
   main:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22.23.5, 24.22.3, 26.13.1]
     runs-on: ubuntu-latest
     env:
       NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js
       CONTEXT_BROKER_GRAPH_CORE: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/core/src
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Checkout pinned CLI SDK
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: yoyooyooo/notion-skills-cli
           ref: 6172b951ee23a669cbe1e8d861b10bac8d47111d
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.3
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.22.3
+          node-version: ${{ matrix.node }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build pinned CLI SDK
@@ -55,9 +59,9 @@ jobs:
         run: node scripts/verify-artifacts.mjs --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs"
       - name: Preserve current SDK results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: installed-current-sdk-${{ github.run_id }}-${{ github.run_attempt }}
+          name: installed-current-sdk-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             /tmp/broker-artifacts-*/
             ${{ runner.temp }}/ntn-skills-current-fixture/

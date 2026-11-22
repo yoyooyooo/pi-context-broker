@@ -9,14 +9,14 @@ import { verifyPackageClosure, verifyBundledNotices, verifyBundledRuntime } from
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
-const usage = "Usage: node scripts/verify-artifacts.mjs --fixture CURRENT_FIXTURE_JSON --source-http-helper ABSOLUTE_HELPER";
+const usage = "Usage: node scripts/verify-artifacts.mjs --fixture CURRENT_FIXTURE_JSON --source-http-helper ABSOLUTE_HELPER [--archive CHECKED_TARBALL] [--report NEW_ABSOLUTE_JSON]";
 const options = new Map();
 for (let index = 0; index < args.length; index += 2) {
   const key = args[index], value = args[index + 1];
-  assert.ok(["--fixture", "--source-http-helper"].includes(key) && !options.has(key) && value && isAbsolute(value), usage);
-  options.set(key, await realpath(value));
+  assert.ok(["--fixture", "--source-http-helper", "--archive", "--report"].includes(key) && !options.has(key) && value && isAbsolute(value), usage);
+  options.set(key, key === "--report" ? resolve(value) : await realpath(value));
 }
-assert.equal(options.size, 2, usage);
+assert.ok(options.has("--fixture") && options.has("--source-http-helper"), usage);
 const fixture = JSON.parse(await readFile(options.get("--fixture"), "utf8"));
 assert.equal(fixture.version, 2);
 assert.equal(fixture.kind, "current-notion-service");
@@ -98,14 +98,17 @@ await saveReport();
 try {
   const selected = await selectedBuildInput(selectedEntry);
   report.buildInput = selected;
-  const output = join(base, "archives");
-  await mkdir(output);
-  run("bun", ["scripts/pack.mjs", "--target", "broker", "--out-dir", output], { cwd: root });
+  let archive = options.get("--archive");
+  if (!archive) {
+    const output = join(base, "archives");
+    await mkdir(output);
+    run("bun", ["scripts/pack.mjs", "--target", "broker", "--out-dir", output], { cwd: root });
+    const archives = (await readdir(output)).filter(name => name.endsWith(".tgz"));
+    assert.equal(archives.length, 1);
+    assert.equal((await readdir(output)).some(name => name.includes("tern")), false);
+    archive = join(output, archives[0]);
+  }
   assert.deepEqual(await selectedBuildInput(selectedEntry), selected, "Build input changed while packaging");
-  const archives = (await readdir(output)).filter(name => name.endsWith(".tgz"));
-  assert.equal(archives.length, 1);
-  assert.equal((await readdir(output)).some(name => name.includes("tern")), false);
-  const archive = join(output, archives[0]);
   const closure = await verifyPackageClosure({ brokerArchive: archive, base: join(base, "strict-closure") });
   const installed = closure.installed;
   const metadata = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
@@ -158,4 +161,5 @@ try {
   report.finishedAt = new Date().toISOString();
   await writeFile(join(base, "commands.json"), JSON.stringify(commands, null, 2) + "\n");
   await saveReport();
+  if (options.has("--report")) await writeFile(options.get("--report"), JSON.stringify(report, null, 2) + "\n", { flag: "wx" });
 }

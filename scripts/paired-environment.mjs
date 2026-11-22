@@ -126,8 +126,10 @@ async function toolIdentity(path) {
 
 function supportedNode() {
   const [major, minor, patch] = process.versions.node.split('.').map(Number);
-  assert.ok((major === 22 && (minor > 22 || (minor === 22 && patch >= 3))) ||
-    (major === 24 && minor >= 20) || major > 24, 'Use Node ^22.22.3 or >=24.20.0');
+  assert.ok((major === 22 && (minor > 23 || (minor === 23 && patch >= 5))) ||
+    (major === 24 && (minor > 22 || (minor === 22 && patch >= 3))) ||
+    (major === 26 && (minor > 13 || (minor === 13 && patch >= 1))),
+  'Use Node ^22.23.5, ^24.22.3, or ^26.13.1');
 }
 
 async function findPi(explicit, npm) {

@@ -31,7 +31,7 @@
     "packages/context-broker/src/index.ts": "91005ee156d29382d0eaf05e9c6af3181b347f5df43fe188f8c8224f99b40448",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
-    "packages/context-broker/src/notion-source.ts": "69f5c51758c5c8925e97b5d8bef9e3b37c40f2c094c3dca7e130c88bf299a1d3",
+    "packages/context-broker/src/notion-source.ts": "74b995c3b7d2c4dd739da729a2132aaa28d80e2c4daaaa9da4ea3a2e3e449844",
     "packages/context-broker/src/pi-host-adapter.ts": "5c99f461e4fa30f5985e37bef44ec42ec9b72edecc469383c7271d6a433a23f8",
     "packages/context-broker/scripts/host-refresh.test.ts": "92ada6c72b912ac2cff14b24345457476e1e84ede75aeeeb302154506a8608e2",
     "packages/context-broker/scripts/session-refresh.test.ts": "9d00f8ecbe392dbd3367ef51dcaffa325cb709986f1128e90d3f542894175a89",
@@ -809,6 +809,12 @@
         "host-refresh.test.ts via activeNotionSession/currentNotionFixture: production index, configured source and SDK wiring, target old-pin inspect, unchanged use/active state and Source-changed failure before target acquisition"
       ],
       "proof_limit": "Source contribution mapping, relative-path interpretation, handle syntax and SDK capability are concrete implementation obligations outside the finite model variables. TLA/config/view bytes, model bounds, case inventories, independent expected_rules, tool lock and production mutation targets are unchanged. These reviewed whole-file hashes do not prove mapping correctness, implementation refinement, live Notion or natural Pi behavior; those require separate execution evidence."
+    },
+    "runtime_security_baseline": {
+      "reviewed_from": "5f08942df93bd2b4ceea2872c10e7e243ab0259b",
+      "scope": "Only sourceFailureMessage SOURCE_COMMAND_UNAVAILABLE changes its diagnostic Node range to ^22.23.5, ^24.22.3, or ^26.13.1. Removing that exact changed line leaves notion-source.ts byte-identical to the reviewed base.",
+      "unchanged_guards": "No SDK acquisition, authorization, scope, snapshot, owner/File identity, cancellation, selection, commit, recovery or provider-delivery logic changes. TLA/config/view bytes, finite bounds, cases, expected_rules and mutation targets are unchanged.",
+      "proof_limit": "The updated whole-file hash binds the reviewed diagnostic wording. Runtime dependency safety and supported Node versions require source/consumer audit and runtime checks; this hash does not prove them or model refinement."
     }
   }
 }
