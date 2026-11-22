@@ -79,7 +79,7 @@ function preparedFixture() {
   return { tasks, session, preparedReads: new Map([[id, evidence]]), evidence, native, proof };
 }
 
-function selectedPreparedFixture({ resource = false, storage = 'entry', refresh = false, inspect = false } = {}) {
+function selectedPreparedFixture({ resource = false, storage = 'entry', refresh = false, inspect = false, canonical = false } = {}) {
   const value = preparedFixture(), { evidence, tasks, session, native } = value;
   const binding = value.proof.binding, owner = binding.record.id, scope = binding.scope;
   const main = evidence.manifest.files[0], mainBinding = evidence.manifest.file_bindings[0];
@@ -94,7 +94,8 @@ function selectedPreparedFixture({ resource = false, storage = 'entry', refresh 
   evidence.manifest.files = [main, file]; evidence.manifest.file_bindings = [mainBinding, fileBinding];
   const priorOwner = { type: 'custom', id: 'selected-owner', customType: 'context-broker-short-ref',
     data: { version: 1, ref: ownerRef, target: selected } };
-  const original = { path: resource ? resourceRef : ownerRef, ...(refresh ? { refresh: true } : {}) };
+  const original = { path: canonical ? resource ? fixed : selected.ref : resource ? resourceRef : ownerRef,
+    ...(refresh ? { refresh: true } : {}) };
   native.arguments = original; tasks[0].selectors = original; tasks[0].inputSha256 = argsHash(original);
   evidence.observation.originalInputSha256 = argsHash(original);
   session.branchEntries[0] = priorOwner;
@@ -122,6 +123,10 @@ function selectedPreparedFixture({ resource = false, storage = 'entry', refresh 
   } else if (refresh) {
     selected.snapshot_id = 's_' + 'e'.repeat(64); selected.version_id = 'f'.repeat(64);
     selected.ref = binding.ref.replace(binding.snapshot_id, selected.snapshot_id);
+    if (canonical) {
+      original.path = selected.ref; tasks[0].inputSha256 = argsHash(original);
+      evidence.observation.originalInputSha256 = argsHash(original);
+    }
     evidence.input = { ...evidence.input, refresh: true };
     value.proof.purpose = 'inspect';
     value.proof.readStatus = { purpose: 'inspect', activation_effect: 'unchanged', requires_acquisition: 'not_performed',
@@ -132,6 +137,48 @@ function selectedPreparedFixture({ resource = false, storage = 'entry', refresh 
   evidence.observation.preparedInputSha256 = tasks[1].inputSha256;
   return value;
 }
+
+function changePreparedOriginal(value, input) {
+  value.native.arguments = input; value.tasks[0].selectors = input;
+  value.tasks[0].inputSha256 = argsHash(input);
+  value.evidence.observation.originalInputSha256 = argsHash(input);
+}
+
+test('registered canonical fixed File reads retain the prior selected owner for main and resource storage', () => {
+  for (const options of [{}, { refresh: true }, { resource: true }, { resource: true, storage: 'resource', inspect: true }]) {
+    const value = selectedPreparedFixture({ ...options, canonical: true }), result = inspect(value);
+    assert.equal(result.status, 'passed', JSON.stringify({ options, diagnostics: result.diagnostics }));
+    assert.equal(result.attempts[0].preparedRead.originalRef, value.native.arguments.path);
+    assert.equal(result.attempts[0].preparedRead.snapshotId, options.refresh ? value.proof.snapshotId : value.session.branchEntries[0].data.target.snapshot_id);
+  }
+});
+
+test('canonical rewrites require the unique prior fixed registration and cannot rely on the receipt alone', () => {
+  const resource = { resource: true, storage: 'resource', canonical: true };
+  const main = { canonical: true, refresh: true };
+  for (const [options, alter] of [
+    [resource, value => { value.session.branchEntries.shift(); }],
+    [resource, value => { value.session.branchEntries.splice(1, 1); }],
+    [resource, value => { const row = structuredClone(value.session.branchEntries[1]); row.data.ref = 'sr:R' + 'z'.repeat(22); value.session.branchEntries.splice(1, 0, row); }],
+    [resource, value => { value.session.branchEntries[1].data.ref = 'unregistered-ref-kind'; }],
+    [resource, value => { const row = value.session.branchEntries.splice(1, 1)[0]; value.session.branchEntries.push(row); }],
+    [resource, value => { value.session.branchEntries[1].data.target.owner = 'sr:S' + 'z'.repeat(22); }],
+    [resource, value => { value.proof.file_id = 'file-' + 'e'.repeat(64); }],
+    [resource, value => { value.proof.version_id = 'e'.repeat(64); }],
+    [resource, value => { changePreparedOriginal(value, { ...value.native.arguments, refresh: true }); }],
+    [resource, value => { const path = value.native.arguments.path.split('?')[0]; value.session.branchEntries[1].data.target.ref = path; changePreparedOriginal(value, { path }); }],
+    [resource, value => { const path = value.native.arguments.path + '&extra=unreviewed'; value.session.branchEntries[1].data.target.ref = path; value.proof.ref = path; changePreparedOriginal(value, { path }); }],
+    [resource, value => { const path = value.native.arguments.path + '&snapshot=' + value.proof.snapshot_id; value.session.branchEntries[1].data.target.ref = path; value.proof.ref = path; changePreparedOriginal(value, { path }); }],
+    [main, value => { value.session.branchEntries[0].data.target.identity.scope = 'f'.repeat(64); }],
+    [main, value => { delete value.evidence.input.refresh; }],
+    [main, value => { delete value.proof.purpose; }],
+    [resource, value => { value.preparedReads.clear(); }],
+  ]) {
+    const value = selectedPreparedFixture(options); alter(value);
+    assert.equal(inspect(value).status, 'failed');
+    assert.ok(codes(value).includes('TOOL_RESULT_INPUT_MISMATCH'));
+  }
+});
 
 test('selected refresh inspection keeps its original flag while binding the newly observed complete entry', () => {
   const value = selectedPreparedFixture({ refresh: true }), result = inspect(value);
