@@ -27,6 +27,15 @@ inputs may share this expectation. Each actual episode independently verifies
 its public input bytes, loaded resources and first serialized request before
 transport. An expectation mismatch stops before submitting the business task.
 
+Cases with multiple turns, fixture events or frozen clarification responses also
+require a completed build containing the current common turn runtime. Configuration
+checks this before preparing any remote fixture; capture and execution check it
+again before reading model credentials or dispatching. If it reports
+`BENCHMARK_TURN_RUNTIME_BUILD_MISMATCH`, create a fresh build from the intended
+source and use a new setup identity. Keep the failed setup and old build as
+evidence. Editing a frozen manifest or reusing an older startup capture cannot
+make the runtime compatible.
+
 The example limit of two is a slice of the frozen batch, not an extra batch.
 Run the same plan again to continue its remaining slots. Completed slots are
 never silently repeated. Model retries are disabled in the initial policy.
