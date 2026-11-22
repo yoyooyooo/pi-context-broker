@@ -23,6 +23,7 @@ const paired=new Set(['input_ratio','time_ratio','version_transition']);
 const global=new Set(['model_environment_interaction','code_mode_interaction','cost_frontier']);
 export const METRIC_ENTRIES=Object.freeze(Object.fromEntries(Object.entries(names).map(([id,entry])=>[entry,{
   id,entry,version:METRIC_VERSION,scope:global.has(id)?'experiment':paired.has(id)?'comparison':'condition',
+  ...(id==='verified_quality'?{unit:'percent',value_path:'condition.metrics.verified_quality.score_percent'}:{}),
 }])));
 export function evaluateMetric(entry,{analysis,condition_id,candidate,reference}) {
   const definition=METRIC_ENTRIES[entry];
@@ -36,5 +37,11 @@ export function evaluateMetric(entry,{analysis,condition_id,candidate,reference}
   }
   const condition=analysis.conditions.find(c=>c.condition_id===condition_id);
   if(!condition)throw new Error('No such analyzed condition');
-  return condition.metrics[definition.id];
+  const value=condition.metrics[definition.id];
+  if(definition.id==='verified_quality') {
+    if(!value.score_percent)throw new Error('The declared percentage entry requires analysis 1.1.0; replay historical analyses with their retained implementation');
+    return {...value.score_percent,quality_ratio:{unit:'ratio',status:value.status,estimate:value.estimate,interval:value.interval},
+      analysis_version:analysis.analysis_version};
+  }
+  return value;
 }

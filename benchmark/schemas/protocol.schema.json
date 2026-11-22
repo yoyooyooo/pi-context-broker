@@ -631,6 +631,34 @@
                     "evidence_sha256"
                   ],
                   "additionalProperties": false
+                },
+                "currency_cost": {
+                  "type": "object",
+                  "properties": {
+                    "upper": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    "verified": {
+                      "const": true
+                    },
+                    "evidence_sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  },
+                  "required": [
+                    "upper",
+                    "currency",
+                    "verified",
+                    "evidence_sha256"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [],
