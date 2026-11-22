@@ -25,6 +25,7 @@ import { compileSkillPreparation, projectSkillDirectory } from "./skill-context-
 import { projectCatalogDescriptions, type CatalogDescription } from "./skill-catalog-projection";
 import { reduceSessionShortRefs, resolveSessionShortRef } from "./session-short-ref";
 import { compileResourceRead } from "./resource-read-projection";
+import { notionReadDisplay, withReadDisplay, type ReadDisplaySnapshot } from "./read-display";
 import { normalizeResourceReadBudget, RESOURCE_READ_MAX_CONTEXT_BYTES, type ResourceReadBudget, type FixedResourceRead, type ResourceReadBatch, type ResourceReadFileIdentity } from "./resource-read-types";
 import { createConsumerObservations, type ObservationTicket } from "./consumer-observation";
 import { notionCatalogAction, notionCatalogRetryGapMs, notionListFreshness } from "./catalog-menu";
@@ -158,10 +159,11 @@ type ReadAdmission = {
   version: 1; phase: "hook" | "execute"; stage: ReadAdmissionStage; code: string;
   generation_started: number; generation_current: number; signal_aborted: boolean;
 };
-type PreparedReadResult = ToolCallResult & { assertCurrent?: () => void; effects?: ConsumptionEffects; admission?: ReadAdmission };
+type PreparedReadResult = ToolCallResult & { assertCurrent?: () => void; effects?: ConsumptionEffects; admission?: ReadAdmission; display?: ReadDisplaySnapshot };
 type ResolvedHostReference = { reference: ExactNativeReference; canonicalRef: string; short?: HostShortRefResolution; record?: SkillRecord };
 type PendingResourceRead = {
   generation: number;
+  display?: ReadDisplaySnapshot;
   purpose?: "inspect";
   effects?: ConsumptionEffects;
   assertCurrent?: () => void;
@@ -377,7 +379,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const publishing = new Map<string, Promise<void>>();
   const registeredCommands = new Set<string>();
   const nativeInputs = new Map<string, SkillRecord>();
-  const pendingNativeReads = new Map<string, { record: SkillRecord; generation: number; signal: AbortSignal; effects?: ConsumptionEffects; purpose?: "inspect" }>();
+  const pendingNativeReads = new Map<string, { record: SkillRecord; generation: number; signal: AbortSignal; effects?: ConsumptionEffects; purpose?: "inspect"; display?: ReadDisplaySnapshot }>();
   const pendingResourceReads = new Map<string, PendingResourceRead>();
   const printTurns = new Set<() => void>();
   const gate = createPreparationGate();
@@ -2010,7 +2012,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
 
   async function prepareFixedResourceRead(event: ToolCallEvent, ctx: ExtensionContext, signal: AbortSignal, record: SkillRecord,
-    reference: ExactNativeReference, short?: HostShortRefResolution): Promise<PreparedReadResult | undefined> {
+    reference: ExactNativeReference, short?: HostShortRefResolution, requestedRef = event.input.path as string): Promise<PreparedReadResult | undefined> {
     if (adapter.paths.host !== "pi" || !options.readFixedResource || record.source !== "notion"
       || !reference.snapshot || !reference.path || short && short.kind !== "resource") return undefined;
     // Keep canonical main hints on the normal route so main reads do not first
@@ -2058,9 +2060,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (!isAbsolute(file.output)) throw hostError("SOURCE_OUTPUT_CONFLICT");
     if (initial.inspection && (file.bytes !== initial.inspection.file.bytes || file.sha256 !== initial.inspection.file.sha256
       || !isDeepStrictEqual(parseNativeReference(file.ref), parseNativeReference(initial.inspection.file.ref)))) throw hostError("SOURCE_IDENTITY_MISMATCH");
-    if (event.toolCallId) pendingResourceReads.set(event.toolCallId, { generation, selection: resource.selection, file, assertCurrent: current,
+    const display = notionReadDisplay({ ...record, name: resource.ownerBinding.record.name },
+      { kind: "file", files: [{ ref: requestedRef, path: file.path }] }, hostRecords.values());
+    if (event.toolCallId) pendingResourceReads.set(event.toolCallId, { generation, display, selection: resource.selection, file, assertCurrent: current,
       ...(initial.inspection ? { purpose: "inspect" as const } : {}), effects: consumptionEffects(effects) });
-    return { input: { ...event.input, path: file.output }, assertCurrent: current, effects: consumptionEffects(effects) };
+    return { input: { ...event.input, path: file.output }, assertCurrent: current, effects: consumptionEffects(effects), display };
   }
 
   function blockedRead(error: unknown, phase: ReadAdmission["phase"], stage: ReadAdmissionStage,
@@ -2168,7 +2172,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (exactReference && (readPhase === "execute" || exactReference.snapshot && exactReference.path
         && exactReference.path !== selected.entrypoint && resourceSelection(selected, exactReference, ctx).inspection)) {
         stage = "resource";
-        const fixed = await prepareFixedResourceRead(canonicalRef ? { ...event, input: { ...event.input, path: canonicalRef } } : event, ctx, signal, selected, exactReference, short);
+        const fixed = await prepareFixedResourceRead(canonicalRef ? { ...event, input: { ...event.input, path: canonicalRef } } : event, ctx, signal, selected, exactReference, short, requested);
         if (fixed) return fixed;
       }
       stage = "preparation";
@@ -2218,10 +2222,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       // old record as a current candidate or alter its task role.
       if (confirmedFixedRead) graphSelectionCommits.delete(snapshot);
       else graphSelectionCommits.get(snapshot)?.();
+      const display = piConsumption ? notionReadDisplay(snapshot, reference && reference !== (snapshot.entrypoint ?? "SKILL.md")
+        ? { kind: "file", files: [{ ref: requested, path: reference }] } : { kind: "skill", ref: requested }, hostRecords.values()) : undefined;
       if (event.toolCallId && snapshot.entryManifest && reference && reference !== snapshot.entrypoint) {
         const file = snapshot.entryManifest.files.find(file => file.path === reference);
         if (!file) throw hostError("FILE_NOT_FOUND");
-        pendingResourceReads.set(event.toolCallId, { generation,
+        pendingResourceReads.set(event.toolCallId, { generation, display,
           selection: { owner: snapshot.id, scope: snapshot.sourceScope, snapshot_id: snapshot.snapshotId, version_id: snapshot.versionId },
           file: { ...file, file_id: snapshot.fileBindings?.find(binding => binding.path === file.path)?.file_id },
           materialization: publicEntryMaterialization(snapshot), effects: observedEffects.length ? combineConsumptionEffects(observedEffects) : consumptionEffects(undefined) });
@@ -2231,11 +2237,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         // native reader may use a canonical parent (/private/tmp on macOS),
         // while the same immutable entry retains its original /tmp spelling.
         // The result hook still requires exact complete source bytes.
-        pendingNativeReads.set(event.toolCallId, { record: snapshot, generation, signal, effects: observedEffects.length ? combineConsumptionEffects(observedEffects) : consumptionEffects(undefined),
+        pendingNativeReads.set(event.toolCallId, { record: snapshot, generation, signal, display, effects: observedEffects.length ? combineConsumptionEffects(observedEffects) : consumptionEffects(undefined),
           ...(refresh || confirmedFixedRead ? { purpose: "inspect" as const } : {}) });
       }
       const updated = { ...event.input, path: path + suffix };
-      return { input: updated, effects: observedEffects.length ? combineConsumptionEffects(observedEffects) : consumptionEffects(undefined) };
+      return { input: updated, effects: observedEffects.length ? combineConsumptionEffects(observedEffects) : consumptionEffects(undefined), display };
     } catch (error) {
       const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
       return blocked(error, effects);
@@ -2323,8 +2329,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const result = compileResourceRead({ toolCallId, batch, modelRefs, maxContextBytes: RESOURCE_READ_MAX_CONTEXT_BYTES, effects: batch.effects,
       ...(selections.every(value => value.inspection) ? { purpose: "inspect" as const } : {}) });
     current();
-    return { ...result, details: { ...(result.details && typeof result.details === "object" ? result.details : {}), effects: batch.effects,
-      contextBrokerResourceSource: { source_id: record.sourceId, result: batch.machine } } };
+    return withReadDisplay({ ...result, details: { ...(result.details && typeof result.details === "object" ? result.details : {}), effects: batch.effects,
+      contextBrokerResourceSource: { source_id: record.sourceId, result: batch.machine } } },
+      notionReadDisplay({ ...record, name: batch.ownerBinding.record.name }, { kind: "file",
+        files: batch.files.map((file, index) => ({ ref: requested[index]!, path: file.path })) }, hostRecords.values()));
   }
   const readRunsInTool = sourceToolsEnabled ? adapter.registerReadExecutor?.(async (input, ctx, signal, read, toolCallId) => {
     const executionSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
@@ -2348,13 +2356,16 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const result = await read(prepared?.input ?? input, executionSignal);
       checkPreparationSignal(executionSignal);
       prepared?.assertCurrent?.();
-      return result;
+      return withReadDisplay(result, prepared?.display);
     } catch (error) {
       pendingResourceReads.delete(toolCallId);
       pendingNativeReads.delete(toolCallId);
       if (prepared?.effects) throw consumptionFailure(error, JSON.stringify({ error: failure(error), effects: prepared.effects }), prepared.effects);
       throw error;
     }
+  }, toolCallId => {
+    const pending = pendingNativeReads.get(toolCallId) ?? pendingResourceReads.get(toolCallId);
+    return pending?.generation === generation && !("signal" in pending && pending.signal.aborted) ? pending.display : undefined;
   }) : undefined;
   host.on("tool_call", async (event, ctx): Promise<ToolCallResult | undefined> => {
     if (event.toolName === "read" && readRunsInTool?.()) return undefined;

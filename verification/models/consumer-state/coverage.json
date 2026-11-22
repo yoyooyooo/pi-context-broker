@@ -11,7 +11,7 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "5e7369970b78e3c9487f09542e313e7b0396c46d8ba685059e453f90f1d218b1",
     "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "93320851194148b3dc369940a51b2a32673812b500bcf5af27cc03bc047fe26e",
+    "packages/context-broker/src/host-skills.ts": "24bab24a5f83274dfca522d562d780b9acb77f515b6755eb804389d584b3873a",
     "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
@@ -19,7 +19,7 @@
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
     "packages/context-broker/scripts/host-prepare.test.ts": "15e3a446dd94371bd47ac5ab34fc14d4d1f5b81d167b4d08645cf7fc68ce0631",
     "packages/context-broker/scripts/session-active.test.ts": "8c028ee53bf86b253dee9a63ce6e15a8e27c811de25e4cc9936f37ab134e0e90",
-    "packages/context-broker/scripts/native-read-session.test.ts": "ef967d31fe6ea68167c548a75c8df69791a4001da874e0b2e034a415207a597b",
+    "packages/context-broker/scripts/native-read-session.test.ts": "3a08fd67cd077f4f1df1e5accca529bdbb6d59fd272352a93e78d86dc8c8afb9",
     "packages/context-broker/scripts/skill-context-session.test.ts": "71b2d3ba5d5937e164a6fa08c8ebfd0fc183019d00a8495a220a7cdee4d9c897",
     "packages/context-broker/scripts/consumer-state.test.ts": "97b19d0f3ac167bfb30cd9dd4aa6959924784dcb13c4644221334bba390c5799",
     "scripts/check-consumer-state-mutations.mjs": "5f1fa0c0a174d747488c282fe5fd8d0ea03bb6e20e30a18c703bb41feaa88994",
@@ -32,19 +32,19 @@
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
     "packages/context-broker/src/notion-source.ts": "22aad41bed6b78d9c37954d9304da7089898914539920cbcdbfb7b92dfd10ba5",
-    "packages/context-broker/src/pi-host-adapter.ts": "d76e42642f3edfce33cf922363324fbe5d03ae805c77c71d0044078471ac870a",
+    "packages/context-broker/src/pi-host-adapter.ts": "67e99b7094a29a0da8e240dc0b7023997db439c3470c25c86732823d9e81dcce",
     "packages/context-broker/scripts/host-refresh.test.ts": "e057ab9627a606f67d00b890c12691bc75dfe82d6ed366b3fde975b5f314a9c8",
     "packages/context-broker/scripts/session-refresh.test.ts": "9d00f8ecbe392dbd3367ef51dcaffa325cb709986f1128e90d3f542894175a89",
     "packages/context-broker/scripts/session-recovery.test.ts": "b247e1a41ad21b2a0b124ec22cc8da4487adcf3eb0d9ad883bff5bbbc70ece88",
-    "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "858cf3fcf02255e49641af3cc4794445eaa85aca5a27c2e6fbee8dac38bd4dd1",
+    "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "02c770dde0a9af085c5608ad935420d4edeab2e945e8ab20c9d3d231132a326f",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "e739a9e24612e40517934ac425fa33240db75303eea63b1a399e405f9d330cf0",
     "packages/context-broker/scripts/notion-source-sdk.test.ts": "be8c85a033320f919c4e81b9950663ebff113e28910425856d6e6ab9211cd181",
-    "packages/context-broker/scripts/pi-read-adapter.test.ts": "3419f995caa81b2f40cedd58579fed6d8aab5b0da151bb229825d62e40041ae2",
+    "packages/context-broker/scripts/pi-read-adapter.test.ts": "6b43c28d7de9c21bb31b5e22c7a83bbe07d69545df365e4715a6dc7cea59387b",
     "packages/context-broker/scripts/fixtures/active-notion-session.ts": "a14eb538b7abbb4d3cc112be8fbab48918f83303684f30a8d80b3cd979a841c7",
     "packages/context-broker/scripts/notion-entry.test.ts": "dfaac5e5d7d0ea7996dba91427cd16568d2933c94f5d4cd03ff3a1ad9a0c3c6f",
     "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
     "packages/context-broker/scripts/read-intent-status.test.ts": "a7f9efed5d60515cfa667c1baf40d6e4dc289bd0a57731189c48d31c1a941393",
-    "packages/context-broker/scripts/resource-read-host.test.ts": "0f32949d65e924beb5762c461ef9c4f53348f64dd4cfd7114cb90181881b3e25",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "c7448e39a6727559b4613589e0324ab256ba84d14e2ddb1c73494314eb671faa",
     "packages/context-broker/scripts/fixed-resource-source.test.ts": "5679a5b9ed73f0ec5c10722d1b37ec139cfbaab5a0f7b1d124e5b28d69f2b645",
     "packages/context-broker/src/resource-read-types.ts": "83bbf31109482048a472e58d580d6a09dcc605435db71528e33343570cbbeebd"
   },
@@ -790,6 +790,12 @@
       "scope": "The only production changes are the notion_list description in host-skills.ts and the named-availability routing string in index.ts. Removing those exact changed lines leaves both files byte-identical to the reviewed base. Removing the single added 39-line host-refresh regression restores that test file exactly.",
       "unchanged_guards": "Metadata acquisition, original validation time, scoped eligibility, request ordering, cancellation, session generation, complete graph commit, selected/active pins, fixed references, recovery and provider delivery guards are unchanged. The new controlled-clock regression checks the same disabled identity becoming enabled outside the default View before TTL, metadata-only refresh and unchanged root/Requires selection.",
       "proof_limit": "Named-query intent, metadata-only answers and real model compliance are outside the finite state variables and require natural-session evidence. TLA/config/view bytes, finite bounds, cases, independent expected_rules, tool locks and every production mutation target remain unchanged. Whole-file hashes bind these reviewed bytes; they do not prove instruction compliance or refinement."
+    },
+    "native_read_presentation": {
+      "reviewed_from": "7ada5b5765ab1722fadc59a1b1c2132c51dbda6a",
+      "scope": "Names and resolved relative file paths are copied from already validated read metadata into a separate per-result presentation snapshot. Native execution, content, identity and consumption receipts remain intact. Renderer lookup reads only existing pending maps and historical results; it adds no source resolution or I/O.",
+      "guards": "Reviewed source availability, owner/scope/snapshot/File/hash, graph commit, original observation order/time, cancellation/generation, provider acceptance and projection/recovery guards are unchanged. Display-only metadata cannot establish loaded state, selection or source bindings. Branch rewind still rejects a late resource receipt while retaining presentation of the completed read.",
+      "proof_limit": "UI titles, keyboard hints and persistence formatting are implementation regressions outside finite variables. Models, configs, views, bounds, cases, expected_rules, tool lock and guard mutation targets are unchanged. These hashes bind reviewed bytes and do not prove UI behavior or implementation refinement."
     }
   }
 }
