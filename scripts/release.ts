@@ -40,7 +40,7 @@ function main(): void {
   try {
     const options = parseArgs(process.argv.slice(2));
     const config = readConfig();
-    ensureGitBase(config, options);
+    ensureGitBase(config);
     run("git", ["fetch", config.remote, config.defaultBranch, "--tags"], { quiet: true });
     if (run("git", ["rev-parse", "HEAD"], { quiet: true }) !==
         run("git", ["rev-parse", `${config.remote}/${config.defaultBranch}`], { quiet: true })) {
@@ -164,7 +164,7 @@ Default model:
   Repair an already published version through Publish on its original tag; never delete or move it.`;
 }
 
-function ensureGitBase(config: Config, options: Options): void {
+function ensureGitBase(config: Config): void {
   run("git", ["rev-parse", "--is-inside-work-tree"], { quiet: true });
   const status = run("git", ["status", "--porcelain"], { quiet: true });
   if (status.length > 0) fail("Working tree is not clean. Commit or stash changes before release.");
@@ -173,10 +173,8 @@ function ensureGitBase(config: Config, options: Options): void {
   if (branch !== config.defaultBranch) {
     fail(`Release must run on ${config.defaultBranch}. Current branch: ${branch}.`);
   }
-  if (!options.noPush) {
-    const remote = execCommand("git", ["remote", "get-url", config.remote], false);
-    if (remote.exitCode !== 0) fail(`Missing git remote: ${config.remote}. Add it or run with --no-push.`);
-  }
+  const remote = execCommand("git", ["remote", "get-url", config.remote], false);
+  if (remote.exitCode !== 0) fail(`Missing git remote: ${config.remote}. Every mode requires current ${config.remote}/${config.defaultBranch}.`);
 }
 
 function readVersionFiles(paths: string[]): PackageFile[] {
