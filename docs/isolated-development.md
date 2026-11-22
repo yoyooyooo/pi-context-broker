@@ -21,8 +21,8 @@ shared toolchain through its normal maintenance workflow; task environments do
 not install a separate Pi version. Run the entry from a checkout containing the
 script; its destination must be a new absolute directory owned by this task.
 Each build and run uses the launcher's current Node `process.execPath` to invoke
-target JavaScript and records its actual tool identities. Runs also record the
-actual Pi version and resolved entry. This avoids silently selecting an older
+target JavaScript and records its actual tool identities. Runs observe Node,
+Pi and Bun before and after the command, using the run's environment. This avoids silently selecting an older
 runtime through a shell shim. Node, Pi and Bun remain shared maintained
 prerequisites; upgrading them does not require recreating task clones or a
 per-task runtime manager. Results record the runtime used for that invocation.
@@ -76,6 +76,14 @@ edits remain available in the task's source trees.
 ```sh
 node scripts/paired-environment.mjs build --root /absolute/owned/feature-env
 ```
+
+If dependency installation requires the machine's configured network proxy,
+name those existing variables explicitly, for example `--pass-env HTTPS_PROXY`.
+If that proxy requires an existing CA bundle, also pass
+`--pass-env NODE_EXTRA_CA_CERTS`; its value must be an absolute certificate path.
+This does not permit `NODE_OPTIONS` or disabling TLS verification.
+Builds use the same environment allowlist as runs and record only the passed
+variable names. They do not inherit credentials or proxy settings implicitly.
 
 Each build gets a new ID. It copies the current tracked files and nonignored
 untracked files from both task clones into private source snapshots, using the
@@ -135,8 +143,10 @@ node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
 ```
 
 `--target cli` runs the selected generation's CLI. `--target pi` runs the resolved
-machine Pi with that generation's Broker and run-owned settings. Pi uses the
-explicit Broker extension and `-ns`; the run does not load native Pi Skills.
+machine Pi using the declared mode and run-owned settings. The default mode is
+`broker`, which loads the selected generation's Broker and disables automatic
+native Skill discovery. Both the direct target and the private `pi` wrapper use
+the same recorded launch definition.
 `--target command` executes an explicit command in the same run environment:
 
 ```sh
@@ -166,8 +176,10 @@ node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
 Arguments after `--` belong to the target. The CLI path and any command wrapper
 added to `PATH` apply only to this process tree. They do not replace a global
 `ntn-skills` executable, rewrite shell startup files or change another session.
-Direct Pi runs reject session-directory, session-file and resume overrides; the
-launcher owns session selection. CLI arguments pass through unchanged, including
+Both Pi entries reject resource and session overrides after `--`, including
+`-e`, `--skill`, session-directory, session-file and resume flags. Declare common
+extensions and native Skill inputs through the launcher instead. The launcher
+owns session selection. CLI arguments pass through unchanged, including
 those supplied to the process-local `ntn-skills` wrapper. Select the remote object
 in the actual CLI command with its documented flags or positional arguments.
 The launcher's remote declaration does not add or validate CLI arguments.
@@ -194,7 +206,7 @@ its evidence available. Every invocation allocates its own run ID and paths:
 | CLI operation state | Private `NTN_SKILLS_HOME` |
 | CLI cache and builtin data | Private `NTN_SKILLS_CACHE_HOME` and `NTN_SKILLS_DATA_HOME` |
 | Request scheduler | Private `NTN_SKILLS_SCHEDULER_ROOT` |
-| Node and Pi executables | Shared maintained toolchain; actual versions and entries recorded per run |
+| Node, Pi and Bun executables | Shared maintained toolchain; actual versions and entries recorded per run |
 | Pi configuration and sessions | Private agent directory and session paths |
 | Broker configuration | Run-specific `CONTEXT_BROKER_CONFIG` |
 | Local Skills | A run-owned copy of the explicitly selected directory |
@@ -211,6 +223,79 @@ address other paths explicitly. Keep commands within task-owned paths, and use
 an explicit shell template such as `mktemp -d "${TMPDIR%/}/work.XXXXXX"` when
 creating temporary directories. Do not infer ownership from a filename or from
 another process having exited.
+
+### Declare the Pi consumption mode
+
+| Input | Broker mode, the default | Native mode |
+| --- | --- | --- |
+| Mode | `--pi-mode broker` | `--pi-mode native` |
+| Skill input | Optional `--skills ABSOLUTE_DIRECTORY` for Broker discovery | Required `--native-skills ABSOLUTE_DIRECTORY`, copied and loaded with Pi's `--skill` |
+| Broker extension | Selected build's entry | Not loaded |
+| Native Skill commands | Disabled | Enabled |
+| Common observers | Repeatable `--pi-extension ABSOLUTE_ENTRY` | Same option |
+
+For example, start a native fixture using Pi's own command and reader:
+
+```sh
+node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
+  --build BUILD_ID --target pi --pi-mode native \
+  --native-skills /absolute/owned/fixture-skills \
+  --pi-extension /absolute/owned/observer.mjs -- \
+  --provider PROVIDER --model MODEL -p '/skill:fixture-name Perform the task.'
+```
+
+Provide the model configuration and credential variable names separately when
+the selected provider needs them. The fixture example does not supply a model.
+Native mode rejects `--skills`; Broker mode rejects `--native-skills`.
+The common extension option accepts an absolute file or directory, keeps its
+declared path for relative imports, and records its bounded file identity.
+Do not modify a shared observer during a run. Native mode rejects the selected
+Broker package as a common extension. Arbitrary extension code can still import
+other code, so the benchmark must verify actual loaded resources with its own
+observer before submitting a task.
+
+Both modes use `-ns` to disable discovered/configured Skills; explicit native
+roots still load. Both disable automatic extension, context, MCP and prompt
+template discovery, and reject project trust overrides. The private settings
+contain no packages. `pi-launch.json` and `run.json.pi_launch` record the same
+mode, entry, fixed argv, settings, extension identities and copied native root.
+Arguments for provider, model, tools, print/RPC and the user task remain Pi
+arguments after the launcher's `--`.
+
+Inside `--target command`, invoking `pi` uses that same profile. One multi-turn
+episode can keep its state in one command run while a harness owns Pi pipes.
+The launcher does not implement a benchmark handshake, a task oracle or a
+comparison scheduler.
+
+### Interpret runtime and command results separately
+
+`run.json.runtime` is the initial endpoint observation. After the target ends,
+`result.json.runtime_check` contains `before`, `after`, `changes`, `unknown`,
+and one of these statuses:
+
+| Status | Meaning |
+| --- | --- |
+| `unchanged` | Every declared identity was observed at both endpoints and matched |
+| `drifted` | At least one observed entry, version or file identity changed; additional unknown observations remain listed |
+| `unknown` | No known difference, but at least one required observation was unavailable |
+
+The scope covers selected Node/Bun entry files and versions, Pi's selected
+entry/version, package manifest, optional `cli-runtime.js`, and the run-owned
+Pi/CLI wrappers. Version probes use the target's cwd/environment and have a
+five-second limit. Probe output is not retained. Usage states describe what the
+launcher requested or made available; a version probe does not prove a tool was
+used by the task. An arbitrary command's child processes require their own
+observers. These endpoint checks do not inventory every installed dependency or
+prove that no file changed and changed back between observations.
+
+`command_status`, `exit_code`, `signal`, `spawned`, and `timed_out` retain the
+target process result. `frozen_artifacts` separately describes the selected
+CLI/Broker build. The overall run `status` passes only when the command succeeds,
+the frozen artifacts match, and `runtime_check.status` is `unchanged`. A command
+can therefore exit zero while the overall run fails because its runtime drifted
+or could not be checked. Original stdout/stderr and both observations stay
+available; do not rewrite the business result to explain a measurement failure.
+Benchmark owns comparisons across runs, re-pairing and invalid-result policies.
 
 ## Choose remote and model inputs
 
@@ -294,7 +379,7 @@ does not replace product tests, the natural scenario corpus or daily delivery.
 Run the environment unit tests first:
 
 ```sh
-node --test scripts/paired-environment.test.mjs
+node --test scripts/paired-environment.test.mjs scripts/paired-runtime-identity.test.mjs
 ```
 
 To include the real CLI argument contract, set `NTN_SKILLS_BUILD_ENTRY` to the
@@ -313,12 +398,16 @@ node scripts/paired-environment.smoke.mjs \
   --other-root /absolute/owned/environment-b --other-build BUILD_B
 ```
 
-The smoke check starts the actual private CLI and paired Broker in machine Pi.
-It uses a controlled provider and two copies of a same-named Skill, each with
-a unique marker. Captured provider context must contain its own marker and
-exclude the other environment's marker. The check also inspects the selected
-extensions, separate runtime state and unchanged build artifacts. It makes no
-Notion request and does not call a real model.
+The smoke check runs two private CLIs and eight actual Pi processes: two
+environments, Broker/native modes, and direct/private-wrapper entries. Each
+condition runs both environments concurrently. Captured provider context must
+contain the complete selected Skill body and exclude the other environment and
+unselected discovery canaries. It observes real commands, tools, argv, settings,
+private state, unchanged runtime endpoints and frozen artifacts. Native mode
+must use the native Skill command and built-in reader with no Broker registered.
+The canaries are task-owned stand-ins for inherited configuration and actual
+ancestor discovery; the check does not edit global Skills or replace HOME.
+It makes no Notion request and does not call a real model.
 
 Each invocation preserves its fixtures and summary under the first environment's
 `proofs/UNIQUE_ID/`. Logs and run receipts remain in each environment's `runs/`.

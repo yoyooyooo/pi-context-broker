@@ -24,6 +24,9 @@ C01–C11/T01–T23、单一 owner 与实际入口由 CLI `verification/skill-do
 环境创建、构建与进程隔离由 integration 负责；它不判定自然业务场景或替代其他领域
 测试。原有 candidate/daily 的正常环境要求、formal 守卫与严格 next 交付条件保持不变。
 独立运行成功只计入实际观测的范围。远端库选择与本地隔离不能充当 API 权限沙箱。
+公共入口的 Broker/原生 Pi 声明、direct/private wrapper 一致性和单 run 运行时前后
+检查归 integration。Benchmark AH-1220 负责候选实际装载握手、同 episode 编排、
+跨 pair/batch 的条件一致性与 invalid 判定；公共 smoke 不算真实模型比较成绩。
 
 ## 当前执行边界
 

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { test } from 'node:test';
 import {
-  checkEnvironment, createEnvironment, inventory, parseArgs, runEnvironment, runtimeEnvironment,
+  checkEnvironment, createEnvironment, inventory, parseArgs, runEnvironment, runtimeEnvironment, validatePiArguments,
 } from './paired-environment.mjs';
 
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
@@ -80,6 +80,7 @@ test('paired environments isolate writable state and detect artifact changes', a
       NODE_OPTIONS: '--require=/shared/inject.js', BASH_ENV: '/shared/profile',
       GIT_CONFIG_GLOBAL: '/shared/gitconfig', SSH_AUTH_SOCK: '/shared/ssh.sock',
       npm_config_userconfig: '/shared/npmrc', TMPDIR: '/shared/tmp',
+      HTTPS_PROXY: 'http://proxy.example.invalid:3128', NODE_EXTRA_CA_CERTS: '/shared/trusted-ca.pem',
     });
     const runA = join(retained, 'run-a'), runB = join(retained, 'run-b');
     const envA = runtimeEnvironment(runA, join(retained, 'build-a'), inherited);
@@ -102,6 +103,11 @@ test('paired environments isolate writable state and detect artifact changes', a
     const explicit = runtimeEnvironment(runA, join(retained, 'build-a'), inherited, ['OPENAI_API_KEY']);
     assert.equal(explicit.OPENAI_API_KEY, inherited.OPENAI_API_KEY);
     assert.equal(explicit.NOTION_API_TOKEN, undefined);
+    const network = runtimeEnvironment(runA, retained, inherited, ['HTTPS_PROXY', 'NODE_EXTRA_CA_CERTS']);
+    assert.equal(network.HTTPS_PROXY, inherited.HTTPS_PROXY);
+    assert.equal(network.NODE_EXTRA_CA_CERTS, inherited.NODE_EXTRA_CA_CERTS);
+    assert.equal(envA.HTTPS_PROXY, undefined);
+    assert.equal(envA.NODE_EXTRA_CA_CERTS, undefined);
     for (const name of ['HOME', 'PATH', 'NODE_OPTIONS', 'BASH_ENV', 'NTN_SKILLS_DEV_ROOT',
       'PI_CODING_AGENT_DIR', 'GIT_CONFIG_GLOBAL', 'SSH_AUTH_SOCK']) {
       assert.throws(() => runtimeEnvironment(runA, retained, inherited, [name]), /Cannot override/);
@@ -117,6 +123,7 @@ test('paired environments isolate writable state and detect artifact changes', a
     assert.throws(() => parseArgs(['build', '--root', retained, '--latest', 'true']), /Unknown/);
     assert.throws(() => parseArgs(['check', '--root', 'relative']), /absolute/);
     assert.throws(() => parseArgs(['build', '--root', retained, '--', 'unexpected']), /Only run/);
+    assert.deepEqual(parseArgs(['build', '--root', retained, '--pass-env', 'HTTPS_PROXY'])['pass-env'], ['HTTPS_PROXY']);
   });
 
   await t.test('inventory detects executable/content changes and rejects external links', async () => {
@@ -145,7 +152,8 @@ test('paired environments isolate writable state and detect artifact changes', a
   await mkdir(piPackage);
   await writeJson(join(piPackage, 'package.json'), { name: '@earendil-works/pi-coding-agent', version: '0.0.0-fixture', type: 'module' });
   const piEntry = join(piPackage, 'cli.js');
-  await writeFile(piEntry, 'console.log(JSON.stringify({fixture:"pi-launcher",args:process.argv.slice(2)}));\n');
+  await writeFile(piEntry, 'if(process.argv.includes("--version"))console.log("0.0.0-fixture");' +
+    'else console.log(JSON.stringify({fixture:"pi-launcher",args:process.argv.slice(2)}));\n');
   const roots = [join(retained, 'pair-a'), join(retained, 'pair-b')];
   const created = await Promise.all(roots.map(root => createEnvironment(parseArgs([
     'create', '--root', root, '--cli-repository', upstreamCli, '--broker-repository', upstreamBroker,
@@ -322,6 +330,7 @@ process.exit(0);`;
     assert.equal((await readJson(join(receipt.root, 'run.json'))).remote.entry, entry);
     for (const [name, args] of [
       ['consume', ['list', '--database', entry, '--json']],
+      ['read', ['read', 'selected-skill', '--database', entry, '--json']],
       ['manage', ['ctl', 'library', 'init', '--entry', entry]],
     ]) {
       for (const target of ['cli', 'command']) {
@@ -350,6 +359,7 @@ process.exit(0);`;
     for (const [name, args, help] of [
       ['help', ['--help'], /ntn-skills/],
       ['consume', ['list', '--database', entry, '--help'], /--database/],
+      ['read', ['read', 'selected-skill', '--database', entry, '--help'], /--database/],
       ['manage', ['ctl', 'library', 'init', '--entry', entry, '--help'], /--entry/],
     ]) {
       for (const target of ['cli', 'command']) {
@@ -365,12 +375,77 @@ process.exit(0);`;
 
   await t.test('Pi flags stay within the selected run', async () => {
     const pi = await runEnvironment({ root: rootB, build: 'fixture', target: 'pi',
-      id: 'pi-flags', 'pass-env': [], args: ['--version'] });
+      id: 'pi-flags', 'pass-env': [], args: ['--help'] });
     const args = (await readJson(pi.stdout)).args;
     for (const flag of ['-ne', '-ns', '-nc', '--no-mcp', '--no-prompt-templates']) assert.ok(args.includes(flag), flag);
     assert.equal(args[args.indexOf('-e') + 1], join(buildB, 'broker/src/index.ts'));
     assert.equal(args[args.indexOf('--session-dir') + 1], join(pi.root, 'sessions'));
     // The fixture proves launcher arguments only; actual Pi loading has a separate integration run.
+  });
+
+  await t.test('direct Pi and the private wrapper share declared broker/native launch inputs', async () => {
+    const corpus = join(retained, 'native-corpus');
+    await mkdir(corpus);
+    await writeFile(join(corpus, 'SKILL.md'), '---\nname: local-fixture\ndescription: A selected fixture.\n---\n\nNative fixture body.\n');
+    const extension = join(retained, 'common-observer.mjs');
+    await writeFile(extension, 'export default function observer() {}\n');
+    for (const mode of ['broker', 'native']) {
+      for (const target of ['pi', 'command']) {
+        const receipt = await runEnvironment({ root: rootB, build: 'fixture', target,
+          id: 'declared-' + mode + '-' + target, 'pi-mode': mode,
+          ...(mode === 'native' ? { 'native-skills': corpus } : { skills: corpus }),
+          'pi-extension': [extension], 'pass-env': [], args: target === 'pi' ? ['--help'] : ['pi', '--help'] });
+        assert.equal(receipt.status, 'passed');
+        const run = await readJson(join(receipt.root, 'run.json'));
+        const launch = await readJson(join(receipt.root, 'pi-launch.json'));
+        assert.deepEqual(run.pi_launch, launch);
+        const actual = await readJson(receipt.stdout);
+        assert.deepEqual(actual.args, [...launch.argv, '--help']);
+        assert.equal(launch.entry, piEntry);
+        assert.equal(launch.mode, mode);
+        assert.deepEqual(await readJson(join(receipt.root, 'pi-agent/settings.json')), launch.settings);
+        assert.equal(launch.settings.enableSkillCommands, mode === 'native');
+        assert.ok(launch.argv.includes('-ns'));
+        assert.ok(launch.argv.includes('--no-approve'));
+        assert.ok(launch.argv.includes(extension));
+        assert.equal(launch.argv.includes(join(buildB, 'broker/src/index.ts')), mode === 'broker');
+        assert.equal(launch.native_skill_roots.length, mode === 'native' ? 1 : 0);
+        if (mode === 'native') {
+          const copied = launch.native_skill_roots[0];
+          assert.ok(inside(receipt.root, copied));
+          assert.ok(launch.argv.includes(copied));
+          assert.equal(await readFile(join(copied, 'SKILL.md'), 'utf8'), await readFile(join(corpus, 'SKILL.md'), 'utf8'));
+          assert.deepEqual((await readJson(join(receipt.root, 'config/broker.json'))).skillRoots, []);
+        }
+        assert.equal(receipt.runtime_check.status, 'unchanged');
+        assert.deepEqual(receipt.runtime_check.before, run.runtime);
+        assert.equal(receipt.command_status, 'succeeded');
+      }
+    }
+    for (const [suffix, extra, message] of [
+      ['no-root', { 'pi-mode': 'native' }, /requires --native-skills/],
+      ['ambiguous-root', { 'pi-mode': 'native', 'native-skills': corpus, skills: corpus }, /for Broker discovery/],
+      ['wrong-mode', { 'native-skills': corpus }, /requires --pi-mode native/],
+      ['broker-extension', { 'pi-mode': 'native', 'native-skills': corpus, 'pi-extension': [join(buildB, 'broker/src/index.ts')] }, /cannot select the paired Broker/],
+    ]) await assert.rejects(runEnvironment({ root: rootB, build: 'fixture', target: 'pi',
+      id: 'invalid-profile-' + suffix, 'pass-env': [], args: ['--help'], ...extra }), message);
+  });
+
+  await t.test('resource and session overrides cannot diverge the direct and private Pi entries', async () => {
+    for (const flag of ['-e', '--extension=/shared/observer.ts', '--skill', '--session-dir', '--continue', '--fork', '--fork=/shared/session.jsonl', '--session-id', '--no-session', '--approve']) {
+      assert.throws(() => validatePiArguments([flag]), /belongs to the isolated launcher/);
+    }
+    validatePiArguments(['--provider', 'fixture', '-p', 'read the selected skill']);
+    validatePiArguments(['-p', '--', '--skill']);
+    await assert.rejects(runEnvironment({ root: rootB, build: 'fixture', target: 'pi',
+      id: 'direct-override-rejected', 'pass-env': [], args: ['--fork', join(retained, 'foreign-session.jsonl')] }), /belongs to the isolated launcher/);
+    const result = await runEnvironment({ root: rootB, build: 'fixture', target: 'command',
+      id: 'wrapper-override-rejected', 'pass-env': [], args: ['pi', '--fork', join(retained, 'foreign-session.jsonl')] });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.command_status, 'failed');
+    assert.equal(result.runtime_check.status, 'unchanged');
+    assert.match(await readFile(result.stderr, 'utf8'), /belongs to the isolated launcher/);
+    assert.equal(await readFile(result.stdout, 'utf8'), '', 'Rejected before the Pi entry is called');
   });
 
   await t.test('the complete Broker package is sealed, including source additions and removals', async t => {
@@ -420,6 +495,35 @@ process.exit(0);`;
     assert.equal(await readFile(environmentPath, 'utf8'), historicalBytes, 'Runs must preserve creation-time tool metadata');
     assert.equal(await readFile(join(rootB, 'environment.initial.json'), 'utf8'), originalBytes);
     assert.equal(await readFile(join(buildB, 'build.json'), 'utf8'), buildBytes, 'Running with current tools must not rewrite a frozen build receipt');
+  });
+
+  await t.test('run results retain successful command output when a selected runtime changes or becomes unavailable', async () => {
+    const original = await readFile(piEntry);
+    const saved = join(piPackage, 'retained-unavailable-entry.js');
+    try {
+      const drift = await runEnvironment({ root: rootB, build: 'fixture', target: 'command',
+        id: 'runtime-file-drift', 'pass-env': [], args: ['node', '-e',
+          'require("node:fs").appendFileSync(' + JSON.stringify(piEntry) + ',"// owned drift probe\\n");console.log("product completed");'] });
+      assert.equal(drift.exit_code, 0);
+      assert.equal(drift.command_status, 'succeeded');
+      assert.equal(drift.status, 'failed');
+      assert.equal(drift.runtime_check.status, 'drifted');
+      assert.equal(drift.frozen_artifacts, 'passed');
+      assert.equal(await readFile(drift.stdout, 'utf8'), 'product completed\n');
+      assert.deepEqual(await readJson(join(drift.root, 'result.json')), drift);
+      await writeFile(piEntry, original);
+      const unknown = await runEnvironment({ root: rootB, build: 'fixture', target: 'command',
+        id: 'runtime-end-unavailable', 'pass-env': [], args: ['node', '-e',
+          'require("node:fs").renameSync(' + JSON.stringify(piEntry) + ',' + JSON.stringify(saved) + ');console.log("product completed");'] });
+      assert.equal(unknown.exit_code, 0);
+      assert.equal(unknown.command_status, 'succeeded');
+      assert.equal(unknown.status, 'failed');
+      assert.equal(unknown.runtime_check.status, 'unknown');
+      assert.equal(await readFile(unknown.stdout, 'utf8'), 'product completed\n');
+      assert.deepEqual(await readJson(join(unknown.root, 'result.json')), unknown);
+    } finally {
+      await writeFile(piEntry, original);
+    }
   });
 
   await t.test('a sealed package cannot be replaced by an external directory symlink', async () => {
