@@ -176,7 +176,7 @@ function fixture({ calls = [], answerText = '合计：100 元', bodies = {}, sco
     costs.push({ phase: 'provider_request', request: i + 1, provider: 'magpie', model: 'group/worker',
       payload: { sha256, bytes: bytes.length, verifiedBodyOccurrences: counts } });
     costs.push({ phase: 'message_end', request: i + 1, message: { role: 'assistant', provider: 'magpie', model: 'group/worker',
-      responseModel: 'actual-worker', stopReason: message.stopReason, usage,
+      responseModel: 'actual-worker', responseModelStatus: 'reported', stopReason: message.stopReason, usage,
       content: { sha256: hash(JSON.stringify(message.content)), bytes: Buffer.byteLength(JSON.stringify(message.content)) } } });
     transport.push({ phase: 'request_start', id: i + 1, category: 'model' },
       { phase: 'request_sent', id: i + 1, requestBodySha256: sha256, requestBodyBytes: bytes.length },
@@ -279,16 +279,15 @@ test('completed real-evidence shape passes facts and zero tool attempts', async 
 test('unreported response models retain wire, native response and SSE completion requirements', async t => {
   const make = () => {
     const f = fixture({ calls: [{ name: 'read', arguments: { path: '/owned/data.txt' } }] });
-    for (const row of f.observed.costs.filter(row => row.phase === 'message_end')) delete row.message.responseModel;
+    for (const row of f.observed.costs.filter(row => row.phase === 'message_end')) Object.assign(row.message, { responseModel: null, responseModelStatus: 'unreported' });
     for (const row of f.observed.transport.filter(row => row.phase === 'request_end')) Object.assign(row, {
       outcome: 'failure', errorName: 'AbortError', errorCode: 20, contentEncoding: 'identity', contentType: 'text/event-stream',
       sseCompletion: { method: 'bounded-sse-data-done-v1', doneEvents: 1 },
     });
     return f;
   };
-  for (const responseModel of [undefined, null]) await t.test(String(responseModel), async () => {
+  await t.test('unreported', async () => {
     const f = make();
-    if (responseModel === null) for (const row of f.observed.costs.filter(row => row.phase === 'message_end')) row.message.responseModel = null;
     const before = structuredClone(f.observed.costs), result = await f.run([{ kind: 'completed' }]);
     assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
     assert.deepEqual(result.delivery.requests.map(row => row.completion), ['sse-done-before-http-cancel', 'sse-done-before-http-cancel']);
@@ -296,6 +295,7 @@ test('unreported response models retain wire, native response and SSE completion
   });
   for (const [name, change, code] of [
     ['invalid response model', f => { f.observed.costs[1].message.responseModel = {}; }, 'APPLICATION_COMPLETION_MISSING'],
+    ['missing raw status', f => { delete f.observed.costs[1].message.responseModelStatus; }, 'APPLICATION_COMPLETION_MISSING'],
     ['missing DONE', f => { f.observed.transport[2].sseCompletion.doneEvents = 0; }, 'APPLICATION_COMPLETION_MISSING'],
     ['empty response entity', f => { f.observed.transport[2].responseEntityBytes = 0; }, 'APPLICATION_COMPLETION_MISSING'],
     ['wrong native response', f => { f.observed.costs[1].message.content.sha256 = 'e'.repeat(64); }, 'NATIVE_RESPONSE_CORRELATION_MISSING'],

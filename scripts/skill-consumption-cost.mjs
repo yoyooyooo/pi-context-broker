@@ -68,12 +68,13 @@ export function observeConsumptionCost(api, settings) {
         ? Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'total'].map(key => [key, value.cost[key] ?? null])) : null };
   };
   const assistant = message => {
-    const text = textContent(message?.content);
+    const text = textContent(message?.content), responseModel = modelField(message?.responseModel);
     return { role: message?.role === 'assistant' ? 'assistant' : 'other', content: jsonMeasure(message?.content),
       text: textMeasure(text), nonWhitespaceText: text.trim().length > 0,
       permissionOnly: text.length < 1200 && /(?:please\s+(?:approve|authorize|confirm)|(?:need|require|await)\w*\s+(?:your\s+)?(?:approval|permission)|(?:请|需要|等待).{0,15}(?:授权|批准|确认))/iu.test(text),
       stopReason: ['stop', 'length', 'toolUse', 'error', 'aborted'].includes(message?.stopReason) ? message.stopReason : null,
-      provider: modelField(message?.provider), model: modelField(message?.model), responseModel: modelField(message?.responseModel),
+      provider: modelField(message?.provider), model: modelField(message?.model), responseModel,
+      responseModelStatus: message?.responseModel == null ? 'unreported' : responseModel === null ? 'invalid' : 'reported',
       thinkingLevel: modelField(message?.thinkingLevel), providerThinkingLevel: modelField(message?.providerThinkingLevel),
       usage: usage(message?.usage) };
   };

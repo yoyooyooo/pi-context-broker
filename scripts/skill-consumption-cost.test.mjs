@@ -6,6 +6,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { observeConsumptionCost, consumptionCostExtensionSource, readConsumptionCostEvents, freezeConsumptionPlan,
   summarizeConsumptionSource, summarizeConsumptionSample, consumptionMetricStats, compareConsumptionRuns } from './skill-consumption-cost.mjs';
 
@@ -169,6 +170,25 @@ test('model identity and thinking observations come from actual hooks and respon
   const missingResponse = absent.events.find(event => event.phase === 'message_end').message;
   for (const key of Object.keys(assistantFields)) assert.equal(missingResponse[key], null, key);
   assert.equal(missingResponse.usage.totalTokens, reportedUsage.totalTokens, 'Missing model metadata must not rewrite usage');
+});
+
+test('raw invalid response models cannot become unreported cost evidence for completion', async () => {
+  const end = { category: 'model', status: 200, outcome: 'failure', errorName: 'AbortError', errorCode: 20,
+    modelApi: 'openai-completions', contentEncoding: 'identity', contentType: 'text/event-stream',
+    sseCompletion: { method: 'bounded-sse-data-done-v1', doneEvents: 1 } };
+  for (const [status, fields] of [
+    ['invalid', { responseModel: 42 }], ['invalid', { responseModel: { secret: 'raw-invalid-secret' } }],
+    ['invalid', { responseModel: '' }], ['invalid', { responseModel: 'raw invalid secret' }],
+    ['unreported', {}], ['unreported', { responseModel: null }], ['reported', { responseModel: 'actual/route' }],
+  ]) {
+    const observed = await observe({ assistantFields: { provider: 'magpie', model: 'group/worker', ...fields } });
+    const message = observed.events.find(row => row.phase === 'message_end').message, accepted = status !== 'invalid';
+    assert.equal(providerApplicationCompletion(end, message), accepted ? 'sse-done-before-http-cancel' : null);
+    assert.equal(providerApplicationCompletion({ ...end, outcome: 'completed' }, message), accepted ? 'http-complete' : null);
+    assert.equal(message.responseModelStatus, status);
+    assert.equal(message.responseModel, status === 'reported' ? fields.responseModel : null);
+    assert.equal(fs.readFileSync(observed.file, 'utf8').includes('raw-invalid-secret'), false);
+  }
 });
 
 function preparedBody(body, version = 2, toolName = version === 1 ? 'skill_prepare' : 'notion_use') {

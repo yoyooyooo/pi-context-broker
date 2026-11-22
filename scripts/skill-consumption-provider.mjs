@@ -181,15 +181,16 @@ export function observeProviderTransport(api, settings) {
  * protocol terminal can establish a separate application completion. */
 export function providerApplicationCompletion(end, message) {
   if (end?.category !== 'model' || !Number.isInteger(end.status) || end.status < 200 || end.status >= 300) return null;
+  // The cost observer distinguishes absent raw metadata from invalid values it redacts.
+  // Unknown stays null; an old null without that observation cannot prove validity.
+  if (!(message?.responseModelStatus === 'unreported' && message.responseModel === null
+    || message?.responseModelStatus === 'reported' && typeof message.responseModel === 'string' && message.responseModel.trim())) return null;
   if (end.outcome === 'completed') return 'http-complete';
   if (end.outcome !== 'failure' || end.errorName !== 'AbortError' || end.errorCode !== 20
     || end.modelApi !== 'openai-completions' || end.contentEncoding !== 'identity' || end.contentType !== 'text/event-stream'
     || end.sseCompletion?.method !== 'bounded-sse-data-done-v1' || end.sseCompletion.doneEvents !== 1) return null;
-  // Pi's optional responseModel is null in observer rows when unreported.
-  // Keep it unknown; a reported value must still be a nonempty string.
   if (message?.role !== 'assistant' || !['stop', 'toolUse'].includes(message.stopReason)
     || !['provider', 'model'].every(key => typeof message[key] === 'string' && message[key].trim())
-    || (message.responseModel != null && (typeof message.responseModel !== 'string' || !message.responseModel.trim()))
     || !['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens'].every(key => Number.isFinite(message.usage?.[key]) && message.usage[key] >= 0)
     || message.usage.totalTokens <= 0) return null;
   return 'sse-done-before-http-cancel';
