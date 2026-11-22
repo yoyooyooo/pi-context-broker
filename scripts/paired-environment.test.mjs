@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { test } from 'node:test';
 import {
-  checkEnvironment, createEnvironment, inventory, parseArgs, runEnvironment, runtimeEnvironment, validatePiArguments,
+  checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, validatePiArguments,
 } from './paired-environment.mjs';
 
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
@@ -161,6 +161,41 @@ test('paired environments isolate writable state and detect artifact changes', a
   ]))));
   const [rootA, rootB] = roots;
   const [buildA, buildB] = await Promise.all(roots.map(root => sealedBuild(root)));
+
+  await t.test('packed candidates run actual clean-installed entries and freeze archives and dependencies', async () => {
+    const buildId = 'packed-candidate', root = await sealedBuild(rootA, buildId);
+    await writeJson(join(root, 'cli/package.json'), { name: 'ntn-skills', version: '0.0.0', type: 'module',
+      bin: { 'ntn-skills': './dist/ntn-skills.js' }, exports: { './sdk': { import: './dist/sdk.js' } } });
+    await writeJson(join(root, 'broker/package.json'), { name: 'pi-context-broker', version: '0.0.0', type: 'module', pi: { extensions: ['./src/index.ts'] } });
+    await writeFile(join(root, 'broker/dist/ntn-skills-sdk.mjs'), 'export const SDK_VERSION=2;\n');
+    const selectedCli = await inventory(join(root, 'cli'));
+    await writeJson(join(root, 'broker/dist/next-build.json'), { selected_cli: selectedCli });
+    await mkdir(join(root, 'logs')); await mkdir(join(root, 'build-state/config'), { recursive: true }); await mkdir(join(root, 'build-state/tmp'));
+    const environment = await readJson(join(rootA, 'environment.json'));
+    const env = runtimeEnvironment(join(root, 'build-state'), root, process.env, [], environment.tools.node.path);
+    await writeFile(env.npm_config_userconfig, '');
+    const candidate = await installPackedPair(root, environment.tools, env);
+    const build = await readJson(join(root, 'build.json'));
+    build.selected_cli_sha256 = selectedCli.sha256; build.candidate = candidate;
+    for (const name of ['cli', 'broker']) build.packages[name] = await inventory(join(root, name));
+    await writeJson(join(root, 'build.json'), build);
+    const checked = await checkEnvironment({ root: rootA, build: buildId });
+    assert.equal(checked.candidate_mode, 'packed');
+    assert.equal(checked.selected_entries.cli, join(root, 'installed/cli/node_modules/ntn-skills/dist/ntn-skills.js'));
+    for (const target of ['cli', 'command']) {
+      const receipt = await runEnvironment({ root: rootA, build: buildId, target, id: 'packed-' + target, 'pass-env': [],
+        args: target === 'cli' ? ['--help'] : ['ntn-skills', '--help'] });
+      assert.equal(receipt.status, 'passed'); assert.deepEqual((await readJson(receipt.stdout)).args, ['--help']);
+      assert.deepEqual((await readJson(join(receipt.root, 'run.json'))).candidate.entries, checked.selected_entries);
+    }
+    const original = await readFile(checked.selected_entries.cli);
+    await writeFile(checked.selected_entries.cli, 'throw new Error("replaced candidate")');
+    await assert.rejects(checkEnvironment({ root: rootA, build: buildId }), /Frozen installed candidate changed/);
+    await assert.rejects(runEnvironment({ root: rootA, build: buildId, target: 'cli', id: 'packed-must-not-start', 'pass-env': [], args: [] }), /Frozen installed candidate changed/);
+    await writeFile(checked.selected_entries.cli, original);
+    await writeFile(candidate.packages.cli.closure.archive.path, 'changed archive');
+    await assert.rejects(checkEnvironment({ root: rootA, build: buildId }), /Frozen candidate archive changed/);
+  });
 
   await t.test('clones own refs, Git objects and editable files independently of other tasks', async () => {
     assert.notEqual(created[0].environment_id, created[1].environment_id);

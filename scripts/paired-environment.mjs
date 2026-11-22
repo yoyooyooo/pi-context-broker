@@ -10,6 +10,7 @@ import { access, chmod, copyFile, cp, lstat, mkdir, readFile, readdir, readlink,
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captureRuntimeIdentity, compareRuntimeIdentity } from './paired-runtime-identity.mjs';
+import { verifyArchiveInstallation } from './verify-package-closure.mjs';
 
 const DEFAULTS = {
   cli: 'https://github.com/yoyooyooo/notion-skills-cli.git',
@@ -29,7 +30,8 @@ export const HELP = `Usage:
   node scripts/paired-environment.mjs create --root ABSOLUTE_NEW_DIRECTORY
     [--cli-repository URL --broker-repository URL --cli-ref next --broker-ref next]
     [--pi-entry ABSOLUTE_PI_JS]
-  node scripts/paired-environment.mjs build --root ROOT [--id BUILD_ID] [--pass-env ENV_NAME ...]
+  node scripts/paired-environment.mjs build --root ROOT [--id BUILD_ID]
+    [--install-mode directory|packed] [--pass-env ENV_NAME ...]
   node scripts/paired-environment.mjs check --root ROOT --build BUILD_ID
   node scripts/paired-environment.mjs run --root ROOT --build BUILD_ID
     --target cli|pi|command [--id RUN_ID] [--cwd workspace|cli|broker]
@@ -44,6 +46,10 @@ create freezes both refs in independent clones with a task branch. build copies
 current source into its own source/cli and source/broker snapshots, installs
 private dependencies, and seals complete CLI/Broker packages. No implicit latest
 build, global install, automatic pull, cleanup, or release is performed.
+The optional packed install mode packs both packages, installs each archive in
+a new private npm consumer, verifies installed bytes against the archive, and
+freezes the archives, installed dependency trees and public runtime entries.
+Every run of that build selects those installed entries through the usual wrapper.
 
 run starts with private CLI/Broker config, cache, state, scheduler, Pi agent/session,
 skill, working and temporary directories. HOME is unchanged. Pi uses a single
@@ -83,7 +89,7 @@ export function parseArgs(args) {
   const [command, ...rest] = args;
   const allowed = {
     create: ['root', 'cli-repository', 'broker-repository', 'cli-ref', 'broker-ref', 'pi-entry'],
-    build: ['root', 'id', 'pass-env'], check: ['root', 'build'],
+    build: ['root', 'id', 'pass-env', 'install-mode'], check: ['root', 'build'],
     run: ['root', 'build', 'target', 'id', 'cwd', 'entry', 'parent', 'skills', 'models', 'pass-env', 'timeout-ms', 'stdin',
       'pi-mode', 'native-skills', 'pi-extension'],
   };
@@ -204,7 +210,7 @@ async function copyTree(source, destination, entries) {
 }
 
 /** Child-local allowlist; never inherit NODE_OPTIONS, BASH_ENV, config, or credentials. */
-export function runtimeEnvironment(runRoot, buildRoot, inherited, passNames = [], node = process.execPath) {
+export function runtimeEnvironment(runRoot, buildRoot, inherited, passNames = [], node = process.execPath, selected = {}) {
   const env = {};
   for (const name of ['HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'TERM', 'SHELL', 'SystemRoot']) {
     if (inherited[name] !== undefined) env[name] = inherited[name];
@@ -232,8 +238,8 @@ export function runtimeEnvironment(runRoot, buildRoot, inherited, passNames = []
     npm_config_userconfig: join(runRoot, 'config/npmrc'),
     PAIRED_RUN_ROOT: runRoot, PAIRED_BUILD_ROOT: buildRoot,
     PAIRED_CLI_SOURCE: join(buildRoot, 'source/cli'), PAIRED_BROKER_SOURCE: join(buildRoot, 'source/broker'),
-    PAIRED_CLI_ENTRY: join(buildRoot, 'cli/dist/ntn-skills.js'),
-    PAIRED_BROKER_ENTRY: join(buildRoot, 'broker/src/index.ts'),
+    PAIRED_CLI_ENTRY: selected.cli ?? join(buildRoot, 'cli/dist/ntn-skills.js'),
+    PAIRED_BROKER_ENTRY: selected.broker ?? join(buildRoot, 'broker/src/index.ts'),
   });
   return env;
 }
@@ -342,7 +348,44 @@ async function currentTools(environment) {
   return { node, bun, npm, pi: await findPi(environment.tools.pi.path, npm) };
 }
 
+/** Standard npm archives and fresh consumers; no wrapper or frozen-file substitution. */
+export async function installPackedPair(root, tools, env) {
+  const installRoot = join(root, 'installed'), archives = join(root, 'archives'), packages = {};
+  await mkdir(installRoot); await mkdir(archives);
+  for (const [role, name] of [['cli', 'ntn-skills'], ['broker', 'pi-context-broker']]) {
+    const built = join(root, role), manifest = await json(join(built, 'package.json'));
+    assert.equal(manifest.name, name);
+    await step(tools.node.path, [tools.npm, 'pack', '--ignore-scripts', '--json', '--pack-destination', archives],
+      { cwd: built, env, log: join(root, 'logs/pack-' + role) });
+    const packed = JSON.parse(await readFile(join(root, 'logs/pack-' + role + '.stdout.log'), 'utf8'));
+    assert.equal(packed.length, 1); assert.equal(packed[0].name, name); assert.equal(packed[0].version, manifest.version);
+    assert.ok(packed[0].filename && !packed[0].filename.includes('/') && packed[0].filename.endsWith('.tgz'));
+    const archive = join(archives, packed[0].filename), consumer = join(installRoot, role);
+    await mkdir(consumer);
+    await save(join(consumer, 'package.json'), { private: true, dependencies: { [name]: 'file:' + archive } });
+    await step(tools.node.path, [tools.npm, 'install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
+      { cwd: consumer, env, log: join(root, 'logs/install-packed-' + role) });
+    const installed = join(consumer, 'node_modules', name);
+    const closure = await verifyArchiveInstallation(installed, archive, hash(await readFile(archive)));
+    for (const member of closure.files) assert.equal(hash(await readFile(join(built, member.path))), member.sha256,
+      'Packed member differs from the selected build: ' + role + '/' + member.path);
+    const actual = await json(join(installed, 'package.json'));
+    assert.equal(actual.name, name); assert.equal(actual.version, manifest.version);
+    const relativeEntry = role === 'cli' ? actual.bin?.['ntn-skills'] : actual.pi?.extensions?.[0];
+    assert.ok(typeof relativeEntry === 'string', 'The installed package must declare its public entry');
+    const entry = resolve(installed, relativeEntry);
+    assert.ok(own(installed, entry)); await toolIdentity(entry);
+    const sdkExport = actual.exports?.['./sdk'];
+    const sdk = role === 'cli' ? resolve(installed, typeof sdkExport === 'string' ? sdkExport : sdkExport?.import ?? '') : join(installed, 'dist/ntn-skills-sdk.mjs');
+    assert.ok(own(installed, sdk) && sdk !== installed, 'The installed CLI must export its SDK'); await toolIdentity(sdk);
+    packages[role] = { name, version: actual.version, root: installed, entry, sdk, closure };
+  }
+  return { mode: 'packed', root: installRoot, packages, tree: await inventory(installRoot), archives: await inventory(archives) };
+}
+
 export async function buildEnvironment(options) {
+  const installMode = options['install-mode'] ?? 'directory';
+  assert.ok(['directory', 'packed'].includes(installMode), '--install-mode must be directory or packed');
   const environment = await readEnvironment(options.root);
   environment.tools = await currentTools(environment);
   const buildId = validId(options.id ?? id('build')), root = join(options.root, 'builds', buildId);
@@ -376,12 +419,13 @@ export async function buildEnvironment(options) {
     const brokerReceipt = await verifyCurrentBuild(join(root, 'source/broker'), join(root, 'broker'), 'broker-build');
     assert.deepEqual(await fileInventory(join(root, 'cli'), ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills']), brokerReceipt.selected_cli,
       'The built Broker does not contain this generation\'s CLI/SDK');
+    const candidate = installMode === 'packed' ? await installPackedPair(root, environment.tools, env) : { mode: 'directory' };
     const packages = {};
     for (const name of ['cli', 'broker']) packages[name] = await inventory(join(root, name));
     const sourceTree = await inventory(join(root, 'source'));
     await save(join(root, 'build.json'), { version: VERSION, kind: 'paired-build', environment_id: environment.environment_id,
       build_id: buildId, root, created_at: new Date().toISOString(), sources, packages,
-      source_tree: sourceTree, selected_cli_sha256: brokerReceipt.selected_cli.sha256, tools: environment.tools,
+      source_tree: sourceTree, selected_cli_sha256: brokerReceipt.selected_cli.sha256, tools: environment.tools, candidate,
       passed_environment_names: options['pass-env'] ?? [],
       launcher: await toolIdentity(fileURLToPath(import.meta.url)) });
     return { status: 'built', root, build_id: buildId, selected_cli_sha256: brokerReceipt.selected_cli.sha256 };
@@ -399,6 +443,21 @@ export async function checkEnvironment(options) {
   assert.equal(build.environment_id, environment.environment_id); assert.equal(build.root, root); assert.equal(build.build_id, buildId);
   for (const name of ['cli', 'broker']) assert.equal((await inventory(join(root, name))).sha256, build.packages[name].sha256, 'Frozen package changed: ' + name);
   assert.equal((await inventory(join(root, 'source'))).sha256, build.source_tree.sha256, 'Frozen source/dependency snapshot changed');
+  const selected = { cli: join(root, 'cli/dist/ntn-skills.js'), broker: join(root, 'broker/src/index.ts') };
+  if (build.candidate?.mode === 'packed') {
+    assert.equal(build.candidate.root, join(root, 'installed'));
+    assert.equal((await inventory(build.candidate.root)).sha256, build.candidate.tree.sha256, 'Frozen installed candidate changed');
+    assert.equal((await inventory(join(root, 'archives'))).sha256, build.candidate.archives.sha256, 'Frozen candidate archive changed');
+    for (const [role, name] of [['cli', 'ntn-skills'], ['broker', 'pi-context-broker']]) {
+      const candidate = build.candidate.packages[role], installed = join(root, 'installed', role, 'node_modules', name);
+      assert.equal(candidate.root, installed); assert.equal(candidate.name, name);
+      const manifest = await json(join(installed, 'package.json'));
+      assert.equal(candidate.version, manifest.version);
+      assert.equal(candidate.entry, resolve(installed, role === 'cli' ? manifest.bin['ntn-skills'] : manifest.pi.extensions[0]));
+      assert.ok(own(installed, candidate.entry)); selected[role] = candidate.entry;
+      for (const file of candidate.closure.files) assert.equal(hash(await readFile(join(installed, file.path))), file.sha256, 'Installed archive member changed: ' + file.path);
+    }
+  } else assert.ok(build.candidate === undefined || build.candidate.mode === 'directory', 'Unknown candidate installation mode');
   // Check pairing independently of the mutable checkout, using the sealed build receipt.
   const brokerReceipt = await json(join(root, 'broker/dist/next-build.json'));
   assert.equal(brokerReceipt.selected_cli.sha256, build.selected_cli_sha256);
@@ -411,7 +470,7 @@ export async function checkEnvironment(options) {
   return { status: 'passed', scope: 'isolated-development-artifacts', root, build_id: buildId,
     source_heads_at_build: Object.fromEntries(Object.entries(build.sources).map(([name, source]) => [name, source.commit])),
     current_source_heads: currentHeads, source_changes_invalidate_frozen_build: false,
-    selected_cli_sha256: build.selected_cli_sha256, actual_pi_process: 'not_run' };
+    selected_cli_sha256: build.selected_cli_sha256, candidate_mode: build.candidate?.mode ?? 'directory', selected_entries: selected, actual_pi_process: 'not_run' };
 }
 
 function validUuid(value) { assert.match(value, /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i, 'Use a canonical Notion UUID'); return value; }
@@ -446,7 +505,7 @@ export function validatePiArguments(args) {
   }
 }
 
-async function piLaunchDefinition(options, root, buildRoot, pi) {
+async function piLaunchDefinition(options, root, buildRoot, pi, selectedBroker = join(buildRoot, 'broker/src/index.ts')) {
   const mode = options['pi-mode'] ?? 'broker';
   assert.ok(['broker', 'native'].includes(mode), '--pi-mode must be broker or native');
   assert.ok(mode !== 'native' || options['native-skills'], 'Native Pi requires --native-skills');
@@ -469,12 +528,11 @@ async function piLaunchDefinition(options, root, buildRoot, pi) {
     nativeCorpus = { source, source_sha256: before.sha256, root: destination, copied_sha256: copied.sha256 };
   }
   const extensions = [];
-  const selectedBroker = join(buildRoot, 'broker/src/index.ts');
   if (mode === 'broker') extensions.push({ ...await toolIdentity(selectedBroker), role: 'broker' });
   for (const selected of options['pi-extension'] ?? []) {
     assert.ok(isAbsolute(selected), '--pi-extension must be an absolute file or directory');
     const path = await realpath(selected);
-    assert.ok(mode !== 'native' || !own(join(buildRoot, 'broker'), path), 'Native Pi cannot select the paired Broker as a common extension');
+    assert.ok(mode !== 'native' || path !== selectedBroker && !own(join(buildRoot, 'broker'), path) && !own(join(buildRoot, 'installed/broker'), path), 'Native Pi cannot select the paired Broker as a common extension');
     assert.ok(!extensions.some(extension => extension.path === path), 'Repeated Pi extension: ' + path);
     const info = await stat(path);
     assert.ok(info.isFile() || info.isDirectory(), 'Pi extension must be an ordinary file or directory');
@@ -518,7 +576,7 @@ export async function runEnvironment(options) {
   assert.ok(['inherit', 'ignore'].includes(stdin), '--stdin must be inherit or ignore');
   const runId = validId(options.id ?? id('run')), root = join(options.root, 'runs', runId);
   await fresh(root);
-  const env = runtimeEnvironment(root, buildRoot, process.env, options['pass-env'], environment.tools.node.path);
+  const env = runtimeEnvironment(root, buildRoot, process.env, options['pass-env'], environment.tools.node.path, checked.selected_entries);
   for (const path of ['bin', 'tmp', 'config/cli', 'state/cli', 'cache/cli', 'data/cli', 'state/scheduler', 'cache/broker',
     'xdg/config', 'xdg/state', 'xdg/cache', 'xdg/data', 'pi-agent', 'sessions', 'skills', 'workspace']) await mkdir(join(root, path), { recursive: true });
   await writeFile(env.npm_config_userconfig, '', { mode: 0o600, flag: 'wx' });
@@ -534,7 +592,7 @@ export async function runEnvironment(options) {
   const sources = options.entry ? [{ id: 'notion', type: 'notion', namespace: 'notion', database: options.entry,
     cacheDir: join(root, 'cache/broker'), prefetch: false }] : [];
   const pi = environment.tools.pi;
-  const piLaunch = await piLaunchDefinition(options, root, buildRoot, pi);
+  const piLaunch = await piLaunchDefinition(options, root, buildRoot, pi, env.PAIRED_BROKER_ENTRY);
   await save(env.CONTEXT_BROKER_CONFIG, { sources, skillRoots, extraSkillRoots: [], ruleRoots: [], discoveryCatalogs: [], extraDiscoveryCatalogs: [], requireAutoload: false });
   await save(join(root, 'pi-agent/settings.json'), piLaunch.settings);
   await save(join(root, 'pi-launch.json'), piLaunch);
@@ -571,7 +629,7 @@ export async function runEnvironment(options) {
   const runtime = await captureRuntimeIdentity(runtimeSelection);
   await save(join(root, 'run.json'), { version: VERSION, kind: 'isolated-development-run', environment_id: environment.environment_id,
     run_id: runId, root, build_id: options.build, build_root: buildRoot, target: options.target, cwd,
-    runtime, pi_launch: piLaunch, launcher: await toolIdentity(fileURLToPath(import.meta.url)),
+    runtime, pi_launch: piLaunch, candidate: { mode: checked.candidate_mode, entries: checked.selected_entries }, launcher: await toolIdentity(fileURLToPath(import.meta.url)),
     runtime_observer: await toolIdentity(fileURLToPath(new URL('./paired-runtime-identity.mjs', import.meta.url))), stdin,
     argument_sha256: hash(JSON.stringify(args)), passed_environment_names: options['pass-env'],
     remote: { entry: options.entry ?? null, parent: options.parent ?? null },
