@@ -750,41 +750,84 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     if (!fs.existsSync(path)) fs.writeFileSync(path, bytes, { flag: 'wx', mode: 0o600 });
     return { path, bytes: Buffer.byteLength(bytes), sha256 };
   };
-  const preparedRead = (message, proof, receiptSequence) => {
-    const pending = pendingPreparedReads.get(message.toolCallId), binding = proof?.binding;
-    if (!pending || pending.turn !== turn || !pending.result || message.toolName !== 'read' || proof?.version !== 3
-      || proof.toolCallId !== message.toolCallId || !/^[a-f0-9]{64}$/u.test(binding?.scope ?? '')
-      || !/^s_[a-f0-9]{64}$/u.test(binding?.snapshot_id ?? '') || binding.record?.entrypoint !== 'SKILL.md'
-      || typeof binding.record.id !== 'string' || binding.snapshot_id !== proof.snapshotId
-      || pending.identity?.source !== 'notion' || pending.identity.scope !== binding.scope
-      || pending.identity.id !== binding.record.id || pending.identity.kind !== binding.record.kind
-      || pending.identity.ref !== 'skill://' + encodeURIComponent(binding.record.id)
-      || !pending.identity.locator || !binding.record.locator
-      || Object.keys(pending.identity.locator).length !== Object.keys(binding.record.locator).length
-      || Object.entries(pending.identity.locator).some(([key, value]) => binding.record.locator[key] !== value)) return;
+  const preparedRead = (message, proofs, receiptSequence) => {
+    const pending = pendingPreparedReads.get(message.toolCallId);
+    if (!pending || pending.turn !== turn || !pending.result || message.toolName !== 'read') return;
+    const resource = pending.target.kind === 'resource', proof = resource ? proofs.contextBrokerResource : proofs.contextBrokerRead;
+    const binding = proof?.binding, identity = pending.identity, ownerTarget = pending.ownerTarget;
+    const scope = resource ? proof?.scope : binding?.scope, owner = resource ? proof?.id : binding?.record?.id;
+    const snapshot = resource ? proof?.snapshot_id : binding?.snapshot_id, version = resource ? proof?.version_id : binding?.version_id;
+    const relative = resource ? proof?.path : 'SKILL.md', bodyHash = resource ? proof?.sha256 : proof?.bodySha256;
+    const fixed = (ref, expectedPath, expectedSnapshot, fileId) => {
+      const match = /^skill:\/\/([^/?#]+)\/([^?#]+)\?([^#]+)$/u.exec(ref ?? '');
+      if (!match) return false;
+      try {
+        const query = new URLSearchParams(match[3]);
+        return decodeURIComponent(match[1]) === owner && decodeURIComponent(match[2]) === expectedPath
+          && [...query.keys()].length === 2 && query.getAll('snapshot').length === 1 && query.getAll('file_id').length === 1
+          && query.get('snapshot') === expectedSnapshot && query.get('file_id') === fileId;
+      } catch { return false; }
+    };
+    if (proof?.version !== (resource ? 2 : 3) || proof.toolCallId !== message.toolCallId
+      || !/^[a-f0-9]{64}$/u.test(scope ?? '') || !/^s_[a-f0-9]{64}$/u.test(snapshot ?? '') || !/^[a-f0-9]{64}$/u.test(version ?? '')
+      || !/^[a-f0-9]{64}$/u.test(bodyHash ?? '') || !Number.isSafeInteger(proof.bytes) || proof.bytes < (resource ? 0 : 1)
+      || identity?.source !== 'notion' || identity.scope !== scope || identity.id !== owner || identity.kind !== 'skill'
+      || identity.ref !== 'skill://' + encodeURIComponent(owner) || !identity.locator
+      || typeof relative !== 'string' || !relative || /[\\:\p{Cc}\p{Cf}\p{Cs}]/u.test(relative)
+      || relative.split('/').some(part => !part || part === '.' || part === '..')) return;
+    if (ownerTarget.kind === 'selected' && (!/^s_[a-f0-9]{64}$/u.test(ownerTarget.snapshot_id ?? '')
+      || !/^[a-f0-9]{64}$/u.test(ownerTarget.version_id ?? '') || !/^file-[a-f0-9]{64}$/u.test(ownerTarget.file_id ?? '')
+      || !/^[a-f0-9]{64}$/u.test(ownerTarget.body_sha256 ?? '') || ownerTarget.entrypoint !== 'SKILL.md'
+      || !fixed(ownerTarget.ref, 'SKILL.md', ownerTarget.snapshot_id, ownerTarget.file_id))) return;
+    if (resource) {
+      const target = pending.target;
+      if (ownerTarget.kind !== 'selected' || ownerTarget.snapshot_id !== snapshot || ownerTarget.version_id !== version
+        || relative === 'SKILL.md' || target.path !== relative || target.ref !== proof.ref || target.file_id !== proof.file_id
+        || target.bytes !== proof.bytes || target.sha256 !== bodyHash || !/^file-[a-f0-9]{64}$/u.test(proof.file_id ?? '')
+        || !fixed(proof.ref, relative, snapshot, proof.file_id) || proof.loaded !== false || proof.delivered_complete_text !== true
+        || 'files' in proof || proof.purpose !== undefined && proof.purpose !== 'inspect') return;
+    } else {
+      if (binding.record?.entrypoint !== 'SKILL.md' || binding.snapshot_id !== proof.snapshotId
+        || identity.kind !== binding.record.kind || !binding.record.locator
+        || Object.keys(identity.locator).length !== Object.keys(binding.record.locator).length
+        || Object.entries(identity.locator).some(([key, value]) => binding.record.locator[key] !== value)) return;
+      if (pending.originalInput.refresh === true) {
+        if (proof.purpose !== 'inspect') return;
+      } else if (ownerTarget.kind === 'selected' && (ownerTarget.snapshot_id !== snapshot || ownerTarget.version_id !== version
+        || ownerTarget.body_sha256 !== bodyHash || ownerTarget.ref !== binding.ref)) return;
+    }
     const input = pending.result.input, path = input?.path;
-    const tail = '/scopes/' + binding.scope + '/records/' + sha(binding.record.id) + '/entries/' + binding.snapshot_id + '/tree/SKILL.md';
-    if (Object.keys(input ?? {}).length !== 1 || typeof path !== 'string' || !path.startsWith('/') || !path.endsWith(tail)
+    const tail = projection => '/scopes/' + scope + '/records/' + sha(owner) + '/' + projection + '/' + snapshot + '/tree/' + relative;
+    const resourceStorage = resource && typeof path === 'string' && path.endsWith(tail('resources'));
+    if (Object.keys(input ?? {}).length !== Object.keys(pending.originalInput).length
+      || Object.keys(input ?? {}).some(key => !Object.hasOwn(pending.originalInput, key) || key !== 'path' && input[key] !== pending.originalInput[key])
+      || typeof path !== 'string' || !path.startsWith('/') || !path.endsWith(tail('entries')) && !resourceStorage
       || path.split('/').some(part => part === '.' || part === '..') || pending.result.isError
       || pending.result.inputSha256 === pending.inputSha256) return;
-    // Read only an identified whole-entry Notion result. Arbitrary read paths,
-    // other tools and late retained receipts never authorize filesystem probes.
-    const manifestPath = path.slice(0, -'/tree/SKILL.md'.length) + '/.broker-entry.json';
-    if (fs.realpathSync(path) !== path || fs.realpathSync(manifestPath) !== manifestPath
-      || !fs.lstatSync(path).isFile() || !fs.lstatSync(manifestPath).isFile()) return;
-    const manifestBytes = fs.readFileSync(manifestPath), manifest = JSON.parse(manifestBytes.toString('utf8'));
-    const file = manifest.files?.find(file => file.path === 'SKILL.md');
-    if (manifest.version !== 1 || manifest.projection !== 'entry' || manifest.manifest_complete !== true
-      || manifest.scope !== binding.scope || manifest.id !== binding.record.id || manifest.snapshot_id !== proof.snapshotId
-      || manifest.version_id !== binding.version_id || manifest.ref !== binding.ref || manifest.entrypoint !== 'SKILL.md'
-      || file?.sha256 !== proof.bodySha256 || file.bytes !== proof.bytes) return;
+    // Probe only the immutable file authorized by the original native short-ref
+    // chain and the same completed result. Resource-only storage has no entry
+    // manifest; it must not cause a speculative main-file or manifest read.
+    if (fs.realpathSync(path) !== path || !fs.lstatSync(path).isFile()) return;
+    let manifestObservation;
+    if (!resourceStorage) {
+      const manifestPath = path.slice(0, -('/tree/' + relative).length) + '/.broker-entry.json';
+      if (fs.realpathSync(manifestPath) !== manifestPath || !fs.lstatSync(manifestPath).isFile()) return;
+      const manifestBytes = fs.readFileSync(manifestPath), manifest = JSON.parse(manifestBytes.toString('utf8'));
+      const files = manifest.files?.filter(file => file.path === relative), file = files?.[0];
+      if (manifest.version !== 1 || manifest.projection !== 'entry' || manifest.manifest_complete !== true
+        || manifest.scope !== scope || manifest.id !== owner || manifest.snapshot_id !== snapshot || manifest.version_id !== version
+        || manifest.ref !== (resource ? ownerTarget.ref : binding.ref) || manifest.entrypoint !== 'SKILL.md'
+        || files?.length !== 1 || file.sha256 !== bodyHash || file.bytes !== proof.bytes) return;
+      manifestObservation = { path: manifestPath, realpath: manifestPath, artifact: retain('prepared-manifest', manifestBytes) };
+    }
     const bytes = fs.readFileSync(path);
-    if (sha(bytes) !== proof.bodySha256 || bytes.length !== proof.bytes || !text(message.content).startsWith(bytes.toString('utf8'))) return;
+    if (sha(bytes) !== bodyHash || bytes.length !== proof.bytes || !Buffer.from(bytes.toString('utf8')).equals(bytes)
+      || !text(message.content).startsWith(bytes.toString('utf8'))) return;
     record('prepared_read', { version: 1, toolName: 'read', toolCallId: message.toolCallId, receiptSequence,
       originalInputSha256: pending.inputSha256, preparedInputSha256: pending.result.inputSha256,
       brokerSource: pending.brokerSource, inputArtifact: retain('prepared-input', JSON.stringify(input)),
       file: { path, realpath: path, artifact: retain('prepared-body', bytes) },
-      manifest: { path: manifestPath, realpath: manifestPath, artifact: retain('prepared-manifest', manifestBytes) } });
+      ...(resourceStorage ? { projection: 'resource' } : { manifest: manifestObservation }) });
     pendingPreparedReads.delete(message.toolCallId);
   };
   const receipt = message => {
@@ -798,7 +841,7 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     const body = text(message.content);
     const row = record('receipt', { toolName: message.toolName, toolCallId: message.toolCallId, customType: message.customType,
       content: { bytes: Buffer.byteLength(body), sha256: sha(body) }, proofs });
-    preparedRead(message, proofs.contextBrokerRead, row.sequence);
+    preparedRead(message, proofs, row.sequence);
   };
   const attach = (target, name, fn) => target.on(name, (event, ctx) => {
     if (closed || api !== target) return;
@@ -842,8 +885,10 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     const selectors = Object.fromEntries(['path', 'paths', 'ref', 'refs', 'query', 'id', 'ids', 'refresh'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
     const toolSource = typeof api.getAllTools === 'function' ? api.getAllTools().find(tool => tool.name === event.toolName)?.sourceInfo : undefined;
     let toolImplementation;
-    if (event.toolName === 'read' && toolResultDirectory && Object.keys(input).length === 1
-      && /^sr:C[A-Za-z0-9_-]{22}$/u.test(input.path ?? '') && event.parentToolCallId === undefined
+    if (event.toolName === 'read' && toolResultDirectory && typeof input.path === 'string'
+      && Object.keys(input).every(key => ['path', 'refresh'].includes(key))
+      && (input.refresh === undefined || typeof input.refresh === 'boolean') && !(input.path?.startsWith('sr:R') && input.refresh === true)
+      && /^sr:[CSR][A-Za-z0-9_-]{22}$/u.test(input.path ?? '') && event.parentToolCallId === undefined
       && toolSource?.origin === 'package' && toolSource.source === 'npm:pi-compact-ui'
       && typeof toolSource.baseDir === 'string' && toolSource.path === toolSource.baseDir + '/index.ts') {
       const files = ['package.json', 'index.ts'].map(relativePath => {
@@ -852,10 +897,17 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
       });
       toolImplementation = { version: 1, runtimeMode: ctx?.mode, files };
       const registrations = api.getCommands().filter(command => command.name === 'context-broker');
-      const refs = ctx.sessionManager.getBranch().filter(entry => entry.type === 'custom'
-        && entry.customType === 'context-broker-short-ref' && entry.data?.ref === input.path);
-      if (registrations.length === 1 && refs.length === 1 && refs[0].data?.version === 1 && refs[0].data.target?.kind === 'candidate') pendingPreparedReads.set(event.toolCallId, {
-        turn, inputSha256: sha(JSON.stringify(input)), identity: structuredClone(refs[0].data.target.identity), brokerSource: registrations[0].sourceInfo,
+      const branch = ctx.sessionManager.getBranch(), targetFor = ref => {
+        const refs = branch.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref' && entry.data?.ref === ref);
+        return refs.length === 1 && refs[0].data?.version === 1 ? refs[0].data.target : undefined;
+      };
+      const target = targetFor(input.path), kind = input.path.startsWith('sr:R') ? 'resource' : input.path.startsWith('sr:S') ? 'selected' : 'candidate';
+      const ownerTarget = kind === 'resource' && /^sr:S[A-Za-z0-9_-]{22}$/u.test(target?.owner ?? '') ? targetFor(target.owner) : target;
+      if (registrations.length === 1 && target?.kind === kind && ownerTarget?.identity?.source === 'notion'
+        && (kind !== 'resource' || ownerTarget.kind === 'selected')) pendingPreparedReads.set(event.toolCallId, {
+        turn, inputSha256: sha(JSON.stringify(input)), originalInput: JSON.parse(JSON.stringify(input)),
+        target: structuredClone(target), ownerTarget: structuredClone(ownerTarget), identity: structuredClone(ownerTarget.identity),
+        brokerSource: registrations[0].sourceInfo,
       });
     }
     if (event.toolName === 'ask_user' && toolResultDirectory && toolSource?.origin === 'package' &&

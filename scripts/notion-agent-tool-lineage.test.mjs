@@ -79,6 +79,109 @@ function preparedFixture() {
   return { tasks, session, preparedReads: new Map([[id, evidence]]), evidence, native, proof };
 }
 
+function selectedPreparedFixture({ resource = false, storage = 'entry', refresh = false, inspect = false } = {}) {
+  const value = preparedFixture(), { evidence, tasks, session, native } = value;
+  const binding = value.proof.binding, owner = binding.record.id, scope = binding.scope;
+  const main = evidence.manifest.files[0], mainBinding = evidence.manifest.file_bindings[0];
+  const ownerRef = 'sr:S' + 'o'.repeat(22), resourceRef = 'sr:R' + 'r'.repeat(22);
+  const selected = { kind: 'selected', identity: session.branchEntries[0].data.target.identity,
+    snapshot_id: binding.snapshot_id, version_id: binding.version_id, body_sha256: binding.body_sha256,
+    entrypoint: 'SKILL.md', ref: binding.ref, file_id: mainBinding.file_id };
+  const body = Buffer.from('精确资源\n'), fileId = 'file-' + 'f'.repeat(64), relative = 'references/rates.md';
+  const fixed = 'skill://' + encodeURIComponent(owner) + '/' + relative + '?snapshot=' + binding.snapshot_id + '&file_id=' + fileId;
+  const file = { path: relative, bytes: body.length, sha256: sha(body), ref: fixed };
+  const fileBinding = { path: relative, file_id: fileId, page_id: 'resource-page' };
+  evidence.manifest.files = [main, file]; evidence.manifest.file_bindings = [mainBinding, fileBinding];
+  const priorOwner = { type: 'custom', id: 'selected-owner', customType: 'context-broker-short-ref',
+    data: { version: 1, ref: ownerRef, target: selected } };
+  const original = { path: resource ? resourceRef : ownerRef, ...(refresh ? { refresh: true } : {}) };
+  native.arguments = original; tasks[0].selectors = original; tasks[0].inputSha256 = argsHash(original);
+  evidence.observation.originalInputSha256 = argsHash(original);
+  session.branchEntries[0] = priorOwner;
+  if (resource) {
+    session.branchEntries.splice(1, 0, { type: 'custom', id: 'resource-ref', customType: 'context-broker-short-ref',
+      data: { version: 1, ref: resourceRef, target: { kind: 'resource', owner: ownerRef,
+        path: relative, ref: fixed, bytes: body.length, sha256: sha(body), file_id: fileId } } });
+    evidence.body = body; evidence.content = [{ type: 'text', text: body.toString() }];
+    const proof = { version: 2, toolCallId: native.id, id: owner, scope,
+      snapshot_id: binding.snapshot_id, version_id: binding.version_id,
+      ref: fixed, path: relative, bytes: body.length, sha256: sha(body), file_id: fileId,
+      delivery: { start: 0, end: body.toString().length, encoding: 'raw' },
+      delivered_complete_text: true, loaded: false, ...(inspect ? { purpose: 'inspect' } : {}) };
+    value.proof = proof; tasks[2].proofs = { contextBrokerResource: proof };
+    const message = session.branchEntries.find(entry => entry.id === 'result').message;
+    const rendered = body.toString() + '\n<notion-effects>readonly</notion-effects>';
+    message.content = [{ type: 'text', text: rendered }]; message.details = { contextBrokerResource: proof };
+    tasks[2].content = { bytes: Buffer.byteLength(rendered), sha256: sha(rendered) };
+    const path = '/cache/notion/scopes/' + scope + '/records/' + sha(owner) + '/' +
+      (storage === 'entry' ? 'entries' : 'resources') + '/' + binding.snapshot_id + '/tree/' + relative;
+    evidence.input = { path }; evidence.observation.file = { path, realpath: path };
+    if (storage === 'resource') {
+      evidence.observation.projection = 'resource'; delete evidence.observation.manifest; delete evidence.manifest;
+    }
+  } else if (refresh) {
+    selected.snapshot_id = 's_' + 'e'.repeat(64); selected.version_id = 'f'.repeat(64);
+    selected.ref = binding.ref.replace(binding.snapshot_id, selected.snapshot_id);
+    evidence.input = { ...evidence.input, refresh: true };
+    value.proof.purpose = 'inspect';
+    value.proof.readStatus = { purpose: 'inspect', activation_effect: 'unchanged', requires_acquisition: 'not_performed',
+      use_selection: { status: 'inspection_only', roles: [] } };
+    value.proof.directory = { files: structuredClone(evidence.manifest.files), required: [], candidates: [], references: [] };
+  }
+  tasks[1].inputSha256 = argsHash(evidence.input);
+  evidence.observation.preparedInputSha256 = tasks[1].inputSha256;
+  return value;
+}
+
+test('selected refresh inspection keeps its original flag while binding the newly observed complete entry', () => {
+  const value = selectedPreparedFixture({ refresh: true }), result = inspect(value);
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostics));
+  assert.deepEqual(result.attempts[0].arguments, value.native.arguments);
+  assert.equal(result.attempts[0].preparedRead.snapshotId, value.proof.snapshotId);
+});
+
+test('a fixed selected read retains its original full multi-file selection', () => {
+  const value = selectedPreparedFixture(), result = inspect(value);
+  assert.equal(result.status, 'passed');
+  assert.equal(result.attempts[0].preparedRead.snapshotId, value.session.branchEntries[0].data.target.snapshot_id);
+  assert.equal(value.evidence.manifest.files.length, 2);
+});
+
+test('scalar resource delegation binds the prior resource and selected owner for entry and resource storage', () => {
+  for (const options of [{ resource: true }, { resource: true, storage: 'resource', inspect: true }]) {
+    const value = selectedPreparedFixture(options), result = inspect(value);
+    assert.equal(result.status, 'passed', JSON.stringify(result.diagnostics));
+    assert.equal(result.attempts[0].preparedRead.bodySha256, sha(value.evidence.body));
+    assert.equal(result.attempts[0].preparedRead.resourcePath, 'references/rates.md');
+  }
+});
+
+test('selected and resource rewrites reject lost flags, foreign bindings, incomplete delivery and receipt-only history', () => {
+  const cases = [
+    [() => selectedPreparedFixture({ refresh: true }), value => { delete value.evidence.input.refresh; }],
+    [() => selectedPreparedFixture({ refresh: true }), value => { delete value.proof.purpose; }],
+    [() => selectedPreparedFixture(), value => { value.session.branchEntries[0].data.target.snapshot_id = 's_' + 'e'.repeat(64); }],
+    [() => selectedPreparedFixture({ refresh: true }), value => { value.evidence.manifest.files.pop(); }],
+    [() => selectedPreparedFixture({ resource: true }), value => { value.session.branchEntries.shift(); }],
+    [() => selectedPreparedFixture({ resource: true }), value => { value.session.branchEntries.splice(0, 0, structuredClone(value.session.branchEntries[0])); }],
+    [() => selectedPreparedFixture({ resource: true }), value => { const owner = value.session.branchEntries.shift(); value.session.branchEntries.push(owner); }],
+    [() => selectedPreparedFixture({ resource: true }), value => { value.session.branchEntries[1].data.target.owner = 'sr:S' + 'z'.repeat(22); }],
+    [() => selectedPreparedFixture({ resource: true }), value => { value.proof.file_id = 'file-' + 'e'.repeat(64); }],
+    [() => selectedPreparedFixture({ resource: true }), value => { value.proof.version_id = 'e'.repeat(64); }],
+    [() => selectedPreparedFixture({ resource: true }), value => { value.evidence.manifest.file_bindings[1].file_id = 'file-' + 'e'.repeat(64); }],
+    [() => selectedPreparedFixture({ resource: true, storage: 'resource' }), value => { value.evidence.observation.file.realpath += '-other'; }],
+    [() => selectedPreparedFixture({ resource: true, storage: 'resource' }), value => { value.evidence.content = [{ type: 'text', text: 'partial' }]; }],
+    [() => selectedPreparedFixture({ resource: true, storage: 'resource' }), value => { value.proof.delivered_complete_text = false; }],
+    [() => selectedPreparedFixture({ resource: true, storage: 'resource' }), value => { value.evidence.body = Buffer.from('different'); }],
+    [() => selectedPreparedFixture({ resource: true, storage: 'resource' }), value => { value.preparedReads.clear(); }],
+  ];
+  for (const [index, [make, alter]] of cases.entries()) {
+    const value = make(); alter(value);
+    assert.equal(inspect(value).status, 'failed', 'case ' + index);
+    assert.ok(codes(value).includes('TOOL_RESULT_INPUT_MISMATCH'), 'case ' + index);
+  }
+});
+
 test('a verified ordinary compact-ui read proves original short ref, prepared input, owner and full file delivery', () => {
   const value = preparedFixture(), result = inspect(value);
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostics));
@@ -121,13 +224,15 @@ test('reviewed read delegation requires the observed complete package files and 
 });
 
 test('analysis reads the actual sealed implementation bytes before admitting a claimed reviewed rewrite', async () => {
-  const value = preparedFixture();
   const bindings = { version: 1, public: {}, private: { objects: {}, bodies: {}, facts: {}, readbacks: {} } };
-  const observed = { tasks: value.tasks, session: value.session, costs: [], transport: [], source: [], sourceCoverage: true };
-  const result = await analyzeNotionAgentTurn({ id: 'sealed-read', expect: [{ kind: 'no-semantic-writes' }] }, observed, bindings,
-    { inspectPayload: () => [], readArtifact: async () => Buffer.from('a different implementation despite the claimed hash') });
-  assert.equal(result.assertions.find(row => row.kind === 'tool-attempt-observation').code, 'ARTIFACT_CHANGED');
-  assert.notEqual(result.status, 'passed');
+  for (const value of [preparedFixture(), selectedPreparedFixture({ refresh: true }),
+    selectedPreparedFixture({ resource: true, storage: 'resource' })]) {
+    const observed = { tasks: value.tasks, session: value.session, costs: [], transport: [], source: [], sourceCoverage: true };
+    const result = await analyzeNotionAgentTurn({ id: 'sealed-read', expect: [{ kind: 'no-semantic-writes' }] }, observed, bindings,
+      { inspectPayload: () => [], readArtifact: async () => Buffer.from('a different implementation despite the claimed hash') });
+    assert.equal(result.assertions.find(row => row.kind === 'tool-attempt-observation').code, 'ARTIFACT_CHANGED');
+    assert.notEqual(result.status, 'passed');
+  }
 });
 
 test('opaque child IDs correlate through complete native census and direct structure, without ID parsing', () => {

@@ -429,7 +429,7 @@ async function observedBrokerToolOwner(observed, readArtifact) {
 // All bytes cross the same artifact boundary as other observed tool results.
 // The pure lineage check still validates the original native call, exact
 // transformation, current-turn receipt and immutable owner/File relationship.
-async function observedPreparedReads(observed, readArtifact) {
+export async function observedPreparedReads(observed, readArtifact) {
   const reads = new Map(); let brokerOwner;
   for (const observation of observed.tasks.filter(row => row.phase === 'prepared_read')) {
     const event = observed.tasks.find(row => row.phase === 'tool_call' && row.toolCallId === observation.toolCallId);
@@ -441,7 +441,8 @@ async function observedPreparedReads(observed, readArtifact) {
     brokerOwner ??= await observedBrokerToolOwner(observed, readArtifact);
     const inputBytes = await verifiedArtifact(observation.inputArtifact, readArtifact);
     const body = await verifiedArtifact(observation.file?.artifact, readArtifact);
-    const manifest = JSON.parse((await verifiedArtifact(observation.manifest?.artifact, readArtifact)).toString('utf8'));
+    const manifest = observation.projection === 'resource' ? undefined
+      : JSON.parse((await verifiedArtifact(observation.manifest?.artifact, readArtifact)).toString('utf8'));
     const contentBytes = await verifiedArtifact(result.contentArtifact, readArtifact);
     demand(hash(inputBytes) === result.inputSha256 && hash(contentBytes) === result.content?.sha256
       && contentBytes.length === result.content.bytes, 'PREPARED_READ_ARTIFACT_CHANGED',
