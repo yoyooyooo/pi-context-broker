@@ -47,7 +47,7 @@ snapshot 指纹、完整 source_tree 与 runtime 清单。构建后修改一边�
 failure.json。smoke 不访问 Notion 或真模型，不能记作自然 onboarding 或日用通过。
 
 stdin 默认 ignore；RPC 或显式管道输入必须传 `--stdin inherit`，交互结束时关闭输入。
-Node/Pi/Bun 使用统一维护的机器基础环境，不为任务另装旧版；每个 run 在实际子进程环境
+Node/Pi/Bun/Git 使用统一维护的机器基础环境，不为任务另装旧版；每个 run 在实际子进程环境
 中前后观察版本、选定入口和声明范围的文件身份，实际 Node 使用本次启动脚本的 `process.execPath`。升级共享基础环境不要求
 重建任务 clone，也不引入任务专用版本管理；按本次实际 runtime 解释验证结果。
 每个 run 核对 config/state/cache/data、`NTN_SKILLS_SCHEDULER_ROOT`、Pi agent
@@ -59,7 +59,7 @@ direct 与 private wrapper 复用 `pi-launch.json` 的同一固定 argv/settings
 HOME 保持不变；CLI wrapper 仅影响子进程树。
 回读 run.runtime 与 result.runtime_check 的 before/after/changes/unknown；unchanged、drifted、
 unknown 分开。运行时不完整或漂移时整体失败，command_status/exit_code/timed_out 和 stdout/stderr
-仍保留原值。选定 Node/Bun 文件、Pi entry/manifest/可选 runtime module 和私有 wrappers 的
+仍保留原值。选定 Node/Bun/Git 文件、Pi entry/manifest/可选 runtime module 和私有 wrappers 的
 端点检查不等于完整安装冻结，不证明任意 command 的子进程身份。跨 pair/batch 判断、实际
 资源装载握手和任务请求前阻断归 Benchmark AH-1220；公共 run 不代判业务成功。
 凭据变量只通过显式 `--pass-env NAME` 传入，models 的 apiKey 只能引用环境变量名。

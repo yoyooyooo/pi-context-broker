@@ -126,6 +126,32 @@ test('runtime endpoint identity observes actual files and version subprocesses',
     assert.equal(result.status, 'drifted');
   });
 
+  await t.test('selected Git accepts bounded Git versions and detects entry drift and missing observations', async () => {
+    const f = await fixture('git-identity'), git = join(f.root, 'git');
+    await writeFile(git, '#!/bin/sh\nprintf \'git version 2.50.1\\n\'\n', { mode: 0o700 });
+    const options = { ...f.options, git, usage: { ...f.options.usage, git: 'available' } };
+    const before = await captureRuntimeIdentity(options);
+    assert.equal(before.git.status, 'observed');
+    assert.equal(before.git.version, 'git version 2.50.1');
+    assert.equal(before.git.usage, 'available');
+    await writeFile(git, '#!/bin/sh\nprintf \'git version 2.50.1\\n\'\n# changed entry\n');
+    const changed = compareRuntimeIdentity(before, await captureRuntimeIdentity(options));
+    assert.equal(changed.status, 'drifted');
+    assert.ok(changed.changes.some(item => item.tool === 'git' && item.field === 'sha256'));
+    await writeFile(git, '#!/bin/sh\nprintf \'git version 2.39.5 (Apple Git-154)\\n\'\n');
+    assert.equal((await captureRuntimeIdentity(options)).git.status, 'observed');
+    await writeFile(git, '#!/bin/sh\nprintf \'unexpected secret value\\n\'\n');
+    const malformed = await captureRuntimeIdentity(options);
+    assert.equal(malformed.git.status, 'unknown');
+    assert.equal(malformed.git.version, null);
+    assert.ok(!JSON.stringify(malformed).includes('unexpected secret value'));
+    await rename(git, join(f.root, 'retained-git'));
+    const missing = compareRuntimeIdentity(before, await captureRuntimeIdentity(options));
+    assert.equal(missing.status, 'unknown');
+    assert.ok(missing.unknown.some(item => item.tool === 'git'));
+    assert.equal((await f.capture()).git, undefined, 'Legacy callers do not invent a selected Git identity');
+  });
+
   await t.test('missing endpoint observation remains unknown without replacing known drift', async () => {
     const f = await fixture('missing-at-end');
     const before = await f.capture();

@@ -199,6 +199,36 @@ test('paired environments isolate writable state and detect artifact changes', a
     await assert.rejects(checkEnvironment({ root: rootA, build: buildId }), /Frozen candidate archive changed/);
   });
 
+  await t.test('the caller-selected Git remains selected after the run PATH is isolated', async () => {
+    const originalPath = process.env.PATH;
+    const selected = (await readJson(join(rootA, 'environment.json'))).tools.git.path;
+    const bin = join(retained, 'selected-git-bin'), calls = join(retained, 'selected-git-calls.jsonl');
+    await mkdir(bin);
+    const entry = join(bin, 'git');
+    await writeFile(entry, '#!' + process.execPath + '\n' +
+      'import {appendFileSync} from "node:fs"; import {spawnSync} from "node:child_process";\n' +
+      'appendFileSync(' + JSON.stringify(calls) + ',JSON.stringify(process.argv.slice(2))+"\\n");\n' +
+      'const r=spawnSync(' + JSON.stringify(selected) + ',process.argv.slice(2),{stdio:"inherit",env:process.env});process.exit(r.status??1);\n', { mode: 0o700 });
+    let receipt;
+    try {
+      process.env.PATH = bin + ':' + originalPath;
+      receipt = await runEnvironment({ root: rootA, build: 'fixture', target: 'command',
+        id: 'caller-selected-git', 'pass-env': [], args: ['node', '-e',
+          'const {execFileSync}=require("node:child_process");' +
+          'execFileSync("git",["init","--initial-branch=fixture","owned-repository"],{stdio:"pipe"});' +
+          'console.log(execFileSync("git",["-C","owned-repository","symbolic-ref","--short","HEAD"],{encoding:"utf8"}).trim());'] });
+    } finally { process.env.PATH = originalPath; }
+    assert.equal(receipt.status, 'passed');
+    assert.equal((await readFile(receipt.stdout, 'utf8')).trim(), 'fixture');
+    assert.equal(receipt.runtime_check.before.git.path, entry);
+    assert.equal(receipt.runtime_check.after.git.path, entry);
+    assert.equal(receipt.runtime_check.before.git.usage, 'available');
+    assert.equal(await realpath(join(receipt.root, 'bin/git')), entry);
+    const invoked = (await readFile(calls, 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.ok(invoked.some(args => args[0] === 'init'), 'The actual target must use selected Git, not only its version probe');
+    assert.equal(receipt.frozen_artifacts, 'passed');
+  });
+
   await t.test('clones own refs, Git objects and editable files independently of other tasks', async () => {
     assert.notEqual(created[0].environment_id, created[1].environment_id);
     for (const name of ['cli', 'broker']) {
