@@ -1,133 +1,159 @@
-# Run the Benchmark bootstrap
+# Run a frozen Benchmark comparison
 
-Benchmark work lives on the lowercase `benchmark` integration branch. Shared
-product and isolation changes still go to `next`. Develop in a task-owned
-CLI/Broker pair, with the same ownership rules as
-[isolated development](isolated-development.md). The source environment is not
-the daily installation.
+Benchmark uses the existing paired-environment controller for isolated builds and
+run state. It adds public business cases, private grading, actual Pi SDK episodes,
+and evidence analysis. Use the maintained runtime and an explicitly named frozen
+build. The ordinary daily `next` verification gate remains separate.
 
-This first delivery provides the versioned protocol validator and a real-Pi,
-no-model loading probe. It does not yet run business episodes, collect actual
-model usage, score a comparison, or satisfy the full AH-1220 acceptance scope.
-Use [the protocol contract](benchmark-protocol.md) for experiment identities,
-registration and missing-data rules.
+## Start from an existing setup
 
-## Prepare the machine and pair
-
-Use maintained Node, Pi and Bun. On a machine whose `pi` command is a shell
-wrapper, read its selected JavaScript entry and pass that entry explicitly to
-the existing launcher. An unrelated npm global installation can differ from
-the ordinary `pi --version` command. Do not install a private old runtime to
-make a check pass.
+Read the task's setup JSON, its purpose and total budget before running anything.
+Use absolute paths. The setup names two environments, selected model routes,
+public material, private controller storage, adapter evidence, and episode and
+batch limits. It never contains credentials. A prepared Notion binding names a
+task-owned library and verified native-equivalent bytes.
 
 ```sh
-node scripts/paired-environment.mjs create --root /absolute/owned/benchmark-pair \
-  --cli-ref benchmark --broker-ref benchmark \
-  --pi-entry /absolute/maintained/pi/dist/bundle/cli.js
+node benchmark/cli.mjs configure --setup /absolute/task/setup.json
+node benchmark/cli.mjs run --plan /absolute/task/batch/plan.json --limit 2
+node benchmark/cli.mjs status --root /absolute/task/batch
 ```
 
-Edit only that pair. Build after adding the bootstrap files, then select the
-returned build ID explicitly. The build includes the shared launcher, observer
-and RPC child in its source inventory. The child runs from its run-owned source
-copy; the observer comes from the frozen build.
+`configure` writes the frozen protocol inside `plan.json`; the standalone
+`validate` command is optional when a separate protocol file is available.
+Configuration captures the real maintained Pi SDK startup and final provider
+serialization without sending a model request. Cases with identical startup
+inputs may share this expectation. Each actual episode independently verifies
+its public input bytes, loaded resources and first serialized request before
+transport. An expectation mismatch stops before submitting the business task.
+
+The example limit of two is a slice of the frozen batch, not an extra batch.
+Run the same plan again to continue its remaining slots. Completed slots are
+never silently repeated. Model retries are disabled in the initial policy.
+
+## Review the result
 
 ```sh
-node scripts/paired-environment.mjs build --root /absolute/owned/benchmark-pair \
-  --id protocol-bootstrap-1
-node benchmark/cli.mjs --help
-node benchmark/cli.mjs validate --protocol /absolute/owned/registration.json \
-  --stage phase0
-node benchmark/cli.mjs validate --protocol /absolute/owned/registration.json \
-  --stage execute
+node benchmark/cli.mjs query --root /absolute/task/batch --outcome unknown
+node benchmark/cli.mjs journey --root /absolute/task/batch --run retained-run-id
+node benchmark/cli.mjs analyze --root /absolute/task/batch --out /absolute/environment/reports/first
+node benchmark/cli.mjs reanalysis --root /absolute/task/batch --out /absolute/environment/reports/reanalysis-1
 ```
 
-The execute-stage validator rejects a draft or incomplete policy. Validation
-alone does not launch a model and does not authenticate external evidence.
-The first three selected routes are examples in a configuration, not an enum
-inside the runner. An unverified adapter cannot enter execution merely because
-its route name is known.
+`analyze` verifies retained evidence and aggregates normalized observations.
+`reanalysis` reads the original transport, tool and output artifacts, applies the
+private oracle again, and saves a new analysis identity. Both make zero model
+requests. A new product, prompt, runtime or model behavior needs a new frozen
+comparison and real execution; rescoring old behavior does not test that change.
 
-## Observe an isolated real Pi
-
-Select an owned public synthetic Skill tree, with no private oracle or answers.
-One probe is one fresh `paired-environment` command run. The probe supplies only
-its non-networking sentinel provider and common observer. It passes no model or
-Notion credential variables and supplies no remote library.
+When an analysis defect hid usage that is present in the raw evidence, correct
+the collector and reanalyze the existing run. Register that new bundle before
+resuming a stopped batch. Registration checks unchanged task/runtime identities,
+raw request artifacts, actual send count and private oracle identity; it cannot
+replace the subject build, model, inputs, slots or budgets. The original plan,
+ledger entries and normalized bundle remain intact.
 
 ```sh
-node benchmark/cli.mjs phase0 \
-  --root /absolute/owned/benchmark-pair --build protocol-bootstrap-1 \
-  --mode broker --skills /absolute/owned/synthetic-skills \
-  --condition candidate-broker --id broker-discovery-1
+node benchmark/cli.mjs register-reanalysis --plan /absolute/task/batch/plan.json --replacements /absolute/task/replacements.json --out /absolute/task/analysis-revision.json --reason 'Explain the collector correction'
+node benchmark/cli.mjs run --plan /absolute/task/batch/plan.json --analysis-revision /absolute/task/analysis-revision.json --limit 0
+node benchmark/cli.mjs status --root /absolute/task/batch
 ```
 
-Repeat with `--mode native` to load the same complete tree through native Pi.
-The caller always supplies `--skills`; the thin probe maps it to the existing
-launcher's `--skills` or `--native-skills` according to the selected mode.
+The replacement list contains `{ "run_id": "existing-run", "directory":
+"/absolute/new/normalized" }` entries. Applying the revision with limit zero
+makes no model calls. It records the source revision and adopts verified usage
+for those same runs, each counted once. Later runs use the registered analysis
+revision and continue the original remaining slots.
 
-The probe waits for RPC initialization, verifies the actual source of its
-registered `benchmark-inspect` command, and submits that local control command
-with a fresh nonce. Pi handles it before the Agent/model path. A successful
-receipt requires the matching snapshot, no extension error, no Agent start or
-provider invocation, an empty business-message history, and graceful EOF with
-exit zero. A `handled` acknowledgement by itself is insufficient.
+Every episode keeps its raw result, model attempts, usage, tool lineage,
+independent output readback, grading result and deterministic journey. A known
+business error remains a valid failure. Missing evidence remains unknown.
+Unsupported capabilities are reported separately. Unknown usage stops batch
+expansion because its actual cost cannot be reserved safely.
 
-The initial snapshot contains registered tools and schemas, active names,
-commands, loaded Skill metadata, initial context, system prompt, selected model,
-selected thinking level and relevant settings. The snapshot is taken after
-resource discovery. The full copied corpus is also checked against its input
-file inventory. Run, build and runtime observations retain their independent
-identities.
+## Initial route gate and recovery
 
-## Freeze and compare the observed loading
-
-The first probe returns `captured` and writes a **draft** `load-proposal.json`.
-Review it against the intended candidate and selected build. It does not grant
-a pass merely by observing itself. Freeze that reviewed proposal into a new
-file, then supply it to an independent fresh run:
+The initial pilot has a shared maximum of 144 scheduled episodes, including
+invalid runs and replacements. Its first 24 are a separately frozen comparison
+covering the three selected routes and both API families in native and Broker
+conditions. Successful business answers are not required to pass the apparatus
+gate; complete route, loading, transport and usage evidence is required.
 
 ```sh
-node benchmark/cli.mjs freeze-load \
-  --file /absolute/owned/benchmark-pair/proofs/broker-discovery-1/load-proposal.json \
-  --out /absolute/owned/benchmark-pair/control/broker-load.json
-node benchmark/cli.mjs phase0 \
-  --root /absolute/owned/benchmark-pair --build protocol-bootstrap-1 \
-  --mode broker --skills /absolute/owned/synthetic-skills \
-  --condition candidate-broker --id broker-verify-1 \
-  --expected /absolute/owned/benchmark-pair/control/broker-load.json
+node benchmark/cli.mjs gate --root /absolute/task/first24 --out /absolute/task/route-gate.json
 ```
 
-Each candidate owns its own expectation. Different tool sets and prompts are
-allowed between candidates. A changed build, tool schema, model selection,
-catalog, context or selected corpus is rejected against the old expectation.
-Known run and build path prefixes are replaced by explicit placeholders for
-comparison; process IDs and the control nonce are not candidate identity.
-Original unnormalized bytes remain available.
+Later pilot setups bind the resulting gate path and hash. The controller verifies
+all referenced episodes and their raw artifacts before reserving slot 25 onward.
+Core failures stop expansion. Repairing apparatus creates a new identity and
+retains the failed evidence; do not edit a frozen plan or fabricate a gate.
 
-A matching result is limited to `phase0-registered-resources` and always has
-`task_execution_enabled: false`. The CLI deliberately exposes no business-task
-submission action. These loading expectations are distinct from the complete
-environment manifest and do not replace the future paid-run admission gate.
+A rejected zero-send startup still occupies its pilot reservation. A narrowly
+documented repair may preserve that invalid slot externally while a new frozen
+continuation executes the original remaining order. Its cumulative gate verifies
+reservations 001 through 024 across both plans, the named repair's raw evidence,
+and current actual route coverage. The rejected slot never becomes a valid
+business result. This exception is not available for unknown sends or unknown
+usage, and does not establish a quality or reliability claim.
 
-## Evidence and remaining boundaries
+A running or interrupted lease blocks another controller. Inspect the retained
+lease and process first. When that specific owner is dead, release only that
+lease; the next run reconciles an already-started episode from terminal receipts
+before considering another slot:
 
-The existing launcher owns `runs/RUN_ID/run.json` and `result.json`. The probe
-does not edit them. Its child writes `runs/RUN_ID/benchmark/` with the raw RPC
-frames, lifecycle, observer events, nonce-bound snapshot and probe receipt. The
-outer check writes a new `proofs/` directory containing inputs, proposal,
-comparison or failure, and hashes of native receipts and retained observations.
-Existing IDs and outputs are never overwritten. Failed runs remain available.
+```sh
+node benchmark/cli.mjs reconcile --root /absolute/task/batch --lease observed-dead-lease-id
+```
 
-The public extension/RPC API does not expose a complete census of extensions
-that only register event handlers. Registered-resource provenance is observed;
-the launcher's list is a declaration, not a complete observed census. Registered
-tool definitions are not the final provider wire declaration, and current model
-selection is not proof of the eventually routed backend or effective usage.
-These limitations are recorded in the result. AH-1220 and AH-1221 must close
-their required observation gaps before business episodes can be admitted.
+An unresolved execution is not automatically rerun. Its send and cost status
+must be established or retained as unknown. Never delete a run or its receipts.
 
-This probe uses existing private state and process handling. It does not relax
-the strict `next` daily gate, prove business success, validate real Notion
-management effects, or count as a pilot episode. The first 24 real episodes
-belong inside the bounded 144-episode pilot after corpus, collection and scoring
-are ready. No scheduled paid runs are created.
+## Setup fields and limits
+
+The controller accepts model configuration, not a fixed model enumeration.
+`models.source_file`, `provider`, `ids`, and `api_key_env` select declared routes
+from an existing registry. The generated registry references an environment
+variable; the secret is passed only to the task process. No global model file or
+daily tool installation is changed.
+
+Each model needs `adapter_evidence_file` from the actual maintained SDK's
+controlled transport test, an explicit observation window and effective
+parameters. Unobservable alias backends remain opaque. No fallback or auxiliary
+model is allowed. Unverified prices are reported as unknown currency cost while
+token and network counts remain available.
+
+`budget.episode` sets elapsed time, actual requests, input/output tokens, HTTP
+attempts and retries. `budget.batch` sets their aggregate limits and concurrency.
+The initial controller dispatches one subject at a time. Output request limits
+and cumulative guards are enforced; prospective input estimation is a heuristic,
+not a proof of exact provider tokenization. All actual usage is retained.
+
+`decision` freezes the absolute quality policy and any noninferiority or
+efficiency thresholds before model results. Small samples can yield an
+inconclusive decision. Zero observed failures or all ties do not establish a
+narrow noninferiority margin.
+
+`allowed_changes` declares differences between environments. Code Mode `free`,
+`off` and `required` are separate policy conditions. The runtime records the
+actual declarations and calls; use policy interactions rather than grouping
+episodes afterward according to whether a model happened to call Code Mode.
+
+## Visibility and public distribution
+
+The subject receives business inputs and declared Skill material. Full controller
+source, private oracle and prior experiment results stay outside its run tree;
+the runtime projection contains only the allowlisted observer modules. Exact
+input inventories, trace evidence and private canaries check this boundary.
+This is a same-user filesystem arrangement, not an operating-system sandbox.
+
+Private raw bundles may contain machine paths and task-owned remote identities.
+Distribute a separately sanitized package and its transformation manifest.
+Retain the originals for internal traceability. Public synthetic materials and
+offline statistics do not imply that every corpus case was executed remotely.
+
+## Maintenance
+
+Benchmark implementation belongs on `benchmark`. Fixes to shared product or
+isolation behavior go through `next` first and are then synchronized. Preparation,
+real execution, analysis and source integration have separate receipts. No paid
+cron or automatic all-model matrix is installed.

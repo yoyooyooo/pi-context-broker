@@ -20,7 +20,7 @@ test('public CLI validates a draft but refuses to treat it as an executable regi
   assert.ok(refused.errors.length > 0);
 });
 
-test('CLI has no task execution or unbounded arbitrary argument pass-through', () => {
+test('CLI rejects arbitrary prompt execution and undeclared resource pass-through', () => {
   for (const args of [['run', '--prompt', 'business task'], ['phase0', '--models', '/unselected/models.json'],
     ['phase0', '--pass-env', 'SECRET'], ['validate', '--protocol', '/a', '--protocol', '/b'], ['validate', '--protocol']])
     assert.throws(() => parseBenchmarkArgs(args));

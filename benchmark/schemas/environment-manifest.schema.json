@@ -250,6 +250,43 @@
             "sha256"
           ],
           "additionalProperties": false
+        },
+        "git": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "entry": {
+              "type": "string",
+              "pattern": "^(?:/|\\$\\{(?:RUN_ROOT|BUILD_ROOT)\\}/)"
+            },
+            "sha256": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "version",
+            "entry",
+            "sha256"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -488,6 +525,12 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "entry_kind": {
+          "enum": [
+            "pi-cli",
+            "pi-sdk"
           ]
         }
       },

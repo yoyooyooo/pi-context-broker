@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, readFile, realpath, rename, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import { observeSharedGit, sha256 } from './episode-evidence.mjs';
+
+test('admission observes selected Git bytes and rejects drift without inventing legacy identities', async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-git-admission-')));
+  t.diagnostic('Retained task fixture: ' + root);
+  await mkdir(join(root, 'bin'));
+  const entry = join(root, 'maintained-git');
+  await writeFile(entry, 'owned executable bytes\n');
+  await symlink(entry, join(root, 'bin/git'));
+  const writeReceipt = value => writeFile(join(root, 'run.json'), JSON.stringify(value));
+  await writeReceipt({ runtime: {} });
+  assert.equal(await observeSharedGit(root), undefined);
+  const selected = { path: entry, sha256: sha256(await readFile(entry)), version: 'git version 2.50.1', status: 'observed' };
+  await writeReceipt({ runtime: { git: selected } });
+  const observed = await observeSharedGit(root);
+  assert.equal(observed.sha256, selected.sha256);
+  assert.equal(observed.version, selected.version);
+  await writeFile(entry, 'changed executable bytes\n');
+  await assert.rejects(observeSharedGit(root), /BENCHMARK_GIT_BYTES_DRIFT/);
+  await writeFile(entry, 'owned executable bytes\n');
+  await rename(join(root, 'bin/git'), join(root, 'previous-git-link'));
+  const other = join(root, 'other-git');
+  await writeFile(other, 'owned executable bytes\n');
+  await symlink(other, join(root, 'bin/git'));
+  await assert.rejects(observeSharedGit(root), /BENCHMARK_GIT_SELECTION_DRIFT/);
+  await writeReceipt({ runtime: { git: { ...selected, status: 'unknown' } } });
+  await assert.rejects(observeSharedGit(root), /BENCHMARK_GIT_IDENTITY_UNKNOWN/);
+});

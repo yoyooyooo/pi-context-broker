@@ -247,9 +247,10 @@ placeholder is not evidence of free usage.
 
 `metrics.json` gives each metric a formula, unit, aggregation, evidence list,
 missing-data behavior and a stable `metric:.../v1` analysis contract identifier.
-These are analysis interface identifiers; the dictionary explicitly marks the
-AH-1223 scoring implementation pending. No scores or confidence intervals are
-computed by this protocol module.
+These identifiers resolve to the implemented registry in
+`benchmark/analysis/metrics.mjs`. The protocol module validates their contract;
+the [analysis modules](benchmark-analysis.md) compute scores and conservative
+cluster intervals from verified observations.
 
 Quality first averages repeats within cases, then cases within fixed families.
 Family weights cover exactly the selected common-task families and sum to one.
@@ -289,8 +290,10 @@ Frozen negative fixtures are resealed after deliberate changes so semantic
 checks are tested independently of hash mismatch detection.
 
 A passing protocol test or no-model loading probe is not a real-model Benchmark
-result. Full corpus generation, multiround orchestration, cancellation and remote
-reconciliation, real adapter/usage verification, evidence normalization,
-statistical implementation, bounded pilot and independent confirmation remain
-their respective work items. The daily `next` acceptance gates and product
-content/history model are unchanged.
+result. The [runner](benchmark-running.md), [corpus](benchmark-corpus.md),
+[runtime observer](benchmark-runtime.md), and [analysis](benchmark-analysis.md)
+document their implemented interfaces and evidence boundaries. Each published
+batch must separately identify its actual runtime, materialization, model
+execution, failures, unknowns and confirmation status. An implemented scenario
+is not evidence that it was executed remotely. The daily `next` acceptance gates
+and product content/history model remain separate.
