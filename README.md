@@ -256,6 +256,7 @@ See the [Tern package guide](./packages/tern-context-broker/README.md) for confi
 - [Configuration examples](./packages/context-broker/examples/config.example.yml) and [catalog example](./packages/context-broker/examples/discovery-catalog.example.yaml).
 - [Broker verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-context-broker/SKILL.md) and [Notion integration verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/SKILL.md): checkout procedures and feature maps. The [daily installation and native menu map](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md) separately covers actual installations, slash menus, live Notion and model consumption. CLI consumption verification lives in `.cursor/skills/verify-ntn-skills/SKILL.md` in the [CLI repository](https://github.com/yoyooyooo/notion-skills-cli). These routes do not imply completed acceptance.
 - [Contributing](./CONTRIBUTING.md): development checks, verification and release workflow.
+- [Benchmark protocol](./docs/benchmark-protocol.md) and [no-model bootstrap](./docs/benchmark-running.md): parameterized comparisons and isolated Pi loading checks on the `benchmark` branch. These checks do not report model scores.
 - [Changelog](./CHANGELOG.md) and [security policy](./SECURITY.md).
 
 ## Privacy and support

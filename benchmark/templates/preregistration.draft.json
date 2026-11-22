@@ -1,0 +1,434 @@
+{
+  "schema_version": 1,
+  "id": "REPLACE-experiment-id",
+  "status": "draft",
+  "phase": "phase0",
+  "purpose": "environment_iteration",
+  "registered_at": null,
+  "allowed_changes": [
+    "tools"
+  ],
+  "environments": [
+    {
+      "schema_version": 1,
+      "id": "candidate",
+      "status": "draft",
+      "paired_environment_id": "REPLACE-paired-environment",
+      "build": {
+        "id": "REPLACE-build-id",
+        "receipt_sha256": null,
+        "cli": {
+          "commit": "0000000000000000000000000000000000000000",
+          "source_sha256": null,
+          "package_sha256": null,
+          "sdk_sha256": null
+        },
+        "broker": {
+          "commit": "0000000000000000000000000000000000000000",
+          "source_sha256": null,
+          "package_sha256": null
+        }
+      },
+      "runtime": {
+        "node": {
+          "version": null,
+          "entry": "/REPLACE/maintained/node",
+          "sha256": null
+        },
+        "pi": {
+          "version": null,
+          "entry": "/REPLACE/maintained/pi",
+          "sha256": null
+        },
+        "bun": {
+          "version": null,
+          "entry": "/REPLACE/maintained/bun",
+          "sha256": null
+        }
+      },
+      "pi": {
+        "mode": "broker",
+        "entry": "/REPLACE/maintained/pi",
+        "config_sha256": null,
+        "extensions": [
+          {
+            "id": "candidate-broker",
+            "role": "broker",
+            "path": "${BUILD_ROOT}/broker/dist/pi/index.js",
+            "sha256": null
+          },
+          {
+            "id": "common-observer",
+            "role": "observer",
+            "path": "${RUN_ROOT}/benchmark/observer.mjs",
+            "sha256": null
+          }
+        ],
+        "tools": [
+          {
+            "name": "example_lookup",
+            "description": "Example candidate-specific interface; replace from its real manifest.",
+            "parameters": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+          }
+        ],
+        "active_tools": [
+          "example_lookup"
+        ],
+        "catalog_sha256": null,
+        "sources": [],
+        "native_root": null,
+        "guidance_sha256": null,
+        "injection_sha256": null,
+        "return_contract_sha256": null,
+        "error_contract_sha256": null
+      },
+      "policies": {
+        "cache": "cold",
+        "session": "episode_private",
+        "recovery": "none",
+        "code_mode": "free"
+      },
+      "manifest_sha256": null
+    },
+    {
+      "schema_version": 1,
+      "id": "reference",
+      "status": "draft",
+      "paired_environment_id": "REPLACE-paired-environment",
+      "build": {
+        "id": "REPLACE-build-id",
+        "receipt_sha256": null,
+        "cli": {
+          "commit": "0000000000000000000000000000000000000000",
+          "source_sha256": null,
+          "package_sha256": null,
+          "sdk_sha256": null
+        },
+        "broker": {
+          "commit": "0000000000000000000000000000000000000000",
+          "source_sha256": null,
+          "package_sha256": null
+        }
+      },
+      "runtime": {
+        "node": {
+          "version": null,
+          "entry": "/REPLACE/maintained/node",
+          "sha256": null
+        },
+        "pi": {
+          "version": null,
+          "entry": "/REPLACE/maintained/pi",
+          "sha256": null
+        },
+        "bun": {
+          "version": null,
+          "entry": "/REPLACE/maintained/bun",
+          "sha256": null
+        }
+      },
+      "pi": {
+        "mode": "broker",
+        "entry": "/REPLACE/maintained/pi",
+        "config_sha256": null,
+        "extensions": [
+          {
+            "id": "candidate-broker",
+            "role": "broker",
+            "path": "${BUILD_ROOT}/broker/dist/pi/index.js",
+            "sha256": null
+          },
+          {
+            "id": "common-observer",
+            "role": "observer",
+            "path": "${RUN_ROOT}/benchmark/observer.mjs",
+            "sha256": null
+          }
+        ],
+        "tools": [
+          {
+            "name": "example_search",
+            "description": "Example candidate-specific interface; replace from its real manifest.",
+            "parameters": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+          }
+        ],
+        "active_tools": [
+          "example_search"
+        ],
+        "catalog_sha256": null,
+        "sources": [],
+        "native_root": null,
+        "guidance_sha256": null,
+        "injection_sha256": null,
+        "return_contract_sha256": null,
+        "error_contract_sha256": null
+      },
+      "policies": {
+        "cache": "cold",
+        "session": "episode_private",
+        "recovery": "none",
+        "code_mode": "free"
+      },
+      "manifest_sha256": null
+    }
+  ],
+  "models": [
+    {
+      "id": "selected-model",
+      "family": "REPLACE-model-family",
+      "provider": "magpie",
+      "route": "auto/grok-4.7",
+      "api": "openai-responses",
+      "adapter": {
+        "id": "REPLACE-verified-adapter",
+        "version": "REPLACE",
+        "verification": "unverified",
+        "evidence_sha256": null
+      },
+      "parameters": {},
+      "backend": {
+        "identity": null,
+        "observability": "opaque_alias",
+        "window": {
+          "start": "2026-11-22T00:00:00Z",
+          "end": "2026-11-23T00:00:00Z"
+        }
+      },
+      "adoption": {
+        "mode": "as_is",
+        "development_budget_id": null,
+        "development_material_ids": [],
+        "confirmation_material_ids": []
+      }
+    }
+  ],
+  "corpus": {
+    "id": "REPLACE-canonical-corpus",
+    "version": "REPLACE",
+    "content_sha256": "2145b7ab767aa0c790379ef00bd8eeb2ee9f9ffb5dd7f86e1617451607e72685",
+    "license": "REPLACE-public-synthetic-license",
+    "capabilities": [
+      {
+        "id": "example-common-business",
+        "scope": "common",
+        "environment_ids": [
+          "candidate",
+          "reference"
+        ]
+      }
+    ],
+    "cases": [
+      {
+        "id": "example-case",
+        "family": "example-family",
+        "material_id": "example-material",
+        "cluster_id": "example-independent-cluster",
+        "split": "development",
+        "content_sha256": "b6450f8be6317414f7ede0a1dfb86f93250fe8755f6cd6fd149459b304f2ab41",
+        "prompt_sha256": "b4e3615b8503a1e318f4320d88394bbda87362dfd5c908ea1027b0647f9dec77",
+        "contract_sha256": "65903cdd7b560b7b5a167992611ad0be6dcd84dc44b958cf3b802e969eafb40f",
+        "initial_state_sha256": "d740e7f2724cb8851fce7c6b15eedf7a1d02cacadf74f2613f1ac52fd8b3ec7b",
+        "authorization_sha256": "805d3a0e0c34fe7b23c19d739968443dc3cccd4ca647e80c9864d9737f230e9f",
+        "capability_ids": [
+          "example-common-business"
+        ]
+      }
+    ]
+  },
+  "conditions": [
+    {
+      "id": "candidate-condition",
+      "environment_id": "candidate",
+      "environment_sha256": "2b8e0ffa0c8faeeff2745dbcdc624db8af53d9b420eca68873480bc4162fba02",
+      "model_id": "selected-model",
+      "corpus_id": "REPLACE-canonical-corpus",
+      "corpus_sha256": "2145b7ab767aa0c790379ef00bd8eeb2ee9f9ffb5dd7f86e1617451607e72685",
+      "case_ids": [
+        "example-case"
+      ],
+      "initial_state_sha256": "018d006365c0b47bf79d741ef9309179d3dc5b92e06ad7c2de8745aca865f1f1",
+      "authorization_sha256": "5787fc5f9e5e09dd591ca9dc1b6d1de266e4492dd857cd3558c7fcfe44985eec",
+      "budget_id": "required-budget",
+      "code_mode": "free"
+    },
+    {
+      "id": "reference-condition",
+      "environment_id": "reference",
+      "environment_sha256": "e8ab6fc90f85baf09a514fecfbbbe72b2d85be8c2c125bd4d47a1fb242cc16da",
+      "model_id": "selected-model",
+      "corpus_id": "REPLACE-canonical-corpus",
+      "corpus_sha256": "2145b7ab767aa0c790379ef00bd8eeb2ee9f9ffb5dd7f86e1617451607e72685",
+      "case_ids": [
+        "example-case"
+      ],
+      "initial_state_sha256": "018d006365c0b47bf79d741ef9309179d3dc5b92e06ad7c2de8745aca865f1f1",
+      "authorization_sha256": "5787fc5f9e5e09dd591ca9dc1b6d1de266e4492dd857cd3558c7fcfe44985eec",
+      "budget_id": "required-budget",
+      "code_mode": "free"
+    }
+  ],
+  "pairs": [
+    {
+      "id": "example-pair",
+      "case_id": "example-case",
+      "condition_ids": [
+        "candidate-condition",
+        "reference-condition"
+      ],
+      "repeat": 0,
+      "seed": 0
+    }
+  ],
+  "assessments": [],
+  "policies": {
+    "budgets": [
+      {
+        "id": "required-budget",
+        "episode": {
+          "max_duration_ms": null,
+          "max_model_requests": null,
+          "max_input_tokens": null,
+          "max_output_tokens": null,
+          "max_http_attempts": null,
+          "max_retries": null
+        },
+        "batch": {
+          "max_episodes": null,
+          "max_model_requests": null,
+          "max_input_tokens": null,
+          "max_output_tokens": null,
+          "max_duration_ms": null,
+          "max_concurrency": null
+        },
+        "monetary": {
+          "policy": "unpriced",
+          "currency": null,
+          "max_amount": null,
+          "pricing_sha256": null
+        }
+      }
+    ],
+    "ordering": {
+      "method": "balanced",
+      "seed": 0,
+      "concurrency": null,
+      "condition_order": [
+        "candidate-condition",
+        "reference-condition"
+      ]
+    },
+    "statistics": {
+      "confidence": 0.95,
+      "interval_method": null,
+      "boundary_method": null,
+      "missing": "retain_unknown_fixed_denominator",
+      "multiple_comparisons": null,
+      "case_aggregation": "mean_repeats",
+      "cluster_unit": "cluster_id",
+      "quality_unknown_credit": 0,
+      "invalid": "retain_separate_costs",
+      "family_weights": [
+        {
+          "family": "example-family",
+          "weight": 1
+        }
+      ]
+    },
+    "decision": {
+      "mode": "descriptive",
+      "absolute_quality_required": null,
+      "unassisted_quality_required": null,
+      "quality_delta_min": null,
+      "input_ratio_max": null,
+      "capped_time_ratio_max": null,
+      "efficiency_ratio_max": null,
+      "critical_contracts": [
+        "business-source-content-permissions-effects"
+      ],
+      "allow_inconclusive": true
+    },
+    "stopping": {
+      "on_manifest_mismatch": "stop_before_task",
+      "on_core_evidence_failure": "stop_batch",
+      "on_budget_exhaustion": "stop_and_record",
+      "on_runtime_drift": "invalidate_and_stop_batch",
+      "on_product_failure": "retain_result"
+    },
+    "reruns": {
+      "max_episodes": null,
+      "count_invalid": true,
+      "count_replacements": true,
+      "retain_originals": true,
+      "link_retest_of": true
+    },
+    "evidence": {
+      "required": [
+        "runtime_identity",
+        "loaded_manifest",
+        "visible_materials",
+        "model_requests",
+        "usage",
+        "tool_lineage",
+        "business_readback",
+        "completion_boundary",
+        "interventions"
+      ],
+      "observer_version": null,
+      "normalizer_version": null,
+      "metric_version": "1.0.0",
+      "scoring_version": null,
+      "raw_hashes": "sha256",
+      "locators": "line_or_json_pointer",
+      "missing": "unknown",
+      "oracle_location": "external",
+      "business_contracts": "tool_neutral",
+      "usage_accounting": "verified_adapter_semantics"
+    },
+    "state": {
+      "unit": "episode",
+      "cross_episode": "isolated",
+      "checkpoint_linkage": true
+    },
+    "model_fallback": "forbidden",
+    "auxiliary_model_ids": [],
+    "scheduled_paid_runs": false,
+    "pilot": {
+      "max_scheduled_episodes": 144,
+      "route_gate_episodes": 24,
+      "gate_included": true,
+      "invalid_and_reruns_included": true
+    },
+    "metric_contract": {
+      "unsupported": "separate_capability_scope",
+      "unknown": "no_success_credit_not_confirmed_failure",
+      "retest": "new_model_execution",
+      "reanalysis": "same_raw_evidence"
+    }
+  },
+  "metrics": {
+    "dictionary_sha256": "39f0ba5443c089a43ec8cc0afdafd108a141f95f67e9fcd0587eddd32fe5974f",
+    "primary": [
+      "verified_quality",
+      "input_ratio",
+      "time_ratio",
+      "unassisted_quality"
+    ],
+    "secondary": [
+      "known_failure",
+      "evidence_coverage",
+      "input_first",
+      "input_peak",
+      "input_total",
+      "version_transition"
+    ]
+  },
+  "protocol_sha256": null
+}

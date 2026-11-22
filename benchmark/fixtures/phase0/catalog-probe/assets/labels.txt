@@ -1,0 +1,4 @@
+catalog
+supporting-document
+text-asset
+BENCHMARK_PUBLIC_PHASE_ZERO_ASSET_V1
