@@ -80,6 +80,17 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
         && text.indexOf(presence) < text.indexOf(publish) && text.indexOf(publish) < text.indexOf(registry)
         && text.includes('  release:\n    needs: main\n'),
         'GATE_RELEASE_POLICY_MISSING', 'Keep the existing release approval and publication boundary.');
+      const staged = step('Stage verified release inputs'), upload = step('Preserve verified release inputs'),
+        download = step('Download verified release inputs');
+      check(staged.includes('id: release_inputs')
+        && staged.includes('artifact=verified-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}')
+        && staged.includes('>> "$GITHUB_OUTPUT"') && unconditional(staged)
+        && text.includes('verified_artifact: ${{ steps.release_inputs.outputs.artifact }}')
+        && upload.includes('name: ${{ steps.release_inputs.outputs.artifact }}') && unconditional(upload)
+        && !upload.includes('overwrite:')
+        && download.includes('name: ${{ needs.main.outputs.verified_artifact }}')
+        && text.indexOf(registry) < text.indexOf(staged),
+        'GATE_RELEASE_HANDOFF_MISSING', 'Preserve each verified attempt and consume its producer-selected artifact.');
     }
   }
   check(new Set(revisions).size === 1, 'GATE_SDK_BUILD_INPUT_DRIFT', 'CI and publish must pin the same CLI revision.');

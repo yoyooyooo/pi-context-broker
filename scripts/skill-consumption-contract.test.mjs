@@ -34,6 +34,8 @@ test('missing consumption, drifting CLI input and skipped current HTTP gate are 
     [value => { value.workflows[1].text = value.workflows[1].text.replace('cancel-in-progress: false', 'cancel-in-progress: true'); }, 'GATE_RELEASE_POLICY_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace('Verify registry, cold install, and provenance\n', 'Verify registry, cold install, and provenance\n        if: false\n'); }, 'GATE_RELEASE_POLICY_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace('needs: main', 'needs: []'); }, 'GATE_RELEASE_POLICY_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('artifact=verified-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}', 'artifact=verified-release'); }, 'GATE_RELEASE_HANDOFF_MISSING'],
+    [value => { value.workflows[1].text = value.workflows[1].text.replace('name: ${{ needs.main.outputs.verified_artifact }}', 'name: verified-release'); }, 'GATE_RELEASE_HANDOFF_MISSING'],
   ];
   for (const [mutate, code] of cases) {
     const config = structuredClone(consumptionGateConfiguration()); mutate(config);
