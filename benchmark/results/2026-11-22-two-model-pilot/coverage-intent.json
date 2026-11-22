@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "kind": "public-predeclared-coverage-intent",
+  "source_sha256": "a39ea98698772bbaf509078dbcd72dc594b9cb928f6120258c45714aae44fe48",
+  "case_family_map": [
+    {
+      "case_id": "no-skill-01-a",
+      "family": "no-skill",
+      "stage": "admission",
+      "natural_turns": 1,
+      "frozen_clarification_required": false,
+      "episode_count": 4,
+      "remote_write": false
+    },
+    {
+      "case_id": "no-skill-02-a",
+      "family": "no-skill",
+      "stage": "admission",
+      "natural_turns": 1,
+      "frozen_clarification_required": false,
+      "episode_count": 4,
+      "remote_write": false
+    },
+    {
+      "case_id": "no-skill-03-a",
+      "family": "no-skill",
+      "stage": "admission",
+      "natural_turns": 1,
+      "frozen_clarification_required": false,
+      "episode_count": 4,
+      "remote_write": false
+    },
+    {
+      "case_id": "explicit-01-a",
+      "family": "explicit",
+      "stage": "admission",
+      "natural_turns": 1,
+      "frozen_clarification_required": false,
+      "episode_count": 4,
+      "remote_write": false
+    },
+    {
+      "case_id": "implicit-01-a",
+      "family": "implicit",
+      "stage": "expansion",
+      "natural_turns": 1,
+      "frozen_clarification_required": false,
+      "episode_count": 4,
+      "remote_write": false
+    },
+    {
+      "case_id": "ambiguity-01-a",
+      "family": "ambiguity",
+      "stage": "expansion",
+      "natural_turns": 1,
+      "frozen_clarification_required": true,
+      "episode_count": 4,
+      "remote_write": false
+    },
+    {
+      "case_id": "equivalent-01-a",
+      "family": "equivalent",
+      "stage": "expansion",
+      "natural_turns": 1,
+      "frozen_clarification_required": false,
+      "episode_count": 4,
+      "remote_write": false
+    },
+    {
+      "case_id": "references-01-a",
+      "family": "references",
+      "stage": "expansion",
+      "natural_turns": 1,
+      "frozen_clarification_required": false,
+      "episode_count": 4,
+      "remote_write": false
+    },
+    {
+      "case_id": "scripts-assets-01-a",
+      "family": "scripts-assets",
+      "stage": "expansion",
+      "natural_turns": 1,
+      "frozen_clarification_required": false,
+      "episode_count": 4,
+      "remote_write": false
+    },
+    {
+      "case_id": "complementary-01-a",
+      "family": "complementary",
+      "stage": "expansion",
+      "natural_turns": 1,
+      "frozen_clarification_required": false,
+      "episode_count": 4,
+      "remote_write": false
+    },
+    {
+      "case_id": "continuation-01-a",
+      "family": "continuation",
+      "stage": "expansion",
+      "natural_turns": 2,
+      "frozen_clarification_required": false,
+      "episode_count": 4,
+      "remote_write": false
+    },
+    {
+      "case_id": "task-switch-01-a",
+      "family": "task-switch",
+      "stage": "expansion",
+      "natural_turns": 2,
+      "frozen_clarification_required": false,
+      "episode_count": 4,
+      "remote_write": false
+    }
+  ],
+  "models": [
+    "[identity:5f2db83c384bab6b61ef]/gpt-6.2-sol",
+    "grok/grok-4.6"
+  ],
+  "provider": "[identity:ed69350bc384c36b6df1]",
+  "conditions": [
+    "broker-current",
+    "native-current"
+  ],
+  "ordering_seed": 20261122,
+  "repetitions": 1,
+  "common_material_sha256": "15f804ee3e6d9a74398eb0bc60b1845c5d0e2e2a7ad2859909baed43e898df19",
+  "planned_coverage": {
+    "admission_cases": 4,
+    "admission_episodes": 16,
+    "expansion_cases": 8,
+    "expansion_episodes": 32,
+    "total_distinct_cases": 12,
+    "total_families": 10,
+    "total_new_episodes": 48
+  },
+  "reporting_policy": "Admission and expansion keep separate frozen plans and statistical reports. Total coverage may be listed; no pooled quality or efficiency claim is authorized by this proposal without a common full analysis protocol."
+}

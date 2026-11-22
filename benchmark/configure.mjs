@@ -12,6 +12,7 @@ import { freezeBatchPlan, validateBatchPlan, scheduleProtocol } from './batch.mj
 import { runSubject, verifyTurnRuntimeBuild } from './execute.mjs';
 import { executionImplementation, verifyExecutionImplementation, instrumentationIdentity } from './implementation.mjs';
 import { prepareZeroSendResumption } from './resumption.mjs';
+import { pilotScopePolicy, preparePilotScope, verifyPilotScope } from './pilot-scope.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = async (path, value) => {
@@ -49,6 +50,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     const proof = await readJson(join(root, 'configuration-proof.json'));
     assert.equal(proof.setup_sha256, fingerprint(setup)); assert.equal(proof.plan_sha256, existing.plan_sha256);
     await verifyExecutionImplementation(existing.execution.implementation);
+    if (existing.execution.pilot_scope) await verifyPilotScope(existing);
     const bindings = await readJson(existing.execution.case_bindings_file);
     assert.equal(sha(await readFile(existing.execution.case_bindings_file)), existing.execution.case_bindings_sha256);
     await readEpisodeFixtureBindings({ id: existing.id, registration: existing.execution.episode_fixtures,
@@ -183,7 +185,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   }));
   const protocol = preregisterComparison({ id: setup.id, phase: setup.phase, purpose: setup.purpose, environments, models,
     corpus: corpus.publicCorpus, cases, repetitions: setup.repetitions ?? 1, budget: setup.budget, decision: setup.decision,
-    analysis: setup.analysis, allowedChanges: setup.allowed_changes, orderingSeed: setup.ordering_seed });
+    analysis: setup.analysis, pilotScope: pilotScopePolicy(setup.pilot_scope), allowedChanges: setup.allowed_changes, orderingSeed: setup.ordering_seed });
   assert.deepEqual(scheduleProtocol(protocol), scheduled, 'Fixture ownership differs from the final frozen comparison schedule');
   const conditions = Object.fromEntries(protocol.conditions.map(condition => {
     const ei = environments.findIndex(environment => environment.id === condition.environment_id), candidate = setup.candidates[ei];
@@ -201,6 +203,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const resumption = await prepareZeroSendResumption({ setup, protocol, captures: results, currentSchedule: scheduleProtocol(protocol) });
   if (resumption) execution.resumption = resumption;
   execution.instrumentation = await instrumentationIdentity(execution);
+  const scope = await preparePilotScope({ setup, protocol, execution, slots: scheduleProtocol(protocol), captures: results });
+  if (scope) execution.pilot_scope = scope;
   const plan = freezeBatchPlan({ protocol, execution });
   await save(join(root, 'plan.json'), plan);
   await save(join(root, 'configuration-proof.json'), { version: 1, setup_sha256: fingerprint(setup), plan_sha256: plan.plan_sha256,

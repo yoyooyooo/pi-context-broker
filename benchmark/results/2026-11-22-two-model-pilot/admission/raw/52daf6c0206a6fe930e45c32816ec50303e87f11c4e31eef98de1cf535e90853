@@ -1,0 +1,13 @@
+---
+name: [identity:4e61576dbbcfb49602b6]
+description: "松涛29按行计算税额"
+---
+
+
+# 松涛29按行计算税额
+
+读取 references/tax.json。每行税额为 net\_cents 乘税率除以 100，四舍五入到整数分。输出 id、tax\_cents 和 gross\_cents。
+
+本材料为可公开复现的合成业务资料，许可 CC0-1.0。
+
+金额一律使用整数分；若有舍入，按文中规则执行。

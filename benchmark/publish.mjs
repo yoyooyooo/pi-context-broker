@@ -8,7 +8,7 @@ import { scoreExperiment } from './analysis/compare.mjs';
 import { renderAnalysisMarkdown, renderMetricSvg, reportTables, toCsv } from './analysis/report.mjs';
 import { verifyArtifactFiles, verifyBundle } from './evidence/store.mjs';
 
-export const PUBLICATION_VERSION = '1.0.1';
+export const PUBLICATION_VERSION = '1.0.2';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const within = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
@@ -29,10 +29,33 @@ const executableFiles = ['benchmark/protocol.mjs', 'benchmark/metrics.json', 'be
 const asList = value => value === undefined ? [] : (assert.ok(Array.isArray(value) && value.every(x => typeof x === 'string' && x.length), 'Redaction lists contain nonempty strings'), value);
 const unique = values => [...new Set(values)];
 const alias = (kind, value) => '[' + kind + ':' + hash(kind + '\0' + value).slice(0, 20) + ']';
-function parseRaw(bytes, artifact) {
+function reviewedBinaryMap(entries) {
+  assert.ok(Array.isArray(entries), 'Reviewed binary artifacts must be an explicit allowlist');
+  const approved = new Map();
+  for (const entry of entries) {
+    assert.ok(object(entry));
+    assert.deepEqual(Object.keys(entry).sort(), ['bytes', 'kind', 'purpose', 'sha256']);
+    assert.match(entry.sha256, /^[a-f0-9]{64}$/);
+    assert.ok(Number.isSafeInteger(entry.bytes) && entry.bytes > 0);
+    assert.equal(entry.kind, 'source-bytes', 'Only reviewed synthetic source bytes may bypass text redaction');
+    assert.equal(entry.purpose, 'public-synthetic-fixture');
+    assert.ok(!approved.has(entry.sha256), 'Duplicate reviewed binary identity');
+    approved.set(entry.sha256, { ...entry });
+  }
+  return approved;
+}
+function approveBinary(bytes, artifact, approved) {
+  const entry = approved.get(artifact.sha256);
+  assert.ok(entry, 'Opaque binary evidence needs an explicit reviewed publication policy: ' + artifact.id);
+  assert.equal(hash(bytes), entry.sha256, 'Reviewed binary hash mismatch');
+  assert.equal(bytes.length, entry.bytes, 'Reviewed binary byte count mismatch');
+  assert.equal(artifact.kind, entry.kind, 'Reviewed binary artifact kind mismatch');
+  return entry;
+}
+function parseRaw(bytes, artifact, approved) {
   let text;
   try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); }
-  catch { throw new Error('Opaque binary evidence needs an explicit reviewed publication policy: ' + artifact.id); }
+  catch { return { format: 'binary', value: bytes, approval: approveBinary(bytes, artifact, approved) }; }
   if (artifact.kind === 'jsonl' || /\.jsonl$/i.test(artifact.path)) {
     assert.ok(text.endsWith('\n'), 'Cannot publish truncated JSONL');
     const lines = text.split('\n'); lines.pop();
@@ -198,6 +221,7 @@ function privateGradingMaterial(value) {
   return Object.values(value).some(privateGradingMaterial);
 }
 function encodeRaw(parsed, sanitize) {
+  if (parsed.format === 'binary') return Buffer.from(parsed.value);
   if (parsed.format === 'json') return Buffer.from(canonicalJson(sanitize.walk(parsed.value)) + '\n');
   if (parsed.format === 'jsonl') return Buffer.from(parsed.value.map((value, index) => parsed.blank[index] ? '' : canonicalJson(sanitize.walk(value))).join('\n') + '\n');
   return Buffer.from(sanitize.text(parsed.value, { filesystem: false }));
@@ -222,6 +246,25 @@ function memberPath(directory, name) {
   assert.ok(within(directory, path) && path !== directory, 'Package member escapes its directory');
   return path;
 }
+// Also embedded in the dependency-free public replay below.
+function verifyBinaryPublication(manifest, episodes) {
+  const approved = manifest.policy.reviewed_binary_artifacts ?? [];
+  assert.ok(Array.isArray(approved));
+  const bySha = new Map(approved.map(entry => [entry.sha256, entry]));
+  assert.equal(bySha.size, approved.length, 'Duplicate public binary approval');
+  const rows = manifest.raw_mapping.filter(row => row.format === 'binary');
+  assert.equal(rows.length, approved.length, 'Public binary approvals differ from the released files');
+  for (const row of rows) {
+    const entry = bySha.get(row.source_sha256); assert.ok(entry, 'Public binary approval missing');
+    assert.equal(entry.kind, 'source-bytes'); assert.equal(entry.purpose, 'public-synthetic-fixture');
+    assert.equal(entry.bytes, row.source_bytes); assert.equal(row.source_bytes, row.public_bytes);
+    assert.equal(row.source_sha256, row.public_sha256); assert.equal(row.changed, false);
+  }
+  for (const episode of episodes) for (const artifact of episode.artifacts) {
+    const entry = bySha.get(artifact.sha256);
+    if (entry) assert.equal(artifact.kind, entry.kind, 'Public binary artifact kind mismatch');
+  }
+}
 const replaySource = [
 "import assert from 'node:assert/strict';",
 "import {readFile} from 'node:fs/promises';",
@@ -233,6 +276,7 @@ const replaySource = [
 "import {writeAnalysisReport} from './offline/benchmark/analysis/report.mjs';",
 "import {verifyBundle} from './offline/benchmark/evidence/store.mjs';",
 "const root=dirname(fileURLToPath(import.meta.url)),hash=bytes=>createHash('sha256').update(bytes).digest('hex');",
+verifyBinaryPublication.toString(),
 "const manifest=JSON.parse(await readFile(join(root,'public-manifest.json'),'utf8'));",
 "assert.equal(manifest.kind,'benchmark-public-evidence-package');",
 "assert.equal(manifest.manifest_sha256,fingerprint({...manifest,manifest_sha256:null}));",
@@ -243,6 +287,7 @@ const replaySource = [
 " const bytes=await readFile(path);assert.equal(hash(bytes),file.sha256);assert.equal(bytes.length,file.bytes);",
 "}",
 "const input=JSON.parse(await readFile(join(root,'analysis-input.json'),'utf8'));",
+"verifyBinaryPublication(manifest,input.episodes);",
 "const pathsBySha256=Object.fromEntries(manifest.raw_mapping.map(item=>[item.public_sha256,join(root,item.public_path)]));",
 "for(const episode of input.episodes)await verifyBundle({episode},{root,pathsBySha256});",
 "const analysis=scoreExperiment(input);assert.equal(analysis.analysis_sha256,manifest.public_analysis_sha256);",
@@ -251,9 +296,12 @@ const replaySource = [
 "process.stdout.write(JSON.stringify({status:'verified',scope:manifest.replay_scope,analysis_sha256:analysis.analysis_sha256,original_analysis_sha256:manifest.source_analysis_sha256,model_requests:0})+'\\n');",
 ].join('\n') + '\n';
 
-/** Export derived public copies. Original files and private grading inputs remain untouched. */
-export async function writePublicEvidencePackage({ directory, input, analysis, rawRoot, redactions = {} }) {
+/** Export derived public copies. Original files and private grading inputs remain untouched.
+ * reviewedBinaryArtifacts is opt-in: [{sha256, bytes, kind: 'source-bytes', purpose: 'public-synthetic-fixture'}].
+ * Each entry approves reviewed public fixture content, never an arbitrary binary log or output. */
+export async function writePublicEvidencePackage({ directory, input, analysis, rawRoot, redactions = {}, reviewedBinaryArtifacts = [] }) {
   assert.ok(isAbsolute(directory) && isAbsolute(rawRoot));
+  const approvedBinary = reviewedBinaryMap(reviewedBinaryArtifacts);
   const original = scoreExperiment(input);
   if (analysis) assert.equal(analysis.analysis_sha256, original.analysis_sha256, 'Supplied analysis does not match its inputs');
   const owned = await realpath(rawRoot), sources = new Map();
@@ -262,18 +310,19 @@ export async function writePublicEvidencePackage({ directory, input, analysis, r
     for (const { artifact, bytes } of (await verifyArtifactFiles(episode.artifacts, { root: owned })).values()) {
       assert.ok(!/(?:private[-_]?oracle|oracle[-_]?private)/i.test(artifact.kind ?? ''), 'Private oracle artifacts are not public evidence');
       if (!sources.has(artifact.sha256)) {
-        const parsed = parseRaw(bytes, artifact);
-        assert.ok(parsed.format === 'text' || !privateGradingMaterial(parsed.value), 'Private oracle or control material cannot be published');
+        const parsed = parseRaw(bytes, artifact, approvedBinary);
+        assert.ok(['text', 'binary'].includes(parsed.format) || !privateGradingMaterial(parsed.value), 'Private oracle or control material cannot be published');
         sources.set(artifact.sha256, { artifact, bytes, parsed });
-      }
+      } else if (sources.get(artifact.sha256).parsed.format === 'binary') approveBinary(bytes, artifact, approvedBinary);
     }
   }
   const sanitize = createPublicSanitizer({ redactions: { ...redactions, path_prefixes: unique([owned, ...asList(redactions.path_prefixes)]) },
-    material: [input, ...[...sources.values()].map(source => source.parsed.value)] });
-  const files = new Map(), rawMapping = [], mapping = new Map();
+    material: [input, ...[...sources.values()].filter(source => source.parsed.format !== 'binary').map(source => source.parsed.value)] });
+  const files = new Map(), rawMapping = [], mapping = new Map(), binaryPaths = new Set(), binaryApprovals = [];
   for (const [sourceSha, source] of sources) {
     const bytes = encodeRaw(source.parsed, sanitize), publicSha = hash(bytes), path = 'raw/' + publicSha;
-    try { sanitize.assertClean(bytes); } catch (error) { throw new Error(error.message + '; artifact=' + source.artifact.id + '; format=' + source.parsed.format); }
+    if (source.parsed.format === 'binary') { binaryPaths.add(path); binaryApprovals.push(source.parsed.approval); }
+    else try { sanitize.assertClean(bytes); } catch (error) { throw new Error(error.message + '; artifact=' + source.artifact.id + '; format=' + source.parsed.format); }
     files.set(path, bytes);
     const row = { source_sha256: sourceSha, public_sha256: publicSha, source_bytes: source.bytes.length, public_bytes: bytes.length,
       public_path: path, format: source.parsed.format, changed: !bytes.equals(source.bytes),
@@ -325,6 +374,7 @@ export async function writePublicEvidencePackage({ directory, input, analysis, r
     'Offline replay verifies public file hashes and source locators, then recomputes statistics from retained normalized observations. It does not rerun private business grading, recover secrets, call a provider, or create new executions.',
     'Counts, outcomes, unknown values, fixed denominators, intervals and decisions were compared with the original analysis before export and must be identical after identifier projection.',
     'Private oracles are not included. Credential and private identifier mappings are never written. Deterministic pseudonyms are not a guarantee of irreversible anonymization.',
+    'Non-UTF-8 bytes are refused unless an explicit reviewed synthetic-fixture allowlist binds their SHA256, byte count, artifact kind and public purpose. Approved binary material is copied byte for byte; its approval is recorded in the manifest. Text and structured evidence still pass through redaction.',
     '', '## Replay', '', 'Run node replay.mjs to verify the package and recompute its analysis.',
     'Run node replay.mjs --out /absolute/new-report-directory to write a fresh report. Node with JSON import-attribute support is required; no package installation or credentials are needed.',
     '', '## Identity', '', '- Original analysis: ' + original.analysis_sha256,
@@ -340,7 +390,7 @@ export async function writePublicEvidencePackage({ directory, input, analysis, r
   files.set('replay.mjs', Buffer.from(replaySource));
   const sourceBytes = await readFile(fileURLToPath(import.meta.url));
   files.set('sanitizer-source.mjs', sourceBytes);
-  for (const bytes of files.values()) sanitize.assertClean(bytes);
+  for (const [name, bytes] of files) if (!binaryPaths.has(name)) sanitize.assertClean(bytes);
   const manifest = { schema_version: 1, kind: 'benchmark-public-evidence-package', publication_version: PUBLICATION_VERSION,
     sanitizer_source_sha256: hash(sourceBytes), source_analysis_sha256: original.analysis_sha256,
     source_protocol_sha256: input.protocol.protocol_sha256, public_analysis_sha256: publicAnalysis.analysis_sha256,
@@ -349,7 +399,8 @@ export async function writePublicEvidencePackage({ directory, input, analysis, r
     public_episode_sha256: episodes.map(episode => episode.episode_sha256),
     raw_mapping_sha256: mappingSha, raw_mapping: rawMapping,
     replay_scope: 'public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun',
-    policy: sanitize.policy, transformation_counts: { ...sanitize.counts },
+    policy: { ...sanitize.policy, reviewed_binary_artifacts: binaryApprovals.sort((a, b) => a.sha256.localeCompare(b.sha256)) },
+    transformation_counts: { ...sanitize.counts },
     files: [...files].map(([path, bytes]) => ({ path, sha256: hash(bytes), bytes: bytes.length })).sort((a, b) => a.path.localeCompare(b.path)),
     manifest_sha256: null };
   manifest.manifest_sha256 = fingerprint(manifest);
@@ -378,6 +429,7 @@ export async function verifyPublicEvidencePackage({ directory }) {
     const bytes = await readFile(actual); assert.equal(hash(bytes), item.sha256); assert.equal(bytes.length, item.bytes);
   }
   const input = JSON.parse(await readFile(join(root, 'analysis-input.json'), 'utf8'));
+  verifyBinaryPublication(manifest, input.episodes);
   const pathsBySha256 = Object.fromEntries(manifest.raw_mapping.map(item => [item.public_sha256, memberPath(root, item.public_path)]));
   for (const episode of input.episodes) await verifyBundle({ episode }, { root, pathsBySha256 });
   const analysis = scoreExperiment(input);

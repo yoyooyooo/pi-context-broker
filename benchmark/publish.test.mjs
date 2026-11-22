@@ -14,6 +14,9 @@ import { createPublicSanitizer, writePublicEvidencePackage, verifyPublicEvidence
 
 const run=promisify(execFile),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const privateId='4205636c-236e-8110-9a1a-ce92cfb83ee0',secret='synthetic-export-secret-1234567890';
+const markerBytes=Buffer.from('00ff0a0d2a6d','hex');
+const markerApproval={sha256:'72ee7e95938b82284a312ea248777aad5e5220a20242ccf98d103d33427fc681',
+ bytes:6,kind:'source-bytes',purpose:'public-synthetic-fixture'};
 async function fixture({terminalOwner}={}){
  const root=await mkdtemp(join(tmpdir(),'benchmark-public-unit-')),originals=join(root,'private-originals');
  await mkdir(originals);
@@ -42,6 +45,13 @@ async function fixture({terminalOwner}={}){
   episodes.push(normalizeEpisode(f.input).episode);
  }
  return {root,originals,input:{protocol,episodes},directory:join(root,'public'),redactions:{secrets:[secret]}};
+}
+async function addBinary(f,{bytes=markerBytes,kind='source-bytes',episodeIndex=0}={}){
+ const episode=f.input.episodes[episodeIndex],path=join(f.originals,'format-marker-'+episodeIndex+'.bin');
+ await writeFile(path,bytes);
+ const artifact={id:'synthetic-format-marker',path,sha256:sha(bytes),bytes:bytes.length,kind};
+ episode.artifacts.push(artifact);episode.episode_sha256=fingerprint({...episode,episode_sha256:null});
+ return artifact;
 }
 test('sanitizer removes credentials and machine identity while preserving usage numbers and pointer keys',()=>{
  const s=createPublicSanitizer({redactions:{secrets:[secret]}});
@@ -91,6 +101,50 @@ test('private-oracle and opaque binary inputs are refused rather than silently r
  }
 });
 
+test('reviewed synthetic binary bytes retain their identity through publication and offline replay',async()=>{
+ const f=await fixture({terminalOwner:'yoyo'}),artifact=await addBinary(f),before=scoreExperiment(f.input);
+ assert.equal(sha(markerBytes),markerApproval.sha256);
+ const out=await writePublicEvidencePackage({...f,rawRoot:f.root,analysis:before,
+  reviewedBinaryArtifacts:[markerApproval],redactions:{...f.redactions,identifier_words:['yoyo'],terminal_usernames:['yoyo']}});
+ assert.equal(out.manifest.publication_version,'1.0.2');
+ assert.deepEqual(out.manifest.policy.reviewed_binary_artifacts,[markerApproval]);
+ const row=out.manifest.raw_mapping.find(item=>item.source_sha256===artifact.sha256);
+ assert.equal(row.format,'binary');assert.equal(row.changed,false);
+ assert.equal(row.source_sha256,row.public_sha256);assert.equal(row.source_bytes,6);assert.equal(row.public_bytes,6);
+ assert.deepEqual(await readFile(join(out.directory,row.public_path)),markerBytes);
+ assert.deepEqual(await readFile(artifact.path),markerBytes);
+ assert.deepEqual(out.analysis.conditions.map(x=>x.counts),before.conditions.map(x=>x.counts));
+ for(const item of out.manifest.files){
+  if(item.path===row.public_path)continue;
+  const text=await readFile(join(out.directory,item.path),'utf8');
+  for(const value of [secret,privateId,'/Users/unit-person',f.root])assert.ok(!text.includes(value),item.path);
+  assert.doesNotMatch(text,/(?<![\p{L}\p{N}_-])yoyo(?![\p{L}\p{N}_-])/u,item.path);
+ }
+ const {stdout}=await run(process.execPath,[join(out.directory,'replay.mjs')],{timeout:15000});
+ assert.equal(JSON.parse(stdout).analysis_sha256,out.analysis.analysis_sha256);assert.equal(JSON.parse(stdout).model_requests,0);
+ assert.equal((await verifyPublicEvidencePackage({directory:out.directory})).valid,true);
+});
+
+test('binary publication fails closed without the exact reviewed hash, byte count, kind and purpose',async()=>{
+ const cases=[
+  {approved:[],error:/explicit reviewed publication policy/},
+  {approved:[{...markerApproval,sha256:'0'.repeat(64)}],error:/explicit reviewed publication policy/},
+  {approved:[{...markerApproval,bytes:7}],error:/byte count mismatch/},
+  {approved:[markerApproval],artifact:{kind:'binary'},error:/artifact kind mismatch/},
+  {approved:[markerApproval],artifact:{bytes:Buffer.from([0xff,0xfe,0x80])},error:/explicit reviewed publication policy/},
+  {approved:[{...markerApproval,purpose:'private-runtime-log'}],error:/public-synthetic-fixture/},
+ ];
+ for(const item of cases){
+  const f=await fixture();await addBinary(f,item.artifact);
+  await assert.rejects(writePublicEvidencePackage({...f,rawRoot:f.root,reviewedBinaryArtifacts:item.approved}),item.error);
+ }
+});
+
+test('deduplicating reviewed bytes cannot authorize a different artifact kind',async()=>{
+ const f=await fixture();await addBinary(f);await addBinary(f,{episodeIndex:1,kind:'binary'});
+ await assert.rejects(writePublicEvidencePackage({...f,rawRoot:f.root,reviewedBinaryArtifacts:[markerApproval]}),/artifact kind mismatch/);
+});
+
 test('public projection does not reveal an identity that was restored from a credential-redacted label',()=>{
  const binding={observed_provider:'[REDACTED_CREDENTIAL]',value:'private-provider-label'};
  const s=createPublicSanitizer({material:[binding]});
@@ -129,7 +183,7 @@ test('terminal user redaction propagates through normalized results and raw arti
  assert.equal(projected.content[0].text,projected.structuredContent.output);
  assert.match(projected.content[0].text,/yoyooyooo/);
  assert.deepEqual(exported.analysis.conditions.map(x=>x.counts),before.conditions.map(x=>x.counts));
- assert.equal(exported.manifest.publication_version,'1.0.1');
+ assert.equal(exported.manifest.publication_version,'1.0.2');
  assert.ok(exported.manifest.policy.terminal_username_count>0);
  const rawArtifact=f.input.episodes[0].artifacts[0];
  const mapping=exported.manifest.raw_mapping.find(row=>row.source_sha256===rawArtifact.sha256);

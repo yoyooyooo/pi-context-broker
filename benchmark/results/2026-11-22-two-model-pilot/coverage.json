@@ -1,0 +1,223 @@
+{
+  "version": 1,
+  "kind": "benchmark-separate-plan-coverage",
+  "predeclared": {
+    "admission_cases": 4,
+    "admission_episodes": 16,
+    "expansion_cases": 8,
+    "expansion_episodes": 32,
+    "total_distinct_cases": 12,
+    "total_families": 10,
+    "total_new_episodes": 48
+  },
+  "predeclared_model_routes": [
+    "[identity:5f2db83c384bab6b61ef]/gpt-6.2-sol",
+    "grok/grok-4.6"
+  ],
+  "passed_prospective_gate_included": false,
+  "expansion_plan_included": false,
+  "current_plan_model_routes": [
+    {
+      "role": "admission",
+      "package": "admission",
+      "models": [
+        {
+          "id": "[identity:ed69350bc384c36b6df1]/[identity:a901595f50611539f5ad]/gpt-6.2-sol",
+          "provider": "[identity:ed69350bc384c36b6df1]",
+          "route": "[identity:a901595f50611539f5ad]/gpt-6.2-sol",
+          "api": "openai-completions"
+        },
+        {
+          "id": "[identity:ed69350bc384c36b6df1]/grok/grok-4.6",
+          "provider": "[identity:ed69350bc384c36b6df1]",
+          "route": "grok/grok-4.6",
+          "api": "openai-responses"
+        }
+      ]
+    }
+  ],
+  "manual_route_replacements": [
+    {
+      "scope_id": "two-models-20261122-route1",
+      "source_amendment_sha256": "f4de8483e5cea8f098de3b6dc7748416470d6526987d0cc4b32b824db59cd1fc",
+      "from_model_id": "[identity:ed69350bc384c36b6df1]/[identity:5f2db83c384bab6b61ef]/gpt-6.2-sol",
+      "to_model_id": "[identity:ed69350bc384c36b6df1]/[identity:a901595f50611539f5ad]/gpt-6.2-sol",
+      "variant": "gpt-6.2-sol",
+      "retained_run_id": "benchmark-two-model-admission-2-001"
+    }
+  ],
+  "actual_frozen_new_slots": 16,
+  "recorded_new_scope_episodes": 8,
+  "cases_with_recorded_episode": 3,
+  "families_with_recorded_episode": 1,
+  "cases": [
+    {
+      "case_id": "no-skill-01-a",
+      "family": "no-skill",
+      "stage": "admission",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 4,
+      "recorded_episodes": 4,
+      "valid_episodes": 3,
+      "invalid_episodes": 1,
+      "valid_real_episodes": 3,
+      "valid_unknown_outcomes": 0,
+      "recorded_conditions": [
+        "m0-e0",
+        "m0-e1",
+        "m1-e0",
+        "m1-e1"
+      ]
+    },
+    {
+      "case_id": "no-skill-02-a",
+      "family": "no-skill",
+      "stage": "admission",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 4,
+      "recorded_episodes": 2,
+      "valid_episodes": 2,
+      "invalid_episodes": 0,
+      "valid_real_episodes": 2,
+      "valid_unknown_outcomes": 0,
+      "recorded_conditions": [
+        "m0-e0",
+        "m0-e1"
+      ]
+    },
+    {
+      "case_id": "no-skill-03-a",
+      "family": "no-skill",
+      "stage": "admission",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 4,
+      "recorded_episodes": 2,
+      "valid_episodes": 2,
+      "invalid_episodes": 0,
+      "valid_real_episodes": 2,
+      "valid_unknown_outcomes": 1,
+      "recorded_conditions": [
+        "m0-e0",
+        "m0-e1"
+      ]
+    },
+    {
+      "case_id": "explicit-01-a",
+      "family": "explicit",
+      "stage": "admission",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 4,
+      "recorded_episodes": 0,
+      "valid_episodes": 0,
+      "invalid_episodes": 0,
+      "valid_real_episodes": 0,
+      "valid_unknown_outcomes": 0,
+      "recorded_conditions": []
+    },
+    {
+      "case_id": "implicit-01-a",
+      "family": "implicit",
+      "stage": "expansion",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 0,
+      "recorded_episodes": 0,
+      "valid_episodes": 0,
+      "invalid_episodes": 0,
+      "valid_real_episodes": 0,
+      "valid_unknown_outcomes": 0,
+      "recorded_conditions": []
+    },
+    {
+      "case_id": "ambiguity-01-a",
+      "family": "ambiguity",
+      "stage": "expansion",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 0,
+      "recorded_episodes": 0,
+      "valid_episodes": 0,
+      "invalid_episodes": 0,
+      "valid_real_episodes": 0,
+      "valid_unknown_outcomes": 0,
+      "recorded_conditions": []
+    },
+    {
+      "case_id": "equivalent-01-a",
+      "family": "equivalent",
+      "stage": "expansion",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 0,
+      "recorded_episodes": 0,
+      "valid_episodes": 0,
+      "invalid_episodes": 0,
+      "valid_real_episodes": 0,
+      "valid_unknown_outcomes": 0,
+      "recorded_conditions": []
+    },
+    {
+      "case_id": "references-01-a",
+      "family": "references",
+      "stage": "expansion",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 0,
+      "recorded_episodes": 0,
+      "valid_episodes": 0,
+      "invalid_episodes": 0,
+      "valid_real_episodes": 0,
+      "valid_unknown_outcomes": 0,
+      "recorded_conditions": []
+    },
+    {
+      "case_id": "scripts-assets-01-a",
+      "family": "scripts-assets",
+      "stage": "expansion",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 0,
+      "recorded_episodes": 0,
+      "valid_episodes": 0,
+      "invalid_episodes": 0,
+      "valid_real_episodes": 0,
+      "valid_unknown_outcomes": 0,
+      "recorded_conditions": []
+    },
+    {
+      "case_id": "complementary-01-a",
+      "family": "complementary",
+      "stage": "expansion",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 0,
+      "recorded_episodes": 0,
+      "valid_episodes": 0,
+      "invalid_episodes": 0,
+      "valid_real_episodes": 0,
+      "valid_unknown_outcomes": 0,
+      "recorded_conditions": []
+    },
+    {
+      "case_id": "continuation-01-a",
+      "family": "continuation",
+      "stage": "expansion",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 0,
+      "recorded_episodes": 0,
+      "valid_episodes": 0,
+      "invalid_episodes": 0,
+      "valid_real_episodes": 0,
+      "valid_unknown_outcomes": 0,
+      "recorded_conditions": []
+    },
+    {
+      "case_id": "task-switch-01-a",
+      "family": "task-switch",
+      "stage": "expansion",
+      "predeclared_episodes": 4,
+      "actual_frozen_slots": 0,
+      "recorded_episodes": 0,
+      "valid_episodes": 0,
+      "invalid_episodes": 0,
+      "valid_real_episodes": 0,
+      "valid_unknown_outcomes": 0,
+      "recorded_conditions": []
+    }
+  ],
+  "quality_policy": "Separate plan metrics only; coverage and campaign costs are not a pooled quality or efficiency estimate"
+}

@@ -1,0 +1,485 @@
+{
+  "version": 1,
+  "source_amendment_version": 3,
+  "kind": "public-pilot-scope-amendment",
+  "id": "two-models-20261122-route1",
+  "original_amendment_sha256": "f4de8483e5cea8f098de3b6dc7748416470d6526987d0cc4b32b824db59cd1fc",
+  "predecessor": {
+    "plan_source_sha256": "5c7cce660632fdedd973eae1dfb2dda8d2a0e91a37f001195c07749ca73237ad",
+    "amendment_source_sha256": "619ccf10e04d9e140c4bab6e941a387902ed2973677c2d0eaebcad8bb247914c",
+    "registration_source_sha256": "2b3986b1b4181185d16362c641a4be6adbc7480a870bc26eab383ef891fb1830"
+  },
+  "manual_route_replacement": {
+    "kind": "named-same-variant-auth-route-replacement",
+    "run_id": "benchmark-two-model-admission-2-001",
+    "reason": "Existing [identity:5f2db83c384bab6b61ef] credential reported expired; choose the explicitly named preconfigured same-variant route with retained recent success evidence.",
+    "from_model_id": "[identity:ed69350bc384c36b6df1]/[identity:5f2db83c384bab6b61ef]/gpt-6.2-sol",
+    "to_model_id": "[identity:ed69350bc384c36b6df1]/[identity:a901595f50611539f5ad]/gpt-6.2-sol",
+    "variant": "gpt-6.2-sol",
+    "administrative_hold": "full_prior_episode_allocation_not_actual_upper_bound",
+    "model_registry_before_source_sha256": "36d4157d324134f6e28169ce289070cf9b034cc8cc5e4640e856720154dcb3d3",
+    "model_registry_after_source_sha256": "451060a240af24c1cb49ea69d37ac3c96316b88e8cf5067fe622c46960330c59",
+    "captures": [
+      {
+        "run_id": "benchmark-two-model-admission-3-capture-m0-e0-c0",
+        "model_id": "[identity:ed69350bc384c36b6df1]/[identity:a901595f50611539f5ad]/gpt-6.2-sol",
+        "mode": "broker",
+        "expectation_source_sha256": "38f96dcfd3a4edbee515a6dffa67d5fd9d4f5a2853131618bf8bfddf0d93bea4",
+        "runtime_source_sha256": "382a3530b8091a7a4be49d8e1ac1c209e64b777044e39ac1941fef0f46f3c656",
+        "shared_source_sha256": "272b7b03758508af2e38deb7f6bc28f81fc047eea66531924d4e2d9e6dfbe389"
+      },
+      {
+        "run_id": "benchmark-two-model-admission-3-capture-m0-e1-c0",
+        "model_id": "[identity:ed69350bc384c36b6df1]/[identity:a901595f50611539f5ad]/gpt-6.2-sol",
+        "mode": "native",
+        "expectation_source_sha256": "e3f5308452960b29c4b39b7cc0b30dca57d0aadfe241a180fc547129dc90ec83",
+        "runtime_source_sha256": "738e20818a274629591e9075b18fa405c7ade0b96c3918a931eb91ae61857d3b",
+        "shared_source_sha256": "68ddea031bf09d286115758aac4ad572f43873e47e766b1d8060cca94e115be7"
+      },
+      {
+        "run_id": "benchmark-two-model-admission-3-capture-m1-e0-c0",
+        "model_id": "[identity:ed69350bc384c36b6df1]/grok/grok-4.6",
+        "mode": "broker",
+        "expectation_source_sha256": "b8850356454558dba49befe90d49018ff94c042216d3ede3995be3eaff2a3c6d",
+        "runtime_source_sha256": "8131515ef305bc026d51e9da96892f1aa2b842e010073e904a07f2e1bf059e5f",
+        "shared_source_sha256": "9b260effe3bcd79efb9f1127b07ef66fd5655dad4a4e766e8f94e5cd85f6b536"
+      },
+      {
+        "run_id": "benchmark-two-model-admission-3-capture-m1-e1-c0",
+        "model_id": "[identity:ed69350bc384c36b6df1]/grok/grok-4.6",
+        "mode": "native",
+        "expectation_source_sha256": "662150085d9c01d387af13358f02b80f843c84bd174207e9fee04451412b693a",
+        "runtime_source_sha256": "c3a9cfdcae334917f9dae987c38b59aeeb00597db7ab2cf2f8e599935efe8918",
+        "shared_source_sha256": "2a81956306d150796e4caa53c3b1847e0b48a7d668d0f03ce0418d48ee57729f"
+      }
+    ]
+  },
+  "route_protocol_source_sha256": "dec33c41933785f39302b667104069006ccff67034b4ec25dff07bec9ebf65b8",
+  "authorization_summary": "The user authorization is retained in the private original. This projection reports the frozen prospective scope policy.",
+  "registered_at": "2026-11-22T16:01:33.158Z",
+  "max_scheduled_episodes": 144,
+  "legacy_first24": {
+    "status": "incomplete_not_satisfied",
+    "scheduled_episodes": 24
+  },
+  "history": {
+    "scheduled_episodes": 5,
+    "unknown_usage_run_ids": [
+      "benchmark-route-gate-3-003",
+      "benchmark-two-model-admission-2-001"
+    ],
+    "known_subtotal": {
+      "model_requests": 6,
+      "input_tokens": 23621,
+      "output_tokens": 769,
+      "duration_ms": 59605.04079
+    },
+    "total_usage_status": "incomplete",
+    "monetary_status": "unpriced",
+    "administrative_holds": [
+      {
+        "run_id": "benchmark-two-model-admission-2-001",
+        "basis": "prior_frozen_episode_allocation",
+        "budget_id": "two-model-admission16-v1",
+        "allocation": {
+          "max_duration_ms": 180000,
+          "max_model_requests": 10,
+          "max_input_tokens": 300000,
+          "max_output_tokens": 16000,
+          "max_http_attempts": 10,
+          "max_retries": 0
+        },
+        "monetary": {
+          "policy": "unpriced",
+          "currency": null,
+          "max_amount": null,
+          "pricing_sha256": null
+        },
+        "actual_usage": "unknown",
+        "proven_actual_upper_bound": false,
+        "accounting": "allocation_hold_only_not_added_to_observed_usage_or_reservation_count"
+      }
+    ],
+    "reservations": [
+      {
+        "ordinal": 1,
+        "source_sha256": "960a31d2ea24bf0a483e970460ad760b5961158ec4bb4681fb86306318a5a538"
+      },
+      {
+        "ordinal": 2,
+        "source_sha256": "d5c16d64827237dab2c747c2164699d23c213a31a0e9b679f3041aa95a098ad9"
+      },
+      {
+        "ordinal": 3,
+        "source_sha256": "ad90e2d17c3853f9d6c8ef23dd654a48a56b79f648ee63c236cb8345a1b2fb1a"
+      },
+      {
+        "ordinal": 4,
+        "source_sha256": "ab87e4d38b351c39611e1aa6484acd8880df5f0b5acadc927feccd66622cf90e"
+      },
+      {
+        "ordinal": 5,
+        "source_sha256": "2aee8bb533a487d4ec67f943f44691a3ce7be245bcc53f477ccd1f70bfa312bf"
+      }
+    ],
+    "plans": [
+      {
+        "plan_source_sha256": "cf7d669866f1aadf40835497f1bdd2a1bb5ba937dea1b7db1cac1ab15a8e8002",
+        "ledger_source_sha256": "1f433b2619d8518bccb5ddd25559265bf4f413b9be25263961f65926ca48105c",
+        "analysis_revision_source_sha256": null
+      },
+      {
+        "plan_source_sha256": "4632c3e173935efc2ef7a2eacad0246c44e04b45a9e99c7e8ed33b09dc2bcea1",
+        "ledger_source_sha256": "e776943e34cc54a04925a4d4c15b954c84572afc921d12cb9f255bf5980e045e",
+        "analysis_revision_source_sha256": "217cdee584acd11f1bbe2a2fa9091eacce78bf9ba4b4a3f25e5ce902e3257dbf"
+      },
+      {
+        "plan_source_sha256": "a288c51853e6f05abbc777818fd8402346f5fc4340771e4649f766f793e8cb17",
+        "ledger_source_sha256": "bcc8ec3eff6358cd5c7de7d9d25e9a1383658ecce6cf6e68b428b62ccdb48f0c",
+        "analysis_revision_source_sha256": null
+      },
+      {
+        "plan_source_sha256": "5c7cce660632fdedd973eae1dfb2dda8d2a0e91a37f001195c07749ca73237ad",
+        "ledger_source_sha256": "966de5eb766fdd1ab5d60ba57c186926246d8023d059c2299a6fd62fad74905f",
+        "analysis_revision_source_sha256": null
+      }
+    ],
+    "episodes": [
+      {
+        "run_id": "benchmark-route-gate-1-001",
+        "pilot_ordinal": 1,
+        "experiment_id": "benchmark-route-gate-1",
+        "source_episode_sha256": "c1f3323887329413f660c5435de2bacf26b46d3f1016c102adad48d96e295f42",
+        "admission": "invalid",
+        "budget_usage": {
+          "model_requests": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "duration_ms": 7509.257333
+        },
+        "quality_credit": "excluded_from_new_scope",
+        "stop_batch": true
+      },
+      {
+        "run_id": "benchmark-route-gate-3-002",
+        "pilot_ordinal": 2,
+        "experiment_id": "benchmark-route-gate-3",
+        "source_episode_sha256": "bbafb982ea0e4ca2dcda1c731b40cba217e636817bbd1415e3915600f2175e80",
+        "admission": "valid",
+        "budget_usage": {
+          "model_requests": 4,
+          "input_tokens": 23621,
+          "output_tokens": 769,
+          "duration_ms": 18183.183125
+        },
+        "quality_credit": "excluded_from_new_scope",
+        "stop_batch": false
+      },
+      {
+        "run_id": "benchmark-route-gate-3-003",
+        "pilot_ordinal": 3,
+        "experiment_id": "benchmark-route-gate-3",
+        "source_episode_sha256": "002ed195227a15f0940d0c08ea7f0e5d6ca2d6fc77e3b13eeae82463cc2f17a4",
+        "admission": "invalid",
+        "budget_usage": {
+          "model_requests": 1,
+          "input_tokens": null,
+          "output_tokens": null,
+          "duration_ms": 6082.845083
+        },
+        "quality_credit": "excluded_from_new_scope",
+        "stop_batch": true
+      },
+      {
+        "run_id": "benchmark-two-model-admission-1-001",
+        "pilot_ordinal": 4,
+        "experiment_id": "benchmark-two-model-admission-1",
+        "source_episode_sha256": "41bd80551eddd433a13d88020766b2ecbaefc25490632ddc4961c41a6f48251e",
+        "admission": "invalid",
+        "budget_usage": {
+          "model_requests": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "duration_ms": 19078.471458
+        },
+        "quality_credit": "excluded_from_new_scope",
+        "stop_batch": true,
+        "runtime_source_sha256": "44231a5a57fa71ef04b7d4e6f3ed5b243f61af54d8ddbb3381d02fca360ea519",
+        "shared_source_sha256": "0f37d11f71381882c511a1149fa6c37d74a96d1bb80af2eb4aa663bdfc202b95"
+      },
+      {
+        "run_id": "benchmark-two-model-admission-2-001",
+        "pilot_ordinal": 5,
+        "experiment_id": "benchmark-two-model-admission-2",
+        "source_episode_sha256": "852b6585a946210127031879c2010656cb46ddb6c9f1bebde2f7b33d678e2dc8",
+        "admission": "invalid",
+        "budget_usage": {
+          "model_requests": 1,
+          "input_tokens": null,
+          "output_tokens": null,
+          "duration_ms": 8751.283791
+        },
+        "quality_credit": "excluded_from_new_scope",
+        "stop_batch": true,
+        "runtime_source_sha256": "bcd97ff9104936b31cb4805c8879da4677abcbb85188502a7e42b5511d8135d2",
+        "shared_source_sha256": "612bb1365153a65535d6ac0ec8f2d4c3383ed4e92a6647555942203a07db7a65",
+        "authentication_observation": {
+          "provenance": "sdk_error_event_inside_observed_http_200_sse",
+          "outer_http_status": 200,
+          "reported_auth_status": 401,
+          "actual_model_requests": 1,
+          "actual_usage": "unknown",
+          "event_source_sha256": "b52f36ff5fb27d53d05d899b81ba7353ccbf9f2142cd2704f37de0fc3ceab3c5",
+          "event_line": 45,
+          "transport_source_sha256": "ac35956699cf20176c6d35c6b63a749bd4519f35fc3b19cc8e46cc4bb4db5944"
+        }
+      }
+    ]
+  },
+  "model_conditions": [
+    "4ed5e94e11a75d717e70437a070994a656ede42d8ba0cd02c133618867fb9a4c",
+    "c7b902079f4959f80d388319146e7552ac6885844ab89f08b1b8e535bdf4c8bd"
+  ],
+  "environment_conditions": [
+    "12922fa800690e088eb28b0a1cd7c7c8c82af2273907198bf49c5b4b1d67cbc8",
+    "f72fca9bc4834fd6b81ec130a5a8f4defd93ec5e1e876d7f3f10ce84bec755db"
+  ],
+  "instrumentation": {
+    "version": 1,
+    "runtime_sha256": [
+      "b6449775a9e9093303705b0636c1d7f27273a127501966f548d8e76da0f93004"
+    ],
+    "collector_files": [
+      {
+        "path": "benchmark/collect-turns.mjs",
+        "sha256": "0fb42ca81300d7036cda7389fd5ba9123d6712015fa1be13a154e7a64f7685ca",
+        "bytes": 31033
+      },
+      {
+        "path": "benchmark/collect.mjs",
+        "sha256": "934370167ad69d05bb7c32aa397f459252181b8229ae798d350520fae6577cfc",
+        "bytes": 59912
+      },
+      {
+        "path": "benchmark/corpus/grader.mjs",
+        "sha256": "1d51300a707025aece4ce39ecb236b94a1145e45ace4163e07a2c528e2804e20",
+        "bytes": 14581
+      },
+      {
+        "path": "benchmark/evidence/normalize.mjs",
+        "sha256": "584f586a69e0589014bf1a644d07f95095b9167f823c6de894f651d6b8b063ac",
+        "bytes": 19705
+      },
+      {
+        "path": "benchmark/evidence/store.mjs",
+        "sha256": "70a728298c2a839ffe1e51d939fe05d69f96832ac99e59d7cda1b3a503d654bc",
+        "bytes": 9248
+      },
+      {
+        "path": "benchmark/metrics.json",
+        "sha256": "83b415de2175b3b497db6ab2c5fda55ba56dbd56046ec4c4e16cbb2577542e30",
+        "bytes": 8555
+      },
+      {
+        "path": "benchmark/protocol.mjs",
+        "sha256": "92fa73e5d2b5928671bbc0340f322d05392ce499599da2082185175ba9a37e4f",
+        "bytes": 42504
+      },
+      {
+        "path": "benchmark/schemas/environment-manifest.schema.json",
+        "sha256": "356a59796dbae7da6f1a5e48f8a21ba8910d1c643baa8f3064a040aa760e66ef",
+        "bytes": 14523
+      },
+      {
+        "path": "benchmark/schemas/protocol.schema.json",
+        "sha256": "fa82d2163f37eb72f473af590e9c9c2013f3b94723d648100b01998b3a054195",
+        "bytes": 43266
+      },
+      {
+        "path": "scripts/notion-default-context.mjs",
+        "sha256": "86af00415f898832a13c576b703c7e23be0a32df58cafc33d1ecdcc2d9e99349",
+        "bytes": 16307
+      },
+      {
+        "path": "scripts/notion-integration-hosts.mjs",
+        "sha256": "9f8633660bdf9e1bcd7fadd21210d3d65eb68bbca49feb1ecca7477ead98d43c",
+        "bytes": 2961
+      },
+      {
+        "path": "scripts/notion-skill-graph-model-evidence.mjs",
+        "sha256": "6097f3f0911d51dff7bb24c4d4cf4408bf9ba77a1e482e55628945d37a211768",
+        "bytes": 19075
+      },
+      {
+        "path": "scripts/skill-consumption-provider.mjs",
+        "sha256": "06442ba91256867d3eac322aec7b32d9575c09b2a44cbd927697f1c1f883b60a",
+        "bytes": 16865
+      },
+      {
+        "path": "scripts/skill-consumption-source-observer.mjs",
+        "sha256": "f0117434bcd6461f1cdda5d526b9f0623ceae0ac4eaf1c644f187a47553d6f5a",
+        "bytes": 34093
+      },
+      {
+        "path": "scripts/skill-preparation-evidence.mjs",
+        "sha256": "06cd8988a0eb1aef603e249148ec3ce7dc2956d460dca1b94b824dab0075e112",
+        "bytes": 29803
+      }
+    ],
+    "collector_sha256": "3896c93b2b20cd149567350f71dd7ce1647502b3612205948e2bf924a46f3604",
+    "scope": "exact observer projection, maintained SDK modules and collector static dependency closure"
+  },
+  "observer_version": "benchmark-pi-sdk-1",
+  "gate": {
+    "experiment_id": "benchmark-two-model-admission-3",
+    "scheduled_episodes": 16,
+    "minimum_valid_real_per_condition": 4,
+    "slots": [
+      {
+        "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+        "pair_id": "m0-no-skill-02-a-n16-r1-r0",
+        "case_id": "no-skill-02-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 0
+      },
+      {
+        "slot_id": "m0-e1--no-skill-02-a-n16-r1--r0",
+        "pair_id": "m0-no-skill-02-a-n16-r1-r0",
+        "case_id": "no-skill-02-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 1
+      },
+      {
+        "slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+        "pair_id": "m0-no-skill-01-a-n16-r1-r0",
+        "case_id": "no-skill-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 2
+      },
+      {
+        "slot_id": "m0-e0--no-skill-01-a-n16-r1--r0",
+        "pair_id": "m0-no-skill-01-a-n16-r1-r0",
+        "case_id": "no-skill-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 3
+      },
+      {
+        "slot_id": "m0-e0--no-skill-03-a-n16-r1--r0",
+        "pair_id": "m0-no-skill-03-a-n16-r1-r0",
+        "case_id": "no-skill-03-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 4
+      },
+      {
+        "slot_id": "m0-e1--no-skill-03-a-n16-r1--r0",
+        "pair_id": "m0-no-skill-03-a-n16-r1-r0",
+        "case_id": "no-skill-03-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 5
+      },
+      {
+        "slot_id": "m1-e1--no-skill-01-a-n16-r1--r0",
+        "pair_id": "m1-no-skill-01-a-n16-r1-r0",
+        "case_id": "no-skill-01-a-n16-r1",
+        "condition_id": "m1-e1",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 6
+      },
+      {
+        "slot_id": "m1-e0--no-skill-01-a-n16-r1--r0",
+        "pair_id": "m1-no-skill-01-a-n16-r1-r0",
+        "case_id": "no-skill-01-a-n16-r1",
+        "condition_id": "m1-e0",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 7
+      },
+      {
+        "slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+        "pair_id": "m0-explicit-01-a-n16-r1-r0",
+        "case_id": "explicit-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 8
+      },
+      {
+        "slot_id": "m0-e1--explicit-01-a-n16-r1--r0",
+        "pair_id": "m0-explicit-01-a-n16-r1-r0",
+        "case_id": "explicit-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 9
+      },
+      {
+        "slot_id": "m1-e1--no-skill-03-a-n16-r1--r0",
+        "pair_id": "m1-no-skill-03-a-n16-r1-r0",
+        "case_id": "no-skill-03-a-n16-r1",
+        "condition_id": "m1-e1",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 10
+      },
+      {
+        "slot_id": "m1-e0--no-skill-03-a-n16-r1--r0",
+        "pair_id": "m1-no-skill-03-a-n16-r1-r0",
+        "case_id": "no-skill-03-a-n16-r1",
+        "condition_id": "m1-e0",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 11
+      },
+      {
+        "slot_id": "m1-e0--explicit-01-a-n16-r1--r0",
+        "pair_id": "m1-explicit-01-a-n16-r1-r0",
+        "case_id": "explicit-01-a-n16-r1",
+        "condition_id": "m1-e0",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 12
+      },
+      {
+        "slot_id": "m1-e1--explicit-01-a-n16-r1--r0",
+        "pair_id": "m1-explicit-01-a-n16-r1-r0",
+        "case_id": "explicit-01-a-n16-r1",
+        "condition_id": "m1-e1",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 13
+      },
+      {
+        "slot_id": "m1-e1--no-skill-02-a-n16-r1--r0",
+        "pair_id": "m1-no-skill-02-a-n16-r1-r0",
+        "case_id": "no-skill-02-a-n16-r1",
+        "condition_id": "m1-e1",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 14
+      },
+      {
+        "slot_id": "m1-e0--no-skill-02-a-n16-r1--r0",
+        "pair_id": "m1-no-skill-02-a-n16-r1-r0",
+        "case_id": "no-skill-02-a-n16-r1",
+        "condition_id": "m1-e0",
+        "repeat": 0,
+        "seed": 20261122,
+        "order": 15
+      }
+    ]
+  },
+  "verification_boundary": "Verified privately against original plans, ledgers and evidence; the public replay verifies this projection and its released episode links only"
+}

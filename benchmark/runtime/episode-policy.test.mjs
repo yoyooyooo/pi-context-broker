@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { candidateDifferences, normalizeCandidate } from './episode-evidence.mjs';
-import { createEpisodeBudget, guardedFetch, providerUsage } from './episode-policy.mjs';
-import { brokerDiagnosticsProjection, requestContract } from './episode-runner.mjs';
+import { createEpisodeBudget, EpisodeStop, guardedFetch, providerUsage } from './episode-policy.mjs';
+import { brokerDiagnosticsProjection, catalogCandidateReferences, requestContract, reserveEpisodeRequest } from './episode-runner.mjs';
 
 const limits = { wallTimeMs: 60000, maxModelRequests: 3, maxToolCalls: 4, maxHttpAttempts: 3, maxInputTokens: 300000, maxOutputTokens: 16000, maxTotalTokens: 316000 };
 const usage = (input, output) => providerUsage('openai-completions', { usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output } });
@@ -27,6 +27,53 @@ test('an unreported first usage prevents the next request', () => {
   const budget = createEpisodeBudget(limits); budget.request(); budget.usage(null);
   assert.throws(() => budget.request(), { code: 'BENCHMARK_USAGE_UNKNOWN' });
   assert.equal(budget.state.requests, 1); assert.equal(budget.state.tokens, 0); assert.equal(budget.state.usage_unknown, true);
+});
+
+test('SDK error normalization cannot erase a local cap or overwrite the last sent request', async () => {
+  const budget = createEpisodeBudget({ ...limits, maxModelRequests: 2 });
+  const requests = [], sdkErrors = [];
+  let currentRequest, terminalError, boundRequest, sends = 0;
+  async function sdkRound() {
+    try {
+      const sequence = reserveEpisodeRequest({ budget, captureOnly: false,
+        clearRequest: () => { currentRequest = undefined; boundRequest = null; },
+        onStop: error => { terminalError ??= error; } });
+      currentRequest = { id: 'request-' + sequence, assistant: null }; requests.push(currentRequest); boundRequest = currentRequest.id;
+      budget.attempt(); sends++; budget.usage(usage(100, 10));
+      currentRequest.assistant = { stop_reason: 'toolUse', error: null };
+    } catch (error) {
+      // The SDK reports a rejected stream call as an assistant message_end.
+      const normalized = { stop_reason: 'error', error: error.message }; sdkErrors.push(normalized);
+      if (currentRequest) currentRequest.assistant = normalized;
+    }
+  }
+  await sdkRound(); await sdkRound(); const last = structuredClone(requests[1]); await sdkRound();
+  assert.equal(sends, 2); assert.equal(requests.length, 2); assert.deepEqual(requests[1], last);
+  assert.equal(currentRequest, undefined); assert.equal(boundRequest, null);
+  assert.ok(terminalError instanceof EpisodeStop); assert.equal(terminalError.code, 'BENCHMARK_REQUEST_LIMIT');
+  assert.equal(sdkErrors[0].error, 'BENCHMARK_REQUEST_LIMIT');
+  assert.deepEqual([budget.state.input_tokens, budget.state.output_tokens, budget.state.usage_unknown], [200, 20, false]);
+  assert.throws(() => budget.available(), { code: 'BENCHMARK_REQUEST_LIMIT' });
+});
+
+test('provider text does not manufacture a local guard; missing usage remains its own stop', () => {
+  const budget = createEpisodeBudget(limits); let localStop, currentRequest = 'old-request';
+  const sequence = reserveEpisodeRequest({ budget, captureOnly: false,
+    clearRequest: () => { currentRequest = undefined; }, onStop: error => { localStop = error; } });
+  const providerError = new Error('BENCHMARK_REQUEST_LIMIT');
+  assert.equal(sequence, 1); assert.equal(providerError.message, 'BENCHMARK_REQUEST_LIMIT');
+  assert.equal(localStop, undefined); assert.equal(budget.state.stop, null); assert.equal(currentRequest, undefined);
+  budget.usage(null);
+  assert.throws(() => reserveEpisodeRequest({ budget, captureOnly: false, clearRequest() {}, onStop: error => { localStop = error; } }),
+    { code: 'BENCHMARK_USAGE_UNKNOWN' });
+  assert.equal(localStop.code, 'BENCHMARK_USAGE_UNKNOWN'); assert.equal(budget.state.requests, 1);
+});
+
+test('capture reservation clears identity without consuming a paid request', () => {
+  const budget = createEpisodeBudget(limits); let cleared = false, stopped = false;
+  assert.equal(reserveEpisodeRequest({ budget, captureOnly: true,
+    clearRequest: () => { cleared = true; }, onStop: () => { stopped = true; } }), 1);
+  assert.equal(cleared, true); assert.equal(stopped, false); assert.equal(budget.state.requests, 0); assert.equal(budget.state.attempts, 0);
 });
 
 test('input and output are cumulative episode budgets and output cap shrinks', () => {
@@ -80,4 +127,70 @@ test('final request contract removes only the exact public user input', () => {
   const changed = make('natural question'); changed.messages[2].content = 'wrong guidance';
   assert.ok(candidateDifferences(a, requestContract(changed, 'openai-completions', 'natural question', {})).length);
   assert.throws(() => requestContract(make('probe'), 'openai-completions', 'missing prompt', {}), /NOT_UNIQUELY_LOCATED/);
+});
+
+function candidateFixture(byte = 1) {
+  const ref = 'sr:C' + Buffer.alloc(16, byte).toString('base64url');
+  const locator = { type: 'shared_skill', database_id: 'db', data_source_id: 'source', page_id: 'page', library_id: 'library', skill_id: 'skill' };
+  const identity = { source: 'notion', scope: 'a'.repeat(64), id: 'shared_skill:library:skill', kind: 'skill', locator,
+    ref: 'skill://shared_skill%3Alibrary%3Askill' };
+  const record = { id: identity.id, kind: identity.kind, locator, name: 'same-name', description: 'Original catalog body',
+    entrypoint: 'SKILL.md', ref: identity.ref + '/SKILL.md', enabled: true };
+  const shortRefs = { bindings: new Map([[ref, { kind: 'candidate', identity }]]) };
+  const catalogs = { observed: true, catalogs: [{ facets: [{ facet: 'catalog', ok: true, value: { scope: identity.scope, records: [record] } }] }] };
+  return { ref, identity, record, shortRefs, catalogs };
+}
+
+const catalogText = (ref, body = 'Original catalog body') => '<ntn-skills-view-catalog>\n<catalog-cards>\n<group kind="skill" source="notion">\n'
+  + '<card name="same-name" location="' + ref + '">' + body + '</card>\n</group>\n</catalog-cards>\n</ntn-skills-view-catalog>';
+function catalogPayload(ref, api, prompt = 'task') {
+  const key = api === 'openai-responses' ? 'input' : 'messages', type = api === 'openai-responses' ? 'input_text' : 'text';
+  return { model: 'declared-model', [key]: [{ role: 'system', content: 'Exact stable guidance' },
+    { role: 'user', content: [{ type, text: catalogText(ref) }] }, { role: 'user', content: prompt }],
+    tools: [{ type: 'function', function: { name: 'read', parameters: { type: 'object' } } }], max_tokens: 4096 };
+}
+
+test('request catalog locations canonicalize only observed current-branch candidates without changing raw payloads', () => {
+  const first = candidateFixture(1), second = candidateFixture(2);
+  for (const api of ['openai-completions', 'openai-responses']) {
+    const a = catalogPayload(first.ref, api, 'probe'), b = catalogPayload(second.ref, api), before = JSON.stringify(b);
+    const expected = requestContract(a, api, 'probe', {}, catalogCandidateReferences(first));
+    const observed = requestContract(b, api, 'task', {}, catalogCandidateReferences(second));
+    assert.deepEqual(expected, observed);
+    assert.equal(JSON.stringify(b), before, 'Canonical comparison must not edit the actual serializer payload');
+    assert.ok(JSON.stringify(observed).includes('benchmark-candidate:'));
+    assert.ok(!JSON.stringify(observed).includes(first.ref)); assert.ok(!JSON.stringify(observed).includes(second.ref));
+  }
+});
+
+test('an unobserved, mismatched or out-of-catalog short handle cannot be normalized into admission', () => {
+  const f = candidateFixture(), refs = catalogCandidateReferences(f), api = 'openai-completions';
+  assert.throws(() => requestContract(catalogPayload(candidateFixture(3).ref, api), api, 'task', {}, refs), /REFERENCE_UNOBSERVED/);
+  const misplaced = catalogPayload(f.ref, api); misplaced.messages[0].content += ' ' + f.ref;
+  assert.throws(() => requestContract(misplaced, api, 'task', {}, refs), /REFERENCE_OUTSIDE_LOCATION/);
+  const wrongIdentity = candidateFixture(); wrongIdentity.shortRefs.bindings.get(wrongIdentity.ref).identity = { ...wrongIdentity.identity, id: 'another-owner' };
+  assert.throws(() => catalogCandidateReferences(wrongIdentity), /IDENTITY_MISMATCH/);
+  const wrongScope = candidateFixture(); wrongScope.catalogs.catalogs[0].facets[0].value.scope = 'b'.repeat(64);
+  assert.throws(() => catalogCandidateReferences(wrongScope), /IDENTITY_MISMATCH/);
+});
+
+test('same-name owner changes and changed catalog bodies remain contract differences', () => {
+  const f = candidateFixture(), api = 'openai-completions', refs = catalogCandidateReferences(f);
+  const expected = requestContract(catalogPayload(f.ref, api), api, 'task', {}, refs);
+  const other = candidateFixture(2);
+  other.identity.id = other.record.id = 'shared_skill:library:other';
+  other.identity.locator.skill_id = 'other'; other.identity.ref = 'skill://shared_skill%3Alibrary%3Aother'; other.record.ref = other.identity.ref + '/SKILL.md';
+  assert.ok(candidateDifferences(expected, requestContract(catalogPayload(other.ref, api), api, 'task', {}, catalogCandidateReferences(other))).length);
+  const changedCatalog = candidateFixture(); changedCatalog.record.description = 'Changed independently observed body';
+  assert.ok(candidateDifferences(expected, requestContract(catalogPayload(changedCatalog.ref, api), api, 'task', {}, catalogCandidateReferences(changedCatalog))).length);
+  for (const change of [
+    payload => { payload.messages[1].content[0].text = catalogText(f.ref, 'Changed visible body'); },
+    payload => { payload.messages[0].content = 'Changed instructions'; },
+    payload => { payload.tools[0].function.parameters.type = 'string'; },
+    payload => { payload.model = 'changed-model'; },
+    payload => { payload.max_tokens = 8192; },
+  ]) {
+    const payload = catalogPayload(f.ref, api); change(payload);
+    assert.ok(candidateDifferences(expected, requestContract(payload, api, 'task', {}, refs)).length);
+  }
 });
