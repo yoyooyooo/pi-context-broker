@@ -302,12 +302,43 @@ export function observeSourceProcess(settings) {
   return { file, finish };
 }
 
+/** Resolve an actual Node file entry through its nearest package's public bin.
+ * A wrapper's text or a directory name is never package identity. */
+export function identifySourcePackageEntry({ fs, crypto, path, packageName, binName, entry = process.argv[1] }) {
+  if (typeof entry !== 'string' || process.execArgv.some(arg => /^(?:-e|-p|-c|--eval(?:=|$)|--print(?:=|$)|--check$|--test$|--run(?:=|$))/.test(arg))) return null;
+  const identity = file => {
+    const canonical = fs.realpathSync(file), bytes = fs.readFileSync(canonical);
+    return { path: path.resolve(file), realpath: canonical, bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
+  };
+  try {
+    const actual = identity(entry);
+    let root = path.dirname(actual.realpath);
+    for (let depth = 0; depth < 8; depth++) {
+      const manifestPath = path.join(root, 'package.json');
+      if (fs.existsSync(manifestPath)) {
+        const manifest = identity(manifestPath);
+        if (manifest.bytes > 1024 * 1024) return null;
+        const manifestBytes = fs.readFileSync(manifestPath);
+        if (crypto.createHash('sha256').update(manifestBytes).digest('hex') !== manifest.sha256) return null;
+        const metadata = JSON.parse(manifestBytes.toString('utf8'));
+        const bin = metadata.bin?.[binName];
+        if (metadata.name !== packageName || typeof metadata.version !== 'string' || !metadata.version
+          || typeof bin !== 'string' || fs.realpathSync(path.resolve(root, bin)) !== actual.realpath) return null;
+        return { entry: actual, package: { name: metadata.name, version: metadata.version, root, manifest, bin: binName, entry_realpath: actual.realpath } };
+      }
+      const next = path.dirname(root); if (next === root) break; root = next;
+    }
+  } catch { /* Unreadable or unmatched package identity remains unknown. */ }
+  return null;
+}
+
 /** The transport observer stays in the driver-owned Pi. Optional per-process
  * identity records include real Node descendants without changing their env. */
 export function sourceObserverPreloadSource(settings) {
   return "import diagnostics from 'node:diagnostics_channel';\nimport fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nimport {errorMonitor} from 'node:events';\nimport {isMainThread} from 'node:worker_threads';\nimport {execFileSync} from 'node:child_process';\n"
     + 'const settings = ' + JSON.stringify(settings) + ';\n'
-    + 'let owned=false; try { owned=isMainThread && process.ppid===settings.ownerParentPid && fs.realpathSync(process.argv[1])===fs.realpathSync(settings.ownerEntry); } catch {}\n'
+    + 'const identifyPackageEntry = (' + identifySourcePackageEntry.toString() + ');\n'
+    + 'let owned=false; try { owned=isMainThread && process.ppid===settings.ownerParentPid && (settings.ownerPackage ? Boolean(identifyPackageEntry({...settings.ownerPackage,fs,crypto,path})) : fs.realpathSync(process.argv[1])===fs.realpathSync(settings.ownerEntry)); } catch {}\n'
     + 'if(owned) { try { const safeRequestMetrics = (' + safeRequestMetrics.toString() + '); (' + observeSourceTransport.toString() + ')( {...settings,diagnostics,fs,crypto,path,errorMonitor,safeRequestMetrics} ); } catch { /* Missing observation is reported by the driver. */ } }\n'
     + 'const captureSourceProcessAncestry = (' + captureSourceProcessAncestry.toString() + ');\n'
     + 'if(isMainThread&&settings.processDirectory) { try { (' + observeSourceProcess.toString() + ')({...settings,fs,crypto,path,execFileSync,owner:owned}); } catch { /* Missing process identity remains unknown. */ } }\n';

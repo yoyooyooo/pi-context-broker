@@ -9,7 +9,7 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep 
 import { fileURLToPath } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
-import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
+import { identifySourcePackageEntry, sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
 import { verifyNextWorktreePair } from './verify-next-worktrees.mjs';
 
 // The run action is deliberately explicit. Merely importing/checking this file
@@ -79,6 +79,52 @@ function assertCompletedDaily(receipt) {
     && receipt.scope === 'ordinary-pi-startup-and-metadata' && receipt.status === 'passed',
     'A current passed ordinary-daily receipt is required; plans, candidates and source-only results do not qualify');
 }
+
+function validateHostFile(identity) {
+  assert.ok(identity && isAbsolute(identity.path) && isAbsolute(identity.realpath)
+    && Number.isSafeInteger(identity.bytes) && identity.bytes > 0, 'An actual host file identity is required');
+  assert.match(identity.sha256 ?? '', /^[a-f0-9]{64}$/);
+}
+
+export function validateDailyHostProcess(proof, host, owned, args, { complete = true } = {}) {
+  validateHostFile(host?.launcher);
+  assert.ok(Number.isSafeInteger(host.parent_pid) && host.parent_pid > 0 && Array.isArray(host.prefix));
+  assert.equal(host.launcher.path, host.path);
+  assert.equal(host.launcher.realpath, host.identity);
+  assert.ok(Array.isArray(owned) && owned.length === 1, 'One owned ordinary Pi process is required');
+  const child = owned[0];
+  assert.ok(proof && Number.isSafeInteger(proof.pid) && proof.pid > 0 && proof.pid === child.pid
+    && proof.parent_pid === host.parent_pid, 'The actual Pi must be the owned launcher process');
+  assert.equal(child.file, host.file);
+  assert.deepEqual(child.args, [...host.prefix, ...args]);
+  assert.equal(proof.args_sha256, hash(JSON.stringify(args)), 'The actual Pi arguments differ from the ordinary launch');
+  validateHostFile(proof.entry); validateHostFile(proof.node); validateHostFile(proof.package?.manifest);
+  assert.match(proof.node.version ?? '', /^\d+\.\d+\.\d+(?:[-+].+)?$/);
+  assert.equal(proof.package.name, '@earendil-works/pi-coding-agent', 'The observed entry is not the Pi package');
+  assert.ok(typeof proof.package.version === 'string' && proof.package.version);
+  assert.equal(proof.package.bin, 'pi');
+  assert.equal(proof.package.entry_realpath, proof.entry.realpath, 'The observed entry differs from the package pi bin');
+  assert.ok(inside(proof.package.root, proof.entry.realpath));
+  assert.equal(proof.package.manifest.realpath, join(proof.package.root, 'package.json'));
+  if (complete) {
+    assert.equal(proof.observed_exit, true, 'The actual Pi process must have a witnessed exit');
+    assert.equal(proof.exit_code, 0, 'The actual Pi process did not exit successfully');
+    assert.equal(child.observed_close, true); assert.equal(child.exit_code, 0); assert.equal(child.signal, null);
+  }
+  return proof;
+}
+
+export function observedDailyHostProcess(host, owned, observed, args, options) {
+  const starts = observed.filter(row => row.event === 'process_start' && owned.some(child => child.pid === row.pid));
+  assert.equal(starts.length, 1, 'The owned ordinary Pi process must report its actual entry');
+  const start = starts[0];
+  assert.ok(start.host_identity, 'The owned process did not report a valid Pi package bin');
+  const exits = observed.filter(row => row.event === 'process_exit' && row.pid === start.pid);
+  assert.ok(exits.length <= 1, 'Ambiguous actual Pi exit evidence');
+  return validateDailyHostProcess({ ...start.host_identity, pid: start.pid, parent_pid: start.ppid,
+    args_sha256: start.args_sha256, observed_exit: exits.length === 1, exit_code: exits[0]?.code ?? null }, host, owned, args, options);
+}
+
 /** This is the sole completed-daily receipt contract, also used by the producer. */
 export function validateDailyReceipt(receipt, config, currentPair) {
   const delivery = deliveryIntent(config);
@@ -92,7 +138,7 @@ export function validateDailyReceipt(receipt, config, currentPair) {
   assert.deepEqual(buildIdentity(receipt.worktrees_before), current, 'The daily receipt uses a different target or build');
   assert.deepEqual(receipt.worktrees_after, receipt.worktrees_before, 'The daily source/build identity changed during execution');
   assert.deepEqual(machineIdentity(receipt.machine), receipt.worktrees_before.machine);
-  for (const name of ['worktrees_unchanged', 'configuration_unchanged', 'broker_files_unchanged', 'cli_shim_unchanged'])
+  for (const name of ['worktrees_unchanged', 'configuration_unchanged', 'broker_files_unchanged', 'cli_shim_unchanged', 'host_files_unchanged'])
     assert.equal(receipt[name], true, `Daily proof is incomplete: ${name}`);
   assert.ok(!receipt.error && !receipt.shutdown_error, 'An errored or unfinished process is not a passed daily receipt');
   for (const name of ['user_settings', 'source_config', 'harness_model_credential_files_read', 'old_sessions_read', 'target_extensions_injected', 'source_command_overrides'])
@@ -100,7 +146,7 @@ export function validateDailyReceipt(receipt, config, currentPair) {
   assert.ok(receipt.launch?.host === 'pi' && receipt.launch.normal_user_settings === true
     && Array.isArray(receipt.launch.args) && receipt.launch.args[0] === '--mode' && receipt.launch.args[1] === 'rpc'
     && receipt.launch.args.includes('-ns') && !receipt.launch.args.includes('-e'), 'A fresh ordinary pi -ns launch is required');
-  assert.ok(typeof receipt.host?.identity === 'string' && receipt.host.identity.includes('/@earendil-works/pi-coding-agent/'));
+  validateDailyHostProcess(receipt.host_process, receipt.host, receipt.owned_pi, receipt.launch.args);
   assert.ok(receipt.autoload?.injected_by_cli === false && receipt.autoload.registration?.source === 'extension'
     && typeof receipt.autoload.actual_entry?.realpath === 'string'
     && inside(receipt.worktrees_before.broker.package_root, receipt.autoload.actual_entry.realpath), 'The actual ordinary Broker registration is missing');
@@ -115,6 +161,9 @@ export function validateDailyReceipt(receipt, config, currentPair) {
     && Array.isArray(receipt.actual_default_sdk.operations) && receipt.actual_default_sdk.operations.length > 0
     && receipt.actual_default_sdk.operations.every(operation => operation.operation === 'list')
     && Array.isArray(receipt.actual_default_sdk.http) && receipt.actual_default_sdk.http.length > 0, 'Actual default SDK metadata evidence is required');
+  assert.equal(receipt.actual_default_sdk.owner_pid, receipt.host_process.pid);
+  assert.ok(receipt.actual_default_sdk.operations.every(operation => operation.pid === receipt.host_process.pid),
+    'Default SDK observations must belong to the actual owned Pi process');
   assert.ok(receipt.explicit_doctor_cli?.doctor?.ok === true && receipt.explicit_doctor_cli.doctor.transport === 'direct_http');
   assert.ok(Number.isInteger(receipt.metadata_http_requests) && receipt.metadata_http_requests > 0);
   for (const name of ['provider_invocations', 'tool_invocations', 'remote_mutations', 'current_body_reads']) assert.equal(receipt[name], 0);
@@ -160,7 +209,7 @@ export async function aggregateDailyDeliveries(config) {
 // This recorder observes the real child and HTTP calls without replacing any
 // arguments, configuration, response bodies, or source command. It reads no
 // credential files and never logs environment values, headers, or raw payloads.
-function installPassiveObserver(config) {
+function installPassiveObserver(config, identifyPackageEntry) {
   if (!require('node:worker_threads').isMainThread) return;
   const fs = require('node:fs');
   const cp = require('node:child_process');
@@ -172,7 +221,19 @@ function installPassiveObserver(config) {
   const write = value => fs.appendFileSync(file, JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ...value }) + '\n', { mode: 0o600 });
   const canonical = value => { try { return fs.realpathSync(value); } catch { return undefined; } };
   const entry = typeof process.argv[1] === 'string' ? process.argv[1] : undefined;
-  write({ event: 'process_start', ppid: process.ppid, executable: process.execPath, entry, real_entry: entry ? canonical(entry) : undefined, entry_sha256: entry && canonical(entry) === config.cliEntry ? digest(fs.readFileSync(entry)) : undefined });
+  let hostIdentity = null;
+  if (process.ppid === config.ownerParentPid) {
+    try {
+      const actual = identifyPackageEntry({ fs, crypto, path, packageName: '@earendil-works/pi-coding-agent', binName: 'pi' });
+      if (actual) {
+        const realpath = fs.realpathSync(process.execPath), bytes = fs.readFileSync(realpath);
+        hostIdentity = { ...actual, node: { path: process.execPath, realpath, bytes: bytes.length, sha256: digest(bytes), version: process.versions.node } };
+      }
+    } catch { /* Missing actual runtime identity cannot pass the driver. */ }
+  }
+  write({ event: 'process_start', ppid: process.ppid, executable: process.execPath, entry, real_entry: entry ? canonical(entry) : undefined,
+    entry_sha256: entry && canonical(entry) === config.cliEntry ? digest(fs.readFileSync(entry)) : undefined,
+    host_identity: hostIdentity, args_sha256: digest(JSON.stringify(process.argv.slice(2))) });
   process.once('exit', code => write({ event: 'process_exit', code }));
   const nativeSpawn = cp.ChildProcess.prototype.spawn;
   cp.ChildProcess.prototype.spawn = function(options) {
@@ -298,7 +359,7 @@ function installPassiveObserver(config) {
 }
 
 export function dailyObserverPreloadSource(config) {
-  return `(${installPassiveObserver.toString()})(${JSON.stringify(config)});\n`;
+  return `(${installPassiveObserver.toString()})(${JSON.stringify(config)}, (${identifySourcePackageEntry.toString()}));\n`;
 }
 
 async function packageClosure(root, archive, expectedHash) {
@@ -404,6 +465,14 @@ async function configurationSnapshot(config) {
 async function observedRows(directory) {
   const names = (await readdir(directory)).filter(name => /^observer-[0-9]+\.jsonl$/u.test(name));
   return (await Promise.all(names.map(async name => (await readFile(join(directory, name), 'utf8')).split('\n').filter(Boolean).map(JSON.parse)))).flat();
+}
+async function ownedPiProcesses(path) {
+  const rows = (await readFile(path, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);
+  return rows.filter(row => row.event === 'spawn').map(row => {
+    const end = rows.find(end => end.event === 'close' && end.pid === row.pid && end.observedExit);
+    return { pid: row.pid, file: row.file, args: row.args, cwd: row.cwd,
+      observed_close: Boolean(end), exit_code: end?.code ?? null, signal: end?.signal ?? null };
+  });
 }
 const safeCommand = command => ({ name: command.name, source: command.source, sourceInfo: command.sourceInfo ? { path: command.sourceInfo.path, scope: command.sourceInfo.scope, origin: command.sourceInfo.origin, baseDir: command.sourceInfo.baseDir, source_sha256: hash(String(command.sourceInfo.source)) } : undefined });
 const safeState = state => ({ sessionId: state.sessionId, sessionFile: state.sessionFile, messageCount: state.messageCount, isStreaming: state.isStreaming, isCompacting: state.isCompacting });
@@ -592,13 +661,14 @@ async function run(config) {
     const shim = await verifyDailyCliShim(config);
     result.artifacts = { broker: { root: broker.root, archive_sha256: broker.archive.sha256, published_files: broker.file_count, files_sha256: broker.sha256 }, embedded, embeddedSdk, sdkManifest, standalone, cli_shim: shim };
     result.configuration_before = before;
-    const host = await resolveHost('pi'); result.host = host;
-    assert.ok(host.identity.includes('/@earendil-works/pi-coding-agent/'), 'The daily host must be actual Pi');
+    const resolvedHost = await resolveHost('pi');
+    const host = { ...resolvedHost, launcher: await fileIdentity(resolvedHost.path), parent_pid: process.pid }; result.host = host;
     const preload = join(evidence, 'observe-process.cjs');
-    await writeFile(preload, dailyObserverPreloadSource({ directory: observerDir, cliEntry: embedded.realpath }), { mode: 0o600 });
+    await writeFile(preload, dailyObserverPreloadSource({ directory: observerDir, cliEntry: embedded.realpath, ownerParentPid: process.pid }), { mode: 0o600 });
     const sdkPreload = join(evidence, 'observe-source.mjs'), sourceLedger = join(evidence, 'source-operations.jsonl');
     await writeFile(sdkPreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: resolve(fileURLToPath(new URL('..', import.meta.url))),
-      clockId: 'daily-' + Date.now(), cliPath: embedded.realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { mode: 0o600 });
+      clockId: 'daily-' + Date.now(), cliPath: embedded.realpath, ownerParentPid: process.pid,
+      ownerPackage: { packageName: '@earendil-works/pi-coding-agent', binName: 'pi' } }), { mode: 0o600 });
     const processLedger = join(evidence, 'owned-processes.jsonl');
     await writeFile(processLedger, '', { flag: 'wx', mode: 0o600 });
     const env = { ...process.env, BROKER_E2E_PROCESS_LEDGER: processLedger, NODE_OPTIONS: [process.env.NODE_OPTIONS, '--require=' + JSON.stringify(preload), '--import=' + JSON.stringify(sdkPreload)].filter(Boolean).join(' ') };
@@ -609,6 +679,8 @@ async function run(config) {
     observedRpc = rpc;
     const initial = safeState(await rpc.command('get_state'));
     assert.ok(initial.sessionId && !initial.isStreaming && !initial.isCompacting);
+    result.host_process = observedDailyHostProcess(host, await ownedPiProcesses(processLedger), await observedRows(observerDir),
+      result.launch.args, { complete: false });
     if (initial.sessionFile) assert.ok(inside(sessions, resolve(initial.sessionFile)), 'Only the new owned session may be used');
     result.initial_session = initial;
     const commands = (await rpc.command('get_commands')).commands.map(safeCommand);
@@ -643,6 +715,7 @@ async function run(config) {
     result.rpc_frame_counts = Object.fromEntries([...new Set(rpc.frames.map(frame => frame.type))].map(type => [type, rpc.frames.filter(frame => frame.type === type).length]));
     await rpc.closeInput(); rpc = undefined;
     const observed = await observedRows(observerDir);
+    result.host_process = observedDailyHostProcess(host, await ownedPiProcesses(processLedger), observed, result.launch.args);
     const spawned = observed.filter(row => row.event === 'spawn' && row.bundled_cli);
     assert.ok(spawned.length, 'No explicit bundled doctor CLI child was observed');
     for (const child of spawned) {
@@ -660,6 +733,9 @@ async function run(config) {
     assert.equal(doctor.receipt.skill_read?.checked, false);
     const owned = (await readFile(processLedger, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);
     const sourceObservation = await readSourceObservation(sourceLedger);
+    const sourceOwners = sourceObservation.events.filter(row => row.phase === 'source_observer_start');
+    assert.equal(sourceOwners.length, 1, 'One actual Pi SDK observer owner is required');
+    assert.equal(sourceOwners[0].pid, result.host_process.pid, 'SDK observation belongs to a different Pi process');
     const sdkOperations = sourceObservation.events.filter(row => row.kind === 'sdk' && row.phase === 'started');
     assert.ok(sdkOperations.length && sdkOperations.every(row => row.operation === 'list'), 'Metadata startup/find must use the actual SDK catalog entry only');
     const partition = classifyDailyHttp(observed, new Set(spawned.map(row => row.child_pid)), new Set(owned.filter(row => row.event === 'spawn').map(row => row.pid)), { sourceObservation });
@@ -673,7 +749,7 @@ async function run(config) {
       assert.ok(observed.some(row => row.event === 'http_end' && row.id === request.id && row.status >= 200 && row.status < 300), 'An observed Notion request did not complete with HTTP 2xx');
     }
     assert.ok(!observed.some(row => row.event === 'spawn' && basename(row.executable ?? '') === 'ntn'), 'Official ntn was invoked');
-    result.actual_default_sdk = { entry: embeddedSdk.realpath, sha256: embeddedSdk.sha256, operations: sdkOperations,
+    result.actual_default_sdk = { entry: embeddedSdk.realpath, sha256: embeddedSdk.sha256, owner_pid: sourceOwners[0].pid, operations: sdkOperations,
       http: partition.sdk, source_observation_complete: sourceObservation.complete, source_command_overridden: false, catalog_cli_children: 0 };
     result.explicit_doctor_cli = { entry: embedded.realpath, sha256: embedded.sha256, processes: spawned.map(row => ({ parent_pid: row.pid, pid: row.child_pid, executable: row.executable, script: row.script, args: row.cli_args })), doctor: doctor.receipt, path_cli_used_for_default_source: false };
     result.metadata_http_requests = http.length;
@@ -707,6 +783,15 @@ async function run(config) {
       result.cli_shim_unchanged = JSON.stringify(result.cli_shim_after) === JSON.stringify(result.artifacts.cli_shim);
       if (!result.cli_shim_unchanged) result.status = 'failed';
     }
+    if (result.host_process) {
+      const { version: _version, ...node } = result.host_process.node;
+      const files = [result.host.launcher, result.host_process.entry, result.host_process.package.manifest, node];
+      result.host_files_unchanged = await Promise.all(files.map(async identity => {
+        try { return JSON.stringify(await fileIdentity(identity.path)) === JSON.stringify({ path: identity.path, realpath: identity.realpath, bytes: identity.bytes, sha256: identity.sha256 }); }
+        catch { return false; }
+      })).then(results => results.every(Boolean));
+      if (!result.host_files_unchanged) result.status = 'failed';
+    }
     if (result.namespace_diagnostics_review) {
       const reviewed = result.namespace_diagnostics_review;
       result.reviewed_external_catalog_unchanged = hash(await readFile(reviewed.catalog.path)) === reviewed.catalog.sha256 && hash(await readFile(reviewed.path)) === reviewed.sha256;
@@ -714,8 +799,7 @@ async function run(config) {
     }
     const ownedPath = join(evidence, 'owned-processes.jsonl');
     if (await exists(ownedPath)) {
-      const owned = (await readFile(ownedPath, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);
-      result.owned_pi = owned.filter(row => row.event === 'spawn').map(row => ({ pid: row.pid, file: row.file, args: row.args, cwd: row.cwd, observed_close: owned.some(end => end.event === 'close' && end.pid === row.pid && end.observedExit) }));
+      result.owned_pi = await ownedPiProcesses(ownedPath);
       if (result.owned_pi.some(row => !row.observed_close)) result.status = 'failed';
     }
     result.finished_at = new Date().toISOString();

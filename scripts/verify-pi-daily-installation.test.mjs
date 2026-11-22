@@ -7,7 +7,9 @@ import { delimiter, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { fileInventory } from './next-build-identity.mjs';
-import { aggregateDailyDeliveries, classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, validateDailyDoctor, validateDailyFind, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
+import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
+import { readSourceObservation, sourceObserverPreloadSource } from './skill-consumption-source-observer.mjs';
+import { aggregateDailyDeliveries, classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, observedDailyHostProcess, validateDailyDoctor, validateDailyFind, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
 
 test('daily aggregate requires an explicit new delivery and both machine receipts before any source or Pi operation', async () => {
   for (const config of [{}, { delivery: { id: 'old-label', startedAt: new Date().toISOString() } },
@@ -21,6 +23,61 @@ test('the existing daily entry advertises aggregate and its one current receipt 
   const help = execFileSync(process.execPath, ['scripts/verify-pi-daily-installation.mjs', '--help'], { encoding: 'utf8' });
   assert.match(help, /aggregate --config/); assert.match(help, /Only daily receipt version 2 qualifies/);
   assert.match(help, /delivery:\{id:UUID,startedAt:UTC_ISO\}/);
+});
+
+async function observedHostFixture(kind, packageName = '@earendil-works/pi-coding-agent', binEntry = 'dist/cli.cjs') {
+  const root = await mkdtemp(join(tmpdir(), 'daily-host-identity-')), packageRoot = join(root, 'installed-package');
+  const entry = join(packageRoot, 'dist/cli.cjs'), launcher = join(root, 'pi'), directory = join(root, 'observed');
+  await Promise.all([dirname(entry), directory].map(path => mkdir(path, { recursive: true })));
+  await writeFile(join(packageRoot, 'package.json'), JSON.stringify({ name: packageName, version: '1.6.0', bin: { pi: binEntry } }));
+  await writeFile(entry, '#!/usr/bin/env node\nprocess.stdout.write("controlled host only\\n");\n', { mode: 0o755 });
+  if (kind === 'native') await symlink(entry, launcher);
+  else await writeFile(launcher, kind === 'wrapper'
+    ? '#!/bin/sh\nexec ' + [process.execPath, entry].map(value => "'" + value.replaceAll("'", "'\\''") + "'").join(' ') + ' "$@"\n'
+    : '#!/bin/sh\n# ' + entry + '\nexit 0\n', { mode: 0o755 });
+  const preload = join(root, 'observe.cjs'), sourcePreload = join(root, 'source.mjs'), sourceLedger = join(root, 'source.jsonl');
+  await writeFile(preload, dailyObserverPreloadSource({ directory, cliEntry: entry, ownerParentPid: process.pid }));
+  await writeFile(sourcePreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: process.cwd(), clockId: 'host-test',
+    cliPath: entry, ownerParentPid: process.pid, ownerPackage: { packageName: '@earendil-works/pi-coding-agent', binName: 'pi' } }));
+  const selected = await resolveHost(launcher), bytes = await readFile(launcher);
+  const host = { ...selected, parent_pid: process.pid, launcher: { path: launcher, realpath: await realpath(launcher), bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex') } };
+  const args = ['--mode', 'rpc', '-ns', '--session-dir', join(root, 'sessions')];
+  const child = spawnSync(host.file, [...host.prefix, ...args], { encoding: 'utf8', timeout: 15000,
+    env: { ...process.env, NODE_OPTIONS: '--require=' + JSON.stringify(preload) + ' --import=' + JSON.stringify(sourcePreload) } });
+  assert.equal(child.error, undefined); assert.equal(child.status, 0, child.stderr);
+  const owned = [{ pid: child.pid, file: host.file, args: [...host.prefix, ...args], observed_close: true, exit_code: child.status, signal: child.signal }];
+  const observed = (await Promise.all((await readdir(directory)).map(file => readFile(join(directory, file), 'utf8'))))
+    .flatMap(text => text.trim().split('\n').filter(Boolean).map(JSON.parse));
+  return { host, args, owned, observed, sourceLedger, entry };
+}
+
+for (const kind of ['native', 'wrapper']) test('ordinary ' + kind + ' binds the actual Pi package, Node and source observer to one exited process', async () => {
+  const f = await observedHostFixture(kind);
+  const proof = observedDailyHostProcess(f.host, f.owned, f.observed, f.args);
+  assert.equal(proof.entry.realpath, await realpath(f.entry));
+  assert.equal(proof.node.realpath, await realpath(process.execPath));
+  assert.equal(proof.node.version, process.versions.node);
+  assert.equal(proof.package.version, '1.6.0'); assert.equal(proof.observed_exit, true);
+  assert.equal(proof.pid, f.owned[0].pid);
+  assert.equal(f.host.launcher.realpath === proof.entry.realpath, kind === 'native');
+  const source = await readSourceObservation(f.sourceLedger);
+  assert.equal(source.complete, true);
+  assert.equal(source.events.find(row => row.phase === 'source_observer_start').pid, proof.pid);
+  for (const change of [
+    rows => rows.filter(row => row.event !== 'process_start'),
+    rows => rows.filter(row => row.event !== 'process_exit'),
+    rows => rows.map(row => row.event === 'process_start' ? { ...row, pid: row.pid + 1 } : row),
+    rows => rows.map(row => row.event === 'process_start' ? { ...row, args_sha256: '0'.repeat(64) } : row),
+  ]) assert.throws(() => observedDailyHostProcess(f.host, f.owned, change(f.observed), f.args));
+});
+
+test('fake wrappers, unrelated packages and a mismatched public bin cannot establish host identity', async () => {
+  for (const f of [await observedHostFixture('fake'), await observedHostFixture('wrapper', 'unrelated-package'),
+    await observedHostFixture('wrapper', '@earendil-works/pi-coding-agent', 'dist/other.cjs')]) {
+    assert.throws(() => observedDailyHostProcess(f.host, f.owned, f.observed, f.args));
+    assert.equal((await readSourceObservation(f.sourceLedger)).complete, false);
+  }
 });
 
 test('daily HTTP observation includes retained fetch references without changing responses or double counting', async () => {

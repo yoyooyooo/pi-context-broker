@@ -155,22 +155,29 @@ async function dailyFixture() {
   const harnessSha = createHash('sha256').update(await readFile(new URL('./verify-pi-daily-installation.mjs', import.meta.url))).digest('hex');
   function receipt(machineSha) {
     const bound = structuredClone(pair); bound.machine.sha256 = machineSha;
+    const args = ['--mode', 'rpc', '-ns', '--session-dir', '/controlled/session'];
+    const packageRoot = '/controlled/node_modules/@earendil-works/pi-coding-agent', entry = join(packageRoot, 'dist/cli.js');
+    const file = path => ({ path, realpath: path, bytes: 1, sha256: 'f'.repeat(64) });
+    const host = { file: '/controlled/node', prefix: ['/controlled/bin/pi'], path: '/controlled/bin/pi', identity: entry, parent_pid: 100,
+      launcher: { ...file('/controlled/bin/pi'), realpath: entry } };
     return {
       version: 2, kind: 'actual-daily-pi-autoload-and-diagnostics', scope: 'ordinary-pi-startup-and-metadata', status: 'passed',
       evidence: 'controlled-receipt-fixture', delivery: { ...f.config.delivery },
       started_at: new Date(started + 1000).toISOString(), finished_at: new Date(started + 2000).toISOString(),
       machine: { ...bound.machine }, worktrees_before: bound, worktrees_after: structuredClone(bound),
-      worktrees_unchanged: true, configuration_unchanged: true, broker_files_unchanged: true, cli_shim_unchanged: true,
+      worktrees_unchanged: true, configuration_unchanged: true, broker_files_unchanged: true, cli_shim_unchanged: true, host_files_unchanged: true,
       modifications: { user_settings: 0, source_config: 0, harness_model_credential_files_read: 0, old_sessions_read: 0,
         target_extensions_injected: 0, source_command_overrides: 0 },
-      launch: { host: 'pi', normal_user_settings: true, args: ['--mode', 'rpc', '-ns', '--session-dir', '/controlled/session'] },
-      host: { identity: '/controlled/node_modules/@earendil-works/pi-coding-agent/dist/cli.js' },
+      launch: { host: 'pi', normal_user_settings: true, args }, host,
+      host_process: { pid: 101, parent_pid: 100, entry: file(entry), node: { ...file('/controlled/node'), version: '26.13.1' },
+        package: { name: '@earendil-works/pi-coding-agent', version: '1.6.0', root: packageRoot, manifest: file(join(packageRoot, 'package.json')), bin: 'pi', entry_realpath: entry },
+        args_sha256: createHash('sha256').update(JSON.stringify(args)).digest('hex'), observed_exit: true, exit_code: 0 },
       autoload: { injected_by_cli: false, registration: { source: 'extension' },
         actual_entry: { realpath: join(bound.broker.package_root, 'dist/index.js'), sha256: 'e'.repeat(64) } },
       initial_session: { sessionId: 'controlled-session', isStreaming: false, isCompacting: false },
       final_session: { sessionId: 'controlled-session', isStreaming: false, isCompacting: false },
-      owned_pi: [{ pid: 101, observed_close: true }],
-      actual_default_sdk: { source_observation_complete: true, source_command_overridden: false, operations: [{ operation: 'list' }], http: [{}] },
+      owned_pi: [{ pid: 101, file: host.file, args: [...host.prefix, ...args], observed_close: true, exit_code: 0, signal: null }],
+      actual_default_sdk: { source_observation_complete: true, source_command_overridden: false, owner_pid: 101, operations: [{ operation: 'list', pid: 101 }], http: [{}] },
       explicit_doctor_cli: { doctor: { ok: true, transport: 'direct_http' } }, metadata_http_requests: 1,
       provider_invocations: 0, tool_invocations: 0, remote_mutations: 0, current_body_reads: 0, harness: { sha256: harnessSha },
     };
@@ -210,6 +217,15 @@ test('old delivery, changed builds, incomplete Pi proof and failed states cannot
     d => { d.launch.normal_user_settings = false; },
     d => { d.autoload.injected_by_cli = true; },
     d => { d.owned_pi[0].observed_close = false; },
+    d => { delete d.host_process; },
+    d => { d.host_process.pid++; },
+    d => { d.host_process.package.name = 'unrelated-package'; },
+    d => { d.host_process.package.entry_realpath += '.other'; },
+    d => { d.host_process.observed_exit = false; },
+    d => { d.host_process.exit_code = 1; },
+    d => { d.host_files_unchanged = false; },
+    d => { d.actual_default_sdk.owner_pid++; },
+    d => { d.actual_default_sdk.operations[0].pid++; },
     d => { d.actual_default_sdk.source_observation_complete = false; },
     ...['failed', 'blocked', 'not_run', 'prepared_not_executed'].map(status => d => { d.status = status; }),
   ]) {

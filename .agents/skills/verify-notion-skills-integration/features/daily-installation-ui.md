@@ -79,6 +79,10 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/c
   `selection` 是 `$` 行去掉首字符 `$` 后的完整值；`kind`、`source`、`page` 原样取同一记录的字段。
   不从名称拼 namespace，也不从旧会话猜 page。`validateDailyFind` 要求该 selection 恰好出现一次，
   且整个四字段对象精确相等。当前目标查不到时报告阻断。
+- 保留普通 Pi 原生入口或现役 exec shim。回执分别记录 launcher 路径/hash 与被动观测的
+  `host_process`：同一 owned PID 的实际 Pi package/bin/entry、Node executable/version、RPC 参数及退出。
+  SDK observer 必须归属同一进程；launcher、Node、entry、package manifest 前后字节不变。
+  wrapper 文本中的路径、runner 自身 Node 版本或缺少实际进程的回执不能通过 aggregate。
 
 上述读取受现有访问权限约束。若执行环境不允许读取日用配置，按交付合同记 `blocked`，不要换路径绕读。
 配置本身不含 token。`plan` 展示准备信息，不验证所有原件，也不证明 `run` 已成功。

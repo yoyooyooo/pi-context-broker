@@ -52,6 +52,8 @@ node scripts/verify-next-worktrees.mjs --config /absolute/owned/current-pair.jso
 
 单独核对普通 `ntn-skills` 解析到的实际 CLI，以及普通 `pi` 使用的 Node/Pi 版本。一个显式 Node 候选成功，不证明不带额外参数的 `pi -ns` 可用。
 
+普通 `pi` 可以是原生包入口，也可以是保留日用行为的 exec shim。检查器保留 launcher 的路径和 SHA，并从实际 owned 进程读取 Node executable/version、Pi entry、最近 package.json 的 name/version 与 `pi` bin 对应关系。入口文件名或 shim 中出现的路径不构成 Pi 身份。实际 Pi 必须保持 launcher 的 PID 和 RPC 参数，SDK observer 也必须属于该 PID；结束时核对成功退出及 launcher、Node、entry、manifest 字节未变。缺少实际进程、包/bin 不符或启动额外子进程而未保留 owned PID 时，本次检查失败，不临时改 PATH 绕过。
+
 现有日用检查继续使用同一个入口：
 
 ```sh
