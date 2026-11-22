@@ -428,6 +428,17 @@ export async function runAgentWorkflow(config) {
 
       const frozenBindings = await json(join(evidence, 'turn-' + receipt.id + '-bindings.json'));
       const turn = await json(join(evidence, 'turn-' + receipt.id + '-input.json'));
+      const continuation = turn.expect.find(expected => expected.kind === 'metadata-lookup' && expected.afterTurn);
+      if (continuation) {
+        const prior = result.turns.find(item => item.id === continuation.afterTurn);
+        assert.ok(prior, 'Metadata lookup continuation requires its actual earlier turn');
+        observed.metadataContinuation = {
+          previous: await identity(join(evidence, 'turn-' + prior.id + '-analysis.json')),
+          events: await Promise.all(result.events.map((event, index) => ({ event, index }))
+            .filter(({ event }) => event.afterTurn === prior.id)
+            .map(({ index }) => identity(join(evidence, 'event-' + (index + 1) + '.json')))),
+        };
+      }
       receipt.analysis = await analyzeNotionAgentTurn(turn, observed, frozenBindings, { inspectPayload: candidatePayloadBodies });
       receipt.status = receipt.analysis.status;
       await save(join(evidence, 'turn-' + receipt.id + '-analysis.json'), { observed, analysis: receipt.analysis });

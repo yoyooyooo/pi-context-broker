@@ -142,6 +142,7 @@ export function validateAgentAssertion(assertion) {
     selection: [['object', 'version'], ['object']],
     'selection-any': [['objects'], ['objects']],
     visibility: [['object', 'stage'], ['object', 'stage']],
+    'metadata-lookup': [['object', 'state', 'outsideDefaultView', 'afterTurn'], ['object', 'state']],
     resource: [['object', 'path', 'version'], ['object', 'path']],
     output: [['all', 'none', 'any'], []],
     'no-semantic-writes': [[], []],
@@ -172,6 +173,15 @@ export function validateAgentAssertion(assertion) {
   if (assertion.kind === 'visibility') {
     id(assertion.object, 'visibility.object');
     assert.ok(['native-discovery', 'model-catalog', 'source-pending'].includes(assertion.stage), 'Unsupported visibility stage');
+  }
+  if (assertion.kind === 'metadata-lookup') {
+    id(assertion.object, 'metadata-lookup.object');
+    assert.ok(['present', 'absent'].includes(assertion.state), 'metadata-lookup.state must be present or absent');
+    if (assertion.outsideDefaultView !== undefined) assert.equal(typeof assertion.outsideDefaultView, 'boolean');
+    if (assertion.afterTurn !== undefined) {
+      id(assertion.afterTurn, 'metadata-lookup.afterTurn');
+      assert.equal(assertion.state, 'present', 'A metadata continuation must discover the externally enabled target');
+    }
   }
   if (assertion.kind === 'selection-any') {
     assert.ok(Array.isArray(assertion.objects) && assertion.objects.length > 0, 'selection-any requires allowed identities');
@@ -292,6 +302,8 @@ export function validateAgentCorpus(corpus) {
         assert.ok(aliases.has(assertion.object), scenario.id + ': unknown expected object ' + assertion.object);
         if (assertion.version !== undefined) assert.ok(own(aliases.get(assertion.object).versions, assertion.version), scenario.id + ': unknown expected version');
       }
+      for (const assertion of turn.expect.filter(item => item.kind === 'metadata-lookup' && item.afterTurn))
+        assert.ok(turns.has(assertion.afterTurn), scenario.id + ': metadata lookup must name an earlier turn');
       turns.add(turn.id);
     }
   }
