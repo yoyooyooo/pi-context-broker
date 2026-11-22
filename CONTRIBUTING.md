@@ -97,13 +97,13 @@ an explicit current-reference allowlist, not a copy of the repository history.
 
 ## Release
 
-Broker npm publication remains tag/version driven and uses the existing approval/provenance workflow. Current CI and publish run the Broker checks and current installed-package verifier. They do not inherit deferred dual-host, UI or model requirements.
+Broker publication uses an immutable stable tag, one pinned CLI/SDK source and one checked archive. Read the [release and recovery contract](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/releasing.md) before preparing a release or repairing a partial attempt. The existing npm-publish environment approval and provenance boundary remains in place.
 
 ```sh
 bun run release:check patch --no-push
 bun run release patch
 ```
 
-The release script runs its declared check before creating release commits, tags or pushes. Planning commands do not prove those checks passed and can still fetch/prune tags or query npm. Use the release-policy tests in an owned temporary repository when verifying that behavior. A published npm version cannot be replaced; read back the actual registry result before claiming publication.
+The planning command reads remote tags and registry versions but does not run the checks or create a tag. After separate release authorization, the release command starts from clean, current origin/main and runs its declared check before committing or tagging. Use `node --test scripts/release.test.mjs scripts/skill-consumption-contract.test.mjs` to test this mechanism in owned fixtures without publication. Failed unpublished tags remain immutable and require a higher new version; already published versions can resume verification and metadata repair only when their bytes match.
 
 Tern distribution, when explicitly resumed, uses its own package version and extracted self-contained archive. Do not claim a Tern release from current Broker-only packaging.

@@ -18,15 +18,12 @@ type Config = {
   publishMode: "none" | "npm";
   publishPackage: string | null;
   publishRegistry: string;
-  reuseFailedVersion: boolean;
   releaseBranchPrefix: string;
 };
 type Options = {
-  allowBranch: boolean;
   dryRun: boolean;
   noPush: boolean;
   precheck: boolean;
-  replaceFailedTag: boolean;
   versionArg: string;
 };
 
@@ -44,10 +41,10 @@ function main(): void {
     const options = parseArgs(process.argv.slice(2));
     const config = readConfig();
     ensureGitBase(config, options);
-    if (options.noPush) {
-      execCommand("git", ["fetch", config.remote, "--tags", "--prune-tags"], false);
-    } else {
-      run("git", ["fetch", config.remote, "--tags", "--prune-tags"], { quiet: true });
+    run("git", ["fetch", config.remote, config.defaultBranch, "--tags"], { quiet: true });
+    if (run("git", ["rev-parse", "HEAD"], { quiet: true }) !==
+        run("git", ["rev-parse", `${config.remote}/${config.defaultBranch}`], { quiet: true })) {
+      fail(`Release must start at the exact current ${config.remote}/${config.defaultBranch}.`);
     }
 
     const packages = readVersionFiles(config.versionFiles);
@@ -79,13 +76,12 @@ function main(): void {
     run("git", ["add", ...addPaths]);
     run("git", ["commit", "-m", formatCommitMessage(config.commitMessage, tag)]);
 
-    replaceLocalTagIfNeeded(tag, decision.reusingFailedTag);
+    if (execCommand("git", ["rev-parse", "-q", "--verify", `refs/tags/${tag}`], false).exitCode === 0) {
+      fail(`Tag already exists and is immutable: ${tag}. Repair its published version or choose a higher version.`);
+    }
     run("git", ["tag", "-a", tag, "-m", tag]);
 
     if (!options.noPush) {
-      if (decision.reusingFailedTag) {
-        deleteRemoteTag(config.remote, tag);
-      }
       run("git", ["push", config.remote, `refs/tags/${tag}`]);
     }
 
@@ -120,7 +116,6 @@ function readConfig(): Config {
     publishMode: "npm",
     publishPackage: null,
     publishRegistry: "https://registry.npmjs.org",
-    reuseFailedVersion: true,
     releaseBranchPrefix: "release/",
     ...parsed,
     versionFiles: parsed.versionFiles,
@@ -130,20 +125,16 @@ function readConfig(): Config {
 
 function parseArgs(args: string[]): Options {
   const options: Options = {
-    allowBranch: false,
     dryRun: false,
     noPush: false,
     precheck: false,
-    replaceFailedTag: true,
     versionArg: "",
   };
   const positional: string[] = [];
   for (const arg of args) {
-    if (arg === "--allow-branch") options.allowBranch = true;
-    else if (arg === "--dry-run") options.dryRun = true;
+    if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--no-push") options.noPush = true;
     else if (arg === "--precheck") options.precheck = true;
-    else if (arg === "--no-replace-failed-tag") options.replaceFailedTag = false;
     else if (arg === "--help" || arg === "-h") {
       console.log(usage());
       process.exit(0);
@@ -162,13 +153,15 @@ function parseArgs(args: string[]): Options {
 
 function usage(): string {
   return `Usage:
-  release <patch|minor|major|x.y.z> [--dry-run] [--precheck] [--no-push] [--allow-branch]
+  release <patch|minor|major|x.y.z> [--dry-run] [--precheck] [--no-push]
 
 Default model:
   Creates a temporary local release branch, writes version files, runs the configured checkCommand,
   then commits, tags that commit, and pushes tag only. --no-push still runs the check.
   --dry-run and --precheck only print the plan; they do not run the check or create a release.
-  If latest git tag is absent from npm, it is treated as a failed release and reused.`;
+  Starts only from clean, current origin/main. Only stable x.y.z versions are supported.
+  Every tag is immutable, including failed unpublished tags. A new release uses a higher version.
+  Repair an already published version through Publish on its original tag; never delete or move it.`;
 }
 
 function ensureGitBase(config: Config, options: Options): void {
@@ -177,8 +170,8 @@ function ensureGitBase(config: Config, options: Options): void {
   if (status.length > 0) fail("Working tree is not clean. Commit or stash changes before release.");
   const branch = currentBranch();
   if (branch.length === 0) fail("Detached HEAD. Check out a branch before release.");
-  if (branch !== config.defaultBranch && !options.allowBranch) {
-    fail(`Release must run on ${config.defaultBranch}. Current branch: ${branch}. Use --allow-branch to override.`);
+  if (branch !== config.defaultBranch) {
+    fail(`Release must run on ${config.defaultBranch}. Current branch: ${branch}.`);
   }
   if (!options.noPush) {
     const remote = execCommand("git", ["remote", "get-url", config.remote], false);
@@ -214,12 +207,20 @@ function readPublishedVersions(config: Config): string[] {
   if (config.publishPackage === null || config.publishPackage.length === 0) return [];
   const result = execCommand("npm", ["view", config.publishPackage, "versions", "--json", "--registry", config.publishRegistry], false);
   if (result.exitCode !== 0) {
-    if (result.stderr.includes("E404") || result.stdout.includes("E404")) return [];
+    let error: unknown;
+    try { error = JSON.parse(result.stdout); } catch {}
+    if (error && typeof error === "object" && "error" in error &&
+        error.error && typeof error.error === "object" && "code" in error.error &&
+        error.error.code === "E404") return [];
     fail(`Unable to read npm versions for ${config.publishPackage}.\n${result.stderr || result.stdout}`);
   }
-  const parsed = JSON.parse(result.stdout || "[]") as unknown;
-  if (Array.isArray(parsed)) return parsed.filter((value): value is string => typeof value === "string" && isStableVersion(value));
-  return typeof parsed === "string" && isStableVersion(parsed) ? [parsed] : [];
+  const parsed: unknown = JSON.parse(result.stdout);
+  const values: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+  if (values.some((value) => typeof value !== "string" ||
+      !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value))) {
+    fail(`Malformed npm version response for ${config.publishPackage}; registry state is unknown.`);
+  }
+  return values.filter((value): value is string => typeof value === "string" && isStableVersion(value));
 }
 
 function readTagVersions(prefix: string): string[] {
@@ -238,60 +239,33 @@ function chooseVersion(
   tagVersions: string[],
   options: Options,
   config: Config,
-): { next: string; base: string; reason: string; reusingFailedTag: boolean } {
+): { next: string; base: string; reason: string } {
   const latestPublished = maxVersion(publishedVersions);
   const latestTag = maxVersion(tagVersions);
   const latestKnown = maxVersion([fileVersion, latestPublished, latestTag].filter(Boolean));
-  const tagIsUnpublished = latestTag !== null && !publishedVersions.includes(latestTag);
-
-  if (tagIsUnpublished && config.reuseFailedVersion && options.replaceFailedTag && isBumpKind(options.versionArg)) {
-    return {
-      next: latestTag,
-      base: latestPublished ?? fileVersion,
-      reason: `reuse failed release tag ${config.tagPrefix}${latestTag} because npm does not contain ${latestTag}`,
-      reusingFailedTag: true,
-    };
-  }
-
   const requested = isBumpKind(options.versionArg)
-    ? formatVersion(bumpVersion(parseStableVersion(latestPublished ?? latestKnown ?? fileVersion), options.versionArg))
+    ? formatVersion(bumpVersion(parseStableVersion(latestKnown ?? fileVersion), options.versionArg))
     : formatVersion(parseStableVersion(options.versionArg));
 
   if (publishedVersions.includes(requested)) {
     fail(`${config.publishPackage ?? "package"}@${requested} already exists on npm. Choose a higher version.`);
   }
   if (tagVersions.includes(requested)) {
-    if (!config.reuseFailedVersion || !options.replaceFailedTag) {
-      fail(`Tag already exists: ${config.tagPrefix}${requested}. Use a higher version or allow failed tag replacement.`);
-    }
-    return {
-      next: requested,
-      base: latestPublished ?? fileVersion,
-      reason: `replace unpublished tag ${config.tagPrefix}${requested}`,
-      reusingFailedTag: true,
-    };
+    fail(`Tag already exists and is immutable: ${config.tagPrefix}${requested}. Choose a higher version.`);
+  }
+  if (latestKnown && compareVersions(requested, latestKnown) <= 0) {
+    fail(`Release version must exceed every known file, registry and tag version: ${requested} <= ${latestKnown}.`);
   }
   return {
     next: requested,
-    base: latestPublished ?? fileVersion,
-    reason: `new release from base ${latestPublished ?? fileVersion}`,
-    reusingFailedTag: false,
+    base: latestKnown ?? fileVersion,
+    reason: `new release above every known version, including unpublished tags`,
   };
-}
-
-function replaceLocalTagIfNeeded(tag: string, replace: boolean): void {
-  const exists = execCommand("git", ["rev-parse", "-q", "--verify", `refs/tags/${tag}`], false).exitCode === 0;
-  if (exists && replace) run("git", ["tag", "-d", tag]);
-  if (exists && !replace) fail(`Local tag already exists: ${tag}`);
-}
-
-function deleteRemoteTag(remote: string, tag: string): void {
-  execCommand("git", ["push", remote, `:refs/tags/${tag}`], true);
 }
 
 function printPlan(
   fileVersion: string,
-  decision: { next: string; base: string; reason: string; reusingFailedTag: boolean },
+  decision: { next: string; base: string; reason: string },
   tag: string,
   config: Config,
   options: Options,
@@ -303,7 +277,7 @@ function printPlan(
   next: ${decision.next}
   tag: ${tag}
   reason: ${decision.reason}
-  replace failed tag: ${decision.reusingFailedTag ? "yes" : "no"}
+  existing tags: immutable; unpublished failures require a higher version
   local branch: temporary ${config.releaseBranchPrefix}${tag}-<sha>
   pushes: ${options.noPush ? "none" : "tag only"}
   check: ${formatCommand(config.checkCommand)} (not executed in this plan)

@@ -43,7 +43,10 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
       && /working-directory: \.verification\/ntn-skills-cli\s+run: \|\s+bun install --frozen-lockfile\s+bun run build/u.test(text),
       'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ' must build and decode with one pinned current CLI.');
     revisions.push(source[1]);
-    check(text.includes('bun-version: 1.4.3') && text.includes('node-version: 24.22.3'),
+    const nodePinned = workflow.name === 'ci'
+      ? text.includes('node: [22.23.5, 24.22.3, 26.13.1]') && text.includes('node-version: ${{ matrix.node }}')
+      : text.includes('node-version: 26.13.1');
+    check(text.includes('bun-version: 1.4.3') && nodePinned,
       'GATE_TOOLCHAIN_VERSION', workflow.name + ' must use the pinned toolchain.');
     check(text.includes('run: bun run check:broker'), 'GATE_CHECK_MISSING', workflow.name + ' must run the current package check.');
     check(!/--distinct-names|--ambiguous-names|--name-fixture|--ambiguity-fixture|--host omp|pi14|Pi 1\.4|@oh-my-pi|notion-sdk-pi\.mjs|context-broker-host-e2e|tern-context-broker\.tar/u.test(text),
@@ -59,13 +62,23 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     check(installed.includes('run: node scripts/verify-artifacts.mjs --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs"')
       && unconditional(installed), 'GATE_INSTALLED_SDK_MISSING', workflow.name + ' must run the actual installed SDK/Broker over current HTTP.');
     const retained = step('Preserve current SDK results');
-    check(retained.includes('if: always()') && retained.includes('uses: actions/upload-artifact@v4')
+    check(retained.includes('if: always()') && /uses: actions\/upload-artifact@[a-f0-9]{40} # v7\.0\.2/u.test(retained)
       && retained.includes('/tmp/broker-artifacts-*/') && retained.includes('${{ runner.temp }}/ntn-skills-current-fixture/')
       && retained.includes('include-hidden-files: true'), 'GATE_RESULTS_MISSING', workflow.name + ' must preserve actual package and HTTP results.');
     if (workflow.name === 'publish') {
       check(!/^    strategy:/mu.test(text), 'GATE_PUBLISH_MATRIX', 'Publishing remains a single job.');
+      const candidate = step('Record the checked candidate'), presence = step('Reconcile npm presence'),
+        publish = step('Publish the checked archive'), registry = step('Verify registry, cold install, and provenance');
       check(text.includes('environment: npm-publish') && text.includes('run: bun scripts/pack.mjs --target broker')
-        && text.includes('npm publish --registry https://registry.npmjs.org --access public --provenance'),
+        && text.includes('group: npm-publish-pi-context-broker') && text.includes('cancel-in-progress: false')
+        && installed.includes('--archive "$TARBALL" --report "$RUNNER_TEMP/broker-release/installed.json"')
+        && candidate.includes('scripts/release-evidence.mjs candidate') && unconditional(candidate)
+        && presence.includes('scripts/release-evidence.mjs presence') && unconditional(presence)
+        && publish.includes('npm publish "$TARBALL" --ignore-scripts --registry https://registry.npmjs.org --access public --provenance --tag latest')
+        && unconditional(publish) && registry.includes('scripts/release-evidence.mjs verify') && unconditional(registry)
+        && text.indexOf(installed) < text.indexOf(candidate) && text.indexOf(candidate) < text.indexOf(presence)
+        && text.indexOf(presence) < text.indexOf(publish) && text.indexOf(publish) < text.indexOf(registry)
+        && text.includes('  release:\n    needs: main\n'),
         'GATE_RELEASE_POLICY_MISSING', 'Keep the existing release approval and publication boundary.');
     }
   }

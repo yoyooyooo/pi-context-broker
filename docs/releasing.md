@@ -1,0 +1,123 @@
+# Broker release and recovery
+
+This is the maintainer contract for `pi-context-broker`. Publication requires a
+separate release decision. Development and acceptance use isolated paired builds;
+they do not publish, create release tags, or update daily installations.
+
+## Prepare a release
+
+Integrate and verify the intended CLI and Broker sources before preparing a
+release from clean, current `origin/main`. CI and Publish must pin the **same
+40-character CLI commit**. That checkout supplies the bundled CLI, SDK v2,
+decoder and builtin Skills. Do not select a moving branch or substitute an
+installed global CLI.
+
+```sh
+bun run release:check patch --no-push
+# After release authorization:
+bun run release patch
+```
+
+The first command reads current remote tags and npm versions and prints a plan.
+It does not run the configured checks, create a release commit or create a tag.
+The second writes the package version on a temporary branch, updates the lock,
+runs the configured check, creates an annotated tag and pushes only that tag.
+The release commit must have current main as its single parent and may change
+only declared version files and locks. Version files may change only their
+version field. Main does not receive a version-only commit.
+
+Only stable `x.y.z` versions on npm `latest` are supported. The next version must
+exceed every source, registry and tag version, including unpublished failed
+tags. Repository placeholder versions are not instructions to overwrite or
+roll back a newer registry release. Tags are immutable; no release command
+replaces or deletes them.
+
+CI covers Node `22.23.5`, `24.22.3` and `26.13.1`. Publish uses Node
+`26.13.1`, Bun `1.4.3` and npm `12.2.3`. Workflows pin actions by full commit
+with the corresponding upstream release in a comment. Update these inputs
+together and retain the checks for the supported Node range
+`^22.23.5 || ^24.22.3 || ^26.13.1`.
+
+## What the workflow proves
+
+The `npm-publish` environment retains its approval boundary. Before a real
+release, verify the npm package's Trusted Publisher configuration names this
+repository, `publish.yml` and the intended environment, with direct `npm publish`
+allowed. Inspect it with `npm trust list pi-context-broker --json` using an
+authorized existing account; do not infer that permission from OIDC YAML or
+`npm whoami`. A passing local test
+does not prove that account setting. The publish job uses GitHub OIDC and has
+no repository-write permission. A separate job can create a GitHub Release only
+after registry verification succeeds.
+
+Publication is serialized for the package with
+`cancel-in-progress: false`. The workflow:
+
+1. Checks the selected annotated tag, its allowed source changes and the exact
+   paired CLI checkout.
+2. Builds from frozen locks and runs Broker and release policy checks.
+3. Packs once through the existing `scripts/pack.mjs --target broker` path
+   (which invokes npm pack). It inspects the manifest inside that actual tgz
+   and rejects unresolved `catalog:`, `workspace:` and local dependencies.
+4. Passes that same archive to the independent installed SDK verifier using
+   `--archive` and `--report`. The candidate record binds source commits,
+   CLI/SDK hashes, verification report, SHA-256 and npm SHA-512 integrity.
+5. Reads registry presence explicitly. Only HTTP 404 means absent. Network,
+   authorization, rate-limit, server or malformed-response failures mean
+   unknown and stop the attempt.
+6. Publishes only the checked tgz with scripts disabled, provenance and
+   explicit `latest`. If that exact name/version/integrity already exists,
+   it skips publication and continues readback.
+7. Confirms registry identity, integrity, channel and provenance; performs an
+   independent install with a private npm cache; compares all installed
+   package bytes; loads the bundled CLI/SDK; and runs npm's cryptographic
+   signature/attestation verification. Verified provenance must bind the
+   archive, repository, workflow, immutable tag and Broker commit.
+8. Creates or repairs GitHub Release metadata and its matching archive only
+   after those checks. An existing asset with different bytes is an error;
+   it is never overwritten. Readback confirms the final asset digest.
+
+Archive verification also exercises current controlled Notion HTTP through the
+installed SDK. These checks do not claim real Notion, Pi session or model
+acceptance. Those remain under the existing verification owners.
+
+## Recover without replacing history
+
+Preserve the first failing run, its raw output, tag, source inputs and archive
+identity. The workflow retains the installed SDK workspace, current fixture,
+candidate, registry observations and command output for seven days; keep the
+necessary incident evidence before that retention expires.
+
+| Observed state | Next action |
+| --- | --- |
+| Registry query is unknown | Resolve the read failure, then read again. Do not assume absence or publish speculatively. |
+| Tag exists; registry confirms the version is absent | Keep the failed tag. Fix and verify the cause on main, then prepare a higher version. A retry or repair run cannot publish an absent version. |
+| Registry has exactly the candidate integrity; acknowledgement or later verification failed | Re-run the original workflow, or dispatch Publish on the original tag ref with the same tag input. It rebuilds and checks the exact sources, requires matching bytes, skips npm publication and resumes verification. |
+| Registry integrity differs, provenance does not match, or the rebuilt archive differs | Stop. Preserve both identities and investigate. Do not move the tag, replace registry bytes or relabel the attempt as success. |
+| Registry verification passed; GitHub Release is missing or incomplete | Use the same original-tag repair. It repeats registry/cold-install verification, then creates or updates metadata and uploads a missing matching asset. |
+| A newer version is already on latest | Repair may verify the older published version while leaving latest untouched. New publication may never move latest backward. |
+
+For a manual repair, select the immutable tag as the workflow ref as well as
+the `tag` input. A branch dispatch with a tag-shaped input is rejected.
+Repair never unpublishes a package, moves a tag, resets a channel or overwrites
+a release asset. If policy or source code needs changing, deliver that change
+through main and use a new version.
+
+## Verify the release mechanism without publishing
+
+```sh
+node --test scripts/release.test.mjs scripts/skill-consumption-contract.test.mjs
+```
+
+The existing release tests use owned temporary repositories and controlled
+registry/GitHub responses. They cover failed checks, unknown registry state,
+immutable failed tags, source/pin constraints, archive manifests, duplicate
+attempts, integrity/provenance mismatches and metadata repair. They preserve
+their fixtures and do not call real publication APIs. The wiring test ensures
+CI/Publish reach the required checks and that GitHub Release depends on
+registry verification.
+
+Use the [integration verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/SKILL.md)
+for current installed SDK consumption. CLI publication has its own
+[release contract](https://github.com/yoyooyooo/notion-skills-cli/blob/next/docs/releasing.md).
+Tern remains outside this Broker publication path.
