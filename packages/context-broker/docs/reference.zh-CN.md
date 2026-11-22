@@ -262,6 +262,12 @@ Pi 为 Notion 记录提供归属当前会话分支的不透明引用。它们是
 
 `notion_use({ref:REF})` 接受返回的 `sr:C`、`sr:S` 或 canonical 主入口 `skill://` 引用；`ref` 也可以是本次需要一起使用的多个根。它加载根与完整 Requires 闭包，以应用其指令。介绍、摘要或检查 Skill 使用原生 `read({path:REF})`，不启用 Requires。资源复制系统返回的准确引用。按需发现的 `notion_ctl({refs:[REF]})` 可导出固定 `sr:S`、`sr:R` 的 canonical 证明，未固定的 `sr:C` 不能提供该证明。
 
+读取相对链接时，`read({path:RELATIVE_PATH, from:FIXED_CONTAINING_FILE_REF})`
+接受选中的 `sr:S`、`sr:R` 或固定 canonical File ref。基准必须是实际包含链接的
+文件。跨 Skill 解析需要该文件当前 Source 贡献映射，继续使用目标自己的会话固定
+版本，并保持检查语义。未固定候选、资源批读和 `refresh:true` 不能用于这个入口。
+详见[相对文件读取](fixed-resource-batches.md#relative-paths-from-a-selected-file)。
+
 Pi 的正常 use 结果呈现所选根引用、完整正文和精简资源/关系目录。完整 hash、graph lock、规范身份与物化证明保留在工具 details 和显式证明导出中。确定性编译器逐字保留作者正文，用版本化回执将源 hash、渲染 hash 与实际内容位置绑定；重复读取和显式新选择只派生新的 provider 投影，不编辑会话原件。OMP 保留既有结果形状。[呈现与证明合同](skill-consumption-runtime.md#presentation-and-proof) 定义当前回执和完整内容边界；公开消费使用 list/read/use。
 
 `notion_list` 保留完整名称、说明、来源、可用状态和分页，重复 `id/scope` 留在宿主 details。复制 `next_cursor` 继续同一查询；覆盖不完整或来源失败不等于空目录。当前 Notion 选择只注入固定引用、可用资源目录和完整正文，通用规则由宿主集中提供。恢复选择使用 canonical 固定引用，不把重启后的目录宣称为已注册资源入口。完整原生主文 read 保留精确正文前缀并复用精简目录，完整目录留在 `contextBrokerRead.directory`。源内容和 Notion 管理数据保持完整。详见[呈现与证明合同](skill-consumption-runtime.md#presentation-and-proof)。
@@ -307,7 +313,7 @@ CLI 成功读取返回顶层 `content`（正文）、pinned `ref`（相对 `read
 
 Pi 只在 provider 投影中替换本扩展拥有的旧指引，不重写原始 JSONL。工具变更、重复、fork、持久续接、压缩和回退后都提供一份当前指引；公开 `context_with_system` handler 在 conversation context handlers 完成后复核当时的工具列表，并保留原 leading system 消息。用户/助手/工具中的示例和仅含标记的摘要保持普通内容，不能压掉扩展自己的指引。OMP 保留原有效上下文去重与恢复方式。
 
-宿主/Broker 提供的完整 Skill 正文或成功读取返回的正文可以直接使用。介绍、摘要无需再次读入口、列缓存目录、查包清单或代理界面元数据；只有当前任务确实需要资源内容时才读取支持文件。任务已给出相对文件路径时，直接从 Skill 入口所在目录解析并读取，无需先列目录或查找 cwd；CLI 读取保持选中快照。此规则同时适用于 Pi 与 OMP，不通过禁用工具实现，也不把目录 description 当成正文。
+宿主/Broker 提供的完整 Skill 正文或成功读取返回的正文可以直接使用。介绍、摘要无需再次读入口、列缓存目录、查包清单或代理界面元数据；只有当前任务确实需要资源内容时才读取支持文件。本地 Skill 的相对路径以实际包含链接的文档目录为基准。Pi 读取 Notion 相对引用时，把该文档的固定 ref 传给 `from`；CLI 使用同一 ref 的 `--from`。跨 Skill 的 Source 链接通过身份映射解析，不从缓存目录猜相邻路径。Pi 与 OMP 保留各自可用工具，目录 description 不算已加载正文。
 
 Pi 与 OMP 的选中 Skill payload 在完整正文旁提供经过转义的 `skill-directory` 和按任务读取资源的指引。Notion 记录还提供选中版本的 pinned `skill-ref` 与 `snapshot-id`。Pi 的 `hash`、`basename` 模式隐藏本地目录后，原生工具仍可使用公开的固定引用及准备结果中的资源目录。使用 CLI 后备路径的宿主继续保留来源/数据库范围，执行 `files SNAPSHOT` 或 `read SNAPSHOT --path RELATIVE`。已加载正文的提示明确保留用户任务边界：加载不授权执行工作流、环境探测或前置动作；介绍只把这些指令作为内容说明。
 

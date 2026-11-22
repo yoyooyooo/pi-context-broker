@@ -3,6 +3,21 @@ import type { SkillRecord } from "./types";
 export type ExactNativeReference = { selector: string; path: string; snapshot?: string; fileId?: string };
 export type NativeFileBinding = { file_id: string; page_id: string; path: string };
 
+/** A relative Notion read names the actual containing file, independently of
+ * filesystem materialization. Path interpretation belongs to the shared SDK. */
+export function relativeReadInput(input: Record<string, unknown>): { from: string; path: string } | undefined {
+  if (!Object.hasOwn(input, "from")) return undefined;
+  const { from, path } = input;
+  if (typeof from !== "string" || typeof path !== "string" || !path.trim()
+    || path.startsWith("/") || path.startsWith("~") || /[\\:?#\p{Cc}\p{Cf}\p{Cs}]/u.test(path)
+    || Object.hasOwn(input, "paths") || input.refresh === true) throw invalid();
+  if (!/^sr:[SR][A-Za-z0-9_-]{22}$/.test(from)) {
+    const reference = parseNativeReference(from);
+    if (!reference.selector.startsWith("shared_skill:") || !reference.snapshot || !reference.path) throw invalid();
+  }
+  return { from, path };
+}
+
 function invalid(): Error {
   return Object.assign(new Error("Invalid exact Skill reference"), { code: "SOURCE_REFERENCE_INVALID" });
 }

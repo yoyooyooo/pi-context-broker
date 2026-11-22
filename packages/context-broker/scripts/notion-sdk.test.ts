@@ -7,7 +7,7 @@ import { channel } from "node:diagnostics_channel";
 
 // These fixtures exercise the loading/observation boundary only. Actual SDK
 // runtime, package and Pi proofs use independently installed ntn-skills builds.
-async function fixture(options: { sdk?: boolean; sdkVersion?: number; sdkManifestVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; resourceEffectsVersion?: number | null; resourceEffectsManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; effectsVersion?: number | null; effectsManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; files?: boolean } = {}) {
+async function fixture(options: { sdk?: boolean; sdkVersion?: number; sdkManifestVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; resourceEffectsVersion?: number | null; resourceEffectsManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; effectsVersion?: number | null; effectsManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; relativeResolver?: boolean; files?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-sdk-boundary-"));
   await mkdir(join(root, "src")); await mkdir(join(root, "dist"));
   await copyFile(new URL("../src/notion-sdk.ts", import.meta.url), join(root, "src/notion-sdk.ts"));
@@ -59,6 +59,13 @@ export async function listSkill(target, options) {
   return { target, files: [], scope: options.env?.SDK_TEST_ID };
 }
 ` : ""}
+${options.relativeResolver ? `
+export async function resolveReference(target, options) {
+  calls.push({ operation: 'resolve', target, options });
+  options.onRequestMetrics?.({ total_requests: 0, trace: [] });
+  return { version: 1, from: options.from, ref: 'skill://shared_skill%3Alibrary%3Atarget/SKILL.md', effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' } };
+}
+` : ""}
 ${options.resourceVersion === undefined ? "" : `
 export const RESOURCE_READ_CONTRACT_VERSION = ${options.resourceVersion};
 export function decodeResourceReadResult() { throw new Error('resource read already decoded'); }
@@ -83,6 +90,21 @@ export async function readResources(input, options) {
 test("missing bundled SDK fails without selecting another CLI or SDK", async () => {
   const { boundary } = await fixture({ sdk: false });
   await expect(boundary.consumeNotionSdk({}, {})).rejects.toMatchObject({ code: "SOURCE_SDK_UNAVAILABLE" });
+});
+
+test("relative identity resolution is one scoped SDK operation and missing capability never falls back to read", async () => {
+  const older = await fixture(), current = await fixture({ relativeResolver: true });
+  const from = "skill://shared_skill%3Alibrary%3Aroot/playbooks/prototype.md?snapshot=s_" + "a".repeat(64);
+  const signal = new AbortController().signal, options = { sourceId: "selected", from, database: "db", cwd: "/owned", signal, offline: true, env: { SDK_TEST_ID: "identity" } };
+  await expect(older.boundary.resolveNotionReferenceSdk("../../target/SKILL.md", options)).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+  expect((await import(pathToFileURL(older.module).href)).calls).toHaveLength(0);
+  expect(await current.boundary.resolveNotionReferenceSdk("../../target/SKILL.md", options)).toMatchObject({ version: 1, from,
+    ref: "skill://shared_skill%3Alibrary%3Atarget/SKILL.md", effects: { remote_writes: "none", author_content: "unchanged" } });
+  const calls = (await import(pathToFileURL(current.module).href)).calls;
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ operation: "resolve", target: "../../target/SKILL.md", options: { from, database: "db", cwd: "/owned", offline: true } });
+  expect(calls[0].options.signal).toBe(signal); expect(calls[0].options.env).toBe(options.env);
+  expect(calls[0].options).not.toHaveProperty("sourceId"); expect(calls[0].options).not.toHaveProperty("output");
 });
 
 test("all consumption requires matching effects capability without a readOnly option", async () => {

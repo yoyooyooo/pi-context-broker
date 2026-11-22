@@ -101,7 +101,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
-  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal, policy?: ConsumptionPolicy) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs">> = {}, adapter?: HostCapabilities) => {
+  const install = async (prepareGraph: (purpose: PreparationPurpose, signal: AbortSignal | undefined, policy: ConsumptionPolicy | undefined, requested: readonly SkillRecord[], pins: ReadonlyMap<string, string> | undefined) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs" | "resolveRelativeReference" | "resolveNamedReference" | "sessionBinding">> = {}, adapter?: HostCapabilities) => {
     let host: HostSkills;
     host = await installHostSkills(api, {
       config: { sources },
@@ -115,7 +115,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
         await writeFile(output, text);
       }, signal),
       resolveCurrentRoot: async record => ({ record, ref: record.ref! }),
-      prepareGraph: async (_records, _ctx, signal, purpose, _pins, _bindings, _mode, policy) => { calls.push(purpose); return prepareGraph(purpose, signal, policy); },
+      prepareGraph: async (requested, _ctx, signal, purpose, pins, _bindings, _mode, policy) => { calls.push(purpose); return prepareGraph(purpose, signal, policy, requested, pins); },
       persistGraphs: discovery.persistGraphs ?? ((_graphs, _ctx, mode) => { persisted.push(mode); }),
       ...(withShortRefs ? { sessionGraph: () => ({ kind: "controlled-selected-graph", scope: identityScope }) } : {}),
       needsPreflightPrompt: text => text.includes("$root"),
@@ -1043,8 +1043,8 @@ test("repeated native prepare bodies deduplicate only the provider projection an
   expect(second.content[0]!.text).toContain("Exact root");
 });
 
-async function nativeRead(f: Awaited<ReturnType<typeof fixture>>, reference: string, toolCallId: string): Promise<AgentMessage> {
-  const input = { path: reference };
+async function nativeRead(f: Awaited<ReturnType<typeof fixture>>, reference: string, toolCallId: string, from?: string): Promise<AgentMessage> {
+  const input = { path: reference, ...(from === undefined ? {} : { from }) };
   const admission = await f.emit("tool_call", { toolName: "read", toolCallId, input }, f.ctx);
   expect(admission.some(value => value && typeof value === "object" && "block" in value)).toBe(false);
   const content = [{ type: "text" as const, text: await readFile(input.path, "utf8") }];
@@ -1053,6 +1053,128 @@ async function nativeRead(f: Awaited<ReturnType<typeof fixture>>, reference: str
   if (!annotated) throw new Error("Expected the real read hook to return a complete-body receipt");
   return { role: "toolResult", toolName: "read", toolCallId, content: annotated.content ?? content, details: annotated.details, isError: false };
 }
+
+function oneRecordGraph(f: Awaited<ReturnType<typeof fixture>>, record: SkillRecord, purpose: PreparationPurpose): PreparedHostGraph {
+  const binding = record.preparationBinding!;
+  const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope: binding.scope,
+    roots: [record.id!], required: [], bindings: [binding] };
+  const validatedAt = Date.now();
+  return { ...f.graph(purpose), purpose, roots: vector.roots, bindings: vector.bindings,
+    records: [{ ...record, currentObservation: { origin: "remote", validatedAt, validUntil: validatedAt + 60_000 } }],
+    lock: { ...vector, sha256: hash(canonical(vector)) }, effects: noConsumptionWrites(),
+    usage: { prepared_nodes: 1, instruction_bytes: Buffer.byteLength(record.body!), context_bytes: 4000, max_depth: 0 } };
+}
+
+test("relative read uses the actual fixed containing file and inspects the independently resolved member", async () => {
+  const f = await fixture(true), resolved: Array<{ id: string | undefined; from: string; path: string }> = [];
+  const h = await f.install(async (purpose, _signal, _policy, requested) => {
+    expect(purpose).toBe("inspect");
+    const selected = f.records.find(record => record.id === requested[0]?.id);
+    if (!selected) throw new Error("Unknown requested owner");
+    return [oneRecordGraph(f, selected, purpose)];
+  }, { resolveRelativeReference: async (record, from, path, _ctx, _signal, policy) => {
+    resolved.push({ id: record.id, from, path }); policy.observeEffects?.(noConsumptionWrites()); return f.member.ref!;
+  }, persistGraphs: (graphs, ctx, mode) => persistSessionSelection(f.api, ctx, graphs, mode) });
+  await nativeRead(f, f.root.ref!, "containing-main");
+  const main = h.host.selectedModelReference(f.root, f.ctx)!;
+  const resource = h.host.selectedModelFiles(f.root, f.ctx)!.find(file => file.path === "resources/guide.md")!;
+  const originalDirectory = JSON.stringify(f.root.entryManifest);
+  const fromMain = await nativeRead(f, "../member/SKILL.md", "from-main", main);
+  const fromResource = await nativeRead(f, "../../member/SKILL.md", "from-resource", resource.ref);
+  expect(resolved).toEqual([
+    { id: f.root.id, from: f.root.preparationBinding!.ref, path: "../member/SKILL.md" },
+    { id: f.root.id, from: f.root.entryManifest!.files.find(file => file.path === resource.path)!.ref, path: "../../member/SKILL.md" },
+  ]);
+  for (const result of [fromMain, fromResource]) {
+    expect(sourceMessageText(result.content)).toStartWith(f.member.body!);
+    expect(sourceMessageText(result.content)).not.toContain(f.required.body!);
+    expect(result.details).toMatchObject({ contextBrokerRead: { binding: { record: { id: f.member.id } }, snapshotId: f.member.snapshotId,
+      readStatus: { purpose: "inspect", activation_effect: "unchanged", requires_acquisition: "not_performed" } } });
+  }
+  expect(f.calls.every(purpose => purpose === "inspect")).toBe(true);
+  const inspected = sessionSelection(f.ctx).scopes.get(scope)!;
+  expect([...inspected.bindings.keys()].sort()).toEqual([f.root.id!, f.member.id!].sort());
+  expect(inspected.graphs.every(graph => graph.purpose === "inspect" && graph.required.length === 0)).toBe(true);
+  expect(inspected.bindings.get(f.root.id!)!.snapshot_id).toBe(f.root.snapshotId);
+  expect(inspected.bindings.get(f.member.id!)!.snapshot_id).toBe(f.member.snapshotId);
+  expect(JSON.stringify(f.root.entryManifest)).toBe(originalDirectory);
+});
+
+test("relative read preserves a target's already selected snapshot when its current version changes", async () => {
+  for (const discovered of [true, false]) {
+    const f = await fixture(true), old = f.member;
+    const current = { ...old, snapshotId: "s_" + hash("member current"), versionId: hash("new member bytes"), body: "New member bytes must not be acquired.\n" };
+    f.records.splice(f.records.indexOf(old), 1, current);
+    persistSessionSelection(f.api, f.ctx, [oneRecordGraph(f, old, "use")], "extend");
+    const selectedBefore = sessionSelection(f.ctx).scopes.get(scope)!.bindings.get(old.id!)!;
+    const usedBefore = sessionSelection(f.ctx).scopes.get(scope)!.graphs.filter(graph => graph.purpose === "use");
+    await f.install(async (purpose, _signal, _policy, requested, pins) => {
+      expect(purpose).toBe("inspect"); expect(requested[0]?.id).toBe(old.id);
+      expect(pins?.get(old.id!)).toBe(old.snapshotId);
+      return [oneRecordGraph(f, old, purpose)];
+    }, { resolveRelativeReference: async () => current.ref!,
+      ...(!discovered ? { getRecords: async () => ({ records: [f.root], failures: [] }),
+        resolveNamedReference: async (ref: string) => ({ ref, record: current }) } : {}),
+      sessionBinding: (record, ctx) => sessionSelection(ctx).scopes.get(scope)?.bindings.get(record.id!),
+      persistGraphs: (graphs, ctx, mode) => persistSessionSelection(f.api, ctx, graphs, mode) });
+    const read = await nativeRead(f, "../member/SKILL.md", "kept-target-version", f.root.preparationBinding!.ref);
+    expect(sourceMessageText(read.content)).toStartWith(old.body!);
+    expect(sourceMessageText(read.content)).not.toContain(current.body);
+    expect(read.details).toMatchObject({ contextBrokerRead: { binding: { record: { id: old.id } }, snapshotId: old.snapshotId } });
+    expect(sessionSelection(f.ctx).scopes.get(scope)!.bindings.get(old.id!)).toEqual(selectedBefore);
+    expect([...sessionSelection(f.ctx).scopes.get(scope)!.roots]).toEqual([old.id!]);
+    expect(sessionSelection(f.ctx).scopes.get(scope)!.graphs.filter(graph => graph.purpose === "use")).toEqual(usedBefore);
+  }
+});
+
+test("relative lookup stays in its containing configured source and rejects foreign target metadata", async () => {
+  for (const foreign of [false, true]) {
+    const f = await fixture(true), lookups: unknown[] = [];
+    await f.install(async purpose => [oneRecordGraph(f, f.member, purpose)], {
+      getRecords: async () => ({ records: [f.root], failures: [] }),
+      resolveRelativeReference: async () => f.member.ref!,
+      resolveNamedReference: async (ref, _ctx, _signal, refresh, sourceId) => {
+        lookups.push({ ref, refresh, sourceId });
+        return { ref, record: foreign ? { ...f.member, sourceId: "other-source" } : f.member };
+      },
+    });
+    const input = { path: "../member/SKILL.md", from: f.root.preparationBinding!.ref };
+    const result = await f.emit("tool_call", { toolName: "read", toolCallId: "scoped-target", input }, f.ctx);
+    expect(lookups).toEqual([{ ref: f.member.ref, refresh: false, sourceId: "controlled" }]);
+    if (foreign) { expect(JSON.stringify(result)).toContain("SOURCE_IDENTITY_MISMATCH"); expect(f.calls).toEqual([]); }
+    else { expect(input.path).toBe(f.member.path); expect(input).not.toHaveProperty("from"); expect(f.calls).toEqual(["inspect"]); }
+  }
+});
+
+test("relative Source failures do not guess filesystem paths or prepare another owner", async () => {
+  for (const code of ["CURRENT_SOURCE_CHANGED", "CURRENT_SOURCE_REFERENCE_AMBIGUOUS", "CURRENT_SOURCE_EXTERNAL_REFERENCE", "CURRENT_SOURCE_REQUIRED"]) {
+    const f = await fixture(true);
+    await f.install(undefined, { resolveRelativeReference: async () => { throw new SourceError(code, "controlled"); } });
+    const input = { path: "../member/SKILL.md", from: f.root.preparationBinding!.ref }, original = { ...input };
+    const results = await f.emit("tool_call", { toolName: "read", toolCallId: code, input }, f.ctx);
+    expect(JSON.stringify(results)).toContain(code); expect(input).toEqual(original);
+    expect(f.calls).toEqual([]); expect(f.resourceReads).toEqual([]); expect(f.persisted).toEqual([]);
+  }
+});
+
+test("relative resolution cannot publish a target after cancellation, a session change or a retired generation", async () => {
+  for (const change of ["cancel", "session", "generation"] as const) {
+    const f = await fixture(true), started = Promise.withResolvers<void>(), finish = Promise.withResolvers<string>();
+    const controller = new AbortController(); f.ctx.signal = controller.signal;
+    await f.install(undefined, { resolveRelativeReference: async () => { started.resolve(); return finish.promise; } });
+    const input = { path: "../member/SKILL.md", from: f.root.preparationBinding!.ref }, original = { ...input };
+    const reading = f.emit("tool_call", { toolName: "read", toolCallId: "late-relative", input }, f.ctx);
+    await started.promise;
+    if (change === "cancel") controller.abort();
+    else if (change === "session") f.session.id = "another-session";
+    else await f.emit("session_switch", { reason: "new" }, f.ctx);
+    finish.resolve(f.member.ref!);
+    const results = await reading;
+    expect(JSON.stringify(results)).toContain("SOURCE_ACTIVATION_CANCELLED"); expect(input).toEqual(original);
+    expect(f.calls).toEqual([]); expect(f.persisted).toEqual([]);
+    expect(sessionSelection(f.ctx).scopes.size).toBe(0);
+  }
+});
 
 test("short-ref directory projection preserves older pins, non-main references and canonical graph locks", async () => {
   const f = await fixture(true), oldPin = "s_" + hash("older root version");

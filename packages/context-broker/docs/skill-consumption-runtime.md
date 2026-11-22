@@ -28,6 +28,24 @@ Pi 注册 `notion_list({query?, source?, limit?, cursor?, refresh?})`、`notion_
 宿主等待窗口需覆盖该预算及启动、收尾余量。前台无法持续等待时，保留同一后台
 进程、Store 和凭据范围，等到真实终局；短轮询结束不授权杀掉或重复写入。
 
+## 从正文相对引用读取
+
+Pi 的单文件入口支持 `read({path:RELATIVE_PATH, from:FIXED_CONTAINING_FILE_REF})`。
+`from` 复制实际包含链接的主文 `sr:S`、资源 `sr:R`，或带 snapshot 的 canonical
+File ref。嵌套子文档使用自己的 File 绑定；未固定的 `sr:C` 不能作为基准。
+`path` 必须是相对文件路径，不接受绝对路径、`~/`、URI、query 或 fragment。
+`from` 不与 `paths` 批读或 `refresh:true` 合用。
+
+SDK 先根据该文件的当前 Source revision 和原始仓库路径解析唯一贡献目标，
+Broker 再按目标自己的 owner、scope 和会话固定版本读取。已选目标不会因这次
+解析而换成新版本。没有可靠 Source 上下文时，使用目标的精确稳定引用；不按缓存
+位置、名称或相似文件名推断。来源失效、revision 变化、映射歧义、库外路径或离线
+无法解析都保留明确错误。
+
+结果沿现有 read 回执返回固定目标引用，只做检查，不激活指令、不展开 Requires，
+也不自动修改 Members。取消与分支切换继续阻止旧结果投递。普通本地 read 保持
+Pi 原生行为。参数示例见[相对文件读取](fixed-resource-batches.md#relative-paths-from-a-selected-file)。
+
 ## Presentation and proof
 
 正常 use 结果保留所选根、Requires 的完整作者字符串和资源/关系目录。编译器不

@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { activeNotionSession } from "./fixtures/active-notion-session";
 import { sourceMessageText } from "../src/session-source-snapshot";
+import { noConsumptionWrites } from "../src/consumption-effects";
+import { parseNativeReference } from "../src/native-reference";
 import type { SkillRecord } from "../src/types";
 
 type Session = Awaited<ReturnType<typeof activeNotionSession>>;
@@ -27,6 +29,37 @@ const payloadText = (turn: Awaited<ReturnType<Session["turn"]>>) => {
   expect(turn.error).toBeUndefined(); expect(turn.provider).toBe(true);
   return turn.payload!.messages.map(message => message.content).join("\n");
 };
+
+test("production index resolves a relative read through the scoped SDK before reading the target's own selected version", async () => {
+  const h = await activeNotionSession();
+  try {
+    const old = await h.seed(["root", "independent"]), root = old.records.find(record => record.name === "root")!;
+    const target = old.records.find(record => record.name === "independent")!, revised = h.revise("independent", "New target bytes must not replace its selected version.\n");
+    const selected = h.selected(), active = h.active(), from = h.fixedRef(root), path = "../independent/SKILL.md";
+    h.f.state.resolveRelative = (requested, options) => {
+      expect(requested).toBe(path); expect(options.from).toBe(root.preparationBinding!.ref);
+      expect(options.database).toBe(h.f.source.database);
+      return { version: 1, from: options.from, ref: revised.ref, effects: noConsumptionWrites() };
+    };
+    const started = h.f.calls.length, read = await h.read(path, undefined, from), calls = h.f.calls.slice(started);
+    expect(calls.map(call => call.operation)).toEqual(["resolve", "consume"]);
+    expect(calls[1]!.input!.purpose).toBe("inspect");
+    expect(calls[1]!.input!.targets.map(parseNativeReference)).toEqual([expect.objectContaining({ selector: target.id, snapshot: target.snapshotId })]);
+    expect(sourceMessageText(read.content)).toStartWith(target.body!);
+    expect(sourceMessageText(read.content)).not.toContain(revised.body!);
+    expect(read.details).toMatchObject({ contextBrokerRead: { binding: { record: { id: target.id } }, snapshotId: target.snapshotId,
+      readStatus: { purpose: "inspect", activation_effect: "unchanged", requires_acquisition: "not_performed" } } });
+    expect(h.selected().scopes.get(target.sourceScope!)!.bindings).toEqual(selected.scopes.get(target.sourceScope!)!.bindings);
+    expect(h.selected().scopes.get(target.sourceScope!)!.graphs.filter(graph => graph.purpose === "use"))
+      .toEqual(selected.scopes.get(target.sourceScope!)!.graphs.filter(graph => graph.purpose === "use"));
+    expect(h.active()).toEqual(active);
+    h.f.state.resolveRelative = () => { throw Object.assign(new Error("Source revision changed"), { code: "CURRENT_SOURCE_CHANGED" }); };
+    const failedAt = h.f.calls.length;
+    await expect(h.read(path, undefined, from)).rejects.toMatchObject({ admission: { code: "CURRENT_SOURCE_CHANGED" } });
+    expect(h.f.calls.slice(failedAt).map(call => call.operation)).toEqual(["resolve"]);
+    expect(h.active()).toEqual(active);
+  } finally { await h.close(); }
+});
 
 test("metadata refresh discovers a newly created Skill before TTL without replacing active pins or fixed refs", async () => {
   const h = await activeNotionSession();

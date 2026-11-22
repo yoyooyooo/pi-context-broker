@@ -13,7 +13,7 @@ const canonical = (value: unknown): string => value === null || typeof value !==
   : "{" + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 const uuid = (n: number) => "00000000-0000-4000-8000-" + n.toString().padStart(12, "0");
 type Input = { version: 1; targets: string[]; purpose: "use" | "inspect"; freshness: { policy: string }; budget?: Record<string, number> };
-type Runtime = { database?: string; directory?: { view?: string; profile?: string }; defaultView?: boolean; view?: string; profile?: string; maxAge?: number; refresh?: boolean; offline?: boolean; output?: string; signal?: AbortSignal; execution?: Record<string, unknown> };
+type Runtime = { database?: string; directory?: { view?: string; profile?: string }; defaultView?: boolean; view?: string; profile?: string; maxAge?: number; refresh?: boolean; offline?: boolean; output?: string; from?: string; signal?: AbortSignal; execution?: Record<string, unknown> };
 type Call = { operation: string; input?: Input; target?: string; options: Runtime };
 
 // Only the external SDK operation is controlled. The source adapter, graph
@@ -34,6 +34,7 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     "export async function readSkill(target,options){calls.push({operation:'read',target,options}); return state.read(target,options);}",
     "export async function listSkill(target,options){calls.push({operation:'files',target,options}); return state.listFiles(target,options);}",
     "export function resolveCatalogReference(target,value){return state.resolve(target,value);}",
+    "export async function resolveReference(target,options){calls.push({operation:'resolve',target,options}); return state.resolveRelative(target,options);}",
     "export async function listCatalog(options){calls.push({operation:'list',options}); return state.list(options);}",
   ].join("\n"));
   await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills", package_version: "current-source-fixture",
@@ -94,6 +95,7 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     paired: undefined as unknown,
     filesResponse: undefined as unknown,
     resolve: (target: string, _catalog: unknown): unknown => ({ record, scope, ref: target.replace("entry/", encodeURIComponent(id) + "/") }),
+    resolveRelative: (_target: string, _options: Runtime): unknown => { throw new Error("Unexpected Source-relative reference"); },
     list(options: Runtime): unknown {
       if (options.directory) return state.paired ?? { version: 1, catalog: { ok: true, value: state.catalog }, directory: { ok: true, value: state.directory ?? state.catalog } };
       return options.defaultView || options.view ? state.directory ?? state.catalog : state.catalog;

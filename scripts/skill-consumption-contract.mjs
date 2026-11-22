@@ -43,7 +43,7 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
       && /working-directory: \.verification\/ntn-skills-cli\s+run: \|\s+bun install --frozen-lockfile\s+bun run build/u.test(text),
       'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ' must build and decode with one pinned current CLI.');
     revisions.push(source[1]);
-    check(text.includes('bun-version: 1.4.3') && text.includes('node-version: 24.20.0'),
+    check(text.includes('bun-version: 1.4.3') && text.includes('node-version: 24.22.3'),
       'GATE_TOOLCHAIN_VERSION', workflow.name + ' must use the pinned toolchain.');
     check(text.includes('run: bun run check:broker'), 'GATE_CHECK_MISSING', workflow.name + ' must run the current package check.');
     check(!/--distinct-names|--ambiguous-names|--name-fixture|--ambiguity-fixture|--host omp|pi14|Pi 1\.4|@oh-my-pi|notion-sdk-pi\.mjs|context-broker-host-e2e|tern-context-broker\.tar/u.test(text),

@@ -42,6 +42,7 @@ type Sdk = {
   readSkill: (target: string, options?: RuntimeOptions) => Promise<unknown>;
   listCatalog?: (options?: RuntimeOptions) => Promise<unknown>;
   resolveCatalogReference?: (target: string, catalog: unknown) => unknown;
+  resolveReference?: (target: string, options: RuntimeOptions & { from: string }) => Promise<unknown>;
   listSkill?: (target: string, options?: RuntimeOptions) => Promise<unknown>;
   READ_OUTPUT_PROOF_VERSION?: number;
   CATALOG_DIRECTORY_CONTRACT_VERSION?: number;
@@ -99,7 +100,7 @@ async function loadBundledSdk(): Promise<Sdk> {
 }
 
 /** Code is shared; every operation still creates and closes its own SDK runtime. */
-async function observed(operation: "consume" | "read" | "read-resources" | "list" | "files", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
+async function observed(operation: "consume" | "read" | "read-resources" | "list" | "files" | "resolve", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
   const { sourceId, ...runtimeOptions } = options;
   const attribution = { source_id: sourceId ?? null, database: options.database ?? null };
   const enabled = observations.hasSubscribers;
@@ -122,6 +123,7 @@ async function observed(operation: "consume" | "read" | "read-resources" | "list
     if (operation === "read" && options.output !== undefined
       && (sdk.READ_OUTPUT_PROOF_VERSION !== 1 || readOutputProofVersion !== 1)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "files" && typeof sdk.listSkill !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+    if (operation === "resolve" && typeof sdk.resolveReference !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "read-resources" && (sdk.RESOURCE_READ_CONTRACT_VERSION !== 1 || resourceContractVersion !== 1
       || typeof sdk.readResources !== "function" || typeof sdk.decodeResourceReadResult !== "function")) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     sdkStarted = true;
@@ -154,6 +156,10 @@ export function consumeNotionSdk(input: unknown, options: Options): Promise<unkn
 }
 export function readNotionSdk(target: string, options: Options): Promise<unknown> {
   return observed("read", options, (sdk, runtime) => sdk.readSkill(target, runtime));
+}
+/** Resolve only; the host selects the target's own session version before reading. */
+export function resolveNotionReferenceSdk(target: string, options: Options & { from: string }): Promise<unknown> {
+  return observed("resolve", options, (sdk, runtime) => sdk.resolveReference!(target, { ...runtime, from: options.from }));
 }
 /** Metadata uses the core catalog cache; no CLI subprocess or second discovery authority. */
 export function listNotionCatalogSdk(options: Options): Promise<unknown> {

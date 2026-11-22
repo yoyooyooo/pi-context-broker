@@ -48,6 +48,12 @@ export async function readSkill(target, options) {
   options.onRequestMetrics?.({ total_requests: 0, trace: [] });
   return { ...state.response, output: options.output, reused: false, ...state.overrides };
 }
+export async function resolveReference(target, options) {
+  calls.push({ operation: 'resolve', target, options });
+  state.afterResolve?.();
+  if (state.resolveError) throw state.resolveError;
+  return state.relativeResponse;
+}
 `);
   await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills", package_version: "fixed-resource-fixture",
     sdk_version: 2, consumer_contract_version: 1, resource_read_contract_version: 1, consumption_effects_version: 1,
@@ -72,7 +78,8 @@ export async function readSkill(target, options) {
       { file_id: "guide", path, page_id: "00000000-0000-4000-8000-000000000002" }] };
   const state = { bytes, response, overrides: {} as Record<string, unknown>, afterWrite: undefined as (() => void) | undefined,
     afterBatch: undefined as (() => void) | undefined, symlink: undefined as string | undefined, batchResponse: undefined as unknown,
-    batchBudgetOverride: undefined as ResourceReadBudget | undefined };
+    batchBudgetOverride: undefined as ResourceReadBudget | undefined, relativeResponse: undefined as unknown,
+    afterResolve: undefined as (() => void) | undefined, resolveError: undefined as Error | undefined };
   sdk.configure(state);
   const resourceRoot = join(source.cacheDir!, "scopes", scope, "records", hash(id), "resources", snapshot, "tree");
   const read = (fixedRef = ref, signal?: AbortSignal) => boundary.readFixedNotionResource(record, fixedRef, source, root, signal);
@@ -104,6 +111,37 @@ test("batch source keeps zero-write effects and omits retired SDK options with e
   f.state.batchResponse = { version: 1, status: "failed", effects,
     error: Object.freeze({ code: "NOTION_READ_ONLY", message: "semantic write forbidden", details: { effects } }) };
   await expect(f.readBatch({ readOnly: true })).rejects.toMatchObject({ code: "NOTION_READ_ONLY", details: { effects } });
+});
+
+test("Source-relative resolution keeps the containing resource identity without materializing either owner", async () => {
+  const f = await fixture(), ref = "skill://shared_skill%3Afixed-resource%3Atarget/SKILL.md", observed: ConsumptionEffects[] = [];
+  f.state.relativeResponse = { version: 1, from: f.ref, ref, effects: noConsumptionWrites() };
+  expect(await f.boundary.resolveNotionRelativeReference(f.record, f.ref, "../../target/SKILL.md", f.source, f.root, undefined,
+    { readOnly: true, observeEffects: value => observed.push(value) })).toBe(ref);
+  expect(f.sdk.calls).toHaveLength(1);
+  expect(f.sdk.calls[0]).toMatchObject({ operation: "resolve", target: "../../target/SKILL.md", options: { from: f.ref, offline: true } });
+  expect(f.sdk.calls[0].options).not.toHaveProperty("output");
+  expect(observed).toEqual([noConsumptionWrites()]); expect(await exists(f.resourceRoot)).toBe(false);
+});
+
+test("Source-relative identity rejects mismatched bases, foreign libraries, malformed output and late cancellation", async () => {
+  const f = await fixture(), ref = "skill://shared_skill%3Afixed-resource%3Atarget/SKILL.md";
+  const read = (signal?: AbortSignal) => f.boundary.resolveNotionRelativeReference(f.record, f.ref, "../../target/SKILL.md", f.source, f.root, signal);
+  for (const changed of [{ version: 2 }, { from: f.prefix + "SKILL.md" }, { ref: "skill://shared_skill%3Aforeign%3Atarget/SKILL.md" },
+    { ref: "../target/SKILL.md" }, { ref: f.prefix + "SKILL.md" }, { ref: f.ref.replace(f.snapshot, "s_" + "c".repeat(64)) }]) {
+    f.state.relativeResponse = { version: 1, from: f.ref, ref, effects: noConsumptionWrites(), ...changed };
+    await expect(read()).rejects.toBeDefined();
+  }
+  f.state.relativeResponse = { version: 1, from: f.ref, ref: f.ref, effects: noConsumptionWrites() };
+  expect(await read()).toBe(f.ref);
+  f.state.resolveError = Object.assign(new Error("Source map changed"), { code: "CURRENT_SOURCE_CHANGED" });
+  await expect(read()).rejects.toMatchObject({ code: "CURRENT_SOURCE_CHANGED" });
+  f.state.resolveError = undefined;
+  f.state.relativeResponse = { version: 1, from: f.ref, ref, effects: noConsumptionWrites() };
+  const controller = new AbortController(); f.state.afterResolve = () => controller.abort();
+  await expect(read(controller.signal)).rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
+  expect(f.sdk.calls.every((call: { operation?: string }) => call.operation === "resolve")).toBe(true);
+  expect(await exists(f.resourceRoot)).toBe(false);
 });
 
 test("the source boundary sends and verifies the same per-call resource budget", async () => {

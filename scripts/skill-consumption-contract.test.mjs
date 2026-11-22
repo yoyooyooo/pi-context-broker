@@ -23,7 +23,7 @@ test('missing consumption, drifting CLI input and skipped current HTTP gate are 
     [value => { value.workflows[0].text = value.workflows[0].text.replace('NTN_SKILLS_BUILD_ENTRY:', 'UNUSED_ENTRY:'); }, 'GATE_SDK_BUILD_INPUT_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace(/(repository: yoyooyooo\/notion-skills-cli\s+ref: )[a-f0-9]{40}/u, '$1main'); }, 'GATE_SDK_BUILD_INPUT_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace(/(repository: yoyooyooo\/notion-skills-cli\s+ref: )[a-f0-9]{40}/u, '$1' + 'a'.repeat(40)); }, 'GATE_SDK_BUILD_INPUT_DRIFT'],
-    [value => { value.workflows[0].text = value.workflows[0].text.replace('node-version: 24.20.0', 'node-version: 22'); }, 'GATE_TOOLCHAIN_VERSION'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('node-version: 24.22.3', 'node-version: 22'); }, 'GATE_TOOLCHAIN_VERSION'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('--catalog', '--catalog --distinct-names'); }, 'GATE_RETIRED_PATH'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('Create current SDK fixture\n', 'Create current SDK fixture\n        if: false\n'); }, 'GATE_CURRENT_FIXTURE_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('Installed current SDK consumption\n', 'Installed current SDK consumption\n        continue-on-error: true\n'); }, 'GATE_INSTALLED_SDK_MISSING'],

@@ -194,8 +194,8 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   const failed = (code: string, item = record("required"), details: Record<string, unknown> = {}) => ({ version: 1, status: "failed", effects: noConsumptionWrites(),
     error: { code, message: "Controlled SDK failure", details: { ...details, preparation: { status: "failed", scope,
       required: [], nodes: [{ state: "failed", id: item.id, ref: item.ref, roles: ["root"], error: { code, details: { id: item.id } } }] } } } });
-  const read = async (path: string, refresh?: boolean) => {
-    const input = { path, ...(refresh === undefined ? {} : { refresh }) }, toolCallId = "read-" + branch.length;
+  const read = async (path: string, refresh?: boolean, from?: string) => {
+    const input = { path, ...(refresh === undefined ? {} : { refresh }), ...(from === undefined ? {} : { from }) }, toolCallId = "read-" + branch.length;
     const admitted = await emit("tool_call", { toolName: "read", toolCallId, input });
     const blocked = admitted.find(value => value && typeof value === "object" && "block" in value);
     if (blocked) throw Object.assign(new Error(String(Reflect.get(blocked, "reason"))), { admission: Reflect.get(blocked, "admission") });

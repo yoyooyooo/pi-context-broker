@@ -16,7 +16,7 @@ import { viewSystemPrompt, withoutViewMetadata } from "./view-prompt";
 import { hostCliScope } from "./host-command";
 import { notifyUnavailableReferences, renderUnavailableReferences } from "./unavailable-references";
 import { deduplicateSourceReads, deferredSourceEntries, nativeReadReceipt, notionReadStatusFooter, type NotionReadStatus, sourceDeliveryReceipt, sourceMessageText, contextSourceIdentities, inspectedResource, projectSelectedSourceMessages, withSessionSourceReceipts } from "./session-source-snapshot";
-import { parseNativeReference, parseNotionReference, notionPageId, nativeResourcePath, type ExactNativeReference } from "./native-reference";
+import { parseNativeReference, parseNotionReference, notionPageId, nativeResourcePath, relativeReadInput, type ExactNativeReference } from "./native-reference";
 import { preparationFailureDetails, type PreparedHostGraph, type PreparationPurpose, type PreparationBinding, type PreparationDirectory } from "./prepare-protocol";
 import { applySelectionGraphs, samePreparationBinding, sessionSelection, selectedTaskRole, type SelectionMode } from "./session-graph";
 import { publicEntryMaterialization } from "./notion-entry";
@@ -40,7 +40,8 @@ export type HostSkillOptions = {
   getRecords(ctx?: ExtensionContext, signal?: AbortSignal, refreshSourceIds?: readonly string[]): Promise<DiscoveryResult<SkillRecord>>;
   metadataInvalidated?(ctx: ExtensionContext): boolean;
   lookupReference?(ctx: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
-  resolveNamedReference?(ref: string, ctx: ExtensionContext, signal?: AbortSignal, refresh?: boolean): Promise<{ record: SkillRecord; ref: string }>;
+  resolveNamedReference?(ref: string, ctx: ExtensionContext, signal?: AbortSignal, refresh?: boolean, sourceId?: string): Promise<{ record: SkillRecord; ref: string }>;
+  resolveRelativeReference?(record: SkillRecord, from: string, path: string, ctx: ExtensionContext, signal: AbortSignal, policy: ConsumptionPolicy): Promise<string>;
   resolveCurrentRoot?(record: SkillRecord, ctx: ExtensionContext, signal: AbortSignal): Promise<{ record: SkillRecord; ref: string }>;
   loadRecord(record: SkillRecord, signal?: AbortSignal, snapshotId?: string, policy?: ConsumptionPolicy): Promise<SkillRecord>;
   loadResource?(record: SkillRecord, path: string, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<string>;
@@ -2084,14 +2085,65 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       ...(effects ? { effects } : {}), admission };
   }
 
+  async function resolveRelativeRead(input: { from: string; path: string }, ctx: ExtensionContext, signal: AbortSignal, policy: ConsumptionPolicy): Promise<ResolvedHostReference> {
+    if (!options.resolveRelativeReference) throw hostError("SOURCE_SDK_INCOMPATIBLE");
+    const observedGeneration = generation, owner = gate.active;
+    const sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
+    const current = () => {
+      checkPreparationSignal(signal);
+      if (observedGeneration !== generation || owner !== gate.active || sessionId !== ctx.sessionManager?.getSessionId?.()
+        || sessionFile !== ctx.sessionManager?.getSessionFile?.()) throw preparationCancelled();
+    };
+    const base = await resolveToolReference(input.from, ctx, signal);
+    const from = base.canonicalRef ?? input.from;
+    if (!base.reference.snapshot || !base.reference.path || base.short?.kind === "candidate") throw hostError("SOURCE_REFERENCE_INVALID");
+    const { record } = await exactReadRecord(base.reference, ctx, signal, base.short, base.record);
+    if (record.source !== "notion" || !record.sourceId || !record.sourceScope) throw hostError("SOURCE_IDENTITY_MISMATCH");
+    current();
+    const ticket = observations.begin(signal);
+    let canonicalRef: string;
+    try { canonicalRef = await options.resolveRelativeReference(record, from, input.path, ctx, signal, policy); }
+    catch (error) { observeFailure(error, ticket, [record], new Set([recordIdentity(record)]), ctx); throw error; }
+    current(); assertCanRestore(record);
+    let reference = parseNativeReference(canonicalRef);
+    // Reuse a known target from this exact configured source. The containing
+    // Skill's version and task role never transfer to the target owner.
+    const known = contextRecords(ctx).find(target => target.sourceId === record.sourceId && target.sourceScope === record.sourceScope
+      && target.id === reference.selector && target.ref?.startsWith("skill://"));
+    let target = known;
+    if (!target) {
+      if (!options.resolveNamedReference) throw hostError("SOURCE_REFERENCE_MISSING");
+      const located = await options.resolveNamedReference(canonicalRef, ctx, signal, false, record.sourceId);
+      current();
+      if (!isDeepStrictEqual(parseNativeReference(located.ref), reference)) throw hostError("SOURCE_IDENTITY_MISMATCH");
+      target = located.record;
+    }
+    if (target.source !== "notion" || target.sourceId !== record.sourceId || target.sourceScope !== record.sourceScope
+      || target.id !== reference.selector) throw hostError("SOURCE_IDENTITY_MISMATCH");
+    if (!reference.snapshot) {
+      const { snapshot } = assertSourceSelection(target, ctx);
+      if (snapshot) {
+        const fixed = new URL(canonicalRef); fixed.searchParams.set("snapshot", snapshot);
+        canonicalRef = fixed.toString(); reference = parseNativeReference(canonicalRef);
+      }
+    }
+    current();
+    return { reference, canonicalRef, record: target };
+  }
+
   async function prepareRead(event: ToolCallEvent, ctx: ExtensionContext, signal: AbortSignal, readPhase: "hook" | "execute"): Promise<PreparedReadResult | undefined> {
     if (event.toolName !== "read" || !event.input || typeof event.input.path !== "string") return undefined;
     const requested = event.input.path;
     const started = generation;
+    const observedEffects: ConsumptionEffects[] = [];
+    const policy: ConsumptionPolicy = { readOnly: piConsumption || event.input.readOnly === true, observeEffects: effects => observedEffects.push(effects) };
     let stage: ReadAdmissionStage = "metadata";
-    const blocked = (error: unknown, effects?: ConsumptionEffects, message?: string) => blockedRead(error, readPhase, stage, started, signal, effects, message);
+    const blocked = (error: unknown, effects?: ConsumptionEffects, message?: string) => blockedRead(error, readPhase, stage, started, signal,
+      effects ?? (observedEffects.length ? combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]) : undefined), message);
     if (piConsumption && Object.hasOwn(event.input, "readOnly")) return blocked(hostError("INVALID_ARGUMENT"));
-    const explicit = requested.startsWith("skill://") || isSessionShortRefInput(requested) || notionPageId(requested) !== undefined;
+    let relativeInput: ReturnType<typeof relativeReadInput>;
+    try { relativeInput = relativeReadInput(event.input); } catch (error) { return blocked(error); }
+    const explicit = relativeInput !== undefined || requested.startsWith("skill://") || isSessionShortRefInput(requested) || notionPageId(requested) !== undefined;
     if (event.input.refresh !== undefined && typeof event.input.refresh !== "boolean" || event.input.refresh === true && !explicit) return blocked(hostError("INVALID_ARGUMENT"));
     const refresh = event.input.refresh === true;
     // A plain file read does not acquire a remote Skill dependency. Published
@@ -2109,7 +2161,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     let confirmedFixedRead = false;
     if (explicit) {
       try {
-        let resolved = await resolveToolReference(requested, ctx, signal, refresh);
+        let resolved = relativeInput ? await resolveRelativeRead(relativeInput, ctx, signal, policy) : await resolveToolReference(requested, ctx, signal, refresh);
         exactReference = resolved.reference; short = resolved.short;
         canonicalRef = resolved.canonicalRef;
         const located = await exactReadRecord(exactReference, ctx, signal, short, resolved.record);
@@ -2154,8 +2206,6 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       }
     }
     if (!selected) return undefined;
-    const observedEffects: ConsumptionEffects[] = [];
-    const policy: ConsumptionPolicy = { readOnly: piConsumption || event.input.readOnly === true, observeEffects: effects => observedEffects.push(effects) };
     let retained: SkillRecord | undefined;
     if (!explicit) {
       retained = selected.kind === "prompt" && !turnPrompts?.signal.aborted ? turnPrompts?.snapshots.get(recordIdentity(selected)) : undefined;
@@ -2173,7 +2223,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         && exactReference.path !== selected.entrypoint && resourceSelection(selected, exactReference, ctx).inspection)) {
         stage = "resource";
         const fixed = await prepareFixedResourceRead(canonicalRef ? { ...event, input: { ...event.input, path: canonicalRef } } : event, ctx, signal, selected, exactReference, short, requested);
-        if (fixed) return fixed;
+        if (fixed) {
+          if (observedEffects.length) {
+            fixed.effects = combineConsumptionEffects([...observedEffects, consumptionEffects(fixed.effects)]);
+            const pending = event.toolCallId ? pendingResourceReads.get(event.toolCallId) : undefined;
+            if (pending) pending.effects = fixed.effects;
+          }
+          return fixed;
+        }
       }
       stage = "preparation";
       const snapshot = refresh ? await (async () => {
@@ -2240,7 +2297,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         pendingNativeReads.set(event.toolCallId, { record: snapshot, generation, signal, display, effects: observedEffects.length ? combineConsumptionEffects(observedEffects) : consumptionEffects(undefined),
           ...(refresh || confirmedFixedRead ? { purpose: "inspect" as const } : {}) });
       }
-      const updated = { ...event.input, path: path + suffix };
+      const { from: _from, ...nativeInput } = event.input;
+      const updated = { ...nativeInput, path: path + suffix };
       return { input: updated, effects: observedEffects.length ? combineConsumptionEffects(observedEffects) : consumptionEffects(undefined), display };
     } catch (error) {
       const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
@@ -2375,7 +2433,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const prepared = await prepareRead(event, ctx, readSignal, "hook");
     if (prepared && "block" in prepared) return prepared;
     if (event.toolName === "read" && readSignal.aborted) return blockedRead(preparationCancelled(), "hook", "admission", started, readSignal, prepared?.effects);
-    if (prepared) Object.assign(event.input, prepared.input);
+    if (prepared) { Object.assign(event.input, prepared.input); delete event.input.from; }
     return prepared ? adapter.updatedRead(prepared.input) : undefined;
   });
   host.on("tool_result", (event, ctx) => {

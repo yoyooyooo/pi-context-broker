@@ -26,6 +26,40 @@ actual tool results. A third-party extension that already owns `read` is not
 replaced. OMP receives the call-ID plumbing but this batch slice is Pi-specific.
 The optional `budget` belongs only to `paths`; scalar and local reads reject it.
 
+### Relative paths from a selected File
+
+The scalar branch can resolve a relative link from its exact containing File:
+
+```ts
+read({ path: "../review/SKILL.md", from: "sr:S…" })
+read({ path: "../../reference.md", from: "sr:R…" })
+```
+
+Copy `from` from the actual selected main or supporting file. It accepts a valid
+`sr:S`, `sr:R`, or fixed canonical `skill://shared_skill%3A.../path?snapshot=s_...`
+File ref. An unfixed `sr:C` candidate is not a containing-file selection. The base
+is the real File binding, including a renamed File whose old path is only a hint.
+`path` must be a relative file path; absolute paths, `~/`, URIs, queries and fragments
+are rejected. `from` cannot be combined with `paths` or `refresh: true`.
+
+The paired SDK resolves identity before Broker reads the target. A target mapped
+to the containing owner stays in its fixed selection. A cross-Skill link requires
+the containing file's Source revision and original path to map to one exact current
+contribution. Nested documents use their own Source path before mounts or renames;
+a coincidentally matching cache path cannot override that meaning. Missing or changed
+Source authority, ambiguous mappings, and mappings unavailable offline fail explicitly;
+neighboring cache directories never supply a fallback.
+For a file without reliable Source context, use the target's exact stable ref.
+
+After resolution, the target retains its own owner, scope and any existing session
+pin. Resolving a link does not upgrade an already selected target to newer content.
+The normal read route validates the target and returns its fixed ref and existing
+read receipt. It remains inspection: no `notion_use`, Requires expansion, Members
+change or remote write. Cancellation and branch changes still prevent stale results
+from being delivered. Ordinary local filesystem reads keep Pi's native behavior.
+The paired SDK must export `resolveReference`; a missing export reports
+`SOURCE_SDK_INCOMPATIBLE` without a CLI or filesystem fallback.
+
 ### Fixed scalar resources
 
 A fixed resource `read({ path: "sr:R…", offset?, limit? })` or canonical fixed

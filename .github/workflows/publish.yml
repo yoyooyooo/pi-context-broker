@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: a60e5d83e33c887a54514ab9b84361af47b70961
+          ref: 6172b951ee23a669cbe1e8d861b10bac8d47111d
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun
@@ -47,7 +47,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
-          node-version: 24.20.0
+          node-version: 24.22.3
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - name: Install dependencies

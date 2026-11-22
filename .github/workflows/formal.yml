@@ -53,7 +53,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version: 24.20.0
+          node-version: 24.22.3
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

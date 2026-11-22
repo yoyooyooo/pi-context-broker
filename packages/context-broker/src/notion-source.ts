@@ -15,7 +15,7 @@ import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose
 import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
 import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch, publishNotionResourceFile } from "./notion-entry";
-import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, resolveNotionCatalogReferenceSdk, listNotionFilesSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
+import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, resolveNotionCatalogReferenceSdk, resolveNotionReferenceSdk, listNotionFilesSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
 import type { ResourceReadBudget, FixedResourceRead, ResourceReadBatch, ResourceReadFileIdentity, ResourceReadWireFile } from "./resource-read-types";
 import type { ContentRecord, NotionDirectory, NotionDirectorySelection, NotionDirectoryOutcome, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
 
@@ -189,6 +189,11 @@ export function sourceFailureMessage(code: string, details?: SourceError["detail
     case "NOTION_SCHEDULER_UNAVAILABLE": return "The shared Notion request scheduler is unavailable. Check the local scheduler state and run /context-broker doctor.";
     case "ACCESS_DENIED": return "Grant the existing Notion connection read access to the selected database.";
     case "CONTENT_DISABLED": return "The Skill is disabled (Enabled=false) in Notion. This is not a source connection failure. Enable it before retrying the exact read; catalog metadata may remain cached until refreshed.";
+    case "CURRENT_SOURCE_REQUIRED": return "The containing file has no Source contribution for this cross-Skill link. Use an exact target Skill reference.";
+    case "CURRENT_SOURCE_CHANGED": return "The Source revision no longer matches the containing fixed file. Existing selections are unchanged; use a previously issued exact target reference or explicitly inspect current material.";
+    case "CURRENT_SOURCE_REFERENCE_AMBIGUOUS": return "This Source path maps to more than one Skill. Select one exact target reference.";
+    case "CURRENT_SOURCE_EXTERNAL_REFERENCE": return "This Source path is outside the selected Skill members. It cannot be read as an imported Skill reference.";
+    case "CURRENT_SOURCE_REFERENCE_UNAVAILABLE": return "This cross-Skill link needs its current Source contribution map online. The offline policy and existing selections are unchanged.";
     default: return "Check the source configuration and access, then run /context-broker refresh.";
   }
 }
@@ -597,6 +602,26 @@ function nativeBindings(value: unknown, source: NotionSource): readonly NativeFi
     return { file_id: item.file_id, page_id: item.page_id, path };
   });
 }
+/** Source-relative identity is owned by Core. Do not read a target before the
+ * host has applied that target's independent fixed session selection. */
+export async function resolveNotionRelativeReference(record: SkillRecord, from: string, path: string, source: NotionSource, cwd: string, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<string> {
+  if (record.sourceId !== source.id || !record.sourceScope || record.locator?.type !== "shared_skill")
+    throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  const base = parseNativeReference(from);
+  if (base.selector !== record.id || !base.snapshot || !base.path) throw new SourceError("SOURCE_REFERENCE_INVALID", source.id);
+  let value: unknown;
+  try { value = await resolveNotionReferenceSdk(path, { ...sdkOptions(source, cwd, signal), from, ...(source.activation?.offline ? { offline: true } : {}) }); }
+  catch (error) { throw sdkFailure(error, source, "read", signal, record); }
+  if (signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
+  if (!object(value) || value.version !== 1 || value.from !== from || typeof value.ref !== "string") decodeError(source);
+  policy?.observeEffects?.(consumptionEffects(value.effects));
+  const target = parseNativeReference(value.ref);
+  if (!target.path || !target.selector.startsWith("shared_skill:" + record.locator.library_id + ":")
+    || target.selector === base.selector && target.snapshot !== base.snapshot)
+    throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  return value.ref;
+}
+
 /** A direct load shares the same SDK preparation and complete resource directory. */
 export async function loadNotionSkill(record: SkillRecord, source: NotionSource, cwd: string, options: Options = {}): Promise<SkillRecord> {
   if (record.sourceId !== source.id || !record.id || !record.ref || !record.locator || record.locator.type === "local" || !record.sourceScope || !HASH.test(record.sourceScope)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);

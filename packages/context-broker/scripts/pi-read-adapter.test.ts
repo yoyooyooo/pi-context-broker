@@ -55,6 +55,26 @@ test("Pi batch is one branch of read and retains structured results without ente
   expect(f.current().parameters.required ?? []).not.toContain("path");
 });
 
+test("Pi relative reads pass the exact containing file to preparation and remove from before native I/O", async () => {
+  const f = fixture(), from = "sr:R" + "a".repeat(22), inputs: unknown[] = [];
+  f.adapter.registerReadExecutor!((input, _ctx, signal, read) => { inputs.push(input); return read({ ...input, path: "/fixed-target/SKILL.md" }, signal); });
+  await f.start();
+  await f.current().execute("relative", { path: "../../member/SKILL.md", from, offset: 2 }, undefined, undefined, f.ctx);
+  expect(inputs).toEqual([{ path: "../../member/SKILL.md", from, offset: 2 }]);
+  expect(f.calls[0]).toMatchObject({ input: { path: "/fixed-target/SKILL.md", offset: 2 } });
+  expect(f.calls[0]).not.toHaveProperty("input.from");
+  expect(f.current().parameters).toMatchObject({ properties: { from: { type: "string", description: expect.stringContaining("actual file containing") } } });
+  for (const input of [
+    { path: "../member/SKILL.md", from: "sr:C" + "a".repeat(22) },
+    { path: "../member/SKILL.md", from: "skill://shared_skill%3Alib%3Aroot/SKILL.md" },
+    { path: "../member/SKILL.md", from: null }, { path: "/absolute.md", from },
+    { path: "~/home.md", from }, { path: "C:\\target.md", from }, { path: "skill://target/SKILL.md", from },
+    { path: "../member/SKILL.md#section", from }, { path: "../member/SKILL.md", from, refresh: true },
+    { paths: [from], from },
+  ]) await expect(f.current().execute("invalid-relative", input, undefined, undefined, f.ctx)).rejects.toBeDefined();
+  expect(inputs).toHaveLength(1); expect(f.calls).toHaveLength(1);
+});
+
 test("Pi read advertises an object schema without provider-rejected top-level combinators", async () => {
   const f = fixture();
   f.adapter.registerReadExecutor!((_input, _ctx, _signal, read) => read({ path: "unused" }));

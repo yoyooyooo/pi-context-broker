@@ -116,7 +116,7 @@ if (!worker) {
   // Pi supplies only the TypeScript loader here. No Pi session/provider is started.
   const { createJiti } = createRequire(options.get('--pi-package'))('jiti');
   const jiti = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
-  const { discoverNotionSource, loadNotionSkill, prepareNotionSkills, loadNotionResource, readNotionResources } =
+  const { discoverNotionSource, loadNotionSkill, prepareNotionSkills, loadNotionResource, readNotionResources, resolveNotionRelativeReference } =
     await jiti.import(join(packageRoot, 'src/notion-source.ts'));
   const { DEFAULT_RESOURCE_READ_BUDGET, normalizeResourceReadBudget } =
     await jiti.import(join(packageRoot, 'src/resource-read-types.ts'));
@@ -186,6 +186,30 @@ if (!worker) {
     assert.deepEqual(graph.effects, noWrites);
     verified(await readFile(graph.records[0].path), expectedFile('SKILL.md'));
     assert.equal(graph.records[0].snapshotId, loaded.snapshotId);
+  });
+  await scenario('resolve-scalar-relative-reference', async () => {
+    const before = sdkEvents.length, effects = [];
+    for (const [containing, relative, targetPath] of [
+      ['SKILL.md', 'references/guide.txt', 'references/guide.txt'],
+      ['references/guide.txt', '../SKILL.md', 'SKILL.md'],
+    ]) {
+      const from = loaded.entryManifest.files.find(file => file.path === containing).ref;
+      const ref = await resolveNotionRelativeReference(loaded, from, relative, source, out, undefined,
+        { observeEffects: value => effects.push(value) });
+      const target = new URL(ref);
+      assert.equal(decodeURIComponent(target.hostname), loaded.id);
+      assert.equal(decodeURIComponent(target.pathname.slice(1)), targetPath);
+      assert.equal(target.searchParams.get('snapshot'), loaded.snapshotId);
+    }
+    assert.equal(effects.length, 2); effects.forEach(value => assert.deepEqual(value, noWrites));
+    for (const event of sdkEvents.slice(before).filter(event => event.event === 'end')) {
+      assert.equal(event.operation, 'resolve');
+      assert.equal(event.metrics_observed, true);
+      assert.equal(event.request_metrics.requests.notion_body, 0);
+      assert.equal(event.request_metrics.requests.notion_write, 0);
+      assert.equal(event.request_metrics.requests.provider, 0);
+    }
+    assert.deepEqual(loaded.entryManifest.materialized_paths, ['SKILL.md']);
   });
   await scenario('read-scalar-resource', async () => {
     const effects = [];
