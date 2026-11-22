@@ -28,9 +28,18 @@ const config: ConfigFile = { sources: [
 const text = (tools?: readonly string[]) => String(buildCliGuidance(config, tools).content);
 const guidanceText = (messages: AgentMessage[]) => String(messages.find(message => message.customType === "ntn-skills-guidance")?.content);
 
+// Bound routing prose independently of the required host-local locator. The
+// public paired runner deliberately puts TMPDIR under a potentially long path.
+// Check the exact locator occurs once before excluding only its encoded bytes.
+const routingBytes = (guidance: string): number => {
+  const locator = JSON.stringify(packageEntry);
+  expect(guidance.split(locator)).toHaveLength(2);
+  return Buffer.byteLength(guidance) - Buffer.byteLength(locator);
+};
+
 test("native Pi guidance is a bounded routing contract, not a duplicated CLI tutorial", () => {
   const guidance = text(["read", "notion_list", "notion_use", "bash"]);
-  expect(Buffer.byteLength(guidance)).toBeLessThanOrEqual(1500);
+  expect(routingBytes(guidance)).toBeLessThanOrEqual(1500);
   expect(guidance).not.toContain("Zero tool calls/body reads");
   expect(guidance).toContain("refresh:true checks latest main; pins fixed");
   expect(guidance).toContain("refresh:true adopts latest on request");
@@ -166,9 +175,9 @@ test("deferred native management exposes only exact enabled source IDs when a CL
     for (const forbidden of ["/configured", "database-a", "database-b", "disabled", "must-not-appear", '"local"'])
       expect(routed).not.toContain(forbidden);
   }
-  expect(Buffer.byteLength(hidden)).toBeLessThanOrEqual(1500);
-  expect(Buffer.byteLength(discoverable)).toBeLessThanOrEqual(1500);
-  expect(Buffer.byteLength(discovered)).toBeLessThanOrEqual(1800);
+  expect(routingBytes(hidden)).toBeLessThanOrEqual(1500);
+  expect(routingBytes(discoverable)).toBeLessThanOrEqual(1500);
+  expect(routingBytes(discovered)).toBeLessThanOrEqual(1800);
   for (const tools of [lazy, native]) expect(text(tools.filter(tool => tool !== "bash"))).not.toContain("cli_source");
   expect(String(buildCliGuidance({ sources: [] }, lazy).content)).not.toContain("cli_source");
   const h = await graphHarness();
