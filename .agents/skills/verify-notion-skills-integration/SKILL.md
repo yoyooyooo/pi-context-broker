@@ -1,18 +1,63 @@
 ---
 name: verify-notion-skills-integration
-description: "验证当前配对 CLI/SDK 与 Broker 的消费合同、完整目录、资源和独立安装包。修改 Notion source、随包运行时或消费边界时使用；真实 Notion/Pi/provider 与两机 next 日用沿 AH-1197/AH-637/AH-1198 验收。"
+description: "验证双仓开发隔离、配对 CLI/SDK 与 Broker 的消费合同、完整目录、资源和独立安装包。修改隔离入口、Notion source、随包运行时或消费边界时使用；live Notion、真模型与两机 next 日用沿 AH-1197/AH-637/AH-1198 验收。"
 ---
 
 # Verify Notion Skills Integration
 
 ## 范围和交接
 
-只验证当前 `next` 单轨。复用现有检查和安装入口，不新增总验证 runner。
+只验证从当前 `next` 演进的单轨。开发使用隔离任务分支；正式日用仍要求严格 `next` 配对。复用现有检查和安装入口，不新增总验证 runner。
 OMP/Tern 延期；不恢复 `source.command`、CLI 正文消费、完整 export 回退或旧 snapshot reader。
 [验证交接表](../../../docs/verification-routing.md) 指定 CLI 管理、消费、来源接手与 Broker 的负责人。
 本 Skill 检查跨仓消费和安装包，不复制作者操作验收。自然用户旅程、混合来源选路与日常管理闭环交给 [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md)。当前feature地图直接指向现役SDK、安装与实际Pi入口。
 
 项目级自然旅程沿工作流入口 candidate-plan → candidate-run：plan 校验输入与合同，run 在启动 Pi 前自动核对所选 CLI/SDK 与随包产物身份。无需为这条路径自行导入预检函数或执行正式双机交付；单独诊断包边界时才使用下文的现有检查。
+
+## 0. 准备和核对隔离环境
+
+先读[隔离开发规范](../../../docs/isolated-development.md)，沿
+`scripts/paired-environment.mjs create / build / check / run` 的公开入口工作。
+create 只建立两个独立 clone 和任务分支，不安装依赖；不要在日用 CLI/Pi 指向的目录
+重建，也不要改全局 package 注册、配置或凭据。源码可继续编辑；每次 build 按 Git
+文件清单复制 tracked 与 nonignored untracked 源码，在该 generation 的 snapshot
+内安装依赖，再生成完整私有配对。并行 build 不共享 source node_modules。
+build.json 的 source_tree 封存完整源码与已安装依赖；check 同时核对它和 runtime 包。
+run 必须明确选择 build ID，不能靠 `latest` 猜测。每个 command run 先把两个源码
+snapshot 与依赖复制到自己的 run/source；`--cwd cli|broker` 及 PAIRED_CLI_SOURCE /
+PAIRED_BROKER_SOURCE 指向本 run 副本，默认 workspace 为 run 自有目录。
+command 可修改自己的副本，不能改 build 内冻结目录；CLI/Pi 纯运行不复制源码。
+
+修改隔离机制时，实际创建两个环境并检查 Git 元数据与目录互不共享；核对 create
+没有安装依赖，各 generation 的源码、依赖、完整产物目录独立，build 记录原仓 HEAD、
+snapshot 指纹、完整 source_tree 与 runtime 清单。构建后修改一边源码并生成新 build，
+核对旧 build 与另一环境字节不变。同 build 启动两个 command run，修改一份 run
+源码或依赖，核对另一 run 与冻结 build 不变。分别运行已选 CLI/Pi 或明确 command，
+读回真实入口、退出和自有证据。重复 build/run ID 必须拒绝覆盖.
+具体命令和通过范围以规范及当前 `--help` 为准。
+
+隔离机制按规范执行两层检查：`node --test scripts/paired-environment.test.mjs`
+检查单元行为；`scripts/paired-environment.smoke.mjs` 接收两个独立环境和明确 build ID，
+启动实际 CLI/Pi 与各自配对 Broker，以受控 provider 核对同名 Skill 的唯一 marker
+不串入另一环境。读取首个环境 proofs/唯一目录中的 smoke.json 及原件；失败保留
+failure.json。smoke 不访问 Notion 或真模型，不能记作自然 onboarding 或日用通过。
+
+stdin 默认 ignore；RPC 或显式管道输入必须传 `--stdin inherit`，交互结束时关闭输入。
+Node/Pi 使用统一维护的机器基础环境，不为任务另装旧版；每个 run 记录真实版本
+与入口，实际 Node 使用本次启动脚本的 `process.execPath`。升级共享基础环境不要求
+重建任务 clone，也不引入任务专用版本管理；按本次实际 runtime 解释验证结果。
+每个 run 核对 config/state/cache/data、`NTN_SKILLS_SCHEDULER_ROOT`、Pi agent
+目录、session、显式复制的 Skills 和 TMPDIR。Skills 副本只供 Broker discovery，
+Pi 保留 `-ns`，不改本地原件。HOME 保持不变；CLI wrapper 仅影响子进程树。
+凭据变量只通过显式 `--pass-env NAME` 传入，models 的 apiKey 只能引用环境变量名。
+无远端选择时核对 Notion token 不继承且 sources 为空，不能只看目录名推断隔离。
+entry 绑定 CLI database 与 Broker source；parent 只记录 scope 并供显式 init 使用，
+不自动创建库。明确 entry/parent 不缩小 API 权限；同 token 仍受共享远端限流.
+只记录凭据是否存在，不输出内容。结束后复核未改变日用来源与全局配置。
+
+隔离 smoke 不等于自然旅程或正常日用验收。不要为让任务分支通过而放宽
+`verify-next-worktrees.mjs` 的 branch、clean、真实远端和构建检查，也不要绕过
+candidate/daily 对正常 HOME、agentDir 与配置的要求。
 
 ## 1. 绑定同一份 CLI/SDK
 
@@ -69,7 +114,7 @@ node scripts/verify-artifacts.mjs --fixture /absolute/new/current-fixture/fixtur
 
 源码检查通过，只证明所执行的当前消费回归；安装包通过，只证明独立包与受控 HTTP 服务的交互。
 Source ready、目录完整、本地有文件、正文已交付、当前 turn 成功必须分别判断。
-真实 Notion、Pi 会话、provider/model 和日用安装一律保留 `not_run`，直到本次 AH-1197/AH-637/AH-1198 对当前配对实际执行。
+隔离 smoke 只记录本次实际 Pi 进程与受控 provider 交互；真实 Notion、真模型和日用安装保留 `not_run`，直到本次 AH-1197/AH-637/AH-1198 对当前配对实际执行。
 AH-1197 核两机实际 next 与持续同步，AH-637 独立验证 Mini，AH-1198 核当前真实时间线的配置、provider/serializer 正文、资源读取、恢复与取消。AH-1063 只保留历史范围。
 不能用旧安装、旧回执、模拟 HTTP 或一次 read 代替真实日用成功；OMP/Tern 仍记为延期。
 

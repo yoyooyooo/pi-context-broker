@@ -8,11 +8,22 @@
 | list/read/use、当前快照、本地固定资源、请求预算 | CLI `.cursor/skills/verify-notion-consumption/SKILL.md` | SDK 字段、缓存资格或实际正文发生变化 |
 | Source 配置、成员发现与接纳 | CLI `.cursor/skills/verify-notion-source-onboarding/SKILL.md` | 成员曝光、启停、依赖或当前来源绑定变化 |
 | 资格、请求顺序、固定选择、provider/turn/投影 | [consumer state](../.agents/skills/verify-notion-consumer-state/SKILL.md) | 对应 observations / consumer-state 模型与真实守卫 |
-| CLI/SDK 配对、当前消费、独立安装包 | [integration](../.agents/skills/verify-notion-skills-integration/SKILL.md) | 跨仓合同或实际安装字节变化 |
+| 双仓开发隔离、CLI/SDK 配对、当前消费、独立安装包 | [integration](../.agents/skills/verify-notion-skills-integration/SKILL.md) | 隔离环境、跨仓合同或实际安装字节变化 |
 | 当前 Pi adapter、目录、注入与资源实现 | [context broker](../.agents/skills/verify-context-broker/SKILL.md) | 仅验证本次选择的宿主和功能 |
 | 自然用户旅程、本地/Notion 选路及日常管理 | [agent workflows](../.agents/skills/verify-notion-agent-workflows/SKILL.md) | 真实 worker 的有效 session、实际请求与独立业务读回 |
 
 C01–C11/T01–T23、单一 owner 与实际入口由 CLI `verification/skill-domains.json` 唯一维护，使用同一配对提交的 `docs/verification-contracts.md`。当前主线为 AH-1188，旧 Done 不填作当前通过。CLI feature 归属仍在同一索引中。Broker 四项入口分别是 `.agents/skills/verify-notion-consumer-state/SKILL.md`、`.agents/skills/verify-notion-skills-integration/SKILL.md`、`.agents/skills/verify-context-broker/SKILL.md`、`.agents/skills/verify-notion-agent-workflows/SKILL.md`。
+
+## 并行开发入口
+
+按[隔离开发规范](isolated-development.md)使用 `scripts/paired-environment.mjs`
+创建基于 `next` 的两个独立 clone 和任务分支。每次 build 生成新的私有 CLI/Broker
+完整包，每次 run 使用明确的 build ID 和独立应用状态。源码可以继续编辑，旧构建
+不被下一次 build 覆盖。不得在日用 CLI/Pi 指向的 checkout 重建以验证开发改动。
+
+环境创建、构建与进程隔离由 integration 负责；它不判定自然业务场景或替代其他领域
+测试。原有 candidate/daily 的正常环境要求、formal 守卫与严格 next 交付条件保持不变。
+独立运行成功只计入实际观测的范围。远端库选择与本地隔离不能充当 API 权限沙箱。
 
 ## 当前执行边界
 
