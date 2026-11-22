@@ -274,7 +274,7 @@ Choose checks through [verification routing](https://github.com/yoyooyooo/pi-con
 
 ## Privacy and support
 
-The broker runs with the host agent's local permissions. Selected Skill content is sent to your configured model provider and stored in session history. Routers expose member metadata and paths; their bodies are loaded separately. Use trusted roots, catalogs and Notion databases. Notion credentials stay with `ntn-skills`; metadata and selected bodies/resources are cached locally. Source errors expose safe codes instead of raw stderr or secrets. Paths are home-relative by default; `pathMode: hash` provides stronger path redaction, and decision logs omit paths unless enabled.
+The broker runs with the host agent's local permissions. Selected Skill content is sent to your configured model provider and stored in session history. Router selection includes its own body and member metadata; member bodies are read separately when needed. Use trusted roots, catalogs and Notion databases. Notion credentials stay with `ntn-skills`; metadata and selected bodies/resources are cached locally. Source errors expose safe codes instead of raw stderr or secrets. Paths are home-relative by default; `pathMode: hash` provides stronger path redaction, and decision logs omit paths unless enabled.
 
 Local Pi/OMP checks have run on macOS; CI runs CLI and artifact checks on Linux. Windows path-list separators are supported, but Windows runtime behavior remains unverified. Native Tern UI checks require macOS; remote panes and the Tern web client are unsupported by the manual companion.
 

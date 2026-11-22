@@ -2,15 +2,98 @@
 
 ## 目录
 
+- 空父页首次使用
 - 输入与对象准备
 - 当前候选配置
 - 事件和私有判定
 - 读回与清理
 - 覆盖与结果边界
 
+## 空父页首次使用
+
+`native-onboarding` 只接受授权的空父页，区别于下面基于已有 library 的 daily/no-native-skills。不调用 prepareAgentFixtures，不预置库、维护 Skill、Store、缓存或日用配置。公开资料来自实际安装候选的 README、CLI help 和 bootstrap。业务 oracle 留在控制端；主体的 public-input.json 只保存父页、README 身份、原始自然任务和预算。
+
+先用当前 `next` 的任务独占 pair 构建实际归档并干净安装。两仓代码、archive 和安装依赖均由 paired-environment 冻结：
+
+```sh
+node scripts/paired-environment.mjs build --root /absolute/owned/pair \
+  --id onboarding-packed --install-mode packed
+```
+
+准备一个私有 bindings.json。`parent.url` 和 `readme.path` 由所选候选填入，不能给模型私有判据或逐步命令答案：
+
+```json
+{
+  "version": 1,
+  "public": {
+    "business.goal": "创建名为 travel-policy 的技能。主文写明交通支出需要保留票据，并附 references/rules.md 说明票据需要日期和金额；再用它检查一张只有金额的车票。"
+  },
+  "private": {
+    "objects": {}, "bodies": {}, "facts": {},
+    "readbacks": { "onboarding": {} }
+  }
+}
+```
+
+另存 oracle.json。每个预期 Skill 要列出完整文件集合，至少含 SKILL.md；每个文件声明 `contains` 或精确 `sha256`。`contains` 用于业务文字约束，不代替完整读回。二进制或原件转存用 sha256。业务目标包含实际使用回答时，再声明 `output.contains`，比对原始有效 session 中的最终回答；正文读回和回答判据分别保存，正确回答不抵消缺文件或无效运行。是否允许额外 Skill 必须显式选择：
+
+```json
+{
+  "version": 1,
+  "allowAdditionalSkills": true,
+  "output": { "contains": ["日期"] },
+  "skills": [{
+    "name": "travel-policy",
+    "files": [
+      { "path": "SKILL.md", "contains": ["票据"] },
+      { "path": "references/rules.md", "contains": ["日期", "金额"] }
+    ]
+  }]
+}
+```
+
+场景仍是 scripts/notion-agent-scenarios.json 的 `onboarding-empty-parent`，通过同一公开 candidate 入口运行。以下路径和 UUID 都须换成本轮实际输入；modelsFile 使用显式环境变量引用，不复制日用认证文件，不写入凭据值。
+
+```json
+{
+  "version": 1,
+  "scope": "notion-agent-workflow",
+  "profile": "native-onboarding",
+  "scenarioFile": "/absolute/owned/pair/broker/scripts/notion-agent-scenarios.json",
+  "scenarioId": "onboarding-empty-parent",
+  "bindingsFile": "/absolute/owned/bindings.json",
+  "pairedEnvironment": { "root": "/absolute/owned/pair", "build": "onboarding-packed" },
+  "parent": "11111111-2222-3333-4444-555555555555",
+  "modelsFile": "/absolute/owned/models.json",
+  "passEnv": ["NOTION_API_TOKEN", "MAGPIE_API_KEY"],
+  "evidenceRoot": "/absolute/owned/onboarding-evidence",
+  "oracleFile": "/absolute/owned/oracle.json",
+  "model": "magpie/group/worker",
+  "thinkingLevel": "high",
+  "timeoutMs": 1800000
+}
+```
+
+```sh
+node scripts/verify-pi-daily-installation.mjs candidate-plan --config /absolute/owned/onboarding.json
+node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/owned/onboarding.json --live
+```
+
+从选定 build 的 `source/broker` 执行上述入口，可直接使用该 generation 的私有依赖。candidate-plan 只检查输入。candidate-run 自动创建本轮空 native Skills 目录，并以 `--pi-mode native --native-skills` 启动单个 private command run。脚本在首次请求前以只读 API 核父页为空；随后用原生 RPC helper 保持同一 Pi session，所有模型轮次与 CLI 使用相同 run 的声明。保存 `run.json`、`pi-launch.json`、`loaded.jsonl`、原始 session、RPC frames、provider payload/transport 和 CLI 进程记录。
+
+独立 grader 只接受原始 tool-result 中真实返回、且绑定该 parent 的唯一 library entry。它通过另一个 fresh paired run 的 `--entry` 启动，先执行公开 `ctl library init --entry ENTRY` 验证四表及 schema，再用 inspect 与 episode 返回的完整 library descriptor 交叉核对；`reused` 必须为 true。随后 list 必须报告显式库的穷尽覆盖、无失败 source 和完整分页，逐个 Skill 完整读取主文和支持文件，包括二进制、空文件和长文本。消费目录内额外 Skill 也完整保留读回。
+
+主正文要求从第一行到 total_lines 的完整范围，并与 snapshot manifest 的字节数和 SHA-256 一致。files 只接受当前 `files` 字段及完整 manifest，目录必须与 file_bindings 一致；出现未读完的分页即失败。支持文件的 `read --output` 采用当前完整字节合同，核对 owner、path、固定 snapshot/version/file ref、output 路径、字节数与 SHA-256，再对实际落盘内容复核。缺失字段不能降级成完整成功。oracle 不传给主体或 grader，控制端在完整读回之后比较内容。
+
+内部 fresh grader 输入固定为 `{version: 1, entry, parent, library}`，其中 library 是该 episode 原始 tool-result 的 descriptor，不是预期答案。现役 adapter 将此输入交给 paired `--target command --pi-mode native --native-skills EMPTY --entry ENTRY`，在当次 `PAIRED_BROKER_SOURCE` 调用 `runOnboardingGrader(inputPath)`；它使用同一 build 的实际 `PAIRED_CLI_ENTRY`，不继承 episode 的 config/state/cache/data/scheduler/session。原始 CLI 输出保存在新 run 的 readback-commands，完整文件保存在 readback-files，四表身份和完整性结论保存在 readback.json。
+
+`result.json` 分开报告 `process`、`validity`、`episodeStatus`、`business` 和 `hardContracts`。模型任务退出零但 runtime drift/unknown，仍是 invalid；若已取得 entry，仍执行只读对账并保留独立业务结果。无法取得唯一 entry 或 grader 不完整时标 `unknown_reconcile_before_retry`，保留父页、Store、session 和原始输出供人工对账，不重复初始化或执行外部修补。此模式不声称 API 权限沙箱、请求前 Benchmark 握手或每日安装通过。
+
+有限接线检查使用 `node --test scripts/notion-agent-onboarding.test.mjs scripts/notion-agent-scenarios.test.mjs scripts/paired-environment.test.mjs`。fixture、受控 provider、plan 和帮助输出不计作真模型 onboarding 通过。真实使用与独立 Skill 评价未执行时各标 not_run。
+
 ## 输入与对象准备
 
-在 Broker 根目录工作。只使用当前配对 CLI/SDK 构建和正常 Pi 环境；确认凭据已通过正常环境提供。命令与日志不输出 token。准备阶段和被测 Pi 使用独立状态，不能复制 oracle 到被测缓存。
+以下适用于 daily/no-native-skills。在 Broker 根目录工作。只使用当前配对 CLI/SDK 构建和正常 Pi 环境；确认凭据已通过正常环境提供。命令与日志不输出 token。准备阶段和被测 Pi 使用独立状态，不能复制 oracle 到被测缓存。
 
 准备器将 CLI config/state/cache/data 和 request scheduler 绑定到 fixture 自有根；被测 Pi 使用另一个本轮 state 根及 scheduler。`NTN_SKILLS_HOME` 不会改变 scheduler 的默认位置，必须同时设置 `NTN_SKILLS_SCHEDULER_ROOT`。运行初态回执记录实际 scheduler 路径，正常用户 scheduler 不作为 fixture 或模型验收的共享账本。
 

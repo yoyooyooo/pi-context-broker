@@ -11,6 +11,7 @@ import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
 import { verifyNextWorktreePair } from './verify-next-worktrees.mjs';
+import { verifyArchiveInstallation as packageClosure } from './verify-package-closure.mjs';
 import { dailyObserverPreloadSource, observedDailyHostProcess, observedRows, ownedPiProcesses, validateDailyHostProcess } from './pi-host-observation.mjs';
 export { dailyObserverPreloadSource, observedDailyHostProcess, observedRows, ownedPiProcesses, validateDailyHostProcess } from './pi-host-observation.mjs';
 
@@ -161,27 +162,6 @@ export async function aggregateDailyDeliveries(config) {
     result.error = { code: error.code ?? 'PAIRED_DAILY_VERIFICATION_FAILED', message: error.message };
   }
   return result;
-}
-
-async function packageClosure(root, archive, expectedHash) {
-  assert.ok(isAbsolute(root) && isAbsolute(archive));
-  const canonicalRoot = await realpath(root);
-  const archiveIdentity = await fileIdentity(archive);
-  assert.equal(archiveIdentity.sha256, expectedHash, 'Final package archive SHA mismatch');
-  const entries = execFileSync('tar', ['-tf', archive], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }).split('\n').filter(value => value && !value.endsWith('/'));
-  const files = [];
-  for (const entry of entries) {
-    assert.ok(entry.startsWith('package/'));
-    const local = entry.slice('package/'.length), path = resolve(root, local);
-    assert.ok(inside(root, path), 'Unsafe package member');
-    assert.ok(inside(canonicalRoot, await realpath(path)), 'A package member escapes the installed package');
-    const packed = execFileSync('tar', ['-xOf', archive, entry], { maxBuffer: 32 * 1024 * 1024 });
-    const actual = await fileIdentity(path);
-    assert.equal(actual.sha256, hash(packed), `Installed package differs: ${local}`);
-    files.push({ path: local, sha256: actual.sha256, bytes: actual.bytes, runtime: /^(?:src|dist)\//u.test(local) || local === 'package.json' });
-  }
-  files.sort((a, b) => a.path.localeCompare(b.path));
-  return { root, archive: archiveIdentity, file_count: files.length, files, sha256: hash(JSON.stringify(files)) };
 }
 
 export async function verifyDailyPackageSource(spec, settingsPath, brokerRoot) {
@@ -623,6 +603,10 @@ Aggregate uses the same delivery/worktree inputs and receipts:{pro:ABSOLUTE_RESU
 Only daily receipt version 2 qualifies; candidates and source/build receipts never prove daily execution. Candidate configs require
 scope:project-scoped-candidate-precheck and explicit turns, or scope:notion-agent-workflow
 with scenarioFile, scenarioId, bindingsFile and profile:daily|no-native-skills.
+profile:native-onboarding instead requires pairedEnvironment:{root,build}, parent,
+modelsFile, passEnv, oracleFile and evidenceRoot. Build with --install-mode packed.
+It uses empty native Skills, one private episode and a fresh explicit-entry grader;
+it does not use daily HOME configuration or count as a daily installation result.
 Natural workflows use magpie/group/worker with high thinking, retain normal extensions,
 and use -ns only for the no-native-skills comparison. Broker local roots remain present.
 A plan is prepared_not_executed;

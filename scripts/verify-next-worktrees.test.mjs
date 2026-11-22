@@ -49,6 +49,7 @@ async function fixture() {
   await writeFile(join(cliRoot, 'skills/SKILL.md'), 'current skill\n');
   await writeFile(join(cliRoot, 'dist/ntn-skills.js'), 'current CLI\n');
   await writeFile(join(cliRoot, 'dist/sdk.js'), 'current SDK\n');
+  await writeFile(join(cliRoot, 'THIRD_PARTY_NOTICES.md'), 'current complete third-party notices\n');
   await writeFile(join(brokerRoot, 'dist/ntn-skills-sdk.mjs'), 'embedded current SDK\n');
   async function cliBuild() {
     await save(join(cliRoot, 'dist/next-build.json'), { version: 1, kind: 'cli-build', input_roots: ['src'],
@@ -57,7 +58,7 @@ async function fixture() {
   await cliBuild();
   await save(join(brokerRoot, 'dist/next-build.json'), { version: 1, kind: 'broker-build', input_roots: ['src'],
     source: await fileInventory(broker, ['src']), artifacts: await fileInventory(brokerRoot, ['dist/ntn-skills-sdk.mjs']),
-    selected_cli: await fileInventory(cliRoot, ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills']) });
+    selected_cli: await fileInventory(cliRoot, ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills', 'THIRD_PARTY_NOTICES.md']) });
   function commit(root) {
     git(root, 'add', '.');
     git(root, '-c', 'user.name=Next gate fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture');
