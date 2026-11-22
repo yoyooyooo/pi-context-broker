@@ -22,6 +22,14 @@ always includes the exact `turn-bridge.mjs` bytes, so capture and execution use
 the same source inventory. The controller-only `fixture-turn-adapter.mjs` and
 `fixture.mjs` are excluded from that projection.
 
+`verifyTurnRuntimeBuild` requires a completed shared build with consistent
+environment ownership, selected CLI and source/package inventory identities.
+The frozen `subject.mjs`, `turn-bridge.mjs` and `runtime/episode-runner.mjs` bytes
+must match the common implementation making the call. Both configuration and
+`runSubject` enforce this boundary, including zero-model capture. Configuration
+does so before remote preparation. Historical single-turn cases without turn
+controls retain their existing build requirements.
+
 The controller binding uses the following fields. Only `public_case.turns` and
 the bridge's small public channel configuration reach the subject:
 
@@ -133,6 +141,13 @@ the cited line must be `controller_pause_start`, its completed `user_turn_end`
 must report settled/idle, and the session ID must stay the same. The observed
 prefix is read twice and hashed while later background events may still append.
 A resumed controller revalidates previously accepted prefixes.
+
+The launcher's initial `run.json` can exist before its first write has finished.
+The bridge waits for complete parseable bytes under one fixed deadline. A parsed
+wrong run identity fails immediately; a persistently invalid file stops the run
+with its retained path, byte count and hash. Parser excerpts are excluded from
+the journal. This publication wait neither extends the deadline nor changes an
+existing manifest.
 
 ## Event outcomes and recovery
 
