@@ -340,15 +340,6 @@ async function snapshot(source, destination) {
   return { commit, branch: git(source, 'branch', '--show-current'), files, sha256: hash(JSON.stringify(files)) };
 }
 
-async function currentTools(environment) {
-  supportedNode();
-  const node = { ...await toolIdentity(process.execPath), version: process.version };
-  const bun = await toolIdentity(await executable('bun'));
-  const npm = await realpath(join(dirname(node.path), 'npm'));
-  assert.ok(npm.endsWith('.js'), 'The current Node must provide its npm JavaScript entry');
-  return { node, bun, git: await toolIdentity(await executable('git')), npm, pi: await findPi(environment.tools.pi.path, npm) };
-}
-
 /** Standard npm archives and fresh consumers; no wrapper or frozen-file substitution. */
 export async function installPackedPair(root, tools, env) {
   const installRoot = join(root, 'installed'), archives = join(root, 'archives'), packages = {};
@@ -385,6 +376,15 @@ export async function installPackedPair(root, tools, env) {
     bundledNoticesBytes: await readFile(join(packages.broker.root, 'dist/NOTICES.txt')),
     expectedSha256: packages.cli.closure.files.find(file => file.path === 'THIRD_PARTY_NOTICES.md')?.sha256 });
   return { mode: 'packed', root: installRoot, packages, notices, tree: await inventory(installRoot), archives: await inventory(archives) };
+}
+
+async function currentTools(environment) {
+  supportedNode();
+  const node = { ...await toolIdentity(process.execPath), version: process.version };
+  const bun = await toolIdentity(await executable('bun'));
+  const npm = await realpath(join(dirname(node.path), 'npm'));
+  assert.ok(npm.endsWith('.js'), 'The current Node must provide its npm JavaScript entry');
+  return { node, bun, git: await toolIdentity(await executable('git')), npm, pi: await findPi(environment.tools.pi.path, npm) };
 }
 
 export async function buildEnvironment(options) {
