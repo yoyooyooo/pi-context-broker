@@ -124,6 +124,13 @@ test.skipIf(!process.env.CONTEXT_BROKER_GRAPH_CORE)("a partial or inconsistent m
   }
 });
 
+test.skipIf(!process.env.CONTEXT_BROKER_GRAPH_CORE)("current SDK observations cannot reuse a retained content-only snapshot identity", async () => {
+  const f = await fixture("skill", { legacySnapshot: true });
+  await expect(f.boundary.loadNotionSkill(f.selected, f.source, f.root)).rejects.toMatchObject({ code: "CONSUME_INVALID_PROOF" });
+  expect(f.calls).toHaveLength(1); expect(f.state.decoded).toBe(0);
+  expect(await exists(f.source.cacheDir!)).toBe(false);
+});
+
 test("background prefetch uses the same bounded SDK operation without publishing a host tree", async () => {
   const f = await fixture(), signal = new AbortController().signal;
   const result = await f.boundary.prefetchNotionSkills({ source: f.source, records: [f.selected],
