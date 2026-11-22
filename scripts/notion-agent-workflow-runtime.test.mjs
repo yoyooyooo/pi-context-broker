@@ -56,6 +56,21 @@ test('the subject process receives all five owned roots instead of inherited con
   assert.deepEqual(inherited, before, 'The launch environment must not mutate the caller');
 });
 
+test('the public candidate-plan command dynamically loads workflows and reports a missing corpus without an await cycle', async t => {
+  const fixture = await temporaryFixture(t), configPath = join(fixture.root, 'config.json');
+  const config = { version: 1, scope: 'notion-agent-workflow', profile: 'daily', model: 'magpie/group/worker', thinkingLevel: 'high',
+    scenarioFile: join(fixture.root, 'missing-corpus.json'), bindingsFile: join(fixture.root, 'bindings.json'),
+    brokerRoot: join(fixture.root, 'broker'), cliRoot: join(fixture.root, 'cli'), evidenceRoot: join(fixture.root, 'evidence') };
+  await writeFile(configPath, JSON.stringify(config));
+  await assert.rejects(execute(process.execPath, ['scripts/verify-pi-daily-installation.mjs', 'candidate-plan', '--config', configPath],
+    { timeout: 15000 }), error => {
+    assert.equal(error.code, 1, 'The public dispatch must reach configuration validation');
+    assert.match(error.stderr, /ENOENT.*missing-corpus\.json/u);
+    assert.doesNotMatch(error.stderr, /unsettled top-level await/u);
+    return true;
+  });
+});
+
 test('temporary evidence rejects missing ownership, a foreign token, an escaped path and a symlink', async t => {
   for (const mode of ['missing', 'foreign-token', 'outside-root', 'symlink']) await t.test(mode, async t => {
     const fixture = await temporaryFixture(t), marker = join(fixture.root, 'ownership.json');
