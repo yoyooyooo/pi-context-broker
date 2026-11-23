@@ -321,6 +321,12 @@ changing only the working directory is insufficient. The scheduler needs its
 own explicit root because its default uses the operating-system user's home,
 independently of the CLI state root.
 
+Owned candidate prechecks and fresh candidate print runs also bind all five CLI
+roots below their own state directory, including `ntn/scheduler`. The isolated
+host fixture uses `base/ntn/scheduler`. These paths replace an inherited scheduler
+root. The explicit `normal-management` print mode keeps its existing shared
+user Store and scheduler policy; it does not transfer those paths to owned cleanup.
+
 This is process configuration, not a filesystem sandbox. A program can still
 address other paths explicitly. Keep commands within task-owned paths, and use
 an explicit shell template such as `mktemp -d "${TMPDIR%/}/work.XXXXXX"` when
