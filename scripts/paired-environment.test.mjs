@@ -319,6 +319,36 @@ dependency:fs.realpathSync(dependency),owner:fs.readFileSync(dependency,'utf8')}
     assert.equal((await checkEnvironment({ root: rootA, build: 'fixture' })).status, 'passed');
   });
 
+  await t.test('source copies keep independent bytes and modes when either side changes', async () => {
+    const buildId = 'copy-write-isolation', root = await sealedBuild(rootA, buildId);
+    const runs = await Promise.all(['copy-isolation-a', 'copy-isolation-b'].map(id => runEnvironment({
+      root: rootA, build: buildId, target: 'command', id,
+      'pass-env': [], args: ['node', '-e', 'console.log("source copy ready")'],
+    })));
+    for (const run of runs) assert.equal(run.status, 'passed');
+    const original = join(root, 'source/broker/README.md');
+    const copies = runs.map(run => join(run.root, 'source/broker/README.md'));
+    const paths = [original, ...copies];
+    const before = await Promise.all(paths.map(path => stat(path)));
+    assert.equal(new Set(before.map(info => info.dev + ':' + info.ino)).size, paths.length);
+    for (const path of paths) assert.equal(await readFile(path, 'utf8'), 'broker source snapshot\n');
+    for (const info of before) assert.equal(info.mode, before[0].mode);
+
+    await writeFile(copies[0], 'first run changes its copy\n');
+    await chmod(copies[0], 0o600);
+    assert.equal(await readFile(original, 'utf8'), 'broker source snapshot\n');
+    assert.equal(await readFile(copies[1], 'utf8'), 'broker source snapshot\n');
+    assert.equal((await stat(original)).mode, before[0].mode);
+    assert.equal((await stat(copies[1])).mode, before[2].mode);
+    assert.equal((await checkEnvironment({ root: rootA, build: buildId })).status, 'passed');
+
+    // This dedicated fixture also proves reverse isolation and frozen-source rejection.
+    await writeFile(original, 'frozen source mutation must be rejected\n');
+    assert.equal(await readFile(copies[0], 'utf8'), 'first run changes its copy\n');
+    assert.equal(await readFile(copies[1], 'utf8'), 'broker source snapshot\n');
+    await assert.rejects(checkEnvironment({ root: rootA, build: buildId }), /Frozen source\/dependency snapshot changed/);
+  });
+
   await t.test('a mutated build source dependency fails before any command launches', async () => {
     const buildId = 'source-dependency-mutation', root = await sealedBuild(rootA, buildId);
     await writeFile(join(root, 'source/broker/node_modules/fixture/index.js'), 'changed shared dependency\n');
