@@ -168,7 +168,8 @@ export async function writeAnalysisReport({directory,analysis,input,includeRaw=t
     const repo=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
     for(const name of ['benchmark/protocol.mjs','benchmark/metrics.json','benchmark/schemas/protocol.schema.json',
       'benchmark/schemas/environment-manifest.schema.json','benchmark/analysis/compare.mjs','benchmark/analysis/statistics.mjs',
-      'benchmark/analysis/report.mjs','benchmark/analysis/metrics.mjs','benchmark/evidence/store.mjs','benchmark/evidence/normalize.mjs'])
+      'benchmark/analysis/report.mjs','benchmark/analysis/metrics.mjs','benchmark/evidence/store.mjs','benchmark/evidence/normalize.mjs',
+      'benchmark/reported-model.mjs','benchmark/provider-binding.mjs'])
       files.set('offline/'+name,await readFile(join(repo,name)));
     if(includeRaw)for(const episode of input.episodes) {
       const raw=await verifyArtifactFiles(episode.artifacts,{root:rawRoot});

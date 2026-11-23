@@ -7,6 +7,9 @@ import { readEvidenceBundle, verifyArtifactFiles } from './evidence/store.mjs';
 import { verifyAnalysisRevision } from './revision.mjs';
 import { assertZeroSendInvalid } from './resumption.mjs';
 import { readProviderTransport } from '../scripts/skill-consumption-provider.mjs';
+import { isProspectiveCohort, prospectiveCohortPolicy, prepareProspectiveCohort, verifyProspectiveCohort,
+  assertProspectiveCohortPlan, assertCohortModelEvidence, scopeModelIdentity, scopeEnvironmentIdentity } from './prospective-cohort.mjs';
+export { scopeModelIdentity, scopeEnvironmentIdentity } from './prospective-cohort.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const read = async path => JSON.parse(await readFile(path, 'utf8'));
@@ -43,23 +46,9 @@ function planIdentity(plan) {
   assert.equal(plan.protocol.policies.pilot.max_scheduled_episodes, 144);
 }
 
-/** A pinned route still has an explicitly bounded observation window. */
-export const scopeModelIdentity = model => fingerprint({ provider: model.provider, route: model.route, api: model.api,
-  parameters: model.parameters, adapter: model.adapter, backend: model.backend });
-
-/** Per-case catalogs and prompts are checked by each plan's own startup contract.
- * Apparatus reuse binds the actual implementation, tool contracts and policies. */
-export const scopeEnvironmentIdentity = environment => fingerprint({ build: environment.build, runtime: environment.runtime,
-  paired_environment_id: environment.paired_environment_id, policies: environment.policies,
-  pi: { mode: environment.pi.mode, entry_kind: environment.pi.entry_kind, entry: environment.pi.entry,
-    config_sha256: environment.pi.config_sha256,
-    extensions: environment.pi.extensions.map(({ id, role, sha256 }) => ({ id, role, sha256 })),
-    tools: environment.pi.tools, active_tools: environment.pi.active_tools,
-    source_kinds: environment.pi.sources.map(source => source.kind).sort(),
-    return_contract_sha256: environment.pi.return_contract_sha256, error_contract_sha256: environment.pi.error_contract_sha256 } });
-
-export function pilotScopePolicy(input) {
+export function pilotScopePolicy(input, { modelCount } = {}) {
   if (!input) return undefined;
+  if (isProspectiveCohort(input)) return prospectiveCohortPolicy(input, modelCount);
   assert.ok(safe(input.id)); assert.ok(['gate', 'expansion'].includes(input.role));
   if (input.role === 'gate') {
     assert.equal(input.gate_episodes, 16); assert.equal(input.minimum_valid_real_per_condition, 4);
@@ -82,6 +71,7 @@ export function assertScopePlan(plan, amendment) {
   assert.equal(plan.protocol.policies.pilot.max_scheduled_episodes, 144);
   assert.equal(policy.gate_episodes, amendment.gate.scheduled_episodes);
   assert.equal(policy.minimum_valid_real_per_condition, amendment.gate.minimum_valid_real_per_condition);
+  if (isProspectiveCohort(amendment)) return assertProspectiveCohortPlan(plan, amendment);
   if (amendment.version === 3) assert.equal(plan.execution.models_sha256, amendment.manual_route_replacement.model_registry_after.sha256,
     'PILOT_SCOPE_ROUTE_REGISTRY_CHANGED');
   if (policy.role === 'gate') {
@@ -478,6 +468,17 @@ export async function preparePilotScope({ setup, protocol, execution, slots, cap
     return registration;
   }
   assert.equal(input.role, 'gate'); assert.ok(typeof input.authorization === 'string' && input.authorization.trim().length > 0);
+  if (isProspectiveCohort(input)) {
+    assert.ok(input.predecessor?.registration && input.predecessor?.amendment, 'COHORT_PREDECESSOR_REQUIRED');
+    const predecessor = await readPilotScopeAmendment(input.predecessor.amendment);
+    const previous = await verified(input.predecessor.registration);
+    assert.equal(previous.id, predecessor.id); assert.deepEqual(previous.amendment, input.predecessor.amendment);
+    const amendment = await prepareProspectiveCohort({ setup, protocol, execution, slots, predecessor });
+    const path = join(execution.control_root, 'pilot-scope-amendment.json');
+    const registration = { id: input.id, role: input.role, amendment: { path, sha256: sha(JSON.stringify(amendment, null, 2) + '\n') } };
+    assertScopePlan({ id: protocol.id, protocol, execution: { ...execution, pilot_scope: registration }, slots }, amendment);
+    await save(path, amendment); return registration;
+  }
   let history, successor = {};
   if (input.manual_route_replacement) {
     assert.ok(input.predecessor && !input.zero_send_repair);
@@ -530,6 +531,35 @@ export async function preparePilotScope({ setup, protocol, execution, slots, cap
 
 export async function readPilotScopeAmendment(reference) {
   const value = await verified(reference);
+  if (isProspectiveCohort(value)) {
+    const predecessor = await readPilotScopeAmendment(value.predecessor.amendment);
+    const previous = await verified(value.predecessor.registration);
+    assert.equal(previous.id, predecessor.id); assert.deepEqual(previous.amendment, value.predecessor.amendment);
+    assert.notEqual(value.id, predecessor.id); assert.equal(value.pilot_ledger_root, predecessor.pilot_ledger_root);
+    assert.ok(value.history.scheduled_episodes >= predecessor.history.scheduled_episodes, 'COHORT_HISTORY_PREFIX_TRUNCATED');
+    if (isProspectiveCohort(predecessor)) {
+      assert.deepEqual(value.history_exemption, predecessor.history_exemption, 'COHORT_HISTORY_EXEMPTION_CHANGED');
+      assert.equal(value.history.scheduled_episodes, predecessor.history.scheduled_episodes + predecessor.reservation_limit, 'COHORT_PREDECESSOR_INCOMPLETE');
+      const previousEpisodes = value.history.episodes.slice(predecessor.history.scheduled_episodes);
+      for (const [role, phase] of Object.entries({ gate: predecessor.gate, expansion: predecessor.expansion })) {
+        assert.equal(previousEpisodes.filter(episode => episode.experiment_id === phase.experiment_id).length,
+          phase.scheduled_episodes, 'COHORT_PREDECESSOR_PHASE_INCOMPLETE');
+        const entry = value.history.plans.find(item => item.plan.path === join(phase.control_root, 'plan.json'));
+        assert.ok(entry, 'COHORT_PREDECESSOR_PLAN_MISSING');
+        const owner = await verified(entry.plan); planIdentity(owner); assertScopePlan(owner, predecessor);
+        assert.equal(owner.execution.pilot_scope.role, role); assert.deepEqual(owner.execution.pilot_scope.amendment, value.predecessor.amendment);
+      }
+      for (const entry of value.history.reservations.slice(predecessor.history.scheduled_episodes)) {
+        const reservation = await verified(entry.reference);
+        assert.equal(reservation.scope_id, predecessor.id); assert.equal(reservation.scope_amendment_sha256, predecessor.amendment_sha256);
+        const phase = predecessor[reservation.scope_role]; assert.ok(phase && ['gate', 'expansion'].includes(reservation.scope_role));
+        assert.equal(reservation.experiment_id, phase.experiment_id);
+        assert.equal(reservation.plan.path, join(phase.control_root, 'plan.json'));
+      }
+    } else assert.deepEqual(value.history_exemption, { scheduled_episodes: value.history.scheduled_episodes,
+      unknown_usage_run_ids: value.history.unknown_usage_run_ids, checkpoint_sha256: fingerprint(value.history) }, 'COHORT_HISTORY_EXEMPTION_CHANGED');
+    return verifyProspectiveCohort(value);
+  }
   assert.ok([1, 2, 3].includes(value.version)); assert.equal(value.kind, 'benchmark-pilot-scope-amendment'); assert.ok(safe(value.id));
   assert.equal(value.amendment_sha256, fingerprint({ ...value, amendment_sha256: null }), 'PILOT_SCOPE_AMENDMENT_CHANGED');
   assert.equal(value.max_scheduled_episodes, 144); assert.equal(value.gate.scheduled_episodes, 16);
@@ -603,6 +633,13 @@ export async function verifyPilotScope(plan, revisionOptions = {}) {
   if (!registration) { assert.equal(plan.protocol.policies.pilot.scope, undefined); return null; }
   const amendment = await readPilotScopeAmendment(registration.amendment); assertScopePlan(plan, amendment);
   const all = await reservations(amendment.pilot_ledger_root), ownerResults = new Map();
+  const cohort = isProspectiveCohort(amendment), reservedSlots = new Set();
+  if (cohort) {
+    const scheduled = all.length - amendment.history.scheduled_episodes;
+    assert.ok(scheduled <= amendment.reservation_limit, 'COHORT_RESERVATION_LIMIT');
+    if (revisionOptions.forReservation && scheduled === amendment.reservation_limit)
+      throw Object.assign(new Error('The registered cohort reservation limit is exhausted'), { code: 'COHORT_CAP' });
+  }
   if (revisionOptions.analysisRevisionReference || revisionOptions.analysisRevision)
     ownerResults.set(plan.plan_sha256, await readScopeCompletedResults(plan, revisionOptions));
   for (const item of all.slice(amendment.history.scheduled_episodes)) {
@@ -615,6 +652,11 @@ export async function verifyPilotScope(plan, revisionOptions = {}) {
     assert.equal(reservation.plan.path, join(owner.execution.control_root, 'plan.json'));
     assert.deepEqual(owner.execution.pilot_scope.amendment, registration.amendment);
     const slot = owner.slots.find(slot => slot.slot_id === reservation.slot_id); assert.ok(slot, 'PILOT_SCOPE_UNKNOWN_SLOT');
+    if (cohort) {
+      const key = owner.id + '/' + slot.slot_id;
+      assert.ok(!reservedSlots.has(key), 'COHORT_DUPLICATE_RESERVED_SLOT'); reservedSlots.add(key);
+      assert.equal(reservation.scope_role, owner.execution.pilot_scope.role, 'COHORT_RESERVATION_ROLE_CHANGED');
+    }
     if (!ownerResults.has(owner.plan_sha256)) ownerResults.set(owner.plan_sha256,
       await readScopeCompletedResults(owner, owner.plan_sha256 === plan.plan_sha256 ? revisionOptions : {}));
     const { rows, completed: effective } = ownerResults.get(owner.plan_sha256);
@@ -636,6 +678,7 @@ export async function verifyPilotScope(plan, revisionOptions = {}) {
     const condition = owner.protocol.conditions.find(condition => condition.id === slot.condition_id);
     const environment = owner.protocol.environments.find(environment => environment.id === condition.environment_id);
     assert.equal(episode.identity.model_id, condition.model_id);
+    if (cohort) assertCohortModelEvidence(episode, owner.protocol.models.find(model => model.id === condition.model_id));
     assert.equal(episode.identity.environment_sha256, environment.manifest_sha256); assert.equal(episode.identity.build_id, environment.build.id);
     assert.equal(episode.admission.status, 'valid', 'PILOT_SCOPE_NEW_CORE_INVALID');
     for (const key of ['attempts', 'tools', 'interventions']) assert.equal(episode.admission.completeness[key], 'complete', 'PILOT_SCOPE_NEW_CORE_INCOMPLETE');
@@ -657,19 +700,26 @@ export function scopeReservationFields(plan, amendment, planReference) {
     plan: planReference, plan_sha256: plan.plan_sha256, scope_role: plan.execution.pilot_scope.role };
 }
 
-/** A scope uses one live controller across gate and expansion control roots. */
+/** All scopes in one campaign share a controller lease. Old per-scope leases
+ * remain blocking until their dead owners have been explicitly reconciled. */
 export async function acquirePilotScopeLease(plan, amendment) {
-  const path = join(amendment.pilot_ledger_root, 'scope-' + amendment.id + '.lease.json');
+  const root = amendment.pilot_ledger_root, path = join(root, 'campaign.lease.json');
+  const legacyLeases = (await readdir(root)).filter(name => /^scope-.+\.lease\.json$/.test(name));
+  assert.equal(legacyLeases.length, 0, 'PILOT_SCOPE_LEGACY_LEASE_REQUIRES_RECONCILIATION');
   const lease = { id: randomUUID(), pid: process.pid, plan_sha256: plan.plan_sha256,
-    control_root: plan.execution.control_root, created_at: new Date().toISOString() };
+    scope_id: amendment.id, control_root: plan.execution.control_root, created_at: new Date().toISOString() };
   await writeFile(path, JSON.stringify(lease, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-  return async () => rename(path, join(amendment.pilot_ledger_root, 'scope-' + amendment.id + '.lease-retained-' + lease.id + '.json'));
+  return async () => rename(path, join(root, 'campaign.lease-retained-' + lease.id + '.json'));
 }
 
 export async function reconcilePilotScopeLease({ plan, leaseId, batchLease }) {
   const registration = plan.execution.pilot_scope; if (!registration) return null;
-  const path = join(plan.execution.pilot_ledger_root, 'scope-' + registration.id + '.lease.json');
-  let lease; try { lease = await read(path); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  let path = join(plan.execution.pilot_ledger_root, 'campaign.lease.json'), lease;
+  try { lease = await read(path); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    path = join(plan.execution.pilot_ledger_root, 'scope-' + registration.id + '.lease.json');
+    try { lease = await read(path); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  }
   assert.equal(lease.plan_sha256, plan.plan_sha256); assert.equal(lease.control_root, plan.execution.control_root);
   if (batchLease) { assert.equal(lease.pid, batchLease.pid); assert.equal(batchLease.id, leaseId); }
   else assert.equal(lease.id, leaseId, 'Scope-only recovery must name the observed dead scope lease');
@@ -690,16 +740,20 @@ export async function checkCampaignScope(plan, { activate = false } = {}) {
     assert.ok(registration, 'PILOT_SCOPE_REQUIRED_FOR_ACTIVE_CAMPAIGN');
     let latest = { value: existing, reference: await ref(path), sequence: 1 };
     const names = (await readdir(plan.execution.pilot_ledger_root)).filter(name => /^scope-registration-\d{3}\.json$/.test(name)).sort();
-    assert.ok(names.length <= 2, 'PILOT_SCOPE_NO_FURTHER_SUCCESSION');
     for (const [index, name] of names.entries()) {
       const sequence = index + 2, successorPath = join(plan.execution.pilot_ledger_root, name);
       assert.equal(name, 'scope-registration-' + String(sequence).padStart(3, '0') + '.json', 'PILOT_SCOPE_REGISTRATION_GAP');
       const successor = await read(successorPath);
       assert.equal(successor.version, 1); assert.equal(successor.sequence, sequence);
-      assert.equal(successor.kind, sequence === 2 ? 'benchmark-zero-send-scope-succession' : 'benchmark-manual-auth-route-succession');
       assert.deepEqual(successor.predecessor, latest.reference, 'PILOT_SCOPE_REGISTRATION_HISTORY_CHANGED');
       const amendment = await readPilotScopeAmendment(successor.amendment);
-      assert.equal(amendment.version, sequence); assert.equal(amendment.id, successor.id);
+      if (isProspectiveCohort(amendment)) assert.equal(successor.kind, 'benchmark-prospective-cohort-succession');
+      else {
+        assert.ok(sequence === 2 || sequence === 3, 'PILOT_SCOPE_LEGACY_SUCCESSION_CLOSED');
+        assert.equal(successor.kind, sequence === 2 ? 'benchmark-zero-send-scope-succession' : 'benchmark-manual-auth-route-succession');
+        assert.equal(amendment.version, sequence);
+      }
+      assert.equal(amendment.id, successor.id);
       assert.deepEqual(amendment.predecessor.registration, latest.reference);
       assert.deepEqual(amendment.predecessor.amendment, latest.value.amendment);
       latest = { value: { id: successor.id, amendment: successor.amendment }, reference: await ref(successorPath), sequence };
@@ -707,16 +761,18 @@ export async function checkCampaignScope(plan, { activate = false } = {}) {
     const wanted = { id: registration.id, amendment: registration.amendment };
     if (fingerprint(latest.value) === fingerprint(wanted)) return;
     const amendment = await readPilotScopeAmendment(registration.amendment);
-    assert.ok(latest.sequence < 3 && amendment.version === latest.sequence + 1, 'PILOT_SCOPE_OTHER_ACTIVE_AMENDMENT');
+    const prospective = isProspectiveCohort(amendment);
+    if (!prospective) assert.ok(latest.sequence < 3 && amendment.version === latest.sequence + 1, 'PILOT_SCOPE_OTHER_ACTIVE_AMENDMENT');
     assert.deepEqual(amendment.predecessor.registration, latest.reference, 'PILOT_SCOPE_OTHER_ACTIVE_AMENDMENT');
     assert.deepEqual(latest.value, { id: (await readPilotScopeAmendment(amendment.predecessor.amendment)).id,
       amendment: amendment.predecessor.amendment });
-    if (activate) await save(join(plan.execution.pilot_ledger_root, 'scope-registration-' + String(amendment.version).padStart(3, '0') + '.json'),
-      { version: 1, kind: amendment.version === 2 ? 'benchmark-zero-send-scope-succession' : 'benchmark-manual-auth-route-succession',
-        sequence: amendment.version, predecessor: latest.reference, ...wanted });
+    if (activate) await save(join(plan.execution.pilot_ledger_root, 'scope-registration-' + String(latest.sequence + 1).padStart(3, '0') + '.json'),
+      { version: 1, kind: prospective ? 'benchmark-prospective-cohort-succession'
+        : amendment.version === 2 ? 'benchmark-zero-send-scope-succession' : 'benchmark-manual-auth-route-succession',
+        sequence: latest.sequence + 1, predecessor: latest.reference, ...wanted });
   } else if (registration) {
     const amendment = await readPilotScopeAmendment(registration.amendment);
-    assert.equal(amendment.version, 1, 'A successor requires the retained original campaign registration');
+    assert.ok(!isProspectiveCohort(amendment) && amendment.version === 1, 'A successor requires the retained original campaign registration');
     if (activate) await save(path, { id: registration.id, amendment: registration.amendment });
   }
 }

@@ -50,9 +50,10 @@ export async function launchSubject(launch) {
   const selected = (await readdir(join(origin, 'benchmark/runtime'))).filter(name => /^episode-.*\.mjs$/.test(name) && !name.endsWith('.test.mjs'));
   assert.ok(selected.includes('episode-runner.mjs'));
   for (const name of selected) await cp(join(origin, 'benchmark/runtime', name), join(projectionRoot, 'benchmark/runtime', name), { errorOnExist: true, force: false });
-  // This module has only Node dependencies. Private fixture APIs and policies
+  // These modules have only Node dependencies. Private fixture APIs and policies
   // remain in the parent controller and are not part of the subject projection.
-  await cp(join(origin, 'benchmark/turn-bridge.mjs'), join(projectionRoot, 'benchmark/turn-bridge.mjs'), { errorOnExist: true, force: false });
+  for (const name of ['turn-bridge.mjs', 'reported-model.mjs'])
+    await cp(join(origin, 'benchmark', name), join(projectionRoot, 'benchmark', name), { errorOnExist: true, force: false });
   for (const name of ['skill-consumption-provider.mjs', 'skill-consumption-source-observer.mjs', 'notion-skill-graph-model-evidence.mjs',
     'notion-default-context.mjs', 'notion-integration-hosts.mjs'])
     await cp(join(origin, 'scripts', name), join(projectionRoot, 'scripts', name), { errorOnExist: true, force: false });

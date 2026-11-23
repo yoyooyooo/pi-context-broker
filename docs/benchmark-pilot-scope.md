@@ -1,4 +1,10 @@
-# Prospective pilot scope under the retained campaign
+# Retained pilot scope amendment contracts
+
+This page documents the retained version 1–3 scope formats and their historical
+repair contracts. Newly authorized continuation uses
+[finite prospective cohorts](benchmark-prospective-cohorts.md). Those cohorts
+have a separate format and cannot reinterpret the old gate as completed or
+reopen its stopped plan.
 
 A scope amendment narrows a previously interrupted pilot without changing its
 original plan or deleting its costs. The current supported amendment selects

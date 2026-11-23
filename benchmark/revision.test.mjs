@@ -164,7 +164,7 @@ test('same raw usage is restored once, all old bytes retained, and the new sourc
   assert.ok((await readFile(f.ledger)).equals(before)); assert.equal(checked.replacements[0].original_episode_sha256, f.old.episode_sha256);
   assert.equal(checked.implementation_sources.length, checked.implementation.files.length);
   const isolated = join(f.control, 'offline-verifier');
-  for (const file of ['revision.mjs', 'protocol.mjs', 'metrics.json', 'evidence/store.mjs', 'evidence/normalize.mjs',
+  for (const file of ['revision.mjs', 'protocol.mjs', 'reported-model.mjs', 'provider-binding.mjs', 'metrics.json', 'evidence/store.mjs', 'evidence/normalize.mjs',
     'schemas/environment-manifest.schema.json', 'schemas/protocol.schema.json']) {
     await mkdir(dirname(join(isolated, file)), { recursive: true }); await copyFile(join(sourceRoot, file), join(isolated, file));
   }

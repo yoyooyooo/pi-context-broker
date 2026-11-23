@@ -7,13 +7,16 @@ import { canonicalJson, fingerprint } from './protocol.mjs';
 import { gradeEpisode } from './corpus/grader.mjs';
 import { readTurnControlEvidence, collectTurnFacts } from './collect-turns.mjs';
 import { known, unknown, normalizeEpisode } from './evidence/normalize.mjs';
+import { assessReportedModel, providerReportedModel, validateRoutingPolicy } from './reported-model.mjs';
+import { deriveRedactedProviderBinding } from './provider-binding.mjs';
+export { deriveRedactedProviderBinding } from './provider-binding.mjs';
 import { verifyArtifactFiles, writeEvidenceBundle } from './evidence/store.mjs';
 import { readProviderTransport } from '../scripts/skill-consumption-provider.mjs';
 import { parseSourceObservation } from '../scripts/skill-consumption-source-observer.mjs';
 import { graphSourceViews } from '../scripts/notion-skill-graph-model-evidence.mjs';
 import { verifyPreparationEvidence } from '../scripts/skill-preparation-evidence.mjs';
 
-export const COLLECTOR_VERSION = '1.0.2';
+export const COLLECTOR_VERSION = '1.1.0';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const inside = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
@@ -80,45 +83,6 @@ export function collectRawUsage(api, event) {
 
 /** Recover only the exact recorder marker from an independently observed, unique
  * provider configuration key. A missing or arbitrary provider is never accepted. */
-export function deriveRedactedProviderBinding({ event, request, requestStart, candidate, expected, admission,
-  payload, attemptStart, transportStart, transportSent, transportEnd, model, refs = [] }) {
-  try {
-    assert.equal(event.type, 'provider_stream_event');
-    assert.equal(event.data.provider, '[REDACTED_CREDENTIAL]');
-    assert.equal(event.data.request_id, request.id); assert.equal(event.data.attempt_id, request.usage_attempt_id);
-    assert.equal(event.data.api, model.api); assert.equal(event.data.model, model.route ?? model.id);
-    assert.deepEqual(candidate.projection, expected.projection);
-    assert.deepEqual(admission.differences, []);
-    const selected = candidate.projection.model;
-    assert.equal(selected.provider, '[REDACTED_CREDENTIAL]');
-    assert.equal(selected.id, model.route ?? model.id); assert.equal(selected.api, model.api);
-    assert.deepEqual(candidate.projection.model_parameters, model.parameters);
-    assert.equal(requestStart.type, 'model_request_start'); assert.equal(requestStart.data.request_id, request.id);
-    assert.equal(requestStart.data.capture_only, false); assert.deepEqual(requestStart.data.model, selected);
-    assert.equal(payload.model, selected.id);
-    const matches = [];
-    for (const [provider, definition] of Object.entries(candidate.projection.model_configuration.definition.providers))
-      for (const item of definition.models ?? []) if (item.id === selected.id && (item.api ?? definition.api) === selected.api &&
-        (item.baseUrl ?? definition.baseUrl) === selected.baseUrl) matches.push(provider);
-    assert.deepEqual(matches, [model.provider], 'Provider configuration must bind one unique selected route');
-    assert.equal(attemptStart.type, 'http_attempt_start');
-    assert.equal(attemptStart.data.request_id, request.id); assert.equal(attemptStart.data.attempt_id, request.usage_attempt_id);
-    assert.equal(attemptStart.data.method, 'POST');
-    const base = new URL(selected.baseUrl), actual = new URL(attemptStart.data.url_path, attemptStart.data.url_origin);
-    assert.equal(actual.origin, base.origin);
-    const prefix = base.pathname.replace(/\/$/, '');
-    assert.ok(actual.pathname === prefix || actual.pathname.startsWith(prefix + '/'));
-    assert.equal(transportStart.phase, 'request_start'); assert.equal(transportStart.category, 'model');
-    assert.equal(transportStart.method, 'POST'); assert.equal(transportStart.originSha256, hash(actual.origin));
-    assert.equal(transportStart.pathSha256, hash(actual.pathname + actual.search));
-    assert.equal(transportSent.phase, 'request_sent'); assert.equal(transportSent.id, transportStart.id);
-    assert.equal(transportSent.requestBodySha256, request.payload_sha256);
-    assert.equal(transportEnd.phase, 'request_end'); assert.equal(transportEnd.id, transportStart.id);
-    assert.ok(refs.length > 0);
-    return { status: 'known', value: model.provider, precision: 'derived',
-      observed_provider: '[REDACTED_CREDENTIAL]', formula: 'unique-observed-provider-configuration-key/v1', refs };
-  } catch { return null; }
-}
 
 /** Runtime-owned execution callbacks, not model proposals or CodeMode display previews. */
 export function collectRuntimeTools(events, eventArtifact, sessionEntries = null, sessionArtifact = null) {
@@ -627,6 +591,30 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
   const endings = new Map(transport.filter(row => row.phase === 'request_end').map(row => [row.id, row]));
   const transportRef = row => ({ artifact_id: transportArtifact.id, sha256: transportArtifact.sha256, line: row.sequence });
   const attempts = [], matched = new Set();
+  if (model.routing !== undefined) validateRoutingPolicy(model.routing);
+  const providerBindings = new Map();
+  async function bindProviderEvent(row, request, attempt, sourceRef) {
+    if (row.data.provider !== '[REDACTED_CREDENTIAL]' || !attempt) return null;
+    if (providerBindings.has(attempt.id)) return providerBindings.get(attempt.id);
+    const candidateArtifact = registry.get('candidate-observed'), admissionArtifact = registry.get('admission-comparison');
+    if (!candidateArtifact || !admissionArtifact) return null;
+    const candidate = JSON.parse(fileBytes.get(candidateArtifact.id)), admission = JSON.parse(fileBytes.get(admissionArtifact.id));
+    const expectedFile = admission.expected_file;
+    if (!expectedFile?.path || !expectedFile.sha256) return null;
+    const expectation = await addFile('collection-provider-binding-expectation', expectedFile.path, expectedFile.sha256);
+    const start = resolveRef(request.start_ref), payload = resolveRef(request.payload_ref), httpStart = resolveRef(attempt.start_ref);
+    const transportStart = starts.get(attempt.transport_id), transportSent = transportStart && sent.get(transportStart.id);
+    const transportEnd = transportStart && endings.get(transportStart.id);
+    const binding = deriveRedactedProviderBinding({ event: row, request, attemptId: attempt.id, requestStart: start?.value,
+      candidate, expected: JSON.parse(fileBytes.get(expectation.id)), admission, payload: payload?.value,
+      attemptStart: httpStart?.value, transportStart, transportSent, transportEnd, model,
+      refs: uniqueRefs([sourceRef, ref(candidateArtifact, '/projection/model_configuration'),
+        ref(candidateArtifact, '/projection/model'), ref(admissionArtifact), ref(expectation), start?.ref, payload?.ref, httpStart?.ref,
+        transportStart ? transportRef(transportStart) : null, transportSent ? transportRef(transportSent) : null,
+        transportEnd ? transportRef(transportEnd) : null]) });
+    if (binding) providerBindings.set(attempt.id, binding);
+    return binding;
+  }
   let attemptSeq = 0, usageUnknown = false;
   for (const request of episode?.requests ?? []) {
     let observedUsage = null, usageRef = null, providerBinding = null;
@@ -635,28 +623,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       if (row?.type === 'provider_stream_event' && row.data?.request_id === request.id &&
           row.data?.attempt_id === request.usage_attempt_id && row.data?.api === model.api &&
           row.data?.model === (model.route ?? model.id)) {
-        if (row.data.provider === '[REDACTED_CREDENTIAL]') {
-          const candidateArtifact = registry.get('candidate-observed'), admissionArtifact = registry.get('admission-comparison');
-          const usageAttempt = request.attempts?.find(attempt => attempt.id === request.usage_attempt_id);
-          if (candidateArtifact && admissionArtifact && usageAttempt) {
-            const candidate = JSON.parse(fileBytes.get(candidateArtifact.id)), admission = JSON.parse(fileBytes.get(admissionArtifact.id));
-            const expectedFile = admission.expected_file;
-            if (expectedFile?.path && expectedFile.sha256) {
-              const expectation = await addFile('collection-provider-binding-expectation', expectedFile.path, expectedFile.sha256);
-              const start = resolveRef(request.start_ref), payload = resolveRef(request.payload_ref), httpStart = resolveRef(usageAttempt.start_ref);
-              const transportStart = starts.get(usageAttempt.transport_id), transportSent = transportStart && sent.get(transportStart.id);
-              const transportEnd = transportStart && endings.get(transportStart.id);
-              providerBinding = deriveRedactedProviderBinding({ event: row, request, requestStart: start?.value,
-                candidate, expected: JSON.parse(fileBytes.get(expectation.id)), admission, payload: payload?.value,
-                attemptStart: httpStart?.value, transportStart, transportSent, transportEnd, model,
-                refs: uniqueRefs([source.ref, ref(candidateArtifact, '/projection/model_configuration'),
-                  ref(candidateArtifact, '/projection/model'), ref(admissionArtifact), ref(expectation),
-                  start?.ref, payload?.ref, httpStart?.ref,
-                  transportStart ? transportRef(transportStart) : null, transportSent ? transportRef(transportSent) : null,
-                  transportEnd ? transportRef(transportEnd) : null]) });
-            }
-          }
-        }
+        providerBinding = await bindProviderEvent(row, request, request.attempts?.find(attempt => attempt.id === request.usage_attempt_id), source.ref);
         if (row.data.provider === model.provider || providerBinding) {
           observedUsage = collectRawUsage(model.api, row.data.event); usageRef = source.ref;
         }
@@ -668,15 +635,40 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       const sendStatus = actualSend ? true : attempt.sent === false ? false : null;
       if (!start || !actualSend || !end || actualSend.requestBodySha256 !== request.payload_sha256) problems.push('model_transport_proof_incomplete');
       if (attempt.sent === true && !actualSend) problems.push('claimed_send_not_observed');
-      const rawUsage = request.usage_attempt_id === attempt.id ? observedUsage : null;
+      let rawUsage = request.usage_attempt_id === attempt.id ? observedUsage : null;
+      let attemptUsageRef = rawUsage ? usageRef : null, attemptProviderBinding = request.usage_attempt_id === attempt.id ? providerBinding : null;
+      let reportedModel;
+      if (model.routing) {
+        const observations = [], bindingRefs = [];
+        for (const [index, row] of events.entries()) {
+          if (row.type !== 'provider_stream_event' || row.data?.request_id !== request.id || row.data?.attempt_id !== attempt.id) continue;
+          const sourceRef = { artifact_id: eventArtifact.id, sha256: eventArtifact.sha256, line: index + 1 };
+          const binding = await bindProviderEvent(row, request, attempt, sourceRef);
+          if (binding) attemptProviderBinding ??= binding;
+          bindingRefs.push(...(binding?.refs ?? []));
+          const bound = row.data.api === model.api && row.data.model === (model.route ?? model.id) &&
+            (row.data.provider === model.provider || Boolean(binding));
+          const usage = bound ? collectRawUsage(model.api, row.data.event) : null;
+          if (usage) { rawUsage = usage; attemptUsageRef = sourceRef; attemptProviderBinding = binding; }
+          const reported = providerReportedModel(row.data.api, row.data.event);
+          if (!reported) continue;
+          observations.push({ ...reported, bound, ref: sourceRef });
+        }
+        reportedModel = assessReportedModel({ routing: model.routing, sent: sendStatus, observations,
+          providerError: Boolean(attempt.error_ref) || attempt.status >= 400 || Boolean(end && end.outcome !== 'completed'),
+          refs: uniqueRefs([cleanRef(attempt.start_ref), actualSend ? transportRef(actualSend) : null, end ? transportRef(end) : null,
+            ...(resultArtifact ? [ref(resultArtifact, '/requests')] : []), ...bindingRefs]) });
+        if (reportedModel.reason) problems.push(reportedModel.reason);
+      }
       if (sendStatus === true && (!rawUsage?.complete || !adapterVerified)) usageUnknown = true;
       const sourceRefs = uniqueRefs([cleanRef(attempt.start_ref), actualSend ? transportRef(actualSend) : null,
-        end ? transportRef(end) : null, usageRef, ...(providerBinding?.refs ?? []), ...(resultArtifact ? [ref(resultArtifact, '/requests')] : [])]);
+        end ? transportRef(end) : null, attemptUsageRef, ...(attemptProviderBinding?.refs ?? []), ...(reportedModel?.refs ?? []), ...(resultArtifact ? [ref(resultArtifact, '/requests')] : [])]);
       const usage = Object.fromEntries(['input', 'output', 'cache_read', 'cache_write', 'reasoning'].map(key =>
-        [key, rawUsage?.[key] !== null && rawUsage?.[key] !== undefined && usageRef
-          ? known(rawUsage[key], [usageRef], 'reported') : unknown('Raw provider ' + key + ' is unavailable for this actual attempt', sourceRefs)]));
+        [key, rawUsage?.[key] !== null && rawUsage?.[key] !== undefined && attemptUsageRef
+          ? known(rawUsage[key], [attemptUsageRef], 'reported') : unknown('Raw provider ' + key + ' is unavailable for this actual attempt', sourceRefs)]));
       attempts.push({ id: attempt.id, request_id: request.id, seq: attemptSeq++, sent: sendStatus, refs: sourceRefs,
-        transport_id: start?.id ?? null, provider_binding: providerBinding, raw_usage_pointer: rawUsage?.raw_pointer ?? null,
+        transport_id: start?.id ?? null, provider_binding: attemptProviderBinding, raw_usage_pointer: rawUsage?.raw_pointer ?? null,
+        ...(reportedModel ? { reported_model: reportedModel } : {}),
         adapter: { id: model.adapter.id, version: model.adapter.version, verified: adapterVerified,
           evidence_sha256: model.adapter.evidence_sha256, input_semantics: 'includes_cache', output_semantics: 'includes_reasoning' },
         usage, cost: unknown('Route pricing is unverified; configured Pi zeros are not economic cost', sourceRefs) });
@@ -685,8 +677,11 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
   for (const [id, start] of starts) if (!matched.has(id)) {
     problems.push('unattributed_model_transport'); usageUnknown = true;
     const actualSend = sent.get(id), refs = [transportRef(actualSend ?? start)];
+    const reportedModel = model.routing ? assessReportedModel({ routing: model.routing, sent: actualSend ? true : null, refs }) : null;
+    if (reportedModel?.reason) problems.push(reportedModel.reason);
     attempts.push({ id: 'unattributed-http-' + id, request_id: 'unattributed-http-' + id, seq: attemptSeq++,
       sent: actualSend ? true : null, refs, adapter: { id: model.adapter.id, version: model.adapter.version, verified: false },
+      ...(reportedModel ? { reported_model: reportedModel } : {}),
       usage: {}, cost: unknown('Unattributed request cost is unknown', refs) });
   }
   const requestCoverage = episode?.coverage?.attempts === 'complete' && transportComplete &&
@@ -729,7 +724,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
   const normalizationInput = {
     identity: { episode_id: run.run_id, run_id: run.run_id, experiment_id: protocol.id, condition_id: condition.id,
       environment_id: condition.environment_id, environment_sha256: condition.environment_sha256,
-      model_id: model.id, model_route: model.route, corpus_id: protocol.corpus.id, corpus_sha256: protocol.corpus.content_sha256,
+      model_id: model.id, model_route: model.route, ...(model.routing ? { model_routing: structuredClone(model.routing), model_api: model.api, model_provider: model.provider } : {}), corpus_id: protocol.corpus.id, corpus_sha256: protocol.corpus.content_sha256,
       case_id: slot.case_id, material_id: caseInfo.material_id, cluster_id: caseInfo.cluster_id, family: caseInfo.family,
       pair_id: slot.pair_id ?? null, repeat: slot.repeat, seed: slot.seed ?? null, split: caseInfo.split, phase: protocol.phase,
       build_id: shared.build_id ?? null, budget_id: condition.budget_id, goal: binding.public_case.title,

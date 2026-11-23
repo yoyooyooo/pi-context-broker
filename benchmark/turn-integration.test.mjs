@@ -64,7 +64,7 @@ async function fixture({ clarifications = true, kind = 'publish-version', malfor
   const runId = 'integration-' + randomUUID().slice(0, 8), runRoot = join(root, 'runs', runId), controlRoot = join(root, 'control');
   const buildRoot = join(root, 'builds/apparatus'), source = join(buildRoot, 'source/broker'), fixtureRoot = join(controlRoot, 'fixture');
   const copy = async path => { await mkdir(dirname(join(source, path)), { recursive: true }); await cp(join(repository, path), join(source, path)); };
-  for (const path of ['benchmark/subject.mjs', 'benchmark/turn-bridge.mjs', 'scripts/paired-environment.mjs', 'scripts/paired-runtime-identity.mjs',
+  for (const path of ['benchmark/subject.mjs', 'benchmark/turn-bridge.mjs', 'benchmark/reported-model.mjs', 'scripts/paired-environment.mjs', 'scripts/paired-runtime-identity.mjs',
     'scripts/skill-consumption-provider.mjs', 'scripts/skill-consumption-source-observer.mjs', 'scripts/notion-skill-graph-model-evidence.mjs',
     'scripts/notion-default-context.mjs', 'scripts/notion-integration-hosts.mjs']) await copy(path);
   await save(join(source, 'benchmark/runtime/episode-runner.mjs'), runtimeSource);
@@ -186,6 +186,7 @@ test('runSubject launches a real isolated child; clarification and complete nati
   for (const marker of ['PRIVATE_FIXTURE_POLICY_83627', 'PRIVATE_EXPECTED_VALUE_83627', 'PRIVATE_ORACLE_83627']) assert.ok(!publicText.includes(marker));
   const visibility = await json(join(f.runRoot, 'subject-visibility.json'));
   assert.ok(visibility.files.some(file => file.path === 'benchmark/turn-bridge.mjs'));
+  assert.ok(visibility.files.some(file => file.path === 'benchmark/reported-model.mjs'));
   assert.ok(!visibility.files.some(file => /fixture|corpus|grader/.test(file.path)));
   const terminal = await json(join(f.controlRoot, 'turn-control', f.runId, 'fixture-adapter/policy-v2/receipt.json'));
   const installation = await json(terminal.native_installation.path);

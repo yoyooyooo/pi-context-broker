@@ -1,11 +1,106 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {mkdtemp,writeFile,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {normalizeEpisode} from './evidence/normalize.mjs';
+import {assessReportedModel} from './reported-model.mjs';
 import {verifyBundle,writeEvidenceBundle,readEvidenceBundle,buildEvidenceIndex,queryEvidenceIndex,inventoryLegacyEvidence,resolveEvidenceRef} from './evidence/store.mjs';
 import {exampleEnvelope,exampleEpisode} from './analysis/fixtures.mjs';
+import {fingerprint} from './protocol.mjs';
+
+test('public projection needs an explicit exact manifest mapping and cannot weaken private verification',async()=>{
+  const f=await reportedBundle(),episode=structuredClone(f.bundle.episode),pathsBySha256={};
+  const mapping=episode.artifacts.map(artifact=>{
+    pathsBySha256[artifact.sha256]=artifact.path;
+    const format=artifact.kind==='jsonl'?'jsonl':'json',row={source_sha256:artifact.sha256,public_sha256:artifact.sha256,
+      source_bytes:artifact.bytes,public_bytes:artifact.bytes,public_path:'raw/'+artifact.sha256,format,changed:false,
+      line_locators:format==='jsonl'?'preserved one-to-one':'not a JSONL artifact',
+      inner_hash_claims:'historical original claims; transformed bytes are identified by public_sha256'};
+    artifact.path=row.public_path;artifact.publication={source_sha256:row.source_sha256,source_bytes:row.source_bytes,transformed:false};return row;
+  });
+  const descriptor={raw_mapping_sha256:fingerprint(mapping),raw_mapping:mapping};
+  episode.identity.public_projection={raw_mapping_sha256:descriptor.raw_mapping_sha256};
+  const rehash=()=>{episode.episode_sha256=fingerprint({...episode,episode_sha256:null});};rehash();
+  const options={root:f.root,pathsBySha256};
+  await assert.rejects(()=>verifyBundle({episode},options),/requires an explicit verified manifest mapping/);
+  const result=await verifyBundle({episode},{...options,publicProjection:descriptor});
+  assert.match(result.verification_scope,/original-inner-hash-claims-not-recomputed/);
+  await assert.rejects(()=>verifyBundle({episode},{...options,publicProjection:{...descriptor,raw_mapping_sha256:'0'.repeat(64)}}),/mapping fingerprint/);
+  const originalSize=episode.artifacts[0].publication.source_bytes;episode.artifacts[0].publication.source_bytes++;rehash();
+  await assert.rejects(()=>verifyBundle({episode},{...options,publicProjection:descriptor}),/original-to-public mapping/);
+  episode.artifacts[0].publication.source_bytes=originalSize;
+  const badMapping=structuredClone(mapping);badMapping.find(row=>row.format==='jsonl').line_locators='not guaranteed';
+  const badDescriptor={raw_mapping_sha256:fingerprint(badMapping),raw_mapping:badMapping};
+  episode.identity.public_projection.raw_mapping_sha256=badDescriptor.raw_mapping_sha256;rehash();
+  await assert.rejects(()=>verifyBundle({episode},{...options,publicProjection:badDescriptor}),/row is incomplete/);
+  episode.identity.public_projection.raw_mapping_sha256=descriptor.raw_mapping_sha256;
+  episode.attempts[0].reported_model.observations[0].value='grok/grok-4.6';rehash();
+  await assert.rejects(()=>verifyBundle({episode},{...options,publicProjection:descriptor}),/value or field differs/);
+});
+
+async function reportedBundle({values=['grok/grok-4.7'],keep,claimedValues,rawRequest,rawRoute,auto=false}={}) {
+  const root=await mkdtemp(join(tmpdir(),'benchmark-reported-raw-')),path=join(root,'raw.json');
+  const {input,rawText}=exampleEnvelope({rawPath:path,cost:0.1});await writeFile(path,rawText);
+  const attempt=input.attempts[0],route=auto?'auto/grok-4.7':'grok/grok-4.7';
+  const routing={mode:auto?'auto-route':'fixed-route',model_variant:'grok-4.7',reported_model_ids:['grok/grok-4.7',...(auto?['auto/grok-4.7']:[])]};
+  Object.assign(input.identity,{model_routing:routing,model_route:route,model_provider:'unit-provider',model_api:'openai-completions'});
+  const rows=values.map(value=>({type:'provider_stream_event',data:{request_id:rawRequest??attempt.request_id,attempt_id:attempt.id,
+    provider:'unit-provider',api:'openai-completions',model:rawRoute??route,event:{model:value}}}));
+  const text=rows.map(JSON.stringify).join('\n')+'\n',eventsPath=join(root,'events.jsonl');await writeFile(eventsPath,text);
+  const artifact={id:'events',path:eventsPath,kind:'jsonl',sha256:createHash('sha256').update(text).digest('hex'),bytes:Buffer.byteLength(text)};
+  input.artifacts.push(artifact);
+  attempt.reported_model=assessReportedModel({routing,sent:true,refs:attempt.refs,
+    observations:(keep??values.map((_,i)=>i)).map((index,position)=>({value:claimedValues?.[position]??values[index],field:'/data/event/model',bound:true,
+      ref:{artifact_id:'events',sha256:artifact.sha256,line:index+1}}))});
+  return {root,bundle:normalizeEpisode(input)};
+}
+
+test('bundle verification proves original reported value, request identity and complete event coverage',async()=>{
+  const valid=await reportedBundle();assert.equal((await verifyBundle(valid.bundle,{root:valid.root})).valid,true);
+  const forged=await reportedBundle({values:['grok/grok-4.6'],claimedValues:['grok/grok-4.7']});
+  await assert.rejects(()=>verifyBundle(forged.bundle,{root:forged.root}),/value or field differs/);
+  const otherRequest=await reportedBundle({rawRequest:'a-different-request'});
+  await assert.rejects(()=>verifyBundle(otherRequest.bundle,{root:otherRequest.root}),/original request and attempt/);
+  const otherRoute=await reportedBundle({rawRoute:'some-other-route'});
+  await assert.rejects(()=>verifyBundle(otherRoute.bundle,{root:otherRoute.root}),/binding differs/);
+  const omitted=await reportedBundle({values:['grok/grok-4.7','grok/grok-4.6','grok/grok-4.7'],keep:[0,2]});
+  assert.equal(omitted.bundle.episode.admission.status,'valid');
+  await assert.rejects(()=>verifyBundle(omitted.bundle,{root:omitted.root}),/omits an original server model event/);
+});
+test('raw-backed mismatch remains retainable with usage/cost and an explicit auto alias stays opaque',async()=>{
+  const mismatch=await reportedBundle({values:['grok/grok-4.7','grok/grok-4.6']});
+  assert.equal((await verifyBundle(mismatch.bundle,{root:mismatch.root})).valid,true);
+  assert.equal(mismatch.bundle.episode.admission.status,'invalid');assert.equal(mismatch.bundle.episode.measurements.cost.value.amount,0.1);
+  const alias=await reportedBundle({values:['auto/grok-4.7'],auto:true});
+  assert.equal((await verifyBundle(alias.bundle,{root:alias.root})).valid,true);
+  assert.equal(alias.bundle.episode.attempts[0].reported_model.label_kind,'requested_route_alias');
+});
+
+test('offline normalization refuses to make an early missing model valid because a later attempt matches',()=>{
+  const {input}=exampleEnvelope({attemptInputs:[100,180],cost:0.1});
+  const routing={mode:'auto-route',model_variant:'grok-4.7',reported_model_ids:['grok/grok-4.7']};
+  input.identity.model_routing=routing;
+  for(const [index,attempt] of input.attempts.entries()) attempt.reported_model=assessReportedModel({routing,sent:attempt.sent,refs:attempt.refs,
+    observations:index===0?[]:[{value:'grok/grok-4.7',field:'/data/event/response/model',ref:attempt.refs[0]}]});
+  const {episode}=normalizeEpisode(input);
+  assert.equal(episode.admission.status,'invalid');assert.ok(episode.admission.reasons.includes('reported_model_missing'));
+  assert.equal(episode.result.outcome,'not_applicable');assert.equal(episode.measurements.actual_attempts.value,2);
+  assert.equal(episode.measurements.input_total.value.value,280);assert.equal(episode.measurements.cost.value.amount,0.2);
+  assert.equal(episode.attempts[1].reported_model.status,'matched');
+});
+test('reported model claims must reproduce the raw observations and retain hash-bound refs',()=>{
+  const {input}=exampleEnvelope();
+  input.identity.model_routing={mode:'fixed-route',model_variant:'grok-4.7',reported_model_ids:['grok/grok-4.7']};
+  const attempt=input.attempts[0];
+  attempt.reported_model=assessReportedModel({routing:input.identity.model_routing,sent:true,refs:attempt.refs,
+    observations:[{value:'grok/grok-4.6',field:'/data/event/response/model',ref:attempt.refs[0]}]});
+  attempt.reported_model.status='matched';
+  assert.throws(()=>normalizeEpisode(input),/differs from its original observations/);
+  attempt.reported_model.status='mismatch';attempt.reported_model.observations[0].ref={...attempt.refs[0],sha256:'0'.repeat(64)};
+  assert.throws(()=>normalizeEpisode(input),/raw artifact hash/);
+});
 
 test('normalization is deterministic and keeps every actual retry',()=>{
   const {input}=exampleEnvelope({attemptInputs:[100,180]});

@@ -10,6 +10,7 @@ import { observeProviderTransport, readProviderTransport } from '../../scripts/s
 import { bindReferences, candidateDifferences, createEpisodeRecorder, exists, fileIdentity, inside, inventory, normalizeCandidate, observeSharedGit, readJson, sha256 } from './episode-evidence.mjs';
 import { createEpisodeBudget, EpisodeStop, guardedFetch, providerUsage } from './episode-policy.mjs';
 import { observeEpisodeNotion } from './episode-notion.mjs';
+import { assessReportedModel, providerReportedModel, validateRoutingPolicy } from '../reported-model.mjs';
 
 const ADMISSION_PROMPT = 'Benchmark candidate admission. Do not call tools. This request will be stopped before provider transmission.';
 const sourceEnvironment = ['PAIRED_CLI_SOURCE', 'PAIRED_BROKER_SOURCE', 'CONTEXT_BROKER_GRAPH_CORE', 'NTN_SKILLS_BUILD_ENTRY'];
@@ -21,10 +22,31 @@ const bounded = async (promise, milliseconds, fallback) => { let timer; try { re
 
 /** A blocked SDK stream call has no request identity and cannot replace the
  * previous assistant receipt. Preserve its local exception before SDK wrapping. */
-export function reserveEpisodeRequest({ budget, captureOnly, clearRequest, onStop }) {
+export function reserveEpisodeRequest({ budget, captureOnly, clearRequest, onStop, priorStop }) {
   clearRequest();
-  try { return captureOnly ? 1 : budget.request(); }
+  try { if (!captureOnly && priorStop) throw priorStop; return captureOnly ? 1 : budget.request(); }
   catch (error) { onStop(error); throw error; }
+}
+
+/** Run only after the current response has drained. Account usage before deciding
+ * whether a later request is allowed; a wrong variant still consumed resources. */
+export function finishEpisodeRequest({ request, budget, routing, captureOnly, record, onStop }) {
+  if (!request || captureOnly || request.accounted) return;
+  if (request.attempts.length > 0) budget.usage(request.usage ?? null);
+  request.accounted = true;
+  record('request_usage_accounted', { request_id: request.id, raw_usage_observed: Boolean(request.usage), guarded_fetch_attempts: request.attempts.length, budget: budget.state });
+  if (!routing) return;
+  for (const attempt of request.attempts) {
+    const observations = attempt.reported_model_observations ?? [];
+    // The independent transport ledger establishes actual send status in cleanup.
+    // A response proves a send here; a fetch failure keeps send status unknown.
+    const sent = attempt.sent === true || attempt.response_ref || observations.length ? true : attempt.sent === false ? false : null;
+    const report = assessReportedModel({ routing, sent, observations,
+      providerError: Boolean(attempt.error_ref) || attempt.status >= 400, refs: [attempt.start_ref].filter(Boolean) });
+    attempt.reported_model = report;
+    record('reported_model_checked', { request_id: request.id, attempt_id: attempt.id, ...report });
+    if (report.reason) onStop(new EpisodeStop('BENCHMARK_' + report.reason.toUpperCase(), { request_id: request.id, attempt_id: attempt.id, reported_model: report }));
+  }
 }
 
 /** Candidate handles are random per branch. Resolve them with the actual product
@@ -110,6 +132,7 @@ export function validateEpisodeConfig(config) {
   assert.ok(!inside(config.workspace, config.controlDir), 'BENCHMARK_CONTROL_IN_WORKSPACE');
   assert.ok(['native', 'broker'].includes(config.mode), 'BENCHMARK_MODE_INVALID');
   assert.ok(['openai-completions', 'openai-responses'].includes(config.model?.api), 'BENCHMARK_UNVERIFIED_PROVIDER_API');
+  if (config.model.routing !== undefined) validateRoutingPolicy(config.model.routing);
   for (const name of ['provider', 'id', 'baseUrl']) assert.ok(typeof config.model[name] === 'string' && config.model[name], 'BENCHMARK_MODEL_FIELD_REQUIRED: ' + name);
   const url = new URL(config.model.baseUrl);
   assert.ok(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash, 'BENCHMARK_PROVIDER_URL_INVALID');
@@ -212,7 +235,7 @@ async function captureCandidate({ config, profile, session, installation, visibi
     build: await fileIdentity(join(config.buildRoot, 'build.json')), cli: await fileIdentity(cliEntry),
     mode: config.mode, launch_profile: profile, model: selectedModel(session.model), thinking_level: session.thinkingLevel,
     catalog_reference_reader: referenceReader?.identity ?? null,
-    model_parameters: config.model.parameters, model_configuration: { file: await fileIdentity(join(config.agentDir, 'models.json')), definition: await readJson(join(config.agentDir, 'models.json')) },
+    model_parameters: config.model.parameters, ...(config.model.routing ? { model_routing: config.model.routing } : {}), model_configuration: { file: await fileIdentity(join(config.agentDir, 'models.json')), definition: await readJson(join(config.agentDir, 'models.json')) },
     settings: session.settingsManager.getSettings(), code_mode: config.codeMode,
     factories: { codemode: 'public createCodemodeExtension, models:false', tool_search: 'public createToolSearchExtension', mcp: 'disabled by the shared --no-mcp profile' },
     extensions, extension_warnings: loaded.warnings ?? [],
@@ -318,11 +341,8 @@ export async function runEpisode(input, hooks = {}) {
       if (event.type === 'agent_settled') { settled = true; if (currentTurn) currentTurn.settled_ref = ref; }
       if (event.type === 'message_end' && event.message.role === 'assistant' && currentRequest) {
         currentRequest.assistant = { stop_reason: event.message.stopReason, error: event.message.errorMessage ?? null, normalized_usage: event.message.usage ?? null, ref };
-        if (!config.admission.captureOnly && !currentRequest.accounted) {
-          if (currentRequest.attempts.length > 0) budget.usage(currentRequest.usage ?? null);
-          currentRequest.accounted = true;
-          recorder.record('request_usage_accounted', { request_id: currentRequest.id, raw_usage_observed: Boolean(currentRequest.usage), guarded_fetch_attempts: currentRequest.attempts.length, budget: budget.state });
-        }
+        finishEpisodeRequest({ request: currentRequest, budget, routing: config.model.routing, captureOnly: config.admission.captureOnly,
+          record: recorder.record, onStop: error => { terminalError ??= error; } });
       }
     });
     await Promise.race([session.bindExtensions({ uiContext: ui, mode: 'rpc', onError: error => { extensionErrors.push(error); recorder.record('extension_error', error); }, shutdownHandler: () => stop('BENCHMARK_EXTENSION_SHUTDOWN') }), stopping]);
@@ -345,7 +365,9 @@ export async function runEpisode(input, hooks = {}) {
     }
     session.agent.streamFunction = async (requestModel, context, options = {}) => {
       assertModel(config, requestModel, session.thinkingLevel);
-      const sequence = reserveEpisodeRequest({ budget, captureOnly: config.admission.captureOnly,
+      finishEpisodeRequest({ request: currentRequest, budget, routing: config.model.routing, captureOnly: config.admission.captureOnly,
+        record: recorder.record, onStop: error => { terminalError ??= error; } });
+      const sequence = reserveEpisodeRequest({ budget, captureOnly: config.admission.captureOnly, priorStop: terminalError,
         clearRequest: () => { currentRequest = undefined; recorder.bind({ request_id: null }); },
         onStop: error => {
           terminalError ??= error;
@@ -399,6 +421,11 @@ export async function runEpisode(input, hooks = {}) {
         onResponse: async (response, responseModel) => { recorder.record('provider_response', { request_id: request.id, attempt_id: request.current_attempt_id ?? null, status: response.status }); await options.onResponse?.(response, responseModel); },
         onProviderStreamEvent: async (event, eventModel) => {
           const ref = recorder.record('provider_stream_event', { request_id: request.id, attempt_id: request.current_attempt_id ?? null, provider: eventModel.provider, api: eventModel.api, model: eventModel.id, event }, { request_id: request.id });
+          if (config.model.routing) {
+            const reported = providerReportedModel(eventModel.api, event), attempt = request.attempts.find(item => item.id === request.current_attempt_id);
+            if (reported && attempt) (attempt.reported_model_observations ??= []).push({ ...reported,
+              bound: eventModel.api === config.model.api && eventModel.provider === config.model.provider && eventModel.id === config.model.id, ref });
+          }
           const usage = providerUsage(eventModel.api, event);
           if (usage) { request.usage = usage; request.usage_ref = { ...ref, pointer: '/data/event' + usage.pointer }; request.usage_attempt_id = request.current_attempt_id ?? null; }
           await options.onProviderStreamEvent?.(event, eventModel);

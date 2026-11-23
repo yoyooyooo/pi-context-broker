@@ -5,6 +5,9 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { fileIdentity, sha256 } from './episode-evidence.mjs';
+import { createEpisodeBudget, guardedFetch, providerUsage } from './episode-policy.mjs';
+import { finishEpisodeRequest, reserveEpisodeRequest } from './episode-runner.mjs';
+import { providerReportedModel } from '../reported-model.mjs';
 
 const pairedRoot = process.env.PAIRED_RUN_ROOT;
 const fixtureUsage = { prompt_tokens: 100, completion_tokens: 30, total_tokens: 130, prompt_tokens_details: { cached_tokens: 20, cache_write_tokens: 10 }, completion_tokens_details: { reasoning_tokens: 5 } };
@@ -25,7 +28,8 @@ test('maintained Pi adapter and CodeMode apparatus proof over owned loopback HTT
     received.push({ path: request.url, body: JSON.parse(body), sha256: sha256(body) });
     response.writeHead(200, { 'content-type': 'text/event-stream', 'x-request-id': 'controlled-' + received.length });
     if (route.api === 'openai-completions') {
-      const base = { id: 'chatcmpl-controlled-' + received.length, object: 'chat.completion.chunk', created: 0, model: 'fixture' };
+      const base = { id: 'chatcmpl-controlled-' + received.length, object: 'chat.completion.chunk', created: 0,
+        ...(route.omitReported ? {} : { model: route.reportedModel ?? 'fixture' }) };
       if (route.nested && received.length === 1) {
         const code = 'const result = await tools.read({path:"probe.txt"}); console.log(result); throw new Error("intentional parent failure after child success");';
         response.write(sse({ ...base, choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'outer-call', type: 'function', function: { name: 'codemode', arguments: JSON.stringify({ code }) } }] }, finish_reason: null }] }));
@@ -36,7 +40,7 @@ test('maintained Pi adapter and CodeMode apparatus proof over owned loopback HTT
       }
       response.write(sse({ ...base, choices: [], usage: fixtureUsage })); response.end('data: [DONE]\n\n');
     } else {
-      const base = { id: 'resp-controlled', object: 'response', created_at: 0, model: 'fixture', output: [] };
+      const base = { id: 'resp-controlled', object: 'response', created_at: 0, model: route.reportedModel ?? 'fixture', output: [] };
       const item = { id: 'msg-controlled', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Controlled fixture complete.', annotations: [] }] };
       for (const event of [
         { type: 'response.created', response: { ...base, status: 'in_progress' } },
@@ -53,7 +57,10 @@ test('maintained Pi adapter and CodeMode apparatus proof over owned loopback HTT
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
-    for (const scenario of [{ id: 'guard-and-census', api: 'openai-completions', guard: true }, { id: 'completions-and-nested', api: 'openai-completions', nested: true }, { id: 'responses', api: 'openai-responses' }]) {
+    for (const scenario of [{ id: 'guard-and-census', api: 'openai-completions', guard: true }, { id: 'completions-and-nested', api: 'openai-completions', nested: true }, { id: 'responses', api: 'openai-responses' },
+      { id: 'completions-reported-mismatch', api: 'openai-completions', nested: true, enforceReported: true, reportedModel: 'wrong-variant' },
+      { id: 'completions-reported-missing', api: 'openai-completions', nested: true, enforceReported: true, omitReported: true },
+      { id: 'responses-reported-mismatch', api: 'openai-responses', enforceReported: true, reportedModel: 'wrong-variant' }]) {
       route = scenario; received = [];
       const directory = join(proofRoot, scenario.id), cwd = join(directory, 'workspace'), agentDir = join(directory, 'agent');
       await mkdir(cwd, { recursive: true }); await mkdir(agentDir); await writeFile(join(cwd, 'probe.txt'), 'SDK owned nested read fixture.\n');
@@ -61,6 +68,11 @@ test('maintained Pi adapter and CodeMode apparatus proof over owned loopback HTT
       const modelRuntime = await sdk.ModelRuntime.create({ authPath: join(agentDir, 'auth.json'), modelsPath: null, modelsStorePath: join(agentDir, 'model-store.json'), allowModelNetwork: false, refreshOnCreate: false });
       modelRuntime.registerProvider('benchmark-loopback', { baseUrl: 'http://127.0.0.1:' + server.address().port + '/v1', api: scenario.api, apiKey: 'controlled-local-only-key', models: [{ id: 'fixture', name: 'fixture', reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 256 }] });
       const extensionErrors = [], events = [], providerEvents = [], payloads = [];
+      const requests = [], runtimeRecords = [], routing = { mode: 'fixed-route', model_variant: 'fixture', reported_model_ids: ['fixture'] };
+      const budget = createEpisodeBudget({ wallTimeMs: 30000, maxModelRequests: 10, maxToolCalls: 40, maxHttpAttempts: 10,
+        maxInputTokens: 300000, maxOutputTokens: 16000, maxTotalTokens: 316000 });
+      let currentRequest, identityStop;
+      const record = (type, data) => { runtimeRecords.push({ type, data: structuredClone(data) }); return { artifact_id: 'observed', pointer: '/runtime_records/' + (runtimeRecords.length - 1) }; };
       const loader = new sdk.DefaultResourceLoader({ cwd, agentDir, settingsManager, noExtensions: true, noSkills: true, noContextFiles: true, noPromptTemplates: true, noThemes: true,
         additionalExtensionPaths: ['builtin:codemode'], extensionFactories: [
           { name: 'codemode', builtin: true, factory: sdk.createCodemodeExtension({ mode: 'on', models: false }) },
@@ -68,25 +80,59 @@ test('maintained Pi adapter and CodeMode apparatus proof over owned loopback HTT
         ] });
       await loader.reload();
       const { session } = await sdk.createAgentSession({ cwd, agentDir, modelRuntime, settingsManager, resourceLoader: loader, model: modelRuntime.getModel('benchmark-loopback', 'fixture'), thinkingLevel: 'off', tools: ['+codemode'], sessionManager: sdk.SessionManager.inMemory(cwd) });
-      session.subscribe(event => events.push(event));
+      session.subscribe(event => {
+        events.push(event);
+        if (scenario.enforceReported && currentRequest && event.type === 'message_end' && event.message.role === 'assistant') {
+          currentRequest.assistant = { stop_reason: event.message.stopReason, error: event.message.errorMessage ?? null };
+          finishEpisodeRequest({ request: currentRequest, budget, routing, record, onStop: error => { identityStop ??= error; } });
+        }
+      });
       try {
         await session.bindExtensions({ onError: error => extensionErrors.push(error) });
         const initial = [{ role: 'system', content: session.systemPrompt, toolsAdded: session.agent.state.tools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })), timestamp: 0 }];
         const preview = await session.agent.transformContext(initial);
         const original = session.agent.streamFunction;
-        session.agent.streamFunction = (model, context, options = {}) => original(model, context, { ...options, maxTokens: 256, maxRetries: 0,
+        session.agent.streamFunction = async (model, context, options = {}) => {
+          let request;
+          if (scenario.enforceReported) {
+            const sequence = reserveEpisodeRequest({ budget, captureOnly: false, priorStop: identityStop,
+              clearRequest: () => { currentRequest = undefined; }, onStop: error => { identityStop ??= error; } });
+            request = { id: 'request-' + sequence, attempts: [], accounted: false, usage: null };
+            requests.push(request); currentRequest = request;
+          }
+          return original(model, context, { ...options, maxTokens: 256, maxRetries: 0,
+          ...(request ? { fetch: guardedFetch({ request, model, budget, admitted: () => true, record }) } : {}),
           onPayload: async payload => { const replacement = await options.onPayload?.(payload, model), final = replacement === undefined ? payload : replacement; payloads.push(final); if (scenario.guard) throw new Error('CONTROLLED_OUTER_TRANSPORT_GUARD'); return final; },
-          onProviderStreamEvent: async (event, observedModel) => { providerEvents.push(event); await options.onProviderStreamEvent?.(event, observedModel); },
-        });
+          onProviderStreamEvent: async (event, observedModel) => {
+            providerEvents.push(event);
+            if (request) {
+              const observed = providerReportedModel(observedModel.api, event), attempt = request.attempts.find(item => item.id === request.current_attempt_id);
+              if (observed && attempt) (attempt.reported_model_observations ??= []).push({ ...observed, ref: { artifact_id: 'observed', pointer: '/provider_events/' + (providerEvents.length - 1) } });
+              const usage = providerUsage(observedModel.api, event); if (usage) request.usage = usage;
+            }
+            await options.onProviderStreamEvent?.(event, observedModel);
+          },
+        }); };
         await session.prompt('Run the owned controlled apparatus fixture.'); await session.waitForIdle();
+        if (scenario.enforceReported && !scenario.nested) { await session.prompt('Attempt the controlled follow-up.'); await session.waitForIdle(); }
         const assistants = events.filter(event => event.type === 'message_end' && event.message.role === 'assistant').map(event => event.message);
-        const result = { ...scenario, extensions: loader.getExtensions().extensions.map(extension => ({ path: extension.path, handlers: [...extension.handlers.keys()], tools: [...extension.tools.keys()] })), preview_contains_marker: JSON.stringify(preview).includes('CONTROLLED_SILENT_EXTENSION'), payloads, provider_events: providerEvents, events, received: [...received], extension_errors: extensionErrors, assistants };
+        const result = { ...scenario, extensions: loader.getExtensions().extensions.map(extension => ({ path: extension.path, handlers: [...extension.handlers.keys()], tools: [...extension.tools.keys()] })), preview_contains_marker: JSON.stringify(preview).includes('CONTROLLED_SILENT_EXTENSION'), payloads, provider_events: providerEvents, events, received: [...received], extension_errors: extensionErrors, assistants,
+          ...(scenario.enforceReported ? { tracked_requests: requests, runtime_records: runtimeRecords, budget: budget.state, identity_stop: identityStop?.code ?? null } : {}) };
         await writeFile(join(directory, 'observed.json'), JSON.stringify(result, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
         const artifact = await fileIdentity(join(directory, 'observed.json'), scenario.id);
         assert.equal(result.preview_contains_marker, true); assert.ok(result.extensions.some(extension => extension.path.includes('silent-proof')));
         if (scenario.guard) {
           assert.equal(received.length, 0); assert.equal(payloads.length, 1); assert.equal(extensionErrors.length, 1);
           assert.match(assistants.at(-1).errorMessage, /CONTROLLED_OUTER_TRANSPORT_GUARD/);
+        } else if (scenario.enforceReported) {
+          assert.equal(received.length, 1); assert.equal(requests.length, 1); assert.equal(payloads.length, 1);
+          assert.equal(identityStop?.code, scenario.omitReported ? 'BENCHMARK_REPORTED_MODEL_MISSING' : 'BENCHMARK_REPORTED_MODEL_MISMATCH');
+          assert.deepEqual([budget.state.input_tokens, budget.state.output_tokens, budget.state.tokens], [100, 30, 130]);
+          assert.equal(requests[0].usage.complete_for_token_budget, true);
+          assert.equal(requests[0].assistant.stop_reason, scenario.nested ? 'toolUse' : 'stop');
+          assert.equal(currentRequest, undefined); assert.equal(budget.state.requests, 1); assert.equal(budget.state.attempts, 1);
+          assert.equal(runtimeRecords.find(item => item.type === 'request_usage_accounted').data.budget.tokens, 130);
+          assert.ok(assistants.some(message => message.stopReason === 'error'));
         } else {
           assert.equal(received.length, scenario.nested ? 2 : 1);
           const normalized = assistants.at(-1).usage;

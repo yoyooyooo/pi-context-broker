@@ -1,6 +1,7 @@
 import { canonicalJson, fingerprint } from '../protocol.mjs';
+import { assessReportedModel, validateRoutingPolicy } from '../reported-model.mjs';
 
-export const EVIDENCE_VERSION = '1.0.0';
+export const EVIDENCE_VERSION = '1.1.0';
 const hashPattern = /^[a-f0-9]{64}$/;
 const outcomes = new Set(['pass', 'fail', 'unknown', 'not_applicable']);
 const precision = new Set(['observed', 'reported', 'derived', 'estimated']);
@@ -80,6 +81,7 @@ function derivedWithZero(facts, formula, complete, refs) {
 
 export function normalizeEpisode({ identity, admission, attempts, tools, business, contracts, interventions, timing, artifacts }) {
   if (!object(identity)) throw new TypeError('Episode identity is required');
+  if (identity.model_routing !== undefined) validateRoutingPolicy(identity.model_routing);
   for (const name of ['episode_id', 'run_id', 'experiment_id', 'condition_id', 'case_id']) id(identity[name], name);
   if (!Number.isSafeInteger(identity.repeat) || identity.repeat < 0) throw new TypeError('repeat must be a nonnegative integer');
   for (const [name, value] of Object.entries({ artifacts, attempts, tools, contracts, interventions }))
@@ -98,6 +100,7 @@ export function normalizeEpisode({ identity, admission, attempts, tools, busines
     completeness[name] = state;
   }
   const facts = value => validateFact(value, registry, { numeric: true });
+  const modelReasons = [];
   unique(attempts, 'attempt');
   const normalizedAttempts = attempts.map((attempt, index) => {
     if (![true, false, null].includes(attempt.sent)) throw new TypeError('Actual send status must be observed true, false or unknown null');
@@ -119,6 +122,24 @@ export function normalizeEpisode({ identity, admission, attempts, tools, busines
       throw new TypeError('Currency cost requires nonnegative amount, currency and verified pricing');
     const value = { ...structuredClone(attempt), request_id: id(attempt.request_id, 'request ID'), seq: attempt.seq,
       refs, usage, adapter, cost, index };
+    if (identity.model_routing) {
+      const report = attempt.reported_model;
+      if (report !== undefined && (!object(report) || !Array.isArray(report.observations) || typeof report.provider_error !== 'boolean'))
+        throw new TypeError('Reported model requires original observations and provider-error state');
+      const observations = (report?.observations ?? []).map(item => {
+        if (!object(item) || !Object.hasOwn(item, 'value') ||
+          !['/data/event/model', '/data/event/response/model'].includes(item.field) ||
+          item.bound !== undefined && typeof item.bound !== 'boolean') throw new TypeError('Reported model must identify the raw server field');
+        canonicalJson(item.value);
+        return { ...structuredClone(item), ref: validateRef(item.ref, registry) };
+      });
+      const derived = assessReportedModel({ routing: identity.model_routing, sent: attempt.sent, observations,
+        providerError: report?.provider_error === true, refs: report ? refsOf(report.refs, registry, true) : refs });
+      if (report && ['status', 'reason', 'assurance', 'label_kind', 'reported_ids'].some(key => canonicalJson(report[key]) !== canonicalJson(derived[key])))
+        throw new TypeError('Reported model result differs from its original observations and frozen policy');
+      value.reported_model = derived;
+      if (derived.reason) modelReasons.push(derived.reason);
+    }
     const fullInput = inputFor(value), fullOutput = outputFor(value);
     const usable = fact => fact.status === 'known' && fact.precision !== 'estimated' ? fact.value : 0;
     const inputSubtotal = adapter.verified ? adapter.input_semantics === 'includes_cache' ? usable(usage.input)
@@ -127,6 +148,7 @@ export function normalizeEpisode({ identity, admission, attempts, tools, busines
       : adapter.output_semantics === 'excludes_reasoning' ? usable(usage.output) + usable(usage.reasoning) : 0 : 0;
     return { ...value, full_input: fullInput, full_output: fullOutput, known_input_subtotal: inputSubtotal, known_output_subtotal: outputSubtotal };
   }).sort((a, b) => a.seq - b.seq || a.id.localeCompare(b.id));
+  if (modelReasons.length) admission = { ...admission, status: 'invalid', reasons: [...new Set([...(admission.reasons ?? []), ...modelReasons])] };
   if (new Set(normalizedAttempts.map(a => a.seq)).size !== normalizedAttempts.length) throw new TypeError('Attempt sequence must be unique');
   unique(tools, 'tool call');
   const toolIds = new Set(tools.map(t => t.id));

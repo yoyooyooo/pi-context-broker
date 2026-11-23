@@ -9,7 +9,8 @@ import { collectEpisode, collectRawUsage, deliveredSourceBodies, deriveRedactedP
 import { exampleProtocol } from './analysis/fixtures.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-async function fixture({ outcome='pass', missingUsage=false, tools=[], source=false, opaque=false, capture=false, budgetStopped=false, adapter=true }={}) {
+async function fixture({ outcome='pass', missingUsage=false, tools=[], source=false, opaque=false, capture=false, budgetStopped=false, adapter=true,
+  routing, reportedModels=[], api='openai-completions', providerError=false }={}) {
   const root=await mkdtemp(join(tmpdir(),'benchmark-collect-unit-')),runRoot=join(root,'runs','unit-run'),workspace=join(runRoot,'workspace');
   await mkdir(join(workspace,'output'),{recursive:true});
   const save=async(path,value)=>{await mkdir(join(path,'..'),{recursive:true});const text=typeof value==='string'?value:canonicalJson(value)+'\n';await writeFile(path,text);return {path,sha256:sha(text),bytes:Buffer.byteLength(text)};};
@@ -21,10 +22,10 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
     ...(source?[{id:'main-source',kind:'resources',critical:true,alternatives:[[{skill_id:'unit-skill',path:'SKILL.md',sha256:material.sha256}]]}]:[]),
   ]};
   const oracleFile=await save(join(root,'private','oracle.json'),oracle);
-  const proof=await save(join(root,'private','adapter.json'),{scope:'synthetic-unit-only',status:'passed',api:'openai-completions'});
+  const proof=await save(join(root,'private','adapter.json'),{scope:'synthetic-unit-only',status:'passed',api});
   const p=exampleProtocol({cases:[{id:'c1',family:'unit',material_id:'material',cluster_id:'cluster',split:'development',contract_sha256:fingerprint(oracle)}]});
   p.corpus.content_sha256='a'.repeat(64);p.corpus.capabilities=[{id:'workspace-files',scope:'common',environment_ids:p.conditions.map(c=>c.environment_id)}];
-  const model={id:'model',provider:'unit-provider',route:'unit-route',api:'openai-completions',parameters:{},
+  const model={id:'model',provider:'unit-provider',route:'unit-route',api,parameters:{},...(routing?{routing}:{}),
     adapter:{id:'unit-adapter',version:'1',verification:'verified',evidence_sha256:proof.sha256}};
   p.models=[model];for(const c of p.conditions)c.environment_sha256='b'.repeat(64);
   p.protocol_sha256=fingerprint({...p,protocol_sha256:null});
@@ -44,14 +45,17 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
   const trace=[];let previous=null;
   const event=fields=>{const row={version:1,sequence:trace.length+1,previousSha256:previous,clockId:'unit-run',monotonicNs:String(trace.length+1),...fields};row.eventSha256=sha(JSON.stringify(row));previous=row.eventSha256;trace.push(row);};
   event({phase:'transport_start'});
-  if(!capture){event({phase:'request_start',id:1,category:'model'});event({phase:'request_sent',id:1,requestBodySha256:payloadSha});event({phase:'request_end',id:1,category:'model',outcome:'completed'});}
+  if(!capture){event({phase:'request_start',id:1,category:'model'});event({phase:'request_sent',id:1,requestBodySha256:payloadSha});event({phase:'request_end',id:1,category:'model',outcome:providerError?'failure':'completed'});}
   event({phase:'transport_end',attempts:capture?0:1,errors:0,incompleteRequestIds:[],pendingForkRebind:false,complete:true});
   const transport=await add('transport',join(runRoot,'transport.jsonl'),trace.map(JSON.stringify).join('\n')+'\n','jsonl');
   const rows=[];const record=(type,data,request_id=null)=>{const row={version:1,sequence:rows.length+1,type,turn_id:'turn-1',request_id,
     monotonic_ns:String(1000000+rows.length*1000000),wall_time:'2026-01-01T00:00:00.000Z',data};rows.push(row);return rows.length;};
   let usageLine=null;
-  if(!capture&&!missingUsage)usageLine=record('provider_stream_event',{request_id:'request-1',attempt_id:'attempt-1',provider:'unit-provider',api:'openai-completions',model:'unit-route',
-    event:{usage:{prompt_tokens:100,completion_tokens:20,total_tokens:120,prompt_tokens_details:{cached_tokens:30}}}},'request-1');
+  if(!capture)for(const reported of reportedModels)record('provider_stream_event', {request_id:'request-1',attempt_id:'attempt-1',provider:'unit-provider',api,model:'unit-route',
+    event:api==='openai-responses'?{type:'response.created',response:{model:reported}}:{model:reported}},'request-1');
+  if(!capture&&!missingUsage)usageLine=record('provider_stream_event',{request_id:'request-1',attempt_id:'attempt-1',provider:'unit-provider',api,model:'unit-route',
+    event:api==='openai-responses'?{type:'response.completed',response:{usage:{input_tokens:100,output_tokens:20,total_tokens:120,input_tokens_details:{cached_tokens:30}}}}
+      :{usage:{prompt_tokens:100,completion_tokens:20,total_tokens:120,prompt_tokens_details:{cached_tokens:30}}}},'request-1');
   if(source) {
     const copied=join(run.pi_launch.native_corpus.root,'unit-skill','SKILL.md');await save(copied,body);
     tools=[...tools,{id:'read-skill',name:'read',args:{path:copied},result:{content:[{type:'text',text:body}],structuredContent:body},isError:false}];
@@ -80,6 +84,47 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
     args:{environmentRoot:root,outputDirectory:join(root,'collected')},save};
 }
 const collect=f=>collectEpisode({...f,...f.args});
+
+const routing={mode:'auto-route',model_variant:'grok-4.7',reported_model_ids:['grok-4.7','grok/grok-4.7']};
+test('collector binds every original server label to its actual attempt and freezes the extraction module',async()=>{
+  for(const api of ['openai-completions','openai-responses']){
+    const result=await collect(await fixture({routing,api,reportedModels:['grok/grok-4.7','grok-4.7']}));
+    assert.equal(result.validity,'valid');assert.equal(result.stop_batch,false);
+    assert.deepEqual(result.budget_usage,{model_requests:1,input_tokens:100,output_tokens:20,duration_ms:100});
+    const report=result.bundle.episode.attempts[0].reported_model;
+    assert.equal(report.status,'matched');assert.equal(report.assurance,'provider_reported_label_not_backend_attestation');
+    assert.deepEqual(report.reported_ids,['grok/grok-4.7','grok-4.7']);
+    assert.equal(report.observations.length,2);
+    for(const observation of report.observations){
+      assert.equal(observation.bound,true);assert.match(observation.ref.sha256,/^[a-f0-9]{64}$/);
+      assert.equal(observation.ref.artifact_id,'events');assert.ok(observation.ref.line>0);
+      assert.equal(observation.field,api==='openai-responses'?'/data/event/response/model':'/data/event/model');
+    }
+    assert.ok(JSON.stringify(result.bundle.episode.identity.analysis_implementation).includes('benchmark/reported-model.mjs'));
+  }
+});
+test('wrong and missing reported variants invalidate the core without erasing known consumption',async()=>{
+  for(const reportedModels of [[],['grok/grok-4.7','grok/grok-4.6','grok/grok-4.7'],['auto/grok-4.7']]){
+    const result=await collect(await fixture({routing,reportedModels}));
+    assert.equal(result.validity,'invalid');assert.equal(result.stop_batch,true);assert.equal(result.outcome,'not_applicable');
+    assert.ok(result.bundle.episode.admission.reasons.includes(reportedModels.length?'reported_model_mismatch':'reported_model_missing'));
+    assert.equal(result.bundle.episode.admission.completeness.attempts,'complete');
+    assert.deepEqual(result.budget_usage,{model_requests:1,input_tokens:100,output_tokens:20,duration_ms:100});
+    assert.equal(result.bundle.episode.measurements.input_total.known_subtotal,100);
+    assert.equal(result.bundle.episode.measurements.output_total.known_subtotal,20);
+  }
+});
+test('a failed provider response is distinguishable from an otherwise complete response lacking identity',async()=>{
+  const result=await collect(await fixture({routing,providerError:true}));
+  assert.equal(result.validity,'invalid');assert.equal(result.stop_batch,true);
+  assert.ok(result.bundle.episode.admission.reasons.includes('reported_model_unavailable_after_provider_error'));
+  assert.equal(result.budget_usage.model_requests,1);assert.equal(result.budget_usage.input_tokens,100);
+});
+test('routing policy does not require server identity before any actual model send',async()=>{
+  const result=await collect(await fixture({routing,capture:true}));
+  assert.equal(result.budget_usage.model_requests,0);
+  assert.ok(!result.bundle.episode.admission.reasons.some(reason=>reason.startsWith('reported_model')));
+});
 
 test('raw API usage keeps cached subsets and absent fields without Pi zero fallback',()=>{
   const u=collectRawUsage('openai-completions',{usage:{prompt_tokens:100,completion_tokens:20,total_tokens:120,prompt_tokens_details:{cached_tokens:30}}});
@@ -186,6 +231,21 @@ test('redacted provider recovery requires the unique observed configuration and 
   const recovered=deriveRedactedProviderBinding(value);
   assert.equal(recovered.value,'unit-provider');assert.equal(recovered.precision,'derived');
   assert.equal(recovered.observed_provider,'[REDACTED_CREDENTIAL]');
+  assert.equal(recovered.verification_scope,'private-original-transport-hashes-recomputed');
+  const projected=structuredClone(value);
+  projected.candidate.projection.model.baseUrl='https://published-endpoint.invalid/v1';
+  projected.candidate.projection.model_configuration.definition.providers['unit-provider'].baseUrl='https://published-endpoint.invalid/v1';
+  projected.expected=structuredClone(projected.candidate);projected.requestStart.data.model=structuredClone(projected.candidate.projection.model);
+  projected.attemptStart.data.url_origin='https://published-endpoint.invalid';
+  assert.equal(deriveRedactedProviderBinding(projected),null);
+  const publicProof=deriveRedactedProviderBinding({...projected,publicProjection:true});
+  assert.equal(publicProof.value,'unit-provider');assert.equal(publicProof.verification_scope,'public-projection-original-transport-hash-claims-retained');
+  const badBody=structuredClone(projected);badBody.transportSent.requestBodySha256='b'.repeat(64);
+  assert.equal(deriveRedactedProviderBinding({...badBody,publicProjection:true}),null);
+  const badIdentity=structuredClone(projected);badIdentity.event.data.attempt_id='another-attempt';
+  assert.equal(deriveRedactedProviderBinding({...badIdentity,publicProjection:true}),null);
+  const missingClaim=structuredClone(projected);delete missingClaim.transportStart.originSha256;
+  assert.equal(deriveRedactedProviderBinding({...missingClaim,publicProjection:true}),null);
   const bad=[
     x=>{x.event.data.provider=null;},
     x=>{x.event.data.provider='another-provider';},
