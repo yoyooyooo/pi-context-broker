@@ -428,6 +428,18 @@ async function currentTools(environment) {
   return { node, bun, git: await toolIdentity(await executable('git')), npm, pi: await findPi(environment.tools.pi.path, npm) };
 }
 
+/** Use the frozen Broker's contract; older snapshots declared these four inputs inline. */
+export async function verifySelectedCliPair(root, brokerReceipt) {
+  const { fileInventory, selectedCliInputs } = await import(pathToFileURL(join(root, 'source/broker/scripts/next-build-identity.mjs')));
+  const legacy = ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills'];
+  const names = selectedCliInputs === undefined ? legacy : selectedCliInputs;
+  assert.ok(Array.isArray(names) && names.every(name => typeof name === 'string' && name && !isAbsolute(name) && !name.split('/').includes('..'))
+    && new Set(names).size === names.length, 'Invalid selected CLI input declaration');
+  assert.ok(legacy.every(name => names.includes(name)), 'Selected CLI input declaration omits a required CLI/SDK input');
+  assert.deepEqual(await fileInventory(join(root, 'cli'), names), brokerReceipt.selected_cli,
+    'The built Broker does not contain this generation\'s complete selected CLI/SDK');
+}
+
 export async function buildEnvironment(options) {
   const installMode = options['install-mode'] ?? 'directory';
   assert.ok(['directory', 'packed'].includes(installMode), '--install-mode must be directory or packed');
@@ -460,11 +472,9 @@ export async function buildEnvironment(options) {
       { cwd: join(root, 'source/broker'), env: { ...env, NTN_SKILLS_BUILD_ENTRY: join(root, 'cli/dist/ntn-skills.js') }, log: join(root, 'logs/build-broker') });
     await install('broker');
     const { verifyCurrentBuild } = await import(pathToFileURL(join(root, 'source/broker/scripts/verify-next-worktrees.mjs')));
-    const { fileInventory, selectedCliInputs } = await import(pathToFileURL(join(root, 'source/broker/scripts/next-build-identity.mjs')));
     await verifyCurrentBuild(join(root, 'source/cli'), join(root, 'cli'), 'cli-build');
     const brokerReceipt = await verifyCurrentBuild(join(root, 'source/broker'), join(root, 'broker'), 'broker-build');
-    assert.deepEqual(await fileInventory(join(root, 'cli'), selectedCliInputs), brokerReceipt.selected_cli,
-      'The built Broker does not contain this generation\'s CLI/SDK');
+    await verifySelectedCliPair(root, brokerReceipt);
     const candidate = installMode === 'packed' ? await installPackedPair(root, environment.tools, env) : { mode: 'directory' };
     const packages = {};
     for (const name of ['cli', 'broker']) packages[name] = await inventory(join(root, name));
@@ -507,10 +517,7 @@ export async function checkEnvironment(options) {
   // Check pairing independently of the mutable checkout, using the sealed build receipt.
   const brokerReceipt = await json(join(root, 'broker/dist/next-build.json'));
   assert.equal(brokerReceipt.selected_cli.sha256, build.selected_cli_sha256);
-  for (const file of brokerReceipt.selected_cli.files) {
-    assert.ok(!isAbsolute(file.path) && !file.path.split('/').includes('..'));
-    assert.equal(hash(await readFile(join(root, 'cli', file.path))), file.sha256, 'CLI/SDK pair was swapped: ' + file.path);
-  }
+  await verifySelectedCliPair(root, brokerReceipt);
   const currentHeads = {};
   for (const name of ['cli', 'broker']) currentHeads[name] = git(join(options.root, name), 'rev-parse', 'HEAD');
   return { status: 'passed', scope: 'isolated-development-artifacts', root, build_id: buildId,

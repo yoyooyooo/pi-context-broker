@@ -5,12 +5,16 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { test } from 'node:test';
 import {
-  checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, validatePiArguments,
+  checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, validatePiArguments, verifySelectedCliPair,
 } from './paired-environment.mjs';
+import { fileInventory, selectedCliInputs } from './next-build-identity.mjs';
 
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
 const writeJson = (path, value) => writeFile(path, JSON.stringify(value) + '\n');
 const inside = (root, path) => path.startsWith(root + sep);
+const legacyCliInputs = ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills'];
+const identitySource = await readFile(new URL('./next-build-identity.mjs', import.meta.url), 'utf8');
+const legacyIdentitySource = identitySource.replace(/^export const selectedCliInputs = .*;\n/m, '');
 const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -33,7 +37,7 @@ async function sourceRepository(root, name) {
 async function sealedBuild(root, buildId = 'fixture', realCliEntry) {
   const environment = await readJson(join(root, 'environment.json'));
   const buildRoot = join(root, 'builds', buildId);
-  for (const path of ['cli/dist', 'cli/skills', 'broker/dist', 'broker/src', 'source/cli', 'source/broker']) {
+  for (const path of ['cli/dist', 'cli/skills', 'broker/dist', 'broker/src', 'source/cli', 'source/broker/scripts']) {
     await mkdir(join(buildRoot, path), { recursive: true });
   }
   await writeJson(join(buildRoot, 'cli/package.json'), { name: 'paired-cli-fixture', version: '0.0.0', type: 'module' });
@@ -54,7 +58,8 @@ async function sealedBuild(root, buildId = 'fixture', realCliEntry) {
   await mkdir(join(buildRoot, 'source/broker/node_modules/.bin'), { recursive: true });
   await writeFile(join(buildRoot, 'source/broker/node_modules/fixture/index.js'), 'original dependency\n');
   await symlink('../fixture/index.js', join(buildRoot, 'source/broker/node_modules/.bin/fixture'));
-  const selectedCli = await inventory(join(buildRoot, 'cli'));
+  await writeFile(join(buildRoot, 'source/broker/scripts/next-build-identity.mjs'), legacyIdentitySource);
+  const selectedCli = await fileInventory(join(buildRoot, 'cli'), legacyCliInputs);
   await writeJson(join(buildRoot, 'broker/dist/next-build.json'), { selected_cli: selectedCli });
   const packages = {};
   for (const name of ['cli', 'broker']) packages[name] = await inventory(join(buildRoot, name));
@@ -65,6 +70,15 @@ async function sealedBuild(root, buildId = 'fixture', realCliEntry) {
     source_tree: await inventory(join(buildRoot, 'source')), packages, tools: environment.tools,
   });
   return buildRoot;
+}
+
+async function resealPair(root, selectedCli) {
+  await writeJson(join(root, 'broker/dist/next-build.json'), { selected_cli: selectedCli });
+  const build = await readJson(join(root, 'build.json'));
+  build.selected_cli_sha256 = selectedCli.sha256;
+  for (const name of ['cli', 'broker']) build.packages[name] = await inventory(join(root, name));
+  build.source_tree = await inventory(join(root, 'source'));
+  await writeJson(join(root, 'build.json'), build);
 }
 
 test('paired environments isolate writable state and detect artifact changes', async t => {
@@ -216,6 +230,40 @@ test('paired environments isolate writable state and detect artifact changes', a
     await assert.rejects(checkEnvironment({ root: rootA }), /simple build\/run ID|type string/);
   });
 
+  await t.test('selected CLI pairing accepts absent legacy export and the explicit five-input contract', async () => {
+    await verifySelectedCliPair(buildA, await readJson(join(buildA, 'broker/dist/next-build.json')));
+    const buildId = 'explicit-cli-inputs', root = await sealedBuild(rootA, buildId);
+    await writeFile(join(root, 'cli/THIRD_PARTY_NOTICES.md'), 'Selected notice bytes\n');
+    await writeFile(join(root, 'source/broker/scripts/next-build-identity.mjs'), identitySource);
+    const selectedCli = await fileInventory(join(root, 'cli'), selectedCliInputs);
+    await resealPair(root, selectedCli);
+    await verifySelectedCliPair(root, { selected_cli: selectedCli });
+    assert.equal((await checkEnvironment({ root: rootA, build: buildId })).status, 'passed');
+    await assert.rejects(verifySelectedCliPair(root, { selected_cli: await fileInventory(join(root, 'cli'), legacyCliInputs) }), /complete selected CLI\/SDK/);
+  });
+
+  await t.test('selected CLI pairing does not fall back for null or incomplete explicit declarations', async () => {
+    for (const [id, declaration] of [['null', null], ['missing-sdk', legacyCliInputs.filter(name => name !== 'dist/sdk.js')]]) {
+      const root = await sealedBuild(rootA, 'invalid-cli-inputs-' + id);
+      await writeFile(join(root, 'source/broker/scripts/next-build-identity.mjs'),
+        legacyIdentitySource + '\nexport const selectedCliInputs = ' + JSON.stringify(declaration) + ';\n');
+      const selectedCli = await fileInventory(join(root, 'cli'), declaration ?? legacyCliInputs);
+      await assert.rejects(verifySelectedCliPair(root, { selected_cli: selectedCli }), /selected CLI input declaration|Selected CLI input declaration/);
+    }
+  });
+
+  await t.test('ordinary checks reject omitted selected files and changed CLI bytes despite matching outer inventories', async () => {
+    for (const action of ['omit-sdk', 'replace-sdk']) {
+      const buildId = 'pairing-' + action, root = await sealedBuild(rootA, buildId);
+      const selectedCli = action === 'omit-sdk'
+        ? await fileInventory(join(root, 'cli'), legacyCliInputs.filter(name => name !== 'dist/sdk.js'))
+        : (await readJson(join(root, 'broker/dist/next-build.json'))).selected_cli;
+      if (action === 'replace-sdk') await writeFile(join(root, 'cli/dist/sdk.js'), 'export const replaced = true;\n');
+      await resealPair(root, selectedCli);
+      await assert.rejects(checkEnvironment({ root: rootA, build: buildId }), /complete selected CLI\/SDK/);
+    }
+  });
+
   await t.test('packed candidates run actual clean-installed entries and freeze archives and dependencies', async () => {
     const buildId = 'packed-candidate', root = await sealedBuild(rootA, buildId);
     await writeJson(join(root, 'cli/package.json'), { name: 'ntn-skills', version: '0.0.0', type: 'module',
@@ -224,7 +272,8 @@ test('paired environments isolate writable state and detect artifact changes', a
     await writeFile(join(root, 'broker/dist/ntn-skills-sdk.mjs'), 'export const SDK_VERSION=2;\n');
     await writeFile(join(root, 'cli/THIRD_PARTY_NOTICES.md'), 'Complete selected CLI notice fixture\n');
     await writeFile(join(root, 'broker/dist/NOTICES.txt'), 'Other notices\nComplete selected CLI notice fixture\n');
-    const selectedCli = await inventory(join(root, 'cli'));
+    await writeFile(join(root, 'source/broker/scripts/next-build-identity.mjs'), identitySource);
+    const selectedCli = await fileInventory(join(root, 'cli'), selectedCliInputs);
     await writeJson(join(root, 'broker/dist/next-build.json'), { selected_cli: selectedCli });
     await mkdir(join(root, 'logs')); await mkdir(join(root, 'build-state/config'), { recursive: true }); await mkdir(join(root, 'build-state/tmp'));
     const environment = await readJson(join(rootA, 'environment.json'));
@@ -234,6 +283,7 @@ test('paired environments isolate writable state and detect artifact changes', a
     const build = await readJson(join(root, 'build.json'));
     build.selected_cli_sha256 = selectedCli.sha256; build.candidate = candidate;
     for (const name of ['cli', 'broker']) build.packages[name] = await inventory(join(root, name));
+    build.source_tree = await inventory(join(root, 'source'));
     await writeJson(join(root, 'build.json'), build);
     const checked = await checkEnvironment({ root: rootA, build: buildId });
     assert.equal(checked.candidate_mode, 'packed');
