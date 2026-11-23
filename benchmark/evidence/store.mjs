@@ -53,9 +53,31 @@ function allRefs(value, output = []) {
   return output;
 }
 
+// Each verification owns these lazy views of its freshly read and hashed bytes.
+function createVerificationReader(files) {
+  const texts = new Map(), lineRows = new Map(), values = new Map();
+  const text = id => {
+    if (!texts.has(id)) texts.set(id, files.get(id).bytes.toString('utf8'));
+    return texts.get(id);
+  };
+  const lines = id => {
+    if (!lineRows.has(id)) lineRows.set(id, text(id).split('\n'));
+    return lineRows.get(id);
+  };
+  const json = id => {
+    if (!values.has(id)) values.set(id, JSON.parse(text(id)));
+    return values.get(id);
+  };
+  const lineCount = id => {
+    const rows = lines(id);
+    return rows.length - Number(rows.at(-1) === '');
+  };
+  return { lines, json, lineCount };
+}
+
 /** A real artifact hash is insufficient if a derived label points at another
  * request or invents a value. Verify the source field and the complete event set. */
-function verifyReportedModelSources(episode, files, projection) {
+function verifyReportedModelSources(episode, files, projection, reader) {
   const routing = episode.identity?.model_routing;
   if (!routing) return;
   validateRoutingPolicy(routing);
@@ -71,8 +93,8 @@ function verifyReportedModelSources(episode, files, projection) {
   };
   const rawValue = ref => {
     const locator = clean(ref); validateRef(locator, registry);
-    const text = files.get(locator.artifact_id).bytes.toString('utf8');
-    return locator.line !== undefined ? JSON.parse(text.split('\n')[locator.line - 1]) : pointerValue(JSON.parse(text), locator.pointer);
+    return locator.line !== undefined ? JSON.parse(reader.lines(locator.artifact_id)[locator.line - 1])
+      : pointerValue(reader.json(locator.artifact_id), locator.pointer);
   };
   const bindingCache = new Map();
   function verifiedRedactedBinding(attempt, row) {
@@ -90,9 +112,9 @@ function verifyReportedModelSources(episode, files, projection) {
       };
       const boundFile = id => {
         if (!binding.refs.some(ref => ref.artifact_id === id)) throw new Error('Provider binding source is absent');
-        return JSON.parse(files.get(id).bytes.toString('utf8'));
+        return reader.json(id);
       };
-      const runtime = JSON.parse(files.get('collection-runtime-result').bytes.toString('utf8'));
+      const runtime = reader.json('collection-runtime-result');
       const requests = runtime.requests.filter(request => request.id === attempt.request_id);
       if (requests.length !== 1) return null;
       const request = requests[0], attempts = request.attempts.filter(item => item.id === attempt.id);
@@ -102,7 +124,7 @@ function verifyReportedModelSources(episode, files, projection) {
       const expectedArtifact = files.get('collection-provider-binding-expectation').artifact;
       if (admission.expected_file?.sha256 !== expectedArtifact.sha256 &&
         admission.expected_file?.sha256 !== projection?.get(expectedArtifact.id)?.source_sha256) return null;
-      const protocol = JSON.parse(files.get('collection-protocol').bytes.toString('utf8'));
+      const protocol = reader.json('collection-protocol');
       const models = protocol.models.filter(model => model.id === identity.model_id);
       if (models.length !== 1) return null;
       const model = models[0];
@@ -135,9 +157,9 @@ function verifyReportedModelSources(episode, files, projection) {
   for (const artifactId of sourceIds) {
     const source = files.get(artifactId);
     if (!source) throw new Error('Reported model raw source is absent');
-    const text = source.bytes.toString('utf8'), base = { artifact_id: artifactId, sha256: source.artifact.sha256 };
+    const base = { artifact_id: artifactId, sha256: source.artifact.sha256 };
     if (source.artifact.kind === 'jsonl' || source.artifact.path.endsWith('.jsonl')) {
-      const lines = text.split('\n'); if (lines.at(-1) === '') lines.pop();
+      const lines = reader.lines(artifactId).slice(0, reader.lineCount(artifactId));
       lines.forEach((line, index) => capture(JSON.parse(line), { ...base, line: index + 1 }));
     } else {
       const walk = (value, pointer = '') => {
@@ -145,7 +167,7 @@ function verifyReportedModelSources(episode, files, projection) {
         if (value.type === 'provider_stream_event') { capture(value, { ...base, pointer }); return; }
         for (const [key, child] of Object.entries(value)) walk(child, pointer + '/' + key.replaceAll('~', '~0').replaceAll('/', '~1'));
       };
-      walk(JSON.parse(text));
+      walk(reader.json(artifactId));
     }
   }
   for (const attempt of episode.attempts) {
@@ -181,7 +203,7 @@ function verifyReportedModelSources(episode, files, projection) {
 
 /** Only a caller that verified the public package manifest can opt in. A field
  * inside an episode never changes the default private verification boundary. */
-function verifyPublicProjection(episode, files, descriptor) {
+function verifyPublicProjection(episode, files, descriptor, reader) {
   const declaration = episode.identity?.public_projection;
   if (!descriptor) {
     if (declaration) throw new Error('Public projection requires an explicit verified manifest mapping');
@@ -209,9 +231,9 @@ function verifyPublicProjection(episode, files, descriptor) {
       typeof row.changed !== 'boolean' || (!row.changed && (row.source_sha256 !== row.public_sha256 || row.source_bytes !== row.public_bytes)) ||
       (artifact.kind === 'jsonl' || /jsonl$/.test(artifact.kind ?? '')) && row.format !== 'jsonl')
       throw new Error('Public projection artifact differs from its verified original-to-public mapping');
-    if (row.format === 'json') JSON.parse(bytes.toString('utf8'));
+    if (row.format === 'json') reader.json(artifact.id);
     if (row.format === 'jsonl') {
-      const lines = bytes.toString('utf8').split('\n'); if (lines.at(-1) === '') lines.pop();
+      const lines = reader.lines(artifact.id).slice(0, reader.lineCount(artifact.id));
       for (const line of lines) if (line !== '') JSON.parse(line);
     }
     projected.set(artifact.id, row);
@@ -223,7 +245,8 @@ export async function verifyBundle(bundle, options = {}) {
   if (episode?.kind !== 'benchmark-normalized-episode' || episode.episode_sha256 !== fingerprint({ ...episode, episode_sha256: null }))
     throw new Error('Normalized episode fingerprint mismatch');
   const files = await verifyArtifactFiles(episode.artifacts, options);
-  const projection = verifyPublicProjection(episode, files, options.publicProjection);
+  const reader = createVerificationReader(files);
+  const projection = verifyPublicProjection(episode, files, options.publicProjection, reader);
   const registry = new Map(episode.artifacts.map(a => [a.id, a]));
   const checked = new Set();
   for (const ref of allRefs(bundle)) {
@@ -231,14 +254,11 @@ export async function verifyBundle(bundle, options = {}) {
     const key = canonicalJson(ref);
     if (checked.has(key)) continue;
     checked.add(key);
-    const bytes = files.get(ref.artifact_id).bytes;
     if (Object.hasOwn(ref, 'line')) {
-      const lines = bytes.toString('utf8').split('\n');
-      if (lines.at(-1) === '') lines.pop();
-      if (ref.line > lines.length) throw new Error('Raw line locator exceeds artifact: ' + ref.artifact_id);
-    } else pointerValue(JSON.parse(bytes.toString('utf8')), ref.pointer);
+      if (ref.line > reader.lineCount(ref.artifact_id)) throw new Error('Raw line locator exceeds artifact: ' + ref.artifact_id);
+    } else pointerValue(reader.json(ref.artifact_id), ref.pointer);
   }
-  verifyReportedModelSources(episode, files, projection);
+  verifyReportedModelSources(episode, files, projection, reader);
   return { valid: true, raw_artifacts: files.size, references: checked.size, episode_sha256: episode.episode_sha256,
     ...(projection ? { verification_scope: 'public-projection-file-hashes-and-source-fields; original-inner-hash-claims-not-recomputed' } : {}) };
 }
