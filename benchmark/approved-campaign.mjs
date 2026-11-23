@@ -117,8 +117,13 @@ async function verifyApproval(value) {
   assert.equal(episode.stop_batch, true); assert.equal(episode.admission, 'invalid'); assert.equal(knownUsage(episode.budget_usage), false);
   assert.ok(value.history.unknown_usage_run_ids.includes(stop.run_id));
   const bytes = await fileBytes(join(episode.directory, 'episode.json'));
-  assert.equal(sha(bytes), stop.normalized_episode_sha256, 'APPROVAL_RETAINED_STOP_BYTES_CHANGED');
-  const normalized = JSON.parse(bytes); assert.equal(normalized.episode_sha256, episode.episode_sha256);
+  // The published proposal names the normalized semantic identity, not the
+  // pretty-printed episode.json file digest. Raw bundle bytes are independently
+  // checked by the campaign history reader before this boundary can dispatch.
+  const normalized = JSON.parse(bytes);
+  assert.equal(normalized.episode_sha256, stop.normalized_episode_sha256, 'APPROVAL_RETAINED_STOP_IDENTITY_CHANGED');
+  assert.equal(fingerprint({ ...normalized, episode_sha256: null }), normalized.episode_sha256, 'APPROVAL_RETAINED_STOP_CONTENT_CHANGED');
+  assert.equal(normalized.episode_sha256, episode.episode_sha256);
   assert.ok(normalized.admission.refs.some(ref => ref.sha256 === stop.result_sha256), 'APPROVAL_RETAINED_STOP_RESULT_CHANGED');
   return { value, approval, proposal };
 }

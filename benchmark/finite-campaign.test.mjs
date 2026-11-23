@@ -225,7 +225,7 @@ async function approveStoppedFixture(f) {
     work: [11, 8, 8, 20, 24, 10, 8].map((maximum_new_reservations, index) => ({ maximum_new_reservations,
       ...([1, 2].includes(index) ? { route: 'provider/' + (index === 1 ? 'grok' : 'terra') + '/fixture-0' } : {}) })),
     retained_stop: { run_id: stop.run_id, result_sha256: normalized.admission.refs[0].sha256,
-      normalized_episode_sha256: sha(await readFile(normalizedPath)), current_scope_still_stopped: true, usage_still_unknown: true, invalid_still_retained: true } };
+      normalized_episode_sha256: normalized.episode_sha256, current_scope_still_stopped: true, usage_still_unknown: true, invalid_still_retained: true } };
   const proposalPath = join(f.owner, 'proposal.json'); await save(proposalPath, proposal);
   const decision = { version: 1, kind: 'user-prospective-benchmark-resumption-decision', approved: true,
     source: 'Synthetic direct user decision for contract testing', user_message: 'Approve the exact prospective proposal',
@@ -260,6 +260,12 @@ test('explicit approval advances the exact stopped 50-prefix, while old scope an
       await writeFile(reference.path, bytes);
     }
     const original = f.approvalInputs;
+    const retainedEpisodePath = join(original.history.episodes.at(-1).directory, 'episode.json');
+    const retainedEpisodeBytes = await readFile(retainedEpisodePath), retainedEpisode = JSON.parse(retainedEpisodeBytes);
+    assert.notEqual(sha(retainedEpisodeBytes), retainedEpisode.episode_sha256, 'Real proposals bind semantic episode hashes rather than JSON file hashes');
+    retainedEpisode.identity.case_id = 'tampered'; await save(retainedEpisodePath, retainedEpisode);
+    await assert.rejects(prepareApprovedCampaign(original), /RETAINED_STOP_CONTENT_CHANGED/);
+    await writeFile(retainedEpisodePath, retainedEpisodeBytes);
     const declined = await read(original.userApproval.path), declinedPath = join(f.owner, 'declined-user-decision.json');
     declined.approved = false; await save(declinedPath, declined);
     await assert.rejects(prepareApprovedCampaign({ ...original, userApproval: await reference(declinedPath) }), /EXPLICIT_DECISION_REQUIRED/);
