@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import environmentSchema from './schemas/environment-manifest.schema.json' with { type: 'json' };
 import protocolSchema from './schemas/protocol.schema.json' with { type: 'json' };
 import metricDictionary from './metrics.json' with { type: 'json' };
+import { validateRoutingPolicy } from './reported-model.mjs';
 
 const REQUIRED_EVIDENCE = ['runtime_identity', 'loaded_manifest', 'visible_materials',
   'model_requests', 'usage', 'tool_lineage', 'business_readback', 'completion_boundary', 'interventions'];
@@ -83,6 +84,7 @@ function setSame(a, b) { return same([...a].sort(), [...b].sort()); }
 function modelCondition(model) {
   return {
     provider: model.provider, route: model.route, api: model.api, parameters: model.parameters,
+    ...(model.routing ? { routing: model.routing } : {}),
     backend: { identity: model.backend.identity, observability: model.backend.observability,
       window: { start: Date.parse(model.backend.window.start), end: Date.parse(model.backend.window.end) } },
   };
@@ -443,12 +445,35 @@ function policyChecks(value, maps, pairCells, stage, errors) {
   if (policies.pilot.scope) {
     const scope = policies.pilot.scope;
     if (value.phase !== 'pilot') issue(errors, '/policies/pilot/scope', 'pilot_scope_phase', 'A prospective scope remains inside the pilot campaign');
-    if (value.models.length !== 2 || value.environments.length !== 2 || !setSame(value.environments.map(e => e.pi.mode), ['broker', 'native']))
-      issue(errors, '/policies/pilot/scope', 'pilot_scope_conditions', 'The registered scope requires two selected models in Broker and native');
-    if (value.conditions.length !== 4 || new Set(value.conditions.map(c => c.model_id + '/' + c.environment_id)).size !== 4)
-      issue(errors, '/conditions', 'pilot_scope_cells', 'Every selected model/environment cell must occur exactly once');
-    if (scope.role === 'gate' && (totalScheduled !== 16 || value.conditions.some(c => value.pairs.reduce((n, pair) => n + pair.condition_ids.filter(id => id === c.id).length, 0) !== 4)))
-      issue(errors, '/policies/pilot/scope', 'pilot_scope_gate_schedule', 'The prospective gate requires sixteen new episodes, four per condition');
+    if (scope.kind === 'benchmark-prospective-cohort') {
+      const conditionCount = scope.model_count * 2, caseCount = scope.role === 'gate' ? 4 : 8;
+      if (value.models.length !== scope.model_count || value.environments.length !== 2
+          || !setSame(value.environments.map(e => e.pi.mode), ['broker', 'native']))
+        issue(errors, '/policies/pilot/scope', 'cohort_conditions', 'The cohort fixes its declared models in Broker and native');
+      if (value.conditions.length !== conditionCount
+          || new Set(value.conditions.map(c => canonicalJson([c.model_id, c.environment_id]))).size !== conditionCount
+          || value.models.some(model => value.environments.some(environment =>
+            !value.conditions.some(c => c.model_id === model.id && c.environment_id === environment.id))))
+        issue(errors, '/conditions', 'cohort_cells', 'Every declared model/environment cell must occur exactly once');
+      if (scope.gate_episodes !== conditionCount * 4 || scope.reservation_limit !== conditionCount * 12)
+        issue(errors, '/policies/pilot/scope', 'cohort_limits', 'The finite cohort has four gate and eight expansion cases per condition');
+      const caseIds = new Set(value.pairs.map(pair => pair.case_id));
+      if (value.assessments.length || caseIds.size !== caseCount || totalScheduled !== conditionCount * caseCount
+          || value.conditions.some(c => !setSame(c.case_ids, [...caseIds])
+            || value.pairs.reduce((n, pair) => n + pair.condition_ids.filter(id => id === c.id).length, 0) !== caseCount))
+        issue(errors, '/policies/pilot/scope', 'cohort_schedule', 'Every condition requires exactly the same declared gate or expansion case set');
+      if (value.pairs.some(pair => pair.repeat !== 0) || policies.reruns.max_episodes !== 0)
+        issue(errors, '/policies/pilot/scope', 'cohort_repetitions', 'Each cohort case runs once per condition with no replacement allowance');
+      if (value.models.some(model => !model.routing))
+        issue(errors, '/models', 'cohort_routing_required', 'Each prospective cohort model freezes its route and reported-model contract');
+    } else {
+      if (value.models.length !== 2 || value.environments.length !== 2 || !setSame(value.environments.map(e => e.pi.mode), ['broker', 'native']))
+        issue(errors, '/policies/pilot/scope', 'pilot_scope_conditions', 'The registered scope requires two selected models in Broker and native');
+      if (value.conditions.length !== 4 || new Set(value.conditions.map(c => c.model_id + '/' + c.environment_id)).size !== 4)
+        issue(errors, '/conditions', 'pilot_scope_cells', 'Every selected model/environment cell must occur exactly once');
+      if (scope.role === 'gate' && (totalScheduled !== 16 || value.conditions.some(c => value.pairs.reduce((n, pair) => n + pair.condition_ids.filter(id => id === c.id).length, 0) !== 4)))
+        issue(errors, '/policies/pilot/scope', 'pilot_scope_gate_schedule', 'The prospective gate requires sixteen new episodes, four per condition');
+    }
   }
   if (value.phase === 'pilot' && totalScheduled + (policies.reruns.max_episodes ?? 0) > policies.pilot.max_scheduled_episodes)
     issue(errors, '/pairs', 'pilot_episode_limit', 'Pilot planned attempts plus reserved replacements cannot exceed 144 including the first 24');
@@ -483,6 +508,24 @@ function policyChecks(value, maps, pairCells, stage, errors) {
     issue(errors, '/allowed_changes', 'interaction_model_change', 'The finite interaction explicitly declares its model factor');
   value.models.forEach((model, i) => {
     const path = '/models/' + i;
+    if (model.routing) {
+      const routing = model.routing, auto = model.route.startsWith('auto/');
+      try { validateRoutingPolicy(routing); }
+      catch (error) { issue(errors, path + '/routing', 'routing_policy_invalid', error.message); }
+      const matchesVariant = id => id === routing.model_variant || id.endsWith('/' + routing.model_variant);
+      if ((routing.mode === 'auto-route') !== auto || /(^|\/)group\//.test(model.route)
+          || (routing.mode === 'auto-route' && model.route !== 'auto/' + routing.model_variant)
+          || (routing.mode === 'fixed-route' && /(^|\/)auto\//.test(model.route)))
+        issue(errors, path + '/routing/mode', 'routing_mode_mismatch', 'Auto routes must declare auto-route; fixed routes cannot use group aliases');
+      if (auto && model.backend.observability !== 'opaque_alias')
+        issue(errors, path + '/backend', 'auto_backend_unverified', 'An auto route is an opaque backend condition; a returned route label is not backend attestation');
+      if (!matchesVariant(model.route))
+        issue(errors, path + '/routing/model_variant', 'route_variant_mismatch', 'The requested route must name the declared concrete model variant');
+      unique(routing.reported_model_ids, path + '/routing/reported_model_ids', errors);
+      if (routing.reported_model_ids.some(id => /(^|\/)group\//.test(id)
+          || (/(^|\/)auto\//.test(id) && !(routing.mode === 'auto-route' && id === model.route)) || !matchesVariant(id)))
+        issue(errors, path + '/routing/reported_model_ids', 'reported_model_alias', 'Reported labels must name the declared variant or its exact authorized auto route');
+    }
     if (Date.parse(model.backend.window.start) >= Date.parse(model.backend.window.end))
       issue(errors, path + '/backend/window', 'route_window_invalid', 'Route window start must precede its end');
     if (model.backend.observability === 'reported' && model.backend.identity === null)

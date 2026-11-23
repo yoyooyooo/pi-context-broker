@@ -14,11 +14,11 @@ const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '
 /** Common Benchmark instrumentation must implement the controller's turn
  * contract before any fixture preparation, credential read or subject dispatch.
  * This check does not compare the candidate/reference product tools. */
-export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding }) {
+export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding, model }) {
   assert.ok(isAbsolute(environmentRoot));
   assert.ok(typeof buildId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(buildId));
   const required = (binding.public_case?.turns?.length ?? 0) > 1 ||
-    (binding.events?.length ?? 0) > 0 || (binding.clarification?.length ?? 0) > 0;
+    (binding.events?.length ?? 0) > 0 || (binding.clarification?.length ?? 0) > 0 || Boolean(model?.routing);
   const result = { version: 1, required, status: required ? 'unverified' : 'not_required', build_id: buildId,
     scope: 'exact common Benchmark turn instrumentation; product tool implementations are outside this comparison', files: [] };
   if (!required) return result;
@@ -52,7 +52,7 @@ export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding
     result.selected_cli_sha256 = manifest.selected_cli_sha256;
     result.packages = Object.fromEntries(['cli', 'broker'].map(name => [name, manifest.packages[name].sha256]));
     result.product_artifacts_verification = 'full package/source bytes remain subject to the shared frozen-artifact check';
-    for (const name of ['subject.mjs', 'turn-bridge.mjs', 'runtime/episode-runner.mjs']) {
+    for (const name of ['subject.mjs', 'turn-bridge.mjs', 'runtime/episode-runner.mjs', ...(model?.routing ? ['reported-model.mjs', 'runtime/episode-policy.mjs'] : [])]) {
       const path = 'benchmark/' + name;
       const current = await file(fileURLToPath(new URL('./' + name, import.meta.url)));
       const selected = await file(join(buildRoot, 'source/broker', path));
@@ -140,7 +140,7 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
   for (const path of [environmentRoot, modelsFile, controlRoot]) assert.ok(isAbsolute(path));
   assert.ok(['native', 'broker'].includes(mode));
   assert.ok(['free', 'off', 'required'].includes(codeMode));
-  const turnRuntimeBuild = await (apparatus.verifyTurnRuntimeBuild ?? verifyTurnRuntimeBuild)({ environmentRoot, buildId, binding });
+  const turnRuntimeBuild = await (apparatus.verifyTurnRuntimeBuild ?? verifyTurnRuntimeBuild)({ environmentRoot, buildId, binding, model });
   if (!captureOnly) {
     assert.ok(expected && isAbsolute(expected.path), 'Paid execution requires the exact frozen expectation');
     assert.equal(sha(await readFile(expected.path)), expected.sha256, 'Frozen expectation bytes changed');
@@ -168,7 +168,7 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
     ...(controller ? { turn_bridge: controller.publicConfig } : {}),
     runtime_config: { version: 1, mode,
       model: { provider: model.provider, id: model.route ?? model.id, api: model.api, baseUrl: model.baseUrl,
-        apiKeyEnv: credential.api_key_env, parameters }, runtime,
+        apiKeyEnv: credential.api_key_env, parameters, ...(model.routing ? { routing: structuredClone(model.routing) } : {}) }, runtime,
       limits: { wallTimeMs: budget.max_duration_ms, maxModelRequests: budget.max_model_requests, maxToolCalls: 40,
         maxHttpAttempts: budget.max_http_attempts, maxInputTokens: budget.max_input_tokens,
         maxOutputTokens: budget.max_output_tokens, maxTotalTokens: budget.max_input_tokens + budget.max_output_tokens },

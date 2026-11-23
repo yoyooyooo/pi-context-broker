@@ -2,10 +2,43 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { candidateDifferences, normalizeCandidate } from './episode-evidence.mjs';
 import { createEpisodeBudget, EpisodeStop, guardedFetch, providerUsage } from './episode-policy.mjs';
-import { brokerDiagnosticsProjection, catalogCandidateReferences, requestContract, reserveEpisodeRequest } from './episode-runner.mjs';
+import { brokerDiagnosticsProjection, catalogCandidateReferences, finishEpisodeRequest, requestContract, reserveEpisodeRequest } from './episode-runner.mjs';
 
 const limits = { wallTimeMs: 60000, maxModelRequests: 3, maxToolCalls: 4, maxHttpAttempts: 3, maxInputTokens: 300000, maxOutputTokens: 16000, maxTotalTokens: 316000 };
 const usage = (input, output) => providerUsage('openai-completions', { usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output } });
+
+test('reported-model mismatch accounts the complete response before blocking the next SDK request', () => {
+  const budget = createEpisodeBudget(limits), routing = { mode: 'auto-route', model_variant: 'grok-4.7', reported_model_ids: ['grok/grok-4.7'] };
+  budget.request(); budget.attempt();
+  let currentRequest = { id: 'r1', accounted: false, usage: usage(100, 30), assistant: { stop_reason: 'toolUse' },
+    attempts: [{ id: 'a1', response_ref: { artifact_id: 'events', line: 1 }, reported_model_observations: [
+      { value: 'grok/grok-4.6', field: '/data/event/model', ref: { artifact_id: 'events', line: 2 } }] }] }, stop;
+  const request = currentRequest, recorded = [];
+  const args = { request, budget, routing, record: (type, value) => recorded.push({ type, value: structuredClone(value) }), onStop: error => { stop ??= error; } };
+  finishEpisodeRequest(args); finishEpisodeRequest(args);
+  assert.deepEqual([budget.state.input_tokens, budget.state.output_tokens, budget.state.tokens], [100, 30, 130]);
+  assert.equal(recorded[0].type, 'request_usage_accounted'); assert.equal(recorded[0].value.budget.tokens, 130);
+  assert.equal(stop.code, 'BENCHMARK_REPORTED_MODEL_MISMATCH');
+  assert.throws(() => reserveEpisodeRequest({ budget, captureOnly: false, priorStop: stop,
+    clearRequest: () => { currentRequest = undefined; }, onStop() {} }), { code: 'BENCHMARK_REPORTED_MODEL_MISMATCH' });
+  assert.equal(currentRequest, undefined); assert.equal(request.assistant.stop_reason, 'toolUse');
+  assert.equal(budget.state.requests, 1); assert.equal(budget.state.attempts, 1);
+});
+
+test('reported-model missing is separate from a network failure and never requires a pre-send label', () => {
+  const routing = { mode: 'fixed-route', model_variant: 'gpt-6.2-sol', reported_model_ids: ['imile-win-gpt/gpt-6.2-sol'] };
+  for (const [attempt, expected] of [[{ response_ref: { artifact_id: 'events', line: 1 }, status: 200 }, 'BENCHMARK_REPORTED_MODEL_MISSING'],
+    [{ error_ref: { artifact_id: 'events', line: 2 } }, 'BENCHMARK_REPORTED_MODEL_UNAVAILABLE_AFTER_PROVIDER_ERROR']]) {
+    const budget = createEpisodeBudget(limits); let stop;
+    finishEpisodeRequest({ request: { id: 'r', attempts: [{ id: 'a', ...attempt }], usage: usage(5, 7) }, budget, routing,
+      record() {}, onStop: error => { stop = error; } });
+    assert.equal(stop.code, expected); assert.equal(budget.state.tokens, 12);
+  }
+  const budget = createEpisodeBudget(limits);
+  finishEpisodeRequest({ request: { id: 'capture', attempts: [] }, budget, routing, captureOnly: true,
+    record() { assert.fail('capture has no completed model response'); }, onStop() { assert.fail('capture needs no server label'); } });
+  assert.equal(budget.state.tokens, 0);
+});
 
 test('raw usage retains missing fields and does not borrow normalized Pi zeros', () => {
   assert.equal(providerUsage('openai-completions', {}), null);

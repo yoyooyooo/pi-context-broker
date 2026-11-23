@@ -93,7 +93,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   for (const file of [proof.pi_manifest, proof.sdk_entry, ...proof.source_modules]) assert.equal(sha(await readFile(file.path)), file.sha256, 'Verified adapter module changed');
   const adapterReceipts = [...new Set(registry.models.map(model => model.api))].map(api => ({ api, id: 'maintained-pi-' + api,
     version: '1.0.0', status: 'passed', sha256: sha(proofBytes) }));
-  const models = verifiedModelConditions({ registry, adapterReceipts, parameters: setup.models.parameters, window: setup.models.window });
+  const models = verifiedModelConditions({ registry, adapterReceipts, parameters: setup.models.parameters, window: setup.models.window,
+    ...(setup.models.routing ? { routing: setup.models.routing } : {}) });
   const credential = { source_file: setup.models.source_file, provider: setup.models.provider, api_key_env: registry.api_key_env };
   const runtime = setup.runtime;
   assert.ok(runtime && isAbsolute(runtime.node) && isAbsolute(runtime.pi) && isAbsolute(runtime.bun));
@@ -185,7 +186,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   }));
   const protocol = preregisterComparison({ id: setup.id, phase: setup.phase, purpose: setup.purpose, environments, models,
     corpus: corpus.publicCorpus, cases, repetitions: setup.repetitions ?? 1, budget: setup.budget, decision: setup.decision,
-    analysis: setup.analysis, pilotScope: pilotScopePolicy(setup.pilot_scope), allowedChanges: setup.allowed_changes, orderingSeed: setup.ordering_seed });
+    analysis: setup.analysis, pilotScope: pilotScopePolicy(setup.pilot_scope, { modelCount: models.length }), allowedChanges: setup.allowed_changes, orderingSeed: setup.ordering_seed });
   assert.deepEqual(scheduleProtocol(protocol), scheduled, 'Fixture ownership differs from the final frozen comparison schedule');
   const conditions = Object.fromEntries(protocol.conditions.map(condition => {
     const ei = environments.findIndex(environment => environment.id === condition.environment_id), candidate = setup.candidates[ei];

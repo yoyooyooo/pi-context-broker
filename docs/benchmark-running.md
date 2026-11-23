@@ -10,6 +10,11 @@ records the actual GPT-6.2 Sol and Grok-4.6 results, the retained local-budget
 classification repair, and the later Notion-startup stop. Its frozen plan is
 stopped; it is evidence for review, not a ready-to-resume setup.
 
+For newly authorized work after a closed scope, use
+[finite prospective cohorts](benchmark-prospective-cohorts.md). They retain the
+original campaign ledger, freeze all historical costs and failures, and require
+fresh apparatus evidence for each concrete model set.
+
 ## Start from an existing setup
 
 Read the task's setup JSON, its purpose and total budget before running anything.

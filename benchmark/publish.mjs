@@ -8,7 +8,7 @@ import { scoreExperiment } from './analysis/compare.mjs';
 import { renderAnalysisMarkdown, renderMetricSvg, reportTables, toCsv } from './analysis/report.mjs';
 import { verifyArtifactFiles, verifyBundle } from './evidence/store.mjs';
 
-export const PUBLICATION_VERSION = '1.0.2';
+export const PUBLICATION_VERSION = '1.0.4';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const within = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
@@ -25,7 +25,8 @@ const escapeRegex = value => value.replace(/[.*+?^{}$()|[\]\\]/g, '\\$&');
 const wholeIdentifierPattern = value => new RegExp('(?<![\\p{L}\\p{N}_-])' + escapeRegex(value) + '(?![\\p{L}\\p{N}_-])', 'gu');
 const executableFiles = ['benchmark/protocol.mjs', 'benchmark/metrics.json', 'benchmark/schemas/protocol.schema.json',
   'benchmark/schemas/environment-manifest.schema.json', 'benchmark/analysis/compare.mjs', 'benchmark/analysis/statistics.mjs',
-  'benchmark/analysis/report.mjs', 'benchmark/analysis/metrics.mjs', 'benchmark/evidence/store.mjs', 'benchmark/evidence/normalize.mjs'];
+  'benchmark/analysis/report.mjs', 'benchmark/analysis/metrics.mjs', 'benchmark/evidence/store.mjs', 'benchmark/evidence/normalize.mjs',
+  'benchmark/reported-model.mjs', 'benchmark/provider-binding.mjs'];
 const asList = value => value === undefined ? [] : (assert.ok(Array.isArray(value) && value.every(x => typeof x === 'string' && x.length), 'Redaction lists contain nonempty strings'), value);
 const unique = values => [...new Set(values)];
 const alias = (kind, value) => '[' + kind + ':' + hash(kind + '\0' + value).slice(0, 20) + ']';
@@ -165,15 +166,29 @@ export function createPublicSanitizer({ redactions = {}, material = [] } = {}) {
       return text(decoded).replaceAll('~', '~0').replaceAll('/', '~1');
     }).join('/');
   }
-  function walk(value, parentKey = '') {
-    if (typeof value === 'string') return parentKey === 'pointer' ? pointer(value) : text(value);
+  function requestUrlPath(value) {
+    if (!/^\/(?!\/)/.test(value)) return text(value);
+    // An observed HTTP path is not a filesystem path. Reuse URL sanitization
+    // so query credentials and private identifiers are still projected.
+    const origin = 'https://request-path.invalid';
+    const projected = text(origin + value, { nested: false, filesystem: false });
+    assert.ok(projected.startsWith(origin), 'Public HTTP path projection changed its placeholder origin');
+    return projected.slice(origin.length);
+  }
+  function walk(value, parentKey = '', httpAttemptData = false) {
+    if (typeof value === 'string') {
+      const modelField = parentKey === 'field' && ['/data/event/model', '/data/event/response/model'].includes(value);
+      return parentKey === 'pointer' || modelField ? pointer(value) : text(value);
+    }
     if (Array.isArray(value)) return value.map(child => walk(child));
     if (!object(value)) return value;
     const output = {};
     for (const [key, child] of Object.entries(value)) {
       const projected = text(key);
       assert.ok(!Object.hasOwn(output, projected), 'Public redaction would merge distinct object keys');
-      output[projected] = secretKey.test(key) ? conceal(child) : walk(child, key);
+      output[projected] = secretKey.test(key) ? conceal(child)
+        : httpAttemptData && key === 'url_path' && typeof child === 'string' ? requestUrlPath(child)
+        : walk(child, key, value.type === 'http_attempt_start' && key === 'data');
     }
     return output;
   }
@@ -209,6 +224,7 @@ export function createPublicSanitizer({ redactions = {}, material = [] } = {}) {
   return { walk, text, pointer, assertClean, counts,
     policy: { version: PUBLICATION_VERSION, credentials: 'values removed; original secret mappings are never written',
       identities: 'deterministic pseudonyms; not an irreversible-anonymization claim', paths: 'machine paths and caller-supplied roots replaced',
+      http_request_paths: 'Observed HTTP URL paths retain route structure; URL credentials and private identifiers remain redacted',
       identifier_words: 'Whole-token replacement bounded by Unicode letters, digits, underscore and hyphen; longer public identifiers remain intact',
       terminal_usernames: 'POSIX long-listing owner fields; whole-token occurrences of usernames discovered from home paths, listings, or explicit input',
       explicit_secret_count: secrets.length, explicit_identifier_count: identifiers.size, explicit_path_prefix_count: prefixes.length,
@@ -280,6 +296,7 @@ verifyBinaryPublication.toString(),
 "const manifest=JSON.parse(await readFile(join(root,'public-manifest.json'),'utf8'));",
 "assert.equal(manifest.kind,'benchmark-public-evidence-package');",
 "assert.equal(manifest.manifest_sha256,fingerprint({...manifest,manifest_sha256:null}));",
+"assert.equal(manifest.raw_mapping_sha256,fingerprint(manifest.raw_mapping));",
 "for(const file of manifest.files){",
 " assert.ok(!isAbsolute(file.path));",
 " const path=resolve(root,file.path),part=relative(root,path);",
@@ -289,7 +306,8 @@ verifyBinaryPublication.toString(),
 "const input=JSON.parse(await readFile(join(root,'analysis-input.json'),'utf8'));",
 "verifyBinaryPublication(manifest,input.episodes);",
 "const pathsBySha256=Object.fromEntries(manifest.raw_mapping.map(item=>[item.public_sha256,join(root,item.public_path)]));",
-"for(const episode of input.episodes)await verifyBundle({episode},{root,pathsBySha256});",
+"const publicProjection={raw_mapping_sha256:manifest.raw_mapping_sha256,raw_mapping:manifest.raw_mapping};",
+"for(const episode of input.episodes)await verifyBundle({episode},{root,pathsBySha256,publicProjection});",
 "const analysis=scoreExperiment(input);assert.equal(analysis.analysis_sha256,manifest.public_analysis_sha256);",
 "const flag=process.argv.indexOf('--out');",
 "if(flag>=0){assert.ok(process.argv[flag+1] && isAbsolute(process.argv[flag+1]));await writeAnalysisReport({directory:resolve(process.argv[flag+1]),analysis});}",
@@ -371,6 +389,7 @@ export async function writePublicEvidencePackage({ directory, input, analysis, r
     'This package contains transformed copies of retained evidence. Whenever redaction changed a file, its original bytes are not included.',
     'The manifest maps each verified original SHA256 to the public copy SHA256 and records both byte counts. JSONL line numbers and JSON pointer locations remain usable after deterministic key pseudonymization.',
     'Inner original body hashes, HTTP entity hashes and hash-chain entries are historical claims. Redaction changes those bytes; this package does not claim that original chains can be recomputed from transformed copies.',
+    'Reported model labels, request/attempt references and provider configuration bindings are checked against transformed raw evidence. Explicit original-to-public mapping is required for this verification; private execution never accepts the public projection as original evidence. Original private endpoint/path hashes remain historical claims after redaction.',
     'Offline replay verifies public file hashes and source locators, then recomputes statistics from retained normalized observations. It does not rerun private business grading, recover secrets, call a provider, or create new executions.',
     'Counts, outcomes, unknown values, fixed denominators, intervals and decisions were compared with the original analysis before export and must be identical after identifier projection.',
     'Private oracles are not included. Credential and private identifier mappings are never written. Deterministic pseudonyms are not a guarantee of irreversible anonymization.',
@@ -431,7 +450,8 @@ export async function verifyPublicEvidencePackage({ directory }) {
   const input = JSON.parse(await readFile(join(root, 'analysis-input.json'), 'utf8'));
   verifyBinaryPublication(manifest, input.episodes);
   const pathsBySha256 = Object.fromEntries(manifest.raw_mapping.map(item => [item.public_sha256, memberPath(root, item.public_path)]));
-  for (const episode of input.episodes) await verifyBundle({ episode }, { root, pathsBySha256 });
+  const publicProjection = { raw_mapping_sha256: manifest.raw_mapping_sha256, raw_mapping: manifest.raw_mapping };
+  for (const episode of input.episodes) await verifyBundle({ episode }, { root, pathsBySha256, publicProjection });
   const analysis = scoreExperiment(input);
   assert.equal(analysis.analysis_sha256, manifest.public_analysis_sha256);
   assert.equal(fingerprint(analysisMeaning(analysis)), manifest.unchanged_analysis_meaning_sha256);

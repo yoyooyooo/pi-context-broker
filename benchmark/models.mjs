@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
+import { validateRoutingPolicy } from './reported-model.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const APIS = new Set(['openai-completions', 'openai-responses']);
@@ -55,13 +56,19 @@ export async function resolveModelCredential({ sourceFile, provider, apiKeyEnv =
   return { [apiKeyEnv]: value };
 }
 
-export function verifiedModelConditions({ registry, adapterReceipts, parameters, window }) {
+export function verifiedModelConditions({ registry, adapterReceipts, parameters, window, routing }) {
   assert.ok(Date.parse(window.start) < Date.parse(window.end));
+  if (routing !== undefined) {
+    assert.ok(routing && typeof routing === 'object' && !Array.isArray(routing), 'Routing policies must be keyed by selected route');
+    assert.deepEqual(Object.keys(routing).sort(), registry.models.map(model => model.id).sort(), 'Every selected route needs exactly one frozen routing policy');
+    for (const policy of Object.values(routing)) validateRoutingPolicy(policy);
+  }
   return registry.models.map(model => {
     const adapter = adapterReceipts.find(value => value.api === model.api);
     assert.ok(adapter?.status === 'passed' && /^[a-f0-9]{64}$/.test(adapter.sha256), 'No verified API/usage receipt for ' + model.api);
     assert.ok(Number.isSafeInteger(parameters.maxTokens) && parameters.maxTokens > 0 && parameters.maxTokens <= model.maxTokens);
     return { id: registry.provider + '/' + model.id, family: model.id, provider: registry.provider, route: model.id, api: model.api,
+      ...(routing === undefined ? {} : { routing: structuredClone(routing[model.id]) }),
       adapter: { id: adapter.id, version: adapter.version, verification: 'verified', evidence_sha256: adapter.sha256 },
       parameters, backend: { identity: null, observability: 'opaque_alias', window },
       adoption: { mode: 'as_is', development_budget_id: null, development_material_ids: [], confirmation_material_ids: [] } };

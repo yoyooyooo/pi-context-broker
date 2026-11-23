@@ -11,13 +11,16 @@ import { exampleEnvelope, exampleProtocol } from './analysis/fixtures.mjs';
 import { normalizeEpisode } from './evidence/normalize.mjs';
 import { scoreExperiment } from './analysis/compare.mjs';
 import { createPublicSanitizer, writePublicEvidencePackage, verifyPublicEvidencePackage } from './publish.mjs';
+import { assessReportedModel } from './reported-model.mjs';
+import { deriveRedactedProviderBinding } from './provider-binding.mjs';
+import { verifyBundle } from './evidence/store.mjs';
 
 const run=promisify(execFile),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const privateId='4205636c-236e-8110-9a1a-ce92cfb83ee0',secret='synthetic-export-secret-1234567890';
 const markerBytes=Buffer.from('00ff0a0d2a6d','hex');
 const markerApproval={sha256:'72ee7e95938b82284a312ea248777aad5e5220a20242ccf98d103d33427fc681',
  bytes:6,kind:'source-bytes',purpose:'public-synthetic-fixture'};
-async function fixture({terminalOwner}={}){
+async function fixture({terminalOwner,reportedRoute}={}){
  const root=await mkdtemp(join(tmpdir(),'benchmark-public-unit-')),originals=join(root,'private-originals');
  await mkdir(originals);
  const protocol=exampleProtocol({cases:[{id:'c1',family:'unit',cluster_id:'cluster',material_id:'material'}]});
@@ -38,6 +41,21 @@ async function fixture({terminalOwner}={}){
    if(key==='sha256'&&child===old)value[key]=sha(bytes);else update(child);
   }}
   update(f.input);f.input.artifacts[0].bytes=Buffer.byteLength(bytes);await writeFile(f.input.artifacts[0].path,bytes);
+  if(reportedRoute){
+   const routing={mode:'fixed-route',model_variant:'synthetic-model',reported_model_ids:[reportedRoute]};
+   Object.assign(f.input.identity,{model_routing:routing,model_route:reportedRoute,
+    model_api:'openai-completions',model_provider:'synthetic-provider'});
+   const providerRows=f.input.attempts.map(attempt=>({type:'provider_stream_event',data:{
+    request_id:attempt.request_id,attempt_id:attempt.id,provider:'synthetic-provider',api:'openai-completions',
+    model:reportedRoute,event:{model:reportedRoute}}}));
+   const providerText=providerRows.map(JSON.stringify).join('\n')+'\n';
+   const providerPath=join(originals,condition+'-reported.jsonl'),providerSha=sha(providerText);
+   await writeFile(providerPath,providerText);
+   f.input.artifacts.push({id:'provider-events',path:providerPath,kind:'jsonl',sha256:providerSha,bytes:Buffer.byteLength(providerText)});
+   f.input.attempts.forEach((attempt,i)=>{attempt.reported_model=assessReportedModel({routing,sent:true,
+    observations:[{value:reportedRoute,field:'/data/event/model',bound:true,
+     ref:{artifact_id:'provider-events',sha256:providerSha,line:i+1}}]});});
+  }
   const lines=[{sequence:1,type:'unit',path:'/Users/unit-person/private',secret,usage:{input_tokens:100}},{sequence:2,type:'unit',page_id:privateId,value:'kept'}];
   const text=lines.map(JSON.stringify).join('\n')+'\n',id='events-'+privateId,file=join(originals,condition+'.jsonl');
   await writeFile(file,text);f.input.artifacts.push({id,path:file,kind:'jsonl',sha256:sha(text),bytes:Buffer.byteLength(text)});
@@ -53,6 +71,89 @@ async function addBinary(f,{bytes=markerBytes,kind='source-bytes',episodeIndex=0
  episode.artifacts.push(artifact);episode.episode_sha256=fingerprint({...episode,episode_sha256:null});
  return artifact;
 }
+
+async function redactedProviderFixture(){
+ const f=await fixture(),route='private-route/synthetic-model',provider='private-provider-label',api='openai-completions';
+ const routing={mode:'fixed-route',model_variant:'synthetic-model',reported_model_ids:[route]};
+ const model=f.input.protocol.models[0];
+ Object.assign(model,{provider,route,api,parameters:{maxTokens:4096},routing});
+ f.input.protocol.protocol_sha256=fingerprint({...f.input.protocol,protocol_sha256:null});
+ const selected={id:route,api,provider:'[REDACTED_CREDENTIAL]',baseUrl:'http://127.0.0.1:1234/v1'};
+ const projection={model:selected,model_parameters:model.parameters,model_configuration:{definition:{providers:{
+  [provider]:{api,baseUrl:selected.baseUrl,models:[{id:route}]},
+ }}}};
+ for(const episode of f.input.episodes){
+  Object.assign(episode.identity,{model_id:model.id,model_provider:provider,model_route:route,model_api:api,model_routing:routing});
+  const artifact=async(id,value,kind='json')=>{
+   const bytes=kind==='jsonl'?value.map(canonicalJson).join('\n')+'\n':canonicalJson(value)+'\n';
+   const item={id,path:join(f.originals,episode.identity.condition_id+'-'+id),kind,sha256:sha(bytes),bytes:Buffer.byteLength(bytes)};
+   await writeFile(item.path,bytes);episode.artifacts.push(item);return item;
+  };
+  const ref=(item,pointer='')=>({artifact_id:item.id,sha256:item.sha256,pointer});
+  const line=(item,index)=>({artifact_id:item.id,sha256:item.sha256,line:index+1});
+  const candidate=await artifact('candidate-observed',{projection});
+  const expected=await artifact('collection-provider-binding-expectation',{projection});
+  const admission=await artifact('admission-comparison',{differences:[],expected_file:{sha256:expected.sha256}});
+  const protocol=await artifact('collection-protocol',f.input.protocol);
+  const payloads=episode.attempts.map(()=>({model:route,messages:[{role:'user',content:'Synthetic request'}]}));
+  const payload=await artifact('payloads',payloads),eventRows=[],transportRows=[];
+  episode.attempts.forEach((attempt,index)=>{
+   attempt.transport_id=index+1;
+   eventRows.push(
+    {type:'model_request_start',data:{request_id:attempt.request_id,capture_only:false,model:selected}},
+    {type:'http_attempt_start',data:{request_id:attempt.request_id,attempt_id:attempt.id,method:'POST',
+     url_origin:'http://127.0.0.1:1234',url_path:'/v1/chat/completions'}},
+    {type:'provider_stream_event',data:{request_id:attempt.request_id,attempt_id:attempt.id,
+     provider:'[REDACTED_CREDENTIAL]',api,model:route,event:{model:route}}});
+   transportRows.push(
+    {phase:'request_start',category:'model',method:'POST',id:attempt.transport_id,
+     originSha256:sha('http://127.0.0.1:1234'),pathSha256:sha('/v1/chat/completions')},
+    {phase:'request_sent',id:attempt.transport_id,requestBodySha256:sha(canonicalJson(payloads[index]))},
+    {phase:'request_end',id:attempt.transport_id});
+  });
+  const events=await artifact('events',eventRows,'jsonl'),transport=await artifact('transport',transportRows,'jsonl');
+  const requests=episode.attempts.map((attempt,index)=>({id:attempt.request_id,usage_attempt_id:attempt.id,
+   payload_sha256:sha(canonicalJson(payloads[index])),start_ref:line(events,index*3),payload_ref:ref(payload,'/'+index),
+   attempts:[{id:attempt.id,transport_id:attempt.transport_id,start_ref:line(events,index*3+1)}]}));
+  const runtime=await artifact('collection-runtime-result',{requests});
+  episode.attempts.forEach((attempt,index)=>{
+   const refs=[ref(candidate),ref(expected),ref(admission),ref(protocol),ref(runtime),ref(payload,'/'+index),
+    ...[0,1,2].map(offset=>line(events,index*3+offset)),...[0,1,2].map(offset=>line(transport,index*3+offset))];
+   attempt.provider_binding=deriveRedactedProviderBinding({event:eventRows[index*3+2],request:requests[index],attemptId:attempt.id,
+    requestStart:eventRows[index*3],candidate:{projection},expected:{projection},admission:{differences:[]},
+    payload:payloads[index],attemptStart:eventRows[index*3+1],transportStart:transportRows[index*3],
+    transportSent:transportRows[index*3+1],transportEnd:transportRows[index*3+2],model,refs});
+   assert.equal(attempt.provider_binding?.status,'known');
+   attempt.reported_model=assessReportedModel({routing,sent:true,refs:attempt.refs,
+    observations:[{value:route,field:'/data/event/model',bound:true,ref:line(events,index*3+2)}]});
+  });
+  episode.episode_sha256=fingerprint({...episode,episode_sha256:null});
+ }
+ return f;
+}
+test('redacted-provider request chains survive publication and independent replay with explicit manifest authorization',async()=>{
+ const f=await redactedProviderFixture(),sourceHashes=new Map();
+ for(const episode of f.input.episodes){
+  assert.equal((await verifyBundle({episode},{root:f.root})).valid,true);
+  for(const artifact of episode.artifacts)sourceHashes.set(artifact.path,sha(await readFile(artifact.path)));
+ }
+ const out=await writePublicEvidencePackage({...f,rawRoot:f.root}),episode=out.input.episodes[0];
+ const events=episode.artifacts.find(item=>item.id==='events');
+ const eventRows=(await readFile(join(out.directory,events.path),'utf8')).trimEnd().split('\n').map(JSON.parse);
+ assert.equal(eventRows.find(row=>row.type==='http_attempt_start').data.url_path,'/v1/chat/completions');
+ assert.equal(episode.attempts[0].provider_binding.status,'known');
+ assert.match(episode.identity.model_provider,/^\[identity:/);
+ assert.equal(out.verified.valid,true);
+ await assert.rejects(()=>verifyBundle({episode},{root:out.directory}),/explicit verified manifest mapping/);
+ const privateClaim=structuredClone(episode);delete privateClaim.identity.public_projection;
+ privateClaim.episode_sha256=fingerprint({...privateClaim,episode_sha256:null});
+ await assert.rejects(()=>verifyBundle({episode:privateClaim},{root:out.directory}),/binding differs/);
+ const {stdout}=await run(process.execPath,[join(out.directory,'replay.mjs')],{timeout:15000});
+ assert.equal(JSON.parse(stdout).analysis_sha256,out.analysis.analysis_sha256);
+ assert.equal(JSON.parse(stdout).model_requests,0);
+ for(const [path,hash] of sourceHashes)assert.equal(sha(await readFile(path)),hash);
+});
+
 test('sanitizer removes credentials and machine identity while preserving usage numbers and pointer keys',()=>{
  const s=createPublicSanitizer({redactions:{secrets:[secret]}});
  const value=s.walk({authorization:'Bearer '+secret,api_key:{nested:secret},token_v2:'not-a-public-value',encrypted_content:'opaque-provider-state',note:'file /Users/unit-person/a.txt',
@@ -63,6 +164,17 @@ test('sanitizer removes credentials and machine identity while preserving usage 
  assert.equal(value.api_key.nested,'[REDACTED]');assert.equal(value.token_v2,'[REDACTED]');assert.equal(value.encrypted_content,'[REDACTED]');assert.equal(JSON.parse(value.nested).input_tokens,101);
  const key=value.pointer.split('/')[1];assert.equal(value[key].total,3);
  assert.ok(!value.endpoint.includes('127.0.0.1'));
+});
+test('observed HTTP paths preserve routing structure without exposing query credentials or filesystem fields',()=>{
+ const s=createPublicSanitizer();
+ const projected=s.walk({type:'http_attempt_start',data:{url_path:'/v1/chat/completions?api_key=private-value&mode=stream',
+  diagnostic_path:'/private/project/config.json'},unrelated:{url_path:'/opt/private/config.json'}});
+ assert.match(projected.data.url_path,/^\/v1\/chat\/completions\?/);
+ assert.equal(new URL(projected.data.url_path,'https://request.invalid').searchParams.get('api_key'),'[REDACTED]');
+ assert.equal(new URL(projected.data.url_path,'https://request.invalid').searchParams.get('mode'),'stream');
+ assert.match(projected.data.diagnostic_path,/^\[path:/);assert.match(projected.unrelated.url_path,/^\[path:/);
+ assert.ok(!JSON.stringify(projected).includes('private-value'));
+ s.assertClean(JSON.stringify(projected));
 });
 test('public export preserves metrics, unknowns, raw line refs and original hashes with offline replay',async()=>{
  const f=await fixture(),before=scoreExperiment(f.input);
@@ -80,6 +192,24 @@ test('public export preserves metrics, unknowns, raw line refs and original hash
  const replay=JSON.parse(stdout);assert.equal(replay.analysis_sha256,exported.analysis.analysis_sha256);assert.equal(replay.model_requests,0);
  const again=await writePublicEvidencePackage({...f,rawRoot:f.root});assert.equal(again.manifest_sha256,exported.manifest_sha256);
  const original=await readFile(f.input.episodes[0].artifacts[0].path,'utf8');assert.ok(original.includes(secret)&&original.includes(privateId));
+});
+test('reported-model evidence survives identifier projection and standalone replay',async()=>{
+ const f=await fixture({reportedRoute:'private-route/synthetic-model'});
+ const exported=await writePublicEvidencePackage({...f,rawRoot:f.root,
+  redactions:{...f.redactions,identifier_words:['private-route']}});
+ const projected=JSON.parse(await readFile(join(exported.directory,'analysis-input.json'),'utf8'));
+ for(const episode of projected.episodes){
+  assert.equal(episode.identity.model_routing.model_variant,'synthetic-model');
+  assert.ok(!episode.identity.model_routing.reported_model_ids[0].includes('private-route'));
+  for(const attempt of episode.attempts){
+   assert.equal(attempt.reported_model.status,'matched');
+   assert.equal(attempt.reported_model.assurance,'provider_reported_label_not_backend_attestation');
+   assert.deepEqual(attempt.reported_model.reported_ids,episode.identity.model_routing.reported_model_ids);
+  }
+ }
+ assert.ok((await readFile(join(exported.directory,'offline/benchmark/reported-model.mjs'),'utf8')).includes('assessReportedModel'));
+ const {stdout}=await run(process.execPath,[join(exported.directory,'replay.mjs')],{timeout:15000});
+ assert.equal(JSON.parse(stdout).model_requests,0);
 });
 test('changed original raw bytes cannot be laundered into a public evidence package',async()=>{
  const f=await fixture();await writeFile(f.input.episodes[0].artifacts[0].path,'changed\n');
@@ -106,7 +236,7 @@ test('reviewed synthetic binary bytes retain their identity through publication 
  assert.equal(sha(markerBytes),markerApproval.sha256);
  const out=await writePublicEvidencePackage({...f,rawRoot:f.root,analysis:before,
   reviewedBinaryArtifacts:[markerApproval],redactions:{...f.redactions,identifier_words:['yoyo'],terminal_usernames:['yoyo']}});
- assert.equal(out.manifest.publication_version,'1.0.2');
+ assert.equal(out.manifest.publication_version,'1.0.4');
  assert.deepEqual(out.manifest.policy.reviewed_binary_artifacts,[markerApproval]);
  const row=out.manifest.raw_mapping.find(item=>item.source_sha256===artifact.sha256);
  assert.equal(row.format,'binary');assert.equal(row.changed,false);
@@ -183,7 +313,7 @@ test('terminal user redaction propagates through normalized results and raw arti
  assert.equal(projected.content[0].text,projected.structuredContent.output);
  assert.match(projected.content[0].text,/yoyooyooo/);
  assert.deepEqual(exported.analysis.conditions.map(x=>x.counts),before.conditions.map(x=>x.counts));
- assert.equal(exported.manifest.publication_version,'1.0.2');
+ assert.equal(exported.manifest.publication_version,'1.0.4');
  assert.ok(exported.manifest.policy.terminal_username_count>0);
  const rawArtifact=f.input.episodes[0].artifacts[0];
  const mapping=exported.manifest.raw_mapping.find(row=>row.source_sha256===rawArtifact.sha256);

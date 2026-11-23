@@ -102,6 +102,28 @@
             "type": "string",
             "minLength": 1
           },
+          "routing": {
+            "type": "object",
+            "properties": {
+              "mode": { "enum": ["fixed-route", "auto-route"] },
+              "model_variant": {
+                "type": "string",
+                "maxLength": 120,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+              },
+              "reported_model_ids": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "maxLength": 240,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+                }
+              }
+            },
+            "required": ["mode", "model_variant", "reported_model_ids"],
+            "additionalProperties": false
+          },
           "api": {
             "type": "string",
             "minLength": 1
@@ -1432,48 +1454,48 @@
               "const": true
             },
             "scope": {
-              "type": "object",
-              "properties": {
-                "version": {
-                  "const": 1
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "version": { "const": 1 },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+                    },
+                    "role": { "enum": ["gate", "expansion"] },
+                    "gate_episodes": { "const": 16 },
+                    "minimum_valid_real_per_condition": { "const": 4 },
+                    "history_quality": { "const": "excluded_retained_in_campaign_costs" },
+                    "legacy_first24": { "const": "incomplete_not_satisfied" },
+                    "new_unknown_usage": { "const": "stop_scope" }
+                  },
+                  "required": ["version", "id", "role", "gate_episodes",
+                    "minimum_valid_real_per_condition", "history_quality", "legacy_first24", "new_unknown_usage"],
+                  "additionalProperties": false
                 },
-                "id": {
-                  "type": "string",
-                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
-                },
-                "role": {
-                  "enum": [
-                    "gate",
-                    "expansion"
-                  ]
-                },
-                "gate_episodes": {
-                  "const": 16
-                },
-                "minimum_valid_real_per_condition": {
-                  "const": 4
-                },
-                "history_quality": {
-                  "const": "excluded_retained_in_campaign_costs"
-                },
-                "legacy_first24": {
-                  "const": "incomplete_not_satisfied"
-                },
-                "new_unknown_usage": {
-                  "const": "stop_scope"
+                {
+                  "type": "object",
+                  "properties": {
+                    "version": { "const": 1 },
+                    "kind": { "const": "benchmark-prospective-cohort" },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+                    },
+                    "role": { "enum": ["gate", "expansion"] },
+                    "model_count": { "type": "integer", "minimum": 1, "maximum": 6 },
+                    "gate_episodes": { "type": "integer", "minimum": 8, "maximum": 144 },
+                    "minimum_valid_real_per_condition": { "const": 4 },
+                    "reservation_limit": { "type": "integer", "minimum": 24, "maximum": 144 },
+                    "history_quality": { "const": "excluded_retained_in_campaign_costs" },
+                    "new_unknown_usage": { "const": "stop_scope" }
+                  },
+                  "required": ["version", "kind", "id", "role", "model_count", "gate_episodes",
+                    "minimum_valid_real_per_condition", "reservation_limit", "history_quality", "new_unknown_usage"],
+                  "additionalProperties": false
                 }
-              },
-              "required": [
-                "version",
-                "id",
-                "role",
-                "gate_episodes",
-                "minimum_valid_real_per_condition",
-                "history_quality",
-                "legacy_first24",
-                "new_unknown_usage"
-              ],
-              "additionalProperties": false
+              ]
             }
           },
           "required": [

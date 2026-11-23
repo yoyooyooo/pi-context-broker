@@ -93,6 +93,105 @@ function interactionFixture() {
   return seal(value);
 }
 
+function cohortFixture(modelCount = 1, role = 'gate') {
+  const value = modelCount === 2 ? interactionFixture() : frozenFixture();
+  if (modelCount === 1) value.purpose = 'native_calibration';
+  value.allowed_changes = [...new Set([...value.allowed_changes, 'pi_mode', 'extensions', 'tools', 'native_root', 'sources'])];
+  const native = value.environments[1]; native.pi.mode = 'native';
+  native.pi.extensions = native.pi.extensions.filter(extension => extension.role !== 'broker');
+  native.pi.native_root = { path: '${RUN_ROOT}/skills', content_sha256: value.corpus.content_sha256 };
+  native.pi.sources = [{ id: 'native-corpus', kind: 'native', content_sha256: value.corpus.content_sha256 }];
+  const caseCount = role === 'gate' ? 4 : 8, original = value.corpus.cases[0];
+  value.corpus.cases = Array.from({ length: caseCount }, (_, index) => ({ ...clone(original),
+    id: 'cohort-case-' + index, material_id: 'cohort-material-' + index, cluster_id: 'cohort-cluster-' + index }));
+  value.conditions.forEach(condition => { condition.case_ids = value.corpus.cases.map(item => item.id); });
+  value.models.forEach(model => {
+    model.route = 'fixed/' + model.id;
+    model.routing = { mode: 'fixed-route', model_variant: model.id, reported_model_ids: [model.route] };
+  });
+  value.pairs = value.models.flatMap(model => value.corpus.cases.map(item => ({
+    id: 'pair-' + model.id + '-' + item.id, case_id: item.id,
+    condition_ids: value.conditions.filter(condition => condition.model_id === model.id).map(condition => condition.id),
+    repeat: 0, seed: 0,
+  })));
+  value.policies.pilot.scope = { version: 1, kind: 'benchmark-prospective-cohort', id: 'synthetic-cohort', role,
+    model_count: modelCount, gate_episodes: modelCount * 8, minimum_valid_real_per_condition: 4,
+    reservation_limit: modelCount * 24, history_quality: 'excluded_retained_in_campaign_costs', new_unknown_usage: 'stop_scope' };
+  return seal(value);
+}
+
+for (const modelCount of [1, 2]) for (const role of ['gate', 'expansion']) {
+  test('prospective cohort freezes ' + modelCount + ' models for ' + role, () => {
+    const value = cohortFixture(modelCount, role);
+    assertValid(value);
+    assert.equal(value.pairs.length * 2, modelCount * (role === 'gate' ? 8 : 16));
+  });
+}
+
+for (const [name, change, code] of [
+  ['wrong model count', v => { v.policies.pilot.scope.model_count = 2; }, 'cohort_conditions'],
+  ['missing route contract', v => { delete v.models[0].routing; }, 'cohort_routing_required'],
+  ['wrong gate allowance', v => { v.policies.pilot.scope.gate_episodes = 16; }, 'cohort_limits'],
+  ['extra reservation allowance', v => { v.policies.pilot.scope.reservation_limit = 25; }, 'cohort_limits'],
+  ['repeat substituted for a first observation', v => { v.pairs[0].repeat = 1; }, 'cohort_repetitions'],
+  ['reserved replacement', v => { v.policies.reruns.max_episodes = 1; }, 'cohort_repetitions'],
+  ['incomplete case schedule', v => { v.pairs.pop(); }, 'cohort_schedule'],
+  ['duplicated condition cell', v => { v.conditions[1].environment_id = v.conditions[0].environment_id; }, 'cohort_cells'],
+]) test('prospective cohort rejects ' + name, () => {
+  const value = cohortFixture(); change(value); assertCode(seal(value), code);
+});
+
+test('legacy sixteen-episode scope remains valid without a routing policy', () => {
+  const value = cohortFixture(2);
+  value.models.forEach(model => { delete model.routing; });
+  value.policies.pilot.scope = { version: 1, id: 'legacy-scope', role: 'gate', gate_episodes: 16,
+    minimum_valid_real_per_condition: 4, history_quality: 'excluded_retained_in_campaign_costs',
+    legacy_first24: 'incomplete_not_satisfied', new_unknown_usage: 'stop_scope' };
+  assertValid(seal(value));
+});
+
+test('auto route policy binds the requested variant and concrete provider-reported aliases', () => {
+  const value = cohortFixture();
+  value.models[0].route = 'auto/' + value.models[0].id;
+  value.models[0].routing.mode = 'auto-route';
+  assertValid(seal(value));
+});
+
+test('authorized auto alias is an opaque route condition and cannot claim a fixed backend', () => {
+  const value = cohortFixture();
+  const model = value.models[0]; model.route = 'auto/' + model.id; model.routing.mode = 'auto-route';
+  model.routing.reported_model_ids.push(model.route);
+  assertValid(seal(value));
+  model.backend.observability = 'reported'; model.backend.identity = model.id;
+  assertCode(seal(value), 'auto_backend_unverified');
+});
+
+for (const [name, change, code] of [
+  ['undeclared auto route', m => { m.route = 'auto/' + m.id; }, 'routing_mode_mismatch'],
+  ['nested auto route declared fixed', m => { m.route = 'provider/auto/' + m.id; }, 'routing_mode_mismatch'],
+  ['auto policy on fixed route', m => { m.routing.mode = 'auto-route'; }, 'routing_mode_mismatch'],
+  ['different requested variant', m => { m.route = 'fixed/another-model'; }, 'route_variant_mismatch'],
+  ['different reported variant', m => { m.routing.reported_model_ids = ['another-model']; }, 'reported_model_alias'],
+  ['auto alias as variant evidence', m => { m.routing.reported_model_ids = ['auto/' + m.id]; }, 'reported_model_alias'],
+  ['group alias as variant evidence', m => { m.routing.reported_model_ids = ['provider/group/' + m.id]; }, 'reported_model_alias'],
+  ['duplicate reported alias', m => { m.routing.reported_model_ids.push(m.routing.reported_model_ids[0]); }, 'duplicate_identity'],
+]) test('reported model contract rejects ' + name, () => {
+  const value = cohortFixture(); change(value.models[0]); assertCode(seal(value), code);
+});
+
+test('model condition identity includes its reported-model contract', () => {
+  const value = modelComparison();
+  value.models[1] = { ...clone(value.models[0]), id: value.models[1].id };
+  const variant = 'synthetic-model';
+  value.models.forEach(model => {
+    model.route = 'fixed/' + variant;
+    model.routing = { mode: 'fixed-route', model_variant: variant, reported_model_ids: [variant] };
+  });
+  assertCode(seal(value), 'model_condition_same');
+  value.models[1].routing.reported_model_ids = ['provider/' + variant];
+  assertValid(seal(value));
+});
+
 test('optional analysis policy is frozen with verified bounds and ordered budget cutoffs', () => {
   const value = frozenFixture();
   assertValid(value);

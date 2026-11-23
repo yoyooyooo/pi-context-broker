@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fingerprint, validateProtocol } from './protocol.mjs';
+import { EVIDENCE_VERSION } from './evidence/normalize.mjs';
+import { ANALYSIS_VERSION } from './analysis/compare.mjs';
 import { createPreregistrationTemplate } from './templates/preregistration.mjs';
 import { bindPublicCaseToFixture, materializeLocal, planCaseVariant, validateCorpus } from './corpus/index.mjs';
 import { inventoryPublicInputs } from './subject.mjs';
@@ -116,7 +118,8 @@ export function preregisterComparison({ id, phase, purpose, environments, models
   if (analysis !== undefined) value.policies.analysis = structuredClone(analysis);
   if (pilotScope !== undefined) value.policies.pilot.scope = structuredClone(pilotScope);
   value.policies.reruns.max_episodes = 0;
-  value.policies.evidence = { ...value.policies.evidence, observer_version: 'benchmark-pi-sdk-1', normalizer_version: '1.0.0', scoring_version: '1.0.0' };
+  value.policies.evidence = { ...value.policies.evidence, observer_version: 'benchmark-pi-sdk-1',
+    normalizer_version: EVIDENCE_VERSION, scoring_version: ANALYSIS_VERSION };
   value.protocol_sha256 = fingerprint({ ...value, protocol_sha256: null });
   const validation = validateProtocol(value, { stage: 'execute' });
   assert.ok(validation.valid, JSON.stringify(validation.errors));

@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fingerprint, validateProtocol } from './protocol.mjs';
 import { verifyGateReference } from './gate.mjs';
 import { verifyPilotScope, acquirePilotScopeLease, checkCampaignScope, scopeReservationFields, reconcilePilotScopeLease } from './pilot-scope.mjs';
+import { isProspectiveCohort } from './prospective-cohort.mjs';
 
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 const safe = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(value);
@@ -79,8 +80,10 @@ export async function verifyRouteGate(plan, revisionOptions = {}) {
   if (!reference || !isAbsolute(reference.path ?? '')) return { passed: false, reason: 'route_gate_pending' };
   const gate = await verifyGateReference({ reference, environmentRoot: plan.execution.environment_root });
   if (plan.execution.pilot_scope) {
-    await verifyPilotScope(plan, revisionOptions);
-    assert.equal(gate.version, 3, 'The prospective scope requires its own v3 gate');
+    const amendment = await verifyPilotScope(plan, revisionOptions);
+    if (isProspectiveCohort(amendment)) {
+      assert.equal(gate.kind, 'benchmark-cohort-gate', 'The cohort requires its own gate'); assert.equal(gate.version, 1);
+    } else assert.equal(gate.version, 3, 'The legacy scope requires its own v3 gate');
     assert.deepEqual(gate.amendment, plan.execution.pilot_scope.amendment, 'Route gate belongs to another scope amendment');
     assert.equal(gate.scope_id, plan.execution.pilot_scope.id);
     return { passed: true, sha256: reference.sha256 };
@@ -218,7 +221,8 @@ async function runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconci
     if (plan.protocol.phase !== 'pilot') return;
     assert.equal(pilotLedgerRoot, plan.execution.pilot_ledger_root, 'Pilot ledger must remain bound to the frozen plan');
     assert.equal(await realpath(pilotLedgerRoot), pilotLedgerRoot, 'Pilot ledger cannot change to a symlink');
-    if (scopeAmendment) await verifyPilotScope(plan);
+    await checkCampaignScope(plan);
+    if (scopeAmendment) await verifyPilotScope(plan, { forReservation: true });
     const scopeFields = scopeAmendment ? scopeReservationFields(plan, scopeAmendment,
       { path: planPath, sha256: createHash('sha256').update(await readFile(planPath)).digest('hex') }) : {};
     // O_EXCL reservations make the cap independent of retries, batch names and concurrent controllers.
@@ -263,7 +267,10 @@ async function runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconci
     const runId = plan.id + '-' + String(slot.order + 1).padStart(3, '0');
     assert.ok(safe(runId));
     try { await reservePilot(runId, slot); }
-    catch (error) { if (!['PILOT_CAP', 'ROUTE_GATE'].includes(error.code)) throw error; stopReason = error.code === 'PILOT_CAP' ? 'pilot_cap' : 'route_gate_pending'; break; }
+    catch (error) {
+      if (!['PILOT_CAP', 'COHORT_CAP', 'ROUTE_GATE'].includes(error.code)) throw error;
+      stopReason = error.code === 'PILOT_CAP' ? 'pilot_cap' : error.code === 'COHORT_CAP' ? 'cohort_cap' : 'route_gate_pending'; break;
+    }
     await append('episode_started', { ...slot, run_id: runId, condition_id: slot.condition_id, budget_id: budget.id });
     newCount++;
     let result;
