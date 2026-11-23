@@ -201,7 +201,7 @@ CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/d
 
 普通产品维护与 Source 同步默认使用实际配对 CLI 随包提供的 `ntn-skills-maintain`、`ntn-skills-sync` Builtin。Broker 提供安装路径，供普通原生 `read` 读取；只有 shell 的宿主使用配对 CLI 的 `ctl builtin read`。本任务已经完整加载的指引直接复用。新库无需在 Notion 中保存官方 Skill 副本，也无需先搜索 Notion 才能找到这些产品说明。
 
-工作流来源和写入目标分别选择。随包指引不会选定 Notion source 或数据库；数据操作使用用户明确选择的来源对应的 CLI command 与 `--database ENTRY`，不能隐式取第一个来源。普通业务 Skill 的发现与同名歧义规则保持不变。同名 Notion 页面是用户维护的独立工作流，不能凭名称冒充官方 Builtin。
+工作流来源和写入目标分别选择。随包指引不会选定 Notion source 或数据库；数据操作使用用户明确选择的来源对应的 CLI command；消费传入 `--database ENTRY`，管理传入 `--entry ENTRY`，不能隐式取第一个来源。普通业务 Skill 的发现与同名歧义规则保持不变。同名 Notion 页面是用户维护的独立工作流，不能凭名称冒充官方 Builtin。
 
 用户明确选择 Notion 团队流程时，在所选来源中读取精确 ref；需要发现时只查询该来源，也可读取默认 View 之外的授权条目。真正采用时调用 `notion_use(ref)` 加载完整 Requires，本任务已准备完整闭包时可复用；被编辑目标仍只 inspect，不激活其工作流。没有原生 use 时可用同来源 CLI 的 `use EXACT_REF --database ENTRY --json`。CLI 使用规范引用，不能消费会话 `sr:` 句柄；没有可用路线就报告无法采用。pending、partial 或访问失败都不能把已选择的流程换成 Builtin。已有任务保留选中版本，只有明确刷新才采用新内容。本地和随包流程继续使用原生消费路线。
 
