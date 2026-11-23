@@ -17,7 +17,7 @@
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "6ac7c29f29ecc5aca851c836cbb113d5a1f611d1856b2fe268570efcd056c3b1",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "03f8b5d910fa200e07a253889a7169c97638a2c689cf95092d0783a368714053",
+    "packages/context-broker/scripts/host-prepare.test.ts": "edfb79c1f64f05e2c1409957f5d2701be58682248f097eeb5ad3c5cfc5751d1e",
     "packages/context-broker/scripts/session-active.test.ts": "8c028ee53bf86b253dee9a63ce6e15a8e27c811de25e4cc9936f37ab134e0e90",
     "packages/context-broker/scripts/native-read-session.test.ts": "3a08fd67cd077f4f1df1e5accca529bdbb6d59fd272352a93e78d86dc8c8afb9",
     "packages/context-broker/scripts/skill-context-session.test.ts": "71b2d3ba5d5937e164a6fa08c8ebfd0fc183019d00a8495a220a7cdee4d9c897",
@@ -835,6 +835,12 @@
       "scope": "Only the four guidance producers in index.ts change: notionWorkflowGuidance (formerly maintenanceGuidance), packagedWorkflowGuidance (formerly packagedMaintenanceGuidance), buildCliGuidance and buildToolGuidance. TypeScript AST comparison preserves all other 139 top-level statements, including 91 functions, byte-for-byte. Other protected source and regression files retain their reviewed hashes.",
       "guards": "Ordinary maintenance and sync advertise actual paired-package reads; explicit Notion workflows keep exact source/ref, Requires and failure semantics. Workflow origin does not select the write target. No source-admission, no-enabled-source gate, identity, cancellation, graph commit, active selection, recovery or provider-delivery guard changes.",
       "proof_limit": "Natural model routing, full packaged body delivery, empty-library first use and real Notion failure behavior require separate actual-session evidence. Models, configurations, views, bounds, cases, independent expected_rules, tool lock and guard mutation targets are unchanged. This whole-file hash binds reviewed bytes; it does not prove instruction compliance or implementation refinement."
+    },
+    "explicit_workflow_guidance_fixture": {
+      "reviewed_from": "d5e6b8fdb8afb1c185b96332a2342491502a0246",
+      "scope": "Only the existing cold metadata guidance regression changes its title, natural prompt and routing-text expectations. The user now explicitly selects the Notion team workflow, matching the existing source-scoped discovery behavior. Default package guidance and the no-fallback sentence are asserted separately. Reversing those exact edits restores the complete previous test file byte-for-byte.",
+      "preserved_assertions": "The pending-to-ready metadata sequence, exact controlled source and short ref, complete metadata return, absence of prepared calls, persisted selection and resource body reads are unchanged. All other test cases and production source bytes are unchanged.",
+      "proof_limit": "This is a concrete guidance and metadata regression, outside the finite state variables. Models, configurations, views, bounds, cases, independent expected_rules, tool lock and production guard mutation targets remain unchanged. Real Agent behavior still requires separate evidence."
     }
   }
 }
