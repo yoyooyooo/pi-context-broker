@@ -20,7 +20,7 @@ const privateId='4205636c-236e-8110-9a1a-ce92cfb83ee0',secret='synthetic-export-
 const markerBytes=Buffer.from('00ff0a0d2a6d','hex');
 const markerApproval={sha256:'72ee7e95938b82284a312ea248777aad5e5220a20242ccf98d103d33427fc681',
  bytes:6,kind:'source-bytes',purpose:'public-synthetic-fixture'};
-async function fixture({terminalOwner,reportedRoute}={}){
+async function fixture({terminalOwner,reportedRoute,streamingHomeFragment}={}){
  const root=await mkdtemp(join(tmpdir(),'benchmark-public-unit-')),originals=join(root,'private-originals');
  await mkdir(originals);
  const protocol=exampleProtocol({cases:[{id:'c1',family:'unit',cluster_id:'cluster',material_id:'material'}]});
@@ -57,6 +57,11 @@ async function fixture({terminalOwner,reportedRoute}={}){
      ref:{artifact_id:'provider-events',sha256:providerSha,line:i+1}}]});});
   }
   const lines=[{sequence:1,type:'unit',path:'/Users/unit-person/private',secret,usage:{input_tokens:100}},{sequence:2,type:'unit',page_id:privateId,value:'kept'}];
+  if(streamingHomeFragment){
+   const partial={content:[{type:'toolCall',arguments:{path:streamingHomeFragment}}]};
+   lines.push({type:'session_event',data:{type:'message_update',
+    assistantMessageEvent:{type:'toolcall_delta',partial},message:partial}});
+  }
   const text=lines.map(JSON.stringify).join('\n')+'\n',id='events-'+privateId,file=join(originals,condition+'.jsonl');
   await writeFile(file,text);f.input.artifacts.push({id,path:file,kind:'jsonl',sha256:sha(text),bytes:Buffer.byteLength(text)});
   f.input.business.refs.push({artifact_id:id,sha256:sha(text),line:2});
@@ -236,7 +241,7 @@ test('reviewed synthetic binary bytes retain their identity through publication 
  assert.equal(sha(markerBytes),markerApproval.sha256);
  const out=await writePublicEvidencePackage({...f,rawRoot:f.root,analysis:before,
   reviewedBinaryArtifacts:[markerApproval],redactions:{...f.redactions,identifier_words:['yoyo'],terminal_usernames:['yoyo']}});
- assert.equal(out.manifest.publication_version,'1.0.4');
+  assert.equal(out.manifest.publication_version,'1.0.5');
  assert.deepEqual(out.manifest.policy.reviewed_binary_artifacts,[markerApproval]);
  const row=out.manifest.raw_mapping.find(item=>item.source_sha256===artifact.sha256);
  assert.equal(row.format,'binary');assert.equal(row.changed,false);
@@ -299,7 +304,56 @@ test('whole-token and terminal-owner redaction preserve longer public repository
  assert.throws(()=>s.assertClean(JSON.stringify({owner:'yoyo'})),/identifier word/i);
  assert.throws(()=>s.assertClean(JSON.stringify({listing:'-rw-r--r-- 1 502 staff 3 Nov 22 file\n'})),/terminal owner/i);
  const numeric=s.text('-rw-r--r-- 1 502 staff 3 Nov 22 file\n');
- s.assertClean(numeric);assert.match(numeric,/\[username:/);
+  s.assertClean(numeric);assert.match(numeric,/\[username:/);
+});
+
+test('unfinished home components are masked without becoming global username words',()=>{
+ const fragments=['/Users/y','/home/yo','C:\\Users\\y','C:/Users/yo'];
+ const material=[...fragments.map(path=>({partial:{arguments:{path}}})),
+  {partial:{arguments:{code:"await Promise.all(['/Users/y"}}},
+  {settled:{path:'/Users/yoyo/project'}}];
+ const s=createPublicSanitizer({material});
+ const projected=s.walk(material),svg='<svg><text y="16">y yo</text></svg>';
+ s.assertClean(JSON.stringify(projected));
+ s.assertClean(svg);assert.equal(s.text(svg),svg);
+ for(const fragment of fragments)assert.ok(!JSON.stringify(projected).includes(fragment));
+ assert.match(s.text('yoyo'),/^\[username:/);
+ assert.throws(()=>s.assertClean('yoyo'),/identifier word/i);
+ assert.throws(()=>s.assertClean('/Users/y'),/machine path/i);
+});
+
+test('complete one-letter usernames and explicit home roots retain strict word protection',()=>{
+ const paths=['/Users/y/file','/home/y/file','C:\\Users\\y\\file','C:/Users/y/file'];
+ const roots=['/Users/y','/home/y','C:\\Users\\y','C:/Users/y'];
+ const options=[...paths.map(path=>({material:[path]})),
+  ...roots.map(root=>({redactions:{path_prefixes:[root]}})),
+  {redactions:{terminal_usernames:['y']}},{redactions:{identifier_words:['y']}},
+  {material:['-rw-r--r-- 1 y staff 3 Nov 22 file\n']}];
+ for(const option of options){
+  const s=createPublicSanitizer(option);
+  assert.notEqual(s.text('y'),'y');s.assertClean(s.text('y'));
+  assert.throws(()=>s.assertClean('<svg y="16"/>'),/identifier word/i);
+ }
+});
+
+test('streaming home fragments publish charts and unchanged replay sources with offline verification',async()=>{
+ const f=await fixture({streamingHomeFragment:'/Users/y'}),before=scoreExperiment(f.input);
+ const originalFiles=new Map();
+ for(const episode of f.input.episodes)for(const artifact of episode.artifacts)
+  originalFiles.set(artifact.path,await readFile(artifact.path));
+ const out=await writePublicEvidencePackage({...f,rawRoot:f.root,analysis:before});
+ assert.deepEqual(out.analysis.conditions.map(x=>x.counts),before.conditions.map(x=>x.counts));
+ assert.match(await readFile(join(out.directory,'quality.svg'),'utf8'),/\by="/);
+ for(const name of ['compare','report'])assert.deepEqual(
+  await readFile(join(out.directory,'offline/benchmark/analysis/'+name+'.mjs')),
+  await readFile(new URL('./analysis/'+name+'.mjs',import.meta.url)));
+ for(const [path,bytes] of originalFiles)assert.deepEqual(await readFile(path),bytes);
+ for(const row of out.manifest.raw_mapping)
+  assert.ok(!(await readFile(join(out.directory,row.public_path),'utf8')).includes('/Users/y'));
+ await verifyPublicEvidencePackage({directory:out.directory});
+ const {stdout}=await run(process.execPath,[join(out.directory,'replay.mjs')],{timeout:15000});
+ const replay=JSON.parse(stdout);assert.equal(replay.model_requests,0);
+ assert.equal(replay.analysis_sha256,out.analysis.analysis_sha256);
 });
 
 test('terminal user redaction propagates through normalized results and raw artifacts with new hashes and replay',async()=>{
@@ -313,7 +367,7 @@ test('terminal user redaction propagates through normalized results and raw arti
  assert.equal(projected.content[0].text,projected.structuredContent.output);
  assert.match(projected.content[0].text,/yoyooyooo/);
  assert.deepEqual(exported.analysis.conditions.map(x=>x.counts),before.conditions.map(x=>x.counts));
- assert.equal(exported.manifest.publication_version,'1.0.4');
+  assert.equal(exported.manifest.publication_version,'1.0.5');
  assert.ok(exported.manifest.policy.terminal_username_count>0);
  const rawArtifact=f.input.episodes[0].artifacts[0];
  const mapping=exported.manifest.raw_mapping.find(row=>row.source_sha256===rawArtifact.sha256);
