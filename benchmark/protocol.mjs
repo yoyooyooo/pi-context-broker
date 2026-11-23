@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import environmentSchema from './schemas/environment-manifest.schema.json' with { type: 'json' };
 import protocolSchema from './schemas/protocol.schema.json' with { type: 'json' };
 import metricDictionary from './metrics.json' with { type: 'json' };
-import { validateRoutingPolicy } from './reported-model.mjs';
+import { canonicalAutoGroupLabel, validateRoutingPolicy } from './reported-model.mjs';
 import { scheduleProtocol, UNSTARTED_FOLLOWUP } from './campaign-selection.mjs';
 
 const REQUIRED_EVIDENCE = ['runtime_identity', 'loaded_manifest', 'visible_materials',
@@ -554,9 +554,9 @@ function policyChecks(value, maps, pairCells, stage, errors) {
       if (!matchesVariant(model.route))
         issue(errors, path + '/routing/model_variant', 'route_variant_mismatch', 'The requested route must name the declared concrete model variant');
       unique(routing.reported_model_ids, path + '/routing/reported_model_ids', errors);
-      if (routing.reported_model_ids.some(id => /(^|\/)group\//.test(id)
-          || (/(^|\/)auto\//.test(id) && !(routing.mode === 'auto-route' && id === model.route)) || !matchesVariant(id)))
-        issue(errors, path + '/routing/reported_model_ids', 'reported_model_alias', 'Reported labels must name the declared variant or its exact authorized auto route');
+      if (routing.reported_model_ids.some(id => !(routing.mode === 'auto-route' && id === canonicalAutoGroupLabel(routing.model_variant)) &&
+          (/(^|\/)group\//.test(id) || (/(^|\/)auto\//.test(id) && !(routing.mode === 'auto-route' && id === model.route)) || !matchesVariant(id))))
+        issue(errors, path + '/routing/reported_model_ids', 'reported_model_alias', 'Reported labels must name the declared variant or its exact authorized auto route or canonical group');
     }
     if (Date.parse(model.backend.window.start) >= Date.parse(model.backend.window.end))
       issue(errors, path + '/backend/window', 'route_window_invalid', 'Route window start must precede its end');
