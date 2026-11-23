@@ -80,6 +80,8 @@ C10/T21 的 entrypoints.required_inputs 列出各动作必需配置。`/absolute
 
 普通 daily 保留全局本地与 Notion 的日常混合环境；no-native-skills 只添加 -ns，不表示 Broker local 或显式路径消失。两种正式环境都固定真实 magpie/group/worker。按场景前提选择适用 profile，不能将原生命令计数当成目标可见性，也不能靠关闭 Notion source 获得零误用。
 
+默认产品维护和 Source 同步分别用 `cold-maintenance-consultation`、`cold-source-sync-consultation` 核对实际配对 Builtin；fixture 不放官方 Notion 副本，包内正文不预加载。`connected-maintenance-filtered-view` 与 `cold-maintenance-unauthorized` 则明确选择 Notion 团队流程，核对精确来源、inspect/use 及失败不切换。指导来源不决定写入 source/ENTRY，普通业务发现、零已启用 Notion source 的本地会话和既有选择保持原合同。
+
 `native-onboarding` 是同一 candidate-plan / candidate-run 路由的空父页适配。它要求 `pairedEnvironment` 的 packed build、授权 `parent`、显式模型配置和环境变量名；不接受已有 `database`、日用 package 注册或预制 fixture。主体只收到公开 README/help/bootstrap、业务任务和空父页，一个 run 内连续完成。integration 负责冻结的 archive/installed 入口、`--pi-mode native` 与空 `--native-skills` 的共同声明；agent-workflows 负责真实请求/session/CLI 关联和另一个 fresh run 中显式 entry 的主文及所有支持文件读回。正文和文件判据保存于 controller-only oracle。进程成功、运行有效性和业务成功分别报告，漂移或未知状态不得通过。没有唯一 entry、超时或不明写入先对账，不能据此声称远端没有副作用。该 profile 不改变 daily/no-native-skills 或严格 next gate。
 
 普通续聊保持原进程；发布新版、restart/resume、fork、compact 和故障各有有限事件与真实完成屏障。公开用户文本不携带私有 oracle、工具名或修复路线。只读查看与采用分别断言；失败的 notion_use 也计入实际尝试，已有完整正文允许复用。输出正确不抵消错误来源、混版、缺依赖、管理残留或外部扫尾。

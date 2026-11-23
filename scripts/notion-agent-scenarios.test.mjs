@@ -143,7 +143,7 @@ test('the checked-in corpus keeps required journeys, real environment profiles a
   const required = selectAgentScenarios(actual);
   for (const id of ['mixed-explicit-global', 'mixed-explicit-notion', 'mixed-notion-url', 'mixed-ambiguous-source',
     'mixed-equivalent-copies', 'mixed-complementary', 'mixed-pending-local', 'mixed-resource-owner',
-    'mixed-native-slash', 'mixed-broker-explicit', 'cold-maintenance-consultation', 'connected-maintenance-filtered-view',
+    'mixed-native-slash', 'mixed-broker-explicit', 'cold-maintenance-consultation', 'cold-source-sync-consultation', 'connected-maintenance-filtered-view',
     'explicit-offline-bootstrap', 'lifecycle-inspect-adopt', 'lifecycle-resume-fork-compact', 'lifecycle-recovery-failure',
     'lifecycle-shared-requires', 'lifecycle-enabled-default-context', 'management-native-crud',
     'management-register-existing', 'management-description-flags-resource', 'management-upstream-delete-restore',
@@ -170,6 +170,26 @@ test('the checked-in corpus keeps required journeys, real environment profiles a
   const source = actual.fixtures['upstream-authoring'].objects[0];
   assert.equal(source.placement, 'source'); assert.deepEqual(source.versions.A.files, []);
   assert.match(source.source.declaration.definition.adapter.ref, /^[a-f0-9]{40}$/u);
+});
+
+test('default maintenance and sync need no Notion projection while explicit team workflow inspection stays remote', () => {
+  const actual = validateAgentCorpus(JSON.parse(readFileSync(new URL('./notion-agent-scenarios.json', import.meta.url), 'utf8')));
+  for (const [id, body] of [['cold-maintenance-consultation', 'paired-maintain@A/SKILL.md'], ['cold-source-sync-consultation', 'paired-sync@A/SKILL.md']]) {
+    const scenario = actual.scenarios.find(item => item.id === id), recipe = actual.fixtures[scenario.fixture];
+    assert.deepEqual(recipe.objects, [], 'A product help task must not depend on seeded Notion instructions');
+    assert.deepEqual(recipe.environment, { catalog: 'normal' });
+    assert.deepEqual(scenario.profiles, ['daily', 'no-native-skills']);
+    const turn = scenario.turns[0];
+    assert.ok(turn.expect.some(item => item.kind === 'body' && item.body === body && item.occurrences === 1));
+    for (const tool of ['notion_list', 'notion_use'])
+      assert.ok(turn.expect.some(item => item.kind === 'tool-attempts' && item.tool === tool && item.max === 0));
+    assert.ok(!turn.prompt.includes('paired-'), 'The private evidence binding must not teach the subject a route');
+  }
+  const remote = actual.scenarios.find(item => item.id === 'connected-maintenance-filtered-view');
+  assert.equal(actual.fixtures[remote.fixture].environment.catalog, 'filtered-view');
+  assert.match(remote.turns[0].prompt, /Notion.*\{\{maintain\.name\}\}.*团队流程/u);
+  assert.ok(remote.turns[0].expect.some(item => item.kind === 'resource' && item.object === 'maintain'));
+  assert.ok(remote.turns[0].expect.some(item => item.kind === 'tool-attempts' && item.tool === 'notion_use' && item.max === 0));
 });
 
 test('C/T coverage comes from the paired current index rather than a second contract map', () => {

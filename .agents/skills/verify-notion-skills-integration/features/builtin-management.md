@@ -9,6 +9,8 @@ Broker 与 Tern 分发三份完整的本地 Skill，经普通发现、选择与�
 | NS-BUILTIN-03 | 配置同名本地/Notion Skill | 每个来源有独立身份；`@builtin` 指向包内内容，精确选择不串源 |
 | NS-BUILTIN-04 | 零 Notion source、禁用 Notion source、仅启用 filesystem source，再启用尚未连通的 Notion source，之后配置多个 source | 前三种不出现三条 `@builtin` 补全，普通 local/filesystem 候选保留；已启用 Notion 即使连接不可用也出现 builtin，包内资源可离线读取；多来源保留各自 command/database，不隐式选首项 |
 | NS-BUILTIN-05 | 独立 npm 和 Tern 归档 | 三份正文和完整资源相同；不借用 checkout 或旧中央目录；升级包后新会话消费新版本 |
+| NS-BUILTIN-06 | 已启用 Notion source，库中没有官方副本时自然咨询产品维护或 Source 同步 | 默认读取实际配对包中对应的完整正文，不先搜索 Notion 同名说明；指导来源和写入 source/ENTRY 分开；generic、legacy 与 Pi 的可用工具分支一致 |
+| NS-BUILTIN-07 | 明确指定 Notion 团队流程，再遇到目录 pending、partial 或权限失败 | 精确来源与已选版本保留，不静默换 Builtin；inspect 不激活，真正采用仍加载 Requires；同名副本不能冒充 `@builtin` |
 
 ## 执行路线
 
@@ -17,5 +19,7 @@ Broker 与 Tern 分发三份完整的本地 Skill，经普通发现、选择与�
 分别检查 Pi terminal、OMP terminal、OMP native GUI 的候选、接受草稿、完整正文和资源。Tern 手动 picker 插入完整身份 token；宿主自动补全在接受事件记录精确身份。正文、资源、CLI 指引、多来源隔离和实际模型使用分别报告，不以候选出现代替正文消费。
 
 维护任务由普通 Agent 加载内建 Skill 后执行 public CLI：当前读取 → pinned apply；首次 connect → 后续 run。真实 Notion 验证使用本次有归属的内容与原操作，核对内容、恢复和冲突；不要求日常用户执行额外证明步骤。
+
+产品维护与同步默认使用实际配对包；Notion 团队副本是可选的用户 native Skill，包升级不覆盖、不删除，也不替换当前任务的选择。`skill-guidance.test.ts` 核对各工具分支、零来源 gate、两份包内入口及正文未预加载；真实模型使用 `verify-notion-agent-workflows` 的默认咨询、明确远端流程与失败场景，不能以文字断言替代实际正文和来源证据。
 
 `/ntn-skills` 父子命令、管理/schema palette、专用 save 工作流和中央安装管理 runner 已移除。CLI 的显式 `ctl builtin install/update` 仍用于用户主动管理的本地副本，其验证归 CLI 仓库；不再是 Broker 安装或发现的前置条件。

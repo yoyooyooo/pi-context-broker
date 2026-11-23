@@ -192,7 +192,7 @@ cwd 来自 bindings.private.fixture.projectRoot；ownership 来自 fixtureRoot/o
 
 Node 等遵守 TMPDIR 的临时文件 API 会使用这个目录。macOS 裸 mktemp -d 可能忽略 TMPDIR，因此原生项目说明要求 shell 使用显式模板 `mktemp -d "${TMPDIR%/}/work.XXXXXX"`。这只是临时材料约定，不是文件系统沙箱；硬编码其他路径仍可能越界，不能据 TMPDIR 声称全部文件已收口。不改 PATH，不加载验证 Skill 或 oracle，不改变业务 prompt。正常 HOME、全局 Skill 与扩展发现保持原样，不扫描系统临时目录推测所有权。
 
-明确离线检查安装包的场景由运行器绑定 `paired-maintain@A/SKILL.md`：原件来自本轮 Broker 的实际配对包，并在观测目录冻结。这个私有绑定只用于核对真实 native read 和 provider 请求，不预加载正文；旧全局包的目录存在不能证明它属于当前候选。
+默认维护、Source 同步及明确离线检查安装包的场景，按私有正文断言绑定 `paired-maintain@A/SKILL.md` 或 `paired-sync@A/SKILL.md`：原件来自本轮 Broker 的实际配对包，并在观测目录冻结。绑定只用于核对真实 native read 和 provider 请求，不预加载正文；旧全局包的目录存在不能证明它属于当前候选。默认咨询 fixture 不创建官方 Notion 副本，也不以远端查找作为前置步骤。`connected-maintenance-filtered-view` 的用户明确指定 Notion 团队流程，继续验证 View 外发现与精确来源读取；不能把它改成默认产品指导场景。
 
 daily 正常加载全局与项目 native Skills、其他扩展/MCP；no-native-skills 只关闭默认 native 发现，仍需如实记录 Broker local 与可读路径。正式请求和响应必须证明实际 worker 路由；模型配置标签、RPC success 和进程退出零均不足以通过。
 

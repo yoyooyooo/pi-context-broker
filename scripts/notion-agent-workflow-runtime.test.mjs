@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { access, mkdir, mkdtemp, readFile, realpath, rename, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { agentWorkflowArgs, agentWorkflowEnvironment, agentWorkflowProjectSettings, prepareWorkflowTemporaryEnvironment, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
+import { agentWorkflowArgs, agentWorkflowEnvironment, agentWorkflowProjectSettings, bindPairedWorkflowEvidence, prepareWorkflowTemporaryEnvironment, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
 import { validateCandidateTurn } from './verify-pi-daily-candidate.mjs';
 
 const execute = promisify(execFile);
@@ -18,6 +18,37 @@ async function temporaryFixture(t) {
   const projectRoot = join(root, 'project'); await mkdir(projectRoot);
   return { root, runId: ownership.runId, ownership, projectRoot };
 }
+
+test('connected and offline workflow assertions bind only the actual paired package bodies without prompt injection', async t => {
+  const fixture = await temporaryFixture(t), brokerRoot = join(fixture.root, 'broker');
+  const bindings = { public: {}, private: { objects: {}, bodies: {}, facts: {} } };
+  const scenario = { turns: [{ prompt: '请解释如何维护这个库，以及怎么同步来源。', expect: [] }] };
+  const prompt = scenario.turns[0].prompt;
+  for (const name of ['maintain', 'sync']) {
+    const path = join(brokerRoot, 'dist/builtin-skills/ntn-skills-' + name, 'SKILL.md');
+    await mkdir(join(path, '..'), { recursive: true });
+    await writeFile(path, '# Actual paired ' + name + '\n');
+    scenario.turns[0].expect.push({ kind: 'body', body: 'paired-' + name + '@A/SKILL.md', occurrences: 1 });
+  }
+  await bindPairedWorkflowEvidence(bindings, brokerRoot, scenario);
+  assert.deepEqual(bindings.public, {});
+  assert.equal(scenario.turns[0].prompt, prompt);
+  for (const name of ['maintain', 'sync']) {
+    const object = 'paired-' + name, body = bindings.private.bodies[object + '@A/SKILL.md'];
+    const content = await readFile(body.path);
+    assert.equal(body.sha256, createHash('sha256').update(content).digest('hex'));
+    assert.equal(body.bytes, content.length);
+    assert.equal(body.origin, 'paired-package');
+    assert.equal(body.observedPath, join(brokerRoot, 'dist/builtin-skills/ntn-skills-' + name, 'SKILL.md'));
+    assert.equal(bindings.private.objects[object].owner, 'package:' + await realpath(body.path));
+    assert.equal(body.content, undefined, 'Observation metadata does not preload the body');
+  }
+  await assert.rejects(bindPairedWorkflowEvidence(bindings, brokerRoot, scenario), /reserved/u);
+  const empty = { public: {}, private: { objects: {}, bodies: {} } };
+  await bindPairedWorkflowEvidence(empty, '/unavailable-package', { turns: [{ expect: [{ kind: 'completed' }] }] });
+  assert.deepEqual(empty.private, { objects: {}, bodies: {} });
+  await assert.rejects(bindPairedWorkflowEvidence(empty, '/unavailable-package', scenario), { code: 'ENOENT' });
+});
 
 test('explicit TMPDIR shell templates and Node temporary APIs retain inputs without changing the caller environment', async t => {
   const fixture = await temporaryFixture(t);

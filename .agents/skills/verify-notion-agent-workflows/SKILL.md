@@ -20,7 +20,8 @@ description: "用真实 Pi 和 magpie/group/worker 验证自然用户怎样发�
 | 改动 | 至少选择的旅程 |
 | --- | --- |
 | 目录、描述、同名选路或提示词 | mixed-explicit-global、mixed-explicit-notion；再选对应 URL、歧义、语义匹配、等价、互补或原生 slash 场景 |
-| 冷启动、builtin 维护说明 | cold-maintenance-consultation、connected-maintenance-filtered-view；明确离线诉求另跑 explicit-offline-bootstrap |
+| 默认产品维护与 Source 同步 | cold-maintenance-consultation、cold-source-sync-consultation；空库不放官方 Notion 副本，核对实际配对包的完整正文；明确离线诉求另跑 explicit-offline-bootstrap |
+| 用户指定 Notion 团队流程 | connected-maintenance-filtered-view、cold-maintenance-unauthorized；保留精确来源、inspect/use 与 Requires 语义，失败不换成 Builtin |
 | 空父页首次建库、公开 CLI onboarding | onboarding-empty-parent / native-onboarding；独立保存业务 oracle，禁止预植维护 Skill、库、Store 或日用缓存 |
 | 版本、支持文件、会话恢复 | lifecycle-inspect-adopt；再选依赖共享、来源切换、fork/compact/resume 或故障后三轮 |
 | 原生管理 | management-native-crud、management-register-existing、management-description-flags-resource |
