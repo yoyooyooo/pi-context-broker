@@ -614,6 +614,94 @@ merely because both runs have a Notion directory. Unsupported surfaces remain
 separate unless the native condition has a registered semantically equivalent
 fault with independent evidence.
 
+### Frozen clean/fault Store comparisons
+
+The optional episode_fixtures.diagnostics policy supports one bounded design:
+two journeys, one model, two selected Broker builds and clean/fault arms for
+each build. It requires exactly eight scheduled slots with one repetition.
+Native conditions are rejected before fixture allocation. This is Store
+consumption and recovery coverage; it does not stand for every Source-write,
+cancellation or unknown-side-effect scenario.
+
+~~~js
+corpus: {
+  generator: 'owned-store-first-use-v1',
+  seed: '<separately frozen diagnostic seed>',
+  split: 'development',
+  material_version: '2',
+  selections: [
+    { caseId: 'store-first-grant-a' },
+    { caseId: 'store-first-tariff-a' },
+  ],
+},
+episode_fixtures: {
+  version: 1,
+  project_page_id: '<owned benchmark project>',
+  diagnostics: {
+    version: 1,
+    kind: 'owned-store-clean-fault',
+    pairs: [
+      { clean: 'm0-e0', fault: 'm0-e2' },
+      { clean: 'm0-e1', fault: 'm0-e3' },
+    ],
+    scenarios: [
+      {
+        id: 'grant-first-use',
+        case_id: 'store-first-grant-a-n16-r4',
+        skill_id: 'references-01-a-grant',
+        probe_skill_id: 'implicit-01-a-routing',
+        mode: 'store-unavailable',
+        before_turn: 'turn-2',
+        restore_before_turn: 'turn-3',
+      },
+      {
+        id: 'tariff-first-use',
+        case_id: 'store-first-tariff-a-n16-r4',
+        skill_id: 'scripts-assets-02-a-tariff',
+        probe_skill_id: 'explicit-01-a-refund',
+        mode: 'store-unavailable',
+        before_turn: 'turn-2',
+        restore_before_turn: 'turn-3',
+      },
+    ],
+  },
+}
+~~~
+
+The pair declarations connect clean and fault arms of the same product build.
+They are separate from environment_pairs, which can compare the two product
+builds within each arm. Both clean and fault slots receive independent owned
+fixtures, runtime roots and zero-model startup captures. A clean arm has no
+diagnostic events; it still cannot reuse a shared fixture or startup capture.
+
+The independent generator composes two different business journeys from
+existing public material and neutral contracts. The first turn uses Skill A
+for shipping or refund work. Turn two starts unrelated grant or tariff work
+that first needs Skill B. Turns three and four continue B with new inputs and
+separate turn-bound business outputs. The corpus has new case, cluster,
+material and provenance identities; the original forty cases remain unchanged.
+Clean and fault arms receive the same new natural tasks and private contracts.
+
+The private projection adds fault and restore-fault events. With a distinct
+probe_skill_id, only a global store-unavailable fault is allowed. Events and
+their logical_operation name probe A, whose actual subject snapshot must be
+readable before the Store is quarantined and again after exact restoration.
+The separate expected_subject_operation names prospective business target B;
+it is not evidence that B was actually consumed. The controller does not seed
+A or B. A missing probe precondition remains missing diagnostic coverage.
+
+No call ordinal chooses the fault. Event timing is frozen between natural
+turns. Without a distinct probe, missing-object, missing-manifest and
+store-unavailable can target one already consumed Skill. Actual subject traces
+must independently establish whether the target operation occurred during the
+outage. Report applied fault, observed encounter, verified restore and final
+business outcome separately. Store restoration alone does not establish model
+recovery. All business failures remain in the unchanged diagnostic grading.
+
+Filesystem tests prove scheduling, isolation, immutable event bindings and
+capture selection only. Real model dispatch, actual Store faults, recovery
+receipts and unchanged business grading are still required for live acceptance.
+
 ### Tentative complete-delivery acceptance budget
 
 The following design was accepted before later batch freezes:

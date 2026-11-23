@@ -7,6 +7,8 @@ import { readCampaignHistory } from './campaign-history.mjs';
 import { isProspectiveCohort, assertCohortModelEvidence, scopeModelIdentity, scopeEnvironmentIdentity } from './prospective-cohort.mjs';
 import { assertScopePlan, readPilotScopeAmendment, readScopeCompletedResults } from './pilot-scope.mjs';
 import { readEvidenceBundle } from './evidence/store.mjs';
+import { scheduleProtocol as expectedSchedule, declaredSchedule, UNSTARTED_FOLLOWUP, assertFollowupSelection } from './campaign-selection.mjs';
+import { readApprovedCampaign, approvedCampaignBinding, assertApprovedCampaignBinding } from './approved-campaign.mjs';
 
 export const FINITE_CAMPAIGN = 'benchmark-finite-campaign';
 export const isFiniteCampaign = value => value?.kind === FINITE_CAMPAIGN;
@@ -50,27 +52,15 @@ async function noLeases(execution) {
 export function finiteCampaignPolicy(input, { scheduledEpisodes } = {}) {
   if (!input) return undefined;
   assert.equal(input.kind, FINITE_CAMPAIGN); assert.ok(safe(input.id));
-  assert.ok(['route_gate_only', 'acceptance'].includes(input.role), 'FINITE_ROLE');
+  assert.ok(['route_gate_only', 'acceptance', UNSTARTED_FOLLOWUP].includes(input.role), 'FINITE_ROLE');
   assert.ok(Number.isSafeInteger(scheduledEpisodes) && scheduledEpisodes > 0 && scheduledEpisodes <= 144, 'FINITE_SCHEDULE_COUNT');
   if (input.role === 'route_gate_only') assert.equal(scheduledEpisodes, 8, 'FINITE_GATE_REQUIRES_EIGHT');
+  if (input.role === UNSTARTED_FOLLOWUP) {
+    assertFollowupSelection(input.selection); assert.equal(input.selection.slot_ids.length, scheduledEpisodes, 'FOLLOWUP_SELECTION_COUNT');
+  } else assert.equal(input.selection, undefined, 'FOLLOWUP_SELECTION_ROLE_REQUIRED');
   return { version: 1, kind: FINITE_CAMPAIGN, id: input.id, role: input.role, reservation_limit: scheduledEpisodes,
-    max_scheduled_episodes: 144, history_quality: 'excluded_retained_in_campaign_costs', new_unknown_usage: 'stop_scope' };
-}
-
-// This is the schedule's existing deterministic definition, without importing
-// batch.mjs back through its campaign dispatcher. No slots may be omitted.
-function expectedSchedule(protocol) {
-  const ordered = protocol.pairs.map(pair => ({ pair, key: sha(String(protocol.policies.ordering.seed) + '\0' + pair.id) }))
-    .sort((a, b) => a.key.localeCompare(b.key));
-  const slots = [];
-  for (const [index, { pair }] of ordered.entries()) {
-    const conditions = index % 2 === 0 ? pair.condition_ids : [...pair.condition_ids].reverse();
-    for (const condition_id of conditions) slots.push({ slot_id: condition_id + '--' + pair.case_id + '--r' + pair.repeat,
-      pair_id: pair.id, case_id: pair.case_id, condition_id, repeat: pair.repeat, seed: pair.seed });
-  }
-  for (const item of protocol.assessments) if (item.expected_support === 'supported') slots.push({ slot_id: item.id,
-    assessment_id: item.id, case_id: item.case_id, condition_id: item.condition_id, repeat: item.repeat ?? 0, seed: item.seed ?? 0 });
-  return slots.map((slot, order) => ({ ...slot, order }));
+    max_scheduled_episodes: 144, history_quality: 'excluded_retained_in_campaign_costs', new_unknown_usage: 'stop_scope',
+    ...(input.role === UNSTARTED_FOLLOWUP ? { selection: structuredClone(input.selection) } : {}) };
 }
 
 function assertProtocolExecution({ protocol, execution, slots }) {
@@ -92,6 +82,7 @@ function assertProtocolExecution({ protocol, execution, slots }) {
   const budget = protocol.policies.budgets[0]; assert.equal(budget.batch.max_episodes, slots.length, 'FINITE_BATCH_COUNT_CHANGED');
   assert.equal(budget.episode.max_retries, 0, 'FINITE_RETRY_FORBIDDEN'); assert.equal(budget.batch.max_concurrency, 1);
   assert.ok(protocol.models.every(model => model.routing), 'FINITE_ROUTING_REQUIRED');
+  if (policy.role === UNSTARTED_FOLLOWUP) assert.equal(protocol.phase, 'pilot', 'FOLLOWUP_PILOT_ONLY');
   if (policy.role === 'route_gate_only') {
     assert.equal(protocol.phase, 'pilot'); assert.equal(protocol.purpose, 'native_calibration');
     assert.equal(protocol.models.length, 1); assert.equal(protocol.environments.length, 2); assert.equal(protocol.conditions.length, 2);
@@ -121,9 +112,12 @@ function assertHistoryBoundary(value) {
   assert.equal(exemption.scheduled_episodes, 13, 'FINITE_ORIGINAL_HISTORY_THIRTEEN_ONLY');
   assert.ok(hash(exemption.checkpoint_sha256)); assert.equal(exemption.unknown_usage_run_ids.length, 3, 'FINITE_ORIGINAL_THREE_UNKNOWNS_ONLY');
   assert.equal(new Set(exemption.unknown_usage_run_ids).size, 3);
-  assert.deepEqual(history.unknown_usage_run_ids, exemption.unknown_usage_run_ids, 'FINITE_NEW_UNKNOWN_CANNOT_BECOME_HISTORY');
-  assert.ok(history.scheduled_episodes >= 13 && history.scheduled_episodes + value.reservation_limit <= 144, 'FINITE_CAMPAIGN_CAP');
-  for (const episode of history.episodes.slice(13)) {
+  const approved = value.version === 2 ? assertApprovedCampaignBinding(value.prospective_authorization) : null;
+  const boundary = approved?.history_boundary ?? exemption;
+  assert.deepEqual(history.unknown_usage_run_ids, boundary.unknown_usage_run_ids, 'FINITE_NEW_UNKNOWN_CANNOT_BECOME_HISTORY');
+  assert.ok(history.scheduled_episodes >= boundary.scheduled_episodes
+    && history.scheduled_episodes + value.reservation_limit <= (approved?.campaign_limit ?? 144), 'FINITE_CAMPAIGN_CAP');
+  for (const episode of history.episodes.slice(boundary.scheduled_episodes)) {
     assert.equal(episode.core_evidence, 'complete', 'FINITE_NEW_CORE_FAILURE_CANNOT_BECOME_HISTORY');
     assert.equal(episode.stop_batch, false, 'FINITE_NEW_CORE_STOP_CANNOT_BECOME_HISTORY');
   }
@@ -132,8 +126,10 @@ function assertHistoryBoundary(value) {
 function assertShape(value) {
   exactKeys(value, ['version', 'kind', 'id', 'role', 'authorization', 'registered_at', 'predecessor', 'environment_root', 'pilot_ledger_root',
     'max_scheduled_episodes', 'reservation_limit', 'history', 'history_exemption', 'model_conditions', 'environment_conditions', 'models_sha256',
-    'instrumentation', 'observer_version', 'plan', 'amendment_sha256'], 'FINITE_AMENDMENT_SHAPE');
-  assert.equal(value.version, 1); assert.equal(value.kind, FINITE_CAMPAIGN); assert.ok(safe(value.id));
+    'instrumentation', 'observer_version', 'plan', 'amendment_sha256',
+    ...(value.version === 2 ? ['prospective_authorization'] : []), ...(value.role === UNSTARTED_FOLLOWUP ? ['selection'] : [])], 'FINITE_AMENDMENT_SHAPE');
+  assert.ok([1, 2].includes(value.version)); assert.equal(value.kind, FINITE_CAMPAIGN); assert.ok(safe(value.id));
+  if (value.role === UNSTARTED_FOLLOWUP) assert.equal(value.version, 2, 'FOLLOWUP_APPROVAL_REQUIRED');
   assert.equal(value.amendment_sha256, fingerprint({ ...value, amendment_sha256: null }), 'FINITE_AMENDMENT_CHANGED');
   assert.ok(typeof value.authorization === 'string' && value.authorization.trim()); assert.ok(Number.isFinite(Date.parse(value.registered_at)));
   assert.ok(canonicalPath(value.environment_root) && canonicalPath(value.pilot_ledger_root)); assert.equal(value.max_scheduled_episodes, 144);
@@ -158,6 +154,7 @@ export function assertFiniteCampaignPlan(plan, amendment) {
   assert.equal(registration.version, 1); assert.equal(registration.kind, FINITE_CAMPAIGN);
   assert.equal(registration.id, amendment.id); assert.equal(registration.role, amendment.role);
   assert.equal(policy.id, amendment.id); assert.equal(policy.role, amendment.role); assert.equal(policy.reservation_limit, amendment.reservation_limit);
+  assert.deepEqual(policy.selection, amendment.selection, 'FOLLOWUP_SELECTION_CHANGED');
   assert.equal(registration.amendment.path, join(amendment.plan.control_root, 'finite-campaign-amendment.json')); assert.ok(hash(registration.amendment.sha256));
   assert.deepEqual(planBinding(plan.protocol, plan.execution, plan.slots), amendment.plan, 'FINITE_PLAN_BINDING_CHANGED');
   assert.equal(plan.execution.environment_root, amendment.environment_root); assert.equal(plan.execution.pilot_ledger_root, amendment.pilot_ledger_root);
@@ -221,6 +218,8 @@ async function assertHistoricalPlan(plan) {
     assert.ok(isFiniteCampaign(plan.protocol.policies.campaign) && isFiniteCampaign(plan.execution.campaign_scope), 'FINITE_HISTORY_TYPED_SCOPE_REQUIRED');
     const amendment = await shallowFinite(plan.execution.campaign_scope.amendment);
     assertFiniteCampaignPlan(plan, amendment); await assertConfirmationUnexposed(plan.protocol, plan.execution, amendment.history);
+    if (amendment.version === 2) await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment,
+      await readApprovedCampaign(amendment.prospective_authorization.reference));
   } else assert.equal(plan.protocol.phase, 'pilot', 'FINITE_HISTORY_UNREGISTERED_NONPILOT');
 }
 
@@ -267,11 +266,16 @@ async function originalLedger(plan) {
   return bytes.toString('utf8').split('\n').filter(Boolean).map((line, index) => { const row = JSON.parse(line); assert.equal(row.seq, index + 1); return row; });
 }
 
-export async function readFiniteCampaignHistory(options) {
-  return readCampaignHistory({ ...options, assertPlan: assertHistoricalPlan, assertOriginalCompleted,
+export async function readFiniteCampaignHistory({ prospectiveAuthorization, ...options }) {
+  const authorized = prospectiveAuthorization ? await readApprovedCampaign(prospectiveAuthorization) : null;
+  const history = await readCampaignHistory({ ...options, assertPlan: assertHistoricalPlan,
+    assertOriginalCompleted: input => authorized && input.ordinal <= authorized.value.history.scheduled_episodes
+      ? undefined : assertOriginalCompleted(input),
     assertModelEvidence: (episode, model, plan) => {
       if (isFiniteCampaign(plan.protocol.policies.campaign) || isProspectiveCohort(plan.protocol.policies.pilot.scope)) assertCohortModelEvidence(episode, model);
     } });
+  if (authorized) assertPrefix(history, authorized.value.history);
+  return history;
 }
 
 function assertPrefix(current, expected) {
@@ -285,12 +289,17 @@ async function predecessorRegistration(value, predecessor) {
   const registration = await verified(ref); assert.equal(registration.id, predecessor.id);
   assert.deepEqual(registration.amendment, value.predecessor.amendment, 'FINITE_PREDECESSOR_REGISTRATION_CHANGED');
 }
-async function assertPredecessorComplete(value, predecessor) {
+async function assertPredecessorComplete(value, predecessor, authorized = null) {
   assert.notEqual(value.id, predecessor.id); assert.equal(value.pilot_ledger_root, predecessor.pilot_ledger_root);
   assert.ok(isFiniteCampaign(predecessor) || isProspectiveCohort(predecessor), 'FINITE_CLOSED_FINITE_PREDECESSOR_REQUIRED');
   assert.deepEqual(value.history_exemption, predecessor.history_exemption, 'FINITE_HISTORY_EXEMPTION_CHANGED');
   assertPrefix(value.history, predecessor.history);
-  assert.equal(value.history.scheduled_episodes, predecessor.history.scheduled_episodes + predecessor.reservation_limit, 'FINITE_PREDECESSOR_INCOMPLETE');
+  const approvedTransition = authorized && fingerprint(value.predecessor) === fingerprint(authorized.value.predecessor);
+  if (approvedTransition) assert.deepEqual(value.history, authorized.value.history, 'APPROVAL_INITIAL_HISTORY_CHANGED');
+  else {
+    assert.equal(value.history.scheduled_episodes, predecessor.history.scheduled_episodes + predecessor.reservation_limit, 'FINITE_PREDECESSOR_INCOMPLETE');
+    if (authorized) assert.deepEqual(value.prospective_authorization.reference, predecessor.prospective_authorization?.reference, 'APPROVAL_LINEAGE_CHANGED');
+  }
   const phases = isFiniteCampaign(predecessor) ? [predecessor.plan] : [predecessor.gate, predecessor.expansion];
   const owners = new Map();
   for (const phase of phases) {
@@ -299,7 +308,8 @@ async function assertPredecessorComplete(value, predecessor) {
     if (isFiniteCampaign(predecessor)) { assertFiniteCampaignPlan(plan, predecessor); assert.deepEqual(plan.execution.campaign_scope.amendment, value.predecessor.amendment); }
     else { assertScopePlan(plan, predecessor); assert.deepEqual(plan.execution.pilot_scope.amendment, value.predecessor.amendment); }
     const episodes = value.history.episodes.filter(item => item.experiment_id === phase.experiment_id);
-    assert.equal(episodes.length, phase.scheduled_episodes, 'FINITE_PREDECESSOR_PLAN_INCOMPLETE');
+    if (approvedTransition) assert.ok(episodes.length <= phase.scheduled_episodes, 'APPROVAL_PREDECESSOR_PLAN_OVERFLOW');
+    else assert.equal(episodes.length, phase.scheduled_episodes, 'FINITE_PREDECESSOR_PLAN_INCOMPLETE');
     assert.equal(plan.slots.length, phase.scheduled_episodes); owners.set(plan.id, { plan, reference: entry.plan });
   }
   for (const [index, entry] of value.history.reservations.slice(predecessor.history.scheduled_episodes).entries()) {
@@ -315,11 +325,75 @@ async function assertPredecessorComplete(value, predecessor) {
     }
     assert.ok(owner.plan.slots.some(slot => slot.slot_id === reservation.slot_id));
   }
+  if (approvedTransition) for (const { plan } of owners.values()) {
+    const actual = [];
+    for (const entry of value.history.reservations.slice(predecessor.history.scheduled_episodes)) {
+      const reservation = await verified(entry.reference); if (reservation.experiment_id === plan.id) actual.push(reservation.slot_id);
+    }
+    assert.deepEqual(actual, plan.slots.slice(0, actual.length).map(slot => slot.slot_id), 'APPROVAL_PREDECESSOR_EXECUTION_PREFIX');
+  }
+}
+
+async function authorizedScope(value, context) {
+  if (value.version !== 2) return null;
+  const binding = value.prospective_authorization;
+  if (!context.authorized) context.authorized = await readApprovedCampaign(binding.reference);
+  const authorized = context.authorized;
+  assert.deepEqual(binding, approvedCampaignBinding(binding.reference, authorized.value, binding.allocation_id), 'APPROVAL_BINDING_CHANGED');
+  if (context.reference) assert.deepEqual(binding.reference, context.reference, 'APPROVAL_LINEAGE_CHANGED');
+  else context.reference = binding.reference;
+  const allocation = authorized.value.allocations.find(item => item.id === binding.allocation_id);
+  assert.equal(value.id, allocation.id, 'APPROVAL_SCOPE_ID_CHANGED'); assert.equal(value.role, allocation.role, 'APPROVAL_SCOPE_ROLE_CHANGED');
+  assert.ok(value.reservation_limit <= allocation.reservation_limit, 'APPROVAL_ALLOCATION_LIMIT');
+  assert.equal(value.environment_root, authorized.value.environment_root); assert.equal(value.pilot_ledger_root, authorized.value.pilot_ledger_root);
+  assertPrefix(value.history, authorized.value.history);
+  assert.ok(!context.allocations.has(allocation.id), 'APPROVAL_ALLOCATION_REUSED'); context.allocations.add(allocation.id);
+  return authorized;
+}
+
+async function assertAuthorizedProtocol(protocol, execution, slots, value, authorized) {
+  if (!authorized) return;
+  const allocation = authorized.value.allocations.find(item => item.id === value.prospective_authorization.allocation_id);
+  const work = authorized.proposal.work[allocation.work_index];
+  if (work.route) {
+    assert.equal(protocol.models.length, 1);
+    assert.equal(protocol.models[0].provider + '/' + protocol.models[0].route, work.route, 'APPROVAL_ROUTE_CHANGED');
+  }
+  if (value.role !== UNSTARTED_FOLLOWUP) return;
+  const candidates = [];
+  for (const item of authorized.value.history.plans) {
+    const plan = await verified(item.plan); if (plan.plan_sha256 === value.selection.source_plan_sha256) candidates.push(plan);
+  }
+  assert.equal(candidates.length, 1, 'FOLLOWUP_SOURCE_PLAN_MISSING');
+  const source = candidates[0];
+  assert.equal(source.execution.pilot_scope?.amendment.sha256, authorized.value.predecessor.amendment.sha256, 'FOLLOWUP_SOURCE_NOT_STOPPED_SCOPE');
+  const observed = new Set(authorized.value.history.episodes.filter(item => item.experiment_id === source.id).map(item => item.run_id));
+  const unstarted = source.slots.filter(slot => !observed.has(source.id + '-' + String(slot.order + 1).padStart(3, '0')));
+  assert.deepEqual(value.selection.slot_ids, unstarted.map(slot => slot.slot_id), 'FOLLOWUP_MUST_USE_EXACT_UNSTARTED_SUFFIX');
+  assert.deepEqual(slots, unstarted.map((slot, order) => ({ ...slot, order })), 'FOLLOWUP_SOURCE_SLOTS_CHANGED');
+  assert.deepEqual(declaredSchedule(protocol), source.slots, 'FOLLOWUP_SCIENTIFIC_DESIGN_CHANGED');
+  assert.deepEqual(protocol.corpus, source.protocol.corpus, 'FOLLOWUP_BUSINESS_MATERIAL_CHANGED');
+  assert.deepEqual(protocol.pairs, source.protocol.pairs, 'FOLLOWUP_COMPARISON_DESIGN_CHANGED');
+  assert.deepEqual(protocol.assessments, source.protocol.assessments, 'FOLLOWUP_ASSESSMENTS_CHANGED');
+  assert.deepEqual(protocol.policies.statistics, source.protocol.policies.statistics, 'FOLLOWUP_STATISTICAL_DENOMINATOR_CHANGED');
+  for (const condition of protocol.conditions) {
+    const original = source.protocol.conditions.find(item => item.id === condition.id); assert.ok(original, 'FOLLOWUP_CONDITION_MISSING');
+    const before = source.protocol.models.find(item => item.id === original.model_id), after = protocol.models.find(item => item.id === condition.model_id);
+    assert.equal(after.routing.model_variant, before.routing.model_variant, 'FOLLOWUP_MODEL_VARIANT_CHANGED');
+    assert.deepEqual(after.parameters, before.parameters, 'FOLLOWUP_MODEL_PARAMETERS_CHANGED');
+    const oldEnvironment = source.protocol.environments.find(item => item.id === original.environment_id);
+    const newEnvironment = protocol.environments.find(item => item.id === condition.environment_id);
+    assert.equal(newEnvironment.pi.mode, oldEnvironment.pi.mode, 'FOLLOWUP_MODE_CHANGED');
+    assert.deepEqual(newEnvironment.build, oldEnvironment.build, 'FOLLOWUP_SUBJECT_BUILD_CHANGED');
+    assert.deepEqual(condition.case_ids, original.case_ids, 'FOLLOWUP_CONDITION_CASES_CHANGED');
+  }
+  // New route/API/window identities remain explicit in this new protocol. They
+  // are not asserted equivalent to the stopped experiment's model condition.
 }
 
 // Walk immutable amendment links once. The outer history read verifies all raw
 // observations once; historical owner validation never recurses into this walk.
-async function readLineage(reference, seen = new Set()) {
+async function readLineage(reference, seen = new Set(), context = { allocations: new Set() }) {
   assert.ok(!seen.has(reference.path), 'FINITE_PREDECESSOR_CYCLE'); seen.add(reference.path);
   const preview = await verified(reference);
   if (!isFiniteCampaign(preview)) {
@@ -328,16 +402,19 @@ async function readLineage(reference, seen = new Set()) {
     assert.equal(value.history_exemption.scheduled_episodes, 13, 'FINITE_ORIGINAL_HISTORY_THIRTEEN_ONLY');
     return value;
   }
-  const value = await shallowFinite(reference), predecessor = await readLineage(value.predecessor.amendment, seen);
-  await predecessorRegistration(value, predecessor); await assertPredecessorComplete(value, predecessor);
+  const value = await shallowFinite(reference), predecessor = await readLineage(value.predecessor.amendment, seen, context);
+  const authorized = await authorizedScope(value, context);
+  await predecessorRegistration(value, predecessor); await assertPredecessorComplete(value, predecessor, authorized);
   return value;
 }
 
 export async function verifyFiniteCampaign(value) {
   assertShape(value);
-  const predecessor = await readLineage(value.predecessor.amendment);
-  await predecessorRegistration(value, predecessor); await assertPredecessorComplete(value, predecessor);
-  await readFiniteCampaignHistory({ planFiles: value.history.plans.map(item => item.plan.path), pilotLedgerRoot: value.pilot_ledger_root, expected: value.history });
+  const context = { allocations: new Set() }, predecessor = await readLineage(value.predecessor.amendment, new Set(), context);
+  const authorized = await authorizedScope(value, context);
+  await predecessorRegistration(value, predecessor); await assertPredecessorComplete(value, predecessor, authorized);
+  await readFiniteCampaignHistory({ planFiles: value.history.plans.map(item => item.plan.path), pilotLedgerRoot: value.pilot_ledger_root, expected: value.history,
+    ...(authorized ? { prospectiveAuthorization: value.prospective_authorization.reference } : {}) });
   return value;
 }
 export async function readFiniteCampaignAmendment(reference) {
@@ -350,18 +427,26 @@ export async function prepareFiniteCampaign({ setup, protocol, execution, slots,
   const policy = assertProtocolExecution({ protocol, execution, slots });
   assert.deepEqual(policy, finiteCampaignPolicy(input, { scheduledEpisodes: slots.length }));
   await noLeases(execution);
-  const previous = await readLineage(input.predecessor.amendment);
+  const context = { allocations: new Set() }, previous = await readLineage(input.predecessor.amendment, new Set(), context);
   if (predecessor) assert.deepEqual(previous, predecessor, 'FINITE_VERIFIED_PREDECESSOR_CHANGED');
-  const history = await readFiniteCampaignHistory({ planFiles: input.history_plan_files, pilotLedgerRoot: execution.pilot_ledger_root });
-  const value = { version: 1, kind: FINITE_CAMPAIGN, id: input.id, role: input.role, authorization: input.authorization,
+  const approved = input.prospective_authorization ? await readApprovedCampaign(input.prospective_authorization) : null;
+  const prospective = approved ? approvedCampaignBinding(input.prospective_authorization, approved.value, input.allocation_id) : null;
+  if (previous.version === 2 && isFiniteCampaign(previous)) assert.ok(prospective, 'APPROVAL_LINEAGE_REQUIRED');
+  const history = await readFiniteCampaignHistory({ planFiles: input.history_plan_files, pilotLedgerRoot: execution.pilot_ledger_root,
+    ...(approved ? { prospectiveAuthorization: input.prospective_authorization } : {}) });
+  const value = { version: approved ? 2 : 1, kind: FINITE_CAMPAIGN, id: input.id, role: input.role, authorization: input.authorization,
     registered_at: protocol.registered_at, predecessor: structuredClone(input.predecessor), environment_root: execution.environment_root,
     pilot_ledger_root: execution.pilot_ledger_root, max_scheduled_episodes: 144, reservation_limit: slots.length, history,
     history_exemption: structuredClone(previous.history_exemption), model_conditions: sorted(protocol.models.map(scopeModelIdentity)),
     environment_conditions: sorted(protocol.environments.map(scopeEnvironmentIdentity)), models_sha256: execution.models_sha256,
     instrumentation: structuredClone(execution.instrumentation), observer_version: protocol.policies.evidence.observer_version,
-    plan: planBinding(protocol, execution, slots), amendment_sha256: null };
+    plan: planBinding(protocol, execution, slots), amendment_sha256: null,
+    ...(prospective ? { prospective_authorization: prospective } : {}),
+    ...(input.role === UNSTARTED_FOLLOWUP ? { selection: structuredClone(input.selection) } : {}) };
   value.amendment_sha256 = fingerprint(value); assertShape(value);
-  await predecessorRegistration(value, previous); await assertPredecessorComplete(value, previous);
+  const authorized = await authorizedScope(value, context);
+  await predecessorRegistration(value, previous); await assertPredecessorComplete(value, previous, authorized);
+  await assertAuthorizedProtocol(protocol, execution, slots, value, authorized);
   await assertConfirmationUnexposed(protocol, execution, history); await noLeases(execution);
   return value;
 }
@@ -392,6 +477,8 @@ export async function verifyFiniteCampaignScope(plan, options = {}) {
   const registration = plan.execution.campaign_scope;
   if (!registration) { assert.equal(plan.protocol.policies.campaign, undefined); return null; }
   const amendment = await readFiniteCampaignAmendment(registration.amendment); assertFiniteCampaignPlan(plan, amendment);
+  if (amendment.version === 2) await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment,
+    await readApprovedCampaign(amendment.prospective_authorization.reference));
   await assertConfirmationUnexposed(plan.protocol, plan.execution, amendment.history);
   const all = await reservations(amendment.pilot_ledger_root);
   assert.deepEqual(all.slice(0, amendment.history.scheduled_episodes).map(({ ordinal, reference }) => ({ ordinal, reference })), amendment.history.reservations, 'FINITE_HISTORY_RESERVATION_CHANGED');

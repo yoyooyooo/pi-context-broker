@@ -1,8 +1,9 @@
 # Finite campaign contract
 
 An explicit `campaign_scope` binds one complete Benchmark plan to the existing
-144-reservation campaign. It supports a route gate for one model and bounded
-acceptance comparisons, including independent confirmation. The scope never
+144-reservation campaign. It supports a route gate for one model, bounded
+acceptance comparisons, and an explicitly approved descriptive follow-up of
+previously unstarted slots. The scope never
 creates a second budget ledger or removes a retained observation.
 
 The existing [prospective cohort contract](benchmark-prospective-cohorts.md)
@@ -22,11 +23,14 @@ Its `campaign_scope` has the following fields:
 | --- | --- |
 | `kind` | `benchmark-finite-campaign`. |
 | `id` | A new scope identity. |
-| `role` | `route_gate_only` or `acceptance`. |
+| `role` | `route_gate_only`, `acceptance`, or `unstarted_followup`. |
 | `authorization` | The actual authorization for this finite work. |
 | `predecessor.registration` | Absolute path and SHA-256 of the current registration file. |
 | `predecessor.amendment` | Absolute path and SHA-256 of that registration's amendment file. |
 | `history_plan_files` | Every owning plan for the closed historical reservations. |
+| `prospective_authorization` | Optional absolute path and SHA-256 of an immutable approved campaign document. Required for an explicitly approved transition after retained stopped history. |
+| `allocation_id` | The unique predeclared allocation for an approved campaign; must equal this scope's `id`. |
+| `selection` | For `unstarted_followup` only: the source plan's semantic `source_plan_sha256` and its exact ordered unstarted `slot_ids`. |
 
 Reference hashes identify the retained file bytes. They are distinct from the
 semantic `amendment_sha256` inside an amendment. The scope derives its reservation
@@ -73,6 +77,7 @@ selection, material, runtime, budget, or slots requires a new authorized plan.
 | --- | --- | --- |
 | `route_gate_only` | Phase `pilot`, purpose `native_calibration`, one model, Broker and native Pi, four common cases, one observation per case and condition: eight episodes. | Actual route, loading, observation, and accounting coverage. No expansion or business-quality acceptance is implied. |
 | `acceptance` | Phase `pilot` or `confirmation`, a complete schedule, and the existing protocol's purpose and comparison rules. | The declared acceptance comparison. Claims depend on its actual baseline, material, observations, and decision policy. |
+| `unstarted_followup` | Phase `pilot`, decision `descriptive`, the complete original scientific design, and only the exact unstarted suffix of the approved stopped source plan. | New observations in their own experiment. Original missing cells remain in the scientific denominator; old successes cannot fill them. |
 
 The generic configuration entry supports two candidates, or four candidates
 with two explicit comparison pairs. For four candidates, `environment_pairs`
@@ -98,10 +103,13 @@ Historical observations receive no new scope's quality credit.
 
 The inherited checkpoint contains the original thirteen observations and their
 three unknown-usage run IDs. The exact checkpoint and unknown set are preserved.
-A new scope cannot add an unknown observation to that exemption, acknowledge it
-away, or turn an unknown historical total into a measured total.
+A scope cannot enlarge that exemption or turn an unknown historical total into a
+measured total. The separately approved boundary described below preserves its
+own exact stopped prefix without editing this original checkpoint.
 
-A predecessor must be fully complete. A closed operator slice is insufficient.
+A predecessor must be fully complete unless the explicit approved transition
+below identifies that stopped predecessor and its exact retained history.
+A closed operator slice by itself is insufficient.
 A prospective predecessor requires both its gate and expansion; a finite
 predecessor requires every slot in its one plan. The new history must equal the
 old prefix plus exactly that predecessor's allowance. Its reservation ordinals,
@@ -116,6 +124,60 @@ The first run activates an append-only registration successor after acquiring
 `campaign.lease.json`. Legacy and finite controllers use this same physical
 lease. Every later reservation rechecks the current registration and immutable
 history. A different scope cannot dispatch through an old registration.
+
+## An explicitly approved prospective transition
+
+An original stop remains a stop. Continuing a separately approved program uses
+an immutable `benchmark-approved-prospective-campaign` document and version 2
+finite amendments. Version 1 amendments retain their existing rules.
+
+The approved document binds the bytes of the user's decision record and the
+published proposal, the original predecessor registration and amendment, the
+environment and shared ledger roots, and the complete retained history. The
+proposal remains an unexecuted historical proposal with `approved: false`;
+the separate affirmative user decision supplies authorization. Changing either
+file invalidates the approved document. The retained stop's normalized episode
+and original result reference are also checked against the proposal.
+
+`prepareApprovedCampaign` in `benchmark/approved-campaign.mjs` returns this data
+for an exclusive immutable write. Its inputs are `id`, `userApproval`,
+`predecessor`, `environmentRoot`, `pilotLedgerRoot`, `history`, and `allocations`.
+`userApproval` is a file reference with `path` and `sha256`. Each allocation has
+`id`, `work_index`, `role`, and `reservation_limit`. The ordered proposal work
+items define the allowed roles and totals; they do not fix execution order.
+
+For the approved continuation, 50 existing reservations and four retained usage
+unknowns form the exact boundary. The frozen allocation maxima sum to the
+approved 89, so the complete program stays within 139 reservations and the
+unchanged absolute cap of 144. Five reservations remain unallocated. Scale
+work is predeclared as five distinct two-slot allocations with matching material
+catalogs; the other six work items each retain one allocation. Every allocation
+and its maximum are frozen together before any new scope starts. A scope cannot
+reuse an allocation, borrow from another work item, or append an allocation
+after seeing results.
+
+Every finite reader verifies the original plans, ledgers, reservations, and raw
+evidence against that exact approved prefix. The first version 2 scope may
+succeed the specifically named stopped predecessor once all of its started
+observations have retained completed records. It does not complete or reopen
+the original scope. Later scopes require their predecessor's entire new
+schedule to be complete and must bind the same approval document. A new unknown,
+core-invalid observation, or core stop after the approved boundary blocks
+further dispatch. Analysis revisions do not expand the boundary.
+
+For `unstarted_followup`, the approved source plan must belong to the stopped
+predecessor. The controller derives the unstarted suffix from the retained
+observations and compares every selected slot, order, case, pair, and statistic.
+The original 32-slot scientific design remains intact while the new execution
+schedule contains only its 11 never-started cells. Its own report therefore
+retains 21 unresolved cells even after all 11 new observations complete. The
+failed twenty-first source observation is excluded from this schedule and stays
+retained in the original experiment.
+
+Follow-up conditions preserve the source model variants, parameters, subject
+builds, modes, cases, and business material. A newly declared route, API, or
+window belongs to the new protocol and is recorded explicitly; matching a
+model variant does not establish equivalence to the old route condition.
 
 ## Original failures and analysis revisions
 

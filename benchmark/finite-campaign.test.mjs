@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, writeFile, rename, symlink
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { fingerprint } from './protocol.mjs';
+import { fingerprint, validateProtocol } from './protocol.mjs';
 import { createPreregistrationTemplate } from './templates/preregistration.mjs';
 import { preregisterComparison } from './planning.mjs';
 import { freezeBatchPlan, scheduleProtocol, runBatch } from './batch.mjs';
@@ -12,11 +12,14 @@ import { writeRouteGate, verifyGateReference } from './gate.mjs';
 import { pilotScopePolicy, preparePilotScope, readPilotScopeAmendment, scopeReservationFields } from './pilot-scope.mjs';
 import { PROSPECTIVE_COHORT, readCohortHistory } from './prospective-cohort.mjs';
 import { FINITE_CAMPAIGN, finiteCampaignPolicy, prepareFiniteCampaign, assertFiniteCampaignPlan,
-  readFiniteCampaignAmendment, verifyFiniteCampaignScope, finiteCampaignReservationFields, readFiniteCampaignHistory, verifyFiniteOriginalResults } from './finite-campaign.mjs';
+  readFiniteCampaignAmendment, verifyFiniteCampaign, verifyFiniteCampaignScope, finiteCampaignReservationFields, readFiniteCampaignHistory, verifyFiniteOriginalResults } from './finite-campaign.mjs';
 import { exampleEnvelope } from './analysis/fixtures.mjs';
 import { normalizeEpisode } from './evidence/normalize.mjs';
 import { writeEvidenceBundle } from './evidence/store.mjs';
 import { assessReportedModel } from './reported-model.mjs';
+import { prepareApprovedCampaign, readApprovedCampaign } from './approved-campaign.mjs';
+import { declaredSchedule, UNSTARTED_FOLLOWUP } from './campaign-selection.mjs';
+import { scoreExperiment } from './analysis/compare.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n');
@@ -123,7 +126,7 @@ async function writeClosedPlan(plan, { startOrdinal, count = plan.slots.length, 
   await writeFile(join(plan.execution.control_root, 'ledger.jsonl'), rows.map(row => JSON.stringify(row)).join('\n') + '\n');
 }
 
-async function fixture() {
+async function fixture({ modelCount = 1, expansionCount = modelCount * 16, unknownExpansion = false } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-finite-campaign-'))), pilot = join(root, 'pilot'), owner = join(root, 'owner');
   await mkdir(pilot); await mkdir(owner);
   const oldControl = join(owner, 'historical'), legacyControl = join(owner, 'legacy'); await mkdir(oldControl); await mkdir(legacyControl);
@@ -149,7 +152,7 @@ async function fixture() {
   const input = { kind: PROSPECTIVE_COHORT, id: 'prospective', role: 'gate', authorization: 'Synthetic completed prospective cohort',
     predecessor, history_plan_files: [oldPlan, legacyPlanPath], acknowledged_unknown_run_ids: unknowns,
     expansion: { experiment_id: 'prospective-expansion', control_root: expansionRoot, case_ids: expansionIds } };
-  const p = fixtureProtocol('prospective-gate', { scope: pilotScopePolicy(input, { modelCount: 1 }), modelCount: 1, routing: true });
+  const p = fixtureProtocol('prospective-gate', { scope: pilotScopePolicy(input, { modelCount }), modelCount, routing: true });
   const execution = { environment_root: owner, control_root: gateRoot, pilot_ledger_root: pilot, instrumentation, models_sha256: fingerprint({ models: 1 }) };
   execution.pilot_scope = await preparePilotScope({ setup: { pilot_scope: input }, protocol: p, execution, slots: scheduleProtocol(p) });
   const gatePlan = freezeBatchPlan({ protocol: p, execution }); await save(join(gateRoot, 'plan.json'), gatePlan);
@@ -157,25 +160,33 @@ async function fixture() {
   const reg = join(pilot, 'scope-registration-002.json'); await save(reg, { version: 1, kind: 'benchmark-prospective-cohort-succession', sequence: 2,
     predecessor: await reference(originalRegistration), id: input.id, amendment: execution.pilot_scope.amendment });
   const expInput = { kind: PROSPECTIVE_COHORT, id: input.id, role: 'expansion', amendment: execution.pilot_scope.amendment };
-  const ep = fixtureProtocol('prospective-expansion', { scope: pilotScopePolicy(expInput, { modelCount: 1 }), modelCount: 1, expansion: true, routing: true });
+  const ep = fixtureProtocol('prospective-expansion', { scope: pilotScopePolicy(expInput, { modelCount }), modelCount, expansion: true, routing: true });
   const ee = { ...execution, control_root: expansionRoot }; delete ee.pilot_scope;
   ee.pilot_scope = await preparePilotScope({ setup: { pilot_scope: expInput }, protocol: ep, execution: ee, slots: scheduleProtocol(ep) });
-  const expPlan = freezeBatchPlan({ protocol: ep, execution: ee }); await save(join(expansionRoot, 'plan.json'), expPlan); await writeClosedPlan(expPlan, { startOrdinal: 22 });
+  const expPlan = freezeBatchPlan({ protocol: ep, execution: ee }); await save(join(expansionRoot, 'plan.json'), expPlan);
+  await writeClosedPlan(expPlan, { startOrdinal: 14 + modelCount * 8, count: expansionCount, unknownLast: unknownExpansion });
   return { root, pilot, owner, originalBindings, historyPlans: [oldPlan, legacyPlanPath, join(gateRoot, 'plan.json'), join(expansionRoot, 'plan.json')],
-    predecessor: { registration: await reference(reg), amendment: execution.pilot_scope.amendment }, unknowns, count: 37 };
+    predecessor: { registration: await reference(reg), amendment: execution.pilot_scope.amendment }, unknowns,
+    count: 13 + modelCount * 8 + expansionCount };
 }
 
-async function prepare(f, { id = 'finite-gate', role = 'route_gate_only', phase = 'pilot', exposed = false, canonicalExposure = false } = {}) {
-  const control = join(f.owner, id); await mkdir(control);
-  const input = { kind: FINITE_CAMPAIGN, id, role, authorization: 'Synthetic finite campaign contract', predecessor: f.predecessor, history_plan_files: f.historyPlans };
-  const p = fixtureProtocol(id, { modelCount: 1, routing: true }); p.phase = phase;
+async function prepare(f, { id = 'finite-gate', role = 'route_gate_only', phase = 'pilot', exposed = false, canonicalExposure = false,
+  route, protocol: suppliedProtocol, selection } = {}) {
+  const control = join(f.owner, id); await mkdir(control, { recursive: true });
+  const input = { kind: FINITE_CAMPAIGN, id, role, authorization: 'Synthetic finite campaign contract', predecessor: f.predecessor, history_plan_files: f.historyPlans,
+    ...(f.approval ? { prospective_authorization: f.approval, allocation_id: id } : {}), ...(selection ? { selection } : {}) };
+  const p = suppliedProtocol ? structuredClone(suppliedProtocol) : fixtureProtocol(id, { modelCount: 1, routing: true });
+  p.id = id; p.phase = phase; delete p.policies.pilot.scope;
+  if (route) p.models[0].route = route;
   if (phase === 'confirmation') {
     for (const item of p.corpus.cases) {
       item.split = 'confirmation'; item.material_id = id + '-' + item.material_id;
       if (!exposed) for (const key of ['content_sha256', 'prompt_sha256', 'contract_sha256', 'initial_state_sha256', 'authorization_sha256']) item[key] = fingerprint({ confirmation: id, case: item.id, key });
     }
   }
-  p.policies.campaign = finiteCampaignPolicy(input, { scheduledEpisodes: 8 }); sealProtocol(p);
+  const count = selection?.slot_ids.length ?? 8;
+  p.policies.budgets[0].batch.max_episodes = count;
+  p.policies.campaign = finiteCampaignPolicy(input, { scheduledEpisodes: count }); sealProtocol(p);
   const execution = { environment_root: f.owner, control_root: control, pilot_ledger_root: f.pilot, instrumentation, models_sha256: fingerprint({ models: 1 }) };
   if (canonicalExposure) {
     const bindings = p.corpus.cases.map((item, index) => ({ ...structuredClone(f.originalBindings[index]), id: item.id, protocol_case: item }));
@@ -195,6 +206,144 @@ async function successor(f, current, sequence) {
   return { ...f, count: f.count + current.plan.slots.length, predecessor: { registration: await reference(path), amendment: current.plan.execution.campaign_scope.amendment },
     historyPlans: [...f.historyPlans, join(current.plan.execution.control_root, 'plan.json')] };
 }
+
+async function approveStoppedFixture(f) {
+  const history = await readCohortHistory({ planFiles: f.historyPlans, pilotLedgerRoot: f.pilot });
+  const stop = history.episodes.at(-1), normalizedPath = join(stop.directory, 'episode.json'), normalized = await read(normalizedPath);
+  const allocations = [
+    { id: 'approved-followup', work_index: 0, role: UNSTARTED_FOLLOWUP, reservation_limit: 11 },
+    { id: 'approved-grok', work_index: 1, role: 'route_gate_only', reservation_limit: 8 },
+    { id: 'approved-terra', work_index: 2, role: 'route_gate_only', reservation_limit: 8 },
+    { id: 'approved-confirmation', work_index: 3, role: 'acceptance', reservation_limit: 20 },
+    { id: 'approved-code', work_index: 4, role: 'acceptance', reservation_limit: 24 },
+    ...Array.from({ length: 5 }, (_, i) => ({ id: 'approved-scale-' + i, work_index: 5, role: 'acceptance', reservation_limit: 2 })),
+    { id: 'approved-fault', work_index: 6, role: 'acceptance', reservation_limit: 8 },
+  ];
+  const proposal = { version: 1, kind: 'prospective-resumption-proposal-not-executable', revision: 2, approved: false, execution_authority: null,
+    campaign_absolute_limit: 144, current_physical_reservations: 50, retained_usage_unknown: 4,
+    proposed_new_reservation_ceiling: 89, proposed_total_ceiling: 139, unallocated_headroom: 5,
+    work: [11, 8, 8, 20, 24, 10, 8].map((maximum_new_reservations, index) => ({ maximum_new_reservations,
+      ...([1, 2].includes(index) ? { route: 'provider/' + (index === 1 ? 'grok' : 'terra') + '/fixture-0' } : {}) })),
+    retained_stop: { run_id: stop.run_id, result_sha256: normalized.admission.refs[0].sha256,
+      normalized_episode_sha256: sha(await readFile(normalizedPath)), current_scope_still_stopped: true, usage_still_unknown: true, invalid_still_retained: true } };
+  const proposalPath = join(f.owner, 'proposal.json'); await save(proposalPath, proposal);
+  const decision = { version: 1, kind: 'user-prospective-benchmark-resumption-decision', approved: true,
+    source: 'Synthetic direct user decision for contract testing', user_message: 'Approve the exact prospective proposal',
+    authorization_scope: 'The seven fixed work items within 89 new reservations', recorded_at_utc: '2026-11-23T00:00:00Z',
+    approved_proposal: { ...await reference(proposalPath), revision: 2 }, campaign_absolute_limit: 144,
+    existing_reservations: 50, retained_usage_unknown: 4, approved_new_reservation_ceiling: 89, approved_total_ceiling: 139, unallocated_headroom: 5 };
+  const decisionPath = join(f.owner, 'user-approval.json'); await save(decisionPath, decision);
+  const inputs = { id: 'approved-program', userApproval: await reference(decisionPath), predecessor: f.predecessor,
+    environmentRoot: f.owner, pilotLedgerRoot: f.pilot, history, allocations };
+  const value = await prepareApprovedCampaign(inputs), path = join(f.owner, 'approved-campaign.json'); await save(path, value);
+  return { ...f, approval: await reference(path), approvedDocument: value, approvalInputs: inputs };
+}
+
+test('explicit approval advances the exact stopped 50-prefix, while old scope and every later stop stay closed', async t => {
+  const base = await fixture({ modelCount: 2, expansionCount: 21, unknownExpansion: true });
+  await assert.rejects(prepare(base, { id: 'no-new-approval' }), /ORIGINAL_CORE_STOP/);
+  const f = await approveStoppedFixture(base), gate = await prepare(f, { id: 'approved-grok', route: 'grok/fixture-0' });
+  assert.equal(gate.amendment.version, 2); assert.equal(gate.amendment.history.scheduled_episodes, 50);
+  assert.equal(gate.amendment.history_exemption.scheduled_episodes, 13);
+  assert.equal(gate.amendment.prospective_authorization.history_boundary.scheduled_episodes, 50);
+  assert.equal(gate.amendment.prospective_authorization.campaign_limit, 139);
+  assert.equal(gate.amendment.history.unknown_usage_run_ids.length, 4);
+  assert.equal(gate.amendment.history.total_usage.input_tokens, null);
+  assert.deepEqual((await readApprovedCampaign(f.approval)).value, f.approvedDocument);
+  const source = await read(f.historyPlans.at(-1)), stoppedRows = await readFile(join(source.execution.control_root, 'ledger.jsonl'));
+  const baselineReservations = await Promise.all(f.approvedDocument.history.reservations.map(item => readFile(item.reference.path)));
+
+  await t.test('approval, proposal, retained stop and allocation changes fail before a callback', async () => {
+    for (const reference of [f.approvedDocument.user_approval, f.approvedDocument.proposal]) {
+      const bytes = await readFile(reference.path); await writeFile(reference.path, Buffer.concat([bytes, Buffer.from(' ')]));
+      await assert.rejects(verifyFiniteCampaignScope(gate.plan, { forReservation: true }), /REFERENCED_BYTES_CHANGED/);
+      await writeFile(reference.path, bytes);
+    }
+    const original = f.approvalInputs;
+    const declined = await read(original.userApproval.path), declinedPath = join(f.owner, 'declined-user-decision.json');
+    declined.approved = false; await save(declinedPath, declined);
+    await assert.rejects(prepareApprovedCampaign({ ...original, userApproval: await reference(declinedPath) }), /EXPLICIT_DECISION_REQUIRED/);
+    const invalidAllocations = structuredClone(original.allocations); invalidAllocations.find(item => item.work_index === 5).reservation_limit++;
+    await assert.rejects(prepareApprovedCampaign({ ...original, allocations: invalidAllocations }));
+    const borrowing = structuredClone(original.allocations); borrowing[1].reservation_limit++; borrowing[2].reservation_limit--;
+    await assert.rejects(prepareApprovedCampaign({ ...original, allocations: borrowing }), /WORK_LIMIT_CHANGED/);
+    const missing = structuredClone(original.allocations); missing[6].id = missing[5].id;
+    await assert.rejects(prepareApprovedCampaign({ ...original, allocations: missing }), /DUPLICATE_ALLOCATION/);
+    const execution = structuredClone(gate.plan.execution); delete execution.campaign_scope;
+    const changed = structuredClone(gate.plan.protocol); changed.models[0].route = 'other/fixture-0'; sealProtocol(changed);
+    await assert.rejects(prepareFiniteCampaign({ setup: { campaign_scope: gate.input }, protocol: changed, execution, slots: scheduleProtocol(changed) }), /APPROVAL_ROUTE_CHANGED/);
+    const rows = stoppedRows.toString().trimEnd().split('\n').map(JSON.parse), last = rows.filter(row => row.type === 'episode_completed').at(-1);
+    last.result.stop_batch = false; await writeFile(join(source.execution.control_root, 'ledger.jsonl'), rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+    await assert.rejects(verifyFiniteCampaignScope(gate.plan, { forReservation: true }));
+    await writeFile(join(source.execution.control_root, 'ledger.jsonl'), stoppedRows);
+  });
+
+  let calls = 0;
+  const status = await runBatch({ plan: gate.plan, executeEpisode: async ({ plan, slot, runId }) => {
+    const reservation = await read(join(f.pilot, String(51 + calls).padStart(3, '0') + '.json'));
+    assert.equal(reservation.run_id, runId); assert.equal(reservation.scope_id, 'approved-grok'); calls++;
+    return resultFor(plan, slot, runId);
+  } });
+  assert.equal(status.completed, 8); assert.equal(calls, 8);
+  await runBatch({ plan: gate.plan, executeEpisode: () => assert.fail('No ninth approved gate observation') });
+  await assert.rejects(runBatch({ plan: source, executeEpisode: () => assert.fail('Original stopped scope cannot resume') }));
+  const next = { ...f, count: 58, historyPlans: [...f.historyPlans, join(gate.plan.execution.control_root, 'plan.json')],
+    predecessor: { registration: await reference(join(f.pilot, 'scope-registration-003.json')), amendment: gate.plan.execution.campaign_scope.amendment } };
+  const withoutApproval = { ...next }; delete withoutApproval.approval;
+  await assert.rejects(prepare(withoutApproval, { id: 'unapproved-successor' }), /APPROVAL_LINEAGE_REQUIRED/);
+  const repeated = structuredClone(gate.amendment); repeated.predecessor = next.predecessor;
+  repeated.history = await readFiniteCampaignHistory({ planFiles: next.historyPlans, pilotLedgerRoot: f.pilot, prospectiveAuthorization: f.approval });
+  repeated.amendment_sha256 = fingerprint({ ...repeated, amendment_sha256: null });
+  await assert.rejects(verifyFiniteCampaign(repeated), /ALLOCATION_REUSED/);
+  const terra = await prepare(next, { id: 'approved-terra', route: 'terra/fixture-0' });
+  let failedCalls = 0;
+  await runBatch({ plan: terra.plan, executeEpisode: async ({ plan, slot, runId }) => {
+    failedCalls++; return resultFor(plan, slot, runId, { attempts: [null], valid: false, stop: true });
+  } });
+  assert.equal(failedCalls, 1);
+  await assert.rejects(runBatch({ plan: terra.plan, executeEpisode: () => assert.fail('New unknown remains a stop') }), /ORIGINAL_CORE_STOP/);
+  await assert.rejects(readFiniteCampaignHistory({ planFiles: [...next.historyPlans, join(terra.plan.execution.control_root, 'plan.json')],
+    pilotLedgerRoot: f.pilot, prospectiveAuthorization: f.approval }), /ORIGINAL_CORE_STOP/);
+  assert.equal((await readdir(f.pilot)).filter(name => /^\d{3}\.json$/.test(name)).length, 59);
+  assert.deepEqual(await readFile(join(source.execution.control_root, 'ledger.jsonl')), stoppedRows);
+  for (const [i, item] of f.approvedDocument.history.reservations.entries()) assert.deepEqual(await readFile(item.reference.path), baselineReservations[i]);
+});
+
+test('the separate unstarted follow-up schedules exactly 11 old unstarted cells and retains the full 32-slot denominator', async t => {
+  const f = await approveStoppedFixture(await fixture({ modelCount: 2, expansionCount: 21, unknownExpansion: true }));
+  const source = await read(f.historyPlans.at(-1)), protocol = structuredClone(source.protocol);
+  protocol.models[0].route = 'auto/fixture-0'; protocol.models[0].routing.mode = 'auto-route';
+  const selection = { source_plan_sha256: source.plan_sha256, slot_ids: source.slots.slice(21).map(slot => slot.slot_id) };
+  const current = await prepare(f, { id: 'approved-followup', role: UNSTARTED_FOLLOWUP, protocol, selection });
+  assert.equal(current.plan.slots.length, 11); assert.equal(declaredSchedule(current.plan.protocol).length, 32);
+  assert.deepEqual(current.plan.slots, source.slots.slice(21).map((slot, order) => ({ ...slot, order })));
+  assert.equal(current.plan.protocol.models[0].route, 'auto/fixture-0');
+  assert.equal(validateProtocol(current.plan.protocol, { stage: 'execute' }).valid, true);
+  const execution = structuredClone(current.plan.execution); delete execution.campaign_scope;
+  await t.test('a completed slot, the invalid twenty-first slot, reorder or changed cases cannot replace the exact suffix', async () => {
+    for (const replacement of [source.slots.slice(20, 31).map(slot => slot.slot_id), source.slots.slice(0, 11).map(slot => slot.slot_id), [...selection.slot_ids].reverse()]) {
+      const input = structuredClone(current.input), changed = structuredClone(current.plan.protocol);
+      input.selection.slot_ids = replacement; changed.policies.campaign.selection.slot_ids = replacement;
+      changed.policies.campaign.reservation_limit = replacement.length; changed.policies.budgets[0].batch.max_episodes = replacement.length; sealProtocol(changed);
+      await assert.rejects(async () => prepareFiniteCampaign({ setup: { campaign_scope: input }, protocol: changed, execution, slots: scheduleProtocol(changed) }),
+        /FOLLOWUP|ALLOCATION_LIMIT/);
+    }
+    const changed = structuredClone(current.plan.protocol); changed.corpus.cases[0].content_sha256 = 'c'.repeat(64); sealProtocol(changed);
+    await assert.rejects(prepareFiniteCampaign({ setup: { campaign_scope: current.input }, protocol: changed, execution, slots: scheduleProtocol(changed) }), /FOLLOWUP_BUSINESS_MATERIAL_CHANGED/);
+    const accepted = structuredClone(current.plan.protocol); accepted.policies.decision.mode = 'acceptance'; sealProtocol(accepted);
+    assert.equal(validateProtocol(accepted, { stage: 'execute' }).valid, false);
+  });
+  const episodes = [], status = await runBatch({ plan: current.plan, executeEpisode: async ({ plan, slot, runId }) => {
+    const result = await resultFor(plan, slot, runId); episodes.push(await read(join(result.normalized_directory, 'episode.json'))); return result;
+  } });
+  assert.equal(status.completed, 11); assert.equal(episodes.length, 11);
+  const report = scoreExperiment({ protocol: current.plan.protocol, episodes });
+  assert.equal(report.completeness.planned_slots, 32); assert.equal(report.completeness.valid_slots, 11);
+  assert.equal(report.completeness.unresolved_slots.length, 21);
+  assert.equal(report.cost_ledger.actual_runs, 11);
+  await runBatch({ plan: current.plan, executeEpisode: () => assert.fail('No twelfth follow-up observation') });
+  assert.equal((await readdir(f.pilot)).filter(name => /^\d{3}\.json$/.test(name)).length, 61);
+});
 
 test('finite policies are exact and cannot encode a partial 24-slot cohort', () => {
   const input = { kind: FINITE_CAMPAIGN, id: 'scope', role: 'route_gate_only' };

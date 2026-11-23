@@ -5,13 +5,13 @@ import { dirname, isAbsolute, join, relative } from 'node:path';
 import { fingerprint } from './protocol.mjs';
 import { planBenchmarkFixture, prepareBenchmarkFixture, reconcileBenchmarkFixture } from './fixture.mjs';
 import { bindMaterializedCases } from './planning.mjs';
+import { diagnosticBinding, episodeFixtureSelections, validateFixtureDiagnostics } from './fixture-diagnostics.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const inside = (root, path) => { const child = relative(root, path); return child === '' || child !== '..' && !child.startsWith('../') && !isAbsolute(child); };
 const runIdFor = (id, slot) => id + '-' + String(slot.order + 1).padStart(3, '0');
 const json = path => readFile(path, 'utf8').then(JSON.parse);
 const present = path => lstat(path).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
-const hasEvents = binding => (binding.events?.length ?? 0) > 0;
 
 async function canonicalDirectory(path) {
   assert.ok(isAbsolute(path));
@@ -42,11 +42,12 @@ async function save(path, value) {
 export function validateEpisodeFixturePolicy(policy, { required = false } = {}) {
   if (policy === undefined) { assert.equal(required, false, 'Cases with events require setup.episode_fixtures before capture'); return null; }
   assert.equal(policy.version, 1);
-  assert.deepEqual(Object.keys(policy).filter(key => !['version', 'project_page_id', 'placement', 'source_bindings', 'git'].includes(key)), []);
+  assert.deepEqual(Object.keys(policy).filter(key => !['version', 'project_page_id', 'placement', 'source_bindings', 'git', 'diagnostics'].includes(key)), []);
   assert.match(policy.project_page_id, /^[a-f0-9-]{32,36}$/i);
   assert.equal(policy.placement ?? 'notion', 'notion', 'Per-slot preparation currently requires a complete Notion/source catalog');
   if (policy.git !== undefined) assert.ok(isAbsolute(policy.git));
   assert.ok(policy.source_bindings === undefined || policy.source_bindings && typeof policy.source_bindings === 'object' && !Array.isArray(policy.source_bindings));
+  validateFixtureDiagnostics(policy.diagnostics);
   return structuredClone(policy);
 }
 
@@ -68,6 +69,7 @@ async function bindPrepared({ baseBinding, materialization, fixturePlan, fixture
     fixture_control: await artifact(join(fixtureRoot, 'plan.json'), fixtureRoot) };
 }
 async function readSlot({ ref, slot, id, baseBinding, environmentRoot, controlRoot, policy, candidate, runtime }) {
+  const episode = diagnosticBinding(baseBinding, slot.condition_id, policy.diagnostics);
   assert.equal(ref.path, join(controlRoot, 'slot-bindings', runIdFor(id, slot) + '.json'));
   await artifact(ref.path, controlRoot, ref); const record = await json(ref.path);
   assert.equal(record.version, 1); assert.equal(record.kind, 'benchmark-slot-materialization');
@@ -87,8 +89,13 @@ async function readSlot({ ref, slot, id, baseBinding, environmentRoot, controlRo
   assert.equal(record.build_id, candidate.build_id);
   assert.equal(plan.build_root, join(environmentRoot, 'builds', candidate.build_id));
   assert.equal(plan.node, runtime.node);
+  assert.deepEqual(plan.events.map(event => event.id), (episode.binding.events ?? []).map(event => event.id), 'Frozen fixture events differ from the scheduled arm');
+  for (const expected of episode.binding.events ?? []) {
+    const event = plan.events.find(value => value.id === expected.id);
+    for (const [key, value] of Object.entries(expected)) assert.deepEqual(event[key], value, 'Frozen fixture event changed: ' + key);
+  }
   await artifact(record.materialization.path, fixtureRoot, record.materialization);
-  const binding = await bindPrepared({ baseBinding, materialization: await json(record.materialization.path), fixturePlan: plan, fixtureRoot });
+  const binding = await bindPrepared({ baseBinding: episode.binding, materialization: await json(record.materialization.path), fixturePlan: plan, fixtureRoot });
   assert.deepEqual(record.binding, binding, 'Frozen slot binding differs from its canonical case and actual material');
   assert.equal(record.public_case_sha256, fingerprint(binding.public_case));
   assert.equal(record.public_prompt_sha256, fingerprint(binding.public_case.turns));
@@ -100,7 +107,8 @@ async function readSlot({ ref, slot, id, baseBinding, environmentRoot, controlRo
 /** Freeze each writable slot independently, before its actual zero-model capture.
  * A lost preparation receipt permits only the existing read-only reconciler. */
 export async function prepareEpisodeFixtures({ id, environmentRoot, controlRoot, corpus, cases, slots, candidates, runtime, policy: supplied }, operations = {}) {
-  const mutable = slots.filter(slot => hasEvents(cases.find(binding => binding.id === slot.case_id)));
+  const selections = episodeFixtureSelections({ cases, slots, candidates, diagnostics: supplied?.diagnostics });
+  const mutable = slots.filter(slot => selections.has(slot.slot_id));
   const policy = validateEpisodeFixturePolicy(supplied, { required: mutable.length > 0 });
   if (!mutable.length) return { registration: null, slots: new Map() };
   assert.ok(isAbsolute(environmentRoot) && isAbsolute(controlRoot) && inside(environmentRoot, controlRoot));
@@ -110,7 +118,7 @@ export async function prepareEpisodeFixtures({ id, environmentRoot, controlRoot,
   const prepare = operations.prepare ?? prepareBenchmarkFixture, reconcile = operations.reconcile ?? reconcileBenchmarkFixture;
   const completed = new Map(), references = {};
   for (const slot of mutable) {
-    const baseBinding = cases.find(binding => binding.id === slot.case_id), candidate = candidates[slot.condition_id];
+    const episode = selections.get(slot.slot_id), { baseBinding } = episode, candidate = candidates[slot.condition_id];
     assert.ok(candidate && baseBinding); const runId = runIdFor(id, slot);
     assert.match(runId, /^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/, 'Episode fixture run IDs are bounded by the existing fixture API');
     const fixtureRoot = join(controlRoot, 'episode-fixtures', runId), recordPath = join(controlRoot, 'slot-bindings', runId + '.json');
@@ -127,9 +135,10 @@ export async function prepareEpisodeFixtures({ id, environmentRoot, controlRoot,
       placement: policy.placement ?? 'notion', sourceBindings, git: policy.git ?? null,
       access: 'episode-owned', episodeId: runId, ownedRuntimeRoot: join(environmentRoot, 'runs', runId),
       candidateCount: baseBinding.variant.candidate_count, roundCount: baseBinding.variant.round_count,
+      events: episode.events,
       ...(baseBinding.variant.candidate_count === 16 ? { catalogSkillIds: catalog } : {}) });
     assert.equal(fixturePlan.corpus.publicCorpus.content_sha256, corpus.publicCorpus.content_sha256, 'Slot preparation cannot change the registered canonical corpus');
-    for (const event of baseBinding.events) {
+    for (const event of episode.binding.events ?? []) {
       const actual = fixturePlan.events.find(value => value.id === event.id); assert.ok(actual);
       for (const [key, value] of Object.entries(event)) assert.deepEqual(actual[key], value);
     }
@@ -148,7 +157,7 @@ export async function prepareEpisodeFixtures({ id, environmentRoot, controlRoot,
     assert.ok(materializationRef && materializationRef.path === result.binding_path);
     await artifact(materializationRef.path, fixtureRoot, materializationRef);
     const actualPlan = await json(join(fixtureRoot, 'plan.json')); assert.deepEqual(actualPlan, fixturePlan);
-    const binding = await bindPrepared({ baseBinding, materialization: await json(materializationRef.path), fixturePlan, fixtureRoot });
+    const binding = await bindPrepared({ baseBinding: episode.binding, materialization: await json(materializationRef.path), fixturePlan, fixtureRoot });
     const record = { version: 1, kind: 'benchmark-slot-materialization', slot_id: slot.slot_id, run_id: runId,
       slot_sha256: fingerprint(slot), build_id: candidate.build_id,
       case_id: slot.case_id, condition_id: slot.condition_id, canonical_binding_sha256: fingerprint(baseBinding),
@@ -165,7 +174,8 @@ export async function prepareEpisodeFixtures({ id, environmentRoot, controlRoot,
 /** Dispatch, recovery and reanalysis select retained bindings; no preparation
  * or remote command is reachable from this function. */
 export async function readEpisodeFixtureBindings({ id, registration, environmentRoot, controlRoot, cases, slots, candidates, runtime }) {
-  const required = slots.filter(slot => hasEvents(cases.find(binding => binding.id === slot.case_id)));
+  const selections = episodeFixtureSelections({ cases, slots, candidates, diagnostics: registration?.policy?.diagnostics });
+  const required = slots.filter(slot => selections.has(slot.slot_id));
   if (!registration) { assert.equal(required.length, 0, 'Stateful execution requires frozen per-slot materializations'); return new Map(); }
   assert.equal(registration.version, 1); const policy = validateEpisodeFixturePolicy(registration.policy, { required: true });
   assert.deepEqual(Object.keys(registration.slot_bindings).sort(), required.map(slot => slot.slot_id).sort(), 'Frozen episode fixtures must cover exactly the writable scheduled slots');
