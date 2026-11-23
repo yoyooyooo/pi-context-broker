@@ -634,7 +634,8 @@ async function preparationHarness(t) {
     records: { data_source_id: '33333333-3333-4333-8333-333333333333', property_ids: { Skill: 'Skill' } } };
   await writeJson(statePath, { library, records: [], calls: [] });
   await writeFile(cliPath, `import assert from 'node:assert/strict';
-import {readFile,writeFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {readFile,writeFile,readdir} from 'node:fs/promises';
 import {join} from 'node:path';
 const path=${JSON.stringify(statePath)},state=JSON.parse(await readFile(path,'utf8')),args=process.argv.slice(2);
 const one=key=>args[args.indexOf(key)+1],many=key=>args.flatMap((arg,i)=>arg===key?[args[i+1]]:[]);
@@ -643,6 +644,20 @@ state.stores??=[];state.stores.push(process.env.NTN_SKILLS_HOME);
 state.environments??=[];state.environments.push(Object.fromEntries(['NTN_SKILLS_HOME','NTN_SKILLS_CONFIG_HOME','NTN_SKILLS_CACHE_HOME','NTN_SKILLS_DATA_HOME','NTN_SKILLS_SCHEDULER_ROOT'].map(key=>[key,process.env[key]])));
 let value;
 if(args[0]==='ctl'&&args[2]==='inspect')value={ok:true,library:state.library};
+else if(args[0]==='ctl'&&args[2]==='import'){
+  const files=[];
+  async function walk(root,relative=''){
+    for(const item of await readdir(join(root,relative),{withFileTypes:true})){
+      const path=relative?relative+'/'+item.name:item.name;
+      if(item.isDirectory())await walk(root,path);
+      else{const bytes=await readFile(join(root,path));files.push({path,content:bytes.toString(),bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),mode:'100644'});}
+    }
+  }
+  await walk(args[3]);
+  const record={id:'00000000-0000-4000-8000-'+String(state.records.length+1).padStart(12,'0'),name:one('--name'),description:one('--description'),skillId:one('--skill-id'),content:files.find(file=>file.path==='SKILL.md').content,files,requires:[],members:[],enabled:true,defaultContext:false};
+  if(args.includes('--dry-run'))value={ok:true,contract:'current',dry_run:true,library:{library_id:state.library.library_id,database_id:state.library.skills.database_id,data_source_id:state.library.skills.data_source_id},skill_id:record.skillId,page_id:state.importExistingOwner??null,state:null,remote_writes:0,replaces_complete_tree:true,remove:[],metadata:{name:record.name,description:record.description,kind:'skill',enabled:true,default_context:false},files:files.map(file=>({path:file.path,bytes:file.bytes,sha256:file.sha256,page_id:null,previous_authority:null,action:'create',authority:many('--native').includes(file.path)?'native':'resource'}))};
+  else{state.records.push(record);value={ok:true,page_id:record.id};}
+}
 else if(args[0]==='ctl'&&args[2]==='skill'){
   const action=args[3];assert.ok(['create','update'].includes(action));
   const requires=many('--requires'),members=many('--members');
@@ -658,11 +673,19 @@ else if(args[0]==='ctl'&&args[2]==='skill'){
     if(args.includes('--default-context'))record.defaultContext=one('--default-context')==='true';
     value={ok:true,page_id:record.id};
   }
+}else if(args[0]==='read'&&args.includes('--from')){
+  const record=state.records.find(row=>'unit:'+row.id===one('--from'));assert.ok(record);
+  const file=record.files.find(file=>file.path===args[1]);assert.ok(file);
+  await writeFile(one('--output'),state.observedResources?.[file.path]??file.content);
+  value={ok:true,effects:{remote_writes:'none'}};
 }else if(args[0]==='read'){
   const record=state.records.find(row=>row.id===args[1]);assert.ok(record);assert.equal(record.enabled,true,'Disabled content cannot be consumed');
   if(state.failRead){value={ok:false,error:{code:'STATE_UNAVAILABLE'}};process.exitCode=1;}
   else value={ok:true,has_more:false,path:'SKILL.md',content:state.observedContent??record.content,ref:'unit:'+record.id,snapshot_id:'snapshot:'+record.id,version_id:'version:'+record.id,scope:'unit-scope',record:{id:record.skillId,locator:{page_id:record.id,skill_id:record.skillId}},effects:{remote_writes:'none'}};
-}else if(args[0]==='files')value={ok:true,files:[{path:'SKILL.md',mode:'100644'}]};
+}else if(args[0]==='files'){
+  const record=state.records.find(row=>'snapshot:'+row.id===args[1]);assert.ok(record);
+  value={ok:true,files:record.files?.map(file=>({path:file.path,mode:file.mode}))??[{path:'SKILL.md',mode:'100644'}]};
+}
 else throw Error('Unexpected CLI request '+JSON.stringify(args));
 await writeFile(path,JSON.stringify(state));process.stdout.write(JSON.stringify(value)+'\\n');
 `);
@@ -692,6 +715,45 @@ await writeFile(path,JSON.stringify(state));process.stdout.write(JSON.stringify(
 
 const managedObject = (id, relations = {}) => ({ id, name: id, description: 'Business instructions for ' + id,
   placement: 'notion', initial: 'A', versions: { A: { files: [{ path: 'SKILL.md', content: '# ' + id + '\n\nFollow the business rule.\n' }], ...relations } } });
+
+test('explicit resource authoring imports only native main and preserves every auxiliary Markdown byte', async t => {
+  for (const changed of [false, true]) await t.test(changed ? 'normalized auxiliary bytes are rejected' : 'exact auxiliary bytes pass', async t => {
+    const harness = await preparationHarness(t), object = managedObject('grant');
+    object.authoring = 'native-main-exact-resources';
+    const expected = '# Rules\n\ngrant_cents is exact.\n';
+    object.versions.A.files.push({ path: 'references/rules.md', content: expected });
+    if (changed) { const state = await json(harness.statePath); state.observedResources = { 'references/rules.md': expected.replace('grant_cents', 'grant\\_cents') }; await writeJson(harness.statePath, state); }
+    const preparing = prepareAgentFixtures({ ...harness.options, recipe: { kind: 'mixed-rules', objects: [object] } });
+    if (changed) await assert.rejects(preparing, /Exact source\/resource bytes changed/u);
+    else {
+      const bindings = await preparing;
+      assert.equal(await readFile(bindings.private.bodies['grant@A/references/rules.md'].path, 'utf8'), expected);
+      assert.equal(bindings.private.fixture.observedReadbacks.grant.status, 'passed');
+      const before = (await json(harness.statePath)).calls.length;
+      await assert.rejects(runAgentFixtureEvent({ kind: 'publish-version', object: 'grant', version: 'A' }, { bindings }), /does not support version publication/u);
+      assert.equal((await json(harness.statePath)).calls.length, before);
+    }
+    const state = await json(harness.statePath), imports = state.calls.filter(args => args[2] === 'import');
+    assert.equal(imports.length, 2); assert.equal(imports[0].at(-1), '--dry-run');
+    assert.deepEqual(imports[1].slice(-2), ['--native', 'SKILL.md']);
+    assert.equal(state.calls.some(args => args[2] === 'skill' && args[3] === 'create'), false);
+  });
+});
+
+test('resource authoring refuses an existing stable owner before the complete import write', async t => {
+  const harness = await preparationHarness(t), object = managedObject('grant'); object.authoring = 'native-main-exact-resources';
+  const state = await json(harness.statePath); state.importExistingOwner = 'existing-page'; await writeJson(harness.statePath, state);
+  await assert.rejects(prepareAgentFixtures({ ...harness.options, recipe: { kind: 'mixed-rules', objects: [object] } }), /cannot replace an existing owner/u);
+  const actual = await json(harness.statePath);
+  assert.equal(actual.calls.filter(args => args[2] === 'import').length, 1);
+  assert.equal(actual.calls.at(-1).at(-1), '--dry-run'); assert.deepEqual(actual.records, []);
+});
+
+test('unsupported resource-authoring semantics fail before ownership, CLI or API work', async t => {
+  const harness = await preparationHarness(t), object = managedObject('grant', { enabled: false }); object.authoring = 'native-main-exact-resources';
+  await assert.rejects(prepareAgentFixtures({ ...harness.options, recipe: { kind: 'mixed-rules', objects: [object] } }), /does not support enabled/u);
+  assert.equal(await exists(harness.options.root), false); assert.deepEqual((await json(harness.statePath)).calls, []); assert.deepEqual(harness.networkCalls, []);
+});
 
 test('Native readback accepts canonical escapes through the selected public SDK and rejects changed complete content', async t => {
   const expected = '# Invoice\n\nRead total_cents and `last_invoice_id`.\n\n[Policy](https://example.com/a)\n';
