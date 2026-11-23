@@ -5,6 +5,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fingerprint } from './protocol.mjs';
 import { ALIAS_REVISION, readAliasRevisionStop } from './campaign-alias-revision.mjs';
 import { verifyApparatusBridge } from './apparatus-bridge.mjs';
+import { HISTORY_EXTENSION, readHistoryExtension } from './campaign-history-extension.mjs';
 
 export const APPROVED_CAMPAIGN = 'benchmark-approved-prospective-campaign';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -60,8 +61,8 @@ async function decision(reference) {
 function assertShape(value) {
   keys(value, ['version', 'kind', 'id', 'user_approval', 'proposal', 'predecessor', 'environment_root', 'pilot_ledger_root',
     'history', 'history_checkpoint_sha256', 'max_scheduled_episodes', 'new_reservation_ceiling', 'total_reservation_ceiling',
-    'allocations', 'authorization_sha256', ...(value.version === 2 ? ['revision'] : [])], 'APPROVED_CAMPAIGN_SHAPE');
-  assert.ok([1, 2].includes(value.version)); assert.equal(value.kind, APPROVED_CAMPAIGN); assert.ok(safe(value.id));
+    'allocations', 'authorization_sha256', ...([2, 3].includes(value.version) ? ['revision'] : [])], 'APPROVED_CAMPAIGN_SHAPE');
+  assert.ok([1, 2, 3].includes(value.version)); assert.equal(value.kind, APPROVED_CAMPAIGN); assert.ok(safe(value.id));
   assert.equal(value.authorization_sha256, fingerprint({ ...value, authorization_sha256: null }), 'APPROVED_CAMPAIGN_CHANGED');
   assert.ok(canonical(value.environment_root) && canonical(value.pilot_ledger_root));
   assert.equal(value.max_scheduled_episodes, 144);
@@ -142,9 +143,13 @@ export async function prepareApprovedCampaign({ id, userApproval, predecessor, e
   value.authorization_sha256 = fingerprint(value); await verifyApproval(value); return value;
 }
 
-export async function readApprovedCampaign(reference) {
+export async function readApprovedCampaign(reference, ancestors = new Set()) {
+  assert.ok(!ancestors.has(reference?.path), 'APPROVAL_ANCESTRY_CYCLE');
+  assert.ok(ancestors.size < 144, 'APPROVAL_ANCESTRY_LIMIT');
+  const next = new Set(ancestors); next.add(reference.path);
   const value = await verified(reference);
   assert.ok(inside(value.environment_root, reference.path), 'APPROVAL_DOCUMENT_OUTSIDE_OWNER');
+  if (value.version === 3) return verifyHistoryExtension(value, next);
   return value.version === 2 ? verifyRevision(value) : verifyApproval(value);
 }
 
@@ -248,4 +253,41 @@ export async function prepareApprovedCampaignRevision({ id, parentAuthorization,
     revision: { kind: ALIAS_REVISION, parent_authorization: cleanReference(parentAuthorization),
       retained_stop: stopped.retained, followup_allocation_id: followupAllocationId, apparatus_bridges: apparatusBridges.map(cleanReference) }, authorization_sha256: null };
   value.authorization_sha256 = fingerprint(value); await verifyRevision(value); return value;
+}
+
+async function verifyHistoryExtension(value, ancestors = new Set()) {
+  assertShape(value); assert.equal(value.version, 3);
+  const revision = value.revision;
+  keys(revision, ['kind', 'parent_authorization', 'user_approval', 'consumed_allocations', 'retained_stop', 'next_allocation_id'], 'HISTORY_EXTENSION_REVISION_SHAPE');
+  assert.equal(revision.kind, HISTORY_EXTENSION);
+  const parent = await readApprovedCampaign(revision.parent_authorization, ancestors);
+  for (const field of ['user_approval', 'proposal', 'environment_root', 'pilot_ledger_root', 'max_scheduled_episodes', 'total_reservation_ceiling'])
+    assert.deepEqual(value[field], parent.value[field], 'HISTORY_EXTENSION_ORIGINAL_AUTHORITY_CHANGED');
+  assert.notEqual(value.id, parent.value.id);
+  const extension = await readHistoryExtension({ parent, parentReference: revision.parent_authorization, userApproval: revision.user_approval,
+    predecessor: value.predecessor, planFiles: value.history.plans.map(item => item.plan.path), pilotLedgerRoot: value.pilot_ledger_root, expected: value.history });
+  assert.deepEqual(revision.consumed_allocations, extension.consumed, 'HISTORY_EXTENSION_CONSUMED_ALLOCATION_CHANGED');
+  assert.deepEqual(revision.retained_stop, extension.retained, 'HISTORY_EXTENSION_STOP_BINDING_CHANGED');
+  assert.equal(revision.next_allocation_id, extension.decision.next_allocation_id, 'HISTORY_EXTENSION_NEXT_ALLOCATION_CHANGED');
+  assert.deepEqual(value.allocations, extension.allocations, 'HISTORY_EXTENSION_ALLOCATION_CHANGED');
+  assert.equal(value.new_reservation_ceiling, extension.decision.approved_remaining_reservations, 'HISTORY_EXTENSION_BUDGET_CHANGED');
+  return { value, approval: parent.approval, proposal: parent.proposal, original: parent.original ?? parent,
+    retainedAliasStop: parent.retainedAliasStop, apparatusBridges: parent.apparatusBridges, extensionDecision: extension.decision };
+}
+
+/** A new user decision can accept one terminal unknown stop after complete
+ * allocations. It cannot grant budget, rewrite history, or register a scope. */
+export async function prepareApprovedCampaignHistoryExtension({ id, parentAuthorization, userApproval, predecessor, history }) {
+  const parent = await readApprovedCampaign(parentAuthorization);
+  const extension = await readHistoryExtension({ parent, parentReference: parentAuthorization, userApproval, predecessor,
+    planFiles: history.plans.map(item => item.plan.path), pilotLedgerRoot: parent.value.pilot_ledger_root, expected: history, currentBoundary: true });
+  const previous = parent.value;
+  const value = { version: 3, kind: APPROVED_CAMPAIGN, id, user_approval: structuredClone(previous.user_approval), proposal: structuredClone(previous.proposal),
+    predecessor: structuredClone(predecessor), environment_root: previous.environment_root, pilot_ledger_root: previous.pilot_ledger_root,
+    history: structuredClone(history), history_checkpoint_sha256: fingerprint(history), max_scheduled_episodes: previous.max_scheduled_episodes,
+    new_reservation_ceiling: extension.decision.approved_remaining_reservations, total_reservation_ceiling: previous.total_reservation_ceiling,
+    allocations: structuredClone(extension.allocations), revision: { kind: HISTORY_EXTENSION, parent_authorization: cleanReference(parentAuthorization),
+      user_approval: cleanReference(userApproval), consumed_allocations: extension.consumed, retained_stop: extension.retained,
+      next_allocation_id: extension.decision.next_allocation_id }, authorization_sha256: null };
+  value.authorization_sha256 = fingerprint(value); await verifyHistoryExtension(value); return value;
 }

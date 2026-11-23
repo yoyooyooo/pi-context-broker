@@ -244,6 +244,56 @@ through the parent authorization. Its full 32-slot denominator remains intact.
 All original history checks and every subsequent core-stop or unknown-usage
 guard continue to apply beyond the revised boundary.
 
+## An accepted extension of completed history
+
+A version 3 approved campaign document records a new, explicit user decision
+to retain one additional terminal unknown-usage stop as history. The decision
+uses `user-approved-campaign-history-extension-decision` and pins the exact
+parent authority, accepted proposal, reviewable draft and retained stop. The
+old draft keeps `approved: false` and its original bytes. The new decision
+records the acceptance, remaining allocations, counts and unchanged budgets.
+Provider diagnostic permission does not alter execution limits or future stop
+policies.
+
+This extension accepts only complete allocations after a valid version 2 or
+version 3 parent. It derives their identities from consecutive registrations,
+checks the original plans and amendments, and requires every registered slot
+to have one reservation and one original completed result. Each source scope
+must be closed and free of leases. Partial scopes, reused allocations, skipped
+registrations and analysis or collection revisions in the new suffix are
+rejected. The sole accepted invalid/unknown stop must be the final slot of the
+final scope and the final reservation at the approved boundary. All other new
+results retain the ordinary core, model and known-usage requirements.
+
+`readAcceptedHistoryExtension` in `benchmark/finite-campaign.mjs` takes
+`parentAuthorization`, `userApproval`, `predecessor`, `planFiles` and
+`pilotLedgerRoot`. It independently reads the original history, registration
+chain, evidence bundles and runtime result. Then
+`prepareApprovedCampaignHistoryExtension` in `benchmark/approved-campaign.mjs`
+takes `id`, `parentAuthorization`, `userApproval`, `predecessor` and that
+`history`. Both return data and require the current ledger to match the accepted
+boundary without an active campaign lease. They neither write an authority nor
+register or dispatch a scope. Reading an already pinned authority later verifies
+its exact historical boundary while allowing subsequent reservations to exist.
+
+The revision is `accepted-history-extension`. It binds the new `user_approval`,
+`parent_authorization`, evidence-derived `consumed_allocations`, exact
+`retained_stop` file references and `next_allocation_id`. The top-level original
+approval and proposal still define the original work and its work indices.
+Remaining allocations equal the parent array with only the fully consumed
+entries removed; their order, roles, indices and limits do not change. The
+first new scope must use the declared next allocation and exact predecessor.
+
+For the accepted continuation, the complete seven-slot Grok follow-up and
+eight-slot Terra gate advance history from 51 to 66 and leave 73 existing
+never-started slots. The total stays 139 under the hard cap of 144; the spare
+five remain unallocated. Five effective token-unknown episodes and six original
+token-unknown completions remain distinct, and incomplete totals remain null.
+The old alias proof, original eleven-slot follow-up design and existing
+apparatus bridge remain inherited. Terra's original gate still fails its
+original-result check. Any new core stop or unknown usage after the accepted
+boundary still blocks the next dispatch until a separate applicable decision.
+
 ## Original failures and analysis revisions
 
 New original completed observations must have known, complete usage and no
