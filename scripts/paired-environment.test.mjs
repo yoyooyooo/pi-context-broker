@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, realpath, rename, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readlink, realpath, rename, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { test } from 'node:test';
 import {
-  checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, validatePiArguments, verifySelectedCliPair,
+  checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, seedBunCache, validatePiArguments, verifySelectedCliPair,
 } from './paired-environment.mjs';
 import { fileInventory, selectedCliInputs } from './next-build-identity.mjs';
 
@@ -138,6 +138,12 @@ test('paired environments isolate writable state and detect artifact changes', a
     assert.throws(() => parseArgs(['check', '--root', 'relative']), /absolute/);
     assert.throws(() => parseArgs(['build', '--root', retained, '--', 'unexpected']), /Only run/);
     assert.deepEqual(parseArgs(['build', '--root', retained, '--pass-env', 'HTTPS_PROXY'])['pass-env'], ['HTTPS_PROXY']);
+    assert.equal(parseArgs(['build', '--root', retained])['bun-cache-from'], undefined);
+    assert.throws(() => parseArgs(['build', '--root', retained, '--bun-cache-from', retained]), /together/);
+    assert.throws(() => parseArgs(['build', '--root', retained, '--bun-cache-sha256', 'a'.repeat(64)]), /together/);
+    assert.throws(() => parseArgs(['build', '--root', retained, '--bun-cache-from', 'relative', '--bun-cache-sha256', 'a'.repeat(64)]), /absolute/);
+    assert.throws(() => parseArgs(['build', '--root', retained, '--bun-cache-from', retained, '--bun-cache-sha256', 'bad']), /SHA-256/);
+    assert.equal(parseArgs(['build', '--root', retained, '--bun-cache-from', retained, '--bun-cache-sha256', 'a'.repeat(64)])['bun-cache-sha256'], 'a'.repeat(64));
   });
 
   await t.test('inventory detects executable/content changes and rejects external links', async () => {
@@ -262,6 +268,17 @@ test('paired environments isolate writable state and detect artifact changes', a
       await resealPair(root, selectedCli);
       await assert.rejects(checkEnvironment({ root: rootA, build: buildId }), /complete selected CLI\/SDK/);
     }
+  });
+
+  await t.test('build checks bind the cache seed receipt without depending on a retained source cache', async () => {
+    const buildId = 'seed-receipt', root = await sealedBuild(rootA, buildId), receipt = join(root, 'bun-cache-seed.json');
+    await writeJson(receipt, { source: { cache_root: '/unavailable/retired-build/cache' }, validation_scope: 'Fixture receipt' });
+    const build = await readJson(join(root, 'build.json'));
+    build.bun_cache_seed = { path: receipt, sha256: (await inventory(root)).files.find(file => file.path === 'bun-cache-seed.json').sha256 };
+    await writeJson(join(root, 'build.json'), build);
+    assert.equal((await checkEnvironment({ root: rootA, build: buildId })).status, 'passed');
+    await writeJson(receipt, { source: { cache_root: '/changed-source/cache' } });
+    await assert.rejects(checkEnvironment({ root: rootA, build: buildId }), /Cache seed receipt changed/);
   });
 
   await t.test('packed candidates run actual clean-installed entries and freeze archives and dependencies', async () => {
@@ -680,5 +697,94 @@ process.exit(0);`;
     await symlink(external, join(root, 'broker'), 'dir');
     await assert.rejects(checkEnvironment({ root: rootA, build: buildId }),
       /symlink|canonical|outside|external/i);
+  });
+});
+
+test('Bun cache seeding copies only pinned idle local inputs into an independent cache', async t => {
+  const retained = await realpath(await mkdtemp(join(tmpdir(), 'paired-cache-test-')));
+  t.diagnostic('Retained cache fixtures (no permanent deletion): ' + retained);
+  async function fixture(name, live = false) {
+    const base = join(retained, name), source = join(base, 'prior/builds/source'), target = join(base, 'next/builds/target');
+    for (const [environment, build] of [[join(base, 'prior'), source], [join(base, 'next'), target]]) {
+      await mkdir(join(build, 'logs'), { recursive: true });
+      await writeJson(join(environment, 'environment.json'), { version: 1, kind: 'paired-development-environment', root: environment, environment_id: environment });
+      for (const role of ['cli', 'broker']) {
+        await mkdir(join(build, 'source', role), { recursive: true });
+        await writeFile(join(build, 'source', role, 'bun.lock'), role + (build === target && role === 'broker' ? '-new-lock\n' : '-same-lock\n'));
+      }
+    }
+    const cache = join(source, 'build-state/cache/bun'), destination = join(target, 'build-state/cache/bun');
+    await mkdir(join(cache, 'package@1@@@1/node_modules/nested'), { recursive: true });
+    await mkdir(join(cache, 'package'));
+    await writeFile(join(cache, 'package@1@@@1/index.js'), 'local cache bytes\n', { mode: 0o700 });
+    await writeFile(join(cache, 'package@1@@@1/node_modules/nested/index.js'), 'nested dependency\n');
+    await symlink(join(cache, 'package@1@@@1'), join(cache, 'package/1.0.0'));
+    const started = new Date().toISOString();
+    const child = spawn(process.execPath, ['-e', live ? 'setInterval(() => {}, 1000)' : ''], { detached: true, stdio: 'ignore' });
+    const closed = new Promise((done, reject) => { child.once('error', reject); child.once('close', done); });
+    await writeJson(join(source, 'logs/install-source-cli.process.json'), { pid: child.pid, process_group: child.pid, started_at: started, command: process.execPath });
+    if (!live) await closed;
+    await writeJson(join(source, 'failure.json'), { status: 'failed', error: 'Retained failure after dependency work' });
+    return { source, target, cache, destination, selected: await inventory(cache), child, closed };
+  }
+
+  await t.test('absolute internal aliases relocate; nested node_modules and executable bytes remain independent', async () => {
+    const f = await fixture('copy');
+    const ref = await seedBunCache(f.source, f.target, f.selected.sha256), receipt = await readJson(ref.path);
+    const copied = await inventory(f.destination);
+    assert.equal(receipt.source.inventory_sha256, f.selected.sha256);
+    assert.equal(receipt.target.inventory_sha256, copied.sha256);
+    assert.equal(receipt.normalized_source_sha256, copied.sha256);
+    assert.notEqual(copied.sha256, f.selected.sha256, 'Absolute source links change spelling when relocated');
+    assert.deepEqual(await inventory(f.cache), f.selected);
+    assert.equal(receipt.source.terminal.status, 'failed');
+    assert.equal(receipt.source.processes[0].state, 'exited');
+    assert.equal(receipt.locks.cli.identical, true); assert.equal(receipt.locks.broker.identical, false);
+    assert.match(receipt.validation_scope, /not archive SRI/);
+    assert.deepEqual(receipt.symlink_mappings, [{ path: 'package/1.0.0', source_target: join(f.cache, 'package@1@@@1'), target: '../package@1@@@1' }]);
+    assert.equal(await readlink(join(f.destination, 'package/1.0.0')), '../package@1@@@1');
+    assert.equal(await realpath(join(f.destination, 'package/1.0.0')), join(f.destination, 'package@1@@@1'));
+    assert.equal(await readFile(join(f.destination, 'package@1@@@1/node_modules/nested/index.js'), 'utf8'), 'nested dependency\n');
+    const original = join(f.cache, 'package@1@@@1/index.js'), duplicate = join(f.destination, 'package@1@@@1/index.js');
+    assert.notEqual((await stat(original)).ino, (await stat(duplicate)).ino);
+    assert.equal((await stat(duplicate)).mode & 0o111, 0o100);
+    await assert.rejects(seedBunCache(f.source, f.target, f.selected.sha256), /EEXIST/);
+    await writeFile(duplicate, 'private changed bytes\n'); await chmod(duplicate, 0o600);
+    assert.equal(await readFile(original, 'utf8'), 'local cache bytes\n');
+    assert.deepEqual(await inventory(f.cache), f.selected);
+  });
+
+  await t.test('an incorrect pinned hash fails before reserving the target cache', async () => {
+    const f = await fixture('wrong-hash');
+    await assert.rejects(seedBunCache(f.source, f.target, '0'.repeat(64)), /selected SHA-256/);
+    await assert.rejects(stat(f.destination), { code: 'ENOENT' });
+  });
+
+  await t.test('cache links outside the selected cache are refused', async () => {
+    const f = await fixture('external-link');
+    await symlink(join(f.source, 'source/cli/bun.lock'), join(f.cache, 'outside'));
+    await assert.rejects(seedBunCache(f.source, f.target, f.selected.sha256), /External symlink/);
+    await assert.rejects(stat(f.destination), { code: 'ENOENT' });
+  });
+
+  await t.test('a terminal marker cannot hide a still-running recorded writer', async () => {
+    const f = await fixture('active-writer', true);
+    try {
+      await assert.rejects(seedBunCache(f.source, f.target, f.selected.sha256), /active recorded process group/);
+      await assert.rejects(stat(f.destination), { code: 'ENOENT' });
+    } finally {
+      try { process.kill(-f.child.pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+      await f.closed;
+    }
+  });
+
+  await t.test('unfinished sources, unrelated directories and terminal targets are refused', async () => {
+    const f = await fixture('boundaries');
+    await rename(join(f.source, 'failure.json'), join(f.source, 'retained-failure.json'));
+    await assert.rejects(seedBunCache(f.source, f.target, f.selected.sha256), /terminal build/);
+    await assert.rejects(seedBunCache(f.cache, f.target, f.selected.sha256), /paired build/);
+    await writeJson(join(f.target, 'failure.json'), { status: 'failed' });
+    await assert.rejects(seedBunCache(f.source, f.target, f.selected.sha256), /terminal build/);
+    await assert.rejects(stat(f.destination), { code: 'ENOENT' });
   });
 });
