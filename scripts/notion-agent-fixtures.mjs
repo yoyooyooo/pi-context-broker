@@ -6,6 +6,8 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { validateAgentFixtureRecipe } from './notion-agent-scenarios.mjs';
+import { NATIVE_MAIN_EXACT_RESOURCES, agentFixtureCreateArgs, assertAgentFixtureImportCreation,
+  agentFixtureRelationArgs as relationArgs, agentFixtureUsesNativeMarkdown } from './notion-agent-authoring.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
@@ -271,21 +273,6 @@ async function prepareVersionInputs(context, object, name) {
   return versions;
 }
 
-function relationArgs(context, version) {
-  const args = [];
-  for (const [field, aliases] of [['requires', version.requires], ['members', version.members]]) {
-    if (!aliases?.length) continue;
-    for (const alias of aliases) {
-      const target = context.objects[alias];
-      assert.ok(target && target.pageId, 'Fixture relation target is not yet live: ' + alias);
-      args.push('--' + field, target.pageId);
-    }
-  }
-  if (version.enabled !== undefined) args.push('--enabled', String(version.enabled));
-  if (version.defaultContext !== undefined) args.push('--default-context', String(version.defaultContext));
-  return args;
-}
-
 async function capture(context, path, value) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 }); await save(path, value); return artifact(path);
 }
@@ -425,7 +412,7 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
     const expectedInput = versionFiles.find(item => item.path === resourcePath);
     if (expectedInput && !owned.wasUnmanaged) {
       const planned = await readFile(expectedInput.input);
-      if (/\.(md|markdown)$/iu.test(resourcePath) && owned.placement !== 'source') {
+      if (agentFixtureUsesNativeMarkdown(context.recipe?.objects.find(object => object.id === alias), resourcePath) && owned.placement !== 'source') {
         const compare = await nativeMarkdownComparator(context);
         const meaning = compare({ expected: withoutFrontmatter(planned.toString()), observed: withoutFrontmatter(bytes.toString()) });
         assert.ok(meaning === 'exact' || meaning === 'normalized', 'Native content changed meaning');
@@ -777,9 +764,14 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
         await cli(context, ['ctl', 'library', 'projection', owned.pageId, '--entry', entry], 'projection'); owned.projectionRequired = true;
       } else {
         const input = owned.versionInputs[object.initial]; assert.ok(input);
-        const created = await cli(context, ['ctl', 'library', 'skill', 'create', input.directory, '--entry', entry, '--skill-id', owned.skillId,
-          '--name', owned.name, '--description', object.description,
-          ...relationArgs(context, deferredMembers.has(object.id) ? { ...input, members: [] } : input)], 'create');
+        const selected = deferredMembers.has(object.id) ? { ...input, members: [] } : input;
+        const creation = { entry, object, owned, input: selected, objects: context.objects };
+        const args = agentFixtureCreateArgs(creation);
+        if (object.authoring === NATIVE_MAIN_EXACT_RESOURCES) {
+          const preflight = await cli(context, [...args, '--dry-run'], 'create-preflight');
+          assertAgentFixtureImportCreation(preflight.value, creation);
+        }
+        const created = await cli(context, args, 'create');
         owned.pageId = created.value.page_id; assert.ok(pageId(owned.pageId));
       }
       if (deferredMembers.size) finalReadbacks.push({ object: object.id, version: object.initial });
@@ -807,6 +799,8 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
 async function publishVersion(bindings, event) {
   const context = bindings.private.fixture, owned = context.objects[event.object], input = owned?.versionInputs[event.version];
   assert.ok(owned && input, 'Unknown owned version');
+  assert.equal(context.recipe?.objects.find(object => object.id === event.object)?.authoring, undefined,
+    'Exact-resource authoring does not support version publication');
   assert.equal(owned.placement, 'notion', 'Version publication uses the native public update command');
   const beforeFiles = owned.versionInputs[owned.currentVersion]?.files ?? [];
   const args = ['ctl', 'library', 'skill', 'update', owned.pageId ?? owned.skillId, '--entry', context.entry];
