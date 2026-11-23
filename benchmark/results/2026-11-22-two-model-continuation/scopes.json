@@ -1,0 +1,206 @@
+[
+  {
+    "kind": "public-cohort-amendment",
+    "id": "continuation-two-models-repair-3",
+    "source_sha256": "98f4c43cacf0276732cf5a7c57da7b98b997ca60fe3b27cd153929991bd10fda",
+    "amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+    "source_kind": "benchmark-prospective-cohort",
+    "reservation_limit": 48,
+    "history_exemption": {
+      "scheduled_episodes": 13,
+      "unknown_usage_run_ids": [
+        "benchmark-route-gate-3-003",
+        "benchmark-two-model-admission-2-001",
+        "benchmark-two-model-admission-3-008"
+      ],
+      "checkpoint_sha256": "b112c656c142aafbb4f344ecbfa6fbf7f3910bfd1fe608081ee99562e713819d"
+    },
+    "history_reservations": [
+      {
+        "ordinal": 1,
+        "source_sha256": "960a31d2ea24bf0a483e970460ad760b5961158ec4bb4681fb86306318a5a538"
+      },
+      {
+        "ordinal": 2,
+        "source_sha256": "d5c16d64827237dab2c747c2164699d23c213a31a0e9b679f3041aa95a098ad9"
+      },
+      {
+        "ordinal": 3,
+        "source_sha256": "ad90e2d17c3853f9d6c8ef23dd654a48a56b79f648ee63c236cb8345a1b2fb1a"
+      },
+      {
+        "ordinal": 4,
+        "source_sha256": "ab87e4d38b351c39611e1aa6484acd8880df5f0b5acadc927feccd66622cf90e"
+      },
+      {
+        "ordinal": 5,
+        "source_sha256": "2aee8bb533a487d4ec67f943f44691a3ce7be245bcc53f477ccd1f70bfa312bf"
+      },
+      {
+        "ordinal": 6,
+        "source_sha256": "8e665446163e79b3034f571e8d27900b136ff1b3c1bd55325a43df7b479142a2"
+      },
+      {
+        "ordinal": 7,
+        "source_sha256": "5521b586b2ceb6d3a93bd6f25dd09c0402081e3866881e607dd026994213ed1d"
+      },
+      {
+        "ordinal": 8,
+        "source_sha256": "a47895831073f378be01190fb3f0c02e652831d34d26669e04402c91688f3d21"
+      },
+      {
+        "ordinal": 9,
+        "source_sha256": "ded6aa1fbbaa28962f71db20680b3aa631703e4822108389901ffd27cee7d159"
+      },
+      {
+        "ordinal": 10,
+        "source_sha256": "76eb89ed41c7e9878b69159f6ce85091402816622d50320104db844c3138719d"
+      },
+      {
+        "ordinal": 11,
+        "source_sha256": "a87cf4aeebc1f29e19d52de5b53b703609a218f6b516db4aa70c2a5b450d71be"
+      },
+      {
+        "ordinal": 12,
+        "source_sha256": "d5f9d485ad9f796ad21550f5730c7cdc4ecfc649e3d43cd2380010a2e23100a5"
+      },
+      {
+        "ordinal": 13,
+        "source_sha256": "6f5884ef19aa18b0a982981a5d3cd3a941e805b71ab54c7441a38a0b24dbff79"
+      }
+    ],
+    "model_count": 2,
+    "gate": {
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "case_ids": [
+        "no-skill-01-a-n16-r1",
+        "no-skill-02-a-n16-r1",
+        "no-skill-03-a-n16-r1",
+        "explicit-01-a-n16-r1"
+      ],
+      "scheduled_episodes": 16
+    },
+    "expansion": {
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "case_ids": [
+        "implicit-01-a-n16-r1",
+        "ambiguity-01-a-n16-r1",
+        "equivalent-01-a-n16-r1",
+        "references-01-a-n16-r1",
+        "scripts-assets-01-a-n16-r1",
+        "complementary-01-a-n16-r1",
+        "continuation-01-a-n16-r2",
+        "task-switch-01-a-n16-r2"
+      ],
+      "scheduled_episodes": 32
+    },
+    "private_verification": "readPilotScopeAmendment + assertScopePlan; not a claim that a failed current gate passed"
+  },
+  {
+    "kind": "public-cohort-gate",
+    "source_sha256": "d4c252787bf5209506c4aeeff47c33ae9f7b38b78f6564902b675447ae6e0639",
+    "scope_id": "continuation-two-models-repair-3",
+    "status": "passed",
+    "scheduled_episodes": 16,
+    "current_plan_source_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+    "episode_evidence": [
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-001",
+        "pilot_ordinal": 14,
+        "source_episode_sha256": "b03ce4de40447d6c1f5dce694d25b9d819ca91616fab640b0e19e982db7077f0",
+        "reservation_source_sha256": "7c210f0f3e6d08c5d0dee8cc1eba39481bbed8ba7e16e4557b0eb9c23b1a2dd2"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-002",
+        "pilot_ordinal": 15,
+        "source_episode_sha256": "41c2658b53d64690a96cdf068a9c591e463da93be10cc97361f30eeb51732d56",
+        "reservation_source_sha256": "fafe2e97641ec0dee2a2701cc1889992074f07bb7fa50cec9c37ce04e043fa8d"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-003",
+        "pilot_ordinal": 16,
+        "source_episode_sha256": "c7f130823d3dcb31344f702e069aa34933ad07e6a92e1ad531cfdeda2cc6631e",
+        "reservation_source_sha256": "7d3591cdeb619453df61a2b222e3bac8771cdefafa2919ea07184c749d62b75e"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-004",
+        "pilot_ordinal": 17,
+        "source_episode_sha256": "b1bdda6d6e252b85aac66c80c3b8a5b3eeea13a2f28d2fb09f34df92935b665b",
+        "reservation_source_sha256": "0183cc81a49572e97e1fc9237e5735ee777d4a90bed49967df6e1248beceda17"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-005",
+        "pilot_ordinal": 18,
+        "source_episode_sha256": "f4ebb2ace77a5f4d57daa4b1dca396de0a8cd46018d8885b9529a5a16539ef2d",
+        "reservation_source_sha256": "804feae93ad702998773fc3cf41f0458cb547af0f5db5b1f66a24cd34f855364"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-006",
+        "pilot_ordinal": 19,
+        "source_episode_sha256": "bc45a8991139b98b2ae4b02baf8c002d3636fb25be143629eb677ea3254015fc",
+        "reservation_source_sha256": "9e83187a098d5b4d1d9bd4eedf795d2aeb7fe33a6fcfdb8227c1b13a6dd7c899"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-007",
+        "pilot_ordinal": 20,
+        "source_episode_sha256": "4224457c6103332188dee4d413f2feb4c878400c155b7dabae6013ae152aa17e",
+        "reservation_source_sha256": "c25b119226f7d301274b47f4f06c9189c90f5aaefaea78d2061bd5c2c6c2bf45"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-008",
+        "pilot_ordinal": 21,
+        "source_episode_sha256": "4243b6a3a03c811121ceb216cec6633440ce9bdb0aec5102cae166d1f34b9a9c",
+        "reservation_source_sha256": "231b05b66d999689f2d960ebf848dadb452b414510d258667087405514f3d38f"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-009",
+        "pilot_ordinal": 22,
+        "source_episode_sha256": "992c794f202ab0387cf395157e864444da21f29dbe604dc131167c8c53282022",
+        "reservation_source_sha256": "8d91ff7a96240cf42e5cf082fd06feffcbddf1d3de01205d0a0fc82ae2c041d5"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-010",
+        "pilot_ordinal": 23,
+        "source_episode_sha256": "be09378fbb68611ba1c1e080edeaaf16204089e7c6f9ec4cf06697dc6f31e1ee",
+        "reservation_source_sha256": "bad007a4c3d462a363c7a883e6773582f646255f20a9403bb6896e8902a826ad"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-011",
+        "pilot_ordinal": 24,
+        "source_episode_sha256": "5a4e05d98998d6b66a2f319790229ca3b31edd6e8d154e41e56f054625cc0387",
+        "reservation_source_sha256": "19c3264321e1362a637115fe48caf014ca62ed3600ada2a3dbc94db3e8e3cec1"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-012",
+        "pilot_ordinal": 25,
+        "source_episode_sha256": "43be766aef436bc5a8406d8703304acb74da12c184504ef5d834af545bf28a68",
+        "reservation_source_sha256": "c57bd3da2bfd70b383c749b61ac8e16cbf48c962950750326ae666fe7decf5ff"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-013",
+        "pilot_ordinal": 26,
+        "source_episode_sha256": "49c3e7ce25f3d778b16c9ad8d3bab600ff9ef59245294769b0ea3160a15293f7",
+        "reservation_source_sha256": "86550993bd58c7c5be5240aacd0c14138313363f99d2ceb48c3b7aaa0fb84b62"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-014",
+        "pilot_ordinal": 27,
+        "source_episode_sha256": "e748cc5829a6ecd355398f71a058acbc0f3bac2e8a0f9384575123a1b67c4910",
+        "reservation_source_sha256": "e008c91c40e16a62d0d245e8428d071db0811255a337ac0a8b4030b622cee9c1"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-015",
+        "pilot_ordinal": 28,
+        "source_episode_sha256": "ce72a0b9e6e75ea62fdbf6e1ed4eefa1220ee9b7c3eed198d573eca868469e07",
+        "reservation_source_sha256": "35ef319bf4695634af73d6e8dc4ad250d1ca31a8acd9ffb5b6c3753dffcf15cc"
+      },
+      {
+        "run_id": "benchmark-two-model-cohort-3-gate-016",
+        "pilot_ordinal": 29,
+        "source_episode_sha256": "ca5a400e9c69eb4ecf2957c2d5f5b96040bb4e51e9cb2057d4cd778ef2cc70ff",
+        "reservation_source_sha256": "a612b2c09c626522a698c7d324431b0acd43e3f6c52cc40aee1b8a365006ae4d"
+      }
+    ],
+    "private_verification": "verifyGateReference against owning environment originals"
+  }
+]
