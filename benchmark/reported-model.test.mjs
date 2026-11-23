@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assessReportedModel, providerReportedModel, validateRoutingPolicy } from './reported-model.mjs';
+import { assessReportedModel, canonicalAutoGroupLabel, providerReportedModel, validateRoutingPolicy } from './reported-model.mjs';
 import { verifiedModelConditions } from './models.mjs';
 
 const routing = { mode: 'auto-route', model_variant: 'grok-4.7', reported_model_ids: ['grok-4.7', 'grok/grok-4.7'] };
@@ -62,4 +62,42 @@ test('routing is frozen per exact selected route while legacy model conditions r
   assert.deepEqual(models[0].routing, routing);
   assert.throws(() => verifiedModelConditions({ ...args, routing: {} }), /Every selected route/);
   assert.throws(() => verifiedModelConditions({ ...args, routing: { 'auto/grok-4.7': routing, extra: routing } }), /Every selected route/);
+});
+
+test('canonical auto-group echoes require an explicit declaration for the exact variant', () => {
+  for (const [variant, label] of [['grok-4.7', 'group/auto-grok-4-7'], ['gpt-6.1-terra', 'group/auto-gpt-6-1-terra'],
+    ['gpt-6.2-sol', 'group/auto-gpt-6-2-sol'], ['fixture-0', 'group/auto-fixture-0']]) {
+    assert.equal(canonicalAutoGroupLabel(variant), label);
+    const policy = { mode: 'auto-route', model_variant: variant, reported_model_ids: [variant, label] };
+    validateRoutingPolicy(policy);
+    const result = assessReportedModel({ routing: policy, sent: true, observations: [observation(label)] });
+    assert.equal(result.status, 'matched'); assert.equal(result.label_kind, 'requested_route_alias');
+    assert.equal(result.assurance, 'provider_reported_label_not_backend_attestation');
+    assert.throws(() => validateRoutingPolicy({ ...policy, mode: 'fixed-route' }), /ALIAS_NOT_CONCRETE/);
+  }
+});
+
+test('a prior undeclared group failure retains its full original mismatch report', () => {
+  const observations = [observation('group/auto-grok-4-7')];
+  assert.deepEqual(assessReportedModel({ routing, sent: true, observations }), {
+    status: 'mismatch', reason: 'reported_model_mismatch', assurance: 'provider_reported_label_not_backend_attestation',
+    label_kind: 'unrecognized_label', reported_ids: ['group/auto-grok-4-7'], observations,
+    provider_error: false, refs: [ref(1)],
+  });
+});
+
+test('declaring one canonical auto group cannot admit another group, variant or unbound observation', () => {
+  const policy = { ...routing, reported_model_ids: [...routing.reported_model_ids, 'group/auto-grok-4-7'] };
+  for (const value of ['group/grok-4.7', 'group/auto-grok-4-6', 'group/auto-grok-4.7', 'group/worker',
+    'provider/group/auto-grok-4-7', 'group/auto-grok-4-7/extra', 'group/auto-grok-4-7 ', 'GROUP/auto-grok-4-7', null]) {
+    assert.equal(assessReportedModel({ routing: policy, sent: true, observations: [observation(value)] }).status, 'mismatch');
+    assert.throws(() => validateRoutingPolicy({ ...policy, reported_model_ids: [value] }));
+  }
+  assert.equal(assessReportedModel({ routing: policy, sent: true,
+    observations: [{ ...observation('group/auto-grok-4-7'), bound: false }] }).reason, 'reported_model_event_binding_mismatch');
+  const mixed = assessReportedModel({ routing: policy, sent: true,
+    observations: ['group/auto-grok-4-7', 'group/auto-grok-4-6', 'grok-4.7'].map((value, i) => observation(value, i + 1)) });
+  assert.equal(mixed.status, 'mismatch'); assert.equal(mixed.observations.length, 3);
+  assert.equal(assessReportedModel({ routing: policy, sent: false,
+    observations: [observation('group/auto-grok-4-7')] }).reason, 'reported_model_send_contradiction');
 });

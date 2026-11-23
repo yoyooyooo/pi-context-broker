@@ -5,10 +5,13 @@ const concreteId = value => typeof value === 'string' && value.length > 0 && val
   !/\s/.test(value) && !value.split('/').some(segment => /^(?:auto|group)(?:-|$)/i.test(segment));
 export const REPORTED_MODEL_ASSURANCE = 'provider_reported_label_not_backend_attestation';
 
+export const canonicalAutoGroupLabel = modelVariant => 'group/auto-' + modelVariant.replaceAll('.', '-');
+const declaredAutoGroupLabel = (routing, value) => routing.mode === 'auto-route' &&
+  value === canonicalAutoGroupLabel(routing.model_variant) && routing.reported_model_ids.includes(value);
 const allowedLabel = (routing, value) => concreteId(value) ||
-  routing.mode === 'auto-route' && value === 'auto/' + routing.model_variant;
+  routing.mode === 'auto-route' && value === 'auto/' + routing.model_variant || declaredAutoGroupLabel(routing, value);
 
-/** Exact frozen labels include an explicitly declared auto-route echo. Neither a
+/** Exact frozen labels include declared route and canonical auto-group echoes. Neither a
  * concrete-looking label nor a routing alias attests the underlying backend. */
 export function validateRoutingPolicy(routing) {
   assert.ok(object(routing), 'BENCHMARK_MODEL_ROUTING_REQUIRED');
@@ -18,7 +21,7 @@ export function validateRoutingPolicy(routing) {
   assert.ok(Array.isArray(routing.reported_model_ids) && routing.reported_model_ids.length > 0 &&
     new Set(routing.reported_model_ids).size === routing.reported_model_ids.length, 'BENCHMARK_REPORTED_MODEL_ALLOWLIST_REQUIRED');
   for (const value of routing.reported_model_ids) assert.ok(allowedLabel(routing, value) &&
-    (value === routing.model_variant || value.endsWith('/' + routing.model_variant)), 'BENCHMARK_REPORTED_MODEL_ALIAS_NOT_CONCRETE');
+    (value === routing.model_variant || value.endsWith('/' + routing.model_variant) || declaredAutoGroupLabel(routing, value)), 'BENCHMARK_REPORTED_MODEL_ALIAS_NOT_CONCRETE');
   return routing;
 }
 
@@ -49,7 +52,8 @@ export function assessReportedModel({ routing, sent, observations = [], provider
     status = 'missing'; reason = providerError ? 'reported_model_unavailable_after_provider_error' : 'reported_model_missing';
   } else status = 'matched';
   const sources = [...new Map([...refs, ...observations.map(item => item.ref)].filter(Boolean).map(ref => [JSON.stringify(ref), ref])).values()];
-  const labelKind = !observations.length ? null : observations.some(item => item.value === 'auto/' + routing.model_variant)
+  // An undeclared group remains unrecognized when replaying an older policy.
+  const labelKind = !observations.length ? null : observations.some(item => item.value === 'auto/' + routing.model_variant || declaredAutoGroupLabel(routing, item.value))
     ? 'requested_route_alias' : observations.every(item => concreteId(item.value)) ? 'concrete_reported_label' : 'unrecognized_label';
   return { status, reason, assurance: REPORTED_MODEL_ASSURANCE, label_kind: labelKind, reported_ids: reportedIds,
     observations: structuredClone(observations), provider_error: providerError === true, refs: structuredClone(sources) };
