@@ -415,7 +415,7 @@ test("Notion source flags are scoped to native installations without rewriting s
   expect(guidance).toContain("Editor flags grant no permissions");
   expect(guidance).toContain("Local @Skills keep native availability");
   expect(guidance).toContain("Honor explicit source and prior choice");
-  expect(guidance).toContain("Equal same-name local/Notion fits: clarify; storage gives no priority");
+  expect(guidance).toContain("Business Skills: equal same-name local/Notion fits: clarify; storage gives no priority");
   expect(guidance).toContain("Clear fit/equivalent copies: no question");
   expect(guidance).toContain("Loading authorizes no commands/writes/delegation");
   expect(guidance).toContain("read(path) inspects.");
