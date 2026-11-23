@@ -7,6 +7,7 @@ import { readEvidenceBundle } from './evidence/store.mjs';
 import { assertZeroSendInvalid, verifyZeroSendRepair } from './resumption.mjs';
 import { assertScopePlan, readPilotScopeAmendment, readScopeCompletedResults, verifyPilotScope, scopeModelIdentity, scopeEnvironmentIdentity } from './pilot-scope.mjs';
 import { isProspectiveCohort, assertCohortModelEvidence } from './prospective-cohort.mjs';
+import { assertFiniteCampaignPlan, readFiniteCampaignAmendment, verifyFiniteCampaignScope, verifyFiniteOriginalResults } from './finite-campaign.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 export const modelGateIdentity = model => fingerprint({ provider: model.provider, route: model.route,
@@ -33,7 +34,7 @@ export async function verifyGateReference({ reference, environmentRoot }) {
   const bytes = await readFile(reference.path);
   assert.equal(sha(bytes), reference.sha256, 'Route gate receipt changed');
   const gate = JSON.parse(bytes);
-  if (gate.kind === 'benchmark-cohort-gate') {
+  if (['benchmark-cohort-gate', 'benchmark-finite-route-gate'].includes(gate.kind)) {
     assert.equal(gate.version, 1); assert.equal(gate.status, 'passed'); assert.equal(gate.core_evidence, 'complete');
     return verifyScopeGate(gate, environmentRoot);
   }
@@ -58,7 +59,7 @@ export async function writeRouteGate({ plan, status, outputFile }) {
   assert.equal(plan.protocol.phase, 'pilot');
   assert.equal(status.plan_sha256, plan.plan_sha256);
   assert.equal(status.unresolved_runs.length, 0);
-  if (plan.execution.pilot_scope) return writeScopeGate({ plan, status, outputFile });
+  if (plan.execution.pilot_scope || plan.execution.campaign_scope) return writeScopeGate({ plan, status, outputFile });
   if (plan.execution.resumption) return writeContinuationGate({ plan, status, outputFile });
   const required = plan.protocol.policies.pilot.route_gate_episodes;
   assert.equal(required, 24);
@@ -97,20 +98,24 @@ export async function writeRouteGate({ plan, status, outputFile }) {
 }
 
 async function verifyScopeGate(gate, environmentRoot) {
-  const amendment = await readPilotScopeAmendment(gate.amendment);
+  const finite = gate.kind === 'benchmark-finite-route-gate';
+  const amendment = finite ? await readFiniteCampaignAmendment(gate.amendment) : await readPilotScopeAmendment(gate.amendment);
   assert.equal(amendment.environment_root, environmentRoot); assert.equal(gate.scope_id, amendment.id);
-  const cohort = isProspectiveCohort(amendment), required = amendment.gate.scheduled_episodes;
-  assert.equal(gate.kind, cohort ? 'benchmark-cohort-gate' : 'benchmark-route-gate');
-  assert.equal(gate.version, cohort ? 1 : 3);
+  const cohort = isProspectiveCohort(amendment), required = finite ? amendment.plan.scheduled_episodes : amendment.gate.scheduled_episodes;
+  assert.equal(gate.kind, finite ? 'benchmark-finite-route-gate' : cohort ? 'benchmark-cohort-gate' : 'benchmark-route-gate');
+  assert.equal(gate.version, finite || cohort ? 1 : 3);
   assert.equal(gate.scheduled_episodes, required); assert.equal(gate.episode_evidence.length, required);
   assert.deepEqual(gate.history_accounting, amendment.history);
   const plan = await verified(gate.current_plan);
   assert.equal(plan.plan_sha256, fingerprint({ ...plan, plan_sha256: null }));
-  assertScopePlan(plan, amendment); assert.equal(plan.execution.pilot_scope.role, 'gate');
-  assert.deepEqual(plan.execution.pilot_scope.amendment, gate.amendment);
+  if (finite) assertFiniteCampaignPlan(plan, amendment); else assertScopePlan(plan, amendment);
+  const registration = finite ? plan.execution.campaign_scope : plan.execution.pilot_scope;
+  assert.equal(registration.role, finite ? 'route_gate_only' : 'gate');
+  assert.deepEqual(registration.amendment, gate.amendment);
   assert.deepEqual(gate.instrumentation, amendment.instrumentation);
   assert.equal(gate.observer_version, amendment.observer_version);
   const effective = await readScopeCompletedResults(plan);
+  if (finite) await verifyFiniteOriginalResults(plan, effective.rows, { analysisRevisionReference: effective.analysis_revision });
   assert.deepEqual(gate.analysis_revision ?? null, effective.analysis_revision);
   const coverage = new Map(), seen = new Set(), ordinals = new Set(), slots = new Set();
   for (const item of gate.episode_evidence) {
@@ -121,6 +126,11 @@ async function verifyScopeGate(gate, environmentRoot) {
     const reservation = await verified(item.reservation);
     assert.equal(reservation.run_id, item.run_id); assert.equal(reservation.experiment_id, plan.id);
     assert.equal(reservation.scope_amendment_sha256, amendment.amendment_sha256);
+    if (finite) {
+      assert.equal(reservation.scope_kind, 'benchmark-finite-campaign'); assert.equal(reservation.scope_id, amendment.id);
+      assert.equal(reservation.scope_role, 'route_gate_only');
+      assert.ok(item.pilot_ordinal <= amendment.history.scheduled_episodes + required);
+    }
     assert.deepEqual(reservation.plan, gate.current_plan);
     const slot = plan.slots.find(slot => slot.slot_id === reservation.slot_id); assert.ok(slot);
     assert.ok(!slots.has(slot.slot_id), 'Scope gate repeats a scheduled slot'); slots.add(slot.slot_id);
@@ -139,15 +149,15 @@ async function verifyScopeGate(gate, environmentRoot) {
     const environment = plan.protocol.environments.find(environment => environment.id === condition.environment_id);
     const model = plan.protocol.models.find(model => model.id === condition.model_id);
     assert.equal(episode.identity.model_id, model.id); assert.equal(episode.identity.environment_sha256, environment.manifest_sha256);
-    if (cohort) assertCohortModelEvidence(episode, model);
+    if (cohort || finite) assertCohortModelEvidence(episode, model);
     assert.equal(episode.identity.build_id, environment.build.id);
     const files = episode.identity.analysis_implementation.files.map(({ artifact_id, ...file }) => file);
     assert.deepEqual(files, gate.instrumentation.collector_files);
     const key = scopeModelIdentity(model) + '/' + scopeEnvironmentIdentity(environment);
     coverage.set(key, (coverage.get(key) ?? 0) + 1);
   }
-  assert.equal(coverage.size, cohort ? amendment.model_count * 2 : 4);
-  for (const count of coverage.values()) assert.equal(count, amendment.gate.minimum_valid_real_per_condition);
+  assert.equal(coverage.size, finite ? 2 : cohort ? amendment.model_count * 2 : 4);
+  for (const count of coverage.values()) assert.equal(count, finite ? 4 : amendment.gate.minimum_valid_real_per_condition);
   assert.deepEqual(Object.fromEntries(coverage), gate.condition_coverage);
   assert.deepEqual(gate.model_conditions, amendment.model_conditions);
   assert.deepEqual(gate.environment_conditions, amendment.environment_conditions);
@@ -155,9 +165,10 @@ async function verifyScopeGate(gate, environmentRoot) {
 }
 
 async function writeScopeGate({ plan, status, outputFile }) {
-  assert.equal(plan.execution.pilot_scope.role, 'gate');
-  const amendment = await verifyPilotScope(plan);
-  const cohort = isProspectiveCohort(amendment), required = amendment.gate.scheduled_episodes;
+  const finite = Boolean(plan.execution.campaign_scope), registration = finite ? plan.execution.campaign_scope : plan.execution.pilot_scope;
+  assert.equal(registration.role, finite ? 'route_gate_only' : 'gate');
+  const amendment = finite ? await verifyFiniteCampaignScope(plan) : await verifyPilotScope(plan);
+  const cohort = isProspectiveCohort(amendment), required = finite ? amendment.plan.scheduled_episodes : amendment.gate.scheduled_episodes;
   const effective = await readScopeCompletedResults(plan);
   assert.deepEqual(status.analysis_revision ?? null, effective.analysis_revision);
   assert.equal(status.scheduled, required); assert.equal(status.completed, required); assert.equal(status.not_dispatched.length, 0);
@@ -184,10 +195,12 @@ async function writeScopeGate({ plan, status, outputFile }) {
     evidence.push({ ...reservation, run_id: item.run_id, directory: item.result.normalized_directory, episode_sha256: item.result.episode_sha256,
       ...(recorded[0].revision_provenance ?? {}) });
   }
-  const gate = { version: cohort ? 1 : 3, kind: cohort ? 'benchmark-cohort-gate' : 'benchmark-route-gate', status: 'passed', core_evidence: 'complete',
-    scope: cohort ? 'current cohort apparatus and accounting only; historical observations excluded; no business-quality acceptance'
+  const gate = { version: finite || cohort ? 1 : 3,
+    kind: finite ? 'benchmark-finite-route-gate' : cohort ? 'benchmark-cohort-gate' : 'benchmark-route-gate', status: 'passed', core_evidence: 'complete',
+    scope: finite ? 'one declared model in Broker/native, four actual observations per condition; route and accounting coverage only; no expansion or quality acceptance'
+      : cohort ? 'current cohort apparatus and accounting only; historical observations excluded; no business-quality acceptance'
       : 'prospective two-model apparatus coverage; original first24 remains incomplete; no business-quality acceptance',
-    scope_id: amendment.id, amendment: plan.execution.pilot_scope.amendment, current_plan: currentPlan,
+    scope_id: amendment.id, amendment: registration.amendment, current_plan: currentPlan,
     scheduled_episodes: required, observer_version: amendment.observer_version, instrumentation: amendment.instrumentation,
     ...(effective.analysis_revision ? { analysis_revision: effective.analysis_revision } : {}),
     model_conditions: amendment.model_conditions, environment_conditions: amendment.environment_conditions,
@@ -196,7 +209,7 @@ async function writeScopeGate({ plan, status, outputFile }) {
   await verifyScopeGate(gate, plan.execution.environment_root);
   const bytes = JSON.stringify(gate, null, 2) + '\n'; await writeFile(outputFile, bytes, { flag: 'wx', mode: 0o600 });
   return { status: 'passed', reference: { path: outputFile, sha256: sha(bytes) }, model_requests: 0, scheduled_episodes: required,
-    scope_id: amendment.id, ...(cohort ? {} : { legacy_first24: 'incomplete_not_satisfied' }), historical_usage: amendment.history.total_usage_status };
+    scope_id: amendment.id, ...(cohort || finite ? {} : { legacy_first24: 'incomplete_not_satisfied' }), historical_usage: amendment.history.total_usage_status };
 }
 
 async function verifyContinuationGate(gate, environmentRoot) {

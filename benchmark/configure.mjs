@@ -4,7 +4,7 @@ import { chmod, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { fingerprint } from './protocol.mjs';
 import { buildCorpus, writeCorpus } from './corpus/index.mjs';
-import { bindMaterializedCases, comparisonPairs, prepareCases, preregisterComparison } from './planning.mjs';
+import { bindMaterializedCases, comparisonEnvironmentPairs, comparisonPairs, prepareCases, preregisterComparison } from './planning.mjs';
 import { prepareEpisodeFixtures, readEpisodeFixtureBindings, validateEpisodeFixturePolicy } from './fixture-dispatch.mjs';
 import { snapshotModels, verifiedModelConditions, resolveModelCredential } from './models.mjs';
 import { environmentFromCapture } from './manifest.mjs';
@@ -12,7 +12,9 @@ import { freezeBatchPlan, validateBatchPlan, scheduleProtocol } from './batch.mj
 import { runSubject, verifyTurnRuntimeBuild } from './execute.mjs';
 import { executionImplementation, verifyExecutionImplementation, instrumentationIdentity } from './implementation.mjs';
 import { prepareZeroSendResumption } from './resumption.mjs';
-import { pilotScopePolicy, preparePilotScope, verifyPilotScope } from './pilot-scope.mjs';
+import { pilotScopePolicy } from './pilot-scope.mjs';
+import { prepareCampaignScope, verifyCampaignScope } from './campaign-dispatch.mjs';
+import { finiteCampaignPolicy } from './finite-campaign.mjs';
 import { prepareMaterialOwnership, verifyMaterialOwnership } from './material-ownership.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -39,7 +41,10 @@ export function verifyRetainedSlotCapture({ launch, run, binding, candidate, con
 export async function configureComparison(setup, { onProgress = () => {} } = {}) {
   assert.equal(setup.version, 1);
   assert.ok(isAbsolute(setup.environment_root) && isAbsolute(setup.control_root));
-  assert.ok(Array.isArray(setup.candidates) && setup.candidates.length === 2);
+  assert.ok(Array.isArray(setup.candidates));
+  const environmentPairs = comparisonEnvironmentPairs(setup.candidates.length, setup.environment_pairs);
+  if (setup.candidates.length !== 2) assert.ok(setup.campaign_scope, 'Four candidates require an explicit finite campaign');
+  assert.ok(!(setup.pilot_scope && setup.campaign_scope), 'A setup cannot mix scope contracts');
   assert.ok(setup.budget && setup.decision && setup.models && setup.corpus);
   const root = setup.control_root;
   await mkdir(root, { recursive: true });
@@ -51,7 +56,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     const proof = await readJson(join(root, 'configuration-proof.json'));
     assert.equal(proof.setup_sha256, fingerprint(setup)); assert.equal(proof.plan_sha256, existing.plan_sha256);
     await verifyExecutionImplementation(existing.execution.implementation);
-    if (existing.execution.pilot_scope) await verifyPilotScope(existing);
+    if (existing.execution.pilot_scope || existing.execution.campaign_scope) await verifyCampaignScope(existing);
     const bindings = await readJson(existing.execution.case_bindings_file);
     assert.equal(sha(await readFile(existing.execution.case_bindings_file)), existing.execution.case_bindings_sha256);
     if (proof.material_original_bindings) {
@@ -132,7 +137,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const runtime = setup.runtime;
   assert.ok(runtime && isAbsolute(runtime.node) && isAbsolute(runtime.pi) && isAbsolute(runtime.bun));
   const scheduled = scheduleProtocol({ pairs: comparisonPairs({ models, cases, repetitions: setup.repetitions ?? 1,
-    orderingSeed: setup.ordering_seed ?? 0 }), assessments: [], policies: { ordering: { seed: setup.ordering_seed ?? 0 } } });
+    orderingSeed: setup.ordering_seed ?? 0, environmentCount: setup.candidates.length, environmentPairs }),
+  assessments: [], policies: { ordering: { seed: setup.ordering_seed ?? 0 } } });
   const candidatesByCondition = Object.fromEntries(models.flatMap((_model, mi) => setup.candidates.map((candidate, ei) => ['m' + mi + '-e' + ei, candidate])));
   const prepared = await prepareEpisodeFixtures({ id: setup.id, environmentRoot: setup.environment_root, controlRoot: root,
     corpus, cases, slots: scheduled, candidates: candidatesByCondition, runtime, policy: setup.episode_fixtures });
@@ -219,7 +225,9 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   }));
   const protocol = preregisterComparison({ id: setup.id, phase: setup.phase, purpose: setup.purpose, environments, models,
     corpus: corpus.publicCorpus, cases, repetitions: setup.repetitions ?? 1, budget: setup.budget, decision: setup.decision,
-    analysis: setup.analysis, pilotScope: pilotScopePolicy(setup.pilot_scope, { modelCount: models.length }), allowedChanges: setup.allowed_changes, orderingSeed: setup.ordering_seed });
+    analysis: setup.analysis, pilotScope: pilotScopePolicy(setup.pilot_scope, { modelCount: models.length }),
+    campaignScope: setup.campaign_scope ? finiteCampaignPolicy(setup.campaign_scope, { scheduledEpisodes: scheduled.length }) : undefined,
+    environmentPairs, allowedChanges: setup.allowed_changes, orderingSeed: setup.ordering_seed });
   assert.deepEqual(scheduleProtocol(protocol), scheduled, 'Fixture ownership differs from the final frozen comparison schedule');
   const conditions = Object.fromEntries(protocol.conditions.map(condition => {
     const ei = environments.findIndex(environment => environment.id === condition.environment_id), candidate = setup.candidates[ei];
@@ -237,8 +245,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const resumption = await prepareZeroSendResumption({ setup, protocol, captures: results, currentSchedule: scheduleProtocol(protocol) });
   if (resumption) execution.resumption = resumption;
   execution.instrumentation = await instrumentationIdentity(execution);
-  const scope = await preparePilotScope({ setup, protocol, execution, slots: scheduleProtocol(protocol), captures: results });
-  if (scope) execution.pilot_scope = scope;
+  const scope = await prepareCampaignScope({ setup, protocol, execution, slots: scheduleProtocol(protocol), captures: results });
+  if (scope) execution[scope.field] = scope.registration;
   const plan = freezeBatchPlan({ protocol, execution });
   await save(join(root, 'plan.json'), plan);
   await save(join(root, 'configuration-proof.json'), { version: 1, setup_sha256: fingerprint(setup), plan_sha256: plan.plan_sha256,

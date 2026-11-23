@@ -78,19 +78,33 @@ export async function bindMaterializedCases({ cases, materialization }) {
 
 /** Use the same canonical pairs for pre-registration fixture ownership and the
  * final protocol. Physical material bindings never add or remove a sample. */
-export function comparisonPairs({ models, cases, repetitions = 1, orderingSeed = 0 }) {
+export function comparisonEnvironmentPairs(environmentCount = 2, declared) {
+  assert.ok([2, 4].includes(environmentCount), 'A comparison names two environments or two explicit environment pairs');
+  const pairs = declared ?? (environmentCount === 2 ? [[0, 1]] : null);
+  assert.ok(Array.isArray(pairs) && pairs.length === environmentCount / 2, 'Four environments require two explicit comparison orientations');
+  assert.ok(pairs.every(pair => Array.isArray(pair) && pair.length === 2
+    && pair.every(index => Number.isSafeInteger(index) && index >= 0 && index < environmentCount)), 'Invalid environment pair');
+  assert.deepEqual(pairs.flat().toSorted((a, b) => a - b), Array.from({ length: environmentCount }, (_, index) => index),
+    'Every environment must belong to exactly one comparison pair');
+  return pairs.map(pair => [...pair]);
+}
+
+export function comparisonPairs({ models, cases, repetitions = 1, orderingSeed = 0, environmentCount = 2, environmentPairs }) {
   assert.ok(Number.isSafeInteger(repetitions) && repetitions > 0);
+  const orientations = comparisonEnvironmentPairs(environmentCount, environmentPairs);
   const pairs = [];
   for (let mi = 0; mi < models.length; mi++) for (const item of cases) for (let repeat = 0; repeat < repetitions; repeat++)
-    pairs.push({ id: 'm' + mi + '-' + item.id + '-r' + repeat, case_id: item.id,
-      condition_ids: ['m' + mi + '-e0', 'm' + mi + '-e1'], repeat, seed: orderingSeed + repeat });
+    for (const [pairIndex, orientation] of orientations.entries())
+      pairs.push({ id: 'm' + mi + (orientations.length === 1 ? '' : '-p' + pairIndex) + '-' + item.id + '-r' + repeat, case_id: item.id,
+        condition_ids: orientation.map(index => 'm' + mi + '-e' + index), repeat, seed: orderingSeed + repeat });
   return pairs;
 }
 
 /** Freeze a concrete comparison, never a speculative future matrix. */
 export function preregisterComparison({ id, phase, purpose, environments, models, corpus, cases, repetitions = 1,
-  budget, decision, analysis, pilotScope, allowedChanges, orderingSeed = 0, registeredAt = new Date().toISOString() }) {
-  assert.equal(environments.length, 2, 'Each comparison names candidate then reference');
+  budget, decision, analysis, pilotScope, campaignScope, environmentPairs, allowedChanges, orderingSeed = 0, registeredAt = new Date().toISOString() }) {
+  const orientations = comparisonEnvironmentPairs(environments.length, environmentPairs);
+  assert.ok(!(pilotScope && campaignScope), 'A comparison cannot mix legacy pilot and finite campaign scopes');
   assert.ok(Number.isSafeInteger(repetitions) && repetitions > 0);
   assert.ok(models.length > 0 && cases.length > 0);
   assert.ok(budget && decision, 'Explicit resource and absolute quality policies are required');
@@ -107,7 +121,7 @@ export function preregisterComparison({ id, phase, purpose, environments, models
     environment_id: environment.id, environment_sha256: environment.manifest_sha256, model_id: model.id,
     corpus_id: corpus.id, corpus_sha256: corpus.content_sha256, case_ids: cases.map(item => item.id),
     initial_state_sha256: state, authorization_sha256: permissions, budget_id: budget.id, code_mode: environment.policies.code_mode })));
-  value.pairs = comparisonPairs({ models, cases, repetitions, orderingSeed });
+  value.pairs = comparisonPairs({ models, cases, repetitions, orderingSeed, environmentCount: environments.length, environmentPairs: orientations });
   value.policies.budgets = [budget];
   value.policies.ordering = { method: 'balanced', seed: orderingSeed, concurrency: 1, condition_order: value.conditions.map(c => c.id) };
   const families = [...new Set(cases.map(item => item.protocol_case.family))];
@@ -117,6 +131,7 @@ export function preregisterComparison({ id, phase, purpose, environments, models
   value.policies.decision = { ...value.policies.decision, ...decision };
   if (analysis !== undefined) value.policies.analysis = structuredClone(analysis);
   if (pilotScope !== undefined) value.policies.pilot.scope = structuredClone(pilotScope);
+  if (campaignScope !== undefined) value.policies.campaign = structuredClone(campaignScope);
   value.policies.reruns.max_episodes = 0;
   value.policies.evidence = { ...value.policies.evidence, observer_version: 'benchmark-pi-sdk-1',
     normalizer_version: EVIDENCE_VERSION, scoring_version: ANALYSIS_VERSION };

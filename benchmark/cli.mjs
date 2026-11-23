@@ -34,6 +34,8 @@ silent model fallback is accepted. Invalid, unknown and failed evidence stays.
 The legacy first24 gate and explicit prospective scope gates retain the same
 144 scheduled-episode campaign cap. See docs/benchmark-pilot-scope.md for the
 two-model gate, verified zero-send repair and single manual route amendment.
+Explicit campaign_scope keeps the same ledger and original stop/usage evidence.
+See docs/benchmark-finite-campaign.md for finite route gates and acceptance.
 analyze replays normalized observations; reanalysis re-reads original artifacts
 and the private oracle before scoring. Both perform zero model requests.
 Collection recovery registers an exact storage-only projection and controller
