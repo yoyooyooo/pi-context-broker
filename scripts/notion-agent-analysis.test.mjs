@@ -545,6 +545,16 @@ test('ordinary relative package source resolves from frozen user settings and ke
     '../../candidate/packages/context-broker');
 });
 
+test('ordinary relative package ownership retains the existing default package slot', async () => {
+  const f = ordinaryPackageFixture();
+  f.save(f.observed.implementation.configArtifact, { brokerRoot: '/owned/candidate/packages/context-broker' });
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  const proof = result.assertions.find(row => row.kind === 'no-semantic-writes').details.implementations[0];
+  assert.equal(proof.ordinaryInstallation.packageIndex, 1);
+  assert.equal(JSON.parse(f.files.get(f.observed.implementation.configArtifact.path)).packageIndex, undefined);
+});
+
 test('ordinary relative source cannot borrow another directory, slot, source, package or settings identity', async () => {
   for (const mutate of [
     f => { delete f.observed.implementation.ordinaryInstallationArtifact; },
@@ -615,6 +625,52 @@ test('a familiar read name without actual implementation provenance cannot prove
   }
 });
 
+function claimedCompactReaderFixture() {
+  const baseDir = '/installed/pi-compact-ui';
+  const f = fixture({ calls: [{ name: 'read', arguments: { path: '/owned/SKILL.md' },
+    toolSource: { path: baseDir + '/index.ts', baseDir, source: 'npm:pi-compact-ui', scope: 'user', origin: 'package' } }] });
+  const event = f.observed.tasks.find(row => row.phase === 'tool_call');
+  event.reviewedReadTool = true;
+  // Claimed metadata is intentionally not the reviewed source bytes. These
+  // negatives must exercise the analyzer's actual artifact verification.
+  event.toolImplementation = { version: 1, runtimeMode: 'rpc', files: [
+    ['package.json', 567, 'a5f319f04fcc0ddeb47c0da5bdd08240598404f96b38dc1fe1baaaab14428f98'],
+    ['index.ts', 66369, 'bac76ae9ed99a3790d8a728cc6e9b5463927ac427a1462ffe59c6adf9e4d4509'],
+  ].map(([relativePath, bytes, sha256]) => ({ relativePath, path: baseDir + '/' + relativePath,
+    artifact: { path: '/owned/evidence/claimed-' + relativePath, bytes, sha256 } })) };
+  return { ...f, event };
+}
+
+test('local read effects cannot borrow a reviewed flag or a partial or foreign implementation', async () => {
+  for (const change of [
+    event => { delete event.toolImplementation; },
+    event => { event.toolImplementation.files.pop(); },
+    event => { event.toolSource.source = 'npm:another-read'; },
+    event => { event.toolImplementation.files[1].artifact.sha256 = '0'.repeat(64); },
+  ]) {
+    const f = claimedCompactReaderFixture(); change(f.event);
+    const result = await f.run([{ kind: 'no-semantic-writes' }]);
+    assert.equal(result.status, 'blocked', JSON.stringify(result.assertions));
+    assert.ok(result.assertions.some(row => row.code === 'TOOL_IMPLEMENTATION_UNKNOWN'));
+  }
+});
+
+test('an exact reviewed reader hash claim must still match the retained implementation bytes', async () => {
+  const f = claimedCompactReaderFixture();
+  for (const file of f.event.toolImplementation.files)
+    f.files.set(file.artifact.path, Buffer.alloc(file.artifact.bytes, 'x'));
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'failed', JSON.stringify(result.assertions));
+  assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_CHANGED'));
+});
+
+test('missing original implementation bytes leave the local read unproved', async () => {
+  const f = claimedCompactReaderFixture();
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'blocked', JSON.stringify(result.assertions));
+  assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_UNREADABLE'));
+});
+
 test('tool discovery binds the real hyphenated Pi builtin path and rejects same-name replacements', async () => {
   const f = fixture({ calls: [{ name: 'tool_search', arguments: { query: 'notion_ctl' } }] });
   const result = await f.run([{ kind: 'no-semantic-writes' }]);
@@ -630,6 +686,37 @@ test('tool discovery binds the real hyphenated Pi builtin path and rejects same-
     const rejected = await f.run([{ kind: 'no-semantic-writes' }]);
     assert.equal(rejected.status, 'blocked');
     assert.ok(rejected.assertions.some(row => row.code === 'TOOL_EFFECTS_UNKNOWN'));
+  }
+});
+
+test('the basic maintenance how-to requires both routes and preservation of an existing body', async () => {
+  const corpus = JSON.parse(readFileSync(new URL('./notion-agent-scenarios.json', import.meta.url), 'utf8'));
+  const scenario = corpus.scenarios.find(row => row.id === 'cold-maintenance-consultation');
+  const expected = scenario.turns[0].expect.find(row => row.kind === 'output');
+  const facts = corpus.fixtures[scenario.fixture].facts;
+  for (const [text, status] of [
+    ['从本地 SKILL.md 用 skill create 新建；已有 Notion 页面用 skill register 登记，不改写正文。', 'passed'],
+    ['可以创建一个 Skill，也可以登记已有 Notion 页面并保留原正文。', 'passed'],
+    ['用 skill create 新建，已有页面用 skill register 注册。注册不会替换页面正文。', 'passed'],
+    ['用 skill create 新建，已有页面用 skill register 注册，页面正文保持不变。', 'passed'],
+    ['用 skill create 新建，已有页面用 skill register 注册，页面正文保持原样。', 'passed'],
+    ['用 skill create 新建，已有页面用 skill register 注册，保留页面正文。', 'passed'],
+    ['可以用 skill create 创建 Skill。', 'failed'],
+    ['已有页面用 skill register 登记，保留原正文。', 'failed'],
+    ['用 skill create 或 skill register，随后覆盖页面正文。', 'failed'],
+    ['给我文件路径、Notion 链接和目标库就行。', 'failed'],
+    ['用 skill create 或 skill register，但不保留页面正文。', 'failed'],
+    ['用 skill create 或 skill register，但不会保留原正文。', 'failed'],
+    ['用 skill create 或 skill register，但不是保留页面正文。', 'failed'],
+    ['用 skill create 或 skill register，并非页面正文保持不变。', 'failed'],
+    ['用 skill create 或 skill register，不是不会替换页面正文。', 'failed'],
+    ...facts['existing-body-preserved'].anyOf.map(value => ['用 skill create 新建，用 skill register 注册：' + value, 'passed']),
+    ...facts['body-preservation-denied'].anyOf.map(value => ['用 skill create 新建，用 skill register 注册：' + value, 'failed']),
+  ]) {
+    const f = fixture({ answerText: text });
+    f.binding.private.facts = facts;
+    const result = await f.run([expected]);
+    assert.equal(result.status, status, JSON.stringify({ text, assertions: result.assertions }));
   }
 });
 

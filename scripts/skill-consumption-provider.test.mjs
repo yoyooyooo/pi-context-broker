@@ -31,7 +31,7 @@ test('serialized transport observer rebinds after real fork reason without dupli
   old.emit('session_start', { reason: 'startup' }, context);
   const emit = (name, value) => diagnostics.channel('undici:request:' + name).publish(value);
   const started = () => {
-    const request = { origin: context.model.baseUrl, method: 'POST', path: '/completions' };
+    const request = { origin: context.model.baseUrl, method: 'POST', path: '/chat/completions' };
     emit('create', { request }); emit('bodyChunkSent', { request, chunk: Buffer.from('body') }); emit('bodySent', { request });
     return request;
   };
@@ -151,7 +151,7 @@ function terminalTrace(output) {
   hooks.get('session_start')({}, { model: { provider: 'fixture', id: 'model', baseUrl: 'https://fixture.invalid' } });
   const emit = (name, event) => callbacks.get('undici:request:' + name)(event);
   for (const failure of [true, false]) {
-    const request = { origin: 'https://fixture.invalid', path: '/completions', method: 'POST' };
+    const request = { origin: 'https://fixture.invalid', path: '/chat/completions', method: 'POST' };
     emit('create', { request }); emit('bodySent', { request });
     emit('headers', { request, response: { statusCode: 200, headers: [] } });
     if (failure) emit('error', { request, error: { code: 20 } });
@@ -211,7 +211,7 @@ function protocolTrace(directory, name, { chunks, api = 'openai-completions', st
   const context = { model: { provider: 'fixture', id: 'model', api, baseUrl: 'https://fixture.invalid' } };
   hooks.get('session_start')({}, context);
   hooks.get('before_provider_request')?.({ payload: {} }, context);
-  const request = { origin: model ? 'https://fixture.invalid' : 'https://other.invalid', path: '/completions', method: 'POST' };
+  const request = { origin: model ? 'https://fixture.invalid' : 'https://other.invalid', path: '/chat/completions', method: 'POST' };
   const emit = (event, fields = {}) => callbacks.get('undici:request:' + event)({ request, ...fields });
   emit('create'); emit('bodySent');
   emit('headers', { response: { statusCode: status, headers: ['content-type', contentType, 'content-encoding', encoding] } });
@@ -312,3 +312,56 @@ test('SSE application completion rejects unsupported transport, error, API and a
   assert.equal(providerObserver.providerApplicationCompletion(legacy, normalProtocolReply()), null, 'Old evidence without protocol proof stays failed');
 });
 
+
+
+test('OpenAI API route separates same-origin MCP traffic while retaining exact request evidence', async t => {
+  const base = fs.mkdtempSync(path.join(tmpdir(), 'provider-endpoint-')), output = path.join(base, 'transport.jsonl');
+  const hooks = new Map(), originalFetch = globalThis.fetch, payload = '{"model":"fixture","messages":[]}';
+  const server = createServer(async (request, response) => {
+    for await (const _chunk of request) { /* Consume the real request without modifying it. */ }
+    response.writeHead(request.url === '/mcp' ? request.method === 'GET' ? 405 : 202 : 200);
+    response.end('actual reply');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+  const origin = 'http://127.0.0.1:' + server.address().port;
+  const observer = observeProviderTransport({ on(event, callback) { hooks.set(event, callback); } },
+    { diagnostics, fs, crypto, path, output, checkoutRoot: process.cwd(), clockId: 'endpoint-test' });
+  t.after(observer.finish);
+  hooks.get('session_start')({}, { model: { provider: 'fixture', id: 'model', api: 'openai-completions', baseUrl: origin + '/v1/' } });
+  for (const [route, method] of [['/v1/chat/completions?opaque=private-query', 'POST'], ['/mcp', 'POST'], ['/mcp', 'GET'],
+    ['/v1/chat/completions-other', 'POST']]) {
+    const response = await fetch(origin + route, { method, ...(method === 'POST' ? { body: payload } : {}) });
+    assert.equal(await response.text(), 'actual reply');
+  }
+  observer.finish();
+  const rows = await readProviderTransport(output), starts = rows.filter(row => row.phase === 'request_start');
+  assert.deepEqual(starts.map(row => row.category), ['model', 'other', 'other', 'other']);
+  assert.deepEqual(rows.filter(row => row.phase === 'request_end').map(row => row.status), [200, 202, 405, 200]);
+  assert.equal(rows.find(row => row.phase === 'request_sent' && row.id === starts[0].id).requestBodySha256,
+    crypto.createHash('sha256').update(payload).digest('hex'));
+  const selected = rows.find(row => row.phase === 'model_selected');
+  assert.equal(selected.endpointPathSha256, crypto.createHash('sha256').update('/v1/chat/completions').digest('hex'));
+  assert.equal(selected.endpointMethod, 'openai-chat-completions-route');
+  assert.equal(rows.at(-1).complete, true); assert.equal(globalThis.fetch, originalFetch);
+  const raw = fs.readFileSync(output, 'utf8');
+  for (const secret of [payload, 'private-query', origin]) assert.equal(raw.includes(secret), false);
+});
+
+test('unsupported provider APIs keep conservative accounting and cannot hide unmatched same-origin requests', async () => {
+  const base = fs.mkdtempSync(path.join(tmpdir(), 'provider-unknown-endpoint-')), output = path.join(base, 'transport.jsonl');
+  const callbacks = new Map(), hooks = new Map();
+  const observer = observeProviderTransport({ on(event, callback) { hooks.set(event, callback); } },
+    { diagnostics: { subscribe(event, callback) { callbacks.set(event, callback); }, unsubscribe() {} },
+      fs, crypto, path, output, checkoutRoot: process.cwd(), clockId: 'unknown-api' });
+  hooks.get('session_start')({}, { model: { provider: 'future', id: 'model', api: 'unknown-protocol', baseUrl: 'https://future.invalid/api' } });
+  const request = { origin: 'https://future.invalid', path: '/unrecognized', method: 'POST' };
+  callbacks.get('undici:request:create')({ request });
+  callbacks.get('undici:request:bodySent')({ request });
+  callbacks.get('undici:request:error')({ request, error: { name: 'Error', code: 'ECONNRESET' } });
+  observer.finish();
+  const rows = await readProviderTransport(output);
+  assert.equal(rows.find(row => row.phase === 'request_start').category, 'model');
+  assert.equal(rows.find(row => row.phase === 'model_selected').endpointMethod, 'conservative-origin');
+  assert.equal(rows.find(row => row.phase === 'request_end').errorCode, 'ECONNRESET');
+});

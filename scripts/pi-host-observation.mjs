@@ -129,10 +129,23 @@ function installPassiveObserver(config, identifyPackageEntry) {
   const bodyIdOrigins = new Set(config.responseRequestIdBodyOrigins ?? ['https://api.notion.com']);
   const validRequestId = value => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(value);
   subscribe('create', ({ request }) => {
-    const url = new URL(String(request.path), String(request.origin));
+    // CONNECT uses an authority-form target (host:port), not a URL path.
+    // Keep the proxy endpoint and tunnel target separate from the HTTP request
+    // carried inside it; neither can substitute for SDK metadata evidence.
+    const connect = request.method === 'CONNECT';
+    const url = new URL(connect ? String(request.origin) : String(request.path), String(request.origin));
+    let authority;
+    if (connect) {
+      authority = String(request.path);
+      const target = new URL('https://' + authority);
+      if (!/^(?:\[[0-9a-f:.]+\]|[a-z0-9.-]+):[0-9]+$/iu.test(authority)
+        || !target.hostname || target.username || target.password || target.pathname !== '/' || target.search || target.hash)
+        throw new Error('INVALID_CONNECT_AUTHORITY');
+    }
     if (requests.has(request)) throw new Error('DUPLICATE_REQUEST');
     const row = { id: `${process.pid}:${++sequence}`, at: new Date().toISOString(), started_ms: performance.now(),
-      method: request.method, origin: url.origin, path: url.pathname, bytes: 0,
+      method: request.method, origin: url.origin, path: connect ? null : url.pathname,
+      ...(connect ? { transport: 'proxy-connect', authority } : {}), bytes: 0,
       hash: crypto.createHash('sha256'), sent: false, status: null, responseId: null,
       responseIdSource: null, encoding: 'identity', json: false, responseBytes: 0, responseChunks: [] };
     requests.set(request, row);
@@ -140,7 +153,8 @@ function installPassiveObserver(config, identifyPackageEntry) {
     // Creation precedes connection and TLS errors. Retain its identity even if
     // no request body is sent and consequently no response ID can exist.
     write({ event: 'http_created', id: row.id, at: row.at, started_ms: row.started_ms,
-      method: row.method, origin: row.origin, path: row.path });
+      method: row.method, origin: row.origin, path: row.path,
+      ...(row.transport ? { transport: row.transport, authority: row.authority } : {}) });
   });
   subscribe('bodyChunkSent', ({ request, chunk }) => {
     const row = requestOf(request);
@@ -152,6 +166,7 @@ function installPassiveObserver(config, identifyPackageEntry) {
     if (row.sent) throw new Error('DUPLICATE_REQUEST_BODY');
     row.sent = true;
     write({ event: 'http_start', id: row.id, at: row.at, method: row.method, origin: row.origin, path: row.path,
+      ...(row.transport ? { transport: row.transport, authority: row.authority } : {}),
       started_ms: row.started_ms, request_bytes: row.bytes, request_sha256: row.hash.digest('hex'), observation: 'undici-request-body-sent' });
   });
   subscribe('headers', ({ request, response }) => {
@@ -197,7 +212,9 @@ function installPassiveObserver(config, identifyPackageEntry) {
     const row = requestOf(request); active.delete(request);
     row.responseChunks.length = 0;
     write({ event: 'http_error', id: row.id, code: error?.code ?? error?.name ?? 'unknown',
-      method: row.method, origin: row.origin, path: row.path, started_ms: row.started_ms, ended_ms: performance.now(),
+      method: row.method, origin: row.origin, path: row.path,
+      ...(row.transport ? { transport: row.transport, authority: row.authority } : {}),
+      started_ms: row.started_ms, ended_ms: performance.now(),
       request_body_sent: row.sent, sent_request_bytes: row.bytes, status: row.status, response_request_id: row.responseId,
       error: { name: error?.name ?? null, code: error?.code ?? null, message: error?.message ?? null,
         errno: error?.errno ?? null, syscall: error?.syscall ?? null } });

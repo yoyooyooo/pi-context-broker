@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation } from './notion-agent-tool-lineage.mjs';
+import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation, inspectedLocalReadEvidence } from './notion-agent-tool-lineage.mjs';
 import { analyzeNotionAgentTurn } from './notion-agent-analysis.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -78,6 +78,86 @@ function preparedFixture() {
     brokerOwner: { source: structuredClone(brokerSource), commit: 'e'.repeat(40) } };
   return { tasks, session, preparedReads: new Map([[id, evidence]]), evidence, native, proof };
 }
+
+function localReadFixture({ nested = false, input = { path: '/owned/SKILL.md' } } = {}) {
+  const value = fixture(), reviewed = preparedFixture().tasks[0];
+  const content = Buffer.from(JSON.stringify([{ type: 'text', text: 'Actual local text.\n' }]));
+  value.child.arguments = structuredClone(input);
+  let tasks = value.tasks, session = value.session, id = value.childId;
+  if (!nested) {
+    id = 'native-local-read';
+    const native = { id, name: 'read', arguments: structuredClone(input), active: true, userEntryId: 'user',
+      callLine: 3, resultLine: 4, assistantEntryId: 'assistant', resultEntryId: 'result', isError: false };
+    session = { supported: true, currentUserId: 'user', attempts: [native], branchEntries: [{
+      type: 'message', id: 'result', message: { role: 'toolResult', toolName: 'read', toolCallId: id,
+        isError: false, content: JSON.parse(content) },
+    }] };
+    tasks = [{ phase: 'tool_call', toolName: 'read', toolCallId: id },
+      { phase: 'tool_result', toolName: 'read', toolCallId: id, isError: false }];
+  }
+  const event = tasks.find(row => row.phase === 'tool_call' && row.toolCallId === id);
+  const result = tasks.find(row => row.phase === 'tool_result' && row.toolCallId === id);
+  Object.assign(event, { inputSha256: argsHash(input), selectors: structuredClone(input),
+    toolSource: structuredClone(reviewed.toolSource), toolImplementation: structuredClone(reviewed.toolImplementation) });
+  Object.assign(result, { inputSha256: argsHash(input), content: { bytes: content.length, sha256: sha(content) },
+    contentArtifact: { path: '/sealed/local-result.json', bytes: content.length, sha256: sha(content) } });
+  if (nested) event.parentToolCallId = result.parentToolCallId = value.rootId;
+  tasks.forEach((row, index) => Object.assign(row, { pid: 100, turn: 1, sequence: index + 1 }));
+  const correlation = inspect({ tasks, session });
+  assert.equal(correlation.status, 'passed', JSON.stringify(correlation.diagnostics));
+  return { tasks, session, content, event, result, call: correlation.attempts.find(row => row.id === id) };
+}
+
+test('a reviewed local reader retains native and nested calls, including bounded ranges', () => {
+  for (const nested of [false, true]) for (const input of [
+    { path: '/owned/SKILL.md' }, { path: '/owned/reference.md', limit: 135 },
+    { path: '/owned/reference.md', offset: 138, limit: 117 },
+  ]) {
+    const f = localReadFixture({ nested, input });
+    const proof = inspectedLocalReadEvidence(f.call, f.content);
+    assert.ok(proof);
+    assert.equal(proof.profile, 'pi-compact-ui:0.1.3:native-read-delegate');
+    assert.equal(proof.path, input.path);
+    assert.equal(proof.offset, input.offset);
+    assert.equal(proof.limit, input.limit);
+    assert.deepEqual(proof.content, { sha256: sha(f.content), bytes: f.content.length });
+  }
+});
+
+test('local read lineage cannot borrow a name, partial implementation, changed input, or incomplete result', () => {
+  for (const mutate of [
+    f => { delete f.event.toolImplementation; f.event.reviewedReadTool = true; },
+    f => { f.event.toolSource.source = 'npm:another-package'; },
+    f => { f.event.toolImplementation.files.pop(); },
+    f => { f.event.toolImplementation.files[1].artifact.sha256 = 'a'.repeat(64); },
+    f => { f.call.arguments.path = 'sr:C' + 'a'.repeat(22); },
+    f => { f.call.arguments.path = 'skill://owner/SKILL.md'; },
+    f => { f.call.arguments.path = 'relative/SKILL.md'; },
+    f => { f.call.arguments.path = 42; },
+    f => { f.call.arguments.refresh = true; },
+    f => { f.call.arguments.limit = 0; },
+    f => { f.call.arguments.offset = 1.5; },
+    f => { f.event.inputSha256 = 'a'.repeat(64); },
+    f => { delete f.result.inputSha256; },
+    f => { f.result.inputSha256 = 'a'.repeat(64); },
+    f => { f.result.pid += 1; },
+    f => { f.result.turn += 1; },
+    f => { f.result.sequence = f.event.sequence; },
+    f => { f.result.parentToolCallId = 'another-parent'; },
+    f => { f.call.parentToolCallId = 'another-parent'; },
+    f => { f.result.isError = true; },
+    f => { f.result.content.bytes += 1; },
+    f => { f.result.content.sha256 = 'a'.repeat(64); },
+    f => { delete f.result.contentArtifact; },
+    f => { f.result.contentArtifact.sha256 = 'a'.repeat(64); },
+    f => { f.content = Buffer.from('different actual result'); },
+    f => { f.call.preparedRead = { claimed: true }; },
+    f => { f.call.provenance.kind = 'unobserved'; },
+  ]) {
+    const f = localReadFixture({ nested: true }); mutate(f);
+    assert.equal(inspectedLocalReadEvidence(f.call, f.content), undefined, mutate.toString());
+  }
+});
 
 function selectedPreparedFixture({ resource = false, storage = 'entry', refresh = false, inspect = false, canonical = false } = {}) {
   const value = preparedFixture(), { evidence, tasks, session, native } = value;

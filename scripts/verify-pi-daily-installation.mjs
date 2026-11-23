@@ -335,8 +335,10 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
       assert.equal(metrics[0].total_requests, events.filter(event => event.phase === 'attempt' && event.requestId === operation.requestId).length);
     }
   }
-  const source = [], sdk = [], otherPlugins = [], unattributedHostHttp = [];
-  for (const request of observed.filter(row => row.event === 'http_start')) {
+  const source = [], sdk = [], otherPlugins = [], unattributedHostHttp = [], proxyTunnels = [];
+  const requests = observed.filter(row => row.event === 'http_start' || row.event === 'http_created' && row.transport === 'proxy-connect'
+    && !observed.some(sent => sent.event === 'http_start' && sent.pid === row.pid && sent.id === row.id));
+  for (const request of requests) {
     let pid = request.pid, role;
     const visited = new Set();
     while (Number.isInteger(pid) && !visited.has(pid)) {
@@ -344,6 +346,22 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
       if (sourcePids.has(pid)) { role = 'source'; break; }
       if (hostPids.has(pid)) { role = pid === request.pid ? 'host' : 'other-plugin'; break; }
       pid = parents.get(pid);
+    }
+    if (request.method === 'CONNECT' || request.transport === 'proxy-connect') {
+      assert.ok(['host', 'source', 'other-plugin'].includes(role), 'Proxy tunnel has no verified process ancestry');
+      assert.equal(request.method, 'CONNECT'); assert.equal(request.transport, 'proxy-connect');
+      const proxy = new URL(request.origin), target = new URL('https://' + request.authority);
+      assert.ok(['http:', 'https:'].includes(proxy.protocol) && proxy.origin === request.origin, 'Proxy tunnel has no exact proxy origin');
+      assert.ok(typeof request.authority === 'string' && /^(?:\[[0-9a-f:.]+\]|[a-z0-9.-]+):[0-9]+$/iu.test(request.authority)
+        && target.hostname && !target.username && !target.password && target.pathname === '/' && !target.search && !target.hash,
+      'Proxy tunnel has no authority-form target');
+      assert.equal(request.path, null);
+      if (request.event === 'http_start') assert.equal(request.request_bytes, 0, 'CONNECT must not carry an application request body');
+      const outcomes = observed.filter(row => ['http_end', 'http_error'].includes(row.event) && row.id === request.id && row.pid === request.pid);
+      assert.ok(outcomes.length <= 1 && outcomes.every(row => !sdkAttempts.has(row.response_request_id)),
+        'A proxy tunnel cannot replace an SDK response or have multiple terminal outcomes');
+      proxyTunnels.push({ ...request, role, outcomes });
+      continue;
     }
     if (role === 'host') {
       const origin = new URL(request.origin);
@@ -376,7 +394,7 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
     }
   }
   assert.equal(matchedSdk.size, sdkAttempts.size, 'An SDK attempt lacks independent HTTP evidence');
-  return { source, sdk, otherPlugins, unattributedHostHttp };
+  return { source, sdk, otherPlugins, unattributedHostHttp, proxyTunnels };
 }
 
 export function classifyDailyNotionRequest(request) {
@@ -511,7 +529,8 @@ async function run(config) {
     const http = partition.source;
     result.other_plugin_http = partition.otherPlugins.map(request => ({ ...request, process: observed.find(row => row.event === 'process_start' && row.pid === request.pid), outcome: observed.find(row => ['http_end', 'http_error'].includes(row.event) && row.id === request.id) }));
     result.unattributed_host_http = partition.unattributedHostHttp;
-    result.http_accounting_scope = 'The verified target includes every host request to api.notion.com, every complete SDK attempt and the verified bundled CLI process tree. SDK attempts are paired by PID, response request ID, method, status and request bytes. Other plugin child-process HTTP is separate. Non-Notion host HTTP without SDK attribution remains in unattributed_host_http with its original failures or missing outcomes; it is excluded from target costs and does not establish global Pi/plugin health or zero external traffic. Worker transport is outside this passive process observer.';
+    result.proxy_tunnels = partition.proxyTunnels;
+    result.http_accounting_scope = 'The verified target includes every host request to api.notion.com, every complete SDK attempt and the verified bundled CLI process tree. SDK attempts are paired by PID, response request ID, method, status and request bytes. Other plugin child-process HTTP is separate. Proxy CONNECT tunnels retain their process ancestry, target and original outcomes separately; they are transport setup, do not count as application requests and cannot satisfy SDK HTTP evidence. Non-Notion host HTTP without SDK attribution remains in unattributed_host_http with its original failures or missing outcomes; it is excluded from target costs and does not establish global Pi/plugin health or zero external traffic. Worker transport is outside this passive process observer.';
     assert.ok(http.length, 'No real HTTP metadata request was observed');
     for (const request of http) {
       classifyDailyNotionRequest(request);

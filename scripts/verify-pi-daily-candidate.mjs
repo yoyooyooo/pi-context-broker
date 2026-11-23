@@ -893,17 +893,26 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     const selectors = Object.fromEntries(['path', 'paths', 'ref', 'refs', 'query', 'id', 'ids', 'refresh'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
     const toolSource = typeof api.getAllTools === 'function' ? api.getAllTools().find(tool => tool.name === event.toolName)?.sourceInfo : undefined;
     let toolImplementation;
+    if (event.toolName === 'read' && toolResultDirectory
+      && toolSource?.origin === 'package' && toolSource.scope === 'user' && toolSource.source === 'npm:pi-compact-ui'
+      && typeof toolSource.baseDir === 'string' && toolSource.path === toolSource.baseDir + '/index.ts') {
+      try {
+        const files = ['package.json', 'index.ts'].map(relativePath => {
+          const path = toolSource.baseDir + '/' + relativePath;
+          return { relativePath, path, artifact: retain('implementation', fs.readFileSync(path)) };
+        });
+        toolImplementation = { version: 1, runtimeMode: ctx?.mode, files };
+      } catch (error) {
+        toolImplementation = { version: 1, error: { name: error.name, message: error.message } };
+      }
+    }
     if (event.toolName === 'read' && toolResultDirectory && typeof input.path === 'string'
       && Object.keys(input).every(key => ['path', 'refresh'].includes(key))
       && (input.refresh === undefined || typeof input.refresh === 'boolean')
       && (/^sr:[CSR][A-Za-z0-9_-]{22}$/u.test(input.path) || input.path.startsWith('skill://')) && event.parentToolCallId === undefined
       && toolSource?.origin === 'package' && toolSource.source === 'npm:pi-compact-ui'
-      && typeof toolSource.baseDir === 'string' && toolSource.path === toolSource.baseDir + '/index.ts') {
-      const files = ['package.json', 'index.ts'].map(relativePath => {
-        const path = toolSource.baseDir + '/' + relativePath;
-        return { relativePath, path, artifact: retain('implementation', fs.readFileSync(path)) };
-      });
-      toolImplementation = { version: 1, runtimeMode: ctx?.mode, files };
+      && typeof toolSource.baseDir === 'string' && toolSource.path === toolSource.baseDir + '/index.ts'
+      && toolImplementation?.files) {
       const registrations = api.getCommands().filter(command => command.name === 'context-broker');
       const branch = ctx.sessionManager.getBranch(), targetFor = ref => {
         const refs = branch.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref' && entry.data?.ref === ref);
