@@ -2,6 +2,7 @@ import { dirname } from "node:path";
 import type { HostCapabilities } from "./host-adapter";
 import type { ExtensionAPI, PiReadDefinition, SkillRecord } from "./types";
 import { installPiDollarAutocompleteEditor } from "./pi-dollar-editor";
+import { presentPiAuthorization } from "./pi-authorization";
 import { DEFAULT_RESOURCE_READ_BUDGET, MAX_RESOURCE_READ_BUDGET, normalizeResourceReadBudget } from "./resource-read-types";
 import { consumptionEffectsJsonSchema } from "./consumption-effects";
 import { createPiReadRenderers } from "./pi-read-renderer";
@@ -39,6 +40,7 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
     paths: { host: "pi" },
     submission: { mode: "transform", receipt: "input-digest" },
     metadataDiscovery: "deferred",
+    presentAuthorization: presentPiAuthorization,
     registerReadExecutor(execute, displayForCall) {
       const register = api.registerTool, allTools = api.getAllTools, activeTools = api.getActiveTools;
       if (!register || !allTools || !activeTools) return undefined;

@@ -214,8 +214,17 @@ for (const representation of ['flat', 'combined']) test('SDK observer retains ac
   assert.deepEqual(receipts[3].value, resolution);
   assert.deepEqual(graphSourceViews([receipts[3]]), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'Resolving an identity does not read a body, prepare a graph or deliver a resource');
   const events = await lines(ledger), accounting = graphSourceAccounting(events, receipts, { sourceMode: 'sdk', requireConsumption: true });
-  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0, resolve: 1 }); assert.equal(accounting.actual_http_attempts, 1);
+  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0, resolve: 1, 'content-search': 0 }); assert.equal(accounting.actual_http_attempts, 1);
   assert.equal(accounting.source_results_observed, 4);
+  const contentEvents = [...events, { phase: 'sdk-start', requestId: 'content', operation: 'content-search' },
+    { phase: 'sdk-end', requestId: 'content', operation: 'content-search' }];
+  for (const metrics of [null, emptyMetrics]) {
+    const contentReceipts = [...receipts, { transport: 'sdk', requestId: 'content', operation: 'content-search',
+      status: 'completed', resultObserved: true, metrics, value: { kind: 'results', records: [] } }];
+    const content = graphSourceAccounting(contentEvents, contentReceipts, { sourceMode: 'sdk' });
+    assert.equal(content.sdk_calls['content-search'], 1);
+    assert.equal(content.actual_http_attempts, null, 'REST metrics cannot supply an MCP HTTP total');
+  }
   assert.throws(() => graphSourceAccounting(events.filter(event => event.requestId !== 'consumption'),
     receipts.filter(item => item.requestId !== 'consumption'), { sourceMode: 'sdk', requireConsumption: true }), /real consumer/);
   assert.throws(() => graphSourceAccounting(events.map(event => event.requestId === 'manifest' ? { ...event, operation: 'future-operation' } : event),

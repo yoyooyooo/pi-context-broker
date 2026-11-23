@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { access, mkdir, mkdtemp, readFile, realpath, rename, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { agentWorkflowArgs, agentWorkflowEnvironment, agentWorkflowProjectSettings, bindPairedWorkflowEvidence, prepareWorkflowTemporaryEnvironment, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
+import { agentWorkflowArgs, agentWorkflowEnvironment, agentWorkflowProjectSettings, bindPairedWorkflowEvidence, prepareWorkflowTemporaryEnvironment, prepareWorkflowMcpAuthorization, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
 import { validateCandidateTurn } from './verify-pi-daily-candidate.mjs';
 
 const execute = promisify(execFile);
@@ -221,4 +221,61 @@ test('a declared Store outage needs sealed probe artifacts and the still-active 
   await writeFile(state, JSON.stringify(marker));
   await writeFile(fault.proof.after.command.path, '{}'); await assert.rejects(workflowCatalogFault(bindings, state));
   fault.status = 'restored'; assert.equal(await workflowCatalogFault(bindings, state), undefined);
+});
+
+test('an explicit parent Node proxy choice reaches both the controller CLI and private Pi environment', () => {
+  const settings = { stateRoot: '/owned/state', sourceConfigPath: '/owned/config.json', evidence: '/owned/evidence' };
+  assert.equal(agentWorkflowEnvironment({}, settings, ['--use-env-proxy']).NODE_USE_ENV_PROXY, '1');
+  assert.equal(agentWorkflowEnvironment({ NODE_USE_ENV_PROXY: '0' }, settings, ['--use-env-proxy']).NODE_USE_ENV_PROXY, '0');
+  assert.equal(agentWorkflowEnvironment({ NODE_USE_ENV_PROXY: '1' }, settings, []).NODE_USE_ENV_PROXY, '1');
+  assert.equal(agentWorkflowEnvironment({ HTTPS_PROXY: 'http://127.0.0.1:7777' }, settings, []).NODE_USE_ENV_PROXY, undefined);
+});
+
+const contentScenario = { fixture: { environment: { catalog: 'normal', mcpAuthorization: 'cli-login' } },
+  turns: [{ expect: [{ kind: 'content-search' }] }] };
+async function authorizationFixture(t, body) {
+  const fixture = await temporaryFixture(t), cli = join(fixture.root, 'fixture-cli.mjs');
+  // A real subprocess fixture proves isolation and lifecycle only. It performs no OAuth or network I/O.
+  const state = { connectionId: 'fixture-connection', grantEpoch: 'fixture-epoch', oauth: 'ready', tokenSource: 'none', registered: true };
+  const text = body ?? 'console.log(JSON.stringify({ok:true,mcp:' + JSON.stringify(state) + ',args:process.argv.slice(2),configRoot:process.env.NTN_SKILLS_CONFIG_HOME}));';
+  await writeFile(cli, text);
+  const expectedCli = { path: cli, realpath: await realpath(cli), bytes: Buffer.byteLength(text), sha256: createHash('sha256').update(text).digest('hex') };
+  const env = agentWorkflowEnvironment({ PATH: process.env.PATH, HOME: process.env.HOME }, {
+    stateRoot: join(fixture.root, 'private-state'), sourceConfigPath: join(fixture.root, 'source.json'), evidence: fixture.root }, []);
+  return { fixture, options: { cli, cwd: fixture.projectRoot, env, evidence: fixture.root, expectedCli } };
+}
+
+test('metadata and unspecified workflows perform no authorization setup', async () => {
+  assert.deepEqual(await prepareWorkflowMcpAuthorization({ fixture: {}, turns: [] }, {}), { status: 'not_required' });
+});
+
+test('declared content setup uses the frozen CLI and independent public status readback in private roots', async t => {
+  const { fixture, options } = await authorizationFixture(t);
+  const result = await prepareWorkflowMcpAuthorization(contentScenario, options);
+  assert.equal(result.status, 'passed'); assert.equal(result.actor, 'fixture-controller');
+  assert.equal(result.mcpHttpAttempts, null); assert.equal(result.commands.length, 2);
+  assert.deepEqual(result.commands[0].argv.slice(2), ['auth', 'mcp', 'login', '--no-browser']);
+  assert.deepEqual(result.commands[1].argv.slice(2), ['auth', 'mcp', 'status']);
+  assert.ok(result.commands.every(command => command.exitCode === 0 && Number.isSafeInteger(command.pid)));
+  const login = JSON.parse(await readFile(result.commands[0].stdout.path, 'utf8'));
+  assert.equal(login.configRoot, join(fixture.root, 'private-state/config'));
+  assert.equal((await access(join(fixture.root, 'mcp-authorization/result.json')).then(() => true)), true);
+});
+
+test('MCP setup rejects unrelated scenarios, ordinary state roots and inherited tokens before spawning', async t => {
+  const { options } = await authorizationFixture(t);
+  await assert.rejects(prepareWorkflowMcpAuthorization({ ...contentScenario, turns: [] }, options), /explicit content-search/u);
+  await assert.rejects(prepareWorkflowMcpAuthorization(contentScenario, { ...options, env: { ...options.env, NTN_SKILLS_CONFIG_HOME: '/normal/config' } }), /private run roots/u);
+  await assert.rejects(prepareWorkflowMcpAuthorization(contentScenario, { ...options, env: { ...options.env, NOTION_MCP_TOKEN: 'fixture-secret' } }), /inherited MCP token/u);
+  await assert.rejects(access(join(options.evidence, 'mcp-authorization')), { code: 'ENOENT' });
+});
+
+test('cancelled or failed CLI preparation retains evidence and cannot start a successful journey', async t => {
+  for (const [name, body, timeout] of [['failure', 'process.exit(7);', 10000], ['timeout', 'setInterval(()=>{},1000);', 100]]) await t.test(name, async t => {
+    const { options } = await authorizationFixture(t, body);
+    await assert.rejects(prepareWorkflowMcpAuthorization(contentScenario, options, { loginTimeoutMs: timeout }), /did not complete/u);
+    const result = JSON.parse(await readFile(join(options.evidence, 'mcp-authorization/result.json'), 'utf8'));
+    assert.equal(result.status, 'failed'); assert.equal(result.commands.length, 1);
+    assert.equal(result.commands[0].timedOut, name === 'timeout');
+  });
 });

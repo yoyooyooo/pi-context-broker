@@ -32,6 +32,20 @@ verification/models/consumer-state/coverage.json 是当前四个模型的唯一 
 
 `FreshnessPublication.Receive` 仍对应异步获取完成后的同步证据准入；它不建模 SDK 请求、写后失效、View 交接或 Promise 等待。`host-refresh.test.ts` 经 production index/adapter 验证 TTL 内新条目、失败/partial、自动写入在途失效、固定选择及随后普通回合；`host-prepare.test.ts` 验证不配合取消的旧 producer、等待者取消、重叠来源合并和 session fence。`catalog-cache.test.ts` 检查精确来源强刷和 offline 策略，`catalog-menu.test.ts` 检查公开 age 随原始验证时刻前进、缺失观察不变成新验证。native CRUD 回执与 literal argv 由 `cli-write-invalidation.test.ts` 检查。这些是实现义务，不扩张现有有限模型的证明范围；保留全部原规则、负例和真实 guard mutations。
 
+### 内容搜索的整份结果发布
+
+`notion_list search_in:content` 以显式、非空 query 和唯一配置来源启动。metadata 模式、禁用来源和无来源不会进入 MCP；headless/RPC/print/JSON 不提供授权展示回调，所以缺少已有凭据时 SDK 在 OAuth flight 前终结。Broker 只持有展示 URL、该 waiter 的 signal 与 deadline；transport、凭据和授权回调由 core/SDK 持有。
+
+`consumer-observation.accept` 在原有 generation、signal、证据时间及请求顺序守卫通过之后，原子地更新 observation、推进 qualification revision 并通知订阅者。拒绝的旧证据不推进 revision；deny 后又 allow 仍是新代次。原 metadata 资格判定和 cursor 合同不变。
+
+`content-publication.createContentPublication` 从这个 revision 和当前 task、metadata、source 配置、session ID/file、branch ancestry 建立一次发布 ticket。成功、空结果、notice、授权拒绝和其他错误共享此 ticket；它在 SDK 等待、授权展示前后及最终输出处检查。已接受资格变化或取消可终止不合作的 producer 等待；原 branch 追加可继续，回退、换支或重写已捕获前缀会退役。授权完成只恢复原参数，不能改来源、另起 query 或改写 selected/active/Requires/pins。
+
+首版没有 content 缓存或远程分页，所有 content cursor 都在 dispatch 前拒绝；返回 `next_cursor:null`、`pagination:not_supported`、`coverage:remote_non_exhaustive` 和 `exhaustive:false`。metadata refresh 仍只刷新目录。SDK 负责显式 entry 的 fresh REST 预检、授权后复核、MCP 同一 physical 来源绑定及 Skill/File owner、Enabled、稳定 ID 的最终准入；这些网络义务不由消费者模型证明。
+
+`host-content-search.test.ts` 经真实 host 工具入口回放整份结果 fence、空结果、远程错误、资格变化、配置变化、deadline、单 waiter 取消、模式和 cursor 拒绝、无 pin/active 写入。`consumer-observation.test.ts` 核资格 revision 的唯一接受点与 ABA；`content-search.test.ts` 核动态 SDK 返回的有界闭合结构与错误白名单；`pi-authorization.test.ts` 核展示/关闭/取消和无交互能力零浏览器副作用。现有 mutation runner 另在隔离副本破坏资格推进、source/session/branch/deadline/cancellation 和错误发布守卫，要求 baseline、行为反例、原字节恢复三个阶段。
+
+这些是 `FreshnessPublication`、`ReadRace` 的具体实现扩展义务。现有有限模型没有 OAuth、空远程列表、metadata epoch、配置指纹或 branch ancestry 变量；不得从旧模型通过推导这些新行为已穷尽验证。保留模型、有限域、完整 cases/expected_rules 和旧负例；源码 hash 只绑定已审查的 owner 字节。真实 Notion/OAuth、安装身份和自然 Pi 任务继续由 integration、agent-workflows 负责。
+
 ## SelectionGraph
 
 一个 root 和一个 Requires，各有两个本地已验证选择的序号；不承诺远端历史恢复。旧向量为 root v1/Requires v2，新向量为 root v2/Requires v1；序号不表示两个身份共享 snapshot/hash。负配置复制 root pin 到 child，会破坏 EachMemberKeepsOwnPin。

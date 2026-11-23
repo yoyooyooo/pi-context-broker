@@ -213,6 +213,16 @@ Notion 网页修改发生在 CLI 缓存之外。精确引用固定身份，不�
 
 公开 `notion_list` 和首轮提交上下文能到达原目录 TTL，不依赖编辑器补全。命中不续期，并发到期核对复用已有请求所有者；交互输入保留 pending 非阻塞，print/JSON 在可取消边界等待。`/context-broker refresh` 明确重取当前目录和 View；失败保留错误或 partial，不把旧结果称作新鲜成功或空目录。分页摘要包括实际 availability、View 与覆盖，状态变化后不能静默拼接两代分页。
 
+### 显式远程内容搜索
+
+用户要求搜索 Skill 内容时，调用 `notion_list({search_in:"content",query:"独特词句",source:"team",limit:20})`。省略 `search_in` 或使用 `search_in:"metadata"` 保持原元数据查询，不启动 MCP 或 OAuth。内容查询要求非空 query、已启用且在线的 Notion 来源、该来源明确配置的 library entry，以及 1–50 的 limit。只有一个来源时可唯一选择；存在多个来源时必须传 source。SDK 先确认选定物理 entry 的访问，再把 query 发到该连接，不向多个连接广播。
+
+MCP transport、OAuth 和凭据只由同包 CLI/core 持有。REST 与 MCP 凭据相互独立；显式 MCP Token 优先，其失败不切换到另一个 OAuth 账号。缺少可用 grant 时，显式 Pi 前台内容搜索可以显示授权屏并打开系统浏览器，Esc 只取消当前查询的等待者。headless、RPC、print、JSON 不打开浏览器；授权需求结果提供 `ntn-skills auth mcp login` 供用户主动登录。宿主总预算至多六分钟，SDK 分别限制授权五分钟、搜索六十秒。回调不可用、拒绝和超时都会结束等待。
+
+成功命中经过 fresh REST 的精确 owner、物理页面、Source 和 Skill Enabled 准入；支持文件命中归到所属 Skill。结果标记 notion_remote_match、native/projection/supporting_file 表示、coverage:remote_non_exhaustive 和 exhaustive:false。Notion 标题或投影命中不证明固定 Skill 快照或 Git 资源的精确字节包含该词。空结果、过滤后的空集合和 partial 不能证明不存在。
+
+内容搜索不建立本地全文索引，也不缓存结果页；始终返回 next_cursor:null 和 pagination:not_supported。任何 content cursor，包括旧 metadata cursor，都在 MCP I/O 前拒绝，原 metadata 分页不变。refresh:true 只刷新所选 REST 目录，不承诺刷新远程全文索引。搜索不采用指令，不修改 root/Requires pins 或 active 图。请求、session/branch/tree、来源、metadata 或已接纳资格发生变化时，旧正结果、空结果和错误均不可发布。授权成功只恢复参数未变且仍有效的原请求。
+
 用户点名询问某个 Notion Skill 是否存在或可用时，Agent 必须把名称作为 `query` 调用 `notion_list`，并设置 `refresh:true`。已有会话、先前查到或没查到、默认 View 已显示该名称，都不能省略这次核验；仍遵守用户明确指定的来源。查询只读元数据，保留已选 root/Requires 的固定版本。存在性与声明用途直接依据返回的元数据回答；用户要求检查或采用指令时，再读取或使用正文。只有当前新鲜且完整的查询才能说明搜索范围内未找到可用项；离线、过期、失败或部分结果不能证明当前不存在。 显式 source 只刷新该来源，省略则刷新全部已启用 Notion 来源；离线策略保持不变。后续分页沿返回的 cursor 继续，不再次刷新。Disabled Skill 可以不出现在可用目录中，这不代表对应 Notion 页面不存在。
 
 当前资格、固定选择与已经交付的文字分别处理。已知禁用阻止新的应用与隐式恢复，不删除已交付的历史解释。已知权限拒绝或认证 scope 变更阻止 Broker 后续受控投递／恢复相应已验证正文，不改写原 session，也不声称能撤回已经发送的请求。明确新选择须完整通过固定文件、身份与响应预算校验才替换旧图，失败保留原选择。

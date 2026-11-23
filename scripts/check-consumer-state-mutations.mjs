@@ -7,6 +7,69 @@ import { createHash } from "node:crypto";
 
 const cases = [
   {
+    "name": "content-qualification-publication",
+    "file": "src/consumer-observation.ts",
+    "old": "    revision++;\n    for (const changed of changes) changed();",
+    "replacement": "    void changes;",
+    "test": "host-content-search.test.ts",
+    "pattern": "a later accepted REST denial retires an in-flight empty content result",
+    "properties": ["NoRetiredPublication", "NewerEvidenceSurvives"]
+  },
+  {
+    "name": "content-source-publication",
+    "file": "src/content-publication.ts",
+    "old": "started.source === undefined || started.source !== current.source",
+    "replacement": "false",
+    "test": "host-content-search.test.ts",
+    "pattern": "source changes and an elapsed deadline reject late results",
+    "properties": ["ScopeIsExact", "NoRetiredPublication"]
+  },
+  {
+    "name": "content-session-publication",
+    "file": "src/content-publication.ts",
+    "old": "sessionId !== input.ctx.sessionManager?.getSessionId?.() || sessionFile !== input.ctx.sessionManager?.getSessionFile?.()",
+    "replacement": "false",
+    "test": "host-content-search.test.ts",
+    "pattern": "source changes and an elapsed deadline reject late results",
+    "properties": ["NoRetiredPublication"]
+  },
+  {
+    "name": "content-branch-publication",
+    "file": "src/content-publication.ts",
+    "old": "ancestry.length > currentBranch.length || ancestry.some((entry, index) => entry !== currentBranch[index])",
+    "replacement": "false",
+    "test": "host-content-search.test.ts",
+    "pattern": "source changes and an elapsed deadline reject late results",
+    "properties": ["NoRetiredPublication"]
+  },
+  {
+    "name": "content-deadline-publication",
+    "file": "src/content-publication.ts",
+    "old": "if (Date.now() >= input.deadline) throw timeout();",
+    "replacement": "void input.deadline;",
+    "test": "host-content-search.test.ts",
+    "pattern": "source changes and an elapsed deadline reject late results",
+    "properties": ["NoRetiredPublication"]
+  },
+  {
+    "name": "content-cancelled-publication",
+    "file": "src/content-publication.ts",
+    "old": "closed || signal.aborted || started.task !== current.task",
+    "replacement": "closed || started.task !== current.task",
+    "test": "host-content-search.test.ts",
+    "pattern": "a cancelled content waiter cannot cancel another valid waiter",
+    "properties": ["NoCancelledPublication"]
+  },
+  {
+    "name": "content-error-publication",
+    "file": "src/host-skills.ts",
+    "old": "      publication.assertCurrent();\n      const output = contentSearchFailure(error);",
+    "replacement": "      const output = contentSearchFailure(error);",
+    "test": "host-content-search.test.ts",
+    "pattern": "source and branch changes retire remote failures before any error publication",
+    "properties": ["NoRetiredPublication", "ScopeIsExact"]
+  },
+  {
     "name": "original-validation-time",
     "file": "src/consumer-observation.ts",
     "old": "validatedAt, validUntil: validatedAt + duration",

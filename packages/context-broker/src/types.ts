@@ -181,6 +181,7 @@ export type ExtensionWidgetNode = {
 export type ExtensionWidgetComponent = {
   render(width: number): string[];
   invalidate(): void;
+  handleInput?(data: string): void;
   describe?(context: { supports(kind: string): boolean }): ExtensionWidgetNode | null;
   handleNativeEvent?(event: { type: string; collapsed?: boolean }): void;
   dispose?(): void;
@@ -193,7 +194,7 @@ export type ExtensionContext = {
   ui?: {
     notify?(message: string, type?: "info" | "warning" | "error"): void;
     setWidget?(key: string, content: string[] | ExtensionWidgetFactory | undefined): void;
-    custom?<T>(factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => { render(width: number): string[]; invalidate(): void }, options?: { overlay?: boolean; overlayOptions?: { visible?: (width: number, height: number) => boolean } }): Promise<T>;
+    custom?<T>(factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => ExtensionWidgetComponent, options?: { overlay?: boolean; overlayOptions?: { visible?: (width: number, height: number) => boolean } }): Promise<T>;
     addAutocompleteProvider?(factory: (current: AutocompleteProvider) => AutocompleteProvider): void;
     setEditorText?(text: string): void;
     getEditorComponent?(): EditorFactory | undefined;

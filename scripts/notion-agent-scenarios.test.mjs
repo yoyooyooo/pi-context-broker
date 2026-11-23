@@ -227,3 +227,43 @@ test('enabled discovery uses a repeated natural query, real filtered View and co
     assert.throws(() => validateAgentCorpus(broken), /earlier turn/u);
   }
 });
+
+test('content discovery uses independent native and supporting-file material without exposing the owner oracle', () => {
+  const actual = validateAgentCorpus(JSON.parse(readFileSync(new URL('./notion-agent-scenarios.json', import.meta.url), 'utf8')));
+  const cases = ['discovery-content-body', 'holdout-discovery-content-file'].map(id => actual.scenarios.find(row => row.id === id));
+  assert.notEqual(cases[0].fixture, cases[1].fixture);
+  for (const scenario of cases) {
+    const recipe = actual.fixtures[scenario.fixture], assertion = scenario.turns[0].expect.find(row => row.kind === 'content-search');
+    assert.equal(recipe.environment.mcpAuthorization, 'cli-login');
+    const target = recipe.objects.find(row => row.id === assertion.object), query = recipe.public[assertion.query];
+    assert.ok(target.versions.A.files.some(file => file.content.includes(query)));
+    assert.ok(!target.name.includes(query) && !target.description.includes(query));
+    assert.ok(!scenario.turns[0].prompt.includes(target.name));
+    assert.equal(target.versions.A.defaultContext, false);
+    assert.equal(target.versions.A.enabled, true);
+    assert.ok(scenario.turns[0].prompt.includes('{{' + assertion.query + '}}'));
+  }
+  assert.ok(cases[0].turns[0].expect.find(row => row.kind === 'content-search').body.endsWith('/SKILL.md'));
+  assert.ok(cases[1].turns[0].expect.find(row => row.kind === 'content-search').body.includes('/references/'));
+  const control = actual.scenarios.find(row => row.id === 'discovery-metadata-without-content');
+  assert.equal(actual.fixtures[control.fixture].environment.mcpAuthorization, undefined);
+  assert.ok(control.turns[0].expect.some(row => row.kind === 'source-operation-attempts' && row.operation === 'content-search' && row.max === 0));
+  const invalid = structuredClone(actual);
+  invalid.fixtures[control.fixture].environment.mcpAuthorization = 'cli-login';
+  assert.throws(() => validateAgentCorpus(invalid), /Only an explicit content-search scenario/u);
+});
+
+test('content assertions and authorization preparation reject implicit or invented selectors', () => {
+  assert.doesNotThrow(() => validateAgentAssertion({ kind: 'content-search', object: 'target', query: 'business.phrase', body: 'target@A/SKILL.md' }));
+  assert.doesNotThrow(() => validateAgentAssertion({ kind: 'source-operation-attempts', operation: 'content-search', max: 0 }));
+  for (const value of [
+    { kind: 'content-search', object: 'target', query: 'private.needle', body: 'target@A/SKILL.md' },
+    { kind: 'content-search', object: 'target', query: 'business.phrase' },
+    { kind: 'source-operation-attempts', operation: 'future-operation', max: 0 },
+    { kind: 'source-operation-attempts', operation: 'content-search' },
+  ]) assert.throws(() => validateAgentAssertion(value));
+  const invalid = structuredClone(recipe); invalid.environment = { catalog: 'normal', mcpAuthorization: 'copy-store' };
+  assert.throws(() => validateAgentFixtureRecipe(invalid), /public CLI login/u);
+  invalid.environment = { catalog: 'normal', offline: true, mcpAuthorization: 'cli-login' };
+  assert.throws(() => validateAgentFixtureRecipe(invalid), /Offline/u);
+});

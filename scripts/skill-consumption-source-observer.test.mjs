@@ -217,6 +217,20 @@ test('an unknown SDK operation remains an observation error instead of a complet
   assert.equal(trace.events.filter(row => row.phase === 'metrics').length, 0);
 });
 
+test('content-search lifecycle is observed while unmeasured MCP HTTP stays unknown', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const id = crypto.randomUUID(), operation = 'content-search';
+  publishSdk(id, 'start', { operation });
+  publishSdk(id, 'end', { operation, elapsed_ms: 1, status: 'completed', sdk_started: true,
+    metrics_observed: false, request_metrics: null });
+  observer.finish();
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
+  assert.deepEqual(trace.events.filter(row => ['started', 'completed'].includes(row.phase)).map(row => row.operation), [operation, operation]);
+  const metrics = trace.events.find(row => row.phase === 'metrics');
+  assert.equal(metrics.observed, false); assert.equal(metrics.complete, false); assert.equal(metrics.total_requests, null);
+});
+
 test('evidence write failure cannot escape a source event or change host exit behavior', async () => {
   const item = fixture(); let writes = 0;
   const observer = observe(item, { fs: { ...fs, writeSync(...args) {

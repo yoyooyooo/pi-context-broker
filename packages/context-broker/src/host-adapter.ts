@@ -1,5 +1,6 @@
 import type { EditorLike, ExtensionContext, HostPathOptions, ImageContent, InputResult, NativeReadExecutor, SkillRecord, ToolCallResult } from "./types";
 import type { ReadDisplaySnapshot } from "./read-display";
+import type { AuthorizationPresentation } from "./pi-authorization";
 
 export type SkillPresentation = {
   query: string;
@@ -18,6 +19,7 @@ export type HostCapabilities = {
   /** Long native reads run in tool execution; the predicate confirms this wrapper still owns read. */
   registerReadExecutor?(execute: NativeReadExecutor, displayForCall?: (toolCallId: string) => ReadDisplaySnapshot | undefined): (() => boolean) | undefined;
   metadataDiscovery?: "deferred";
+  presentAuthorization?(request: AuthorizationPresentation, ctx: ExtensionContext): Promise<void>;
   registerCatalog(records: SkillRecord[], signal?: AbortSignal): Promise<boolean>;
   catalogPaths?(record: SkillRecord): string[];
   handledInput: InputResult;

@@ -93,9 +93,14 @@ export function validateAgentFixtureRecipe(recipe) {
     for (const alias of [...(value.requires ?? []), ...(value.members ?? [])])
       assert.ok(aliases.has(alias), item.id + ': missing dependency object ' + alias);
   if (recipe.environment !== undefined) {
-    keys(recipe.environment, ['catalog', 'offline'], ['catalog'], 'fixture.environment');
+    keys(recipe.environment, ['catalog', 'offline', 'mcpAuthorization'], ['catalog'], 'fixture.environment');
     assert.ok(['normal', 'pending', 'unauthorized', 'filtered-view'].includes(recipe.environment.catalog), 'Unsupported catalog precondition');
     if (recipe.environment.offline !== undefined) assert.equal(typeof recipe.environment.offline, 'boolean');
+    if (recipe.environment.mcpAuthorization !== undefined) {
+      assert.equal(recipe.environment.mcpAuthorization, 'cli-login', 'MCP setup must use the public CLI login');
+      assert.equal(recipe.environment.catalog, 'normal', 'MCP login requires an online source');
+      assert.notEqual(recipe.environment.offline, true, 'Offline fixtures cannot authorize MCP');
+    }
   }
   if (recipe.public !== undefined) validatePublic(recipe.public, 'fixture.public');
   if (recipe.facts !== undefined) validateFacts(recipe.facts, 'fixture.facts');
@@ -138,11 +143,13 @@ export function validateAgentAssertion(assertion) {
     'tool-attempts': [['tool', 'min', 'max'], ['tool']],
     'forbidden-tool-input': [['tool', 'facts'], ['tool', 'facts']],
     'source-network-attempts': [['min', 'max'], []],
+    'source-operation-attempts': [['operation', 'min', 'max'], ['operation']],
     body: [['body', 'occurrences', 'receiptRequired', 'scope'], ['body', 'occurrences']],
     selection: [['object', 'version'], ['object']],
     'selection-any': [['objects'], ['objects']],
     visibility: [['object', 'stage'], ['object', 'stage']],
     'metadata-lookup': [['object', 'state', 'outsideDefaultView', 'afterTurn'], ['object', 'state']],
+    'content-search': [['object', 'query', 'body'], ['object', 'query', 'body']],
     resource: [['object', 'path', 'version'], ['object', 'path']],
     output: [['all', 'none', 'any'], []],
     'no-semantic-writes': [[], []],
@@ -157,8 +164,10 @@ export function validateAgentAssertion(assertion) {
     string(assertion.tool, 'forbidden-tool-input.tool');
     strings(assertion.facts, 'forbidden-tool-input.facts');
   }
-  if (assertion.kind === 'tool-attempts' || assertion.kind === 'source-network-attempts') {
+  if (['tool-attempts', 'source-network-attempts', 'source-operation-attempts'].includes(assertion.kind)) {
     if (assertion.kind === 'tool-attempts') string(assertion.tool, 'expect.tool');
+    if (assertion.kind === 'source-operation-attempts')
+      assert.ok(['list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search'].includes(assertion.operation), 'Unknown source SDK operation');
     assert.ok(assertion.min !== undefined || assertion.max !== undefined, 'tool-attempts requires a boundary');
     for (const key of ['min', 'max']) if (assertion[key] !== undefined)
       assert.ok(Number.isSafeInteger(assertion[key]) && assertion[key] >= 0, 'tool-attempts.' + key + ' must be a nonnegative integer');
@@ -182,6 +191,11 @@ export function validateAgentAssertion(assertion) {
       id(assertion.afterTurn, 'metadata-lookup.afterTurn');
       assert.equal(assertion.state, 'present', 'A metadata continuation must discover the externally enabled target');
     }
+  }
+  if (assertion.kind === 'content-search') {
+    id(assertion.object, 'content-search.object');
+    assert.ok(typeof assertion.query === 'string' && /^business\.[A-Za-z0-9][A-Za-z0-9_.-]*$/u.test(assertion.query), 'Content query must name public business input');
+    string(assertion.body, 'content-search.body');
   }
   if (assertion.kind === 'selection-any') {
     assert.ok(Array.isArray(assertion.objects) && assertion.objects.length > 0, 'selection-any requires allowed identities');
@@ -277,6 +291,9 @@ export function validateAgentCorpus(corpus) {
     assert.ok(own(corpus.fixtures, scenario.fixture), scenario.id + ': unknown fixture ' + scenario.fixture);
     assert.ok(Array.isArray(scenario.turns) && scenario.turns.length > 0, scenario.id + ': missing turns');
     const recipe = corpus.fixtures[scenario.fixture], aliases = new Map(recipe.objects.map(item => [item.id, item])), turns = new Set();
+    if (recipe.environment?.mcpAuthorization !== undefined)
+      assert.ok(scenario.turns.some(turn => turn.expect.some(expected => expected.kind === 'content-search')),
+        'Only an explicit content-search scenario may authorize MCP');
     if (scenario.profiles.includes('native-onboarding') || recipe.kind === 'empty-parent') {
       assert.deepEqual(scenario.profiles, ['native-onboarding'], 'Empty-parent onboarding is separate from daily');
       assert.equal(recipe.kind, 'empty-parent', 'Native onboarding requires an empty parent');
@@ -304,6 +321,11 @@ export function validateAgentCorpus(corpus) {
       }
       for (const assertion of turn.expect.filter(item => item.kind === 'metadata-lookup' && item.afterTurn))
         assert.ok(turns.has(assertion.afterTurn), scenario.id + ': metadata lookup must name an earlier turn');
+      for (const assertion of turn.expect.filter(item => item.kind === 'content-search')) {
+        assert.ok(own(recipe.public ?? {}, assertion.query), scenario.id + ': missing public content query');
+        assert.ok(turn.prompt.includes('{{' + assertion.query + '}}'), scenario.id + ': the user must supply the content query');
+        assert.equal(aliases.get(assertion.object)?.placement, 'notion', 'Content fixtures require independently created native Notion content');
+      }
       turns.add(turn.id);
     }
   }
@@ -363,6 +385,7 @@ export function bindAgentTurn(turn, bindings) {
   });
   for (const expected of turn.expect.flatMap(expected => expected.kind === 'selection-any' ? expected.objects : [expected])) {
     if (expected.body !== undefined) assert.ok(own(bindings.private.bodies, expected.body), 'Missing private body ' + expected.body);
+    if (expected.kind === 'content-search') assert.ok(own(bindings.public, expected.query), 'Missing public content query ' + expected.query);
     if (expected.object !== undefined) {
       const identity = bindings.private.objects[expected.object];
       assert.ok(identity, 'Missing private identity ' + expected.object);

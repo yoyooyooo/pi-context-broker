@@ -7,7 +7,7 @@ import { channel } from "node:diagnostics_channel";
 
 // These fixtures exercise the loading/observation boundary only. Actual SDK
 // runtime, package and Pi proofs use independently installed ntn-skills builds.
-async function fixture(options: { sdk?: boolean; sdkVersion?: number; sdkManifestVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; resourceEffectsVersion?: number | null; resourceEffectsManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; effectsVersion?: number | null; effectsManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; relativeResolver?: boolean; files?: boolean } = {}) {
+async function fixture(options: { sdk?: boolean; sdkVersion?: number; sdkManifestVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; resourceEffectsVersion?: number | null; resourceEffectsManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; effectsVersion?: number | null; effectsManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; relativeResolver?: boolean; files?: boolean; contentSearch?: boolean; contentVersion?: number; contentManifestVersion?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-sdk-boundary-"));
   await mkdir(join(root, "src")); await mkdir(join(root, "dist"));
   await copyFile(new URL("../src/notion-sdk.ts", import.meta.url), join(root, "src/notion-sdk.ts"));
@@ -20,6 +20,12 @@ ${options.readProofVersion === undefined ? "" : `export const READ_OUTPUT_PROOF_
 ${options.directoryVersion === undefined ? "" : `export const CATALOG_DIRECTORY_CONTRACT_VERSION = ${options.directoryVersion};`}
 ${options.effectsVersion === null ? "" : `export const CONSUMPTION_EFFECTS_VERSION = ${options.effectsVersion ?? 1};`}
 ${options.resourceEffectsVersion === null ? "" : `export const RESOURCE_READ_EFFECTS_VERSION = ${options.resourceEffectsVersion ?? 1};`}
+${options.contentSearch ? `export const CONTENT_SEARCH_CONTRACT_VERSION = ${options.contentVersion ?? 1};
+export async function contentSearch(input, options) {
+  calls.push({ operation: 'content-search', input, options });
+  options.onRequestMetrics?.({ total_requests: 0, trace: [] });
+  return { kind: 'results', records: [], input, database: options.database };
+}` : ""}
 export const calls = [];
 export function parseDuration(value) { return value === '1s' ? 1000 : 0; }
 export function decodeConsumeResult() { throw new Error('consume already decoded; duplicate decoder invocation'); }
@@ -78,6 +84,7 @@ export async function readResources(input, options) {
 `);
   await writeFile(join(root, "dist/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills",
     package_version: options.manifestVersion ?? options.packageVersion ?? "fixture-1", sdk_version: options.sdkManifestVersion ?? options.sdkVersion ?? 2, consumer_contract_version: 1,
+    ...(options.contentSearch ? { content_search_contract_version: options.contentManifestVersion ?? options.contentVersion ?? 1 } : {}),
     ...(options.resourceVersion === undefined ? {} : { resource_read_contract_version: options.resourceManifestVersion ?? options.resourceVersion }),
     ...(options.readProofVersion === undefined && options.readProofManifestVersion === undefined ? {} : { read_output_proof_version: options.readProofManifestVersion ?? options.readProofVersion }),
     ...(options.effectsVersion === null && options.effectsManifestVersion === undefined ? {} : { consumption_effects_version: options.effectsManifestVersion ?? options.effectsVersion ?? 1 }),
@@ -384,4 +391,24 @@ test("advertised scalar output proof must agree with its bundled manifest", asyn
     expect((await import(pathToFileURL(module).href)).calls).toHaveLength(0);
     expect(await boundary.consumeNotionSdk({}, {})).toMatchObject({ status: "ready" });
   }
+});
+
+
+test("content search requires the paired capability and preserves its scoped request and authorization callback", async () => {
+  const input = { query: " Case-sensitive 中文 query ", limit: 7 };
+  for (const setup of [{}, { contentSearch: true, contentVersion: 2 }, { contentSearch: true, contentManifestVersion: 2 }]) {
+    const installed = await fixture(setup);
+    await expect(installed.boundary.searchNotionContentSdk(input, { database: "entry" }))
+      .rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    expect((await import(pathToFileURL(installed.module).href)).calls).toHaveLength(0);
+  }
+  const installed = await fixture({ contentSearch: true }), signal = new AbortController().signal;
+  const onAuthorize = async () => {}, deadline = Date.now() + 360_000;
+  await installed.boundary.searchNotionContentSdk(input, { sourceId: "selected", database: "entry", cwd: "/owned", signal, deadline, onAuthorize });
+  const calls = (await import(pathToFileURL(installed.module).href)).calls;
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ operation: "content-search", input, options: { database: "entry", cwd: "/owned", deadline } });
+  expect(calls[0].options.signal).toBe(signal);
+  expect(calls[0].options.onAuthorize).toBe(onAuthorize);
+  expect(calls[0].options).not.toHaveProperty("sourceId");
 });

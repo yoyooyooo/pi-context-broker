@@ -733,6 +733,7 @@ function currentArtifactReceiptFixture() {
   const runtime = { version: 1, package: 'ntn-skills', package_version: '0.1.0', sdk_version: 2,
     consumer_contract_version: 1, resource_read_contract_version: 1, read_output_proof_version: 1,
     catalog_directory_contract_version: 1, command_output_proof_version: 1, consumption_effects_version: 1,
+    content_search_contract_version: 1,
     resource_read_effects_version: 1, cli_sha256: embeddedCli.sha256, sdk_sha256: embeddedSdk.sha256 };
   const actual = {
     buildInput: { package: 'ntn-skills', version: '0.1.0', manifest: identity('/owned/cli/package.json', '{"name":"ntn-skills"}'), cli: rawCli, sdk: rawSdk },

@@ -24,6 +24,7 @@ test('a selected source build accepts its frozen version and rejects wrong packa
   const fixture = { expectedVersion: '0.1.0', cliBytes: Buffer.from('frozen-cli'), sdkBytes: Buffer.from('frozen-sdk'),
     manifest: { version: 1, package: 'ntn-skills', package_version: '0.1.0', sdk_version: 2,
       consumer_contract_version: 1, consumption_effects_version: 1, catalog_directory_contract_version: 1,
+      content_search_contract_version: 1,
       read_output_proof_version: 1, resource_read_contract_version: 1, resource_read_effects_version: 1,
       cli_sha256: hash('frozen-cli'), sdk_sha256: hash('frozen-sdk') } };
   assert.deepEqual(verifyBundledRuntime(fixture), { cli: fixture.manifest.cli_sha256, sdk: fixture.manifest.sdk_sha256 });
@@ -33,6 +34,7 @@ test('a selected source build accepts its frozen version and rejects wrong packa
     value => { value.manifest.version = 2; },
     value => { value.manifest.sdk_version = 1; },
     value => { delete value.manifest.consumption_effects_version; },
+    value => { delete value.manifest.content_search_contract_version; },
     value => { value.cliBytes = Buffer.from('other-cli'); },
     value => { value.sdkBytes = Buffer.from('other-sdk'); },
   ]) {

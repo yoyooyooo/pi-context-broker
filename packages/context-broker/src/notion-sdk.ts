@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import type { ContentSearchRequest } from "./content-search";
+import type { AuthorizationPresentation } from "./pi-authorization";
 
 /** This boundary loads only the SDK bundled beside the selected ntn-skills CLI. */
 export class NotionSdkError extends Error {
@@ -19,6 +21,8 @@ type Options = {
   cwd?: string;
   env?: Readonly<Record<string, string | undefined>>;
   signal?: AbortSignal;
+  deadline?: number;
+  onAuthorize?: (request: AuthorizationPresentation) => Promise<void>;
   execution?: { priority?: "required" | "prefetch"; queueBudgetMs?: number; timeBudgetMs?: number; rateShare?: number };
   path?: string;
   from?: string;
@@ -44,6 +48,8 @@ type Sdk = {
   resolveCatalogReference?: (target: string, catalog: unknown) => unknown;
   resolveReference?: (target: string, options: RuntimeOptions & { from: string }) => Promise<unknown>;
   listSkill?: (target: string, options?: RuntimeOptions) => Promise<unknown>;
+  contentSearch?: (input: ContentSearchRequest, options?: RuntimeOptions) => Promise<unknown>;
+  CONTENT_SEARCH_CONTRACT_VERSION?: number;
   READ_OUTPUT_PROOF_VERSION?: number;
   CATALOG_DIRECTORY_CONTRACT_VERSION?: number;
   RESOURCE_READ_CONTRACT_VERSION?: number;
@@ -62,6 +68,7 @@ let readOutputProofVersion: unknown;
 let catalogDirectoryContractVersion: unknown;
 let consumptionEffectsVersion: unknown;
 let resourceEffectsVersion: unknown;
+let contentSearchContractVersion: unknown;
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -93,6 +100,7 @@ async function loadBundledSdk(): Promise<Sdk> {
     catalogDirectoryContractVersion = manifest.catalog_directory_contract_version;
     consumptionEffectsVersion = manifest.consumption_effects_version;
     resourceEffectsVersion = manifest.resource_read_effects_version;
+    contentSearchContractVersion = manifest.content_search_contract_version;
     return sdk;
   })();
   try { return await bundledSdk; }
@@ -100,7 +108,7 @@ async function loadBundledSdk(): Promise<Sdk> {
 }
 
 /** Code is shared; every operation still creates and closes its own SDK runtime. */
-async function observed(operation: "consume" | "read" | "read-resources" | "list" | "files" | "resolve", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
+async function observed(operation: "consume" | "read" | "read-resources" | "list" | "files" | "resolve" | "content-search", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
   const { sourceId, ...runtimeOptions } = options;
   const attribution = { source_id: sourceId ?? null, database: options.database ?? null };
   const enabled = observations.hasSubscribers;
@@ -124,6 +132,8 @@ async function observed(operation: "consume" | "read" | "read-resources" | "list
       && (sdk.READ_OUTPUT_PROOF_VERSION !== 1 || readOutputProofVersion !== 1)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "files" && typeof sdk.listSkill !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "resolve" && typeof sdk.resolveReference !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+    if (operation === "content-search" && (sdk.CONTENT_SEARCH_CONTRACT_VERSION !== 1 || contentSearchContractVersion !== 1
+      || typeof sdk.contentSearch !== "function")) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "read-resources" && (sdk.RESOURCE_READ_CONTRACT_VERSION !== 1 || resourceContractVersion !== 1
       || typeof sdk.readResources !== "function" || typeof sdk.decodeResourceReadResult !== "function")) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     sdkStarted = true;
@@ -156,6 +166,10 @@ export function consumeNotionSdk(input: unknown, options: Options): Promise<unkn
 }
 export function readNotionSdk(target: string, options: Options): Promise<unknown> {
   return observed("read", options, (sdk, runtime) => sdk.readSkill(target, runtime));
+}
+/** The bundled core owns MCP transport, grants and fresh REST admission. */
+export function searchNotionContentSdk(input: ContentSearchRequest, options: Options): Promise<unknown> {
+  return observed("content-search", options, (sdk, runtime) => sdk.contentSearch!(input, runtime));
 }
 /** Resolve only; the host selects the target's own session version before reading. */
 export function resolveNotionReferenceSdk(target: string, options: Options & { from: string }): Promise<unknown> {

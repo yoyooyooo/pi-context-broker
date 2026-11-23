@@ -213,9 +213,11 @@ fork 从指定先前用户 turn 之前分叉；保留此前有效分支。compac
 | single-projection-restore | 当前轮只有一次公开投影恢复命令且自然退出 0；失败后另启恢复、额外投影写入均失败。帮助与已知只读命令另计；未知命令形态保持 blocked，恢复内容仍须独立业务读回 |
 | visibility | 精确 native-discovery、当前 model-catalog 或真实 source-pending 时序 |
 | metadata-lookup | 点名查询的原始工具结果和实际 provider 投递；同会话外部启用还核首轮完整未命中、原 TTL 未到、独立事件、真实元数据 HTTP 与固定选择不变 |
+| content-search | 生产 CLI 独立读回的正文专属检索词、实际内容模式调用、当前源与 Skill／File 归属、原始工具结果及 provider 投递；全程 roots、固定 bindings、Requires locks 与 active sources 不变。非穷尽结果和空结果均不能证明不存在 |
 | tool-attempts | 指定工具真实尝试的上下界，失败与撤回也计入 |
 | forbidden-tool-input | 实际工具参数不得触及声明的安装包路径或命令；失败尝试也计，不能按同名目录误伤合法 Notion Git 缓存 |
 | source-network-attempts | 完整 source 观测中的实际 Notion HTTP 尝试；未知 CLI 子进程流量保持 blocked，不能以语义写为零推断没有联网 |
+| source-operation-attempts | 完整 SDK 生命周期中指定操作的尝试数，含失败和取消；用于证明元数据旅程没有 content-search。它不是 HTTP 次数 |
 | body / resource | 当前请求中的完整主文/资源及精确归属 |
 | selection / selection-any | 指定逻辑对象/版本或明确允许的等价集合 |
 | output / clarification | 必要业务事实、禁止事实或预写澄清主题，不比较整段标准答案 |
@@ -223,6 +225,16 @@ fork 从指定先前用户 turn 之前分叉；保留此前有效分支。compac
 | business-readback | 真正独立读回的对象、版本、元数据、保护内容或投影状态 |
 
 目录 pending 与 unauthorized 是明确的场景前提。pending 需要首请求与真实后台目录完成时间交叉证据；source 已 ready 的样本不计作 pending。unauthorized 使用本轮故障环境，不能关闭 source 再将“零误用”算通过。显式 offline 单独记账；filtered-view 必须来自真实视图，缺能力保持明确失败/阻断。
+
+### 正文检索与独立授权准备
+
+`discovery-content-body` 与 `holdout-discovery-content-file` 沿同一 candidate-plan／candidate-run 入口运行。前者的词组只位于主文，后者使用不同业务材料和附属 Markdown 表格。配方由既有 `prepareAgentFixtures` 调用冻结的公开 CLI 创建并读回。分析器再核读回原件的 name、description、owner、物理 Skill／File 和正文哈希；不能用事先写入的假 metadata 或命中记录替代。私有 expect、匹配对象和正文判据只供控制器使用，prompt 只展开用户公开给出的检索词，不提供工具名、参数或预期命中身份。
+
+仅配方显式声明 `environment.mcpAuthorization: "cli-login"` 且场景包含 content-search 判定时，现役 runner 才在新建的本轮私有状态中执行冻结 CLI 的 `auth mcp login --no-browser`，最多等待五分钟。授权地址保留于本轮 `mcp-authorization/login.stderr`，由操作者在已登录浏览器完成；随后用 `auth mcp status` 独立读回相同 connection 和 grant epoch。该步骤在 Pi 启动前完成，保留单独的 controller setup receipt，不计入模型旅程，不读或复制凭据文件，也不向 RPC 传入授权 presenter。失败、取消或超时会保留原件并终止本次运行，不能预先声称 Agent 内容检索通过。
+
+需要标准环境代理时，用 `node --use-env-proxy` 启动 candidate runner，或明确设置 `NODE_USE_ENV_PROXY=1`。runner 将自身的显式代理选择传给私有 CLI 和 Pi；只有 HTTP(S)_PROXY 变量不足以证明 Node 已启用代理。
+
+`discovery-metadata-without-content` 不声明授权准备，并核实际 content-search SDK 调用为零。正文调用的 REST 指标不包含 MCP 或 OAuth HTTP，相关总量保留 `null`，即使 REST trace 完整或为空也不能填零。正文证明只支持远程发现、归属和当前选择未变；实际固定正文投递、完整网络次数和远程索引的精确匹配语义另需证据。
 
 pending 的控制端只等到真实目录操作开始就提交自然输入，不等待目录完成，也不额外调用 list。最终仍核首个真实模型请求处在该操作完成之前。若窗口已结束，记录时序前提未达成；不得伪造 pending 或把该样本当作产品失败。启动期间的泛化 pending 提示不能单独证明某个 Source 的排队状态。
 
