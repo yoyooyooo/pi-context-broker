@@ -442,6 +442,27 @@ function policyChecks(value, maps, pairCells, stage, errors) {
   if (value.metrics.dictionary_sha256 !== fingerprint(metricDictionary))
     issue(errors, '/metrics/dictionary_sha256', 'metric_dictionary_mismatch', 'Metric dictionary content must match this versioned implementation');
   const totalScheduled = value.pairs.length * 2 + value.assessments.filter(a => a.expected_support === 'supported').length;
+  if (policies.campaign) {
+    const scope = policies.campaign;
+    if (policies.pilot.scope || !['pilot', 'confirmation'].includes(value.phase))
+      issue(errors, '/policies/campaign', 'campaign_phase', 'A finite campaign requires its own pilot or confirmation contract without a legacy scope');
+    if (scope.reservation_limit !== totalScheduled || totalScheduled > 144)
+      issue(errors, '/policies/campaign/reservation_limit', 'campaign_schedule', 'The finite allowance must equal the complete frozen schedule inside the shared 144 cap');
+    if (policies.budgets.length !== 1 || policies.budgets[0].batch.max_episodes !== totalScheduled
+        || policies.budgets[0].episode.max_retries !== 0 || policies.reruns.max_episodes !== 0)
+      issue(errors, '/policies/campaign', 'campaign_budget', 'The finite schedule requires one exact episode allowance and no retries or replacements');
+    if (value.models.some(model => !model.routing))
+      issue(errors, '/models', 'campaign_routing', 'Every finite campaign model requires a frozen reported-model routing contract');
+    if (scope.role === 'route_gate_only') {
+      const cases = value.corpus.cases.map(item => item.id), modes = value.environments.map(environment => environment.pi.mode);
+      if (value.phase !== 'pilot' || value.purpose !== 'native_calibration' || value.models.length !== 1
+          || value.environments.length !== 2 || !setSame(modes, ['broker', 'native'])
+          || value.conditions.length !== 2 || cases.length !== 4 || totalScheduled !== 8 || value.assessments.length
+          || value.pairs.some(pair => pair.repeat !== 0) || value.conditions.some(condition => !setSame(condition.case_ids, cases))
+          || new Set(value.conditions.map(condition => condition.environment_id)).size !== 2)
+        issue(errors, '/policies/campaign', 'finite_route_gate_shape', 'A route-only gate is one model in Broker/native with the same four cases, once per condition');
+    }
+  }
   if (policies.pilot.scope) {
     const scope = policies.pilot.scope;
     if (value.phase !== 'pilot') issue(errors, '/policies/pilot/scope', 'pilot_scope_phase', 'A prospective scope remains inside the pilot campaign');

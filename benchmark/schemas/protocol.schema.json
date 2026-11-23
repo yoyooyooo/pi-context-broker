@@ -772,6 +772,21 @@
           "required": [],
           "additionalProperties": false
         },
+        "campaign": {
+          "type": "object",
+          "properties": {
+            "version": { "const": 1 },
+            "kind": { "const": "benchmark-finite-campaign" },
+            "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$" },
+            "role": { "enum": ["route_gate_only", "acceptance"] },
+            "reservation_limit": { "type": "integer", "minimum": 1, "maximum": 144 },
+            "max_scheduled_episodes": { "const": 144 },
+            "history_quality": { "const": "excluded_retained_in_campaign_costs" },
+            "new_unknown_usage": { "const": "stop_scope" }
+          },
+          "required": ["version", "kind", "id", "role", "reservation_limit", "max_scheduled_episodes", "history_quality", "new_unknown_usage"],
+          "additionalProperties": false
+        },
         "budgets": {
           "type": "array",
           "items": {

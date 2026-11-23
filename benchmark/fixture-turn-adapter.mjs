@@ -179,7 +179,8 @@ export function freezeClarificationPolicy(clarifications, supplied) {
 }
 export function selectFrozenClarification({ observation, available }, policy) {
   const text = String(observation.final_text ?? '').slice(0, 32768).toLocaleLowerCase();
-  if (!/[?？]|请(?:问|确认|选择|提供)|could you|would you|please (?:confirm|choose|provide)/u.test(text)) return null;
+  // An explicit request for missing information need not end in a question mark.
+  if (!/[?？]|请(?:问|确认|选择|提供|指定|告知|告诉(?:我们|我))|\b(?:could|would)\s+you\b|\bplease\s+(?:confirm|choose|provide|specify|tell\s+(?:me|us))\b/u.test(text)) return null;
   const matched = policy.topics.filter(topic => available.some(item => item.topic_id === topic.topic_id)
     && topic.match_any.some(term => text.includes(term.toLocaleLowerCase())));
   return matched.length === 1 ? matched[0].topic_id : null;

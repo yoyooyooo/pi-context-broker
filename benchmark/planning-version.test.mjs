@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fingerprint } from './protocol.mjs';
 import { createPreregistrationTemplate } from './templates/preregistration.mjs';
-import { boundedBudget, preregisterComparison } from './planning.mjs';
-import { freezeBatchPlan, validateBatchPlan } from './batch.mjs';
+import { boundedBudget, comparisonEnvironmentPairs, comparisonPairs, preregisterComparison } from './planning.mjs';
+import { freezeBatchPlan, validateBatchPlan, scheduleProtocol } from './batch.mjs';
 import { EVIDENCE_VERSION, normalizeEpisode } from './evidence/normalize.mjs';
 import { ANALYSIS_VERSION, scoreExperiment } from './analysis/compare.mjs';
 import { exampleEnvelope } from './analysis/fixtures.mjs';
@@ -53,6 +53,42 @@ function freezeObject(value) {
   }
   return value;
 }
+
+test('explicit two-environment orientation preserves the complete legacy protocol and schedule', () => {
+  const input = comparisonInputs(), original = preregisterComparison(input);
+  const explicit = preregisterComparison({ ...input, environmentPairs: [[0, 1]] });
+  assert.deepEqual(explicit, original);
+  assert.deepEqual(scheduleProtocol(explicit), scheduleProtocol(original));
+});
+
+test('four environments require two disjoint, complete candidate/reference orientations', () => {
+  const cases = [{ id: 'case-a' }, { id: 'case-b' }], models = [{ id: 'model' }];
+  const pairs = comparisonPairs({ models, cases, environmentCount: 4, environmentPairs: [[0, 1], [2, 3]], orderingSeed: 19 });
+  assert.equal(pairs.length, 4);
+  for (const item of cases) assert.deepEqual(pairs.filter(pair => pair.case_id === item.id).map(pair => pair.condition_ids),
+    [['m0-e0', 'm0-e1'], ['m0-e2', 'm0-e3']]);
+  const slots = scheduleProtocol({ pairs, assessments: [], policies: { ordering: { seed: 19 } } });
+  assert.equal(slots.length, 8); assert.equal(new Set(slots.map(slot => slot.slot_id)).size, 8);
+  for (const invalid of [undefined, [[0, 1]], [[0, 1], [1, 2]], [[0, 1], [2, 4]], [[0, 1, 2], [3]]])
+    assert.throws(() => comparisonEnvironmentPairs(4, invalid));
+  assert.throws(() => comparisonEnvironmentPairs(3, [[0, 1]]));
+});
+
+test('four-condition registration retains fresh free/off cells as independent frozen samples', () => {
+  const input = comparisonInputs();
+  const off = input.environments.map(environment => {
+    const copy = structuredClone(environment); copy.id += '-off'; copy.policies.code_mode = 'off';
+    copy.manifest_sha256 = fingerprint({ ...copy, manifest_sha256: null }); return copy;
+  });
+  const budget = boundedBudget({ id: 'four-cell-budget', episodes: 4, durationMs: 1000, requests: 2,
+    inputTokens: 1000, outputTokens: 1000, batchDurationMs: 10000 });
+  const protocol = preregisterComparison({ ...input, environments: [...input.environments, ...off],
+    environmentPairs: [[0, 1], [2, 3]], budget });
+  const plan = freeze(protocol); validateBatchPlan(plan);
+  assert.equal(plan.slots.length, 4); assert.equal(protocol.conditions.length, 4);
+  assert.deepEqual(protocol.pairs.map(pair => pair.condition_ids), [['m0-e0', 'm0-e1'], ['m0-e2', 'm0-e3']]);
+  assert.deepEqual(protocol.conditions.slice(2).map(condition => condition.code_mode), ['off', 'off']);
+});
 
 test('new frozen comparisons score observations from the actual normalizer and scorer versions', () => {
   const plan = freeze(preregisterComparison(comparisonInputs()));
