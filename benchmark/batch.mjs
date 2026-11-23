@@ -6,6 +6,8 @@ import { fingerprint, validateProtocol } from './protocol.mjs';
 import { verifyGateReference } from './gate.mjs';
 import { verifyCampaignScope, acquireCampaignLease, checkCampaignScope, campaignReservationFields, reconcileCampaignLease } from './campaign-dispatch.mjs';
 import { isProspectiveCohort } from './prospective-cohort.mjs';
+import { scheduleProtocol } from './campaign-selection.mjs';
+export { scheduleProtocol } from './campaign-selection.mjs';
 
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 const safe = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(value);
@@ -37,23 +39,6 @@ function validatePilotLedger(protocol, execution) {
   const path = execution.pilot_ledger_root;
   assert.ok(typeof path === 'string' && isAbsolute(path), 'Pilot plans must freeze their shared pilot ledger');
   assert.equal(path, resolve(path), 'Pilot ledger must use a canonical absolute path');
-}
-
-/** A stable schedule is separate from comparison orientation and model outcomes. */
-export function scheduleProtocol(protocol) {
-  const ordered = protocol.pairs.map(pair => ({ pair, key: createHash('sha256').update(String(protocol.policies.ordering.seed) + '\0' + pair.id).digest('hex') }))
-    .sort((a, b) => a.key.localeCompare(b.key));
-  const slots = [];
-  for (let index = 0; index < ordered.length; index++) {
-    const pair = ordered[index].pair;
-    const conditions = index % 2 === 0 ? pair.condition_ids : [...pair.condition_ids].reverse();
-    for (const condition_id of conditions) slots.push({ slot_id: condition_id + '--' + pair.case_id + '--r' + pair.repeat,
-      pair_id: pair.id, case_id: pair.case_id, condition_id, repeat: pair.repeat, seed: pair.seed });
-  }
-  for (const item of protocol.assessments) if (item.expected_support === 'supported') slots.push({ slot_id: item.id,
-    assessment_id: item.id, case_id: item.case_id, condition_id: item.condition_id, repeat: item.repeat ?? 0, seed: item.seed ?? 0 });
-  assert.equal(new Set(slots.map(slot => slot.slot_id)).size, slots.length, 'Scheduled slots must be unique');
-  return slots.map((slot, order) => ({ ...slot, order }));
 }
 
 export function freezeBatchPlan({ protocol, execution, registeredAt = new Date().toISOString() }) {

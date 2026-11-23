@@ -3,6 +3,7 @@ import environmentSchema from './schemas/environment-manifest.schema.json' with 
 import protocolSchema from './schemas/protocol.schema.json' with { type: 'json' };
 import metricDictionary from './metrics.json' with { type: 'json' };
 import { validateRoutingPolicy } from './reported-model.mjs';
+import { scheduleProtocol, UNSTARTED_FOLLOWUP } from './campaign-selection.mjs';
 
 const REQUIRED_EVIDENCE = ['runtime_identity', 'loaded_manifest', 'visible_materials',
   'model_requests', 'usage', 'tool_lineage', 'business_readback', 'completion_boundary', 'interventions'];
@@ -441,7 +442,14 @@ function policyChecks(value, maps, pairCells, stage, errors) {
     issue(errors, '/metrics', 'quality_metric_required', 'Business quality cannot be replaced by efficiency measures');
   if (value.metrics.dictionary_sha256 !== fingerprint(metricDictionary))
     issue(errors, '/metrics/dictionary_sha256', 'metric_dictionary_mismatch', 'Metric dictionary content must match this versioned implementation');
-  const totalScheduled = value.pairs.length * 2 + value.assessments.filter(a => a.expected_support === 'supported').length;
+  let selectedSlots;
+  const followup = policies.campaign?.role === UNSTARTED_FOLLOWUP;
+  if (followup) {
+    try { selectedSlots = scheduleProtocol(value); }
+    catch (error) { issue(errors, '/policies/campaign/selection', 'followup_selection', error.message); }
+  } else if (policies.campaign?.selection !== undefined)
+    issue(errors, '/policies/campaign/selection', 'followup_role_required', 'Only an explicitly authorized unstarted follow-up may select a schedule suffix');
+  const totalScheduled = selectedSlots?.length ?? (value.pairs.length * 2 + value.assessments.filter(a => a.expected_support === 'supported').length);
   if (policies.campaign) {
     const scope = policies.campaign;
     if (policies.pilot.scope || !['pilot', 'confirmation'].includes(value.phase))
@@ -453,6 +461,8 @@ function policyChecks(value, maps, pairCells, stage, errors) {
       issue(errors, '/policies/campaign', 'campaign_budget', 'The finite schedule requires one exact episode allowance and no retries or replacements');
     if (value.models.some(model => !model.routing))
       issue(errors, '/models', 'campaign_routing', 'Every finite campaign model requires a frozen reported-model routing contract');
+    if (followup && (value.phase !== 'pilot' || policies.decision.mode !== 'descriptive'))
+      issue(errors, '/policies/campaign', 'followup_descriptive_pilot', 'An unstarted follow-up keeps the full scientific denominator and remains a descriptive pilot');
     if (scope.role === 'route_gate_only') {
       const cases = value.corpus.cases.map(item => item.id), modes = value.environments.map(environment => environment.pi.mode);
       if (value.phase !== 'pilot' || value.purpose !== 'native_calibration' || value.models.length !== 1
@@ -501,8 +511,9 @@ function policyChecks(value, maps, pairCells, stage, errors) {
   for (const [i, budget] of policies.budgets.entries()) {
     const path = '/policies/budgets/' + i;
     const selected = new Set(value.conditions.filter(c => c.budget_id === budget.id).map(c => c.id));
-    const scheduled = value.pairs.reduce((count, p) => count + p.condition_ids.filter(id => selected.has(id)).length, 0)
-      + value.assessments.filter(a => selected.has(a.condition_id) && a.expected_support === 'supported').length;
+    const scheduled = selectedSlots ? selectedSlots.filter(slot => selected.has(slot.condition_id)).length
+      : value.pairs.reduce((count, p) => count + p.condition_ids.filter(id => selected.has(id)).length, 0)
+        + value.assessments.filter(a => selected.has(a.condition_id) && a.expected_support === 'supported').length;
     if (budget.batch.max_episodes !== null && scheduled + (policies.reruns.max_episodes ?? 0) > budget.batch.max_episodes)
       issue(errors, path + '/batch/max_episodes', 'batch_episode_limit', 'Plan and reserved reruns exceed the frozen scheduling budget');
     if (value.phase === 'pilot' && budget.batch.max_episodes > 144)

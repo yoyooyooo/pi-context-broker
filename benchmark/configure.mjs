@@ -4,6 +4,7 @@ import { chmod, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { fingerprint } from './protocol.mjs';
 import { buildCorpus, writeCorpus } from './corpus/index.mjs';
+import { buildStoreDiagnosticCorpus, STORE_FIRST_USE_GENERATOR } from './diagnostic-corpus.mjs';
 import { bindMaterializedCases, comparisonEnvironmentPairs, comparisonPairs, prepareCases, preregisterComparison } from './planning.mjs';
 import { prepareEpisodeFixtures, readEpisodeFixtureBindings, validateEpisodeFixturePolicy } from './fixture-dispatch.mjs';
 import { snapshotModels, verifiedModelConditions, resolveModelCredential } from './models.mjs';
@@ -35,6 +36,19 @@ export function verifyRetainedSlotCapture({ launch, run, binding, candidate, con
   assert.equal(run.build_id, candidate.build_id); assert.equal(run.pi_launch.mode, candidate.mode);
   if (candidate.mode === 'broker') assert.equal(run.remote.entry, binding.notion_entry);
   else { assert.equal(run.remote.entry, null); assert.equal(run.pi_launch.native_corpus.source, binding.skills_root); }
+}
+
+/** Owned clean diagnostic arms need their own capture even with no state events. */
+export function captureBindingsForCase({ binding, conditionId, slots, slotBindings }) {
+  const scheduled = slots.filter(slot => slot.case_id === binding.id && slot.condition_id === conditionId);
+  if (!scheduled.length) return [];
+  const owned = scheduled.filter(slot => slotBindings.has(slot.slot_id));
+  if (!owned.length) {
+    assert.equal(binding.events.length, 0, 'Stateful capture requires its owned slot fixture');
+    return [{ binding }];
+  }
+  assert.equal(owned.length, scheduled.length, 'Capture materializations must cover every scheduled repeat');
+  return scheduled.map(slot => ({ slot, binding: slotBindings.get(slot.slot_id).binding }));
 }
 
 /** Resolve public inputs, prove no-model loading, then freeze the concrete executable comparison. */
@@ -78,8 +92,11 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
       scheduled_episodes: existing.slots.length, no_model_captures: proof.capture_count, actual_model_requests: 0, reused: true };
   }
   const materialization = setup.materialization_binding_file ? await readJson(setup.materialization_binding_file) : null;
+  if (setup.corpus.generator !== undefined) assert.equal(setup.corpus.generator, STORE_FIRST_USE_GENERATOR, 'Unknown explicit corpus generator');
   const corpus = materialization ? { publicCorpus: await readJson(materialization.public_corpus_path), control: await readJson(materialization.control_path) }
-    : buildCorpus({ seed: setup.corpus.seed, split: setup.corpus.split, materialVersion: setup.corpus.material_version });
+    : (setup.corpus.generator === STORE_FIRST_USE_GENERATOR ? buildStoreDiagnosticCorpus : buildCorpus)(
+      { seed: setup.corpus.seed, split: setup.corpus.split, materialVersion: setup.corpus.material_version });
+  if (setup.corpus.generator !== undefined) assert.equal(corpus.publicCorpus.provenance.generator, setup.corpus.generator);
   assert.equal(corpus.publicCorpus.seed, setup.corpus.seed); assert.equal(corpus.publicCorpus.split, setup.corpus.split);
   assert.equal(corpus.publicCorpus.version, setup.corpus.material_version);
   if (materialization) assert.equal(corpus.publicCorpus.content_sha256, materialization.public_sha256);
@@ -138,7 +155,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   assert.ok(runtime && isAbsolute(runtime.node) && isAbsolute(runtime.pi) && isAbsolute(runtime.bun));
   const scheduled = scheduleProtocol({ pairs: comparisonPairs({ models, cases, repetitions: setup.repetitions ?? 1,
     orderingSeed: setup.ordering_seed ?? 0, environmentCount: setup.candidates.length, environmentPairs }),
-  assessments: [], policies: { ordering: { seed: setup.ordering_seed ?? 0 } } });
+  assessments: [], policies: { ordering: { seed: setup.ordering_seed ?? 0 },
+    ...(setup.campaign_scope ? { campaign: setup.campaign_scope } : {}) } });
   const candidatesByCondition = Object.fromEntries(models.flatMap((_model, mi) => setup.candidates.map((candidate, ei) => ['m' + mi + '-e' + ei, candidate])));
   const prepared = await prepareEpisodeFixtures({ id: setup.id, environmentRoot: setup.environment_root, controlRoot: root,
     corpus, cases, slots: scheduled, candidates: candidatesByCondition, runtime, policy: setup.episode_fixtures });
@@ -146,12 +164,10 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const previous = Object.fromEntries(Object.keys(secrets).map(key => [key, process.env[key]]));
   Object.assign(process.env, secrets);
   const cells = models.flatMap((model, mi) => setup.candidates.flatMap((candidate, ei) => cases.flatMap((binding, ci) => {
-    if (!binding.events.length) return [{ model, candidate, binding, mi, ei, ci }];
-    return scheduled.filter(slot => slot.case_id === binding.id && slot.condition_id === 'm' + mi + '-e' + ei).map(slot => {
-      const actual = prepared.slots.get(slot.slot_id); assert.ok(actual);
-      return { model, candidate: { ...candidate, ...(candidate.mode === 'broker' ? { notion_entry: actual.binding.notion_entry } : {}) },
-        binding: actual.binding, mi, ei, ci, slot };
-    });
+    return captureBindingsForCase({ binding, conditionId: 'm' + mi + '-e' + ei, slots: scheduled, slotBindings: prepared.slots })
+      .map(actual => ({ model, candidate: { ...candidate,
+        ...(actual.slot && candidate.mode === 'broker' ? { notion_entry: actual.binding.notion_entry } : {}) },
+      binding: actual.binding, mi, ei, ci, ...(actual.slot ? { slot: actual.slot } : {}) }));
   })));
   // Natural prompts and task files are bound separately and checked on every run.
   // Identical startup inputs share a frozen expectation; every actual first payload

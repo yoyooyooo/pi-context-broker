@@ -9,8 +9,9 @@ import { comparisonPairs, prepareCases } from './planning.mjs';
 import { scheduleProtocol } from './batch.mjs';
 import { fingerprint } from './protocol.mjs';
 import { prepareEpisodeFixtures, readEpisodeFixtureBindings, validateEpisodeFixturePolicy } from './fixture-dispatch.mjs';
-import { verifyRetainedSlotCapture } from './configure.mjs';
+import { captureBindingsForCase, verifyRetainedSlotCapture } from './configure.mjs';
 import { executionForSlot } from './controller.mjs';
+import { buildStoreDiagnosticCorpus } from './diagnostic-corpus.mjs';
 
 // Controlled filesystem receipts exercise ownership and freezing, not Notion
 // material parity or model quality. Live parity remains the public CLI's job.
@@ -57,6 +58,36 @@ async function materialize(plan) {
   return { status: 'ready', effect_unknown: false, binding_path: binding.path, binding };
 }
 const read = (args, registration) => readEpisodeFixtureBindings({ ...args, registration });
+
+async function diagnosticFixture() {
+  const environmentRoot = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-diagnostic-fixtures-'))), controlRoot = join(environmentRoot, 'control/batch');
+  const corpus = buildCorpus({ seed: 'slot-diagnostic-apparatus', split: 'development', materialVersion: '2' });
+  const cases = await prepareCases({ corpus, selections: ['implicit-01-a', 'references-01-b'].map(caseId => ({ caseId, roundCount: 4 })), root: join(controlRoot, 'cases') });
+  const candidates = { 'm0-e0': { build_id: 'candidate', mode: 'broker' }, 'm0-e1': { build_id: 'reference', mode: 'broker' },
+    'm0-e2': { build_id: 'candidate', mode: 'broker' }, 'm0-e3': { build_id: 'reference', mode: 'broker' } };
+  const slots = scheduleProtocol({ pairs: comparisonPairs({ models: [{ id: 'controlled' }], cases, repetitions: 1,
+    orderingSeed: 17, environmentCount: 4, environmentPairs: [[0, 1], [2, 3]] }), assessments: [], policies: { ordering: { seed: 17 } } });
+  const diagnostics = { version: 1, kind: 'owned-store-clean-fault', pairs: [{ clean: 'm0-e0', fault: 'm0-e2' }, { clean: 'm0-e1', fault: 'm0-e3' }],
+    scenarios: cases.map((binding, index) => ({ id: 'owned-read-' + index, case_id: binding.id,
+      skill_id: corpus.control.cases.find(item => item.case_id === binding.base_case_id).target_skill_ids[0],
+      mode: index === 0 ? 'missing-manifest' : 'store-unavailable', before_turn: 'turn-2', restore_before_turn: 'turn-3' })) };
+  return { id: 'controlled-diagnostic', environmentRoot, controlRoot, corpus, cases, slots, candidates,
+    runtime: { node: process.execPath }, policy: { version: 1, project_page_id: '11111111-1111-4111-8111-111111111111', diagnostics } };
+}
+
+async function firstUseFixture() {
+  const args = await diagnosticFixture();
+  args.corpus = buildStoreDiagnosticCorpus({ seed: 'slot-first-use-apparatus', split: 'development', materialVersion: '2' });
+  args.cases = await prepareCases({ corpus: args.corpus, selections: args.corpus.publicCorpus.cases.map(item => ({ caseId: item.id })), root: join(args.controlRoot, 'first-use-cases') });
+  args.slots = scheduleProtocol({ pairs: comparisonPairs({ models: [{ id: 'controlled' }], cases: args.cases, repetitions: 1,
+    orderingSeed: 17, environmentCount: 4, environmentPairs: [[0, 1], [2, 3]] }), assessments: [], policies: { ordering: { seed: 17 } } });
+  args.policy.diagnostics.scenarios = args.cases.map((binding, index) => {
+    const spec = args.corpus.control.cases.find(item => item.case_id === binding.base_case_id).diagnostic;
+    return { id: 'first-use-' + index, case_id: binding.id, skill_id: spec.expected_target_skill_id, probe_skill_id: spec.probe_skill_id,
+      mode: 'store-unavailable', before_turn: 'turn-2', restore_before_turn: 'turn-3' };
+  });
+  return args;
+}
 
 test('two conditions and repeats receive distinct owned fixtures without changing canonical slots', async () => {
   const args = await fixture(), before = fingerprint(args.slots), canonical = structuredClone(args.cases), plans = [];
@@ -150,4 +181,75 @@ test('retained slot captures bind the actual entry, native root, physical prompt
     value => { value.launch.input_inventory_sha256 = 'b'.repeat(64); }]) { const wrong = structuredClone(args); mutate(wrong); assert.throws(() => verifyRetainedSlotCapture(wrong)); }
   const native = structuredClone(args); native.candidate.mode = 'native'; native.run.pi_launch = { mode: 'native', native_corpus: { source: binding.skills_root } }; native.run.remote.entry = null;
   verifyRetainedSlotCapture(native); native.run.pi_launch.native_corpus.source = '/owned/native-two'; assert.throws(() => verifyRetainedSlotCapture(native));
+});
+
+test('the eight diagnostic cells freeze independent clean/fault material, event identity and capture inputs', async () => {
+  const args = await diagnosticFixture(), before = fingerprint(args.cases), plans = [];
+  const prepared = await prepareEpisodeFixtures(args, { prepare: async plan => { plans.push(plan); return materialize(plan); } });
+  assert.equal(plans.length, 8); assert.equal(prepared.slots.size, 8);
+  assert.equal(new Set(plans.map(plan => plan.control_root)).size, 8);
+  assert.equal(new Set(plans.map(plan => plan.owned_runtime_root)).size, 8);
+  assert.equal(new Set([...prepared.slots.values()].map(item => item.binding.notion_entry)).size, 8);
+  assert.equal(fingerprint(args.cases), before);
+  const loaded = await read(args, prepared.registration); assert.equal(loaded.size, 8);
+  for (const slot of args.slots) {
+    const canonical = args.cases.find(binding => binding.id === slot.case_id), item = loaded.get(slot.slot_id);
+    const fault = ['m0-e2', 'm0-e3'].includes(slot.condition_id);
+    const plan = plans.find(value => value.episode_id === item.record.run_id);
+    assert.equal(item.binding.diagnostic.arm, fault ? 'fault' : 'clean');
+    assert.equal(plan.events.length, fault ? 2 : 0);
+    assert.deepEqual(plan.events.map(event => event.kind), fault ? ['fault', 'restore-fault'] : []);
+    assert.deepEqual(item.binding.protocol_case, canonical.protocol_case);
+    assert.deepEqual(item.binding.public_case.turns, canonical.public_case.turns);
+    const capture = captureBindingsForCase({ binding: canonical, conditionId: slot.condition_id, slots: args.slots, slotBindings: loaded });
+    assert.equal(capture.length, 1); assert.equal(capture[0].slot.slot_id, slot.slot_id);
+    assert.equal(capture[0].binding.notion_entry, item.binding.notion_entry);
+    if (fault) assert.deepEqual(plan.events[0].logical_operation, plan.events[1].logical_operation);
+  }
+  const changed = structuredClone(prepared.registration);
+  changed.policy.diagnostics.scenarios[0].restore_before_turn = 'turn-4';
+  await assert.rejects(read(args, changed));
+  const missing = structuredClone(prepared.registration); delete missing.slot_bindings[args.slots[0].slot_id];
+  await assert.rejects(read(args, missing), /exactly the writable/);
+});
+
+test('unsupported native faults and incomplete diagnostic schedules stop before fixture allocation', async () => {
+  const args = await diagnosticFixture(); let writes = 0;
+  const operations = { prepare: () => { writes++; throw new Error('must not allocate'); } };
+  const native = structuredClone(args); native.candidates['m0-e3'].mode = 'native';
+  await assert.rejects(prepareEpisodeFixtures(native, operations), /DIAGNOSTIC_NATIVE_UNSUPPORTED/);
+  const missing = structuredClone(args); missing.slots.pop();
+  await assert.rejects(prepareEpisodeFixtures(missing, operations), /DIAGNOSTIC_EIGHT_SLOTS/);
+  assert.equal(writes, 0);
+});
+
+test('first-use diagnostic plans preserve the actual Store probe and do not claim an observed subject encounter', async () => {
+  const args = await firstUseFixture(), plans = [];
+  const prepared = await prepareEpisodeFixtures(args, { prepare: async plan => { plans.push(plan); return materialize(plan); } });
+  const loaded = await read(args, prepared.registration); assert.equal(loaded.size, 8);
+  for (const slot of args.slots) {
+    const item = loaded.get(slot.slot_id), diagnostic = item.binding.diagnostic;
+    assert.equal(diagnostic.subject_operation_observed, false);
+    assert.notEqual(diagnostic.probe_skill_id, diagnostic.expected_subject_operation.skill_id);
+    const plan = plans.find(value => value.episode_id === item.record.run_id);
+    for (const event of plan.events) {
+      assert.equal(event.skill_id, diagnostic.probe_skill_id);
+      assert.equal(event.logical_operation.skill_id, diagnostic.probe_skill_id);
+      if (event.kind === 'fault') assert.equal(event.mode, 'store-unavailable');
+    }
+  }
+});
+
+test('capture selection excludes unscheduled followup cells and rejects partial owned repeats', () => {
+  const binding = { id: 'case', events: [] }, slots = [
+    { slot_id: 'one', case_id: 'case', condition_id: 'm0-e0' },
+    { slot_id: 'two', case_id: 'case', condition_id: 'm0-e0' },
+  ];
+  const args = { binding, slots, slotBindings: new Map() };
+  assert.deepEqual(captureBindingsForCase({ ...args, conditionId: 'm0-e1' }), []);
+  assert.deepEqual(captureBindingsForCase({ ...args, conditionId: 'm0-e0' }), [{ binding }]);
+  args.slotBindings.set('one', { binding: { ...binding, notion_entry: 'one' } });
+  assert.throws(() => captureBindingsForCase({ ...args, conditionId: 'm0-e0' }), /cover every/);
+  args.slotBindings.set('two', { binding: { ...binding, notion_entry: 'two' } });
+  assert.deepEqual(captureBindingsForCase({ ...args, conditionId: 'm0-e0' }).map(item => item.binding.notion_entry), ['one', 'two']);
 });
