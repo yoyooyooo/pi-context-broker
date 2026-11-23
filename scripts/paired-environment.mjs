@@ -11,6 +11,7 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'no
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { captureRuntimeIdentity, compareRuntimeIdentity } from './paired-runtime-identity.mjs';
+import { closeoutEnvironment } from './paired-closeout.mjs';
 import { verifyArchiveInstallation, verifyBundledNotices } from './verify-package-closure.mjs';
 
 const DEFAULTS = {
@@ -35,6 +36,8 @@ export const HELP = `Usage:
   node scripts/paired-environment.mjs build --root ROOT [--id BUILD_ID]
     [--install-mode directory|packed] [--pass-env ENV_NAME ...]
   node scripts/paired-environment.mjs check --root ROOT --build BUILD_ID
+  node scripts/paired-environment.mjs closeout --root ROOT
+    [--manifest ABSOLUTE_SOURCE_DISPOSITIONS_JSON] [--receipt ABSOLUTE_NEW_JSON]
   node scripts/paired-environment.mjs run --root ROOT --build BUILD_ID
     --target cli|pi|command [--id RUN_ID] [--cwd workspace|cli|broker]
     [--entry TEST_SKILLS_DATABASE_UUID | --parent TEST_PARENT_UUID]
@@ -84,6 +87,10 @@ Command tests receive their own copy of both source snapshots and dependencies;
 --cwd cli|broker selects that run's copy. Stdin defaults to ignore for headless
 commands; use --stdin inherit for RPC or explicit piped input. An optional timeout
 stops only this run's owned process group.
+closeout reads source identities and retained references; without a manifest it
+returns review_required (exit 2). A complete manifest proves retained or trashed
+dispositions for both sources. It never moves/deletes files or scans foreign
+worktrees. Only an explicit --receipt writes a new, exclusive control record.
 This is isolated-development evidence, not the strict current-next/daily gate.
 `;
 
@@ -92,10 +99,11 @@ export function parseArgs(args) {
   const allowed = {
     create: ['root', 'cli-repository', 'broker-repository', 'cli-ref', 'broker-ref', 'pi-entry'],
     build: ['root', 'id', 'pass-env', 'install-mode'], check: ['root', 'build'],
+    closeout: ['root', 'manifest', 'receipt'],
     run: ['root', 'build', 'target', 'id', 'cwd', 'entry', 'parent', 'skills', 'models', 'pass-env', 'timeout-ms', 'stdin',
       'pi-mode', 'native-skills', 'pi-extension'],
   };
-  assert.ok(allowed[command], 'Choose create, build, check, or run; see --help');
+  assert.ok(allowed[command], 'Choose create, build, check, run, or closeout; see --help');
   const options = { command, args: [], 'pass-env': [], 'pi-extension': [] };
   for (let index = 0; index < rest.length; index++) {
     const arg = rest[index];
@@ -693,9 +701,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   else {
     try {
       const options = parseArgs(process.argv.slice(2));
-      const action = { create: createEnvironment, build: buildEnvironment, check: checkEnvironment, run: runEnvironment }[options.command];
+      const action = { create: createEnvironment, build: buildEnvironment, check: checkEnvironment, run: runEnvironment, closeout: closeoutEnvironment }[options.command];
       const result = await action(options); output(result);
       if (result.status === 'failed') process.exitCode = result.exit_code || 1;
+      if (result.status === 'review_required') process.exitCode = 2;
     } catch (error) { output({ status: 'failed', error: error.message }); process.exitCode = 1; }
   }
 }
