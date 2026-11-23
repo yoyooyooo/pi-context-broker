@@ -28,7 +28,7 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "bf57522e3cd63a398f05085dbfd04068eade37018a897bf269ee3c2d68836fbd",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "a0b3d76adddb20b81858d876c4fdd81c45a66360dee55a877895b1d6348a40b5",
-    "packages/context-broker/src/index.ts": "91005ee156d29382d0eaf05e9c6af3181b347f5df43fe188f8c8224f99b40448",
+    "packages/context-broker/src/index.ts": "03a3d8b04c28579fb3731607a45de2eec6705a6e5cdfe0a2597a19e1c84610a6",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "f0a338ce686cfd88c1ce564ccdec0e34b5b0b868aa617620950e9d5fb6d0a0ad",
     "packages/context-broker/src/notion-source.ts": "ad04a9ed628eb69c7152b6454ff2440b8602cdff783e9e5cdfa8c1c9b3e8bbd3",
@@ -828,6 +828,13 @@
       "scope": "Paired current-Notion SDK fixtures derive their opaque snapshot identity from the selected CLI producer and its complete observed record. Existing source, graph and host assertions are preserved. An explicit legacy content-only identity from a current SDK result is rejected before a cache tree is published.",
       "guards": "No production decoder, source admission, graph commit, delivery, recovery, authorization or fixed-binding guard changes. Legacy local snapshot recovery is owned by the CLI and is not introduced for current Notion observations.",
       "proof_limit": "Only the exact changed SDK test hash is rebound. Models, cases, expected rules, tool locks and guard mutation targets are unchanged; these tests exercise the actual paired decoder outside the finite model."
+    },
+    "default_packaged_workflows": {
+      "reviewed_from": "28d424e54b29a123ae162d191016aa1f03d0c4de",
+      "reviewed_through": "6843ffd7221c50399c9c78cd3957898e93b33d83",
+      "scope": "Only the four guidance producers in index.ts change: notionWorkflowGuidance (formerly maintenanceGuidance), packagedWorkflowGuidance (formerly packagedMaintenanceGuidance), buildCliGuidance and buildToolGuidance. TypeScript AST comparison preserves all other 139 top-level statements, including 91 functions, byte-for-byte. Other protected source and regression files retain their reviewed hashes.",
+      "guards": "Ordinary maintenance and sync advertise actual paired-package reads; explicit Notion workflows keep exact source/ref, Requires and failure semantics. Workflow origin does not select the write target. No source-admission, no-enabled-source gate, identity, cancellation, graph commit, active selection, recovery or provider-delivery guard changes.",
+      "proof_limit": "Natural model routing, full packaged body delivery, empty-library first use and real Notion failure behavior require separate actual-session evidence. Models, configurations, views, bounds, cases, independent expected_rules, tool lock and guard mutation targets are unchanged. This whole-file hash binds reviewed bytes; it does not prove instruction compliance or implementation refinement."
     }
   }
 }
