@@ -23,11 +23,11 @@ function failurePlan(stage, name, code) {
 function failedTool(plan) {
   const expected = plan.expectedFailure;
   return { role: 'toolResult', toolCallId: plan.stage + ':' + expected.index, toolName: expected.name, isError: true,
-    content: [{ type: 'text', text: expected.code === 'CATALOG_INCOMPLETE' ? 'context-broker source operation failed (CATALOG_INCOMPLETE)' : 'context-broker source notion unavailable (' + expected.code + '). The fixed snapshot is missing.' }] };
+    content: [{ type: 'text', text: expected.code === 'SHARED_GRAPH_METADATA_UNAVAILABLE' ? 'context-broker source operation failed (SHARED_GRAPH_METADATA_UNAVAILABLE)' : 'context-broker source notion unavailable (' + expected.code + '). The fixed snapshot is missing.' }] };
 }
 
 test('session planned refresh failure continues to the explicit graph audit', () => {
-  const plan = failurePlan('failed-refresh-keeps-a', 'notion_use', 'CATALOG_INCOMPLETE');
+  const plan = failurePlan('failed-refresh-keeps-a', 'notion_use', 'SHARED_GRAPH_METADATA_UNAVAILABLE');
   assert.deepEqual(nextSessionTool({ messages: [failedTool(plan)] }, plan), { type: 'toolCall', id: plan.stage + ':1', name: 'notion_ctl', arguments: {} });
   for (const diagnostic of ['Content reference is unavailable', 'context-broker source operation failed (AUTH_REQUIRED)']) {
     const wrong = failedTool(plan); wrong.content[0].text = diagnostic;
@@ -76,12 +76,16 @@ test('failed refresh must keep the exact prior scope, graph lock, pin and delive
 
 function failedSource({ fixed = false } = {}) {
   const ref = skillFileRef(skillIdentity('library', 'selected'), 'SKILL.md', fixed ? 's_' + hash('old A') : undefined);
-  const code = fixed ? 'SNAPSHOT_MISSING' : 'CATALOG_INCOMPLETE', dataSource = { id: 'controlled-skills', database: 'controlled-database' };
+  const code = fixed ? 'SNAPSHOT_MISSING' : 'SHARED_GRAPH_METADATA_UNAVAILABLE', dataSource = { id: 'controlled-skills', database: 'controlled-database' };
+  const cause = { path: 'v1/data_sources/' + dataSource.id + '/query?filter_properties=skill_id', cause_code: 'NOT_FOUND', http_status: 404,
+    notion_code: 'object_not_found', phase: 'definitive_rejection' };
+  const preparation = { version: 1, purpose: 'use', scope: hash('controlled-scope'), status: 'failed',
+    roots: [{ target: ref, readiness: 'not_ready' }], nodes: [{ id: skillIdentity('library', 'selected'), ref, roles: ['root'], state: 'failed', error: { code, details: structuredClone(cause) } }],
+    required: [], required_closure: [], observed_bindings: [], usage: { prepared_nodes: 0, instruction_bytes: 0 }, errors: [{ target: ref, code, details: structuredClone(cause) }] };
   return {
     expected: { commands: [fixed ? 'files' : 'prepare'], ref, code, ...(fixed ? {} : { dataSource }) },
-    receipt: { id: 'real-cli-operation', command: fixed ? 'files' : 'prepare', args: fixed ? ['files', ref] : ['prepare', ref, '--refresh'],
-      code: 1, signal: null, timedOut: false, response: { ok: false, error: { code, ...(fixed ? {} : { details: { method: 'explicit_database', exhaustive: false,
-        failed_sources: [{ id: dataSource.id, data_source_id: dataSource.id, database_id: dataSource.database, code: 'NOT_FOUND' }] } }) } },
+    receipt: { id: 'real-cli-operation', command: fixed ? 'files' : 'prepare', args: fixed ? ['files', ref] : ['ctl', 'prepare', ref, '--purpose', 'use', '--database', dataSource.database, '--refresh'],
+      code: 1, signal: null, timedOut: false, response: { ok: false, error: { code, ...(fixed ? {} : { details: { ...cause, preparation } }) } },
       metrics: { complete: true, total_requests: fixed ? 0 : 1, trace: fixed ? [] : [{ event: 'attempt', request_kind: 'notion_metadata',
         method: 'POST', target: { data_source_id: dataSource.id }, outcome: 'failure', http_status: 404 }] } },
   };
@@ -93,7 +97,7 @@ test('planned source errors require the exact real CLI input, code, exit and ful
     assert.equal(failedSourceEvidence([value.receipt], value.expected).code, value.expected.code);
     for (const mutate of [
       receipt => { receipt.code = 0; },
-      receipt => { receipt.args[1] = 'skill://other/SKILL.md'; },
+      receipt => { receipt.args[fixed ? 1 : 2] = 'skill://other/SKILL.md'; },
       receipt => { receipt.response.error.code = 'AUTH_REQUIRED'; },
       receipt => { receipt.signal = 'SIGKILL'; receipt.code = null; },
       receipt => { receipt.timedOut = true; },
@@ -111,16 +115,25 @@ test('planned source errors require the exact real CLI input, code, exit and ful
 test('unavailable fixed evidence rejects a current prepare fallback and refresh evidence rejects another target', () => {
   const fixed = failedSource({ fixed: true });
   for (const command of ['prepare', 'use', 'export']) {
-    const fallback = { command, args: [command, 'skill://selected/SKILL.md'], code: 0,
+    const fallback = { command, args: [...(command === 'prepare' ? ['ctl', 'prepare'] : [command]), 'skill://selected/SKILL.md'], code: 0,
       metrics: { complete: true, total_requests: 0, trace: [] } };
     assert.throws(() => failedSourceEvidence([fixed.receipt, fallback], fixed.expected), /fall back/);
   }
   const refresh = failedSource();
   for (const mutate of [
-    receipt => { receipt.response.error.details.failed_sources[0].data_source_id = 'another-source'; },
-    receipt => { receipt.response.error.details.failed_sources[0].database_id = 'another-database'; },
-    receipt => { receipt.response.error.details.failed_sources[0].code = 'AUTH_REQUIRED'; },
-    receipt => { receipt.response.error.details.failed_sources.push({ ...receipt.response.error.details.failed_sources[0] }); },
+    receipt => { receipt.response.error.code = 'CATALOG_INCOMPLETE'; },
+    receipt => { receipt.response.error.details.path = 'v1/data_sources/another-source/query'; },
+    receipt => { receipt.args[receipt.args.indexOf('--database') + 1] = 'another-database'; },
+    receipt => { receipt.response.error.details.cause_code = 'ACCESS_DENIED'; },
+    receipt => { receipt.response.error.details.http_status = 403; },
+    receipt => { receipt.response.error.details.phase = 'unknown'; },
+    receipt => { receipt.response.error.details.preparation.roots.push({ target: refresh.expected.ref, readiness: 'not_ready' }); },
+    receipt => { receipt.response.error.details.preparation.nodes[0].id = skillIdentity('another-library', 'selected'); },
+    receipt => { receipt.response.error.details.preparation.nodes[0].content = 'Unexpected body'; },
+    receipt => { receipt.response.error.details.preparation.nodes[0].binding = {}; },
+    receipt => { receipt.response.error.details.preparation.observed_bindings.push({}); },
+    receipt => { receipt.response.error.details.preparation.usage.prepared_nodes = 1; },
+    receipt => { receipt.response.error.details.preparation.errors[0].details.cause_code = 'ACCESS_DENIED'; },
     receipt => { receipt.metrics.trace[0].target.data_source_id = 'another-source'; },
     receipt => { receipt.metrics.trace[0].http_status = 403; },
     receipt => { receipt.metrics.trace[0].outcome = 'success'; },
@@ -170,7 +183,7 @@ function fixedMainFixture() {
   const preparation = { version: 1, purpose: 'inspect', scope: binding.scope, status: 'failed',
     roots: [{ target, readiness: 'not_ready' }], nodes: [{ id: node.id, ref: target, roles: ['root'], state: 'failed', error }],
     required: [], required_closure: [], observed_bindings: [], usage: { prepared_nodes: 0, instruction_bytes: 0 }, errors: [{ target, ...error }] };
-  const receipt = { id: 'fixed-main-actual-shape', command: 'prepare', args: ['prepare', target, '--purpose', 'inspect', '--database', fixedMain.database, '--max-age', '0', '--metrics'],
+  const receipt = { id: 'fixed-main-actual-shape', command: 'prepare', args: ['ctl', 'prepare', target, '--purpose', 'inspect', '--database', fixedMain.database, '--max-age', '0', '--metrics'],
     code: 1, signal: null, timedOut: false, response: { ok: false, error: { ...error, details: { ...error.details, preparation } } },
     metrics: { complete: true, total_requests: 1, trace: [{ event: 'attempt', request_kind: 'notion_metadata', method: 'GET', http_status: 200, outcome: 'success' }] } };
   return { ...value, selection, fixedMain, receipt, expected: { commands: ['read', 'files'], ref: binding.ref, code: 'SNAPSHOT_MISSING', fixedMain } };
@@ -199,13 +212,13 @@ test('fixed main permits the unique failed inspect preparation without changing 
   const value = fixedMainFixture();
   assert.equal(failedSourceEvidence([value.receipt], value.expected).code, 'SNAPSHOT_MISSING');
   for (const mutate of [
-    receipt => { receipt.args[1] = value.nodes[0].record.ref; },
-    receipt => { receipt.args[1] += '&file_id=other'; },
-    receipt => { receipt.args[1] = receipt.args[1].replace(value.fixedMain.snapshot, 's_' + hash('different pin')); },
-    receipt => { receipt.args.splice(2, 0, 'skill://another/SKILL.md'); },
-    receipt => { receipt.args[3] = 'use'; },
+    receipt => { receipt.args[2] = value.nodes[0].record.ref; },
+    receipt => { receipt.args[2] += '&file_id=other'; },
+    receipt => { receipt.args[2] = receipt.args[2].replace(value.fixedMain.snapshot, 's_' + hash('different pin')); },
+    receipt => { receipt.args.splice(3, 0, 'skill://another/SKILL.md'); },
+    receipt => { receipt.args[4] = 'use'; },
     receipt => { receipt.args.push('--refresh'); },
-    receipt => { receipt.args[5] = 'different-database'; },
+    receipt => { receipt.args[6] = 'different-database'; },
     receipt => { receipt.response.error.details.snapshot_id = 's_' + hash('different pin'); },
     receipt => { receipt.response.error.details.preparation.scope = 'wrong-scope'; },
     receipt => { receipt.response.error.details.preparation.roots.push({ target: 'another', readiness: 'not_ready' }); },
@@ -304,7 +317,7 @@ test('installed refresh fault intercepts required metadata, preserves unrelated 
     await writeFile(state, JSON.stringify({ cli, cliSha256: hash(await readFile(cli)), cwd: directory, responses, ledger,
       env: isolatedEnv({ base: join(directory, 'consumer'), agentDir: join(directory, 'consumer-agent'), NOTION_API_TOKEN: token, NOTION_API_BASE_URL: info.origin, NODE_EXTRA_CA_CERTS: info.cert, NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000' }) }));
     const ref = skillFileRef(info.logical_ids.root, 'SKILL.md');
-    const result = spawnSync(process.execPath, [fileURLToPath(new URL('./notion-skill-graph-session.mjs', import.meta.url)), '--source', state, 'prepare', ref, '--purpose', 'use', '--database', info.database, '--refresh'], { encoding: 'utf8', timeout: 125000 });
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL('./notion-skill-graph-session.mjs', import.meta.url)), '--source', state, 'ctl', 'prepare', ref, '--purpose', 'use', '--database', info.database, '--refresh'], { encoding: 'utf8', timeout: 125000 });
     await writeFile(join(directory, 'prepare.stdout.json'), result.stdout); await writeFile(join(directory, 'prepare.stderr.log'), result.stderr);
     const observed = (await readFile(info.ledger, 'utf8')).split('\n').filter(Boolean).map(JSON.parse), faults = observed.filter(row => row.fault);
     t.diagnostic(JSON.stringify({ cliExit: result.status, faultHits: faults.length, http: observed.length }));
@@ -312,7 +325,9 @@ test('installed refresh fault intercepts required metadata, preserves unrelated 
     assert.equal(result.status, 1); assert.equal(result.signal, null);
     const files = await readdir(responses); assert.equal(files.length, 1);
     const receipt = JSON.parse(await readFile(join(responses, files[0]), 'utf8'));
-    const proof = failedSourceEvidence([receipt], { commands: ['prepare'], ref, code: 'CATALOG_INCOMPLETE', dataSource: { id: info.data_source_id, database: info.database } });
+    const proof = failedSourceEvidence([receipt], { commands: ['prepare'], ref, code: 'SHARED_GRAPH_METADATA_UNAVAILABLE', dataSource: { id: info.data_source_id, database: info.database } });
+    assert.equal(receipt.response.request_metrics.requests.notion_body, 0);
+    assert.equal(receipt.response.request_metrics.requests.notion_write, 0);
     assert.equal(faults.length, proof.failedAttempts.length);
     assert.ok(faults.every((row, index) => row.method === 'POST' && row.path.split('?')[0] === 'v1/data_sources/' + info.data_source_id + '/query'
       && row.status === 404 && row.request_bytes === proof.failedAttempts[index].request_bytes && row.response_bytes === proof.failedAttempts[index].response_bytes));
@@ -329,7 +344,7 @@ test('installed refresh fault intercepts required metadata, preserves unrelated 
       let stopped;
       try { stopped = await closed; } finally { clearTimeout(kill); }
       await writeFile(join(output, 'stdout.log'), Buffer.concat(stdout)); await writeFile(join(output, 'stderr.log'), Buffer.concat(stderr));
-      assert.deepEqual(stopped, { code: 0, signal: null });
+      assert.deepEqual(stopped, { code: 0, signal: null }, 'Controlled service must exit cleanly; stderr: ' + Buffer.concat(stderr).toString('utf8'));
       assert.equal(JSON.parse(await readFile(join(output, 'stopped.json'), 'utf8')).fail_refresh_root, false);
     }
   }
@@ -354,6 +369,15 @@ test('session custom command forwards the current ctl views metadata entry uncha
   const result = invoke(args);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout).argv, args);
+});
+
+test('session source forwards ctl prepare with metrics and rejects retired root prepare', async t => {
+  const { invoke } = await commandFixture(t), args = ['ctl', 'prepare', 'skill://selected/SKILL.md?library=library', '--purpose', 'use'];
+  const result = invoke(args);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).argv, [...args, '--metrics']);
+  const retired = invoke(args.slice(1));
+  assert.notEqual(retired.status, 0); assert.match(retired.stderr, /AssertionError/);
 });
 
 test('session custom command keeps legacy views and rejects unrelated ctl or author commands before a CLI spawn', async t => {
