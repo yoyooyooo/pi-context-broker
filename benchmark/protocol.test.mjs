@@ -166,6 +166,19 @@ test('authorized auto alias is an opaque route condition and cannot claim a fixe
   assertCode(seal(value), 'auto_backend_unverified');
 });
 
+test('protocol admits only the declared canonical group for its exact auto-route variant', () => {
+  const value = cohortFixture(), model = value.models[0];
+  model.route = 'auto/grok-4.7';
+  model.routing = { mode: 'auto-route', model_variant: 'grok-4.7', reported_model_ids: ['grok-4.7', 'group/auto-grok-4-7'] };
+  assertValid(seal(value));
+  for (const label of ['group/worker', 'group/auto-grok-4-6', 'provider/group/auto-grok-4-7']) {
+    const changed = clone(value); changed.models[0].routing.reported_model_ids = [label];
+    assertCode(seal(changed), 'reported_model_alias');
+  }
+  model.route = 'grok/grok-4.7'; model.routing.mode = 'fixed-route';
+  assertCode(seal(value), 'reported_model_alias');
+});
+
 for (const [name, change, code] of [
   ['undeclared auto route', m => { m.route = 'auto/' + m.id; }, 'routing_mode_mismatch'],
   ['nested auto route declared fixed', m => { m.route = 'provider/auto/' + m.id; }, 'routing_mode_mismatch'],
