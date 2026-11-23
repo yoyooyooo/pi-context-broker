@@ -483,3 +483,95 @@ an isolated run cannot be relabelled as a daily or natural acceptance result.
 Retain run state needed by unfinished operations. Once the task no longer needs
 its owned directories, follow the existing system-Trash cleanup policy. Do not
 delete another environment, reset a shared cache or kill processes by name.
+
+### Record source closeout after integration
+
+Before reporting a task environment closed, attach a source closeout receipt.
+The command accounts for both source checkouts in `environment.json`; it does
+not move or delete files, scan general worktrees, or retire retained builds.
+Run it from the maintained controller checkout, with an explicit environment root:
+
+```sh
+node scripts/paired-environment.mjs closeout --root /absolute/task-pair
+```
+
+Without `--manifest`, this is read-only and returns `review_required` with exit 2.
+It reports current Git HEAD, cleanliness, local branches, stashes, worktrees and
+all owned sealed-build dependencies. An explicit `--receipt` may save this
+snapshot to a new file beneath that environment's existing `control` directory.
+The command never overwrites a receipt or creates output directories implicitly.
+
+Create an owned `control/source-closeout.json` manifest with `version: 1`,
+`kind: "paired-source-closeout"`, the snapshot's exact `environment` descriptor,
+and a `sources` object containing both `cli` and `broker`. Each source has:
+
+- `head`: its exact current commit, with a clean tracked and untracked state.
+- `integration`: `target_ref` (an explicit local `refs/remotes/origin/...` ref),
+  exact `target_commit`, `merged_commit`, and `method` (`ancestor` or `tree_equal`).
+  The merged commit must belong to the declared target. `tree_equal` supports a
+  squash merge without pretending the task commit became a target ancestor.
+  This checks local refs; fetch and confirm remote freshness through the existing
+  integration workflow before recording closeout.
+- `references`: all frozen-build references from the snapshot, plus any explicitly
+  declared owned JSON references. A build retains both source paths because the
+  current `check` contract reads their Git HEADs. Its recorded source HEAD may
+  differ from the current clean HEAD; the command does not change that contract.
+- `disposition`: `retained` or `trashed`, as described below. Omitted or `null`
+  dispositions leave the result `review_required`; they cannot close the task.
+
+For a referenced checkout, use a retained disposition such as:
+
+```json
+{
+  "kind": "retained",
+  "owner": "task owner",
+  "release_condition": {
+    "kind": "environment_retired",
+    "description": "Retire the pair only after its retained run and build evidence is explicitly released."
+  }
+}
+```
+
+`retained` requires at least one current typed reference and a nonempty owner and
+release condition. Every `{kind: "frozen_build", path, sha256}` must match a real
+owned build manifest; all such builds must be included. Other current operations
+may use `{kind: "owned_json_reference", path, sha256, pointer, target}`: the JSON
+file must be inside this environment's `control`, and its JSON Pointer must equal
+the source path (`target: "source"`) or environment root (`"environment"`).
+These can use `release_condition.kind: "references_retired"`; any retained frozen
+build requires `"environment_retired"`. A generic reminder is not a reference.
+
+For an actually removed source, `trashed` requires `pre_audit` and `trash_receipt`
+file descriptors (`path`, `sha256`, optional `bytes`) under the same `control`.
+The pre-audit must bind a clean, integrated source, with no stashes, unmerged local
+branches, extra worktrees, or known retained references. To make that pre-audit,
+submit the exact integration manifest with a `null` disposition and an explicit
+new receipt. This remains a non-final review, never permission to delete files.
+The separately reviewed cleanup operation uses the native system Trash policy.
+Its retained JSON acknowledgement has `version: 1`,
+`kind: "paired-source-system-trash"`, matching `environment_id`, `source_path`,
+`source_head` and `pre_audit`, plus `command: {path: "/usr/bin/trash", args: ["-v",
+SOURCE_PATH]}`, `exit_code: 0`, original `stdout` and `stderr`, and the native
+`destination_path` directly under the current user's `.Trash`.
+
+The source path must now be absent, and no owned frozen-build or declared live
+reference may require it. The native acknowledgement must include the exact
+Trash destination. The receipt reports `destination_bytes: "not_verified"`;
+it does not bypass macOS Trash permissions or claim a destination hash check.
+External references remain the cleanup owner's responsibility: this bounded
+command reports `foreign_references: "not_scanned"` and is not a general garbage
+collector or a replacement for a project-wide reference audit.
+
+```sh
+node scripts/paired-environment.mjs closeout --root /absolute/task-pair \
+  --manifest /absolute/task-pair/control/source-closeout.json \
+  --receipt /absolute/task-pair/control/closeout-after-integration.json
+```
+
+A complete record returns `reviewed_with_retained_sources` or `sources_trashed`.
+Both describe source disposition only. Dirty or changed HEADs, stale references,
+unowned or symlink paths, incomplete Trash proof and false cleanup claims fail.
+Re-run with a new receipt after a retained reference reaches its release condition;
+do not edit the old receipt, frozen build, or source-HEAD check to claim cleanup.
+Focused regression tests use retained local fixtures and make no model calls:
+`node --test scripts/paired-closeout.test.mjs`.
