@@ -16,7 +16,7 @@ import { parseSourceObservation } from '../scripts/skill-consumption-source-obse
 import { graphSourceViews } from '../scripts/notion-skill-graph-model-evidence.mjs';
 import { verifyPreparationEvidence } from '../scripts/skill-preparation-evidence.mjs';
 
-export const COLLECTOR_VERSION = '1.1.0';
+export const COLLECTOR_VERSION = '1.2.0';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const inside = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
@@ -112,14 +112,18 @@ export function collectRuntimeTools(events, eventArtifact, sessionEntries = null
     if (!end) errors.push('Missing tool execution end: ' + id);
     if (end && (end.event.toolName !== start.event.toolName || (end.event.parentToolCallId ?? null) !== (start.event.parentToolCallId ?? null)))
       errors.push('Tool identity or ancestry changed: ' + id);
+    if (end && (end.seq <= start.seq || end.turn_id !== start.turn_id)) errors.push('Tool lifetime or turn changed: ' + id);
     let result = end?.event.result ?? null;
+    if (persisted && (persisted.message.toolName !== start.event.toolName || persisted.message.isError !== end?.event.isError ||
+        canonicalJson(persisted.message.content ?? null) !== canonicalJson(result?.content ?? null)))
+      errors.push('Persisted tool result differs from its callback: ' + id);
     if (persisted && result && !result.details && persisted.message.details &&
         canonicalJson(result.content ?? null) === canonicalJson(persisted.message.content ?? null))
       result = { ...result, details: persisted.message.details };
     const isError = end?.event.isError ?? result?.isError;
     tools.push({ id, parent_id: start.event.parentToolCallId ?? null, name: start.event.toolName,
       args: structuredClone(start.event.args ?? {}), status: isError === true ? 'fail' : isError === false ? 'pass' : 'unknown',
-      result: structuredClone(result), turn_id: start.turn_id, execution: 'observed', sequence: start.seq,
+      result: structuredClone(result), turn_id: start.turn_id, execution: 'observed', sequence: start.seq, end_sequence: end?.seq ?? null,
       refs: uniqueRefs([start.ref, end?.ref, persisted?.ref]), interface_misuse: null });
   }
   for (const [id, end] of ends) if (!starts.has(id)) errors.push('Tool result without execution start: ' + id);
@@ -138,7 +142,77 @@ export function collectRuntimeTools(events, eventArtifact, sessionEntries = null
     errors.push('Unobserved parent for nested call: ' + tool.id);
     tool.observed_parent_id = tool.parent_id; tool.parent_id = null; tool.ancestry = 'unknown';
   }
+  const byId = new Map(tools.map(tool => [tool.id, tool]));
+  for (const tool of tools) if (tool.parent_id !== null) {
+    const parent = byId.get(tool.parent_id);
+    if (!tool.turn_id || tool.turn_id !== parent.turn_id || !(parent.sequence < tool.sequence &&
+        tool.sequence < tool.end_sequence && tool.end_sequence < parent.end_sequence)) {
+      errors.push('Nested tool lifetime is not inside its parent: ' + tool.id);
+      tool.observed_parent_id = tool.parent_id; tool.parent_id = null; tool.ancestry = 'unknown';
+    }
+  }
+  for (const tool of tools.filter(tool => tool.name === 'codemode' && tool.execution === 'observed')) {
+    const message = native.get(tool.id)?.message, summary = message?.nestedCalls, reasons = [], descendants = [];
+    const visit = parent => { for (const child of tools.filter(item => item.parent_id === parent)) { descendants.push(child); visit(child.id); } };
+    visit(tool.id); // Strict lifetime containment above excludes ancestry cycles.
+    if (!native.get(tool.id)?.ref) reasons.push('Native census has no retained artifact');
+    if (!summary || summary.complete !== true || !Array.isArray(summary.calls)) reasons.push('Complete native nested-call census is missing');
+    else {
+      const declared = new Set();
+      for (const child of summary.calls) {
+        const actual = descendants.find(item => item.id === child?.id);
+        if (!actual || declared.has(child.id) || child.name !== actual.name || !object(child.arguments) ||
+            child.argumentsBytes !== undefined || canonicalJson(child.arguments) !== canonicalJson(actual.args) ||
+            !['ok', 'error'].includes(child.status) || (child.status === 'ok' ? 'pass' : 'fail') !== actual.status)
+          reasons.push('Nested census differs from actual callbacks');
+        declared.add(child?.id);
+      }
+      if (declared.size !== descendants.length || descendants.some(child => !declared.has(child.id))) reasons.push('Nested callback set differs from the census');
+      const direct = message.details?.calls, children = descendants.filter(child => child.parent_id === tool.id);
+      if (canonicalJson(direct ?? null) !== canonicalJson(tool.result?.details?.calls ?? null)) reasons.push('Callback and persisted direct census disagree');
+      if (!Array.isArray(direct) || direct.length !== children.length || new Set(direct.map(child => child?.id)).size !== children.length ||
+          direct.some(child => !children.some(actual => actual.id === child?.id && actual.name === child.name &&
+            ['ok', 'error', 'cancelled'].includes(child.status) && (child.status === 'ok' ? 'pass' : 'fail') === actual.status)))
+        reasons.push('Direct CodeMode census differs from actual callbacks');
+    }
+    if (summary && reasons.length) errors.push('Unverified nested tool census: ' + tool.id);
+    if (descendants.some(child => child.status !== 'pass')) reasons.push('An executed descendant did not finish successfully');
+    tool.container = { complete: reasons.length === 0 && tool.status === 'pass', descendant_ids: descendants.map(child => child.id),
+      reasons, refs: uniqueRefs([native.get(tool.id)?.ref, ...descendants.flatMap(child => child.refs)]) };
+  }
+  if (errors.length) for (const tool of tools) if (tool.container) tool.container.complete = false;
   return { tools, complete: errors.length === 0, errors };
+}
+
+// Reviewed Pi builtin wrapper contract: QuickJS receives tool bridges, not Node,
+// filesystem or network globals. This pin does not attest the whole installation.
+const codeModeModules = {
+  'index.js': ['7306902a1079689f601231d4c9bd3abb1d92ec388d202ff08920e4aee87343f4', 1620],
+  'tool.js': ['6904d6b3ebb66e6d9b6eac5cce8f70c11d01ddc3a0a0422ba78645558476d319', 17993],
+  'execute.js': ['18c746d8ec9ad52c17bae4357a374629d500823e7744281905c8a1faf9c17791', 34675],
+};
+export function verifiedCodeModeRuntime({ candidate, expected, admission, after }) {
+  try {
+    assert.deepEqual(candidate.projection, expected.projection); assert.deepEqual(admission.differences, []);
+    assert.deepEqual(after.differences, []);
+    const pinned = files => Object.entries(codeModeModules).map(([name, [sha256, bytes]]) => {
+      const matches = files.filter(file => file.path?.endsWith('/dist/extensions/codemode/' + name));
+      assert.equal(matches.length, 1); assert.equal(matches[0].sha256, sha256); assert.equal(matches[0].bytes, bytes);
+      return matches[0];
+    });
+    for (const view of [candidate.snapshot, candidate.projection]) {
+      assert.equal(view.entry_kind, 'pi-sdk'); assert.equal(view.code_mode.enabled, true); assert.equal(view.code_mode.models, false);
+      assert.equal(view.factories.codemode, 'public createCodemodeExtension, models:false');
+      const owners = view.extensions.filter(extension => extension.tools.includes('codemode'));
+      assert.equal(owners.length, 1); assert.equal(owners[0].resolved_path, 'builtin:codemode');
+      assert.deepEqual(owners[0].handlers, []);
+      const declared = view.tools.all.filter(tool => tool.name === 'codemode');
+      assert.equal(declared.length, 1); assert.equal(declared[0].sourceInfo.path, 'builtin:codemode');
+      assert.equal(declared[0].sourceInfo.source, 'builtin'); pinned(view.pi.files);
+    }
+    assert.deepEqual(pinned(candidate.snapshot.pi.files), pinned(after.files));
+    return true;
+  } catch { return false; }
 }
 
 function bodySpan(text, proof, defaultHashKey = 'bodySha256') {
@@ -159,8 +233,53 @@ function bodySpan(text, proof, defaultHashKey = 'bodySha256') {
   return hash(body) === proof[defaultHashKey] && Buffer.byteLength(body) === proof.bytes ? body : null;
 }
 
+function preparedResourceBodies(tool, preparations) {
+  if (tool.name !== 'read' || !/^sr:[SR][A-Za-z0-9_-]{22}$/u.test(tool.args?.path ?? '') || !tool.turn_id) return [];
+  const text = textContent(tool.result.content), matches = [];
+  if (typeof text !== 'string' || tool.result.structuredContent !== undefined && tool.result.structuredContent !== text) return [];
+  try {
+    for (const preparation of preparations.filter(item => item.status === 'pass' && ['skill_prepare', 'notion_use'].includes(item.name) &&
+      item.turn_id === tool.turn_id && Number.isSafeInteger(item.end_sequence) && item.end_sequence < tool.sequence)) {
+      const verified = verifyPreparationEvidence(textContent(preparation.result?.content), preparation.result?.details?.contextBrokerPreparation, preparation.id);
+      for (const { model, receipt, mapping } of verified.records) {
+        if (mapping.state !== 'source' || !model.directory) continue;
+        const binding = receipt.binding, owner = binding.record.id;
+        assert.ok(typeof owner === 'string' && owner); assert.match(binding.scope, /^[a-f0-9]{64}$/u);
+        assert.match(binding.snapshot_id, /^s_[a-f0-9]{64}$/u); assert.match(binding.version_id, /^[a-f0-9]{64}$/u);
+        assert.equal(receipt.contentIdentity, JSON.stringify([binding.scope, owner]));
+        const paths = new Set(), tokens = new Set();
+        for (const [index, file] of receipt.directory.files.entries()) {
+          const projected = model.directory.files[index], fixed = new URL(file.ref);
+          assert.equal(fixed.protocol, 'skill:'); assert.equal(decodeURIComponent(fixed.hostname), owner);
+          assert.equal(fixed.pathname.slice(1).split('/').map(decodeURIComponent).join('/'), file.path);
+          assert.deepEqual(fixed.searchParams.getAll('snapshot'), [binding.snapshot_id]);
+          assert.ok(!fixed.username && !fixed.password && !fixed.port && !fixed.hash);
+          assert.match(file.sha256, /^[a-f0-9]{64}$/u); assert.ok(finite(file.bytes));
+          assert.ok(!paths.has(file.path) && !tokens.has(projected.ref)); paths.add(file.path); tokens.add(projected.ref);
+          if (projected.ref === tool.args.path) matches.push({ path: file.path, sha256: file.sha256, bytes: file.bytes,
+            source_binding: { owner, scope: binding.scope, snapshot_id: binding.snapshot_id, version_id: binding.version_id },
+            refs: preparation.refs, preparation_tool_call_id: preparation.id });
+        }
+      }
+    }
+    const identities = new Set(matches.map(({ refs, preparation_tool_call_id, ...identity }) => canonicalJson(identity)));
+    if (identities.size !== 1) return [];
+    const selected = matches[0], body = bodySpan(text, selected, 'sha256');
+    return body === null ? [] : [{ ...selected, body, owner: selected.source_binding.owner, kind: 'broker-prepared-resource-read',
+      refs: uniqueRefs(matches.flatMap(item => item.refs)) }];
+  } catch { return []; } // Unverified, ambiguous or cross-turn short refs stay opaque.
+}
+
+export function preparedSourceMatches(binding, material, sdk, bytes) {
+  const versions = material.version ? [material.identity.bound_versions?.[material.version]] : Object.values(material.identity.bound_versions ?? {});
+  return binding.owner === material.identity.bound_owner && versions.length === 1 &&
+    versions[0]?.snapshot_id === binding.snapshot_id && versions[0]?.version_id === binding.version_id &&
+    ['owner', 'scope', 'snapshot_id', 'version_id'].every(key => sdk[key] === binding[key]) &&
+    sdk.path === material.path && sdk.sha256 === material.actual_sha256 && sdk.bytes === bytes;
+}
+
 /** Complete delivered bytes backed by product receipts; declarations without bytes are excluded. */
-export function deliveredSourceBodies(tool) {
+export function deliveredSourceBodies(tool, preparations = []) {
   if (tool.status !== 'pass' || !object(tool.result)) return [];
   const text = textContent(tool.result.content), details = tool.result.details ?? {}, output = [];
   const main = details.contextBrokerRead;
@@ -192,6 +311,7 @@ export function deliveredSourceBodies(tool) {
       }
     } catch { /* An unverified projection does not prove source consumption. */ }
   }
+  if (!main && !resource) output.push(...preparedResourceBodies(tool, preparations));
   return output;
 }
 
@@ -353,11 +473,13 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
         assert.equal(hash(body), value.sha256); assert.equal(Buffer.byteLength(body), value.bytes);
         if (output) { assert.equal(output.sha256, value.sha256); assert.equal(output.bytes, value.bytes); }
         sdkBodyRows.push({ operation_id: entry.requestId, path: value.path ?? 'SKILL.md', owner: value.record?.id ?? null,
+          scope: value.scope, snapshot_id: value.snapshot_id, version_id: value.version_id,
           sha256: hash(body), bytes: Buffer.byteLength(body), ref: receiptRefs.get(entry.requestId) });
       }
       for (const entry of views.resources) for (const file of entry.value.files) {
         const bytes = Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8');
         sdkBodyRows.push({ operation_id: entry.requestId, path: file.path, owner: entry.value.selection.owner,
+          scope: entry.value.selection.scope, snapshot_id: entry.value.selection.snapshot_id, version_id: entry.value.selection.version_id,
           sha256: hash(bytes), bytes: bytes.length, ref: receiptRefs.get(entry.requestId) });
       }
       assert.equal(episode.notion.coverage?.sdk, 'complete'); assert.equal(episode.notion.coverage?.owned_http, 'complete');
@@ -444,6 +566,21 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
   const toolResult = eventArtifact ? collectRuntimeTools(events, eventArtifact, sessionEntries, sessionArtifact) : { tools: [], complete: false, errors: ['Missing SDK event evidence'] };
   const tools = toolResult.tools;
   if (!toolResult.complete) problems.push('tool_lineage_incomplete');
+  const codeModeRuntime = { status: 'unverified', refs: [], scope: 'reviewed builtin wrapper modules; not the entire Pi installation' };
+  if (tools.some(tool => tool.container)) try {
+    assert.equal(episode.admission.status, 'accepted_before_task');
+    const candidate = registry.get('candidate-observed'), admission = registry.get('admission-comparison');
+    for (const artifact of [candidate, admission]) assert.ok(artifact && episode.admission.refs.some(item => item.artifact_id === artifact.id && item.sha256 === artifact.sha256));
+    const comparison = JSON.parse(fileBytes.get(admission.id));
+    const expected = await addFile('collection-provider-binding-expectation', comparison.expected_file.path, comparison.expected_file.sha256);
+    const after = events.map((row, index) => ({ row, index })).filter(item => item.row.type === 'sdk_runtime_after');
+    assert.equal(after.length, 1); assert.ok(tools.every(tool => tool.execution === 'rejected_before_execution' ||
+      Number.isSafeInteger(tool.end_sequence) && tool.end_sequence < after[0].index + 1));
+    assert.ok(verifiedCodeModeRuntime({ candidate: JSON.parse(fileBytes.get(candidate.id)), expected: JSON.parse(fileBytes.get(expected.id)),
+      admission: comparison, after: after[0].row.data }));
+    codeModeRuntime.status = 'verified'; codeModeRuntime.refs = [ref(candidate), ref(admission), ref(expected),
+      { artifact_id: eventArtifact.id, sha256: eventArtifact.sha256, line: after[0].index + 1 }];
+  } catch (error) { codeModeRuntime.reason = error.message; }
   const evidence = { artifacts: [], selections: [], resource_reads: [], clarifications: turnFacts.clarifications,
     state_events: turnFacts.state_events,
     coverage: { artifacts: 'partial', selections: 'partial', resource_reads: 'partial', ...turnFacts.coverage } };
@@ -474,26 +611,33 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     return candidates.sort((a, b) => (b.available_from_turn_id ? episode.turns.findIndex(turn => turn.id === b.available_from_turn_id) : -1) -
       (a.available_from_turn_id ? episode.turns.findIndex(turn => turn.id === a.available_from_turn_id) : -1))[0] ?? null;
   }
-  function observeSource(tool, body, resourcePath, owner, actualPath, kind) {
+  function observeSource(tool, body, resourcePath, owner, actualPath, kind, sourceBinding = null) {
     const material = matchMaterial(Buffer.isBuffer(body) ? body : Buffer.from(body), resourcePath, owner, actualPath, tool.turn_id);
     if (!material) { unmatchedReads.push({ tool_call_id: tool.id, path: resourcePath, owner, actual_sha256: hash(body), reason: 'No unique independently verified material mapping' }); return false; }
     const evidence_id = 'source-' + evidence.resource_reads.length;
     const sdkMatches = sdkBodyRows.filter(row => row.sha256 === material.actual_sha256 && row.path === material.path &&
-      (!row.owner || [material.skill_id, material.identity.bound_owner, material.identity.bound_skill_id].includes(row.owner)));
+      (!row.owner || [material.skill_id, material.identity.bound_owner, material.identity.bound_skill_id].includes(row.owner)) &&
+      (!sourceBinding || preparedSourceMatches(sourceBinding, material, row, Buffer.byteLength(body))));
+    if (sourceBinding && sdkMatches.length === 0) {
+      unmatchedReads.push({ tool_call_id: tool.id, path: resourcePath, owner, reason: 'Prepared reference has no independently observed source binding' }); return false;
+    }
     const refs = uniqueRefs([...tool.refs, ...material.refs, ...sdkMatches.map(row => row.ref)]);
     evidence.resource_reads.push({ skill_id: material.skill_id, path: material.path, sha256: material.canonical_sha256,
       actual_sha256: material.actual_sha256, mapping: material.mapping ?? (material.actual_sha256 === material.canonical_sha256 ? 'exact-bytes' : 'verified-material-parity'),
       ...(material.version ? { version: material.version, state_event_id: material.event_id } : {}),
       turn_id: tool.turn_id, evidence_id, tool_call_id: tool.id, kind,
+      ...(sourceBinding ? { source_binding: sourceBinding } : {}),
       sdk_operation_ids: sdkMatches.map(row => row.operation_id), sdk_association: 'matching bytes and identity; causal association unproven' });
     evidenceRefs.set(evidence_id, refs);
     if (material.path === 'SKILL.md') evidence.selections.push({ skill_id: material.skill_id, evidence_id, turn_id: tool.turn_id, tool_call_id: tool.id });
     return true;
   }
   for (const tool of tools) {
-    if (tool.status !== 'pass') continue;
-    const delivered = deliveredSourceBodies(tool);
-    for (const item of delivered) observeSource(tool, item.body, item.path, item.owner, null, item.kind);
+    if (tool.execution === 'rejected_before_execution') continue;
+    if (tool.container?.complete && codeModeRuntime.status === 'verified') { tool.refs = uniqueRefs([...tool.refs, ...codeModeRuntime.refs, ...tool.container.refs]); continue; }
+    if (tool.status !== 'pass') { if (!['read', 'write', 'edit'].includes(tool.name)) opaqueTools.push(tool.id); continue; }
+    const delivered = deliveredSourceBodies(tool, tools);
+    for (const item of delivered) observeSource({ ...tool, refs: uniqueRefs([...tool.refs, ...(item.refs ?? [])]) }, item.body, item.path, item.owner, null, item.kind, item.source_binding);
     if (delivered.length) continue;
     if (tool.name === 'read' && typeof tool.args?.path === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(tool.args.path)) {
       const actualPath = isAbsolute(tool.args.path) ? resolve(tool.args.path) : resolve(workspace, tool.args.path);
@@ -567,6 +711,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       skill_id: row.skill_id, path: row.path, version: row.version, actual_sha256: row.actual_sha256,
       canonical_sha256: row.canonical_sha256, available_from_turn_id: row.available_from_turn_id, event_id: row.event_id, mapping: row.mapping })) },
     evidence, output_checks: outputChecks, tool_lineage_errors: toolResult.errors, unmatched_reads: unmatchedReads, opaque_tools: opaqueTools,
+    code_mode_runtime: codeModeRuntime, tool_containers: tools.filter(tool => tool.container).map(tool => ({ tool_call_id: tool.id, ...tool.container })),
     limitations: ['Source consumption requires delivered bytes and independently verified material parity.',
       'Opaque shell or arbitrary tool filesystem access is not inferred from code text or tool count.',
       'No clarification or state callback is synthesized from an expected event.'],

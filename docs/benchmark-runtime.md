@@ -189,6 +189,37 @@ arguments, results, errors and nested calls. A failed CodeMode parent can theref
 coexist with a successful child and an observed remote effect. The runtime does
 not convert a tool result into a business-success judgment.
 
+Collector 1.2.0 can treat a CodeMode call as a transparent container only when
+the retained native `nestedCalls.complete` census matches every actual child
+callback: IDs, names, full arguments, terminal status, ancestry, turn and lifetime.
+The direct-call census must also match. The parent and all executed descendants
+must succeed; every descendant is still classified separately. Shell calls and
+unknown tools remain opaque, including calls whose failure was caught by a script.
+Neither script source nor a correct business output proves an unobserved read.
+
+The container exemption additionally requires matching frozen admission and
+before/after runtime evidence for the reviewed Pi builtin wrapper modules
+(`codemode/index.js`, `tool.js` and `execute.js`), with `models:false` and builtin
+tool ownership. Unknown module bytes retain the opaque classification. The
+collector pins the reviewed wrapper contract; this is not an attestation of the
+entire Pi installation, worker/Wasm dependency closure or operating-system isolation.
+The readback retains the admission and census references behind the exemption.
+
+A resource short reference without its own child receipt can be recovered from
+an earlier complete, verified preparation projection in the same user turn.
+Its public token must map unambiguously to the canonical owner, scope, snapshot,
+version, path, hash and byte count. The actual child result must contain the full
+matching text, and both the independent material version and observed SDK source
+identity must agree. Conflicting tokens, partial text, unverified preparations
+and cross-turn reuse do not qualify. These are matching bytes and identities;
+they do not establish a causal association between a tool call and an SDK operation.
+
+Corrections are saved by the existing offline `reanalysis` command in a new
+directory. The collector version, actual source hash, retained import closure
+and `reanalysis_of` identity distinguish the new view without changing the old
+admission, usage, stop or grade artifacts. The normalizer and success criteria
+remain unchanged.
+
 Each user turn records start/end monotonic times, the same session ID, final text,
 `agent_settled`, and a measured workspace file inventory. The optional
 `hooks.afterTurn({turn_id, ref})` lets the controller pause for its own independent

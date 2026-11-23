@@ -167,6 +167,14 @@ test('opaque shell filesystem use cannot prove that no Skill was consumed',async
   assert.equal(result.grade.business_outcome,'pass');assert.equal(result.outcome,'unknown');
   assert.equal(result.grade.contracts.find(c=>c.id==='selection').status,'unknown');
 });
+test('an executed shell failure or unknown terminal status cannot prove absent source consumption',async()=>{
+  for(const isError of [true,undefined]) {
+    const result=await collect(await fixture({tools:[{id:'failed-shell',name:'bash',args:{command:'run a script'},
+      result:{content:[{type:'text',text:'partial output before failure'}]},isError}]}));
+    assert.equal(result.grade.business_outcome,'pass');assert.equal(result.outcome,'unknown');
+    assert.deepEqual(result.readback.opaque_tools,['failed-shell']);
+  }
+});
 test('mutated output after the observed subject boundary cannot become assisted success',async()=>{
   const f=await fixture();await f.save(join(f.workspace,'output/result.json'),{answer:9});
   const result=await collect(f);assert.equal(result.validity,'invalid');assert.equal(result.stop_batch,true);
