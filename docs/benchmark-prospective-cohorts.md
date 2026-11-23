@@ -97,10 +97,21 @@ label. Neither label is independent attestation of the gateway's underlying
 backend. Reports must keep this assurance limit visible.
 
 For `auto-route`, the requested route is exactly `auto/<model_variant>` and the
-backend remains `opaque_alias`. Its identical response label may be placed in
-the frozen allowlist before execution; another auto or group alias cannot match
-by suffix alone. The evidence distinguishes `requested_route_alias` from
-`concrete_reported_label` while retaining the same non-attestation assurance.
+backend remains `opaque_alias`. The frozen allowlist may explicitly include that
+response label or the canonical `group/auto-<model_variant>` label, with periods
+in the variant spelled as hyphens. For example, `auto/grok-4.7` may declare
+`group/auto-grok-4-7`. Verify that exact group against the selected gateway's
+configuration before freezing it. Fixed routes cannot declare these aliases;
+other groups, variants and prefixed or suffixed labels cannot match by pattern.
+The evidence labels either declared alias `requested_route_alias`, retaining
+the same non-attestation assurance as `concrete_reported_label`.
+
+A historical policy that did not declare its canonical group continues to
+produce the original `mismatch` and `unrecognized_label` report. Add a verified
+group only in a new prospective plan. Retain the earlier stopped run and its
+usage; do not reclassify it or modify its frozen subject package. A runtime
+change requires newly paired subject builds with the same reviewed change in
+each comparison arm.
 
 ## Retain history without turning new failures into exceptions
 
