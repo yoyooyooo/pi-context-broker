@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildCorpus, sealCorpus } from './corpus/index.mjs';
-import { planBenchmarkFixture, prepareBenchmarkFixture, inspectBenchmarkFixture, applyBenchmarkFixtureEvent, preparationResumeDecision } from './fixture.mjs';
+import { planBenchmarkFixture, prepareBenchmarkFixture, inspectBenchmarkFixture, applyBenchmarkFixtureEvent, preparationResumeDecision, readPreparationDispatches } from './fixture.mjs';
 
 const corpus = buildCorpus({ seed: 'benchmark-route-gate-v1', split: 'development', materialVersion: '2' });
 const sharedCases = ['no-skill-01-a','no-skill-02-a','no-skill-03-a','explicit-01-a',
@@ -81,6 +81,66 @@ test('real pinned source recipes retain full canonical bytes and complete indepe
   assert.ok(expected.some(item => item.path === 'assets/format-marker.bin' && item.encoding === 'base64'));
   assert.ok(expected.some(item => item.path === 'assets/empty.txt' && item.bytes === 0));
   assert.equal(plan.fixture.source_claim, 'requires-public-readback');
+});
+
+test('exact-resource authoring is explicit, freezes only native owners and rejects unsupported relations or versions', () => {
+  const ordinary = planBenchmarkFixture(options(['references-01-a']));
+  const exact = planBenchmarkFixture(options(['references-01-a'], { authoring: 'native-main-exact-resources' }));
+  assert.equal(ordinary.authoring, undefined); assert.ok(ordinary.fixture.recipe.objects.every(object => object.authoring === undefined));
+  assert.equal(exact.authoring, 'native-main-exact-resources');
+  assert.ok(exact.fixture.recipe.objects.every(object => object.authoring === exact.authoring));
+  assert.deepEqual(exact.corpus, ordinary.corpus); assert.deepEqual(exact.fixture.expected_inventory, ordinary.fixture.expected_inventory);
+  assert.notEqual(exact.plan_sha256, ordinary.plan_sha256);
+  const skillId = 'scripts-assets-01-a-manifest';
+  const source = planBenchmarkFixture(options(['scripts-assets-01-a'], { authoring: exact.authoring, sourceBindings: { [skillId]: sourceBinding(skillId) } }));
+  assert.ok(source.fixture.recipe.objects.filter(object => object.placement === 'source').every(object => object.authoring === undefined));
+  assert.throws(() => planBenchmarkFixture(options(['complementary-01-a'], { authoring: exact.authoring })), /does not support requires/);
+  assert.throws(() => planBenchmarkFixture(options(['continuation-02-a'], { authoring: exact.authoring, access: 'episode-owned', episodeId: 'versioned' })), /one immutable version/);
+  assert.throws(() => planBenchmarkFixture(options(['references-01-a'], { authoring: 'unknown' })), /Unknown fixture authoring/);
+});
+
+test('an explicit per-Skill authoring map preserves every unselected object and its relations', () => {
+  const policy = 'native-main-exact-resources', selectedId = 'references-01-a-grant';
+  const original = planBenchmarkFixture(options(sharedCases));
+  const selected = planBenchmarkFixture(options(sharedCases, { authoringBySkill: { [selectedId]: policy } }));
+  assert.equal(selected.authoring, undefined); assert.deepEqual(selected.authoring_by_skill, { [selectedId]: policy });
+  assert.deepEqual(selected.corpus, original.corpus); assert.deepEqual(selected.fixture.expected_inventory, original.fixture.expected_inventory);
+  const alias = selected.fixture.skill_mapping[selectedId].object_id;
+  for (const object of selected.fixture.recipe.objects) {
+    const previous = original.fixture.recipe.objects.find(item => item.id === object.id);
+    assert.deepEqual(object, object.id === alias ? { ...previous, authoring: policy } : previous);
+  }
+  const relationId = selected.fixture.skill_mapping['complementary-01-a-privacy'].object_id;
+  assert.ok(selected.fixture.recipe.objects.find(object => object.id === relationId).versions.v1.requires.length > 0);
+  for (const extra of [
+    { authoring: policy, authoringBySkill: { [selectedId]: policy } },
+    { authoringBySkill: {} }, { authoringBySkill: { s008: policy } },
+    { authoringBySkill: { [selectedId]: 'unknown' } },
+    { authoringBySkill: { 'complementary-01-a-privacy': policy } },
+  ]) assert.throws(() => planBenchmarkFixture(options(sharedCases, extra)));
+  const sourceId = 'scripts-assets-01-a-manifest';
+  assert.throws(() => planBenchmarkFixture(options(['scripts-assets-01-a'], { sourceBindings: { [sourceId]: sourceBinding(sourceId) },
+    authoringBySkill: { [sourceId]: policy } })), /requires a Notion object/);
+});
+
+test('retained unknown imports count as writes while dry-run and other-owner receipts do not', async () => {
+  const control_root = await scratch(), owned = { skillId: 'owned-import' }, commandRoot = join(control_root, 'objects/commands');
+  await mkdir(commandRoot, { recursive: true }); await mkdir(join(control_root, 'commands'));
+  const command = [process.execPath, '/selected/cli.mjs', 'ctl', 'library', 'import', '/complete/input', '--entry', 'entry', '--skill-id', owned.skillId, '--native', 'SKILL.md'];
+  const records = [
+    { command: [...command, '--dry-run'], code: 0, stdout: '{"ok":true}' },
+    { command: command.map(value => value === owned.skillId ? 'another-owner' : value), code: 1, stdout: '' },
+    { command: [process.execPath, '/selected/cli.mjs', 'help', 'create', '--skill-id', owned.skillId], code: 0, stdout: '' },
+  ];
+  for (const [i, record] of records.entries()) await writeFile(join(commandRoot, i + '.json'), JSON.stringify(record));
+  assert.deepEqual(await readPreparationDispatches({ control_root }, owned), []);
+  const retained = { command, code: 1, stdout: 'incomplete acknowledgement', dispatch_intent: { path: '/owned/intent.json', sha256: 'a'.repeat(64) } };
+  const path = join(control_root, 'commands/resume-import.json'); await writeFile(path, JSON.stringify(retained));
+  const dispatches = await readPreparationDispatches({ control_root }, owned);
+  assert.equal(dispatches.length, 1); assert.equal(dispatches[0].native, true); assert.equal(dispatches[0].value, undefined);
+  assert.equal(dispatches[0].receipt.sha256, sha(await readFile(path))); assert.deepEqual(dispatches[0].dispatch_intent, retained.dispatch_intent);
+  assert.equal(preparationResumeDecision({ absence: { status: 'passed', observed: { absent: true }, artifact: { sha256: 'b'.repeat(64) } },
+    operation: { status: 'not_found', operation: null }, allClaimsAccounted: true, knownNeverDispatched: dispatches.length === 0 }), 'unknown');
 });
 
 test('unreviewed or credential-bearing upstream members fail before any provider action', () => {

@@ -259,6 +259,24 @@ and uses the selected immutable CLI build and the existing Notion credential.
 }
 ```
 
+For immutable native objects with byte-exact auxiliary files, add
+`"authoring": "native-main-exact-resources"`. This explicit policy is passed
+through `planBenchmarkFixture` into every native object's frozen recipe.
+Initial creation and a legitimate never-dispatched continuation use the same
+complete-import argument builder and public dry-run absence guard. Retained
+import commands count as dispatched writes, including unknown outcomes;
+read-only dry-runs do not. An existing owner cannot be replaced as preparation.
+Unsupported version, relation or metadata declarations fail validation instead
+of being silently omitted. Pinned Source objects keep their declared Source
+preparation. The default policy is unchanged.
+
+An explicit `authoring_by_skill` map can select a subset by canonical Skill ID
+instead of the global policy. Unknown or unscheduled IDs are rejected. Selected
+owners must satisfy the same immutable-version and no-relation/metadata limits;
+all unselected owners keep their existing authoring behavior. The two selectors
+cannot be combined. See [setup fields](benchmark-running.md#owned-episode-material)
+for the exact map shape.
+
 The parent must be the explicitly authorized synthetic-material parent. This
 configuration path currently supports a complete remote catalog, including
 explicit pinned source bindings. `project` and `mixed` placement are rejected

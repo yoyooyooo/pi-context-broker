@@ -158,6 +158,53 @@ test('a lost ready acknowledgement reconciles the same scope without preparing i
   assert.equal((await read(args, recovered.registration)).size, 1);
 });
 
+test('first-use import fixtures recover and reuse the same complete snapshot across all eight slots', async () => {
+  const args = await firstUseFixture(); args.policy.authoring = 'native-main-exact-resources';
+  let preparations = 0, reconciliations = 0, retained;
+  const prepare = async plan => {
+    preparations++;
+    assert.equal(plan.authoring, args.policy.authoring);
+    assert.ok(plan.fixture.recipe.objects.every(object => object.authoring === args.policy.authoring));
+    const ready = await materialize(plan);
+    if (preparations === 1) { retained = ready; throw new Error('lost first acknowledgement'); }
+    return ready;
+  };
+  await assert.rejects(prepareEpisodeFixtures(args, { prepare }), /unresolved/);
+  const changed = structuredClone(args); changed.corpus.control.canaries[0].value += '-regenerated';
+  await assert.rejects(prepareEpisodeFixtures(changed, { prepare, reconcile: () => { reconciliations++; } }), /Retained preparation belongs/);
+  assert.equal(preparations, 1); assert.equal(reconciliations, 0);
+  const recovered = await prepareEpisodeFixtures(args, { prepare, reconcile: async () => { reconciliations++; return retained; } });
+  assert.equal(preparations, 8); assert.equal(reconciliations, 1); assert.equal(recovered.slots.size, 8);
+  assert.equal((await read(args, recovered.registration)).size, 8);
+  const noDispatch = { prepare: () => { throw new Error('no repeated write'); }, reconcile: () => { throw new Error('no repeated remote read'); } };
+  assert.deepEqual((await prepareEpisodeFixtures(args, noDispatch)).registration, recovered.registration);
+  await assert.rejects(prepareEpisodeFixtures(changed, noDispatch), /same complete public and private corpus/);
+  await assert.rejects(read(changed, recovered.registration), /same complete public and private corpus/);
+});
+
+test('per-Skill policy is frozen only in matching slots and rejects unselected keys before allocation', async () => {
+  const args = await firstUseFixture(), target = 'references-01-a-grant', policy = 'native-main-exact-resources';
+  args.policy.authoring_by_skill = { [target]: policy };
+  let allocations = 0;
+  await assert.rejects(prepareEpisodeFixtures({ ...args, policy: { ...args.policy, authoring_by_skill: { s008: policy } } }, {
+    prepare: () => { allocations++; },
+  }), /outside the scheduled owned catalogs/);
+  assert.equal(allocations, 0);
+  assert.throws(() => validateEpisodeFixturePolicy({ ...args.policy, authoring: policy }), /not both/);
+  assert.throws(() => validateEpisodeFixturePolicy({ ...args.policy, authoring_by_skill: {} }), /nonempty canonical Skill map/);
+  const plans = [], prepared = await prepareEpisodeFixtures(args, { prepare: plan => { plans.push(plan); return materialize(plan); } });
+  assert.equal(plans.length, 8);
+  for (const plan of plans) {
+    const mapping = plan.fixture.skill_mapping[target];
+    assert.deepEqual(plan.authoring_by_skill, mapping ? { [target]: policy } : undefined);
+    assert.equal(plan.fixture.recipe.objects.filter(object => object.authoring !== undefined).length, mapping ? 1 : 0);
+    if (mapping) assert.equal(plan.fixture.recipe.objects.find(object => object.id === mapping.object_id).authoring, policy);
+  }
+  assert.equal((await read(args, prepared.registration)).size, 8);
+  const reused = await prepareEpisodeFixtures(args, { prepare: () => { throw new Error('cannot recreate'); }, reconcile: () => { throw new Error('cannot reconcile complete slots'); } });
+  assert.deepEqual(reused.registration, prepared.registration);
+});
+
 test('read-only cases require no fixture policy or effects; unsupported placement is rejected before preparation', async () => {
   const args = await fixture(1); args.cases[0].events = [];
   const result = await prepareEpisodeFixtures({ ...args, policy: undefined }, { prepare: () => { throw new Error('no writes'); } });

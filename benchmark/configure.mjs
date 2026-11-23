@@ -5,6 +5,7 @@ import { isAbsolute, join } from 'node:path';
 import { fingerprint } from './protocol.mjs';
 import { buildCorpus, writeCorpus } from './corpus/index.mjs';
 import { buildStoreDiagnosticCorpus, STORE_FIRST_USE_GENERATOR } from './diagnostic-corpus.mjs';
+import { readCorpusSnapshot } from './corpus/snapshot.mjs';
 import { bindMaterializedCases, comparisonEnvironmentPairs, comparisonPairs, prepareCases, preregisterComparison } from './planning.mjs';
 import { prepareEpisodeFixtures, readEpisodeFixtureBindings, validateEpisodeFixturePolicy } from './fixture-dispatch.mjs';
 import { snapshotModels, verifiedModelConditions, resolveModelCredential } from './models.mjs';
@@ -60,6 +61,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   if (setup.candidates.length !== 2) assert.ok(setup.campaign_scope, 'Four candidates require an explicit finite campaign');
   assert.ok(!(setup.pilot_scope && setup.campaign_scope), 'A setup cannot mix scope contracts');
   assert.ok(setup.budget && setup.decision && setup.models && setup.corpus);
+  const snapshot = await readCorpusSnapshot(setup);
   const root = setup.control_root;
   await mkdir(root, { recursive: true });
   await save(join(root, 'setup.json'), setup);
@@ -69,6 +71,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     validateBatchPlan(existing);
     const proof = await readJson(join(root, 'configuration-proof.json'));
     assert.equal(proof.setup_sha256, fingerprint(setup)); assert.equal(proof.plan_sha256, existing.plan_sha256);
+    if (snapshot) assert.deepEqual(existing.execution.corpus_snapshot, setup.corpus.snapshot);
     await verifyExecutionImplementation(existing.execution.implementation);
     if (existing.execution.pilot_scope || existing.execution.campaign_scope) await verifyCampaignScope(existing);
     const bindings = await readJson(existing.execution.case_bindings_file);
@@ -87,15 +90,15 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     }
     await readEpisodeFixtureBindings({ id: existing.id, registration: existing.execution.episode_fixtures,
       environmentRoot: setup.environment_root, controlRoot: root, cases: bindings, slots: existing.slots,
-      candidates: existing.execution.conditions, runtime: existing.execution.runtime });
+      candidates: existing.execution.conditions, runtime: existing.execution.runtime, ...(snapshot ? { corpus: snapshot } : {}) });
     return { status: 'ready', plan: join(root, 'plan.json'), plan_sha256: existing.plan_sha256,
       scheduled_episodes: existing.slots.length, no_model_captures: proof.capture_count, actual_model_requests: 0, reused: true };
   }
   const materialization = setup.materialization_binding_file ? await readJson(setup.materialization_binding_file) : null;
   if (setup.corpus.generator !== undefined) assert.equal(setup.corpus.generator, STORE_FIRST_USE_GENERATOR, 'Unknown explicit corpus generator');
-  const corpus = materialization ? { publicCorpus: await readJson(materialization.public_corpus_path), control: await readJson(materialization.control_path) }
+  const corpus = snapshot ?? (materialization ? { publicCorpus: await readJson(materialization.public_corpus_path), control: await readJson(materialization.control_path) }
     : (setup.corpus.generator === STORE_FIRST_USE_GENERATOR ? buildStoreDiagnosticCorpus : buildCorpus)(
-      { seed: setup.corpus.seed, split: setup.corpus.split, materialVersion: setup.corpus.material_version });
+      { seed: setup.corpus.seed, split: setup.corpus.split, materialVersion: setup.corpus.material_version }));
   if (setup.corpus.generator !== undefined) assert.equal(corpus.publicCorpus.provenance.generator, setup.corpus.generator);
   assert.equal(corpus.publicCorpus.seed, setup.corpus.seed); assert.equal(corpus.publicCorpus.split, setup.corpus.split);
   assert.equal(corpus.publicCorpus.version, setup.corpus.material_version);
@@ -256,6 +259,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     case_bindings_file: bindingsFile, case_bindings_sha256: sha(await readFile(bindingsFile)),
     models_file: modelsFile, models_sha256: registry.sha256, model_base_url: registry.base_url, credential,
     adapter_evidence_file: setup.models.adapter_evidence_file,
+    ...(snapshot ? { corpus_snapshot: structuredClone(setup.corpus.snapshot) } : {}),
     ...(prepared.registration ? { episode_fixtures: prepared.registration } : {}),
     ...(setup.pilot_ledger_root ? { pilot_ledger_root: setup.pilot_ledger_root } : {}), ...(setup.route_gate ? { route_gate: setup.route_gate } : {}) };
   const resumption = await prepareZeroSendResumption({ setup, protocol, captures: results, currentSchedule: scheduleProtocol(protocol) });

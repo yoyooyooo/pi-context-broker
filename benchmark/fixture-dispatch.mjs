@@ -6,6 +6,7 @@ import { fingerprint } from './protocol.mjs';
 import { planBenchmarkFixture, prepareBenchmarkFixture, reconcileBenchmarkFixture } from './fixture.mjs';
 import { bindMaterializedCases } from './planning.mjs';
 import { diagnosticBinding, episodeFixtureSelections, validateFixtureDiagnostics } from './fixture-diagnostics.mjs';
+import { NATIVE_MAIN_EXACT_RESOURCES } from '../scripts/notion-agent-authoring.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const inside = (root, path) => { const child = relative(root, path); return child === '' || child !== '..' && !child.startsWith('../') && !isAbsolute(child); };
@@ -42,13 +43,30 @@ async function save(path, value) {
 export function validateEpisodeFixturePolicy(policy, { required = false } = {}) {
   if (policy === undefined) { assert.equal(required, false, 'Cases with events require setup.episode_fixtures before capture'); return null; }
   assert.equal(policy.version, 1);
-  assert.deepEqual(Object.keys(policy).filter(key => !['version', 'project_page_id', 'placement', 'source_bindings', 'git', 'diagnostics'].includes(key)), []);
+  assert.deepEqual(Object.keys(policy).filter(key => !['version', 'project_page_id', 'placement', 'source_bindings', 'authoring', 'authoring_by_skill', 'git', 'diagnostics'].includes(key)), []);
   assert.match(policy.project_page_id, /^[a-f0-9-]{32,36}$/i);
   assert.equal(policy.placement ?? 'notion', 'notion', 'Per-slot preparation currently requires a complete Notion/source catalog');
+  if (policy.authoring !== undefined) assert.equal(policy.authoring, NATIVE_MAIN_EXACT_RESOURCES, 'Unknown fixture authoring policy');
+  assert.ok(policy.authoring === undefined || policy.authoring_by_skill === undefined, 'Select global authoring or an explicit per-Skill map, not both');
+  if (policy.authoring_by_skill !== undefined) {
+    assert.ok(policy.authoring_by_skill && typeof policy.authoring_by_skill === 'object' && !Array.isArray(policy.authoring_by_skill)
+      && Object.keys(policy.authoring_by_skill).length > 0, 'Per-Skill authoring requires a nonempty canonical Skill map');
+    for (const value of Object.values(policy.authoring_by_skill)) assert.equal(value, NATIVE_MAIN_EXACT_RESOURCES, 'Unknown fixture authoring policy');
+  }
   if (policy.git !== undefined) assert.ok(isAbsolute(policy.git));
   assert.ok(policy.source_bindings === undefined || policy.source_bindings && typeof policy.source_bindings === 'object' && !Array.isArray(policy.source_bindings));
   validateFixtureDiagnostics(policy.diagnostics);
   return structuredClone(policy);
+}
+
+function slotAuthoring(policy, skillIds) {
+  const selected = Object.fromEntries(Object.entries(policy.authoring_by_skill ?? {}).filter(([skillId]) => skillIds.includes(skillId)));
+  return { authoring: policy.authoring, ...(Object.keys(selected).length ? { authoringBySkill: selected } : {}) };
+}
+function validateAuthoringSelection(policy, selections) {
+  const ownedSkills = new Set([...selections.values()].flatMap(item => item.baseBinding.public_case.catalog.skill_ids));
+  for (const skillId of Object.keys(policy?.authoring_by_skill ?? {}))
+    assert.ok(ownedSkills.has(skillId), 'Authoring map names a Skill outside the scheduled owned catalogs: ' + skillId);
 }
 
 function materialIdentity(binding) {
@@ -68,7 +86,7 @@ async function bindPrepared({ baseBinding, materialization, fixturePlan, fixture
   return { ...bound, protocol_case: structuredClone(baseBinding.protocol_case),
     fixture_control: await artifact(join(fixtureRoot, 'plan.json'), fixtureRoot) };
 }
-async function readSlot({ ref, slot, id, baseBinding, environmentRoot, controlRoot, policy, candidate, runtime }) {
+async function readSlot({ ref, slot, id, baseBinding, environmentRoot, controlRoot, policy, candidate, runtime, corpus }) {
   const episode = diagnosticBinding(baseBinding, slot.condition_id, policy.diagnostics);
   assert.equal(ref.path, join(controlRoot, 'slot-bindings', runIdFor(id, slot) + '.json'));
   await artifact(ref.path, controlRoot, ref); const record = await json(ref.path);
@@ -83,6 +101,9 @@ async function readSlot({ ref, slot, id, baseBinding, environmentRoot, controlRo
   await artifact(record.fixture_plan.path, fixtureRoot, record.fixture_plan);
   const plan = await json(record.fixture_plan.path), { plan_sha256, ...body } = plan;
   assert.equal(sha(JSON.stringify(body)), plan_sha256);
+  if (corpus !== undefined) assert.deepEqual(plan.corpus, corpus, 'Prepared fixture must retain the same complete public and private corpus');
+  assert.equal(plan.authoring, policy.authoring, 'Prepared fixture authoring policy differs');
+  assert.deepEqual(plan.authoring_by_skill, slotAuthoring(policy, baseBinding.public_case.catalog.skill_ids).authoringBySkill, 'Prepared fixture per-Skill authoring policy differs');
   assert.equal(plan.access, 'episode-owned'); assert.equal(plan.episode_id, record.run_id);
   assert.equal(plan.control_root, fixtureRoot); assert.equal(plan.owned_runtime_root, join(environmentRoot, 'runs', record.run_id));
   assert.equal(plan.project_page_id, policy.project_page_id);
@@ -110,6 +131,7 @@ export async function prepareEpisodeFixtures({ id, environmentRoot, controlRoot,
   const selections = episodeFixtureSelections({ cases, slots, candidates, diagnostics: supplied?.diagnostics });
   const mutable = slots.filter(slot => selections.has(slot.slot_id));
   const policy = validateEpisodeFixturePolicy(supplied, { required: mutable.length > 0 });
+  validateAuthoringSelection(policy, selections);
   if (!mutable.length) return { registration: null, slots: new Map() };
   assert.ok(isAbsolute(environmentRoot) && isAbsolute(controlRoot) && inside(environmentRoot, controlRoot));
   await canonicalDirectory(controlRoot);
@@ -123,7 +145,7 @@ export async function prepareEpisodeFixtures({ id, environmentRoot, controlRoot,
     assert.match(runId, /^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/, 'Episode fixture run IDs are bounded by the existing fixture API');
     const fixtureRoot = join(controlRoot, 'episode-fixtures', runId), recordPath = join(controlRoot, 'slot-bindings', runId + '.json');
     if (await present(recordPath)) {
-      const ref = await artifact(recordPath, controlRoot), result = await readSlot({ ref, slot, id, baseBinding, environmentRoot, controlRoot, policy, candidate, runtime });
+      const ref = await artifact(recordPath, controlRoot), result = await readSlot({ ref, slot, id, baseBinding, environmentRoot, controlRoot, policy, candidate, runtime, corpus });
       references[slot.slot_id] = ref; completed.set(slot.slot_id, result); continue;
     }
     const catalog = corpus.publicCorpus.cases.find(value => value.id === baseBinding.base_case_id)?.catalog.skill_ids;
@@ -132,7 +154,7 @@ export async function prepareEpisodeFixtures({ id, environmentRoot, controlRoot,
     const fixturePlan = planBenchmarkFixture({ corpus, caseIds: [baseBinding.base_case_id],
       scopeId: 'bm-' + sha(controlRoot + '\0' + slot.slot_id).slice(0, 24), controlRoot: fixtureRoot,
       projectPageId: policy.project_page_id, buildRoot: join(environmentRoot, 'builds', candidate.build_id), node: runtime.node,
-      placement: policy.placement ?? 'notion', sourceBindings, git: policy.git ?? null,
+      placement: policy.placement ?? 'notion', sourceBindings, ...slotAuthoring(policy, baseBinding.public_case.catalog.skill_ids), git: policy.git ?? null,
       access: 'episode-owned', episodeId: runId, ownedRuntimeRoot: join(environmentRoot, 'runs', runId),
       candidateCount: baseBinding.variant.candidate_count, roundCount: baseBinding.variant.round_count,
       events: episode.events,
@@ -173,15 +195,16 @@ export async function prepareEpisodeFixtures({ id, environmentRoot, controlRoot,
 
 /** Dispatch, recovery and reanalysis select retained bindings; no preparation
  * or remote command is reachable from this function. */
-export async function readEpisodeFixtureBindings({ id, registration, environmentRoot, controlRoot, cases, slots, candidates, runtime }) {
+export async function readEpisodeFixtureBindings({ id, registration, environmentRoot, controlRoot, cases, slots, candidates, runtime, corpus }) {
   const selections = episodeFixtureSelections({ cases, slots, candidates, diagnostics: registration?.policy?.diagnostics });
   const required = slots.filter(slot => selections.has(slot.slot_id));
   if (!registration) { assert.equal(required.length, 0, 'Stateful execution requires frozen per-slot materializations'); return new Map(); }
   assert.equal(registration.version, 1); const policy = validateEpisodeFixturePolicy(registration.policy, { required: true });
+  validateAuthoringSelection(policy, selections);
   assert.deepEqual(Object.keys(registration.slot_bindings).sort(), required.map(slot => slot.slot_id).sort(), 'Frozen episode fixtures must cover exactly the writable scheduled slots');
   const output = new Map();
   for (const slot of required) output.set(slot.slot_id, await readSlot({ ref: registration.slot_bindings[slot.slot_id], slot, id,
     baseBinding: cases.find(binding => binding.id === slot.case_id), environmentRoot, controlRoot, policy,
-    candidate: candidates[slot.condition_id], runtime }));
+    candidate: candidates[slot.condition_id], runtime, corpus }));
   return output;
 }

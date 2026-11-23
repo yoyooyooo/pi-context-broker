@@ -5,6 +5,7 @@ import { dirname, isAbsolute, relative, resolve, sep, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { canonicalJson, fingerprint } from '../protocol.mjs';
 import { validateAgentFixtureRecipe } from '../../scripts/notion-agent-scenarios.mjs';
+import { NATIVE_MAIN_EXACT_RESOURCES } from '../../scripts/notion-agent-authoring.mjs';
 import { buildJourney, JOURNEYS, FAMILY_COUNTS, createDistractor, hashBytes, corpusFile } from './materials.mjs';
 import { gradeEpisode, validateOracle } from './grader.mjs';
 
@@ -288,10 +289,22 @@ export async function materializeLocal({ publicCorpus, targetRoot, caseId, candi
 
 /** Builds preparation instructions for the existing real public-interface fixture helper. */
 export function buildFixtureRecipe({ publicCorpus, caseId, placement = 'notion', scopeId, candidateCount = 16,
-  roundCount, sourceBindings = {} } = {}) {
+  roundCount, sourceBindings = {}, authoring, authoringBySkill } = {}) {
   assert.match(scopeId, /^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$/);
   assert.ok(['project', 'notion', 'mixed'].includes(placement));
+  if (authoring !== undefined) {
+    assert.equal(authoring, NATIVE_MAIN_EXACT_RESOURCES, 'Unknown fixture authoring policy');
+    assert.equal(placement, 'notion', 'Exact-resource authoring requires Notion placement');
+  }
+  assert.ok(authoring === undefined || authoringBySkill === undefined, 'Select global authoring or an explicit per-Skill map, not both');
   const plan = planCaseVariant({ publicCorpus, caseId, candidateCount, roundCount });
+  if (authoringBySkill !== undefined) {
+    assert.ok(authoringBySkill && typeof authoringBySkill === 'object' && !Array.isArray(authoringBySkill) && Object.keys(authoringBySkill).length > 0, 'Per-Skill authoring requires a nonempty canonical Skill map');
+    for (const [skillId, policy] of Object.entries(authoringBySkill)) {
+      assert.ok(plan.skills.some(skill => skill.id === skillId), 'Authoring map names a Skill outside the selected catalog: ' + skillId);
+      assert.equal(policy, NATIVE_MAIN_EXACT_RESOURCES, 'Unknown fixture authoring policy');
+    }
+  }
   const aliases = new Map(plan.skills.map((skill, i) => [skill.id, 's' + String(i + 1).padStart(3, '0')]));
   const relationIds = new Set(plan.skills.flatMap(skill => skill.requires.length ? [skill.id, ...skill.requires] : []));
   const objects = plan.skills.map((skill, index) => {
@@ -313,8 +326,11 @@ export function buildFixtureRecipe({ publicCorpus, caseId, placement = 'notion',
     const where = source ? 'source' : placement === 'mixed'
       ? relationIds.has(skill.id) || index % 2 === 0 ? 'notion' : 'project' : placement;
     assert.ok(!skill.requires.length || where === 'notion' || where === 'project', 'Unsupported relation owner');
+    const selectedAuthoring = authoringBySkill && Object.hasOwn(authoringBySkill, skill.id) ? authoringBySkill[skill.id]
+      : where === 'notion' ? authoring : undefined;
     return { id: aliases.get(skill.id), name: skill.name, description: skill.description,
       placement: where, initial: skill.initial_version,
+      ...(selectedAuthoring !== undefined ? { authoring: selectedAuthoring } : {}),
       versions: Object.fromEntries(Object.entries(skill.versions).map(([version, value]) => [version, {
         files: value.files.map(({ path, content, encoding, mode }) => ({ path, content, encoding, mode })),
         ...(skill.requires.length && where === 'notion' ? { requires: skill.requires.map(id => aliases.get(id)) } : {}),
