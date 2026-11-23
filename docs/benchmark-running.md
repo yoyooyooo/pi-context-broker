@@ -10,6 +10,11 @@ records the actual GPT-6.2 Sol and Grok-4.6 results, the retained local-budget
 classification repair, and the later Notion-startup stop. Its frozen plan is
 stopped; it is evidence for review, not a ready-to-resume setup.
 
+The [2026-11-23 continuation checkpoint](../benchmark/results/2026-11-23-continuation-checkpoint/README.md)
+publishes the retained Grok alias failure, its seven-execution continuation, and
+a separate collector correction for the stopped expansion. It preserves fixed
+denominators, original scores and actual costs, with standalone public replay.
+
 For newly authorized work after a closed scope, use
 [finite prospective cohorts](benchmark-prospective-cohorts.md). They retain the
 original campaign ledger, freeze all historical costs and failures, and require

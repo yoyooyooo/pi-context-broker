@@ -1,0 +1,140 @@
+{
+  "kind": "collector-correction-publication-provenance",
+  "historical_release": {
+    "commit": "aa414f49c57eb1e170a91219d9dd429ada8a12db",
+    "repository_directory": "benchmark/results/2026-11-22-two-model-continuation/cohort-3-expansion",
+    "manifest_file_sha256": "f66dc82a024c1e0b988c84fdbef7b6697cc5adff2cbb6441e5ddd37c97215ef2",
+    "publication_version": "1.0.5",
+    "manifest_sha256": "8ffa9287497f929293c0b632496226a73823c3c7431f916214f823a6613743d9",
+    "source_analysis_sha256": "f47f7d9f187d6c9bed0d89b88ea3e6c143ef71ccd82266687b59de0bd74300ed",
+    "public_analysis_sha256": "0abbb0ae7d6498745a1f4d1cb64481b317d2e0fe9345ffc4eadd43efa2b38fad",
+    "source_protocol_sha256": "222089d06c41c36d2359194a42fe4d696f380f3eca3f84d3b885d64058246ce5",
+    "public_protocol_sha256": "229a6e5865b62c4bfb494b9eebfe4737ccf8af26767ff0d6a052b81ea38017a4",
+    "unchanged_analysis_meaning_sha256": "51078c116e9311f7fe862e4f15dcc17f44e33f3e6875ba373f5744704866e973"
+  },
+  "corrected_release": {
+    "package_directory": "collector-correction",
+    "publication_version": "1.0.6",
+    "manifest_sha256": "8568f021c4a4cdd388e750ad169afa8d3a18c70df00e7968370ace8045b71c34",
+    "source_analysis_sha256": "41204d09b6f5229ccd60fed39c6ba29aafd209ef9274497073e1d2e1cebdf437",
+    "public_analysis_sha256": "2cd000e056067cf7a42819ebbcf7f725458f4c26494813b82917444effe26d8c",
+    "source_protocol_sha256": "222089d06c41c36d2359194a42fe4d696f380f3eca3f84d3b885d64058246ce5",
+    "public_protocol_sha256": "229a6e5865b62c4bfb494b9eebfe4737ccf8af26767ff0d6a052b81ea38017a4",
+    "unchanged_analysis_meaning_sha256": "699ee6754aedc724c5e9a9dfeeba3e85e7222f083297528d1efffc3ad46fbac7"
+  },
+  "original_view_equivalence": {
+    "publication_version": "1.0.6",
+    "manifest_sha256": "0ef32c08deebe07077d649ccb36628a7538fb9231e7b08b5c7b523321be87085",
+    "source_analysis_sha256": "10411dda2f2964f52be0c8314ca166de6697bc978ef4d2a184f831c28de1610c",
+    "public_analysis_sha256": "09661f2d2d876877abf5930a49044a43426bf5785458d5f5766e618f04b23582",
+    "source_protocol_sha256": "222089d06c41c36d2359194a42fe4d696f380f3eca3f84d3b885d64058246ce5",
+    "public_protocol_sha256": "229a6e5865b62c4bfb494b9eebfe4737ccf8af26767ff0d6a052b81ea38017a4",
+    "unchanged_analysis_meaning_sha256": "51078c116e9311f7fe862e4f15dcc17f44e33f3e6875ba373f5744704866e973",
+    "all_seven_report_tables_equal_to_historical_release": true,
+    "completeness_equal": true,
+    "baseline_copy_for_local_verification_only": true,
+    "published_baseline_required": false
+  },
+  "population": {
+    "planned_slots": 32,
+    "physical_executions": 21,
+    "valid_slots": 20,
+    "unresolved_slots": 12,
+    "unstarted_slots": 11,
+    "invalid_executions": 1,
+    "views_are_same_executions": true,
+    "pool_analysis_views": false
+  },
+  "contract_results": {
+    "historical": {
+      "pass": 2,
+      "fail": 2,
+      "unknown": 16
+    },
+    "corrected": {
+      "pass": 6,
+      "fail": 2,
+      "unknown": 12
+    }
+  },
+  "business_results_among_valid_executions": {
+    "historical": {
+      "pass": 18,
+      "fail": 2
+    },
+    "corrected": {
+      "pass": 18,
+      "fail": 2
+    }
+  },
+  "changed_contract_results": [
+    {
+      "run": "benchmark-two-model-cohort-3-expansion-003",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "run": "benchmark-two-model-cohort-3-expansion-004",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "run": "benchmark-two-model-cohort-3-expansion-013",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "run": "benchmark-two-model-cohort-3-expansion-017",
+      "before": "unknown",
+      "after": "pass"
+    }
+  ],
+  "retained_unknown": [
+    {
+      "run": "benchmark-two-model-cohort-3-expansion-007",
+      "reason": "The binary resource has no observed read receipt; bash execution and correct output do not establish consumption."
+    },
+    {
+      "run": "benchmark-two-model-cohort-3-expansion-012",
+      "reason": "An executed bash descendant failed. The successful parent does not establish complete source effects."
+    },
+    {
+      "run": "benchmark-two-model-cohort-3-expansion-014",
+      "reason": "An executed bash descendant failed. The successful parent does not establish complete source effects."
+    },
+    {
+      "run": "benchmark-two-model-cohort-3-expansion-018",
+      "reason": "Two nested reads failed with missing paths. The parent caught these failures, so it cannot be treated as a complete successful container."
+    }
+  ],
+  "preserved": {
+    "original_files": 1433,
+    "execution_identity_admission_attempts_usage_stop": 21,
+    "business_results": true,
+    "cost_values": true,
+    "protocol_and_plan": true,
+    "normalizer_and_grader": true,
+    "historical_public_release": true
+  },
+  "implementation": {
+    "collector_version": "1.2.0",
+    "collector_source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+  },
+  "replay": {
+    "status": "verified",
+    "model_requests": 0,
+    "source_file_contents_denied": true,
+    "source_path_metadata_permitted": true,
+    "network_denied": true,
+    "inherited_credentials": false,
+    "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+    "baseline_dependency": false,
+    "command": "node collector-correction/replay.mjs"
+  },
+  "limitations": [
+    "Public replay verifies public hashes, source locators, and statistical reaggregation from normalized observations. It does not rerun the private grader or reconstruct the raw evidence chain.",
+    "The runtime proof covers the reviewed pinned CodeMode wrapper modules. It does not attest the whole SDK installation, worker, WebAssembly runtime, or operating system isolation.",
+    "Short-reference association establishes matching bytes and identity. Causal association with SDK consumption remains unproven.",
+    "Invalid model admission, unknown usage, stop decisions, and unstarted slots remain unchanged."
+  ]
+}

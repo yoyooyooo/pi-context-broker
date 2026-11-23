@@ -1,0 +1,133 @@
+{
+  "kind": "public-grok7-publication-provenance",
+  "prepared_on": "2026-11-23",
+  "publication_status": "verified_package",
+  "original_collector_version": "1.1.0",
+  "publication_version": "1.0.6",
+  "publisher_commit": "fc4ea55f4f7a2dd6cc14730bb6bdf59128e8e748",
+  "publisher_source_sha256": "219791be176bf722248c3a2a3d73738647f2dd97cc6aadab1877391e6858f236",
+  "source_report_files_sha256": {
+    "analysis-input.json": "5bf372b1a1391e5474de5297760bc91912e9c9b6a19fd3ab6cf1cf9a5f966778",
+    "analysis.json": "36efea64a6eff1b966bd8f7a4da21ed8380098669b0b9968b544583f64a87600",
+    "report-manifest.json": "fb7ec1cb5f45d29b7cc004595ef3d4ca4b4a9a17aa762a236e0cdf706cae75ce"
+  },
+  "source_analysis_sha256": "4e5a4e0cf1f1ccd8d4b2f6eb2c0022af16f37ef4ae27bede75b17315e3c9e2a6",
+  "public_analysis_sha256": "b11caa821731a440fc57b22a83eff914d4b552c8286804189bc7581e857ffa49",
+  "source_protocol_sha256": "76c5e0d5714c19f19c20603e4dd42009b6f765d0cc1174ebee9aa9d7c4ea0cfa",
+  "public_protocol_sha256": "fa2857940555363ebb83652f65fd086cf413980c729ca166d11f42e5d03b6be5",
+  "unchanged_analysis_meaning_sha256": "56887205a9782a6635839c5adee63ea9e97c298584067c18568b5faa58930b89",
+  "public_manifest_sha256": "2a7077d566443e71edb3ba4a5b8ae0977883cb70cd64201c12e07e56386b2d9c",
+  "public_manifest_file_sha256": "957263faaa76bed540f73f5aee3eb76d90dd0e9b07a9b1aac312a65f567ade98",
+  "public_inventory_sha256": "cee18b006dbeab525ddd12965216a18e49f0f11f5a9c532fc519f5a1f357a270",
+  "public_files": 334,
+  "public_bytes": 15315582,
+  "raw_source_mapping_count": 304,
+  "sample_counts": {
+    "planned": 8,
+    "valid": 7,
+    "unresolved": 1,
+    "invalid_runs": 0
+  },
+  "known_subject_usage": {
+    "actual_requests": 35,
+    "input_tokens": 275332,
+    "output_tokens": 8702
+  },
+  "missing_slot": {
+    "condition": "m0-e0",
+    "environment": "Broker",
+    "case": "no-skill-02-a-n16-r1",
+    "status": "unresolved"
+  },
+  "historical_alias_invalid": "Separate earlier experiment; retained as invalid and not counted as an eighth valid observation.",
+  "native_quality": {
+    "weighted_percent": 66.66666666666666,
+    "confidence": 0.95,
+    "interval_percent": [
+      0,
+      100
+    ],
+    "raw_passes": 2,
+    "raw_valid_executions": 4
+  },
+  "paired_decision": {
+    "status": "rejected",
+    "stage": "critical_contracts",
+    "scope": "General paired analysis, not route-gate or product acceptance."
+  },
+  "privacy": {
+    "validation": "Existing publisher privacy assertions passed before export; identifier mappings were not written.",
+    "policy": {
+      "credentials": "values removed; original secret mappings are never written",
+      "explicit_identifier_count": 259,
+      "explicit_path_prefix_count": 4,
+      "explicit_secret_count": 0,
+      "http_request_paths": "Observed HTTP URL paths retain route structure; URL credentials and private identifiers remain redacted",
+      "identifier_word_count": 52,
+      "identifier_words": "Whole-token replacement bounded by Unicode letters, digits, underscore and hyphen; longer public identifiers remain intact",
+      "identities": "deterministic pseudonyms; not an irreversible-anonymization claim",
+      "paths": "machine paths and caller-supplied roots replaced",
+      "reviewed_binary_artifacts": [
+        {
+          "bytes": 6,
+          "kind": "source-bytes",
+          "purpose": "public-synthetic-fixture",
+          "sha256": "72ee7e95938b82284a312ea248777aad5e5220a20242ccf98d103d33427fc681"
+        }
+      ],
+      "terminal_username_count": 1,
+      "terminal_usernames": "POSIX long-listing owner fields; whole-token usernames from separator-terminated home components, listings, explicitly declared home roots, or explicit username input",
+      "version": "1.0.6"
+    },
+    "transformation_counts": {
+      "credential_values": 2374,
+      "explicit_identifiers": 12564,
+      "identifier_words": 8647,
+      "machine_paths": 13819,
+      "private_endpoints": 104,
+      "terminal_usernames": 14338,
+      "uuid_identifiers": 6689
+    }
+  },
+  "replay": {
+    "status": "verified",
+    "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+    "network_denied": true,
+    "source_contents_denied": true,
+    "source_metadata_permitted_for_path_resolution": true,
+    "inherited_credentials": false,
+    "source_read_canary": "EPERM or EACCES required",
+    "network_canary": "Loopback listen rejected with EPERM or EACCES",
+    "inventory_exact": true,
+    "inventory_unchanged_after_replay": true,
+    "regenerated_report_files": 13,
+    "regenerated_report_bytes": 367625,
+    "regenerated_report_manifest_file_sha256": "6d1f3821975be59331b8aebff74b8abf51f1b2488d7370e64e0596fe3b6c368c",
+    "identical_analysis_tables_and_quality_chart": 9,
+    "chart_title_differences": [
+      {
+        "file": "input.svg",
+        "public": "Cumulative input",
+        "replay": "Cumulative input across actual attempts"
+      },
+      {
+        "file": "time.svg",
+        "public": "Capped time",
+        "replay": "Capped time across the full fixed denominator"
+      }
+    ]
+  },
+  "publication_subject_model_requests": 0,
+  "auxiliary_agent_tokens": "unknown",
+  "auxiliary_agent_cost": "unknown",
+  "identity_rule": "Public projection and replay refer to the same seven physical executions. Never pool them as extra samples.",
+  "complete_contract_outcomes": {
+    "pass": 3,
+    "fail": 3,
+    "unknown": 1
+  },
+  "business_output_outcomes": {
+    "pass": 5,
+    "fail": 2
+  }
+}
