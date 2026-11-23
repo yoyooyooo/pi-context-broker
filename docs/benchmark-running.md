@@ -15,6 +15,11 @@ publishes the retained Grok alias failure, its seven-execution continuation, and
 a separate collector correction for the stopped expansion. It preserves fixed
 denominators, original scores and actual costs, with standalone public replay.
 
+The later [Terra route-stop report](../benchmark/results/2026-11-23-terra-route-stop/README.md)
+records eight executions, an interrupted response with unknown token usage, and
+the actual route-gate rejection. It includes public replay and a separately
+labelled decision draft; later paid work remains stopped.
+
 For newly authorized work after a closed scope, use
 [finite prospective cohorts](benchmark-prospective-cohorts.md). They retain the
 original campaign ledger, freeze all historical costs and failures, and require

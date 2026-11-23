@@ -1,0 +1,12 @@
+---
+name: [identifier-word:86bfa1860b9d3d9aa7af]
+description: "松涛29发票含税金额计算"
+---
+
+# 松涛29发票含税金额计算
+
+读取 references/tax.json。逐行独立把税额四舍五入为整数分，再加 net_cents。输出 id、tax_cents 和 gross_cents。
+
+本材料为可公开复现的合成业务资料，许可 CC0-1.0。
+
+金额一律使用整数分；若有舍入，按文中规则执行。

@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "kind": "public-terra-campaign-checkpoint-provenance",
+  "snapshot_at_utc": "2026-11-23T11:47:36.052Z",
+  "snapshot_at_local": "2026-11-23 03:47:36.052 PST",
+  "physical_reservations": 66,
+  "completed": 66,
+  "unresolved_reservations": 0,
+  "registered_effective_admission_counts": {
+    "valid": 58,
+    "invalid": 8
+  },
+  "quality_aggregation": "Keep experiment-specific conditions and scientific denominators; these reservation counts are not a pooled quality estimate.",
+  "registered_effective_cost_by_field": {
+    "model_requests": {
+      "known_episode_count": 65,
+      "total_episode_count": 66,
+      "known_subtotal": 295,
+      "campaign_total": null
+    },
+    "input_tokens": {
+      "known_episode_count": 61,
+      "total_episode_count": 66,
+      "known_subtotal": 1557388,
+      "campaign_total": null
+    },
+    "output_tokens": {
+      "known_episode_count": 61,
+      "total_episode_count": 66,
+      "known_subtotal": 45472,
+      "campaign_total": null
+    },
+    "duration_ms": {
+      "known_episode_count": 66,
+      "total_episode_count": 66,
+      "known_subtotal": 2301431.333037999,
+      "campaign_total": 2301431.333037999
+    }
+  },
+  "registered_effective_unknown_token_episodes": 5,
+  "original_completion_cost": {
+    "known_subtotal": {
+      "model_requests": 295,
+      "input_tokens": 1533767,
+      "output_tokens": 44703,
+      "duration_ms": 2301431.333037999
+    },
+    "unknown_run_ids": [
+      "benchmark-two-model-cohort-3-expansion-021",
+      "benchmark-route-gate-3-002",
+      "benchmark-route-gate-3-003",
+      "benchmark-two-model-admission-2-001",
+      "benchmark-two-model-admission-3-008",
+      "benchmark-terra-6-1-approved-gate-1-008"
+    ],
+    "unknown_by_field": {
+      "model_requests": [
+        "benchmark-two-model-admission-3-008"
+      ],
+      "input_tokens": [
+        "benchmark-two-model-cohort-3-expansion-021",
+        "benchmark-route-gate-3-002",
+        "benchmark-route-gate-3-003",
+        "benchmark-two-model-admission-2-001",
+        "benchmark-two-model-admission-3-008",
+        "benchmark-terra-6-1-approved-gate-1-008"
+      ],
+      "output_tokens": [
+        "benchmark-two-model-cohort-3-expansion-021",
+        "benchmark-route-gate-3-002",
+        "benchmark-route-gate-3-003",
+        "benchmark-two-model-admission-2-001",
+        "benchmark-two-model-admission-3-008",
+        "benchmark-terra-6-1-approved-gate-1-008"
+      ],
+      "duration_ms": []
+    },
+    "unknown_runs": 6,
+    "total": {
+      "model_requests": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "duration_ms": 2301431.333037999
+    },
+    "monetary_status": "unpriced_no_price_inference"
+  },
+  "cost_coverage_rule": "Each metric sums only episodes whose total for that metric is known. Complete-episode token subtotals exclude the known first request within Terra008; scope-level observed-attempt subtotals are documented separately.",
+  "budget": {
+    "approved_total_ceiling": 139,
+    "original_hard_limit": 144,
+    "approved_remaining": 73,
+    "unallocated_headroom": 5
+  },
+  "actual_route_gate": "rejected_FINITE_ORIGINAL_CORE_STOP",
+  "later_dispatch": "paused",
+  "future_scopes_configured": false,
+  "active_leases": 0,
+  "current_controller": "benchmark-controller-campaign-revision-1",
+  "terra_collector": "1.1.0",
+  "new_analysis_registration": false,
+  "ordinary_work_approval": "Retained; the additional unknown-triggered stop is a separate pending decision.",
+  "next_decision": {
+    "file": "NEXT-DECISION.md",
+    "sha256": "2363652041bceb32b150f7b7f965a74cd1371757c68c6597ed35b8c5921ac333",
+    "status": "draft_awaiting_user_decision_not_execution_authorization",
+    "existing_unsent_episodes": 73,
+    "additional_reservations_requested": 0,
+    "unallocated_headroom_unchanged": 5
+  },
+  "private_source_audit_references": {
+    "control/resume-20261123/status-review/census-005.json": "4e1b5f3cdc947a5a9deb6634326d092b5def54bbf215a9431a0cf66049d223d1",
+    "control/resume-20261123/status-review/terra8-terminal-cause-002.json": "f5deeb4a55c3d950d8ab7e617ddaf98d6189735297a72063f4ac498e51379955",
+    "control/resume-20261123/terra-route-gate-check-1/rejection-receipt.json": "5f5a6d1df889aa678c6e232ec39d2b207fb39cb17086fa1bd63f8969f74982c3",
+    "control/resume-20261123/terra-campaign-stop-1.json": "e82923747c4632c5f57dad5f7e6c490697e846aad02758eec0e5810e0fe3b3f4",
+    "control/approved-resumption-1/user-approval.json": "99763c2c8a3116023039b926bc6ffdb57a2cf5fd49a4b45e8009f7dfc6124315",
+    "control/approved-resumption-2/approved-campaign.json": "58866ae25dfa7575f2027051a845a4c4228a471c05ad4cabf354fe1e1112d357",
+    "control/prospective-resumption-proposal-1/proposal-2.json": "2f077244d9721f44b83a5e66c2861925758e3f271abc701f43aaffca8ed9a4c9"
+  },
+  "verification_boundary": "The public Terra package replays its normalized observations and public artifact hashes. Campaign history, user decisions, gate execution and prepared future materials remain separate private audit sources; public replay does not reconstruct those records."
+}
