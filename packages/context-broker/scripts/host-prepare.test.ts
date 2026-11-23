@@ -435,12 +435,12 @@ test("Pi keeps ordinary pending requests immediate and refreshes only its direct
   expect(f.resourceReads).toEqual([]);
 });
 
-test("cold maintenance guidance uses scoped Notion discovery before its default directory arrives", async () => {
+test("explicit Notion workflow discovery stays scoped while its default directory is pending", async () => {
   const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
   f.api.getActiveTools = () => ["read", "notion_list", "notion_use", "bash"];
   const { search } = await f.install(undefined, { getRecords: () => metadata.promise });
   installSkillGuidance(f.api, { sources: f.sources }, { host: "pi" });
-  const user = { role: "user", content: "Add a Skill to this Notion library." };
+  const user = { role: "user", content: "Inspect the team's ntn-skills-maintain workflow in this Notion library." };
   const before = await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "Native instructions" }, f.ctx);
   const expected = buildCliGuidance({ sources: f.sources }, f.api.getActiveTools());
   expect(before).toContainEqual({ message: expected });
@@ -448,8 +448,9 @@ test("cold maintenance guidance uses scoped Notion discovery before its default 
   const messages = [{ role: "system", content: "Native instructions" }, user, guidance];
   const pending = await catalogProjection(f, messages);
   expect(pending.catalog).toContain("Notion metadata is pending");
-  expect(sourceMessageText(guidance.content)).toContain("absent/pending: notion_list there");
-  expect(sourceMessageText(guidance.content)).toContain("task's source/library");
+  expect(sourceMessageText(guidance.content)).toContain("Explicit Notion workflow: read exact ref in chosen source; notion_list there if needed.");
+  expect(sourceMessageText(guidance.content)).toContain("Pending/failed: no builtin fallback.");
+  expect(sourceMessageText(guidance.content)).toContain("Default product maintenance/sync:");
   expect(sourceMessageText(guidance.content)).not.toContain("ctl builtin read");
   metadata.resolve({ records: [{ ...f.root, name: "ntn-skills-maintain", alias: "ntn-skills-maintain",
     normalizedName: "ntn-skills-maintain", body: undefined, preparationBinding: undefined, defaultDiscovery: true }], failures: [] });

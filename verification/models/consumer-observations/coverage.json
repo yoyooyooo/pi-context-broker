@@ -14,7 +14,7 @@
     "packages/context-broker/src/host-skills.ts": "52abbf98a8028c60f1dd8725c8e94bc860b50d1d6d110f7c052f038783a7a1cf",
     "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
     "packages/context-broker/scripts/consumer-observation.test.ts": "66df7c27e6f0566124a65a88733e7b3c1b45c1cc93ae67762a95fd9aa4934f6c",
-    "packages/context-broker/scripts/host-prepare.test.ts": "03f8b5d910fa200e07a253889a7169c97638a2c689cf95092d0783a368714053",
+    "packages/context-broker/scripts/host-prepare.test.ts": "edfb79c1f64f05e2c1409957f5d2701be58682248f097eeb5ad3c5cfc5751d1e",
     "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51",
     "packages/context-broker/scripts/host-refresh.test.ts": "92ada6c72b912ac2cff14b24345457476e1e84ede75aeeeb302154506a8608e2",
     "packages/context-broker/scripts/resource-read-host.test.ts": "c7448e39a6727559b4613589e0324ab256ba84d14e2ddb1c73494314eb671faa",
@@ -320,6 +320,12 @@
         "host-refresh.test.ts via activeNotionSession/currentNotionFixture: production index, configured source and SDK wiring, target old-pin inspect, unchanged use/active state and Source-changed failure before target acquisition"
       ],
       "proof_limit": "Source contribution mapping, relative-path interpretation, handle syntax and SDK capability are concrete implementation obligations outside the finite model variables. TLA/config/view bytes, model bounds, case inventories, independent expected_rules, tool lock and production mutation targets are unchanged. These reviewed whole-file hashes do not prove mapping correctness, implementation refinement, live Notion or natural Pi behavior; those require separate execution evidence."
+    },
+    "explicit_workflow_guidance_fixture": {
+      "reviewed_from": "d5e6b8fdb8afb1c185b96332a2342491502a0246",
+      "scope": "Only the existing cold metadata guidance regression changes its title, natural prompt and routing-text expectations. The user now explicitly selects the Notion team workflow, matching the existing source-scoped discovery behavior. Default package guidance and the no-fallback sentence are asserted separately. Reversing those exact edits restores the complete previous test file byte-for-byte.",
+      "preserved_assertions": "The pending-to-ready metadata sequence, exact controlled source and short ref, complete metadata return, absence of prepared calls, persisted selection and resource body reads are unchanged. All other test cases and production source bytes are unchanged.",
+      "proof_limit": "This is a concrete guidance and metadata regression, outside the finite state variables. Models, configurations, views, bounds, cases, independent expected_rules, tool lock and production guard mutation targets remain unchanged. Real Agent behavior still requires separate evidence."
     }
   }
 }
