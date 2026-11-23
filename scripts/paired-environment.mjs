@@ -4,11 +4,12 @@
  */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { constants } from 'node:fs';
 import { access, chmod, copyFile, cp, lstat, mkdir, readFile, readdir, readlink, realpath, stat, symlink, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 import { captureRuntimeIdentity, compareRuntimeIdentity } from './paired-runtime-identity.mjs';
 import { verifyArchiveInstallation, verifyBundledNotices } from './verify-package-closure.mjs';
 
@@ -17,6 +18,7 @@ const DEFAULTS = {
   broker: 'https://github.com/yoyooyooo/pi-context-broker.git',
 };
 const VERSION = 1;
+const execFileAsync = promisify(execFile);
 const hash = value => createHash('sha256').update(value).digest('hex');
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
@@ -195,19 +197,49 @@ export async function inventory(root) {
 }
 
 async function copyTree(source, destination, entries) {
-  await mkdir(destination, { recursive: true });
+  // Reserve the whole namespace before native cp can fall back to an ordinary copy.
+  // A failed partial copy stays owned here; never merge into it or retry over it.
+  await fresh(destination);
+  const directories = new Map(), expected = [];
   for (const file of entries.files) {
-    const target = join(destination, file.path);
+    const original = join(source, file.path), target = join(destination, file.path);
     await mkdir(dirname(target), { recursive: true });
     if (file.link !== undefined) {
-      const actual = await realpath(join(source, file.path));
+      const actual = await realpath(original);
       assert.ok(own(source, actual), 'Source symlink escaped the frozen snapshot');
-      await symlink(relative(dirname(target), join(destination, relative(source, actual))), target);
+      const link = relative(dirname(target), join(destination, relative(source, actual)));
+      await symlink(link, target);
+      expected.push({ ...file, link });
     } else {
-      await copyFile(join(source, file.path), target, constants.COPYFILE_EXCL);
-      await chmod(target, (await stat(join(source, file.path))).mode);
+      expected.push(file);
+      if (process.platform === 'darwin') {
+        const directory = dirname(target);
+        if (!directories.has(directory)) directories.set(directory, []);
+        directories.get(directory).push({ original, target });
+      } else {
+        await copyFile(original, target, constants.COPYFILE_EXCL);
+        await chmod(target, (await stat(original)).mode);
+      }
     }
   }
+  for (const [directory, files] of directories) {
+    // macOS cp uses clonefile and falls back on unsupported filesystems. Group
+    // regular files to avoid one process per file; links keep the mapping above.
+    let batch = [], bytes = Buffer.byteLength(directory) + 1;
+    const flush = async () => {
+      if (!batch.length) return;
+      await execFileAsync('/bin/cp', ['-c', '-n', ...batch, directory], { env: { LANG: 'C', LC_ALL: 'C' } });
+      batch = []; bytes = Buffer.byteLength(directory) + 1;
+    };
+    for (const { original } of files) {
+      const size = Buffer.byteLength(original) + 1;
+      if (batch.length && bytes + size > 64 * 1024) await flush();
+      batch.push(original); bytes += size;
+    }
+    await flush();
+    for (const { original, target } of files) await chmod(target, (await stat(original)).mode);
+  }
+  assert.deepEqual((await inventory(destination)).files, expected, 'Copied source or dependency bytes changed');
 }
 
 /** Child-local allowlist; never inherit NODE_OPTIONS, BASH_ENV, config, or credentials. */

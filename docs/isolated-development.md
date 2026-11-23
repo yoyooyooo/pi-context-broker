@@ -216,6 +216,21 @@ to these copies. Checks can change their own source or dependencies without
 changing the selected build or another run. CLI and Pi targets use the selected
 runtime packages without copying source trees.
 
+The copy reserves a new destination directory and rejects an existing one. On
+macOS, regular files use the system copy command's copy-on-write support, with
+an ordinary copy when the filesystem cannot clone files. Each file still has
+its own inode; changing bytes or permissions cannot change the frozen build or
+another run. Internal symlinks point into the new copy. The completed inventory
+must match the selected bytes, executable modes and remapped links. A failed
+partial copy remains available for inspection and is never retried in place.
+Other platforms keep exclusive ordinary file copies. These choices also apply
+to explicitly copied native Skill roots.
+
+Copy-on-write saves physical blocks until a copy changes them. Logical sizes
+and `du` totals can count shared blocks repeatedly, so check available space on
+the destination volume before a large batch and allow for later writes. Source
+retention, build identities and the complete byte inventories are unchanged.
+
 Command runs also bind the existing `CONTEXT_BROKER_GRAPH_CORE` to the private
 CLI source and `NTN_SKILLS_BUILD_ENTRY` to the selected private CLI package.
 For example, run the existing verification suite without borrowing another
