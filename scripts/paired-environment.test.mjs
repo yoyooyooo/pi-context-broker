@@ -13,6 +13,7 @@ const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
 const writeJson = (path, value) => writeFile(path, JSON.stringify(value) + '\n');
 const inside = (root, path) => path.startsWith(root + sep);
 const legacyCliInputs = ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills'];
+const selectedRefBytes = await readFile(new URL('../packages/context-broker/dist/ntn-skills-ref.cjs', import.meta.url));
 const identitySource = await readFile(new URL('./next-build-identity.mjs', import.meta.url), 'utf8');
 const legacyIdentitySource = identitySource.replace(/^export const selectedCliInputs = .*;\n/m, '');
 const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], {
@@ -48,6 +49,7 @@ async function sealedBuild(root, buildId = 'fixture', realCliEntry) {
       'if(result.error)console.error(result.error.message);process.exitCode=result.status??1;\n'
     : 'console.log(JSON.stringify({fixture:"cli",args:process.argv.slice(2)}));\n');
   await writeFile(join(buildRoot, 'cli/dist/sdk.js'), 'export const fixture = true;\n');
+  await writeFile(join(buildRoot, 'cli/dist/ref.cjs'), selectedRefBytes);
   await writeFile(join(buildRoot, 'cli/skills/SKILL.md'), '# Fixture\n');
   await writeJson(join(buildRoot, 'broker/package.json'), { name: 'paired-broker-fixture', version: '0.0.0', type: 'module' });
   await writeFile(join(buildRoot, 'broker/src/index.ts'), 'export const fixture = true;\n');
@@ -236,7 +238,7 @@ test('paired environments isolate writable state and detect artifact changes', a
     await assert.rejects(checkEnvironment({ root: rootA }), /simple build\/run ID|type string/);
   });
 
-  await t.test('selected CLI pairing accepts absent legacy export and the explicit five-input contract', async () => {
+  await t.test('selected CLI pairing accepts absent legacy export and the explicit six-input contract', async () => {
     await verifySelectedCliPair(buildA, await readJson(join(buildA, 'broker/dist/next-build.json')));
     const buildId = 'explicit-cli-inputs', root = await sealedBuild(rootA, buildId);
     await writeFile(join(root, 'cli/THIRD_PARTY_NOTICES.md'), 'Selected notice bytes\n');
@@ -246,6 +248,9 @@ test('paired environments isolate writable state and detect artifact changes', a
     await verifySelectedCliPair(root, { selected_cli: selectedCli });
     assert.equal((await checkEnvironment({ root: rootA, build: buildId })).status, 'passed');
     await assert.rejects(verifySelectedCliPair(root, { selected_cli: await fileInventory(join(root, 'cli'), legacyCliInputs) }), /complete selected CLI\/SDK/);
+    await assert.rejects(verifySelectedCliPair(root, {
+      selected_cli: await fileInventory(join(root, 'cli'), selectedCliInputs.filter(name => name !== 'dist/ref.cjs')),
+    }), /complete selected CLI\/SDK/);
   });
 
   await t.test('selected CLI pairing does not fall back for null or incomplete explicit declarations', async () => {
@@ -284,7 +289,7 @@ test('paired environments isolate writable state and detect artifact changes', a
   await t.test('packed candidates run actual clean-installed entries and freeze archives and dependencies', async () => {
     const buildId = 'packed-candidate', root = await sealedBuild(rootA, buildId);
     await writeJson(join(root, 'cli/package.json'), { name: 'ntn-skills', version: '0.0.0', type: 'module',
-      bin: { 'ntn-skills': './dist/ntn-skills.js' }, exports: { './sdk': { import: './dist/sdk.js' } } });
+      bin: { 'ntn-skills': './dist/ntn-skills.js' }, exports: { './sdk': { import: './dist/sdk.js' }, './ref': { require: './dist/ref.cjs' } } });
     await writeJson(join(root, 'broker/package.json'), { name: 'pi-context-broker', version: '0.0.0', type: 'module', pi: { extensions: ['./src/index.ts'] } });
     await writeFile(join(root, 'broker/dist/ntn-skills-sdk.mjs'), 'export const SDK_VERSION=2;\n');
     await writeFile(join(root, 'cli/THIRD_PARTY_NOTICES.md'), 'Complete selected CLI notice fixture\n');

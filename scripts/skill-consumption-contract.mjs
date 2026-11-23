@@ -9,11 +9,59 @@ const check = (condition, code, message) => {
 
 export function consumptionGateConfiguration() {
   const json = path => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
-  return { rootScripts: json('../package.json').scripts, packageScripts: json('../packages/context-broker/package.json').scripts,
+  let cliRevision;
+  try { cliRevision = readFileSync(new URL('../.github/ntn-skills-cli-revision', import.meta.url), 'utf8'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  return { cliRevision, rootScripts: json('../package.json').scripts, packageScripts: json('../packages/context-broker/package.json').scripts,
     workflows: ['ci', 'publish'].map(name => ({ name, text: readFileSync(new URL('../.github/workflows/' + name + '.yml', import.meta.url), 'utf8') })) };
 }
 
+function pinnedCliInput(workflow) {
+  const missing = message => check(false, 'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ': ' + message);
+  const jobs = workflow.text.split(/^jobs:\n/mu);
+  if (jobs.length !== 2) missing('The current main job must select the CLI input.');
+  const mainJobs = jobs[1].split(/(?=^  [a-zA-Z_][a-zA-Z0-9_-]*:\n)/mu)
+    .filter(value => value.startsWith('  main:\n'));
+  if (mainJobs.length !== 1) missing('The current main job must be unique.');
+  const main = mainJobs[0], steps = main.split(/(?=^      - name: )/mu);
+  const step = name => {
+    const found = steps.filter(value => value.startsWith('      - name: ' + name + '\n'));
+    return found.length === 1 ? found[0].trimEnd() : '';
+  };
+  const checkout = step('Checkout'), selector = step('Select frozen CLI input'),
+    source = step('Checkout pinned CLI SDK'), build = step('Build pinned CLI SDK');
+  const unconditional = value => !/\n        (?:if|continue-on-error):/u.test(value) && !/\|\|\s*true/u.test(value);
+  const rootCheckout = workflow.name === 'ci'
+    ? /^      - name: Checkout\n        uses: actions\/checkout@[a-f0-9]{40}(?: #[^\n]+)?$/u.test(checkout)
+    : /^      - name: Checkout\n        uses: actions\/checkout@[a-f0-9]{40}(?: #[^\n]+)?\n        with:\n          fetch-depth: 0\n          ref: \$\{\{ inputs\.tag \|\| github\.ref \}\}$/u.test(checkout);
+  check(checkout && selector && source && build
+    && rootCheckout
+    && unconditional(checkout) && unconditional(selector) && unconditional(source) && unconditional(build)
+    && (main.match(/^        id: cli-input$/gmu) ?? []).length === 1
+    && main.indexOf(checkout) < main.indexOf(selector) && main.indexOf(selector) < main.indexOf(source)
+    && main.indexOf(source) < main.indexOf(build),
+    'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ' must bind one main-job CLI output before checkout and build.');
+  check(selector === [
+    '      - name: Select frozen CLI input',
+    '        id: cli-input',
+    '        run: echo "revision=$(cat .github/ntn-skills-cli-revision)" >> "$GITHUB_OUTPUT"',
+  ].join('\n'), 'GATE_SDK_BUILD_INPUT_DRIFT',
+  workflow.name + ' must produce revision from the single current CLI pin file.');
+  check(/^      - name: Checkout pinned CLI SDK\n        uses: actions\/checkout@[a-f0-9]{40}(?: #[^\n]+)?\n        with:\n          repository: yoyooyooo\/notion-skills-cli\n          ref: \$\{\{ steps\.cli-input\.outputs\.revision \}\}\n          path: \.verification\/ntn-skills-cli\n          persist-credentials: false$/u.test(source)
+    && build === [
+      '      - name: Build pinned CLI SDK',
+      '        working-directory: .verification/ntn-skills-cli',
+      '        run: |',
+      '          bun install --frozen-lockfile',
+      '          bun run build',
+    ].join('\n'), 'GATE_SDK_BUILD_INPUT_MISSING',
+  workflow.name + ' must checkout the exact producer output and build that selected tree.');
+  return main;
+}
+
 export function validateConsumptionGates(config = consumptionGateConfiguration()) {
+  const revision = /^(?<revision>[a-f0-9]{40})\n?$/u.exec(typeof config.cliRevision === 'string' ? config.cliRevision : '');
+  check(revision && revision[0] === config.cliRevision, 'GATE_SDK_BUILD_INPUT_MISSING', 'The single .github/ntn-skills-cli-revision file must contain one lowercase 40-hex commit.');
   for (const name of ['check', 'check:broker']) {
     check(config.rootScripts[name]?.includes('bun run --cwd packages/context-broker check'),
       'GATE_PACKAGE_CHECK_MISSING', name + ' must reach the actual package check.');
@@ -32,17 +80,15 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     'packages/context-broker/scripts/final-request-undici.test.ts'])
     check(config.rootScripts['test:verification']?.split(' ').includes(path), 'GATE_VERIFICATION_MISSING',
       'Required current check is absent: ' + path);
-  check(config.workflows.length === 2 && new Set(config.workflows.map(row => row.name)).size === 2,
+  check(config.workflows.length === 2 && new Set(config.workflows.map(row => row.name)).size === 2
+    && config.workflows.some(row => row.name === 'ci') && config.workflows.some(row => row.name === 'publish'),
     'GATE_WORKFLOW_MISSING', 'Check CI and publish.');
-  const revisions = [];
   for (const workflow of config.workflows) {
     const text = workflow.text;
-    const source = /repository: yoyooyooo\/notion-skills-cli\s+ref: ([a-f0-9]{40})\s+path: \.verification\/ntn-skills-cli/u.exec(text);
-    check(source && text.includes('NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js')
-      && text.includes('CONTEXT_BROKER_GRAPH_CORE: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/core/src')
-      && /working-directory: \.verification\/ntn-skills-cli\s+run: \|\s+bun install --frozen-lockfile\s+bun run build/u.test(text),
+    const main = pinnedCliInput(workflow);
+    check(main.includes('NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js')
+      && main.includes('CONTEXT_BROKER_GRAPH_CORE: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/core/src'),
       'GATE_SDK_BUILD_INPUT_MISSING', workflow.name + ' must build and decode with one pinned current CLI.');
-    revisions.push(source[1]);
     const nodePinned = workflow.name === 'ci'
       ? text.includes('node: [24.22.3, 26.13.1]') && text.includes('node-version: ${{ matrix.node }}')
       : text.includes('node-version: 26.13.1');
@@ -93,9 +139,8 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
         'GATE_RELEASE_HANDOFF_MISSING', 'Preserve each verified attempt and consume its producer-selected artifact.');
     }
   }
-  check(new Set(revisions).size === 1, 'GATE_SDK_BUILD_INPUT_DRIFT', 'CI and publish must pin the same CLI revision.');
   return { status: 'gate-wiring-valid', sdkVersion: 2, requiredTests: required.length,
-    cliSourceRevision: revisions[0], installedSdk: 'required_current_http',
+    cliSourceRevision: revision.groups.revision, installedSdk: 'required_current_http',
     piSession: 'not_run', providerModel: 'not_run', deferredHosts: ['OMP', 'Tern'],
     boundary: 'Wiring checks do not establish actual package execution or Pi daily-use acceptance.' };
 }

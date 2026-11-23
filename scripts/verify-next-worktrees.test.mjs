@@ -7,11 +7,12 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { fileInventory } from './next-build-identity.mjs';
+import { fileInventory, selectedCliInputs } from './next-build-identity.mjs';
 import { verifyCurrentBuild, verifyNextWorktreePair } from './verify-next-worktrees.mjs';
 import { aggregateDailyDeliveries, validateDailyReceipt } from './verify-pi-daily-installation.mjs';
 
 const save = (path, value) => writeFile(path, JSON.stringify(value) + '\n');
+const selectedRefBytes = await readFile(new URL('../packages/context-broker/dist/ntn-skills-ref.cjs', import.meta.url));
 const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
 test('help is read-only and needs no config, checkout or PATH tools', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'next-worktree-help-'));
@@ -49,16 +50,17 @@ async function fixture() {
   await writeFile(join(cliRoot, 'skills/SKILL.md'), 'current skill\n');
   await writeFile(join(cliRoot, 'dist/ntn-skills.js'), 'current CLI\n');
   await writeFile(join(cliRoot, 'dist/sdk.js'), 'current SDK\n');
+  await writeFile(join(cliRoot, 'dist/ref.cjs'), selectedRefBytes);
   await writeFile(join(cliRoot, 'THIRD_PARTY_NOTICES.md'), 'current complete third-party notices\n');
   await writeFile(join(brokerRoot, 'dist/ntn-skills-sdk.mjs'), 'embedded current SDK\n');
   async function cliBuild() {
     await save(join(cliRoot, 'dist/next-build.json'), { version: 1, kind: 'cli-build', input_roots: ['src'],
-      source: await fileInventory(cli, ['src']), artifacts: await fileInventory(cliRoot, ['dist/ntn-skills.js', 'dist/sdk.js', 'skills']) });
+      source: await fileInventory(cli, ['src']), artifacts: await fileInventory(cliRoot, ['dist/ntn-skills.js', 'dist/sdk.js', 'dist/ref.cjs', 'skills']) });
   }
   await cliBuild();
   await save(join(brokerRoot, 'dist/next-build.json'), { version: 1, kind: 'broker-build', input_roots: ['src'],
     source: await fileInventory(broker, ['src']), artifacts: await fileInventory(brokerRoot, ['dist/ntn-skills-sdk.mjs']),
-    selected_cli: await fileInventory(cliRoot, ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills', 'THIRD_PARTY_NOTICES.md']) });
+    selected_cli: await fileInventory(cliRoot, selectedCliInputs) });
   function commit(root) {
     git(root, 'add', '.');
     git(root, '-c', 'user.name=Next gate fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture');
@@ -122,6 +124,12 @@ test('a newly built CLI cannot pass with the previous embedded SDK', async () =>
   await writeFile(join(f.cliRoot, 'dist/sdk.js'), 'new raw SDK\n');
   await f.cliBuild(); f.config.worktrees.cli.commit = f.commit(f.cli);
   await assert.rejects(verifyNextWorktreePair(f.config), /Source or artifact differs.*dist\/sdk/);
+});
+test('a newly built pure reference module cannot pass with the previous selected CLI binding', async () => {
+  const f = await fixture();
+  await writeFile(join(f.cliRoot, 'dist/ref.cjs'), Buffer.concat([selectedRefBytes, Buffer.from('\n// New selected reference artifact\n')]));
+  await f.cliBuild(); f.config.worktrees.cli.commit = f.commit(f.cli);
+  await assert.rejects(verifyNextWorktreePair(f.config), /Source or artifact differs.*dist\/ref\.cjs/);
 });
 test('next branch, exact target commit and actual package path are mandatory', async () => {
   const f = await fixture();
