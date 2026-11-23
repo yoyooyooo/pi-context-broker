@@ -205,7 +205,7 @@ CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/d
 
 用户明确选择 Notion 团队流程时，在所选来源中读取精确 ref；需要发现时只查询该来源，也可读取默认 View 之外的授权条目。真正采用时调用 `notion_use(ref)` 加载完整 Requires，本任务已准备完整闭包时可复用；被编辑目标仍只 inspect，不激活其工作流。没有原生 use 时可用同来源 CLI 的 `use EXACT_REF --database ENTRY --json`。CLI 使用规范引用，不能消费会话 `sr:` 句柄；没有可用路线就报告无法采用。pending、partial 或访问失败都不能把已选择的流程换成 Builtin。已有任务保留选中版本，只有明确刷新才采用新内容。本地和随包流程继续使用原生消费路线。
 
-只有配置了至少一个未禁用的 `type: notion` source，才在 `$` 候选中显示 `$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin`；尚未连通 Notion 或完成认证也能读取它们。没有启用 Notion source 时，普通本地会话不暴露 Notion 候选、工具或系统指引。明确需要初始化时，遵循 [CLI 快速开始](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.zh-CN.md)，或通过随包 CLI 的 `ctl builtin read notion/ntn-skills-maintain --path references/setup.md` 读取离线入口。
+只有配置了至少一个未禁用的 `type: notion` source，才在 `$` 候选中显示 `$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin`；尚未连通 Notion 或完成认证也能读取它们。在 Pi 中，零已启用 Notion source 的普通本地会话不暴露 Notion 候选、工具或系统指引。明确需要初始化时，遵循 [CLI 快速开始](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.zh-CN.md)，或通过随包 CLI 的 `ctl builtin read notion/ntn-skills-maintain --path references/setup.md` 读取离线入口。
 
 ```text
 把这段对话中可复用的方法整理为 Skill，保存到已连接的 Notion 库。
