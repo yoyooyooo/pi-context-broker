@@ -11,6 +11,7 @@ import { freezeBatchPlan } from './batch.mjs';
 import { executionImplementation, instrumentationIdentity } from './implementation.mjs';
 import { writeEvidenceBundle } from './evidence/store.mjs';
 import { createAnalysisRevision, verifyAnalysisRevision, assertWrappedRequestLimitRepair } from './revision.mjs';
+import { OFFLINE_REVISION_VERIFIER_SOURCE_FILES } from './offline-source-files.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const sourceRoot = dirname(fileURLToPath(import.meta.url));
@@ -164,12 +165,9 @@ test('same raw usage is restored once, all old bytes retained, and the new sourc
   assert.ok((await readFile(f.ledger)).equals(before)); assert.equal(checked.replacements[0].original_episode_sha256, f.old.episode_sha256);
   assert.equal(checked.implementation_sources.length, checked.implementation.files.length);
   const isolated = join(f.control, 'offline-verifier');
-  for (const file of ['revision.mjs', 'protocol.mjs', 'reported-model.mjs', 'provider-binding.mjs', 'metrics.json', 'evidence/store.mjs', 'evidence/normalize.mjs',
-    'schemas/environment-manifest.schema.json', 'schemas/protocol.schema.json']) {
+  for (const file of OFFLINE_REVISION_VERIFIER_SOURCE_FILES) {
     await mkdir(dirname(join(isolated, file)), { recursive: true }); await copyFile(join(sourceRoot, file), join(isolated, file));
   }
-  await mkdir(join(isolated, '../scripts'), { recursive: true });
-  await copyFile(join(sourceRoot, '../scripts/skill-consumption-provider.mjs'), join(isolated, '../scripts/skill-consumption-provider.mjs'));
   await save(join(isolated, 'implementation.mjs'), "export function executionImplementation(){throw Error('live source must not be consulted')}\nexport function instrumentationIdentity(){throw Error('live source must not be consulted')}\n");
   const offline = await import(pathToFileURL(join(isolated, 'revision.mjs')).href);
   assert.equal((await offline.verifyAnalysisRevision({ reference: result.reference, plan: f.plan })).revision_sha256, checked.revision_sha256);

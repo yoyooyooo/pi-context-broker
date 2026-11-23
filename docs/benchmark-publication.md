@@ -42,6 +42,13 @@ The package contains:
 - `sanitizer-source.mjs`: the exporter implementation for inspection.
 - `README.md`: the transformation and replay limits.
 
+Publication version 1.0.6 and the internal report exporter share the reviewed
+portable source list in `benchmark/offline-source-files.mjs`. It includes the
+protocol's schedule-selection dependency, so the new finite follow-up protocol
+can load in an independent offline package. The isolated revision verifier uses
+the same common evidence dependencies. Original packages and measured results
+are unchanged; this release corrects the exported executable closure.
+
 No credential or private identifier lookup table is written. Raw originals remain in the controlled evidence store.
 
 ## Identity and evidence limits

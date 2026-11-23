@@ -3,6 +3,7 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {join,dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {canonicalJson,fingerprint} from '../protocol.mjs';
+import {OFFLINE_REPORT_SOURCE_FILES} from '../offline-source-files.mjs';
 import {scoreExperiment} from './compare.mjs';
 import {verifyArtifactFiles} from '../evidence/store.mjs';
 
@@ -166,10 +167,7 @@ export async function writeAnalysisReport({directory,analysis,input,includeRaw=t
   if(input) {
     files.set('analysis-input.json',canonicalJson(input)+'\n');
     const repo=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
-    for(const name of ['benchmark/protocol.mjs','benchmark/metrics.json','benchmark/schemas/protocol.schema.json',
-      'benchmark/schemas/environment-manifest.schema.json','benchmark/analysis/compare.mjs','benchmark/analysis/statistics.mjs',
-      'benchmark/analysis/report.mjs','benchmark/analysis/metrics.mjs','benchmark/evidence/store.mjs','benchmark/evidence/normalize.mjs',
-      'benchmark/reported-model.mjs','benchmark/provider-binding.mjs'])
+    for(const name of OFFLINE_REPORT_SOURCE_FILES)
       files.set('offline/'+name,await readFile(join(repo,name)));
     if(includeRaw)for(const episode of input.episodes) {
       const raw=await verifyArtifactFiles(episode.artifacts,{root:rawRoot});

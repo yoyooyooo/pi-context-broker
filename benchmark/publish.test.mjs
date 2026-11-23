@@ -241,7 +241,7 @@ test('reviewed synthetic binary bytes retain their identity through publication 
  assert.equal(sha(markerBytes),markerApproval.sha256);
  const out=await writePublicEvidencePackage({...f,rawRoot:f.root,analysis:before,
   reviewedBinaryArtifacts:[markerApproval],redactions:{...f.redactions,identifier_words:['yoyo'],terminal_usernames:['yoyo']}});
-  assert.equal(out.manifest.publication_version,'1.0.5');
+  assert.equal(out.manifest.publication_version,'1.0.6');
  assert.deepEqual(out.manifest.policy.reviewed_binary_artifacts,[markerApproval]);
  const row=out.manifest.raw_mapping.find(item=>item.source_sha256===artifact.sha256);
  assert.equal(row.format,'binary');assert.equal(row.changed,false);
@@ -367,7 +367,7 @@ test('terminal user redaction propagates through normalized results and raw arti
  assert.equal(projected.content[0].text,projected.structuredContent.output);
  assert.match(projected.content[0].text,/yoyooyooo/);
  assert.deepEqual(exported.analysis.conditions.map(x=>x.counts),before.conditions.map(x=>x.counts));
-  assert.equal(exported.manifest.publication_version,'1.0.5');
+  assert.equal(exported.manifest.publication_version,'1.0.6');
  assert.ok(exported.manifest.policy.terminal_username_count>0);
  const rawArtifact=f.input.episodes[0].artifacts[0];
  const mapping=exported.manifest.raw_mapping.find(row=>row.source_sha256===rawArtifact.sha256);
