@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { fingerprint } from './protocol.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
-const files = ['implementation.mjs', 'revision.mjs', 'cli.mjs', 'controller.mjs', 'batch.mjs', 'gate.mjs', 'collect.mjs',
+const files = ['implementation.mjs', 'revision.mjs', 'cli.mjs', 'configure.mjs', 'controller.mjs', 'batch.mjs', 'gate.mjs', 'collect.mjs',
   'subject.mjs', 'turn-bridge.mjs', 'fixture-turn-adapter.mjs',
   'execute.mjs', 'models.mjs', 'protocol.mjs', 'resumption.mjs', 'corpus/index.mjs', 'corpus/materials.mjs', 'corpus/grader.mjs',
   'evidence/normalize.mjs', 'evidence/store.mjs', 'schemas/protocol.schema.json',

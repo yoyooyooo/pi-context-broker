@@ -6,6 +6,8 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { runtimeEnvironment } from '../scripts/paired-environment.mjs';
 import { prepareAgentFixtures, readAgentFixture, runAgentFixtureEvent, planAgentFixturePreparation } from '../scripts/notion-agent-fixtures.mjs';
+import { NATIVE_MAIN_EXACT_RESOURCES, agentFixtureCreateArgs, assertAgentFixtureImportCreation,
+  isAgentFixtureCreationArgs } from '../scripts/notion-agent-authoring.mjs';
 import { ensureRemoteParent } from './remote.mjs';
 import { validateCorpus, planCaseVariant, rebindCorpusCatalog, buildFixtureRecipe, bindPublicCaseToFixture,
   verifyMaterialization, auditVisibleMaterial, writeCorpus } from './corpus/index.mjs';
@@ -74,7 +76,7 @@ function targetUnion(corpus, caseIds) {
 export function planBenchmarkFixture({
   corpus, caseIds, scopeId, controlRoot, projectPageId, buildRoot, node,
   cli = join(buildRoot ?? '', 'cli/dist/ntn-skills.js'), placement = 'notion',
-  sourceBindings = {}, git = null, access: accessMode = 'shared-readonly', episodeId = null,
+  sourceBindings = {}, authoring, authoringBySkill, git = null, access: accessMode = 'shared-readonly', episodeId = null,
   candidateCount = 16, roundCount, catalogSkillIds, events = [], initiallyAbsentSkillIds = [], ownedRuntimeRoot = null,
 } = {}) {
   validateCorpus(corpus);
@@ -111,7 +113,7 @@ export function planBenchmarkFixture({
     selectedIds = planCaseVariant({ ...corpus, caseId: caseIds[0], candidateCount, roundCount }).skills.map(skill => skill.id);
   }
   const casePlans = caseIds.map(caseId => planCaseVariant({ ...boundCorpus, caseId, candidateCount, roundCount }));
-  const fixture = buildFixtureRecipe({ publicCorpus: boundCorpus.publicCorpus, caseId: caseIds[0], scopeId, placement, sourceBindings, candidateCount, roundCount });
+  const fixture = buildFixtureRecipe({ publicCorpus: boundCorpus.publicCorpus, caseId: caseIds[0], scopeId, placement, sourceBindings, candidateCount, roundCount, authoring, authoringBySkill });
   assert.deepEqual(Object.keys(fixture.skill_mapping).sort(), [...selectedIds].sort());
   for (const key of Object.keys(sourceBindings)) assert.ok(fixture.skill_mapping[key], 'A source binding is outside the frozen catalog');
   const plannedEvents = [...casePlans.flatMap((plan, index) => (plan.events ?? []).map(event => ({ ...event, case_id: caseIds[index] }))), ...structuredClone(events)];
@@ -146,6 +148,8 @@ export function planBenchmarkFixture({
     schema_version: 1, kind: 'benchmark-controller-fixture', scope_id: scopeId, control_root: resolve(controlRoot),
     project_page_id: projectPageId, build_root: resolve(buildRoot), node: resolve(node), cli: resolve(cli), git,
     access: accessMode, episode_id: episodeId, owned_runtime_root: ownedRuntimeRoot, placement, candidate_count: candidateCount,
+    ...(authoring !== undefined ? { authoring } : {}),
+    ...(authoringBySkill !== undefined ? { authoring_by_skill: structuredClone(authoringBySkill) } : {}),
     case_ids: [...caseIds], catalog_skill_ids: selectedIds, required_skill_ids: required,
     corpus: boundCorpus, case_plans: casePlans, fixture, events: plannedEvents,
     initially_absent_skill_ids: [...initiallyAbsentSkillIds],
@@ -244,13 +248,14 @@ async function sourceAbsenceObservation(plan, bindings, owned) {
   return {source_id:sourceId,rows:value.results.map(row=>({page_id:row.id,archived:row.archived,in_trash:row.in_trash})),receipt};
 }
 
-async function priorDispatches(plan, owned) {
+/** Read retained creation receipts; absence cannot erase an earlier unknown import. */
+export async function readPreparationDispatches(plan, owned) {
   const output = [], roots = [join(plan.control_root, 'objects/commands'), join(plan.control_root, 'commands')];
   for (const root of roots) for (const name of await readdir(root).catch(error => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
     if (!name.endsWith('.json')) continue;
     const path = join(root, name), record = await json(path), argv = record.command ?? [];
     const source = argv.includes('apply') && argv.includes('source') && owned.declarationPath && argv.includes(owned.declarationPath);
-    const native = argv.includes('create') && argv.includes('--skill-id') && argv.includes(owned.skillId);
+    const native = isAgentFixtureCreationArgs(argv.slice(2), owned.skillId);
     if (!source && !native) continue;
     let value; try { value = JSON.parse(record.stdout); } catch { /* retain an unknown dispatch */ }
     output.push({ source, native, code: record.code ?? record.status, value, dispatch_intent: record.dispatch_intent ?? null, receipt: await byteArtifact(path) });
@@ -313,7 +318,7 @@ async function observePreparation(plan) {
       const skill = await operationObservation(plan, bindings, owned, 'skill');
       const source = owned.placement === 'source' ? await operationObservation(plan, bindings, owned, 'source') : null;
       if (skill.status === 'not_found' && (!source || source.status === 'not_found')) {
-        const dispatches = await priorDispatches(plan, owned);
+        const dispatches = await readPreparationDispatches(plan, owned);
         const claims=[];
         for(const name of await readdir(join(plan.control_root,'resume-dispatches')).catch(error=>error.code==='ENOENT'?[]:Promise.reject(error))) {
           const path=join(plan.control_root,'resume-dispatches',name), claim=await json(path);
@@ -366,6 +371,14 @@ async function resumePreparationWorker(plan) {
       owned.declarationPath = path; owned.sourceId = declaration.definition.source_id;
       bindings.private.objects[object.id].sourceId = owned.sourceId;
     }
+    let creation;
+    if (owned.placement !== 'source') {
+      creation = agentFixtureCreateArgs({ entry: context.entry, object, owned, input, objects: context.objects });
+      if (object.authoring === NATIVE_MAIN_EXACT_RESOURCES) {
+        const preflight = await command(plan, [...creation, '--dry-run'], 'resume-import-plan', fixtureEnvironment(plan, bindings));
+        assertAgentFixtureImportCreation(preflight.value, { entry: context.entry, object, owned, input });
+      }
+    }
     const intent = await save(join(plan.control_root, 'resume-dispatches', item.object_id + '-' + randomUUID() + '.json'),
       { object_id: item.object_id, skill_id: owned.skillId, source_id: owned.sourceId ?? null, at: now(),
         reconciliation: observed.receipt, immediate_absence: absence.artifact, no_pending_operation:skill.receipt, original_plan_sha256: plan.plan_sha256 });
@@ -379,13 +392,7 @@ async function resumePreparationWorker(plan) {
       await command(plan, ['ctl','library','projection',owned.pageId,'--entry',context.entry], 'resume-projection', fixtureEnvironment(plan, bindings));
       owned.projectionRequired=true;
     } else {
-      const args=['ctl','library','skill','create',input.directory,'--entry',context.entry,'--skill-id',owned.skillId,'--name',owned.name,'--description',object.description];
-      for (const field of ['requires','members']) for (const target of input[field] ?? []) {
-        assert.ok(context.objects[target]?.pageId, 'A prerequisite must be independently ready before creation'); args.push('--'+field,context.objects[target].pageId);
-      }
-      if(input.enabled!==undefined)args.push('--enabled',String(input.enabled));
-      if(input.defaultContext!==undefined)args.push('--default-context',String(input.defaultContext));
-      const created=await command(plan,args,'resume-create',fixtureEnvironment(plan,bindings),{dispatchIntent:intent});
+      const created=await command(plan,creation,object.authoring === NATIVE_MAIN_EXACT_RESOURCES ? 'resume-import' : 'resume-create',fixtureEnvironment(plan,bindings),{dispatchIntent:intent});
       owned.pageId=created.value.page_id; assert.match(owned.pageId,/^[a-f0-9-]{32,36}$/iu);
     }
     const proof=await readAgentFixture(bindings,object.id,{version:object.initial,key:object.id,preserveBindings:true});

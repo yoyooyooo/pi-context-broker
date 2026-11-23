@@ -143,6 +143,51 @@ must be established or retained as unknown. Never delete a run or its receipts.
 
 ## Setup fields and limits
 
+### Reusing a complete private corpus
+
+For material prepared before `configure`, supply a frozen full corpus snapshot:
+
+```json
+{
+  "corpus": {
+    "seed": "declared-material-seed",
+    "split": "development",
+    "material_version": "2",
+    "snapshot": {
+      "path": "/absolute/task/private-material/full-corpus.json",
+      "sha256": "SHA256_OF_THE_EXACT_FILE_BYTES"
+    },
+    "selections": [{ "caseId": "implicit-01-a", "candidateCount": 16 }]
+  }
+}
+```
+
+The file contains exactly `{ "publicCorpus": ..., "control": ... }`, including
+the original private canaries, oracles and seal. Its path must identify a regular
+file outside repository, configuration and subject build/run roots. The reader
+checks the byte hash, complete corpus identities, and the declared `seed`,
+`split` and `material_version` before writing the setup. An explicitly selected
+diagnostic `generator` must match its provenance and existing split/version
+limits. Loading does not open a confirmation seal.
+
+`corpus.snapshot` and `materialization_binding_file` are mutually exclusive.
+The latter still selects an actual verified shared physical materialization;
+it is not a corpus-only input. Without a snapshot, existing generation or shared
+material loading remains available. Regenerating a corpus with the same seed
+preserves public material but creates a new private canary, so it cannot replace
+the full corpus used for earlier slot preparation.
+
+Early preparation and recovery call `readCorpusSnapshot(setup)`, then the existing
+`prepareCases` and `prepareEpisodeFixtures` APIs with that same returned object
+and final slot schedule. They do not run `configure` or register a campaign.
+Final `configure` uses the same snapshot and verifies already prepared slots
+against the complete public and private corpus. It freezes the reference in
+`execution.corpus_snapshot`; changed bytes or a different full slot corpus fail
+before reuse. Missing slot records retain the existing read-only reconciliation
+boundary. No uncertain write is replayed.
+
+### Owned episode material
+
 Cases with declared turn events require `episode_fixtures` in the setup. This
 explicit policy names the authorized synthetic Notion parent and any pinned
 sources. `configure` prepares one owned initial fixture for every scheduled
@@ -158,6 +203,42 @@ members; it rejects local/mixed placements before remote work. An ambiguous
 initial preparation is retained and re-entry only performs read-only reconciliation
 against the same owned scope. See [turn bridge and fixture ownership](benchmark-turn-bridge.md#writable-fixtures-for-every-scheduled-slot)
 for the setup shape, evidence binding and recovery boundary.
+
+`episode_fixtures.authoring: "native-main-exact-resources"` opts native Notion
+owners into complete public import with only `SKILL.md` as Native Markdown.
+Auxiliary Markdown remains an exact resource. The policy is frozen in each
+fixture plan and recipe; it accepts only one present immutable version without
+relation or metadata overrides. Pinned Source bindings retain their existing
+path. See [fixture file authority](fixture-authoring.md) for command, preflight
+and recovery constraints. Omitting this field retains the original authoring
+policy and never changes an existing fixture's authority.
+
+For a catalog that also contains relation-bearing objects, select individual
+eligible owners by their canonical Skill IDs:
+
+```json
+{
+  "episode_fixtures": {
+    "version": 1,
+    "project_page_id": "owned-synthetic-parent-uuid",
+    "authoring_by_skill": {
+      "references-01-a-grant": "native-main-exact-resources"
+    }
+  }
+}
+```
+
+The global `authoring` field and `authoring_by_skill` map are mutually exclusive.
+The map must be nonempty and name Skills in the selected owned catalogs. Unknown
+IDs, unknown policies and ineligible selected objects fail validation. Selection
+is explicit; the controller does not inspect extensions and silently choose a
+policy. Unselected objects retain their complete original recipe, including
+relations and metadata. Each slot freezes only its matching map entries.
+For direct shared-material planning, `planBenchmarkFixture` and
+`buildFixtureRecipe` accept the same map as `authoringBySkill`; the immutable
+fixture plan records it as `authoring_by_skill`.
+
+### Models and budgets
 
 The controller accepts model configuration, not a fixed model enumeration.
 `models.source_file`, `provider`, `ids`, and `api_key_env` select declared routes
