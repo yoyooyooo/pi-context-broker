@@ -9,13 +9,14 @@ import { phaseZero } from './phase-zero.mjs';
 const HELP = `Benchmark: frozen comparisons, actual episodes, and offline evidence
 
   node benchmark/cli.mjs configure --setup ABS_SETUP_JSON
-  node benchmark/cli.mjs run --plan ABS_FROZEN_PLAN [--limit NONNEGATIVE_INTEGER] [--analysis-revision ABS_JSON]
+  node benchmark/cli.mjs run --plan ABS_FROZEN_PLAN [--limit NONNEGATIVE_INTEGER] [--analysis-revision ABS_JSON | --collection-recovery ABS_JSON]
   node benchmark/cli.mjs status --root ABS_BATCH_DIRECTORY
   node benchmark/cli.mjs gate --root ABS_GATE_BATCH --out ABS_NEW_GATE_JSON
   node benchmark/cli.mjs reconcile --root ABS_BATCH_DIRECTORY --lease OBSERVED_DEAD_LEASE_ID
   node benchmark/cli.mjs analyze --root ABS_BATCH_DIRECTORY --out ABS_NEW_REPORT
   node benchmark/cli.mjs reanalysis --root ABS_BATCH_DIRECTORY --out ABS_NEW_REPORT
   node benchmark/cli.mjs register-reanalysis --plan ABS_PLAN --replacements ABS_JSON --out ABS_NEW_REVISION --reason TEXT
+  node benchmark/cli.mjs register-collection-recovery --plan ABS_PLAN --frozen-controller ABS_ORIGINAL_CLI --reason TEXT
   node benchmark/cli.mjs journey --root ABS_BATCH_DIRECTORY --run RUN_ID
   node benchmark/cli.mjs query --root ABS_BATCH_DIRECTORY [--condition ID] [--outcome pass|fail|unknown]
 
@@ -35,6 +36,9 @@ The legacy first24 gate and explicit prospective scope gates retain the same
 two-model gate, verified zero-send repair and single manual route amendment.
 analyze replays normalized observations; reanalysis re-reads original artifacts
 and the private oracle before scoring. Both perform zero model requests.
+Collection recovery registers an exact storage-only projection and controller
+identity after a collection failure. First use run --limit 0 with its explicit
+reference to collect the retained run without sending a replacement request.
 
 Legacy phase0 has no task submission API. Its local-command probe is not the full candidate manifest
 or paid-run gate. It remains available to replay the earlier bootstrap scope.
@@ -47,8 +51,9 @@ export function parseBenchmarkArgs(args) {
   const [action, ...rest] = args;
   const flags = { validate: ['protocol', 'stage'], manifest: ['file', 'stage'],
     phase0: ['root', 'build', 'mode', 'skills', 'expected', 'condition', 'id', 'out'], 'freeze-load': ['file', 'out'],
-    configure: ['setup'], run: ['plan', 'limit', 'analysis-revision'], status: ['root'], gate: ['root', 'out'], reconcile: ['root', 'lease'], analyze: ['root', 'out'], reanalysis: ['root', 'out'],
+    configure: ['setup'], run: ['plan', 'limit', 'analysis-revision', 'collection-recovery'], status: ['root'], gate: ['root', 'out'], reconcile: ['root', 'lease'], analyze: ['root', 'out'], reanalysis: ['root', 'out'],
     'register-reanalysis': ['plan', 'replacements', 'out', 'reason'],
+    'register-collection-recovery': ['plan', 'frozen-controller', 'reason'],
     journey: ['root', 'run'], query: ['root', 'condition', 'outcome'] };
   assert.ok(Object.hasOwn(flags, action), 'Unknown Benchmark action; use --help');
   const options = { action };
@@ -73,6 +78,15 @@ export async function benchmarkMain(args) {
     return createAnalysisRevision({ planFile: options.plan, outputFile: options.out,
       replacements: JSON.parse(await readFile(options.replacements, 'utf8')), reason: options.reason });
   }
+  if (options.action === 'register-collection-recovery') {
+    for (const key of ['plan', 'frozen-controller'])
+      assert.ok(options[key] && isAbsolute(options[key]), '--' + key + ' must be absolute');
+    assert.ok(options.reason, '--reason must explain the collection failure and path projection');
+    const { createCollectionRecovery } = await import('./collection-recovery.mjs');
+    const { reference, recovery } = await createCollectionRecovery({ planFile: options.plan,
+      frozenController: options['frozen-controller'], reason: options.reason });
+    return { status: 'registered', kind: recovery.kind, reference, execution_performed: false, model_requests: 0 };
+  }
   if (options.action === 'configure') {
     assert.ok(options.setup && isAbsolute(options.setup), '--setup must be absolute');
     const { configureComparison } = await import('./configure.mjs');
@@ -84,9 +98,12 @@ export async function benchmarkMain(args) {
     assert.ok(options.plan && isAbsolute(options.plan), '--plan must be absolute');
     assert.ok(options.limit === undefined || /^(0|[1-9][0-9]*)$/.test(options.limit), '--limit is a nonnegative integer');
     assert.ok(options['analysis-revision'] === undefined || isAbsolute(options['analysis-revision']), '--analysis-revision must be absolute');
+    assert.ok(options['collection-recovery'] === undefined || isAbsolute(options['collection-recovery']), '--collection-recovery must be absolute');
+    assert.ok(!options['analysis-revision'] || !options['collection-recovery'], 'Choose one registered correction');
     const { executeBatchPlan } = await import('./controller.mjs');
     const result = await executeBatchPlan({ plan: JSON.parse(await readFile(options.plan, 'utf8')),
-      maximumNewEpisodes: options.limit === undefined ? Infinity : Number(options.limit), analysisRevisionFile: options['analysis-revision'] });
+      maximumNewEpisodes: options.limit === undefined ? Infinity : Number(options.limit), analysisRevisionFile: options['analysis-revision'],
+      collectionRecoveryFile: options['collection-recovery'] });
     return { ...result, ledger: undefined, execution_performed: (result.last?.new_episodes ?? 0) > 0 };
   }
   if (['status', 'gate', 'reconcile', 'analyze', 'reanalysis', 'journey', 'query'].includes(options.action)) {
@@ -110,9 +127,11 @@ export async function benchmarkMain(args) {
       return analyzeBatch({ root: options.root, outputDirectory: options.out, reanalysis: options.action === 'reanalysis' });
     }
     const status = await batchStatus(options.root);
+    const plan = JSON.parse(await readFile(join(options.root, 'plan.json'), 'utf8'));
+    const { verifyCollectionRecoveryResults } = await import('./collection-recovery.mjs');
+    await verifyCollectionRecoveryResults(plan, status.episodes);
     if (options.action === 'status') return { ...status, ledger: undefined, execution_performed: false };
     const { readEvidenceBundle, buildEvidenceIndex, queryEvidenceIndex } = await import('./evidence/store.mjs');
-    const plan = JSON.parse(await readFile(join(options.root, 'plan.json'), 'utf8'));
     if (options.action === 'journey') {
       assert.ok(options.run, '--run must name one retained episode');
       const item = status.episodes.find(item => item.run_id === options.run);

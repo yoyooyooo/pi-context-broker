@@ -5,6 +5,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { fingerprint, validateProtocol } from './protocol.mjs';
 import { readEvidenceBundle } from './evidence/store.mjs';
 import { verifyAnalysisRevision } from './revision.mjs';
+import { verifyCollectionRecoveryResults } from './collection-recovery.mjs';
 
 export const PROSPECTIVE_COHORT = 'benchmark-prospective-cohort';
 export const isProspectiveCohort = value => value?.kind === PROSPECTIVE_COHORT;
@@ -110,7 +111,9 @@ export async function readCohortHistory({ planFiles, pilotLedgerRoot, expected }
     assert.ok(applied.length <= 1, 'COHORT_HISTORY_REVISION_CHAIN_UNSUPPORTED');
     const revisionReference = applied[0]?.reference ?? null;
     const revision = revisionReference ? await verifyAnalysisRevision({ reference: revisionReference, plan }) : null;
-    const item = { plan: await reference(path), ledger: await reference(ledgerPath), analysis_revision: revisionReference };
+    const recovery = await verifyCollectionRecoveryResults(plan, completed);
+    const item = { plan: await reference(path), ledger: await reference(ledgerPath), analysis_revision: revisionReference,
+      ...(recovery ? { collection_recovery: recovery.reference } : {}) };
     plans.push(item); owners.set(plan.id, { plan, starts, completed, revision, reference: item.plan });
   }
   const episodes = [], subtotal = Object.fromEntries(usageKeys.map(key => [key, 0]));
@@ -146,6 +149,7 @@ export async function readCohortHistory({ planFiles, pilotLedgerRoot, expected }
         && knownUsage(usage) && usage.model_requests > 0 && episode.attempts.filter(attempt => attempt.sent).every(attempt => attempt.adapter.verified)
         ? 'complete' : 'incomplete',
       quality_credit: 'excluded_from_new_scope', stop_batch: replacement ? replacement.stop_batch : Boolean(event.result.stop_batch),
+      ...(event.result.collection_recovery ? { collection_recovery: event.result.collection_recovery } : {}),
       ...(replacement ? { analysis_revision: plans.find(item => item.plan.path === owner.reference.path).analysis_revision,
         original_directory: event.result.normalized_directory, original_episode_sha256: event.result.episode_sha256 } : {}) });
   }

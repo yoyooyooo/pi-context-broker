@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fingerprint } from './protocol.mjs';
 import { readEvidenceBundle, verifyArtifactFiles } from './evidence/store.mjs';
 import { verifyAnalysisRevision } from './revision.mjs';
+import { verifyCollectionRecoveryResults } from './collection-recovery.mjs';
 import { assertZeroSendInvalid } from './resumption.mjs';
 import { readProviderTransport } from '../scripts/skill-consumption-provider.mjs';
 import { isProspectiveCohort, prospectiveCohortPolicy, prepareProspectiveCohort, verifyProspectiveCohort,
@@ -624,7 +625,9 @@ export async function readScopeCompletedResults(plan, { analysisRevisionReferenc
       revision_provenance: { analysis_revision: reference, original_episode_sha256: event.result.episode_sha256,
         original_directory: event.result.normalized_directory } };
   });
-  return { rows, completed, analysis_revision: reference, revision };
+  const recovery = await verifyCollectionRecoveryResults(plan, completed);
+  return { rows, completed, analysis_revision: reference, revision,
+    ...(recovery ? { collection_recovery: recovery.reference } : {}) };
 }
 
 /** Recheck every later reservation, so another control root cannot forget a stop. */
