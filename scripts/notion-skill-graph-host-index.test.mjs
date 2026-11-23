@@ -371,10 +371,10 @@ test('a frozen contextual identity cannot borrow identical bytes supported only 
     readMain(f);
     assert.equal(f.call('old-scope', 'skill://index-root/SKILL.md'), undefined);
     await writeVariant(f, { scope: 'b'.repeat(64) }, '');
-    f.result('old-scope', f.body);
+    assert.throws(() => f.result('old-scope', f.body), /Materialized main has no actual consume-entry or fixed read source proof/);
     const events = await f.events(), call = events.find(event => event.phase === 'tool-call' && event.toolCallId === 'old-scope');
     assert.equal(call.expected.scope, f.scope);
-    assert.equal(events.find(event => event.phase === 'tool-result' && event.toolCallId === 'old-scope').complete, false);
+    assert.equal(events.some(event => event.phase === 'tool-result' && event.toolCallId === 'old-scope' && event.complete), false);
   } finally { f.close(); }
 });
 

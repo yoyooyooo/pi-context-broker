@@ -126,6 +126,8 @@ try {
   assert.equal(direct.body, undefined);
   assert.equal(direct.members, undefined);
   assert.equal((await buildRawDollarRegistry(config, root)).records.filter(record => record.id === remoteRouter.id && record.sourceId === source.id).length, 1, "Direct remote Router reference preserves one raw registry record");
+  await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", ...remoteRouter, ref: withNativeSnapshot(remoteRouter.ref, "s_" + "c".repeat(64)) }] }));
+  assert.throws(() => readDiscoveryCatalog(catalog, [], {}, context), { code: "SOURCE_IDENTITY_MISMATCH" }, "A Library query is current; a snapshot selector still cannot become a direct Router catalog entry");
   await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", name: "local-only", members: [{ type: "local", path: local }] }] }));
   assert.equal(readDiscoveryCatalog(catalog)[0]!.members![0]!.name, "local-helper", "Local catalog remains independent of source discovery");
   const vanished = join(root, "vanished", "SKILL.md");

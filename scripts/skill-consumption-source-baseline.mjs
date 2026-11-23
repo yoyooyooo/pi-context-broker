@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { parseNativeReference, hasExactNativeOwner } from '../packages/context-broker/src/native-reference.ts';
+import { parseNativeReference, hasExactNativeOwner, nativeFileBinding } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -298,10 +298,11 @@ async function observeResource(plan, item, value, state) {
   for (const key of ['snapshot_id', 'scope', 'version_id', 'entrypoint']) assert.equal(manifest[key], value[key]);
   for (const key of ['file_bindings', 'native_references', 'members', 'required']) assert.deepEqual(manifest[key] ?? [], value[key] ?? []);
   assert.ok(Array.isArray(manifest.files) && manifest.files.length > 1, 'A resource baseline needs an actual multifile snapshot');
-  const selected = manifest.files.find(file => file.path === value.path);
-  assert.ok(selected); assert.equal(sha(value.content), selected.sha256); assert.equal(Buffer.byteLength(value.content), selected.bytes);
-  const binding = manifest.file_bindings?.find(file => file.path === value.path);
-  if (binding) assert.equal(returned.searchParams.get('file_id'), binding.file_id);
+  const selectedFiles = manifest.files.filter(file => file.path === value.path);
+  assert.equal(selectedFiles.length, 1, 'The selected manifest must bind one exact resource path');
+  const selected = selectedFiles[0];
+  assert.equal(sha(value.content), selected.sha256); assert.equal(Buffer.byteLength(value.content), selected.bytes);
+  nativeFileBinding({ fileBindings: manifest.file_bindings }, value.path);
   const objects = join(state, 'objects'); assert.equal(await realpath(objects), objects);
   const cacheObjects = [];
   for (const name of (await readdir(objects)).sort()) {

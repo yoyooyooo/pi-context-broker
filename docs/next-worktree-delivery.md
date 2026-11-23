@@ -8,7 +8,7 @@
 
 推进前先核 origin、分支、HEAD 和未提交改动。只对干净的自有 checkout 执行 `git pull --ff-only`；上游已变化或本地有未完成工作时先保存并整合，禁止 force push、merge commit、reset --hard 或覆盖其他会话的改动。
 
-CLI 先完成当前 gate 并提交，Broker 的 CI/publish CLI pin 再绑定该完整 commit。双机都以相同的目标 commit 对齐；不能用 main、发布版本或另一个工作树替代。
+CLI 先完成当前 gate 并提交，Broker 的 `.github/ntn-skills-cli-revision` 再绑定该完整 commit；CI、publish 和 formal workflow 共用这一来源。双机都以相同的目标 commit 对齐；不能用 main、发布版本或另一个工作树替代。
 
 ## 构建与来源对应
 
@@ -24,7 +24,7 @@ NTN_SKILLS_BUILD_ENTRY="$CLI_ROOT/packages/cli/dist/ntn-skills.js" bun run build
 
 使用本次已声明的受支持 Node、Bun 与 Git runtime，保留实际 executable/version。临时命令的工具选择与普通 `pi` 的 runtime 分别记录，不能靠临时 PATH 把普通入口的缺项隐藏掉。
 
-两个 build 在 `dist/next-build.json` 写入源文件清单与产物 SHA。Broker 另外绑定所选 raw CLI/SDK 与 Skills。构建途中输入变化会失败。源文件新增、删除、提交后未重建、产物被替换或 Broker 仍嵌入旧 SDK，都会被下列检查拒绝。
+两个 build 在 `dist/next-build.json` 写入源文件清单与产物 SHA。Broker 另外绑定所选 raw CLI、SDK、`ntn-skills/ref` 的纯 CJS 产物与 Skills；内嵌协议版本必须为 2，装载时核对所选模块的实际字节。构建途中输入变化会失败。源文件新增、删除、提交后未重建、产物被替换或 Broker 仍嵌入旧 SDK，都会被下列检查拒绝。
 
 ```json
 {
@@ -71,7 +71,11 @@ plan 为 `prepared_not_executed`。run 在新普通 `pi -ns` 中检查实际注�
 
 Pi 的 `responseModel` 是可选响应信息。现役 cost observer 区分原始未报告、合法报告和非法值；分析器保留未报告为 unknown，不从请求 model 补值。HTTP/SSE 完成仍需真实传输和同请求的响应证据；缺少这项原始状态的旧观察不能按新规则补成通过。
 
-普通真实模型可能由现役 `pi-compact-ui` 注册 `read`。Broker 的公开 hook 将候选或已选主文（`sr:C…`、`sr:S…`）、单个资源（`sr:R…`）以及已登记的完整固定 File `skill://` 地址解析为不可变文件，再交给该包的内建读取委托。完整地址必须带 snapshot 和 File 身份，精确匹配实际 native 分支中此前唯一的已选主文或资源登记；缺少固定身份、额外 query 或歧义登记均不接受。该有限 profile 只接受单路径完整文本读取；原始 `refresh` 布尔参数必须原样保留，主文显式刷新可查看同 owner 新版，但不改变已激活工作集。task observer 仅在同调用、同轮的当前 v3 主文或 v2 资源回执到达后，保全实际执行参数和完整文件字节。原始引用必须已存在于实际 native 分支；资源还必须唯一关联此前已选 owner，并匹配其 scope、snapshot、version 和固定 File。entry 投影同时保全并核对完整 `.broker-entry.json`；独立 resource 投影没有该 manifest，不猜测或读取不存在的主文清单。分析器重新核验原始与 prepared 参数、当前 Broker 注册、不可变身份、实际 callback/回执顺序及交付的完整字节，并只接受已审阅 `pi-compact-ui@0.1.3` 的精确 package/index 字节。这条引用准备证明不覆盖批量或部分读取。对绝对本地路径，observer 另行保全同一已审阅 delegate 的实际 package/index 原件及完整 callback 内容；分析器核对 unchanged path/offset/limit、同进程同轮的调用与结果、嵌套原生 census 和内容字节后，给它独立的本地只读归属。该路径可保留原生范围读取，但不能借用 Broker 身份或授权未证明的引用改写，也不覆盖其他插件或其他工具。旧观察缺少原件时继续失败，不能据事后路径或回执补造证明；更新后用新真实模型运行取证。
+普通真实模型可能由现役 `pi-compact-ui` 注册 `read`。Broker 的公开 hook 将候选或已选主文（`sr:C…`、`sr:S…`）、单个资源（`sr:R…`）以及已登记的完整固定 `skill://` 地址解析为不可变文件，再交给该包的内建读取委托。在这个有限 profile 中，完整地址使用 `skill://<stable-skill-id>/<exact-path>?library=<logical-library-id>&snapshot=<snapshot-id>`，精确匹配实际 native 分支中此前唯一登记的 owner、Library、snapshot 和路径；缺少固定身份、协议之外的 query 或歧义登记均不接受。公开 URI 不包含 `file_id`。所选 manifest 提供唯一的原生 File 绑定，或固定的 Source 路由与字节证明；Source 完整树中的文件可以没有对应的 Notion Files 行。
+
+该 profile 只接受单路径完整文本读取；原始 `refresh` 布尔参数必须原样保留，主文显式刷新可查看同 owner 新版，但不改变已激活工作集。task observer 仅在同调用、同轮的当前 v3 主文或 v2 资源回执到达后，保全实际执行参数和完整文件字节。原始引用必须已存在于实际 native 分支；资源还必须唯一关联此前已选 owner，并匹配其 scope、snapshot、version、精确路径和对应的 manifest 绑定。原生 File 身份继续作为内部证据核验，不由 URI query 提供。entry 投影同时保全并核对完整 `.broker-entry.json`；独立 resource 投影没有这份 host entry manifest，不猜测或读取不存在的主文清单。分析器重新核验原始与 prepared 参数、当前 Broker 注册、不可变身份、实际 callback/回执顺序及交付的完整字节，并只接受已审阅 `pi-compact-ui@0.1.3` 的精确 package/index 字节。该 profile 不覆盖批量、部分读取、其他插件或其他工具。
+
+对绝对本地路径，observer 另行保全同一已审阅 delegate 的实际 package/index 原件及完整 callback 内容；分析器核对 unchanged path/offset/limit、同进程同轮的调用与结果、嵌套原生 census 和内容字节后，给它独立的本地只读归属。该路径可保留原生范围读取，但不能借用 Broker 身份或授权未证明的引用改写，也不覆盖其他插件或其他工具。旧观察缺少原件时继续失败，不能据事后路径或回执补造证明；更新后用新真实模型运行取证。
 
 如果执行环境不允许读取该检查需要的日用配置，记录具体 blocked，不通过另一条文件路径绕读。可使用公开 Pi API 取得独立的部分证据，但不能把该部分回执标为完整 daily runner 通过。
 

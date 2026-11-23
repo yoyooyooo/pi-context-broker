@@ -203,7 +203,7 @@ export function sourceFailureMessage(code: string, details?: SourceError["detail
     case "NOTION_SCHEDULER_UNAVAILABLE": return "The shared Notion request scheduler is unavailable. Check the local scheduler state and run /context-broker doctor.";
     case "ACCESS_DENIED": return "Grant the existing Notion connection read access to the selected database.";
     case "CONTENT_DISABLED": return "The Skill is disabled (Enabled=false) in Notion. This is not a source connection failure. Enable it before retrying the exact read; catalog metadata may remain cached until refreshed.";
-    case "CURRENT_SOURCE_REQUIRED": return "The containing file has no Source contribution for this cross-Skill link. Use an exact target Skill reference.";
+    case "CURRENT_SOURCE_REQUIRED": return "This operation requires a current Source contribution. Migrate its current content if the Source table or binding is missing or historical. For a cross-Skill relative link, use an exact target Skill reference.";
     case "CURRENT_SOURCE_CHANGED": return "The Source revision no longer matches the containing fixed file. Existing selections are unchanged; use a previously issued exact target reference or explicitly inspect current material.";
     case "CURRENT_SOURCE_REFERENCE_AMBIGUOUS": return "This Source path maps to more than one Skill. Select one exact target reference.";
     case "CURRENT_SOURCE_EXTERNAL_REFERENCE": return "This Source path is outside the selected Skill members. It cannot be read as an imported Skill reference.";

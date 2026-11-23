@@ -10,7 +10,7 @@
   },
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
-    "packages/context-broker/src/discovery-records.ts": "be397d085c67f906ba06f56a1aaf06e33f5f2b48c00bed9a2a4138d23255eef9",
+    "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
     "packages/context-broker/src/host-skills.ts": "076162b5081a965300aa4293bfd32510a66eb5ace7f052a1bef4f400db74d76d",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
@@ -31,7 +31,7 @@
     "packages/context-broker/src/index.ts": "9b9785d99024c6d3f4283ad8672412f05d24b8dc04eeb47ddffbd5703c414ec5",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
-    "packages/context-broker/src/notion-source.ts": "d8f2ca3ba19a6e0add10c0165340e17a6dbe97f03acc4039eed691e431dbf1b9",
+    "packages/context-broker/src/notion-source.ts": "643772203b82a5c3a391348c6925fefd6c2d72064e0f8cf1b3e40b10ee6725a4",
     "packages/context-broker/src/pi-host-adapter.ts": "bf30ce68dc398cb0725b216261604e0edebf9d75957ee64f97ee7ccd73715e55",
     "packages/context-broker/scripts/host-refresh.test.ts": "132b729c029e92f278a59bb03c4881346291a1e872add0067951478c8e6703c2",
     "packages/context-broker/scripts/session-refresh.test.ts": "12e75bc82e0c54a59b9c5c1fc703bd04c5c780f5d5907cac1f3d9ffcac9c5b28",
@@ -911,7 +911,9 @@
         "fixed-resource-path-binding and fixed-resource-native-binding are added concrete extension checks with an empty finite properties list and explicit concrete_obligations; baseline, behavioral mutation and byte-identical restoration are required."
       ],
       "proof_limit": "No TLA, config, view, bound, case, expected_rules or tool-lock byte is changed. These finite models use abstract identities and pins; they do not prove URI grammar, Library lookup, Source relative mapping, FileID/path bijection, package selection, live authorization or actual provider bytes. Those are concrete regression/integration obligations and the separately owned CLI reference model. Hashes bind reviewed owner/test bytes and do not establish implementation refinement.",
-      "source_routing": "Only a complete current catalog absence or an explicit descriptor-proven Library mismatch permits trying another configured source. A fixed SKILL_NOT_FOUND, partial catalog or denied response must not be hidden by another source. SNAPSHOT_MISSING retains its dedicated fixed-missing handling and never falls back to current. notion-source-sdk.test.ts exercises the actual source boundary and exact SDK call count."
+      "source_routing": "Only a complete current catalog absence or an explicit descriptor-proven Library mismatch permits trying another configured source. A fixed SKILL_NOT_FOUND, partial catalog or denied response must not be hidden by another source. SNAPSHOT_MISSING retains its dedicated fixed-missing handling and never falls back to current. notion-source-sdk.test.ts exercises the actual source boundary and exact SDK call count.",
+      "router_catalog": "Direct remote Router catalog entries use the actual pure parser snapshot selection; the required Library query does not imply a fixed snapshot. Exact source namespace, credential scope, logical owner, physical locator and canonical entry checks still precede selection. remote-catalog.test.ts covers a complete current Router with library query and rejection of its fixed snapshot form. This grammar-to-catalog boundary is a concrete regression obligation, not a new finite model rule.",
+      "source_diagnostic": "CURRENT_SOURCE_REQUIRED still covers existing missing or historical Sources table/property bindings as well as cross-Skill relative paths without a Source contribution. The public next-action text preserves current-content migration and points relative links to an exact target reference. Existing acquisition failure regressions continue to require the original code and migration action; no acquisition or model behavior changes."
     }
   }
 }

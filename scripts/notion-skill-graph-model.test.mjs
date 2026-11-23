@@ -693,7 +693,7 @@ test('batch resources retain one exact outer provider output and cannot pass on 
   const value = contractFixture('B'), resource = value.trace.reads[1];
   resource.role = 'resource'; resource.toolCallId = 'batch';
   resource.resourceBatchProof = { index: 0, publicRequestId: 'actual-sdk-batch', deliveryVerified: true,
-    selection: { owner: 'fixture-leaf', scope: resource.scope, snapshot_id: resource.snapshot },
+    selection: { owner: value.oracle.target.logicalId, scope: resource.scope, snapshot_id: resource.snapshot },
     delivery: { encoding: 'json', start: 10, end: 10 + resource.content.length },
     toolResultSha256: hash('complete-batch-output'), toolResultBytes: 1000 };
   value.trace.providerRequests.at(-1).toolResults = [{ toolCallId: 'batch', tool: 'read', exactToolOutputCopies: 1,

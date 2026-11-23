@@ -156,7 +156,10 @@ function resourceFixtureCli() {
   const id = 'skill://one?library=test', scope = 'a'.repeat(64), root = 'skill://one/SKILL.md?library=test';
   const version_id = digest(content), snapshot_id = 's_' + digest(version_id);
   const record = { id, ref: root, entrypoint: 'SKILL.md', locator: { database_id: '00000000-0000-4000-8000-000000000001' } };
-  const file_bindings = [{ file_id: 'main', path: 'SKILL.md' }, { file_id: 'resource', path: 'references/example.md' }];
+  const file_bindings = [
+    { file_id: 'main', page_id: '00000000-0000-4000-8000-000000000011', path: 'SKILL.md' },
+    { file_id: 'resource', page_id: '00000000-0000-4000-8000-000000000012', path: 'references/example.md' },
+  ];
   const bodies = [{ path: 'SKILL.md', content: main }, { path: 'references/example.md', content }];
   const files = bodies.map(file => ({ path: file.path, bytes: Buffer.byteLength(file.content), sha256: digest(file.content) }));
   const manifest = { snapshot_id, scope, record, entrypoint: 'SKILL.md', version_id, created_at: new Date().toISOString(), files, file_bindings };

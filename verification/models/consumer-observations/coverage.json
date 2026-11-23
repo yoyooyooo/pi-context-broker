@@ -10,7 +10,7 @@
   },
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
-    "packages/context-broker/src/discovery-records.ts": "be397d085c67f906ba06f56a1aaf06e33f5f2b48c00bed9a2a4138d23255eef9",
+    "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
     "packages/context-broker/src/host-skills.ts": "076162b5081a965300aa4293bfd32510a66eb5ace7f052a1bef4f400db74d76d",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/scripts/consumer-observation.test.ts": "2f07b67ddf22702b2416fc154daf6adc7d9974372e36563f11666c6858509145",
@@ -391,7 +391,8 @@
         "fixed-resource-path-binding and fixed-resource-native-binding are added concrete extension checks with an empty finite properties list and explicit concrete_obligations; baseline, behavioral mutation and byte-identical restoration are required."
       ],
       "proof_limit": "No TLA, config, view, bound, case, expected_rules or tool-lock byte is changed. These finite models use abstract identities and pins; they do not prove URI grammar, Library lookup, Source relative mapping, FileID/path bijection, package selection, live authorization or actual provider bytes. Those are concrete regression/integration obligations and the separately owned CLI reference model. Hashes bind reviewed owner/test bytes and do not establish implementation refinement.",
-      "source_routing": "Only a complete current catalog absence or an explicit descriptor-proven Library mismatch permits trying another configured source. A fixed SKILL_NOT_FOUND, partial catalog or denied response must not be hidden by another source. SNAPSHOT_MISSING retains its dedicated fixed-missing handling and never falls back to current. notion-source-sdk.test.ts exercises the actual source boundary and exact SDK call count."
+      "source_routing": "Only a complete current catalog absence or an explicit descriptor-proven Library mismatch permits trying another configured source. A fixed SKILL_NOT_FOUND, partial catalog or denied response must not be hidden by another source. SNAPSHOT_MISSING retains its dedicated fixed-missing handling and never falls back to current. notion-source-sdk.test.ts exercises the actual source boundary and exact SDK call count.",
+      "router_catalog": "Direct remote Router catalog entries use the actual pure parser snapshot selection; the required Library query does not imply a fixed snapshot. Exact source namespace, credential scope, logical owner, physical locator and canonical entry checks still precede selection. remote-catalog.test.ts covers a complete current Router with library query and rejection of its fixed snapshot form. This grammar-to-catalog boundary is a concrete regression obligation, not a new finite model rule."
     }
   }
 }

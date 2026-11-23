@@ -1,4 +1,4 @@
-import { nativeFileRef as fileRef, nativeSkillId } from '../packages/context-broker/src/native-reference.ts';
+import { nativeFileRef as fileRef, nativeSkillId, parseNativeReference, nativeFileBinding } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -516,8 +516,16 @@ export async function runSkillGraph({ host, root, scratch, evidence, extension, 
               const calls = messages.filter(message => message.role === 'assistant').flatMap(message => (message.content ?? []).filter(part => part.type === 'toolCall'));
               const reads = calls.filter(call => call.name === 'read');
               assert.ok(calls.every(call => ['read', 'notion_list'].includes(call.name))); assert.equal(reads.length, 3);
-              assert.ok(reads[1].arguments.path.startsWith('skill://') && reads[2].arguments.path.includes('/references/ledger.md?library=controlled-graph&snapshot='));
-              observation.observations.push({ directory_target: 'derived from actual root read', resource_target: 'derived from actual Member read; stable file_id resolves renamed path', requires_bodies: 0 });
+              assert.ok(reads[1].arguments.path.startsWith('skill://'));
+              const resourceRef = parseNativeReference(reads[2].arguments.path);
+              assert.equal(resourceRef.selector, fixture.graph.member.record.id); assert.equal(resourceRef.path, fixture.graph.resource.path);
+              if (resourceRef.snapshot !== undefined) assert.equal(resourceRef.snapshot, fixture.graph.member.snapshot_id);
+              const resourceProof = messages.find(message => message.role === 'toolResult' && message.toolCallId === reads[2].id)?.details?.contextBrokerResource;
+              assert.ok(resourceProof); assert.equal(resourceProof.version, 2); assert.equal(resourceProof.delivered_complete_text, true);
+              assert.deepEqual([resourceProof.id, resourceProof.scope, resourceProof.snapshot_id, resourceProof.version_id, resourceProof.path, resourceProof.file_id],
+                [fixture.graph.member.record.id, fixture.graph.member.scope, fixture.graph.member.snapshot_id, fixture.graph.member.version_id, fixture.graph.resource.path,
+                  nativeFileBinding({ fileBindings: fixture.graph.member.file_bindings }, fixture.graph.resource.path)?.file_id]);
+              observation.observations.push({ directory_target: 'derived from actual root read', resource_target: 'derived from actual Member read; exact selected-manifest path with internal native binding', requires_bodies: 0 });
             }
             if (['cold-dollar', 'multi-root', 'renamed-identities'].includes(name)) {
               const prepareCalls = (await rows(fixture.callsPath)).filter(event => event.phase === 'source-entered' && event.command === 'prepare');
@@ -540,8 +548,20 @@ export async function runSkillGraph({ host, root, scratch, evidence, extension, 
               const calls = renamedMessages.filter(message => message.role === 'assistant').flatMap(message => (message.content ?? []).filter(part => part.type === 'toolCall'));
               const reads = calls.filter(call => call.name === 'read');
               assert.ok(calls.every(call => ['read', 'notion_list'].includes(call.name))); assert.equal(reads.length, 3);
-              const resourceId = fixture.graph.member.file_bindings.find(file => file.path === fixture.graph.resource.path).file_id;
-              assert.equal(new URL(reads[2].arguments.path).searchParams.get('file_id'), resourceId);
+              const resourceRef = parseNativeReference(reads[2].arguments.path), member = fixture.graph.member;
+              assert.equal(resourceRef.selector, member.record.id); assert.equal(resourceRef.path, fixture.graph.resource.path);
+              if (resourceRef.snapshot !== undefined) assert.equal(resourceRef.snapshot, member.snapshot_id);
+              const resourceId = nativeFileBinding({ fileBindings: member.file_bindings }, fixture.graph.resource.path)?.file_id;
+              assert.ok(resourceId, 'This controlled native resource has an actual File binding');
+              const resourceResults = renamedMessages.filter(message => message.role === 'toolResult' && message.toolCallId === reads[2].id);
+              assert.equal(resourceResults.length, 1); assert.notEqual(resourceResults[0].isError, true);
+              const resourceProof = resourceResults[0].details?.contextBrokerResource;
+              assert.ok(resourceProof); assert.equal(resourceProof.version, 2); assert.equal(resourceProof.toolCallId, reads[2].id);
+              assert.deepEqual([resourceProof.id, resourceProof.scope, resourceProof.snapshot_id, resourceProof.version_id, resourceProof.path, resourceProof.file_id],
+                [member.record.id, member.scope, member.snapshot_id, member.version_id, fixture.graph.resource.path, resourceId]);
+              assert.equal(resourceProof.ref, fileRef(member.record.id, fixture.graph.resource.path, member.snapshot_id));
+              assert.equal(resourceProof.delivered_complete_text, true); assert.equal(resourceProof.loaded, false);
+              assert.equal(resourceProof.sha256, sha(fixture.graph.resource.content)); assert.equal(resourceProof.bytes, Buffer.byteLength(fixture.graph.resource.content));
               observation.observations.push({ identity_variant: fixture.graph.identityVariant, changed: ['names', 'aliases', 'library_id', 'skill_ids', 'page_ids', 'database_id', 'data_source_id', 'view_id', 'file_ids', 'resource_paths'], first_use: 'complete deduplicated closure', later_native_selection: 'public catalog and body links only; no target in provider plan', required_bodies_in_inspect: 0 });
             }
           }

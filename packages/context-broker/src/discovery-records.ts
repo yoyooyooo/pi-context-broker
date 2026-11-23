@@ -418,7 +418,7 @@ function routerFromRaw(name: string | undefined, value: unknown, catalogPath: st
     const parsed = parseCatalogMember(reference);
     if (parsed.type !== "remote") throw new Error("Remote catalog Router requires remote reference");
     const record = resolveCatalogReference(parsed, context, "router");
-    if (parsed.ref.includes("?")) throw new CatalogReferenceError("SOURCE_IDENTITY_MISMATCH", "Direct remote Router catalog records require the canonical unpinned entry ref");
+    if (parseNativeReference(parsed.ref).snapshot !== undefined) throw new CatalogReferenceError("SOURCE_IDENTITY_MISMATCH", "Direct remote Router catalog records require the canonical unpinned entry ref");
     return record;
   }
   const catalogDir = dirname(catalogPath);
