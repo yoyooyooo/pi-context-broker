@@ -29,6 +29,21 @@ async function json(path) {
     throw error;
   }
 }
+async function assertSentinelProgress(readSnapshot, timeoutMs = 1000) {
+  let before;
+  // Baseline acquisition and later progress share the original bounded wait.
+  await until(async () => {
+    const current = await readSnapshot();
+    if (current === null) return false;
+    assert.ok(Number.isSafeInteger(current.count) && current.count > 0,
+      'independent sentinel emitted an invalid count');
+    if (before === undefined) {
+      before = current.count;
+      return false;
+    }
+    return current.count > before;
+  }, 'independent sentinel stopped making progress', timeoutMs);
+}
 function launch(file, args, options) {
   const child = spawn(file, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '', stderr = '';
@@ -113,9 +128,13 @@ async function fixture(t, { deadlineMs, signal, leaderExits = false, heldStart =
   const sentinelFile = join(root, 'sentinel.json');
   const sentinel = launch(process.execPath, ['-e', `
     const fs = require('node:fs');
+    const destination = ${JSON.stringify(sentinelFile)};
+    const pending = destination + '.pending';
     let count = 0;
-    setInterval(() => fs.writeFileSync(${JSON.stringify(sentinelFile)},
-      JSON.stringify({ pid: process.pid, count: ++count })), 25);
+    setInterval(() => {
+      fs.writeFileSync(pending, JSON.stringify({ pid: process.pid, count: ++count }));
+      fs.renameSync(pending, destination);
+    }, 25);
   `], { detached: true });
   let harness;
   let ownedPids;
@@ -201,9 +220,7 @@ async function fixture(t, { deadlineMs, signal, leaderExits = false, heldStart =
   assert.ok(lifecycle.some(event => event.event === 'close' && event.pid === ownedPids.pid));
   await until(() => !alive(ownedPids.pid) && !alive(ownedPids.descendant),
     'owned wrapper or descendant survived cleanup', 1000);
-  const before = await json(sentinelFile);
-  await until(async () => (await json(sentinelFile))?.count > before.count,
-    'independent sentinel stopped making progress', 1000);
+  await assertSentinelProgress(() => json(sentinelFile));
   assert.ok(alive(sentinel.child.pid));
   assert.equal(sentinel.child.exitCode, null);
   assert.equal(sentinel.child.signalCode, null);
@@ -226,4 +243,22 @@ test('SIGINT before startRpc handle assignment adopts and stops the pending real
   skip: process.platform === 'win32', timeout: 12000,
 }, async t => {
   await fixture(t, { deadlineMs: 10000, signal: 'SIGINT', heldStart: true });
+});
+
+test('sentinel progress waits for a complete baseline and a later advancing count', {
+  timeout: 2000,
+}, async () => {
+  const snapshots = [null, { count: 7 }, null, { count: 7 }, { count: 8 }];
+  let reads = 0;
+  await assertSentinelProgress(async () => snapshots[reads++]);
+  assert.equal(reads, snapshots.length);
+});
+
+test('sentinel progress fails within its bound without a baseline or count advance', {
+  timeout: 2000,
+}, async () => {
+  for (const snapshot of [null, { count: 7 }]) {
+    await assert.rejects(assertSentinelProgress(async () => snapshot, 60),
+      /independent sentinel stopped making progress/);
+  }
 });
