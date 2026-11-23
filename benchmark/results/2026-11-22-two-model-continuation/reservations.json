@@ -1,0 +1,687 @@
+[
+  {
+    "ordinal": 1,
+    "source_sha256": "960a31d2ea24bf0a483e970460ad760b5961158ec4bb4681fb86306318a5a538",
+    "receipt": {
+      "run_id": "benchmark-route-gate-1-001",
+      "experiment_id": "benchmark-route-gate-1",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0"
+    }
+  },
+  {
+    "ordinal": 2,
+    "source_sha256": "d5c16d64827237dab2c747c2164699d23c213a31a0e9b679f3041aa95a098ad9",
+    "receipt": {
+      "run_id": "benchmark-route-gate-3-002",
+      "experiment_id": "benchmark-route-gate-3",
+      "slot_id": "m0-e1--no-skill-02-a-n16-r1--r0"
+    }
+  },
+  {
+    "ordinal": 3,
+    "source_sha256": "ad90e2d17c3853f9d6c8ef23dd654a48a56b79f648ee63c236cb8345a1b2fb1a",
+    "receipt": {
+      "run_id": "benchmark-route-gate-3-003",
+      "experiment_id": "benchmark-route-gate-3",
+      "slot_id": "m2-e1--no-skill-02-a-n16-r1--r0"
+    }
+  },
+  {
+    "ordinal": 4,
+    "source_sha256": "ab87e4d38b351c39611e1aa6484acd8880df5f0b5acadc927feccd66622cf90e",
+    "receipt": {
+      "run_id": "benchmark-two-model-admission-1-001",
+      "experiment_id": "benchmark-two-model-admission-1",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+      "scope_id": "two-models-20261122",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "c0c28483a13f95e13206ae3e6acaa32df5b8769442ee0c58f44fffa9cdccf9ea",
+      "source_plan_file_sha256": "a288c51853e6f05abbc777818fd8402346f5fc4340771e4649f766f793e8cb17",
+      "plan_sha256": "0394f8e10b7b82d8e4916a7e79ab7e47e56405a404b7a58e5557152760df7f51"
+    }
+  },
+  {
+    "ordinal": 5,
+    "source_sha256": "2aee8bb533a487d4ec67f943f44691a3ce7be245bcc53f477ccd1f70bfa312bf",
+    "receipt": {
+      "run_id": "benchmark-two-model-admission-2-001",
+      "experiment_id": "benchmark-two-model-admission-2",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+      "scope_id": "two-models-20261122-repair1",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "2424f602f36bb6d7d10b5e0100e510e58e74fc013d9b610f0b466cdd2117c20d",
+      "source_plan_file_sha256": "5c7cce660632fdedd973eae1dfb2dda8d2a0e91a37f001195c07749ca73237ad",
+      "plan_sha256": "3672b24caea1a0aeaca45a63c8b0b26c741bc52aca2789c0ca1acc6b2c76411f"
+    }
+  },
+  {
+    "ordinal": 6,
+    "source_sha256": "8e665446163e79b3034f571e8d27900b136ff1b3c1bd55325a43df7b479142a2",
+    "receipt": {
+      "run_id": "benchmark-two-model-admission-3-001",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+      "scope_id": "two-models-20261122-route1",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "f4de8483e5cea8f098de3b6dc7748416470d6526987d0cc4b32b824db59cd1fc",
+      "source_plan_file_sha256": "e504f0e987cf5bda860264b95a305202c85ef85c47058629f73cf88161859c4f",
+      "plan_sha256": "3a2629d4dbd4e0fdf0d620afaab90dc22ed2c5965bab40f0b62eb144f45e54a2"
+    }
+  },
+  {
+    "ordinal": 7,
+    "source_sha256": "5521b586b2ceb6d3a93bd6f25dd09c0402081e3866881e607dd026994213ed1d",
+    "receipt": {
+      "run_id": "benchmark-two-model-admission-3-002",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e1--no-skill-02-a-n16-r1--r0",
+      "scope_id": "two-models-20261122-route1",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "f4de8483e5cea8f098de3b6dc7748416470d6526987d0cc4b32b824db59cd1fc",
+      "source_plan_file_sha256": "e504f0e987cf5bda860264b95a305202c85ef85c47058629f73cf88161859c4f",
+      "plan_sha256": "3a2629d4dbd4e0fdf0d620afaab90dc22ed2c5965bab40f0b62eb144f45e54a2"
+    }
+  },
+  {
+    "ordinal": 8,
+    "source_sha256": "a47895831073f378be01190fb3f0c02e652831d34d26669e04402c91688f3d21",
+    "receipt": {
+      "run_id": "benchmark-two-model-admission-3-003",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+      "scope_id": "two-models-20261122-route1",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "f4de8483e5cea8f098de3b6dc7748416470d6526987d0cc4b32b824db59cd1fc",
+      "source_plan_file_sha256": "e504f0e987cf5bda860264b95a305202c85ef85c47058629f73cf88161859c4f",
+      "plan_sha256": "3a2629d4dbd4e0fdf0d620afaab90dc22ed2c5965bab40f0b62eb144f45e54a2"
+    }
+  },
+  {
+    "ordinal": 9,
+    "source_sha256": "ded6aa1fbbaa28962f71db20680b3aa631703e4822108389901ffd27cee7d159",
+    "receipt": {
+      "run_id": "benchmark-two-model-admission-3-004",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e0--no-skill-01-a-n16-r1--r0",
+      "scope_id": "two-models-20261122-route1",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "f4de8483e5cea8f098de3b6dc7748416470d6526987d0cc4b32b824db59cd1fc",
+      "source_plan_file_sha256": "e504f0e987cf5bda860264b95a305202c85ef85c47058629f73cf88161859c4f",
+      "plan_sha256": "3a2629d4dbd4e0fdf0d620afaab90dc22ed2c5965bab40f0b62eb144f45e54a2"
+    }
+  },
+  {
+    "ordinal": 10,
+    "source_sha256": "76eb89ed41c7e9878b69159f6ce85091402816622d50320104db844c3138719d",
+    "receipt": {
+      "run_id": "benchmark-two-model-admission-3-005",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e0--no-skill-03-a-n16-r1--r0",
+      "scope_id": "two-models-20261122-route1",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "f4de8483e5cea8f098de3b6dc7748416470d6526987d0cc4b32b824db59cd1fc",
+      "source_plan_file_sha256": "e504f0e987cf5bda860264b95a305202c85ef85c47058629f73cf88161859c4f",
+      "plan_sha256": "3a2629d4dbd4e0fdf0d620afaab90dc22ed2c5965bab40f0b62eb144f45e54a2"
+    }
+  },
+  {
+    "ordinal": 11,
+    "source_sha256": "a87cf4aeebc1f29e19d52de5b53b703609a218f6b516db4aa70c2a5b450d71be",
+    "receipt": {
+      "run_id": "benchmark-two-model-admission-3-006",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e1--no-skill-03-a-n16-r1--r0",
+      "scope_id": "two-models-20261122-route1",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "f4de8483e5cea8f098de3b6dc7748416470d6526987d0cc4b32b824db59cd1fc",
+      "source_plan_file_sha256": "e504f0e987cf5bda860264b95a305202c85ef85c47058629f73cf88161859c4f",
+      "plan_sha256": "3a2629d4dbd4e0fdf0d620afaab90dc22ed2c5965bab40f0b62eb144f45e54a2"
+    }
+  },
+  {
+    "ordinal": 12,
+    "source_sha256": "d5f9d485ad9f796ad21550f5730c7cdc4ecfc649e3d43cd2380010a2e23100a5",
+    "receipt": {
+      "run_id": "benchmark-two-model-admission-3-007",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m1-e1--no-skill-01-a-n16-r1--r0",
+      "scope_id": "two-models-20261122-route1",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "f4de8483e5cea8f098de3b6dc7748416470d6526987d0cc4b32b824db59cd1fc",
+      "source_plan_file_sha256": "e504f0e987cf5bda860264b95a305202c85ef85c47058629f73cf88161859c4f",
+      "plan_sha256": "3a2629d4dbd4e0fdf0d620afaab90dc22ed2c5965bab40f0b62eb144f45e54a2"
+    }
+  },
+  {
+    "ordinal": 13,
+    "source_sha256": "6f5884ef19aa18b0a982981a5d3cd3a941e805b71ab54c7441a38a0b24dbff79",
+    "receipt": {
+      "run_id": "benchmark-two-model-admission-3-008",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m1-e0--no-skill-01-a-n16-r1--r0",
+      "scope_id": "two-models-20261122-route1",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "f4de8483e5cea8f098de3b6dc7748416470d6526987d0cc4b32b824db59cd1fc",
+      "source_plan_file_sha256": "e504f0e987cf5bda860264b95a305202c85ef85c47058629f73cf88161859c4f",
+      "plan_sha256": "3a2629d4dbd4e0fdf0d620afaab90dc22ed2c5965bab40f0b62eb144f45e54a2"
+    }
+  },
+  {
+    "ordinal": 14,
+    "source_sha256": "7c210f0f3e6d08c5d0dee8cc1eba39481bbed8ba7e16e4557b0eb9c23b1a2dd2",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-001",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 15,
+    "source_sha256": "fafe2e97641ec0dee2a2701cc1889992074f07bb7fa50cec9c37ce04e043fa8d",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-002",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e1--no-skill-02-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 16,
+    "source_sha256": "7d3591cdeb619453df61a2b222e3bac8771cdefafa2919ea07184c749d62b75e",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-003",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 17,
+    "source_sha256": "0183cc81a49572e97e1fc9237e5735ee777d4a90bed49967df6e1248beceda17",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-004",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e0--no-skill-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 18,
+    "source_sha256": "804feae93ad702998773fc3cf41f0458cb547af0f5db5b1f66a24cd34f855364",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-005",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e0--no-skill-03-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 19,
+    "source_sha256": "9e83187a098d5b4d1d9bd4eedf795d2aeb7fe33a6fcfdb8227c1b13a6dd7c899",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-006",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e1--no-skill-03-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 20,
+    "source_sha256": "c25b119226f7d301274b47f4f06c9189c90f5aaefaea78d2061bd5c2c6c2bf45",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-007",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e1--no-skill-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 21,
+    "source_sha256": "231b05b66d999689f2d960ebf848dadb452b414510d258667087405514f3d38f",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-008",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e0--no-skill-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 22,
+    "source_sha256": "8d91ff7a96240cf42e5cf082fd06feffcbddf1d3de01205d0a0fc82ae2c041d5",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-009",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 23,
+    "source_sha256": "bad007a4c3d462a363c7a883e6773582f646255f20a9403bb6896e8902a826ad",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-010",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e1--explicit-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 24,
+    "source_sha256": "19c3264321e1362a637115fe48caf014ca62ed3600ada2a3dbc94db3e8e3cec1",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-011",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e1--no-skill-03-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 25,
+    "source_sha256": "c57bd3da2bfd70b383c749b61ac8e16cbf48c962950750326ae666fe7decf5ff",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-012",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e0--no-skill-03-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 26,
+    "source_sha256": "86550993bd58c7c5be5240aacd0c14138313363f99d2ceb48c3b7aaa0fb84b62",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-013",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e0--explicit-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 27,
+    "source_sha256": "e008c91c40e16a62d0d245e8428d071db0811255a337ac0a8b4030b622cee9c1",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-014",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e1--explicit-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 28,
+    "source_sha256": "35ef319bf4695634af73d6e8dc4ad250d1ca31a8acd9ffb5b6c3753dffcf15cc",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-015",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e1--no-skill-02-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 29,
+    "source_sha256": "a612b2c09c626522a698c7d324431b0acd43e3f6c52cc40aee1b8a365006ae4d",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-gate-016",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e0--no-skill-02-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "gate",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "ee518eebc523f475adee3cf636596c535663ced8f4754e7b43cab4c39c497bca",
+      "plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88"
+    }
+  },
+  {
+    "ordinal": 30,
+    "source_sha256": "c6303fa3fc0d480c4986fd13d7b9cdd67b40c56c45e7eec38f4793974a331970",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-001",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--ambiguity-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 31,
+    "source_sha256": "f08047c5457f0f408ca6a9ba644ee564ffae7448e6ebe90d8ae0779673493d24",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-002",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--ambiguity-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 32,
+    "source_sha256": "7a176c1c9601b1ad0db5abb3123d23da329aab55ba890507a1fcf6278ff54c3c",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-003",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e1--continuation-01-a-n16-r2--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 33,
+    "source_sha256": "1a3ed6544ff11c6ccd900e3378e7ecffa6a7fb72260e5fcd4b4f3b00a4b0bf45",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-004",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e0--continuation-01-a-n16-r2--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 34,
+    "source_sha256": "d6ed08a9173ca56d5c4b32d8894b147f4c69313bbef36d9382b988e622fdf87b",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-005",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--references-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 35,
+    "source_sha256": "49c475770a0b22dc2b90002d00b35928daca6b5cd64a82ea4f8c8edd8485e5a4",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-006",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--references-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 36,
+    "source_sha256": "d124cda450f63043a037150e3a0edd8028f041795d9fba870ffcd988dbf7dc72",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-007",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--scripts-assets-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 37,
+    "source_sha256": "75995aea83586f5d3141d45f428920c00d7762bc2e11d1e61b684d78f33b5ba1",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-008",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--scripts-assets-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 38,
+    "source_sha256": "31c68cbd084e1a9b4c01ff5cacb1f67ee04391cedc3dbd5b6a4d11e683e01f71",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-009",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--complementary-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 39,
+    "source_sha256": "1fec0a146b5938794dd38b04192990c6fc6a20d5aa9278e0fefbdf20b8907134",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-010",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--complementary-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 40,
+    "source_sha256": "878bec292f5a74c4e5338cc8d6dbb14e691bad8bd239950d695611fe54c59a1b",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-011",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e1--complementary-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 41,
+    "source_sha256": "7c5812b92332ec4cd2675d708ad6a49729070a8b6fe8c4550cb72d919498309d",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-012",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e0--complementary-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 42,
+    "source_sha256": "595fa0d4b9fcafde60f5789e7cbd9a44e0006395e8bc263f99a1f0b4db2470d8",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-013",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e0--task-switch-01-a-n16-r2--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 43,
+    "source_sha256": "b0b3cbfe4fa31f0186fd92520e19a3f59f160d5f0065f2016d02bd4921e1b484",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-014",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e1--task-switch-01-a-n16-r2--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 44,
+    "source_sha256": "2e43708679ff7402879009b1d54e253f3eb97b3976f471d17a6983334f24e55f",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-015",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--equivalent-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 45,
+    "source_sha256": "651e37edce62aa5174d5963ce9cfb60a8596d30ac2f84e2bfc12083f7306ceac",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-016",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--equivalent-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 46,
+    "source_sha256": "15b65b438fdc20f9a6f0968226b82a3204909e8dd7bc4ef537d8f0a0a44405df",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-017",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e0--references-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 47,
+    "source_sha256": "a4fae8542f6837e7149b26d070faa1c70eaf43ad4a50ff5061a73956c8bd7238",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-018",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e1--references-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 48,
+    "source_sha256": "c2e7a621a59f5883c4f5978989bc793acc480a9752bc5548942f42845fb39969",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-019",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--continuation-01-a-n16-r2--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 49,
+    "source_sha256": "bcb8f264a1ef3649a8ef20341713f1a503d5e3972f47cf5a29b5c0ab2fb7e912",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-020",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--continuation-01-a-n16-r2--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  },
+  {
+    "ordinal": 50,
+    "source_sha256": "946d180f80ca4b3b9c80b2d214bf906f218e766ed89886e9db28fadb3e7991dc",
+    "receipt": {
+      "run_id": "benchmark-two-model-cohort-3-expansion-021",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e0--scripts-assets-01-a-n16-r1--r0",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_role": "expansion",
+      "scope_amendment_sha256": "bf3c45b007d3edc7c6d158f9ead53bee1a4db14291c7784715b5e2303eb90873",
+      "source_plan_file_sha256": "abee66900b100dd1b71af0f63bcf23d3587d76a3aa452fd11078511a79832654",
+      "plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6"
+    }
+  }
+]

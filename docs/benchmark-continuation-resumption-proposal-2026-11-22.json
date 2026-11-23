@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "kind": "prospective-resumption-proposal-not-executable",
+  "created_at": "2026-11-23T04:27:41.374776+00:00",
+  "status": "draft_requires_explicit_prospective_decision",
+  "approved": false,
+  "execution_authority": null,
+  "current_physical_reservations": 50,
+  "retained_usage_unknown": 4,
+  "campaign_absolute_limit": 144,
+  "proposed_new_reservation_ceiling": 89,
+  "proposed_total_ceiling": 139,
+  "unallocated_headroom": 5,
+  "retained_stop": {
+    "run_id": "benchmark-two-model-cohort-3-expansion-021",
+    "result_sha256": "66be42d5772382c729d182516bb7522e8760b0bfa98e8607b08c420385d9426c",
+    "normalized_episode_sha256": "974c5b7a554ebd89b033360a29e56fa112cc62366d04ae0aa802a5b0abee8f01",
+    "current_scope_still_stopped": true,
+    "usage_still_unknown": true,
+    "invalid_still_retained": true
+  },
+  "work": [
+    {
+      "purpose": "Follow-up on previously unstarted pilot cases",
+      "maximum_new_reservations": 11,
+      "original_stopped_plan_remains_incomplete": true
+    },
+    {
+      "purpose": "Grok-4.7 auto route gate",
+      "maximum_new_reservations": 8,
+      "route": "magpie/auto/grok-4.7"
+    },
+    {
+      "purpose": "GPT-6.1 Terra auto route gate",
+      "maximum_new_reservations": 8,
+      "route_group": "auto-gpt-6-1-terra",
+      "route": "magpie/auto/gpt-6.1-terra"
+    },
+    {
+      "purpose": "Own-product paired confirmation with unseen material",
+      "maximum_new_reservations": 20,
+      "cold_skill_real_slice_is_subset": true
+    },
+    {
+      "purpose": "Code Mode controls",
+      "maximum_new_reservations": 24
+    },
+    {
+      "purpose": "Scale coverage",
+      "maximum_new_reservations": 10
+    },
+    {
+      "purpose": "Fault and recovery coverage",
+      "maximum_new_reservations": 8
+    }
+  ],
+  "constraints": [
+    "No resend of expansion-021 or any completed episode.",
+    "No rewriting old scores, ledger events, fixed denominators, failure records or unknown usage.",
+    "No automatic resumption of the stopped 48-slot scope.",
+    "Each future scope needs its own exact slots, source and runtime identities, parameters, materials, budget, finite window and stopping rules frozen before dispatch.",
+    "Current controller must continue rejecting the retained new stop unless a separately reviewed explicit prospective amendment is introduced after the user decision.",
+    "Any later new usage unknown or core stop stops dispatch again.",
+    "No controller-selected hidden fallback, Flash model, controller-initiated resend, or automatic expansion to significance. Gateway-internal behavior is reported separately and is not attested by this rule.",
+    "Read-only route metadata is not proof that the failing provider is healthy.",
+    "The 139-reservation proposal does not establish acceptance or guarantee all project criteria can close."
+  ],
+  "revision": 2,
+  "supersedes_draft_sha256": "fefadec3b4b84469e1976ef4476b3bacc5c41433dd018de5bb690eaf493950e6"
+}

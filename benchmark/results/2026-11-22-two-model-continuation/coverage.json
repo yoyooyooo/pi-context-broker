@@ -1,0 +1,428 @@
+{
+  "version": 1,
+  "kind": "benchmark-cohort-separate-plan-coverage",
+  "per_plan": [
+    {
+      "package": "cohort-3-gate",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "gate",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "source_plan_sha256": "264c29b3790117ccb34244e35a9bf60f86f9b043a96ab03d35ee1640c6bebc88",
+      "analysis_sha256": "2a22a816f02578f89c52f487b5ce0d07dadfa0a2b98646d21534f57b657d2534",
+      "planned_slots": 16,
+      "reserved_slots": 16,
+      "recorded_episodes": 16,
+      "started_unresolved": 0,
+      "unreserved_slots": 0,
+      "valid_episodes": 16,
+      "invalid_episodes": 0,
+      "missing_slots": 0,
+      "unresolved_slots_without_valid_result": 0,
+      "verified_successes": 3,
+      "valid_fail_outcomes": 3,
+      "valid_unknown_outcomes": 10,
+      "stop_reason": "planned_slots_completed",
+      "metrics_report": "cohort-3-gate/report.md"
+    },
+    {
+      "package": "cohort-3-expansion",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "expansion",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "source_plan_sha256": "d569b5ede4dde58c2169371146f033f7543a31137eabbf0d134383cea7fcfae6",
+      "analysis_sha256": "0abbb0ae7d6498745a1f4d1cb64481b317d2e0fe9345ffc4eadd43efa2b38fad",
+      "planned_slots": 32,
+      "reserved_slots": 21,
+      "recorded_episodes": 21,
+      "started_unresolved": 0,
+      "unreserved_slots": 11,
+      "valid_episodes": 20,
+      "invalid_episodes": 1,
+      "missing_slots": 11,
+      "unresolved_slots_without_valid_result": 12,
+      "verified_successes": 2,
+      "valid_fail_outcomes": 2,
+      "valid_unknown_outcomes": 16,
+      "stop_reason": "subject_requested_stop",
+      "metrics_report": "cohort-3-expansion/report.md"
+    }
+  ],
+  "cohorts": [
+    {
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "model_count": 2,
+      "predeclared_slots": 48,
+      "reserved_slots": 37,
+      "unreserved_predeclared_slots": 11,
+      "retained_stop_run_ids": [
+        "benchmark-two-model-cohort-3-expansion-021"
+      ],
+      "retained_unknown_usage_run_ids": [
+        "benchmark-two-model-cohort-3-expansion-021"
+      ],
+      "actual_frozen_slots": 48,
+      "phases": [
+        {
+          "role": "gate",
+          "phase": "pilot",
+          "purpose": "model_environment_interaction",
+          "experiment_id": "benchmark-two-model-cohort-3-gate",
+          "predeclared_slots": 16,
+          "actual_frozen_slots": 16,
+          "recorded_episodes": 16,
+          "valid_episodes": 16,
+          "pending_valid_results": 0,
+          "state": "actual_plan_included"
+        },
+        {
+          "role": "expansion",
+          "phase": "pilot",
+          "purpose": "model_environment_interaction",
+          "experiment_id": "benchmark-two-model-cohort-3-expansion",
+          "predeclared_slots": 32,
+          "actual_frozen_slots": 32,
+          "recorded_episodes": 21,
+          "valid_episodes": 20,
+          "pending_valid_results": 12,
+          "state": "actual_plan_included"
+        }
+      ],
+      "claim_scope": "the actual declared phase and purpose; no pooled quality acceptance",
+      "gate_proof": "d4c252787bf5209506c4aeeff47c33ae9f7b38b78f6564902b675447ae6e0639"
+    }
+  ],
+  "cases": [
+    {
+      "package": "cohort-3-gate",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "gate",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "no-skill-01-a-n16-r1",
+      "family": "no-skill",
+      "planned_slots": 4,
+      "recorded_episodes": 4,
+      "valid_episodes": 4,
+      "invalid_episodes": 0
+    },
+    {
+      "package": "cohort-3-gate",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "gate",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "no-skill-02-a-n16-r1",
+      "family": "no-skill",
+      "planned_slots": 4,
+      "recorded_episodes": 4,
+      "valid_episodes": 4,
+      "invalid_episodes": 0
+    },
+    {
+      "package": "cohort-3-gate",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "gate",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "no-skill-03-a-n16-r1",
+      "family": "no-skill",
+      "planned_slots": 4,
+      "recorded_episodes": 4,
+      "valid_episodes": 4,
+      "invalid_episodes": 0
+    },
+    {
+      "package": "cohort-3-gate",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "gate",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "explicit-01-a-n16-r1",
+      "family": "explicit",
+      "planned_slots": 4,
+      "recorded_episodes": 4,
+      "valid_episodes": 4,
+      "invalid_episodes": 0
+    },
+    {
+      "package": "cohort-3-expansion",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "expansion",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "implicit-01-a-n16-r1",
+      "family": "implicit",
+      "planned_slots": 4,
+      "recorded_episodes": 0,
+      "valid_episodes": 0,
+      "invalid_episodes": 0
+    },
+    {
+      "package": "cohort-3-expansion",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "expansion",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "ambiguity-01-a-n16-r1",
+      "family": "ambiguity",
+      "planned_slots": 4,
+      "recorded_episodes": 2,
+      "valid_episodes": 2,
+      "invalid_episodes": 0
+    },
+    {
+      "package": "cohort-3-expansion",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "expansion",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "equivalent-01-a-n16-r1",
+      "family": "equivalent",
+      "planned_slots": 4,
+      "recorded_episodes": 2,
+      "valid_episodes": 2,
+      "invalid_episodes": 0
+    },
+    {
+      "package": "cohort-3-expansion",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "expansion",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "references-01-a-n16-r1",
+      "family": "references",
+      "planned_slots": 4,
+      "recorded_episodes": 4,
+      "valid_episodes": 4,
+      "invalid_episodes": 0
+    },
+    {
+      "package": "cohort-3-expansion",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "expansion",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "scripts-assets-01-a-n16-r1",
+      "family": "scripts-assets",
+      "planned_slots": 4,
+      "recorded_episodes": 3,
+      "valid_episodes": 2,
+      "invalid_episodes": 1
+    },
+    {
+      "package": "cohort-3-expansion",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "expansion",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "complementary-01-a-n16-r1",
+      "family": "complementary",
+      "planned_slots": 4,
+      "recorded_episodes": 4,
+      "valid_episodes": 4,
+      "invalid_episodes": 0
+    },
+    {
+      "package": "cohort-3-expansion",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "expansion",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "continuation-01-a-n16-r2",
+      "family": "continuation",
+      "planned_slots": 4,
+      "recorded_episodes": 4,
+      "valid_episodes": 4,
+      "invalid_episodes": 0
+    },
+    {
+      "package": "cohort-3-expansion",
+      "scope_id": "continuation-two-models-repair-3",
+      "scope_kind": "benchmark-prospective-cohort",
+      "role": "expansion",
+      "phase": "pilot",
+      "purpose": "model_environment_interaction",
+      "case_id": "task-switch-01-a-n16-r2",
+      "family": "task-switch",
+      "planned_slots": 4,
+      "recorded_episodes": 2,
+      "valid_episodes": 2,
+      "invalid_episodes": 0
+    }
+  ],
+  "historical_quality_credit": "excluded",
+  "actual_frozen_slots": 48,
+  "recorded_new_episodes": 37,
+  "new_reserved_unresolved": 0,
+  "retained_new_stop_run_ids": [
+    "benchmark-two-model-cohort-3-expansion-021"
+  ],
+  "retained_new_unknown_usage_run_ids": [
+    "benchmark-two-model-cohort-3-expansion-021"
+  ],
+  "future_dispatch_status": "blocked_by_retained_new_stop_or_unknown",
+  "intent_source_sha256": "db221a4346125e62626dde497354191954048c0e021657d2bc4ced1148edd4cd",
+  "original_route_intent_new_maximum": 96,
+  "prospective_budget": {
+    "kind": "public-finite-campaign-budget-intent",
+    "source_sha256": "7a3abc317bc9f8b417a8a7d81b7ec7f4f4e5977e8a3ce10dc68f6655aff777a5",
+    "route_intent_source_sha256": "db221a4346125e62626dde497354191954048c0e021657d2bc4ced1148edd4cd",
+    "source_status": "prospective_allocation_not_registered_not_realized",
+    "historical_prefix_reservations": 13,
+    "shared_cap": 144,
+    "original_unknown_run_ids": [
+      "benchmark-route-gate-3-003",
+      "benchmark-two-model-admission-2-001",
+      "benchmark-two-model-admission-3-008"
+    ],
+    "total_projected_cumulative": 139,
+    "unallocated_reservations": 5,
+    "allocations": [
+      {
+        "id": "current-two-models",
+        "episodes": 48,
+        "status": "existing_frozen_scope_preserved",
+        "scope_id": "continuation-two-models-repair-3"
+      },
+      {
+        "id": "grok-4.7-route-only",
+        "episodes": 8,
+        "status": "draft",
+        "source_setup_sha256": "2f91721cc66cd50e290b7f992b609f138830e1f67194011176d0267eb046352e",
+        "setup_evidence": "draft_only_not_a_registered_plan"
+      },
+      {
+        "id": "gpt-6.1-terra-route-only",
+        "episodes": 8,
+        "status": "draft",
+        "source_setup_sha256": "c9c0c9750c3bf1a3671e2a6f8cce840881dcbe2641da237452d9a73eac48c98e",
+        "setup_evidence": "draft_only_not_a_registered_plan"
+      },
+      {
+        "id": "own-versions-and-unseen-confirmation",
+        "episodes": 20,
+        "status": "design_not_registered",
+        "design": "Ten independent families × one model × two real Broker versions; four own-version journeys fixed as a subset, no extra eight runs and no winner selection on confirmation data."
+      },
+      {
+        "id": "codemode",
+        "episodes": 24,
+        "status": "design_not_registered",
+        "design": "Six anchors × free/off × two environments; all four cells are new. No reuse of earlier free results as predeclared Code Mode data."
+      },
+      {
+        "id": "scale-round",
+        "episodes": 10,
+        "status": "design_not_registered",
+        "design": "Five exact additional anchor variants × two environments."
+      },
+      {
+        "id": "controlled-faults",
+        "episodes": 8,
+        "status": "design_not_registered",
+        "design": "Two semantic journeys × clean/fault × two actually supported environments; common capability requires equivalent independently observed fault."
+      }
+    ],
+    "own_version_confirmation": {
+      "phase": "confirmation",
+      "purpose": "environment_iteration",
+      "reference": {
+        "cli_commit": "5bab9feabc3f78008759166278f490934ffa0ab3",
+        "broker_commit": "1609c248ade588f96de6e3fccb96a8b3c042a5a7",
+        "scope": "daily acceptance, not npm publication"
+      },
+      "candidate": {
+        "cli_commit": "865c97e7f8bd976a32f1196fe38e195ea6dac049",
+        "broker_commit": "59d897c06c863ccec8f01576fa5967a82304f9af",
+        "scope": "accepted for first-use/nonpublication scope, not installed daily baseline or published release"
+      },
+      "no_winner_selection": true,
+      "preselected_source_tuple_is_not_new_result": true,
+      "own_version_subset_episodes_in_twenty": 8,
+      "additional_own_version_episodes": 0,
+      "candidate_provenance_limit": "Later candidate acceptance is supported by fresh named issue/comment snapshots and declared package/runtime bridge; Pro original receipt was not directly read on Mini. Both source tuples require fresh Mini common-apparatus zero-send captures."
+    },
+    "stable_public_anchor": {
+      "cli_commit": "0d81933aa7ea20b56696a07ebcc9a4d3752ea2f2",
+      "broker_commit": "e18ebd102496d79d91ca5a2abc96eb2f7b0ce980",
+      "scope": "published GitHub non-prerelease pair, not a claim of present Benchmark compatibility",
+      "status": "unmeasured_under_current_apparatus",
+      "possible_extra_scope_cap": 5,
+      "compatibility_limit": "Published CLI v0.3.0 lacks ./sdk and dist/sdk.js required by current paired builder. Do not inject a newer SDK and label it the unchanged released pair. A separate legitimate compatible plan must fit the remaining5; otherwise retain unavailable/unmeasured with no invented score."
+    },
+    "known_product_limit": "Candidate59d897c is not established to fix observed nested parentToolCallId resource-receipt omission; do not predeclare that outcome repaired.",
+    "acceptance_claim_limits": [
+      "Full finite coverage does not guarantee a narrow3pp interval or quality adoption; retain inconclusive.",
+      "All cases, weights, model, candidate/reference and policies frozen before confirmation opening; history exposure, seal/open and subject visibility separately verified.",
+      "New original core stop/unknown cannot be hidden by revision or inherited as a new exemption.",
+      "Skill cold-start evaluator is independent; reuse a legitimately frozen slice where possible and account for its own model usage separately.",
+      "The five remaining slots are unallocated, not automatic retries or an expanded cap."
+    ],
+    "statement": "Prospective design only. Actual registration, phase, purpose, coverage and counts come from each retained plan and the complete shared reservation inventory."
+  },
+  "budget_claim": "Route intent and budget allocations are source declarations; actual registration and execution are reported per plan and reservation.",
+  "unregistered_intent_models": [
+    {
+      "variant": "grok-4.7",
+      "route": "auto/grok-4.7",
+      "provider": "[identity:ed69350bc384c36b6df1]",
+      "routing": {
+        "mode": "auto-route",
+        "model_variant": "grok-4.7",
+        "reported_model_ids": [
+          "grok-4.7",
+          "auto/grok-4.7",
+          "grok/grok-4.7",
+          "imile-win-xai/grok-4.7",
+          "sourcedata-grok-super/grok-4.7",
+          "sub2api-mini-xai/grok-4.7"
+        ]
+      },
+      "next_reservation_limit": 24,
+      "backend_observability": "opaque_alias",
+      "assurance": "provider_reported_label_not_backend_attestation"
+    },
+    {
+      "variant": "gpt-6.1-terra",
+      "route": "auto/gpt-6.1-terra",
+      "provider": "[identity:ed69350bc384c36b6df1]",
+      "routing": {
+        "mode": "auto-route",
+        "model_variant": "gpt-6.1-terra",
+        "reported_model_ids": [
+          "gpt-6.1-terra",
+          "auto/gpt-6.1-terra",
+          "ali-kl-sub2api/gpt-6.1-terra",
+          "codex/gpt-6.1-terra",
+          "commandcode-plan/gpt-6.1-terra",
+          "imile-win-gpt/gpt-6.1-terra",
+          "mini-cpa/gpt-6.1-terra",
+          "workbuddy-ai/gpt-6.1-terra"
+        ]
+      },
+      "next_reservation_limit": 24,
+      "backend_observability": "opaque_alias",
+      "assurance": "provider_reported_label_not_backend_attestation",
+      "user_route_group": "auto-gpt-6-1-terra"
+    }
+  ],
+  "quality_policy": "No pooled quality or efficiency statistic across plans or cohorts; pending slots retain their original denominator."
+}
