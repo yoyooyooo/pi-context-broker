@@ -5,8 +5,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { access, mkdir, mkdtemp, readFile, realpath, rename, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { agentWorkflowArgs, agentWorkflowEnvironment, agentWorkflowProjectSettings, bindPairedWorkflowEvidence, prepareWorkflowTemporaryEnvironment, prepareWorkflowMcpAuthorization, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
+import { dirname, join, relative } from 'node:path';
+import { agentWorkflowArgs, agentWorkflowEnvironment, agentWorkflowProjectSettings, bindPairedWorkflowEvidence, prepareWorkflowTemporaryEnvironment, prepareWorkflowMcpAuthorization, workflowImplementationEvidence, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
 import { validateCandidateTurn } from './verify-pi-daily-candidate.mjs';
 
 const execute = promisify(execFile);
@@ -278,4 +278,46 @@ test('cancelled or failed CLI preparation retains evidence and cannot start a su
     assert.equal(result.status, 'failed'); assert.equal(result.commands.length, 1);
     assert.equal(result.commands[0].timedOut, name === 'timeout');
   });
+});
+
+
+test('workflow owner evidence binds an unchanged ordinary relative or absolute package slot and preserves its spelling', async t => {
+  for (const kind of ['relative', 'absolute']) await t.test(kind, async t => {
+    const fixture = await temporaryFixture(t), evidence = join(fixture.root, 'evidence'), agentDir = join(fixture.root, '.pi/agent');
+    const brokerRoot = join(fixture.root, 'repo/packages/context-broker');
+    await Promise.all([evidence, agentDir].map(path => mkdir(path, { recursive: true })));
+    const source = kind === 'relative' ? relative(agentDir, brokerRoot) : brokerRoot;
+    const settingsPath = join(agentDir, 'settings.json'), raw = JSON.stringify({ packages: ['npm:another-package', { source }] });
+    await writeFile(settingsPath, raw);
+    const settingsIdentity = { path: settingsPath, realpath: await realpath(settingsPath), bytes: Buffer.byteLength(raw),
+      sha256: createHash('sha256').update(raw).digest('hex') };
+    await writeFile(join(evidence, 'started.json'), JSON.stringify({ before: { settings: settingsIdentity } }));
+    await writeFile(join(evidence, 'config.json'), JSON.stringify({ brokerRoot, packageIndex: 1 }));
+    const registration = { reusesRegisteredBroker: true, packageIndex: 1, source };
+    const before = structuredClone(registration);
+    const implementation = await workflowImplementationEvidence(evidence, { registration, settingsIdentity });
+    const bindingBytes = await readFile(implementation.ordinaryInstallationArtifact.path), binding = JSON.parse(bindingBytes);
+    assert.equal(implementation.ordinaryInstallationArtifact.sha256, createHash('sha256').update(bindingBytes).digest('hex'));
+    assert.equal(binding.kind, 'ordinary-pi-package-binding'); assert.equal(binding.settingsDirectory, dirname(settingsPath));
+    assert.deepEqual(binding.settings, settingsIdentity);
+    assert.deepEqual(binding.package, { index: 1, count: 2, source });
+    assert.equal(await readFile(settingsPath, 'utf8'), raw); assert.deepEqual(registration, before);
+    assert.equal(implementation.candidateArtifact.path, join(evidence, 'started.json'));
+    assert.equal(implementation.configArtifact.path, join(evidence, 'config.json'));
+  });
+});
+
+test('workflow owner capture rejects changed ordinary settings and skips the binding for a project candidate', async t => {
+  const fixture = await temporaryFixture(t), evidence = join(fixture.root, 'evidence'); await mkdir(evidence);
+  for (const name of ['started.json', 'config.json']) await writeFile(join(evidence, name), '{}');
+  const settingsPath = join(fixture.root, 'settings.json'), raw = '{"packages":["../broker"]}';
+  await writeFile(settingsPath, raw);
+  const settingsIdentity = { path: settingsPath, realpath: await realpath(settingsPath), bytes: Buffer.byteLength(raw),
+    sha256: createHash('sha256').update(raw).digest('hex') };
+  await writeFile(settingsPath, '{"packages":["../different-broker"]}');
+  await assert.rejects(workflowImplementationEvidence(evidence, { settingsIdentity,
+    registration: { reusesRegisteredBroker: true, packageIndex: 0, source: '../broker' } }), /Ordinary settings changed/);
+  const implementation = await workflowImplementationEvidence(evidence, { registration: { reusesRegisteredBroker: false } });
+  assert.equal(implementation.ordinaryInstallationArtifact, undefined);
+  await assert.rejects(readFile(join(evidence, 'ordinary-installation.json')), { code: 'ENOENT' });
 });

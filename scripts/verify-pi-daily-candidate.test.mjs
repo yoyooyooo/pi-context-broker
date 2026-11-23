@@ -1005,6 +1005,45 @@ function preparedObservationFixture({ kind = 'candidate', storage = 'entry', ref
     return { handlers, rows, reads, probes, originals, message, saved, path, manifestPath, input, original, proof, branch, fs, call, result, body };
 }
 
+test('ordinary local and nested reads retain implementation bytes without probing or rewriting their targets', () => {
+  for (const nested of [false, true]) for (const input of [
+    { path: '/owned/SKILL.md' }, { path: '/owned/reference.md', offset: 138, limit: 117 },
+  ]) {
+    const value = preparedObservationFixture(), ctx = { mode: 'rpc' };
+    const event = { toolName: 'read', toolCallId: 'local-read', input: structuredClone(input),
+      ...(nested ? { parentToolCallId: 'actual-codemode-parent' } : {}) };
+    const original = structuredClone(event);
+    value.handlers.get('tool_call')(event, ctx);
+    assert.deepEqual(event, original, 'the observer cannot change the actual invocation');
+    value.handlers.get('tool_result')({ ...event, isError: false, content: [{ type: 'text', text: 'actual local result' }] });
+    const call = value.rows.find(row => row.phase === 'tool_call');
+    const result = value.rows.find(row => row.phase === 'tool_result');
+    assert.equal(call.toolImplementation.files.length, 2);
+    for (const file of call.toolImplementation.files)
+      assert.deepEqual(value.saved.get(file.artifact.path), value.originals.get(file.path));
+    assert.equal(call.inputSha256, sha(JSON.stringify(input)));
+    assert.equal(result.inputSha256, call.inputSha256);
+    assert.equal(call.parentToolCallId, event.parentToolCallId);
+    assert.equal(result.parentToolCallId, event.parentToolCallId);
+    assert.deepEqual(JSON.parse(value.saved.get(result.contentArtifact.path)), [{ type: 'text', text: 'actual local result' }]);
+    assert.deepEqual(value.probes, []);
+    assert.equal(value.reads.length, 2, 'only the two implementation files are read by the observer');
+    assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false);
+  }
+});
+
+test('unavailable reader evidence records an observation gap without changing the local tool call', () => {
+  const value = preparedObservationFixture(), event = { toolName: 'read', toolCallId: 'local-read', input: { path: '/owned/SKILL.md' } };
+  value.originals.delete('/installed/pi-compact-ui/index.ts');
+  const before = structuredClone(event);
+  assert.doesNotThrow(() => value.handlers.get('tool_call')(event, { mode: 'rpc' }));
+  assert.deepEqual(event, before);
+  const call = value.rows.find(row => row.phase === 'tool_call');
+  assert.ok(call.toolImplementation.error);
+  assert.equal(call.toolImplementation.files, undefined);
+  assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false);
+});
+
 test('canonical fixed File observation uses its prior registration for main and scalar resources', () => {
   for (const options of [
     { kind: 'selected' }, { kind: 'selected', refresh: true },

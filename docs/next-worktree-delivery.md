@@ -65,9 +65,13 @@ daily config 需要配对 worktrees 以及本次归档、CLI/SDK、package 来�
 
 plan 为 `prepared_not_executed`。run 在新普通 `pi -ns` 中检查实际注册入口与 metadata 路径，并在结束后重验机器、真实远端、worktrees 和构建。回执记录本次开始/结束时间、实际机器、注册入口与进程退出。它不替代正文、真实模型或时间线任务。
 
+标准代理的 `CONNECT` 使用 `host:port` 目标，不是普通 URL。日用观察单独保留代理 origin、目标 authority、进程归属及成功、失败或未完成结果；这些隧道属于传输准备，不计作 Notion metadata 请求，也不能满足 SDK 的独立 HTTP 关联。隧道中的实际 SDK/doctor 请求仍逐项核对，不能通过关闭正常代理或丢弃隧道失败取得通过。
+
+自然模型观察对 OpenAI chat completions 使用所选 `baseUrl` 加 `/chat/completions` 的精确路径；同 origin 的 MCP 请求保留为其他流量，不计入模型调用。请求正文、响应与模型 hook 仍须逐一关联；未实现端点规则的其他 API 保留原有较保守的 origin 范围，不能猜测后忽略请求。
+
 Pi 的 `responseModel` 是可选响应信息。现役 cost observer 区分原始未报告、合法报告和非法值；分析器保留未报告为 unknown，不从请求 model 补值。HTTP/SSE 完成仍需真实传输和同请求的响应证据；缺少这项原始状态的旧观察不能按新规则补成通过。
 
-普通真实模型可能由现役 `pi-compact-ui` 注册 `read`。Broker 的公开 hook 将候选或已选主文（`sr:C…`、`sr:S…`）、单个资源（`sr:R…`）以及已登记的完整固定 File `skill://` 地址解析为不可变文件，再交给该包的内建读取委托。完整地址必须带 snapshot 和 File 身份，精确匹配实际 native 分支中此前唯一的已选主文或资源登记；缺少固定身份、额外 query 或歧义登记均不接受。该有限 profile 只接受单路径完整文本读取；原始 `refresh` 布尔参数必须原样保留，主文显式刷新可查看同 owner 新版，但不改变已激活工作集。task observer 仅在同调用、同轮的当前 v3 主文或 v2 资源回执到达后，保全实际执行参数和完整文件字节。原始引用必须已存在于实际 native 分支；资源还必须唯一关联此前已选 owner，并匹配其 scope、snapshot、version 和固定 File。entry 投影同时保全并核对完整 `.broker-entry.json`；独立 resource 投影没有该 manifest，不猜测或读取不存在的主文清单。分析器重新核验原始与 prepared 参数、当前 Broker 注册、不可变身份、实际 callback/回执顺序及交付的完整字节，并只接受已审阅 `pi-compact-ui@0.1.3` 的精确 package/index 字节。该 profile 不覆盖批量、部分读取、其他插件或其他工具。旧观察缺少原件时继续失败，不能据事后路径或回执补造证明；更新后用新真实模型运行取证。
+普通真实模型可能由现役 `pi-compact-ui` 注册 `read`。Broker 的公开 hook 将候选或已选主文（`sr:C…`、`sr:S…`）、单个资源（`sr:R…`）以及已登记的完整固定 File `skill://` 地址解析为不可变文件，再交给该包的内建读取委托。完整地址必须带 snapshot 和 File 身份，精确匹配实际 native 分支中此前唯一的已选主文或资源登记；缺少固定身份、额外 query 或歧义登记均不接受。该有限 profile 只接受单路径完整文本读取；原始 `refresh` 布尔参数必须原样保留，主文显式刷新可查看同 owner 新版，但不改变已激活工作集。task observer 仅在同调用、同轮的当前 v3 主文或 v2 资源回执到达后，保全实际执行参数和完整文件字节。原始引用必须已存在于实际 native 分支；资源还必须唯一关联此前已选 owner，并匹配其 scope、snapshot、version 和固定 File。entry 投影同时保全并核对完整 `.broker-entry.json`；独立 resource 投影没有该 manifest，不猜测或读取不存在的主文清单。分析器重新核验原始与 prepared 参数、当前 Broker 注册、不可变身份、实际 callback/回执顺序及交付的完整字节，并只接受已审阅 `pi-compact-ui@0.1.3` 的精确 package/index 字节。这条引用准备证明不覆盖批量或部分读取。对绝对本地路径，observer 另行保全同一已审阅 delegate 的实际 package/index 原件及完整 callback 内容；分析器核对 unchanged path/offset/limit、同进程同轮的调用与结果、嵌套原生 census 和内容字节后，给它独立的本地只读归属。该路径可保留原生范围读取，但不能借用 Broker 身份或授权未证明的引用改写，也不覆盖其他插件或其他工具。旧观察缺少原件时继续失败，不能据事后路径或回执补造证明；更新后用新真实模型运行取证。
 
 如果执行环境不允许读取该检查需要的日用配置，记录具体 blocked，不通过另一条文件路径绕读。可使用公开 Pi API 取得独立的部分证据，但不能把该部分回执标为完整 daily runner 通过。
 
@@ -101,7 +105,9 @@ aggregate config 使用相同的 `version:1`、`delivery`、`worktrees`、`cliRo
 `analyzeNotionAgentTurn` 分析普通安装时，原始 `get_commands.sourceInfo.source`
 可能是用户 settings 中的相对路径，不能将它改写为绝对路径来冒充观测。
 
-分析输入可明确提供 `implementation.ordinaryInstallationArtifact`，指向本次冻结的
+现役自然 workflow 在复用用户已注册的 Broker 时自动保存并传入
+`implementation.ordinaryInstallationArtifact`；独立项目候选继续使用其项目注册证据。
+该字段指向本次冻结的
 JSON 原件（仍用 `path/bytes/sha256` 身份）。内容为：
 
 ```json

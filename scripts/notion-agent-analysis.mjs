@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
 import { providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { validateAgentAssertion, validateAgentBindings } from './notion-agent-scenarios.mjs';
-import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation } from './notion-agent-tool-lineage.mjs';
+import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation, inspectedLocalReadEvidence } from './notion-agent-tool-lineage.mjs';
 import { verifyPreparationEvidence, visibleDiscoveryCards } from './skill-preparation-evidence.mjs';
 import { parseSourceObservation } from './skill-consumption-source-observer.mjs';
 import { verifyNotionAgentCliProcesses, verifyNotionAgentSingleProjectionRestore } from './notion-agent-cli-process.mjs';
@@ -409,7 +409,7 @@ async function observedBrokerToolOwner(observed, readArtifact) {
     const localSource = value => typeof value === 'string' && (isAbsolute(value) || /^\.{1,2}\//u.test(value));
     need(Array.isArray(packages) && Number.isSafeInteger(selectedPackage?.index) && selectedPackage.index >= 0
       && selectedPackage.index < packages.length && selectedPackage.count === packages.length
-      && selectedPackage.index === config.packageIndex && localSource(selectedPackage.source)
+      && selectedPackage.index === (config.packageIndex ?? 1) && localSource(selectedPackage.source)
       && selectedPackage.source === source.source && sourceSpec(packages[selectedPackage.index]) === source.source
       && packages.filter(value => localSource(sourceSpec(value))
         && resolve(binding.settingsDirectory, sourceSpec(value)) === root).length === 1,
@@ -1192,6 +1192,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       if (call.name === 'ask_user' && !interactionProofs.has(call.id))
         interactionProofs.set(call.id, await proveAskUserNoUi(call, observed.session, readArtifact));
       const source = call.event.toolSource;
+      const reviewedReader = inspectedCompactReadImplementation(call.event);
       const builtinPath = call.name === 'tool_search' ? 'builtin:tool-search' : 'builtin:' + call.name;
       if (call.preparedRead) {
         toolOwners.set(call.id, { toolCallId: call.id, owner: 'reviewed-native-read-delegate', path: source.path,
@@ -1199,6 +1200,14 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       } else if (['read', 'grep', 'find', 'ls', 'tool_search'].includes(call.name) &&
         source?.source === 'builtin' && source.path === builtinPath) {
         toolOwners.set(call.id, { toolCallId: call.id, owner: 'builtin', path: source.path });
+      } else if (reviewedReader) {
+        for (const file of reviewedReader.files) await verifiedArtifact(file.artifact, readArtifact);
+        const content = await verifiedArtifact(call.result?.contentArtifact, readArtifact);
+        const localRead = inspectedLocalReadEvidence(call, content);
+        need(localRead, 'TOOL_IMPLEMENTATION_UNKNOWN',
+          'A reviewed local read needs its complete unchanged native call and result', { tool: call.name, toolCallId: call.id });
+        toolOwners.set(call.id, { toolCallId: call.id, owner: 'reviewed-native-local-read-delegate',
+          path: source.path, localRead, implementationArtifacts: reviewedReader.files.map(file => file.artifact) });
       } else if (['read', 'notion_list', 'notion_use', 'notion_ctl'].includes(call.name)) {
         brokerOwner ??= observedBrokerToolOwner(observed, readArtifact);
         const expected = await brokerOwner;

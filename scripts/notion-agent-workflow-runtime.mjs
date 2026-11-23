@@ -36,6 +36,27 @@ const rows = async path => {
 const time = row => BigInt(row.monotonicNs ?? row.monotonic_ns ?? '0');
 const slice = (events, start, end) => events.filter(row => time(row) >= BigInt(start) && time(row) <= BigInt(end));
 
+export async function workflowImplementationEvidence(evidence, { registration, settingsIdentity }) {
+  const implementation = { version: 1, candidateArtifact: await identity(join(evidence, 'started.json')),
+    configArtifact: await identity(join(evidence, 'config.json')) };
+  if (registration.reusesRegisteredBroker) {
+    // Preserve the source spelling reported by Pi. User package paths resolve
+    // from settings.json, while a private candidate uses its project binding.
+    assert.deepEqual(await identity(settingsIdentity.path), settingsIdentity, 'Ordinary settings changed before owner capture');
+    const settings = await json(settingsIdentity.path), packages = settings.packages;
+    const selected = packages?.[registration.packageIndex];
+    assert.ok(Array.isArray(packages) && Number.isSafeInteger(registration.packageIndex) && registration.packageIndex >= 0
+      && registration.packageIndex < packages.length, 'Ordinary owner needs the selected settings slot');
+    assert.equal(typeof selected === 'string' ? selected : selected?.source, registration.source,
+      'Ordinary package source changed before owner capture');
+    const path = join(evidence, 'ordinary-installation.json');
+    await save(path, { version: 1, kind: 'ordinary-pi-package-binding', settingsDirectory: dirname(settingsIdentity.path),
+      settings: settingsIdentity, package: { index: registration.packageIndex, count: packages.length, source: registration.source } });
+    implementation.ordinaryInstallationArtifact = await identity(path);
+  }
+  return implementation;
+}
+
 export function workflowSourceSlice(events, startedNs, endedNs) {
   const ids = new Set(events.filter(row => row.phase === 'started' && time(row) <= BigInt(endedNs) &&
     events.some(end => end.phase === 'completed' && end.requestId === row.requestId && time(end) >= BigInt(startedNs))).map(row => row.requestId));
@@ -423,8 +444,7 @@ export async function runAgentWorkflow(config) {
     cache: 'cold', stateRoot, ownedStateRoot, sourceCache, schedulerRoot: env.NTN_SKILLS_SCHEDULER_ROOT, temporaryRoot: env.TMPDIR, projectContext,
     temporaryFiles: 'environment-convention-not-sandbox', oracle: 'independent', createdAt: result.startedAt });
   await save(join(evidence, 'started.json'), result);
-  const implementation = { version: 1, candidateArtifact: await identity(join(evidence, 'started.json')),
-    configArtifact: await identity(join(evidence, 'config.json')) };
+  const implementation = await workflowImplementationEvidence(evidence, { registration, settingsIdentity: before.settings });
   let rpc, segment, currentSession, segmentIndex = 0;
   const forkBindings = new Map();
   const start = async resume => {

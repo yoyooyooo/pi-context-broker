@@ -186,6 +186,15 @@ test('default maintenance and sync need no Notion projection while explicit team
     assert.ok(!turn.prompt.includes('paired-'), 'The private evidence binding must not teach the subject a route');
   }
   const remote = actual.scenarios.find(item => item.id === 'connected-maintenance-filtered-view');
+  const howTo = actual.scenarios.find(item => item.id === 'cold-maintenance-consultation');
+  assert.deepEqual(howTo.turns[0].expect.find(item => item.kind === 'output'), {
+    kind: 'output', all: ['new-skill-route', 'existing-page-route', 'existing-body-preserved'],
+    none: ['body-preservation-denied'],
+  });
+  assert.ok(!howTo.turns[0].expect.some(item => item.kind === 'clarification'),
+    'A basic how-to follows the bundled create/register guide without an extra business-brief question');
+  assert.ok(remote.turns[0].expect.some(item => item.kind === 'clarification' && item.topic === 'description-question'),
+    'The explicit team workflow still needs its business clarification');
   assert.equal(actual.fixtures[remote.fixture].environment.catalog, 'filtered-view');
   assert.match(remote.turns[0].prompt, /Notion.*\{\{maintain\.name\}\}.*团队流程/u);
   assert.ok(remote.turns[0].expect.some(item => item.kind === 'resource' && item.object === 'maintain'));

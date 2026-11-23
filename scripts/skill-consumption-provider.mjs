@@ -14,7 +14,7 @@ export function observeProviderTransport(api, settings) {
   const fd = fs.openSync(output, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
   fs.fchmodSync(fd, 0o600);
   const hash = value => crypto.createHash('sha256').update(value).digest('hex');
-  let sequence = 0, previous = null, nextRequest = 0, closed = false, errors = 0, modelOrigin, modelApi, selectedModel;
+  let sequence = 0, previous = null, nextRequest = 0, closed = false, errors = 0, modelOrigin, modelPath, modelApi, selectedModel;
   const rows = new Map(), active = new Set(), subscriptions = [];
   const record = (phase, data = {}) => {
     const row = { version: 1, sequence: ++sequence, previousSha256: previous, clockId,
@@ -71,7 +71,11 @@ export function observeProviderTransport(api, settings) {
     const id = ++nextRequest, origin = String(request.origin), now = process.hrtime.bigint();
     const row = { id, started: now, requestBytes: 0, responseBytes: 0, requestHash: crypto.createHash('sha256'),
       responseHash: crypto.createHash('sha256'), sent: false, headers: false, encoding: null, status: null,
-      category: modelOrigin && origin === modelOrigin ? 'model' : 'other', originSha256: hash(origin),
+      // OpenAI chat completions has one exact API route. An MCP service on
+      // the same origin is still independent traffic. Unsupported APIs retain
+      // conservative origin-wide accounting rather than guessing a route.
+      category: modelOrigin && origin === modelOrigin && (!modelPath || new URL(String(request.path), origin).pathname === modelPath) ? 'model' : 'other',
+      originSha256: hash(origin),
       modelApi, contentType: null, completion: null };
     rows.set(request, row); active.add(request);
     record('request_start', { id, category: row.category, method: request.method, originSha256: row.originSha256,
@@ -131,8 +135,13 @@ export function observeProviderTransport(api, settings) {
   const selectModel = ctx => {
     const model = ctx.model;
     selectedModel = model ? hash(String(model.provider) + '/' + String(model.id)) : null;
-    modelOrigin = model?.baseUrl ? new URL(model.baseUrl).origin : undefined;
+    const endpoint = model?.baseUrl ? new URL(model.baseUrl) : undefined;
+    modelOrigin = endpoint?.origin;
     modelApi = model?.api === 'openai-completions' ? 'openai-completions' : model?.api ? 'other' : null;
+    // Pi's OpenAI client appends /chat/completions to baseURL, preserving its
+    // path prefix. Query values remain opaque and are only hashed on requests.
+    modelPath = endpoint && modelApi === 'openai-completions'
+      ? endpoint.pathname.replace(/\/$/u, '') + '/chat/completions' : undefined;
   };
   const handlers = [], unsubscribers = [], seenApis = new WeakSet();
   let boundApi, binding = 0, pendingForkRebind = false;
@@ -158,7 +167,9 @@ export function observeProviderTransport(api, settings) {
   on('session_start', (_event, ctx) => {
     try {
       selectModel(ctx);
-      record('model_selected', { modelSha256: selectedModel, originSha256: modelOrigin ? hash(modelOrigin) : null });
+      record('model_selected', { modelSha256: selectedModel, originSha256: modelOrigin ? hash(modelOrigin) : null,
+        endpointPathSha256: modelPath ? hash(modelPath) : null,
+        endpointMethod: modelPath ? 'openai-chat-completions-route' : 'conservative-origin' });
     } catch { errors++; record('observer_error', { channel: 'session_start' }); }
   });
   on('before_provider_request', (_event, ctx) => {

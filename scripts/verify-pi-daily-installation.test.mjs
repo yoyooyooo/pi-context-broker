@@ -580,3 +580,91 @@ test('doctor and other source processes reject body reads and every semantic wri
     assert.throws(() => classifyDailyNotionRequest({ ...request, origin: 'https://example.com' }), /Unexpected provider/u);
   }
 });
+
+
+test('daily observer preserves real proxy CONNECT authority separately from tunneled application HTTP', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'daily-proxy-connect-')), preload = join(directory, 'observe.cjs');
+  const cert = join(directory, 'cert.pem'), key = join(directory, 'key.pem'), certConfig = join(directory, 'cert.cnf');
+  await writeFile(certConfig, '[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=localhost\n[ext]\nsubjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=critical,CA:TRUE\n', { mode: 0o600 });
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-sha256', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-config', certConfig], { timeout: 10000, stdio: 'pipe' });
+  await writeFile(preload, dailyObserverPreloadSource({ directory, cliEntry: join(directory, 'unused-cli.js') }));
+  const client = `fetch(process.argv[1]).then(async response => {
+    const body = await response.text(); if (response.status !== 200 || body !== 'tunneled metadata') throw new Error('Response changed');
+  }).catch(error => { console.error(error); process.exitCode = 1; });`;
+  const child = `
+    const http = require('node:http'), https = require('node:https'), net = require('node:net');
+    const {readFileSync} = require('node:fs'), {spawn} = require('node:child_process');
+    const sockets = new Set(); let connections = 0;
+    const target = https.createServer({ cert: readFileSync(${JSON.stringify(cert)}), key: readFileSync(${JSON.stringify(key)}) },
+      (_request, response) => { response.end('tunneled metadata'); });
+    const proxy = http.createServer((_request, response) => { response.writeHead(500); response.end('Expected CONNECT'); });
+    proxy.on('connect', (request, socket, head) => {
+      if (request.url !== '127.0.0.1:' + target.address().port) return socket.destroy();
+      connections++; sockets.add(socket);
+      const upstream = net.connect(target.address().port, '127.0.0.1', () => {
+        socket.write('HTTP/1.1 200 Connection Established\\r\\n\\r\\n');
+        if (head.length) upstream.write(head); socket.pipe(upstream); upstream.pipe(socket);
+      });
+      sockets.add(upstream); upstream.on('error', () => socket.destroy()); socket.on('error', () => upstream.destroy());
+    });
+    (async () => {
+      await new Promise(resolve => target.listen(0, '127.0.0.1', resolve));
+      await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
+      const origin = 'http://127.0.0.1:' + proxy.address().port;
+      try {
+        const code = await new Promise((resolve, reject) => {
+          const child = spawn(process.execPath, ['--require', ${JSON.stringify(preload)}, '-e', ${JSON.stringify(client)},
+            'https://127.0.0.1:' + target.address().port + '/metadata'], { stdio: 'inherit', timeout: 8000, killSignal: 'SIGTERM', env: { ...process.env,
+              HTTP_PROXY: origin, HTTPS_PROXY: origin, http_proxy: origin, https_proxy: origin,
+              NO_PROXY: '', no_proxy: '', NODE_USE_ENV_PROXY: '1', NODE_EXTRA_CA_CERTS: ${JSON.stringify(cert)},
+              NODE_TLS_REJECT_UNAUTHORIZED: '1' } });
+          child.once('error', reject); child.once('close', resolve);
+        });
+        if (code !== 0 || connections !== 1) throw new Error('The actual proxy tunnel was not observed');
+      } finally {
+        for (const socket of sockets) socket.destroy(); target.closeAllConnections(); proxy.closeAllConnections();
+        await Promise.all([new Promise(resolve => target.close(resolve)), new Promise(resolve => proxy.close(resolve))]);
+      }
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  execFileSync(process.execPath, ['-e', child], { timeout: 15000, stdio: 'pipe' });
+  const rows = (await Promise.all((await readdir(directory)).filter(name => name.endsWith('.jsonl'))
+    .map(file => readFile(join(directory, file), 'utf8')))).flatMap(text => text.trim().split('\n').map(JSON.parse));
+  const starts = rows.filter(row => row.event === 'http_start');
+  assert.equal(starts.length, 2);
+  const tunnel = starts.find(row => row.method === 'CONNECT'), application = starts.find(row => row.method === 'GET');
+  assert.equal(tunnel.transport, 'proxy-connect'); assert.equal(tunnel.path, null); assert.equal(tunnel.request_bytes, 0);
+  assert.match(tunnel.authority, /^127\.0\.0\.1:[0-9]+$/u);
+  assert.match(tunnel.origin, /^http:\/\/127\.0\.0\.1:[0-9]+$/u);
+  assert.equal(application.path, '/metadata'); assert.equal(application.transport, undefined);
+  assert.equal(application.origin, 'https://' + tunnel.authority);
+  assert.notEqual(tunnel.origin, application.origin);
+  assert.ok(rows.some(row => row.event === 'http_end' && row.id === tunnel.id && row.status === 200));
+  assert.ok(rows.some(row => row.event === 'http_observer_end' && row.complete === true && row.errors === 0));
+});
+
+test('proxy setup retains source ancestry, failures and pre-send attempts without satisfying SDK metadata evidence', () => {
+  const tunnel = { event: 'http_start', id: '10:tunnel', pid: 10, method: 'CONNECT', transport: 'proxy-connect',
+    origin: 'http://127.0.0.1:7890', path: null, authority: 'api.notion.com:443', request_bytes: 0 };
+  const complete = { event: 'http_end', id: tunnel.id, pid: 10, status: 200, response_request_id: null };
+  const childTunnel = { ...tunnel, id: '20:tunnel', pid: 20 };
+  const failed = { event: 'http_error', id: childTunnel.id, pid: 20, code: 'ECONNRESET' };
+  const pending = { ...tunnel, event: 'http_created', id: '10:pending' }; delete pending.request_bytes;
+  const rows = [...sdkHttp, tunnel, complete, childTunnel, failed, pending];
+  const result = classifyDailyHttp(rows, new Set([20]), new Set([10]), { sourceObservation: sdkObservation() });
+  assert.equal(result.source.length, 1); assert.equal(result.sdk.length, 1);
+  assert.deepEqual(result.proxyTunnels, [
+    { ...tunnel, role: 'host', outcomes: [complete] },
+    { ...childTunnel, role: 'source', outcomes: [failed] },
+    { ...pending, role: 'host', outcomes: [] },
+  ]);
+  assert.throws(() => classifyDailyHttp([tunnel, complete], new Set(), new Set([10]), { sourceObservation: sdkObservation() }),
+    /SDK attempt lacks independent HTTP evidence/u);
+  for (const changed of [
+    { ...tunnel, transport: undefined }, { ...tunnel, method: 'POST' }, { ...tunnel, request_bytes: 7 },
+    { ...tunnel, authority: 'user:password@api.notion.com:443' }, { ...tunnel, origin: 'null' },
+    { ...tunnel, pid: 99 }, { ...tunnel, authority: 'api.notion.com:443/hidden' },
+  ]) assert.throws(() => classifyDailyHttp([...sdkHttp, changed], new Set([20]), new Set([10]), { sourceObservation: sdkObservation() }));
+  assert.throws(() => classifyDailyHttp([...sdkHttp, tunnel, { ...complete, response_request_id: sdkRequestId }],
+    new Set(), new Set([10]), { sourceObservation: sdkObservation() }), /cannot replace an SDK response/u);
+});

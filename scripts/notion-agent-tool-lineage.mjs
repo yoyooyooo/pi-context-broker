@@ -33,6 +33,37 @@ export function inspectedCompactReadImplementation(event) {
   return { profile: compactReadProfile.id, files: implementation.files, source };
 }
 
+// The analyzer verifies the two implementation artifacts and these content
+// bytes before calling this pure lineage guard. A local read never borrows a
+// Notion owner, and cannot authorize an unproved short-ref/input rewrite.
+export function inspectedLocalReadEvidence(call, content) {
+  const event = call?.event, result = call?.result, input = call?.arguments;
+  const reader = inspectedCompactReadImplementation(event);
+  if (!reader || call.name !== 'read' || call.preparedRead
+    || !['native-tool-call', 'native-nested-summary'].includes(call.provenance?.kind)
+    || call.native?.name !== 'read' || call.native.isError !== false
+    || !object(input) || typeof input.path !== 'string' || !isAbsolute(input.path) || input.path.includes('\0')
+    || !Object.keys(input).every(key => ['path', 'offset', 'limit'].includes(key))
+    || ['offset', 'limit'].some(key => input[key] !== undefined
+      && (!Number.isSafeInteger(input[key]) || input[key] <= 0))
+    || event.toolCallId !== call.id || result?.toolCallId !== call.id || result.toolName !== 'read'
+    || result.isError !== false || event.inputSha256 !== sha(JSON.stringify(input))
+    || result.inputSha256 !== event.inputSha256
+    || !Number.isSafeInteger(event.pid) || event.pid <= 0 || result.pid !== event.pid
+    || !Number.isSafeInteger(event.turn) || event.turn <= 0 || result.turn !== event.turn
+    || !Number.isSafeInteger(event.sequence) || event.sequence <= 0
+    || !Number.isSafeInteger(result.sequence) || result.sequence <= event.sequence
+    || event.parentToolCallId !== result.parentToolCallId
+    || event.parentToolCallId !== call.parentToolCallId
+    || !(content instanceof Uint8Array) || result.content?.bytes !== content.length
+    || result.content.sha256 !== sha(content)
+    || result.contentArtifact?.bytes !== content.length || result.contentArtifact.sha256 !== sha(content)) return undefined;
+  return { profile: reader.profile, path: input.path, inputSha256: event.inputSha256,
+    ...(input.offset === undefined ? {} : { offset: input.offset }),
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+    content: { bytes: content.length, sha256: sha(content) } };
+}
+
 function preparedReadTransition(call, tasks, session, evidence) {
   const require = (condition, message) => { if (!condition) throw new Error(message); };
   const observations = tasks.filter(row => row.phase === 'prepared_read' && row.toolCallId === call.id);

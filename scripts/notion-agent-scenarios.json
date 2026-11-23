@@ -1138,6 +1138,71 @@
             "本地",
             "安装包"
           ]
+        },
+        "new-skill-route": {
+          "anyOf": [
+            "skill create",
+            "新建 Skill",
+            "新建一个 Skill",
+            "创建 Skill",
+            "创建一个 Skill"
+          ]
+        },
+        "existing-page-route": {
+          "anyOf": [
+            "skill register",
+            "登记已有",
+            "注册已有",
+            "登记现有",
+            "注册现有"
+          ]
+        },
+        "existing-body-preserved": {
+          "anyOf": [
+            "保留原正文",
+            "保留原有正文",
+            "保留已有正文",
+            "保留现有正文",
+            "不改正文",
+            "不改原正文",
+            "不改写正文",
+            "不会改写正文",
+            "不修改正文",
+            "不会修改正文",
+            "不替换正文",
+            "不会替换正文",
+            "不重写正文",
+            "不会重写正文",
+            "不替换页面正文",
+            "不会替换页面正文",
+            "不改写页面正文",
+            "不会改写页面正文",
+            "页面正文保持不变",
+            "页面正文保持原样",
+            "原正文保持不变",
+            "原正文保持原样",
+            "保留页面正文"
+          ]
+        },
+        "body-preservation-denied": {
+          "anyOf": [
+            "不保留原正文",
+            "不会保留原正文",
+            "不保留原有正文",
+            "不会保留原有正文",
+            "不保留已有正文",
+            "不会保留已有正文",
+            "不保留现有正文",
+            "不会保留现有正文",
+            "不保留页面正文",
+            "不会保留页面正文",
+            "不是保留页面正文",
+            "并非保留页面正文",
+            "不是页面正文保持不变",
+            "并非页面正文保持不变",
+            "不是不会替换页面正文",
+            "并非不会替换页面正文"
+          ]
         }
       },
       "environment": {
@@ -4563,8 +4628,15 @@
               "kind": "no-semantic-writes"
             },
             {
-              "kind": "clarification",
-              "topic": "description-question"
+              "kind": "output",
+              "all": [
+                "new-skill-route",
+                "existing-page-route",
+                "existing-body-preserved"
+              ],
+              "none": [
+                "body-preservation-denied"
+              ]
             },
             {
               "kind": "body",
