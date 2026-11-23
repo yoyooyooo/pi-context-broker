@@ -10,6 +10,7 @@ import { readEvidenceBundle } from './evidence/store.mjs';
 import { scheduleProtocol as expectedSchedule, declaredSchedule, UNSTARTED_FOLLOWUP, assertFollowupSelection } from './campaign-selection.mjs';
 import { readApprovedCampaign, approvedCampaignBinding, assertApprovedCampaignBinding } from './approved-campaign.mjs';
 import { readAliasRevisionStop, assertRetainedAliasEpisode } from './campaign-alias-revision.mjs';
+import { readHistoryExtension } from './campaign-history-extension.mjs';
 
 export const FINITE_CAMPAIGN = 'benchmark-finite-campaign';
 export const isFiniteCampaign = value => value?.kind === FINITE_CAMPAIGN;
@@ -306,6 +307,15 @@ export async function readAliasRevisionHistory({ parentAuthorization, predecesso
   return history;
 }
 
+/** Bootstrap only the explicitly accepted, terminal stop. No file or scope is
+ * registered here; every other new original result keeps the ordinary guards. */
+export async function readAcceptedHistoryExtension({ parentAuthorization, userApproval, predecessor, planFiles, pilotLedgerRoot }) {
+  const parent = await readApprovedCampaign(parentAuthorization);
+  const extension = await readHistoryExtension({ parent, parentReference: parentAuthorization, userApproval,
+    predecessor, planFiles, pilotLedgerRoot, currentBoundary: true });
+  return extension.history;
+}
+
 function assertPrefix(current, expected) {
   assert.ok(current.scheduled_episodes >= expected.scheduled_episodes);
   for (const key of ['reservations', 'episodes']) assert.deepEqual(current[key].slice(0, expected.scheduled_episodes), expected[key], 'FINITE_HISTORY_PREFIX_CHANGED');
@@ -368,10 +378,12 @@ async function authorizedScope(value, context) {
   if (!context.authorized) context.authorized = await readApprovedCampaign(binding.reference);
   if (context.reference && fingerprint(binding.reference) !== fingerprint(context.reference)) {
     const next = await readApprovedCampaign(binding.reference);
-    assert.equal(next.value.version, 2, 'APPROVAL_LINEAGE_CHANGED');
+    assert.ok([2, 3].includes(next.value.version), 'APPROVAL_LINEAGE_CHANGED');
     assert.deepEqual(next.value.revision.parent_authorization, context.reference, 'APPROVAL_LINEAGE_CHANGED');
-    assert.deepEqual(value.predecessor, next.value.predecessor, 'ALIAS_REVISION_PREDECESSOR_CHANGED');
-    assert.equal(binding.allocation_id, next.value.revision.followup_allocation_id, 'ALIAS_REVISION_FOLLOWUP_FIRST');
+    assert.deepEqual(value.predecessor, next.value.predecessor, 'APPROVAL_REVISION_PREDECESSOR_CHANGED');
+    if (next.value.version === 2)
+      assert.equal(binding.allocation_id, next.value.revision.followup_allocation_id, 'ALIAS_REVISION_FOLLOWUP_FIRST');
+    else assert.equal(binding.allocation_id, next.value.revision.next_allocation_id, 'HISTORY_EXTENSION_NEXT_ALLOCATION_FIRST');
     context.authorized = next;
   }
   const authorized = context.authorized;
@@ -445,6 +457,17 @@ async function assertAuthorizedProtocol(protocol, execution, slots, value, autho
   }
   // New route/API/window identities remain explicit in this new protocol. They
   // are not asserted equivalent to the stopped experiment's model condition.
+}
+
+// This shallow contract is also used by accepted-history verification. It must
+// not read an authority or walk its lineage: the caller supplies the verified
+// parent, and compares the immutable registration chain separately.
+export async function verifyAuthorizedHistoryPlan(plan, amendment, authorized, reference) {
+  assertFiniteCampaignPlan(plan, amendment);
+  assert.deepEqual(amendment.prospective_authorization,
+    approvedCampaignBinding(reference, authorized.value, amendment.id), 'HISTORY_EXTENSION_SCOPE_AUTHORITY_CHANGED');
+  await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment, authorized);
+  await assertConfirmationUnexposed(plan.protocol, plan.execution, amendment.history);
 }
 
 // Walk immutable amendment links once. The outer history read verifies all raw
