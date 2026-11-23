@@ -10,6 +10,7 @@ import { runSubject, readSubjectTurnControl } from './execute.mjs';
 import { createFixtureTurnAdapter } from './fixture-turn-adapter.mjs';
 import { inventoryPublicInputs } from './subject.mjs';
 import { readTurnBridgeJournal } from './turn-bridge.mjs';
+import { executionImplementation } from './implementation.mjs';
 
 const repository = dirname(dirname(fileURLToPath(import.meta.url)));
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -64,9 +65,9 @@ async function fixture({ clarifications = true, kind = 'publish-version', malfor
   const runId = 'integration-' + randomUUID().slice(0, 8), runRoot = join(root, 'runs', runId), controlRoot = join(root, 'control');
   const buildRoot = join(root, 'builds/apparatus'), source = join(buildRoot, 'source/broker'), fixtureRoot = join(controlRoot, 'fixture');
   const copy = async path => { await mkdir(dirname(join(source, path)), { recursive: true }); await cp(join(repository, path), join(source, path)); };
-  for (const path of ['benchmark/subject.mjs', 'benchmark/turn-bridge.mjs', 'benchmark/reported-model.mjs', 'scripts/paired-environment.mjs', 'scripts/paired-runtime-identity.mjs',
-    'scripts/skill-consumption-provider.mjs', 'scripts/skill-consumption-source-observer.mjs', 'scripts/notion-skill-graph-model-evidence.mjs',
-    'scripts/notion-default-context.mjs', 'scripts/notion-integration-hosts.mjs']) await copy(path);
+  // Keep the real source dependency closure; substitute only the explicit no-model runtime.
+  for (const file of (await executionImplementation()).files)
+    if (file.path !== 'runtime/episode-runner.mjs') await copy(join('benchmark', file.path));
   await save(join(source, 'benchmark/runtime/episode-runner.mjs'), runtimeSource);
   const skillRoot = join(controlRoot, 'initial-skills'), initial = [
     { resource_path: 'SKILL.md', content: '---\nname: owned-skill\ndescription: Controlled apparatus\n---\nVersion one.\n', mode: '100644' },
