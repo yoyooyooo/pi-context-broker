@@ -1,0 +1,91 @@
+{
+  "kind": "retained-alias-invalid-publication-provenance",
+  "run_id": "benchmark-grok-4-7-approved-gate-1-attempt-2-001",
+  "scope_id": "approved-grok-4-7-route-gate-1",
+  "accounting": {
+    "retained_execution_ordinal": 51,
+    "census_physical_executions": 58,
+    "physical_executions_in_this_package": 1,
+    "usage": {
+      "model_requests": 1,
+      "input_tokens": 5789,
+      "output_tokens": 349,
+      "duration_ms": 12427.293291000002
+    },
+    "monetary_cost_status": "unknown_unpriced"
+  },
+  "validity": {
+    "admission": "invalid",
+    "reasons": [
+      "reported_model_mismatch",
+      "runtime_not_a_business_episode:invalid"
+    ],
+    "stop_batch": true,
+    "stop_reason": "subject_requested_stop",
+    "valid_slots": 0,
+    "valid_outcome": null,
+    "raw_business_status": "fail"
+  },
+  "analysis_history": {
+    "original_is_effective": true,
+    "analysis_revision": null,
+    "reanalysis_performed": false,
+    "source_episode_sha256": "5f44fbd50331dd515a9c2392ffc839da58af7a15b9c46957ff7770295dd75de4",
+    "source_episode_file_sha256": "17f577327c4ad7493fb48a5bb3cd7902df57fea08e20c543b61931871ee4ba1d",
+    "source_analysis_sha256": "3d73deaafc769a16c354089fc2351a36793c6ae3fc0258d1fb187c303915baa2",
+    "public_analysis_sha256": "e97f7c824fdd4dbbe725138b5c54feabb2bdf0be82e5ac52632da04198bbf41a",
+    "public_manifest_sha256": "3d07824f93664ef374e2a1335c3eac98adfccb715fafacf9a3edcd10a0f3ed90",
+    "collector_version": "1.1.0",
+    "collector_source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15"
+  },
+  "source_references": {
+    "census": {
+      "file": "census-004.json",
+      "sha256": "96ce55dcb9c3dc6c9531e1b8cbe18c78400a9b36b9df113e760f6cffa4031dcf",
+      "ordinal": 51
+    },
+    "plan": {
+      "file": "control/grok-4-7-approved-gate-1-attempt-2/plan.json",
+      "sha256": "493a3b2a5729a79862a780ee654cfaac7d8e3872a9a41a07293c222a7c1f96fe",
+      "plan_sha256": "868c527f7b788edcc536d556446d6c3829e54f649c14cd4fa04215a663492d77"
+    },
+    "batch_ledger": {
+      "file": "control/grok-4-7-approved-gate-1-attempt-2/ledger.jsonl",
+      "sha256": "2d04dd419de9728352d81efcfe83da13e07451ae2aab543e6b31e84faf8f03d6",
+      "completion_seq": 3,
+      "closure_seq": 4
+    },
+    "scope_registration": {
+      "file": "historical-pilot-ledger/scope-registration-005.json",
+      "sha256": "9d291c42c5f3a1b165ec91f7bf02401a220ff4c74f05d0167a4a3617a66965f6",
+      "sequence": 5,
+      "id": "approved-grok-4-7-route-gate-1"
+    },
+    "scope_amendment": {
+      "file": "control/grok-4-7-approved-gate-1-attempt-2/finite-campaign-amendment.json",
+      "sha256": "c54bf6a00ebac78e6176eb5ef5ff45f3ca87ae9afee32d61a20e68941385ab8e",
+      "amendment_sha256": "7cdfb7f8fabaa05b090d82153e1701e2638047c2b4c28e780f9508e5d7b79932"
+    }
+  },
+  "denominators": {
+    "retained_plan_slots": 8,
+    "retained_plan_executions": 1,
+    "retained_plan_unstarted_slots": 7,
+    "later_grok7_is_separate_execution_scope": true,
+    "add_plan_denominators": false,
+    "count_as_eighth_valid": false,
+    "statement": "This is the retained invalid first execution preceding Grok7. Its original eight-slot plan and the later seven-execution scope describe linked scheduling history; their plan denominators must not be added."
+  },
+  "replay": {
+    "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+    "registration_replayed": false,
+    "registration_boundary": "Registration, plan and batch-ledger hashes are source audit references. The existing public package replay verifies episode evidence mappings and normalized statistical analysis; it does not replay the private finite-campaign registration ledger."
+  },
+  "preservation": {
+    "original_files": 198,
+    "model_requests_during_preparation": 0,
+    "ledger_writes": 0,
+    "notion_writes": 0,
+    "source_changes": 0
+  }
+}
