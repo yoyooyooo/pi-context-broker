@@ -8,7 +8,7 @@ import { scoreExperiment } from './analysis/compare.mjs';
 import { renderAnalysisMarkdown, renderMetricSvg, reportTables, toCsv } from './analysis/report.mjs';
 import { verifyArtifactFiles, verifyBundle } from './evidence/store.mjs';
 
-export const PUBLICATION_VERSION = '1.0.4';
+export const PUBLICATION_VERSION = '1.0.5';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const within = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
@@ -18,7 +18,10 @@ const credentialPattern = /\b(?:Bearer\s+)[A-Za-z0-9._~+/-]{12,}=*|\b(?:sk-(?:pr
 const secretKey = /^(?:authorization|proxy[-_]?authorization|api[-_]?key|access[-_]?token|refresh[-_]?token|id[-_]?token|session[-_]?token|encrypted[-_]?content|encrypted[-_]?reasoning|api[-_]?token|notion[-_]?token|token[-_]?v[0-9]+|private[-_]?key|secret[-_]?key|client[-_]?secret|password|passwd|cookie|set[-_]?cookie|secret|token|credentials?)$/i;
 const bindingKey = /^(?:bound_name|bound_skill_id|bound_owner|bound_page_id|bound_path)$/;
 const terminalOwnerPattern = /^([bcdlps-][rwxStTs-]{9}[+@.]?[ \t]+\d+[ \t]+)([^\s]+)(?=[ \t]+[^\s]+[ \t]+(?:\d+|\d+,[ \t]*\d+)[ \t]+)/gm;
-const homeUsernamePattern = /\/(?:Users|home)\/([^/\s"'<>\\]+)|(?<![\p{L}\p{N}_])[A-Za-z]:[\\/]Users[\\/]([^\\/\s"'<>]+)/gu;
+// Streaming tool arguments may end partway through a home directory name.
+// A following separator proves that the observed username component is complete.
+const homeUsernamePattern = /\/(?:Users|home)\/([^/\s"'<>\\]+)(?=\/)|(?<![\p{L}\p{N}_])[A-Za-z]:[\\/]Users[\\/]([^\\/\s"'<>]+)(?=[\\/])/gu;
+const declaredHomeRootPattern = /^(?:\/(?:Users|home)\/([^/\s"'<>\\]+)|[A-Za-z]:[\\/]Users[\\/]([^\\/\s"'<>]+))$/u;
 const usernamePattern = /^[\p{L}_][\p{L}\p{N}_.-]*\$?$/u;
 const projectedUsername = /^\[username:[a-f0-9]{20}\]$/;
 const escapeRegex = value => value.replace(/[.*+?^{}$()|[\]\\]/g, '\\$&');
@@ -90,7 +93,13 @@ export function createPublicSanitizer({ redactions = {}, material = [] } = {}) {
       discover(child);
     }
   }
-  for (const value of [...prefixes, ...material]) discover(value);
+  for (const prefix of prefixes) {
+    discover(prefix);
+    // Explicit roots are declarations, unlike potentially unfinished raw text.
+    const match = prefix.match(declaredHomeRootPattern), username = match?.[1] ?? match?.[2];
+    if (username && usernamePattern.test(username)) terminalUsernames.add(username);
+  }
+  for (const value of material) discover(value);
   const replacements = [...identifiers].sort((a, b) => b.length - a.length).map(value => [value, alias('identity', value)]);
   const wordReplacements = [
     ...[...terminalUsernames].map(value => [value, alias('username', value), 'terminal_usernames']),
@@ -226,7 +235,7 @@ export function createPublicSanitizer({ redactions = {}, material = [] } = {}) {
       identities: 'deterministic pseudonyms; not an irreversible-anonymization claim', paths: 'machine paths and caller-supplied roots replaced',
       http_request_paths: 'Observed HTTP URL paths retain route structure; URL credentials and private identifiers remain redacted',
       identifier_words: 'Whole-token replacement bounded by Unicode letters, digits, underscore and hyphen; longer public identifiers remain intact',
-      terminal_usernames: 'POSIX long-listing owner fields; whole-token occurrences of usernames discovered from home paths, listings, or explicit input',
+      terminal_usernames: 'POSIX long-listing owner fields; whole-token usernames from separator-terminated home components, listings, explicitly declared home roots, or explicit username input',
       explicit_secret_count: secrets.length, explicit_identifier_count: identifiers.size, explicit_path_prefix_count: prefixes.length,
       identifier_word_count: identifierWords.size, terminal_username_count: terminalUsernames.size } };
 }
