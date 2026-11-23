@@ -58,7 +58,7 @@ function record(value: unknown): ContentSearchRecord {
   const parsed = parseNativeReference(ref);
   const id = sharedSkillId(owner.library_id, owner.skill_id), kind = value.kind;
   const entrypoint = nonempty(value.entrypoint);
-  if (id === undefined || value.id !== id || parsed.selector !== id || parsed.snapshot || parsed.fileId !== undefined || parsed.path !== entrypoint
+  if (id === undefined || value.id !== id || parsed.selector !== id || parsed.snapshot || parsed.path !== entrypoint
     || kind !== "skill" && kind !== "router" && kind !== "prompt"
     || typeof value.default_context !== "boolean" || value.enabled !== true) throw invalid();
   const representation = value.match.representation;

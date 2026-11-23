@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot, bindNativeReference } from "../../src/native-reference";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -27,14 +28,14 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   assert.equal(f.record.locator.type, "shared_skill");
   const records = new Map<string, SkillRecord>();
   for (const [index, name] of ["root", "required", "second", "independent"].entries()) {
-    const id = index === 0 ? f.record.id : "shared_skill:current-source:" + name;
+    const id = index === 0 ? f.record.id : nativeSkillId("current-source", String(name));
     const metadata: ContentRecord = { ...f.record, id, name, alias: name, description: name,
-      ref: "skill://" + encodeURIComponent(id) + "/SKILL.md", locator: { ...f.record.locator,
+      ref: nativeFileRef(id, "SKILL.md"), locator: { ...f.record.locator,
         skill_id: index === 0 ? "entry" : name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0") } };
     const body = "Complete " + name + " instructions A.\n", snapshotId = "s_" + hash(name);
     records.set(name, { ...f.selected, ...metadata, sourceScope: scope, body, snapshotId, versionId: hash(body), normalizedName: name,
       path: join(f.root, name, "SKILL.md"), fileBindings: [{ file_id: "main-" + name, page_id: metadata.locator.page_id, path: metadata.entrypoint }], preparationBinding: { record: metadata, scope, snapshot_id: snapshotId,
-        version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId + "&file_id=main-" + name } });
+        version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(metadata.ref, snapshotId) } });
   }
   const record = (name: string) => { const found = records.get(name); assert.ok(found); return found; };
   const versions = new Map([...records.values()].map(item => [item.snapshotId!, item]));
@@ -43,7 +44,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   type Input = Parameters<typeof f.result>[0];
   const ready = (input: Input) => {
     const roots = input.targets.map(target => {
-      const ref = parseNativeReference(target);
+      const ref = bindNativeReference(parseNativeReference(target), "current-source");
       const found = ref.snapshot ? versions.get(ref.snapshot) : [...records.values()].find(item => item.id === ref.selector);
       assert.ok(found); assert.equal(found.id, ref.selector); return found;
     });
@@ -92,17 +93,17 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
     freshness: { policy: "max_age", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: options.catalogMaxAgeMs ?? 1_000_000, stale: false } };
   f.state.directory = { ...f.state.catalog, records: [], count: 0, view: null, view_selection: "none" };
   f.state.resolve = (target, catalog) => {
-    const ref = parseNativeReference(target);
+    const ref = bindNativeReference(parseNativeReference(target), "current-source");
     const rows = (catalog as typeof f.state.catalog).records;
-    const row = rows.find(item => item.id === ref.selector || item.alias === ref.selector); assert.ok(row);
-    return { record: row, scope, ref: "skill://" + encodeURIComponent(row.id) + "/" + (ref.path || row.entrypoint).split("/").map(encodeURIComponent).join("/") };
+    const row = rows.find(item => item.id === ref.selector); assert.ok(row);
+    return { record: row, scope, ref: nativeFileRef(row.id, ref.path || row.entrypoint) };
   };
   const revise = (name: string, body: string, entrypoint = record(name).entrypoint!) => {
     const previous = record(name), metadata = { ...previous.preparationBinding!.record, entrypoint,
-      ref: "skill://" + encodeURIComponent(previous.id!) + "/" + entrypoint.split("/").map(encodeURIComponent).join("/") };
+      ref: nativeFileRef(previous.id!, entrypoint) };
     const snapshotId = "s_" + hash(name + body + entrypoint), next = { ...previous, ...metadata, body, snapshotId, versionId: hash(body),
       path: join(f.root, name, entrypoint), fileBindings: previous.fileBindings?.map(binding => ({ ...binding, path: entrypoint })), preparationBinding: { record: metadata, scope, snapshot_id: snapshotId,
-        version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId + "&file_id=main-" + name } };
+        version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(metadata.ref, snapshotId) } };
     records.set(name, next); versions.set(snapshotId, next);
     requirements.set(snapshotId, name === "root" || name === "second" ? [record("required")] : []);
     f.state.catalog = { ...f.state.catalog, records: [...records.values()].map(item => item.preparationBinding!.record) };
@@ -193,7 +194,8 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   };
   const failed = (code: string, item = record("required"), details: Record<string, unknown> = {}) => ({ version: 1, status: "failed", effects: noConsumptionWrites(),
     error: { code, message: "Controlled SDK failure", details: { ...details, preparation: { status: "failed", scope,
-      required: [], nodes: [{ state: "failed", id: item.id, ref: item.ref, roles: ["root"], error: { code, details: { id: item.id } } }] } } } });
+      required: [], nodes: [{ state: "failed", id: item.id, ref: item.ref, roles: ["root"], error: { code, details: { id: item.id,
+        ...(typeof details.page_id === "string" ? { page_id: details.page_id } : {}) } } }] } } } });
   const read = async (path: string, refresh?: boolean, from?: string) => {
     const input = { path, ...(refresh === undefined ? {} : { refresh }), ...(from === undefined ? {} : { from }) }, toolCallId = "read-" + branch.length;
     const admitted = await emit("tool_call", { toolName: "read", toolCallId, input });

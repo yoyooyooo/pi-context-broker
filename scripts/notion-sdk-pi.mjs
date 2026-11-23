@@ -124,7 +124,8 @@ async function inspect(options) {
   assert.ok(!packageRoot.startsWith(resolve(dirname(fileURLToPath(import.meta.url)), '..') + '/'), 'Use an independent installed Broker package');
   const runtime = JSON.parse(await readFile(join(packageRoot, 'dist/ntn-skills-runtime.json'), 'utf8'));
   const runtimeHashes = verifyBundledRuntime({ manifest: runtime, expectedVersion: runtime.package_version,
-    cliBytes: await readFile(join(packageRoot, 'dist/ntn-skills.mjs')), sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')) });
+    cliBytes: await readFile(join(packageRoot, 'dist/ntn-skills.mjs')), sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')),
+    refBytes: await readFile(join(packageRoot, 'dist/ntn-skills-ref.cjs')) });
   const [major, minor, patch] = process.versions.node.split('.').map(Number);
   assert.ok((major === 24 && (minor > 22 || minor === 22 && patch >= 3)) ||
     (major === 26 && (minor > 13 || minor === 13 && patch >= 1)), 'Use Node ^24.22.3 or ^26.13.1');

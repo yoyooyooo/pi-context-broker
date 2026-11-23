@@ -10,23 +10,25 @@
   },
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
-    "packages/context-broker/src/discovery-records.ts": "3b8b8abee88e2eba5de3421e76e446de91412b7f7d4b6b71394fede5dd878bab",
-    "packages/context-broker/src/host-skills.ts": "848508f97429de2e922b488656047b7c65852f79f468145ba7e78a013fca2660",
-    "packages/context-broker/src/prepare-protocol.ts": "ae06d35b831250f1ce2cc2b818f162e69e5af3d1ed861c26c20ce103a99effe2",
-    "packages/context-broker/scripts/consumer-observation.test.ts": "5c04efa9cf40595ec6fae01f3c3b7cac140e3e01cbba887729c22d7f17ba5b8e",
-    "packages/context-broker/scripts/host-prepare.test.ts": "edfb79c1f64f05e2c1409957f5d2701be58682248f097eeb5ad3c5cfc5751d1e",
-    "scripts/check-consumer-observation-mutations.mjs": "a34d906997d213187d48af500f3af0c5a61fd9233d5dd11b35268c2611f8cf51",
-    "packages/context-broker/scripts/host-refresh.test.ts": "92ada6c72b912ac2cff14b24345457476e1e84ede75aeeeb302154506a8608e2",
-    "packages/context-broker/scripts/resource-read-host.test.ts": "c7448e39a6727559b4613589e0324ab256ba84d14e2ddb1c73494314eb671faa",
-    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "c33bd5a2d5c4fb321eb116e1522ed9739447d62c47bcea198325b6a70fc3a8c3",
+    "packages/context-broker/src/discovery-records.ts": "be397d085c67f906ba06f56a1aaf06e33f5f2b48c00bed9a2a4138d23255eef9",
+    "packages/context-broker/src/host-skills.ts": "076162b5081a965300aa4293bfd32510a66eb5ace7f052a1bef4f400db74d76d",
+    "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
+    "packages/context-broker/scripts/consumer-observation.test.ts": "2f07b67ddf22702b2416fc154daf6adc7d9974372e36563f11666c6858509145",
+    "packages/context-broker/scripts/host-prepare.test.ts": "314410342e0da1726fd3794b67418ce0b9205c8165d62e789484a3ab885d8c77",
+    "scripts/check-consumer-observation-mutations.mjs": "3ee2b6cc2909687ad54b619eff64b5722cfae5ead0c7a12c21bd013f8157801f",
+    "packages/context-broker/scripts/host-refresh.test.ts": "132b729c029e92f278a59bb03c4881346291a1e872add0067951478c8e6703c2",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "97619387a42eb67a1ca28aad54bee34840b77a43ed1bf30ea3f3bd6d114e9841",
+    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "a518341cf245ab02e0acdd38bc1c3d44e3b8ca12068b91506a52dc5a05658ef4",
     "packages/context-broker/src/content-publication.ts": "0dbb3fb6e12798474d08856649ebb4282483b7241e9830ac3f55daef81ddd4f8",
-    "packages/context-broker/src/content-search.ts": "bc20e1ff787555ababf52e98e930afec71a4275e32df2c31a6ec8f1a891173cd",
+    "packages/context-broker/src/content-search.ts": "6c09904b6c1f86b19c1e67cac324d58cd31e6f62937d09eb956982d3fa29ce3c",
     "packages/context-broker/src/pi-authorization.ts": "9355d0cdf3347043c17447bc691d1a605b374bded3b60cee8a61b317eb690440",
-    "packages/context-broker/src/notion-sdk.ts": "31eb9acc78090976f30fa5b12268b9e78ff1ee1e459e6ee996b75aa2332e400f",
-    "packages/context-broker/scripts/host-content-search.test.ts": "d8b6a77f23ef117ef932cb1b28464fccf9b62aabb299301a86d3bb90fd98e28a",
-    "packages/context-broker/scripts/content-search.test.ts": "8d1e2ca654ca0518a6ee20f32dde1aa9bea3f18d707a613cab2121aa643c6d0b",
+    "packages/context-broker/src/notion-sdk.ts": "eb17bac02d15c0e6a9f3a6ceb2a5151d147d525249dd213c205d5a06a5749b76",
+    "packages/context-broker/scripts/host-content-search.test.ts": "2c2212e2f35236c07698152c3bd8932e1eb24e391759397a4be3b486f51217ad",
+    "packages/context-broker/scripts/content-search.test.ts": "c896da707027be2e695063ac17778d322bcc8f25a2cc4185743f876ec98f738f",
     "packages/context-broker/scripts/pi-authorization.test.ts": "3b632769f7dc12d672c46155222cbc418cd66da86ae8fe6c592e275231a2ee3d",
-    "packages/context-broker/scripts/fixtures/current-notion-source.ts": "1106da116d60043aede5b04be71780d5a5927a73a0acc7de76d207d5f6242317"
+    "packages/context-broker/scripts/fixtures/current-notion-source.ts": "7e25986a3a6c0df9eae6b916c584458e59020cdbfec977ccbb9c54313cd69fcf",
+    "packages/context-broker/src/native-reference.ts": "37158660edb67b70a97bef4fb6bfdab70dfb7ef6ea4ad1c2765bd2313647207e",
+    "packages/context-broker/src/shared-skill-identity.ts": "a2387ff67405901a0ae38158439808e24bff0bf1f90059802e227370c741a682"
   },
   "models": {
     "Availability": {
@@ -162,10 +164,10 @@
   ],
   "current_source_review": {
     "host_skills": "Current Notion materialization requires a complete entry manifest; older receipt scanning/fallback was removed. Pi use/read/resource inputs reject retired readOnly and internally always select no-write policy. Qualification, request ordering, cursor state, final graph commit, cancellation, provider acceptance, turn completion and public projection guards are unchanged.",
-    "host_prepare_tests": "The canonical-binding regression now uses the actual shared_skill record and keeps the physical-page substitution as a negative. It still observes one current use, complete source-body ownership and an unchanged injected message. Existing failure-attribution, incomplete-body, budget, cancellation, provider/turn and projection assertions remain in place.",
+    "host_prepare_tests": "Canonical-binding and physical-page-substitution tests use the shared pure protocol. Retired file_id arguments and former paths are negative inputs; tests mutate actual URI owner/path rather than obsolete encoded prefixes. Complete source-body ownership, unrelated-scope isolation, dependency attribution, budget, cancellation, provider/turn and projection assertions remain.",
     "transport_boundary": "The installed OpenAI serializer case was removed from final-request-undici.test.ts during host deferral; its real Node HTTP entity checks remain. No installed serializer or real Pi result is claimed by these finite models.",
     "scope": "The exact TLA/config/view bytes, model bounds, cases and expected rules are unchanged. Build/pin, user guidance, historical driver scores and unrelated producer files are not formal premises.",
-    "identity_contract": "Reviewed the diff from fd7ebf718f26ec0a2b060cb8a968cb3f209061b2: remote preparation and catalog members accept only explicit shared_skill identities with current enablement. Implicit notion_page/subscription/upstream mapping is removed. Canonical raw page UUID input still qualifies against the current physical owner. Exact source, scope, locator and ref equality remain required; no changed request ordering, cancellation, graph commit, delivery or public projection guard.",
+    "identity_contract": "Current Skill reference v2: canonical complete root URI identifies logical Library plus stable Skill ID, while source configuration, credential scope and physical locator remain independently checked. Portable URI parsing has no display-name, alias or physical-page fallback; explicit Notion page addresses require current qualification. See current_review.skill_reference_v2 for the reviewed concrete identity and denial boundaries.",
     "current_effects_contract": "The current SDK and host effects contract now has exactly version, remote_writes and author_content. Retained-history outcomes and retention arrays are rejected. Existing cancellation, partial-source failure, source-span retirement, exact-body and receipt-preservation cases use current none/unknown observations; unknown remains dominant and absent observations are unknown. Final-request validation rejects explicit malformed effects before payload acceptance and combines top-level/preparation observations conservatively. Actual HTTP entity and delivery guards remain in place. The effects field schema and diagnostic aggregation are concrete regression obligations outside the finite models; no model, bound, case inventory, expected rule or mutation target changed.",
     "cli_host_wait_guidance": "Reviewed 2e5b052: the successful cli_source response now states the public CLI default budget, timeout units, host wait margin and waiting on the same persistent process. The exact input exclusivity, available tool capabilities, one enabled Source, cancellation, selection, recovery, epoch, graph commit and delivery guards are unchanged. This response-only guidance does not change finite states, transitions, cases, expected rules or mutation targets. Natural model adherence remains a separate real-run obligation."
   },
@@ -370,6 +372,26 @@
       "mapping": "Preserved both prior hosted_mcp_content_publication and upstream default/explicit workflow reviews. consumer-observation.test.ts retains the accepted qualification revision case; host-prepare.test.ts takes the reviewed upstream guidance expectations while keeping its pending-to-ready and no-preparation assertions. Only the jointly changed index.ts requires a newly computed merged hash; every other mapped file equals its reviewed parent hash.",
       "workflow": "The upstream bindPairedWorkflowEvidence and its prompt-isolation test coexist with the new private CLI MCP authorization preparation and proxy inheritance tests. The content scenarios and independent holdout remain appended to the current corpus. Neither observer binding injects a Skill or private expected answer into the subject prompt.",
       "proof_limit": "This merge review does not establish runtime or real-model success. TLA/config/view bytes, bounds, case inventories and independent expected_rules are unchanged. Re-run current consumer-state/formal mutations, guidance/prepare, package fixtures and affected natural-workflow verifier tests on the final frozen build."
+    },
+    "skill_reference_v2": {
+      "reviewed_from": "d739ac0c248b460816a48da00b5c90f2bb36e395",
+      "identity": "Remote record.id is the canonical complete root skill URI. Host wrappers use the selected CLI pure protocol, not a second parser. Credential/source scope stays separate from logical Library identity. Contextual stable IDs bind only through the configured entry or actual selected containing file; names, aliases and page UUIDs are not portable URI selectors. Explicit Notion page addresses remain a separate current authorized lookup.",
+      "qualification": "Reviewed preparationFailureDetails and observeFailure: an explicit ACCESS_DENIED page_id or Notion URL preserves the real physical-page denial boundary. A logical canonical denial matches the exact owner and does not widen through its current locator. Existing source/scope, request order, validation time, cancellation and generation guards remain in place. The old physical and stable rebind cases remain distinct, and page_id evidence has an added concrete replay.",
+      "selected_files": "Fixed references select the exact path in the selected immutable manifest; pathless references select its entrypoint. Public file_id and former-path repair are removed. Native File bindings remain internal and optional for Source files. sr:R keys bind owner plus path, reject a changed binding at that path, and reject one native File ID appearing under another path at the same selected owner. sr:S relies on the selected main binding and revalidates actual manifest/hash/scope evidence without duplicating a public main File ID.",
+      "versions_and_delivery": "Same-owner containing references preserve the containing snapshot; cross-owner references use the target selection or its own session pin. An explicit foreign Library is resolved independently and cannot borrow the containing credential/source scope. Missing fixed paths or bytes do not fall back to current. Resource receipts, final request identity and deduplication include exact path and retain optional native File evidence. Original graph closure, delayed commit, provider acceptance, turn completion, current branch, recovery and public projection guards remain intact.",
+      "replays": [
+        "host-refresh/host-prepare: exact physical versus logical denial, cancellation, complete graph and original pins",
+        "native-read-session/pi-read-adapter: stable IDs, actual containing file, exact fixed paths and no legacy parameters",
+        "session-short-ref/session-short-ref-host: immutable owner/path/native binding, replay and actual manifest checks",
+        "fixed-resource-source/scalar-resource-read-host/resource-read-host/notion-entry: exact manifest path, sparse Source bindings and no main activation through resource reads",
+        "session-recovery: missing Required detected by parsed exact owner, independent complete closure preserved"
+      ],
+      "real_guard_mutations": [
+        "All original 33 consumer-state guards and both observations guards retain their original behavioral meaning. The isolation copy now carries the exact selected pure artifact and its verified manifest.",
+        "fixed-resource-path-binding and fixed-resource-native-binding are added concrete extension checks with an empty finite properties list and explicit concrete_obligations; baseline, behavioral mutation and byte-identical restoration are required."
+      ],
+      "proof_limit": "No TLA, config, view, bound, case, expected_rules or tool-lock byte is changed. These finite models use abstract identities and pins; they do not prove URI grammar, Library lookup, Source relative mapping, FileID/path bijection, package selection, live authorization or actual provider bytes. Those are concrete regression/integration obligations and the separately owned CLI reference model. Hashes bind reviewed owner/test bytes and do not establish implementation refinement.",
+      "source_routing": "Only a complete current catalog absence or an explicit descriptor-proven Library mismatch permits trying another configured source. A fixed SKILL_NOT_FOUND, partial catalog or denied response must not be hidden by another source. SNAPSHOT_MISSING retains its dedicated fixed-missing handling and never falls back to current. notion-source-sdk.test.ts exercises the actual source boundary and exact SDK call count."
     }
   }
 }

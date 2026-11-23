@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { nativeFileRef, nativeSkillId } from '../packages/context-broker/src/native-reference.ts';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,8 +8,8 @@ export const resourceCanary = 'NOTION_INTEGRATION_RESOURCE_61C9';
 export const alias = 'ui-alpha';
 export const pageId = '11111111-1111-4111-8111-111111111111';
 const secondPageId = '22222222-2222-4222-8222-222222222222';
-const identity = page => 'shared_skill:fixture:' + page;
-const mainRef = page => 'skill://' + encodeURIComponent(identity(page)) + '/SKILL.md';
+const identity = page => nativeSkillId('fixture', page);
+const mainRef = page => nativeFileRef(identity(page), 'SKILL.md');
 export const skillRef = mainRef(pageId);
 const snapshot = 's_' + 'a'.repeat(64);
 export const database = '33333333-3333-4333-8333-333333333333';

@@ -241,7 +241,7 @@ export function finalRequestSources(messages: readonly AgentMessage[]): { source
     }
     if (resource) {
       const bodySha256 = hexHash(resource.sha256);
-      push({ identitySha256: sha256(JSON.stringify([resource.scope ?? "", resource.id ?? "", resource.file_id ?? ""])),
+      push({ identitySha256: sha256(JSON.stringify([resource.scope ?? "", resource.id ?? "", resource.path ?? "", resource.file_id ?? ""])),
         snapshot: snapshotPin(resource.snapshot_id), bodySha256, state: deliveryState(text, bodySha256, resource.bytes, resource.delivered_complete_text), ...effects });
       continue;
     }

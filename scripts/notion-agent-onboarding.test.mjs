@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import test from 'node:test';
+import { skillFileRef } from './skill-ref-fixture.mjs';
 import { gradeOnboardingAssertions, gradeOnboardingBusiness, gradeOnboardingReadback, onboardingProducedEntries, onboardingResult, validateOnboardingConfig, validateOnboardingOracle } from './notion-agent-onboarding.mjs';
 import { validateOnboardingFileOutput, validateOnboardingLibrary, validateOnboardingLoaded, validateOnboardingSnapshot } from './notion-agent-onboarding-runtime.mjs';
 import { validateAgentCorpus } from './notion-agent-scenarios.mjs';
@@ -29,11 +30,11 @@ function currentReadbackFixture(content = '# Travel\nEvery receipt needs a date.
   const id = n => '00000000-0000-4000-8000-' + n.toString(16).padStart(12, '0');
   const library = { version: 1, library_id: 'library-current', operation_id: 'library-current', parent_page_id: parent,
     ...Object.fromEntries(['skills', 'files', 'records', 'sources'].map((role, i) => [role, { database_id: i ? id(i * 2 + 3) : entry, data_source_id: id(i * 2 + 4), property_ids: { Name: 'title' } }])) };
-  const record = { id: 'shared_skill:library-current:travel', kind: 'skill', name: 'travel', entrypoint: 'SKILL.md',
+  const record = { id: 'skill://travel?library=library-current', kind: 'skill', name: 'travel', entrypoint: 'SKILL.md',
     locator: { type: 'shared_skill', page_id: id(1), database_id: entry, data_source_id: id(4), library_id: library.library_id, skill_id: 'travel' } };
   const support = 'complete supporting content\n', snapshot = 's_' + '1'.repeat(64);
   const bindings = [{ path: 'SKILL.md', file_id: 'main-travel', page_id: id(1) }, { path: 'references/rules.md', file_id: 'support-travel', page_id: id(9) }];
-  const ref = binding => 'skill://' + encodeURIComponent(record.id) + '/' + binding.path + '?snapshot=' + snapshot + '&file_id=' + binding.file_id;
+  const ref = binding => skillFileRef(record.id, binding.path, snapshot);
   const metadata = { record, scope: 'scope-current', snapshot_id: snapshot, version_id: '2'.repeat(64), entrypoint: 'SKILL.md', file_bindings: bindings };
   const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
   const main = { ...metadata, path: 'SKILL.md', ref: ref(bindings[0]), source: 'notion', freshness: { policy: 'refresh', stale: false },

@@ -354,7 +354,7 @@ export function modelBaselineSelectionArgs(config,{provider,controlledModel,...o
  * instruction bodies. A body becomes known only after the actual read result;
  * the exact same outer tool output must subsequently reach the provider. */
 export function observeNativeInspection(api, settings) {
-  const {fs,crypto,path,diagnostics,output,files,catalog,clockId,source,rawDirectory,validateResourceReadProjection,unselectedFiles=[],unselectedSources=[]} = settings;
+  const {fs,crypto,path,diagnostics,output,files,catalog,clockId,source,rawDirectory,validateResourceReadProjection,parseNativeReference,unselectedFiles=[],unselectedSources=[]} = settings;
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const fd = fs.openSync(output, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
   const expected = new Map(files.map(file => [file.absolutePath, file])), calls = new Map(), delivered = new Map(), subscriptions = [];
@@ -394,7 +394,7 @@ export function observeNativeInspection(api, settings) {
     const inputRefs=[call.input?.path,...(Array.isArray(call.input?.paths)?call.input.paths:[])].filter(value=>typeof value==='string');
     const otherRef=inputRefs.find(ref=>unselectedRefs.has(ref));
     let canonicalOwner;
-    if(source)for(const ref of inputRefs)try{const parsed=new URL(ref),id=decodeURIComponent(parsed.hostname);if(parsed.protocol==='skill:'&&id.startsWith('shared_skill:')&&id!==source.recordId)canonicalOwner=id;}catch{}
+    if(source)for(const ref of inputRefs)try{const parsed=parseNativeReference(ref);if(parsed.selector!==source.recordId)canonicalOwner=parsed.selector;}catch{}
     if(valid&&outputText&&(call.other||source&&owner&&owner!==source.recordId||otherRef||canonicalOwner)) {
       const rejected={recordId:call.other?.recordId??canonicalOwner??owner??unselectedRefs.get(otherRef),path:call.other?.path??null,
         toolCallIdSha256:sha(event.toolCallId),bytes:Buffer.byteLength(outputText),sha256:sha(outputText)};
@@ -407,9 +407,8 @@ export function observeNativeInspection(api, settings) {
     };
     if(!source)remember(call.file,outputText,{start:0,end:outputText.length,encoding:'raw'},true);
     else if(valid) {
-      const canonical=(ref,file)=>{try{const parsed=new URL(ref);return parsed.protocol==='skill:'&&decodeURIComponent(parsed.hostname)===source.recordId
-        &&decodeURIComponent(parsed.pathname.slice(1))===file.path&&parsed.searchParams.get('snapshot')===source.snapshotId
-        &&(file.fileId===undefined||parsed.searchParams.get('file_id')===file.fileId);}catch{return false;}};
+      const canonical=(ref,file)=>{try{const parsed=parseNativeReference(ref);return parsed.selector===source.recordId
+        &&parsed.path===file.path&&parsed.snapshot===source.snapshotId;}catch{return false;}};
       const sameSelection=(value,ownerKey='owner')=>value?.scope===source.scope&&value[ownerKey]===source.recordId
         &&value.snapshot_id===source.snapshotId&&value.version_id===source.versionId;
       const main=event.details?.contextBrokerRead,binding=main?.binding;
@@ -488,10 +487,10 @@ export function observeNativeInspection(api, settings) {
 }
 
 export function nativeInspectionExtensionSource(settings) {
-  const validator=settings.validatorPath?"import {validateResourceReadProjection} from "+JSON.stringify(pathToFileURL(settings.validatorPath).href)+";\n":'';
+  const validator=settings.validatorPath?"import {validateResourceReadProjection} from "+JSON.stringify(pathToFileURL(settings.validatorPath).href)+";\nimport {parseNativeReference} from "+JSON.stringify(pathToFileURL(join(dirname(settings.validatorPath),'native-reference.ts')).href)+";\n":'';
   return "import fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nimport diagnostics from 'node:diagnostics_channel';\n"
     +validator+'export default api => (' + observeNativeInspection.toString() + ')(api,{fs,crypto,path,diagnostics,'
-    +(settings.validatorPath?'validateResourceReadProjection,':'')+'...' + JSON.stringify(settings) + '});\n';
+    +(settings.validatorPath?'validateResourceReadProjection,parseNativeReference,':'')+'...' + JSON.stringify(settings) + '});\n';
 }
 
 export function verifyNativeInspectionEvents(events) {

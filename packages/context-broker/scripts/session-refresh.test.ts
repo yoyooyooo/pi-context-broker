@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { activeSelection, activeSources, confirmActiveSources, missingActiveSources, SESSION_ACTIVE_ENTRY } from "../src/session-active";
@@ -8,7 +9,7 @@ import { releaseWorkingSetRoots } from "../src/session-working-set";
 import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "../src/types";
 
 const scope = "e".repeat(64);
-const id = (name: string) => "shared_skill:refresh:" + name;
+const id = (name: string) => nativeSkillId("refresh", String(name));
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const canonical = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
   : Array.isArray(value) ? "[" + value.map(canonical).join(",") + "]"
@@ -19,7 +20,7 @@ function graph(roots: string[], edges: Array<[string, string]> = [], revisions: 
   const names = [...new Set([...roots, ...edges.flat()])].sort();
   const records = names.map((name): SkillRecord => {
     const metadata: ContentRecord = { id: id(name), kind: "skill", name, alias: name, description: name, enabled: true, default_context: false,
-      entrypoint: "SKILL.md", ref: "skill://" + encodeURIComponent(id(name)) + "/SKILL.md",
+      entrypoint: "SKILL.md", ref: nativeFileRef(id(name), "SKILL.md"),
       locator: { type: "shared_skill", library_id: "refresh", skill_id: name,
         page_id: pages[name] ?? "00000000-0000-4000-8000-000000000001",
         database_id: "00000000-0000-4000-8000-000000000002", data_source_id: "00000000-0000-4000-8000-000000000003" } };
@@ -27,7 +28,7 @@ function graph(roots: string[], edges: Array<[string, string]> = [], revisions: 
     return { ...metadata, body, source: "notion", sourceId: "refresh", sourceScope: scope,
       snapshotId, versionId: hash(body), path: "/immutable/" + name + "/SKILL.md", aliases: [], normalizedAliases: [], normalizedName: name,
       normalizedDescription: name, autoloadEnabled: false,
-      preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId } };
+      preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(metadata.ref, snapshotId) } };
   });
   const required = edges.map(([from, to]) => ({ from: id(from), to: id(to), ref: records.find(record => record.id === id(to))!.preparationBinding!.ref }));
   const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose: "use" as const, scope,

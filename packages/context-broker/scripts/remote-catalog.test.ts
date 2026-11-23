@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -15,12 +16,12 @@ try {
   const catalog = join(root, "catalog.json");
   const page = "11111111-1111-4111-8111-111111111111", routerPage = "11111111-1111-4111-8111-111111111112";
   const db = "22222222-2222-4222-8222-222222222222", ds = "33333333-3333-4333-8333-333333333333";
-  const identity = (owner: string) => "shared_skill:catalog:" + owner;
+  const identity = (owner: string) => nativeSkillId("catalog", String(owner));
   const current = (owner: string, kind: ContentKind, name: string, alias: string) => ({
     id: identity(owner), kind, name, alias, description: "registered " + alias, default_context: false, enabled: true,
     entrypoint: kind === "skill" ? "SKILL.md" : "ROUTER.md",
     locator: { type: "shared_skill" as const, library_id: "catalog", skill_id: owner, page_id: owner, database_id: db, data_source_id: ds },
-    ref: "skill://" + encodeURIComponent(identity(owner)) + "/" + (kind === "skill" ? "SKILL.md" : "ROUTER.md") });
+    ref: nativeFileRef(identity(owner), String((kind === "skill" ? "SKILL.md" : "ROUTER.md"))) });
   const initialRecords = [current(page, "skill", "Precise", "precise"), current(routerPage, "router", "Remote Router", "remote-router")];
   runtime.state.catalog = { ...runtime.state.catalog, scope: "a".repeat(64), records: initialRecords, count: 2,
     databases: [{ database_id: db, title: "Fixture", alias: "fixture", role: "content", data_source_ids: [ds] }],
@@ -70,14 +71,14 @@ try {
   assert.equal(preciseDecision.decision, "inject");
   if (preciseDecision.decision === "inject") assert.equal(preciseDecision.record.ref, remote.ref, "Actual precise invocation retains the registered exact entry ref");
   const context = { sources: config.sources, records: metadata.records, failures: metadata.failures };
-  const pinned = { ...remote, ref: remote.ref + "?snapshot=s_" + "c".repeat(64) };
+  const pinned = { ...remote, ref: withNativeSnapshot(remote.ref, "s_" + "c".repeat(64)) };
   assert.equal(resolveCatalogReference(pinned, context, "skill").sourceId, source.id);
   const selectedRecord = metadata.records.find(record => record.sourceId === source.id && record.id === remote.id)!;
   const selectedContext = { ...context, records: [selectedRecord] };
   assert.equal(resolveCatalogReference(remote, selectedContext, "skill"), selectedRecord);
   const retired = [
     { ...remote, id: "notion_page:" + page, locator: { type: "notion_page", page_id: page, database_id: db, data_source_id: ds }, ref: "skill://" + page + "/SKILL.md" },
-    { ...remote, id: "notion_subscription:" + page, locator: { type: "notion_subscription", subscription_id: page, database_id: db, data_source_id: ds, target_database_id: db }, ref: "skill://" + encodeURIComponent("upstream:" + page) + "/ROUTER.md" },
+    { ...remote, id: "notion_subscription:" + page, locator: { type: "notion_subscription", subscription_id: page, database_id: db, data_source_id: ds, target_database_id: db }, ref: "skill://upstream:" + page + "/ROUTER.md" },
   ];
   for (const declaration of retired) {
     assert.throws(() => parseCatalogMember(declaration), /locator/, "Retired locators cannot be normalized through a matching current page");
@@ -106,7 +107,7 @@ try {
   assert.equal(resolveCatalogReference(remote, { ...duplicates, records: metadata.records.map(record => record === secondRecord ? { ...record, locator: { ...remote.locator, database_id: ds } } : record) }, "skill").sourceId, source.id, "Full locator resolves sources sharing a namespace");
   assert.throws(() => resolveCatalogReference(remote, { ...context, records: metadata.records.map(record => ({ ...record, sourceScope: "invalid" })) }, "skill"), { code: "SOURCE_IDENTITY_MISMATCH" });
   const unknownId = "11111111-1111-4111-8111-111111111199";
-  const unknownRecord = { ...remote, id: identity(unknownId), locator: { ...remote.locator, page_id: unknownId, skill_id: unknownId }, ref: "skill://" + encodeURIComponent(identity(unknownId)) + "/SKILL.md" };
+  const unknownRecord = { ...remote, id: identity(unknownId), locator: { ...remote.locator, page_id: unknownId, skill_id: unknownId }, ref: nativeFileRef(identity(unknownId), "SKILL.md") };
   assert.throws(() => resolveCatalogReference(unknownRecord, context, "skill"), { code: "CATALOG_MEMBER_UNAVAILABLE" });
   // The real SDK decoder rejects the foreign request before Broker's graph guard.
   await assert.rejects(loadSourceSkill(metadata.records.find(record => record.id === remote.id)!, config, root), {
@@ -160,7 +161,7 @@ try {
   assert.ok(!("body" in limitedMember));
   assert.equal(readDiscoveryCatalog(catalog, [], { maxSkillBytes: 0 })[0]!.members![0]!.name, "limited");
   assert.ok(validateDiscoveryRecords(readDiscoveryCatalog(catalog, [], { maxSkillBytes: 1 })).some(error => error.includes("LOCAL_ENTRY_TOO_LARGE") && error.includes("scan_size_limit")));
-  await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", ...remoteRouter, ref: remoteRouter.ref + "?snapshot=s_" + "c".repeat(64) }] }));
+  await writeFile(catalog, JSON.stringify({ records: [{ kind: "router", ...remoteRouter, ref: withNativeSnapshot(remoteRouter.ref, "s_" + "c".repeat(64)) }] }));
   assert.throws(() => readDiscoveryCatalog(catalog, [], {}, context), /canonical unpinned/);
   assert.ok(runtime.calls.every(call => call.operation === "list" || call.operation === "consume"));
   const currentCatalog = structuredClone(runtime.state.catalog);

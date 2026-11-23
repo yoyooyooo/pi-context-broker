@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test, setSystemTime } from "bun:test";
 import { installHostSkills, type HostSkillOptions } from "../src/host-skills";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
@@ -7,9 +8,9 @@ import type { ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord, SourceC
 import { activeNotionSession } from "./fixtures/active-notion-session";
 
 const candidate: ContentSearchRecord = {
-  id: "shared_skill:controlled:entry", kind: "skill", name: "Content candidate", alias: "entry",
+  id: "skill://entry?library=controlled", kind: "skill", name: "Content candidate", alias: "entry",
   description: "Outside the default View.", enabled: true, default_context: false, entrypoint: "SKILL.md",
-  ref: "skill://shared_skill%3Acontrolled%3Aentry/SKILL.md",
+  ref: "skill://entry/SKILL.md?library=controlled",
   locator: { type: "shared_skill", library_id: "controlled", skill_id: "entry",
     page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000002",
     data_source_id: "00000000-0000-4000-8000-000000000003" },
@@ -28,8 +29,8 @@ async function fixture(sources: SourceConfig[] = [{ id: "notion", type: "notion"
   let dispatches = 0, authorizations = 0, metadata = 0;
   let run: NonNullable<HostSkillOptions["contentSearch"]> = async () => result();
   let loadError: Error = new SourceError("ACCESS_DENIED", "notion");
-  const records: SkillRecord[] = [0, 1].map(index => ({ ...candidate, id: "shared_skill:controlled:" + index,
-    ref: "skill://shared_skill%3Acontrolled%3A" + index + "/SKILL.md", name: "entry-" + index, alias: "entry-" + index,
+  const records: SkillRecord[] = [0, 1].map(index => ({ ...candidate, id: nativeSkillId("controlled", String(index)),
+    ref: nativeFileRef(nativeSkillId("controlled", String(index)), "SKILL.md"), name: "entry-" + index, alias: "entry-" + index,
     locator: { ...candidate.locator, skill_id: String(index), page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0") },
     source: "notion", sourceId: "notion", sourceScope: "a".repeat(64), defaultDiscovery: false,
     path: "/controlled/" + index + "/SKILL.md", normalizedName: "entry-" + index, normalizedAliases: [], normalizedDescription: "entry",

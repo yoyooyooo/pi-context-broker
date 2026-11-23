@@ -1,3 +1,4 @@
+import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 /** Internal workers of the existing candidate workflow, invoked only inside paired run.
  * No private oracle is accepted by the subject worker or its Pi process.
  */
@@ -207,15 +208,15 @@ export function validateOnboardingSnapshot(main, listed, record, library) {
   assert.ok(Array.isArray(listed.files) && Array.isArray(main.file_bindings));
   assert.equal(new Set(listed.files.map(file => file.path)).size, listed.files.length);
   assert.equal(new Set(main.file_bindings.map(file => file.file_id)).size, main.file_bindings.length);
-  assert.deepEqual(listed.files.map(file => file.path).sort(), main.file_bindings.map(file => file.path).sort());
+  assert.ok(main.file_bindings.every(binding => listed.files.some(file => file.path === binding.path)));
+  assert.equal(new Set(main.file_bindings.map(file => file.path)).size, main.file_bindings.length);
+  assert.equal(new Set(main.file_bindings.map(file => file.page_id)).size, main.file_bindings.length);
   for (const descriptor of listed.files) {
     assert.ok(typeof descriptor.path === 'string' && !isAbsolute(descriptor.path) && !descriptor.path.includes('\\') && !descriptor.path.includes('\0') && descriptor.path.split('/').every(part => part && part !== '.' && part !== '..'));
     assert.ok(Number.isSafeInteger(descriptor.bytes) && descriptor.bytes >= 0); assert.match(descriptor.sha256, /^[a-f0-9]{64}$/u);
-    const binding = main.file_bindings.find(file => file.path === descriptor.path), ref = new URL(descriptor.ref);
-    assert.ok(typeof binding.file_id === 'string' && binding.file_id && typeof binding.page_id === 'string' && binding.page_id);
-    assert.equal(ref.protocol, 'skill:'); assert.equal(decodeURIComponent(ref.hostname), record.id); assert.equal(decodeURIComponent(ref.pathname.slice(1)), descriptor.path);
-    assert.equal(ref.searchParams.get('snapshot'), main.snapshot_id); assert.equal(ref.searchParams.get('file_id'), binding.file_id);
-    assert.equal([...ref.searchParams].length, 2);
+    const binding = main.file_bindings.find(file => file.path === descriptor.path), ref = parseNativeReference(descriptor.ref);
+    if (binding) assert.ok(typeof binding.file_id === 'string' && binding.file_id && typeof binding.page_id === 'string' && binding.page_id);
+    assert.equal(ref.selector, record.id); assert.equal(ref.path, descriptor.path); assert.equal(ref.snapshot, main.snapshot_id);
   }
   const entrypoint = listed.files.find(file => file.path === main.path); assert.ok(entrypoint);
   assert.equal(main.ref, entrypoint.ref); assert.equal(Buffer.byteLength(main.content), entrypoint.bytes); assert.equal(hash(main.content), entrypoint.sha256);

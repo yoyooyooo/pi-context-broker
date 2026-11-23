@@ -62,6 +62,7 @@ async function selectedBuildInput(entry) {
       const sdk = typeof exported === "string" ? exported : exported?.import;
       return { package: metadata.name, version: metadata.version, manifest: await identity(path),
         cli: await identity(entry), sdk: await identity(await runtimePath(directory, sdk)),
+        ref: await identity(await runtimePath(directory, metadata.exports?.["./ref"]?.require)),
         notices: await identity(await runtimePath(directory, "THIRD_PARTY_NOTICES.md")) };
     }
     const parent = dirname(directory);
@@ -118,9 +119,14 @@ try {
   const runtime = JSON.parse(await readFile(join(installed, "dist/ntn-skills-runtime.json"), "utf8"));
   report.runtime = { ...runtime, hashes: verifyBundledRuntime({ manifest: runtime, expectedVersion: selected.version,
     cliBytes: await readFile(join(installed, "dist/ntn-skills.mjs")),
-    sdkBytes: await readFile(join(installed, "dist/ntn-skills-sdk.mjs")) }) };
+    sdkBytes: await readFile(join(installed, "dist/ntn-skills-sdk.mjs")),
+    refBytes: await readFile(join(installed, "dist/ntn-skills-ref.cjs")) }) };
   const sdk = await import(pathToFileURL(join(installed, "dist/ntn-skills-sdk.mjs")).href);
   assert.equal(sdk.SDK_VERSION, 2);
+  assert.equal(sdk.SKILL_REF_VERSION, 2);
+  const pure = await import(pathToFileURL(join(installed, "dist/ntn-skills-ref.cjs")).href);
+  assert.equal(pure.default.SKILL_REF_VERSION, 2);
+  assert.equal(runtime.ref_sha256, selected.ref.sha256, "The installed parser must be the selected CLI artifact bytes");
   for (const name of ["listCatalog", "consume", "readSkill", "readResources"])
     assert.equal(typeof sdk[name], "function", name + " must be exported by the actual installed SDK");
   const currentDocs = ["README.md", "fixed-resource-batches.md", "reference.md", "reference.zh-CN.md", "skill-consumption-runtime.md"];

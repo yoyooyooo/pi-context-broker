@@ -32,8 +32,9 @@ Pi 注册 `notion_list({query?, source?, limit?, cursor?, refresh?})`、`notion_
 
 Pi 的单文件入口支持 `read({path:RELATIVE_PATH, from:FIXED_CONTAINING_FILE_REF})`。
 `from` 复制实际包含链接的主文 `sr:S`、资源 `sr:R`，或带 snapshot 的 canonical
-File ref。嵌套子文档使用自己的 File 绑定；未固定的 `sr:C` 不能作为基准。
-`path` 必须是相对文件路径，不接受绝对路径、`~/`、URI、query 或 fragment。
+File ref。嵌套子文档使用自己的 owner、固定 manifest 与准确路径；未固定的 `sr:C` 不能作为基准。
+`path` 可以是相对文件路径或 `skill://` 引用；后者省略的 Library 来自 `from`。
+相对路径不接受绝对路径、`~/`、query 或 fragment。
 `from` 不与 `paths` 批读或 `refresh:true` 合用。
 
 SDK 先根据该文件的当前 Source revision 和原始仓库路径解析唯一贡献目标，
@@ -133,7 +134,7 @@ version-1 `effects` 只包含 `version`、`remote_writes` 和 `author_content`�
 | Enabled 关闭 | 阻止新的当前消费；已有完整固定原字节可继续用于旧会话，不偷偷改版 |
 | 真实认证或权限拒绝 | 对应正文从当前请求投影中移除，不能借旧缓存绕过 |
 
-刷新可以复用已返回的 `sr:C`、`sr:S` 或有本分支选择证明的固定 canonical 主文引用，包含主 File ID 时必须与该绑定完全一致。资源引用、伪造 File ID、错 owner 或错主路径不因 `refresh:true` 变成合法主入口。检查新版资源仍校验原 SDK fixed binding、hash、bytes、当前分支和权限；检查凭据不构成 active 指令。
+刷新可以复用已返回的 `sr:C`、`sr:S` 或有本分支选择证明的固定 canonical 主文引用，只按所选 manifest 的主路径解析，File ID 不再出现在公开引用中。资源引用、废弃的 `file_id` 参数、错 owner 或错主路径不因 `refresh:true` 变成合法主入口。检查新版资源仍校验原 SDK fixed binding、hash、bytes、当前分支和权限；检查凭据不构成 active 指令。
 
 ## 缓存丢失后的会话连续性
 

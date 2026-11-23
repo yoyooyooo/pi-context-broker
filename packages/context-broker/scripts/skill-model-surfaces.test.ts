@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { buildCliGuidance, buildInjectedContextMessage, buildInjectedPayload, invokeBeforeAgentStart } from "../src/index";
@@ -45,17 +46,17 @@ function content(value: unknown): MessageContent {
 }
 const decodeXml = (value: string) => value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 function fixture(key: string, sourceId = "alpha", enabled = true, kind: ContentKind = "skill") {
-  const id = "shared_skill:surfaces:" + sourceId + "-" + key;
+  const id = nativeSkillId("surfaces", sourceId + "-" + key);
   const entrypoint = kind === "router" ? "ROUTER.md" : "SKILL.md";
   const metadata: ContentRecord = {
     id, kind, name: "Complete Source Name " + key, alias: key, description: "Full description " + key,
-    default_context: false, enabled, entrypoint, ref: "skill://" + encodeURIComponent(id) + "/" + entrypoint,
+    default_context: false, enabled, entrypoint, ref: nativeFileRef(id, String(entrypoint)),
     locator: { type: "shared_skill", library_id: "surfaces", skill_id: sourceId + "-" + key,
       page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000010",
       data_source_id: "00000000-0000-4000-8000-000000000011" },
   };
   const sourceScope = hash(sourceId), snapshotId = "s_" + hash(sourceId + key), versionId = hash(body);
-  const fixedRef = metadata.ref + "?snapshot=" + snapshotId + "&file_id=main-" + key;
+  const fixedRef = withNativeSnapshot(metadata.ref, snapshotId);
   const directory: PreparationDirectory = {
     files: [{ path: entrypoint, bytes: Buffer.byteLength(body), sha256: hash(body), ref: fixedRef }],
     required: [], candidates: [], references: [],
@@ -176,7 +177,7 @@ test("selected source wrappers advertise fixed supporting files without exposing
   expect(advertised).toBeDefined();
   const files = objects(JSON.parse(decodeXml(advertised!)));
   expect(files).toEqual([{ path: resource.path, ref: sourceFiles[1]!.ref }]);
-  expect(parseNativeReference(string(files[0]!.ref))).toMatchObject({ selector: record.id, snapshot: record.snapshotId, path: resource.path, fileId: "guide-resources" });
+  expect(parseNativeReference(string(files[0]!.ref))).toEqual({ selector: record.id, snapshot: record.snapshotId, path: resource.path });
   expect(header).not.toContain("/private/");
   expect(header).not.toContain("SKILL.md");
   expect(header).not.toContain("candidates");
@@ -298,7 +299,7 @@ test("search retains machine identity in the model fallback when native read and
 
 test("native main footer keeps exact v3 prefix and actionable relations while moving hashes and IDs to host-only directory proof", async () => {
   const root = fixture("native"), required = fixture("required"), member = fixture("disabled", "alpha", false);
-  const resource = root.ref.replace("SKILL.md", "references/guide.md") + "?snapshot=" + root.snapshotId + "&file_id=guide";
+  const resource = withNativeSnapshot(root.ref.replace("SKILL.md", "references/guide.md"), root.snapshotId);
   const relation = (record: Fixture) => ({ id: record.id, ref: record.ref, kind: record.kind, name: record.name,
     description: record.description, availability: record.enabled ? "available" : "disabled" });
   root.preparationDirectory = {

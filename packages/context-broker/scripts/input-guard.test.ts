@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
@@ -33,10 +34,10 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
   // A canonical owner reaches exact metadata lookup directly. A physical page
   // UUID instead requires the authorized page-to-owner resolver, which this
   // focused discovery fixture deliberately does not provide.
-  const owner = "shared_skill:startup:entry";
+  const owner = "skill://entry?library=startup";
   const record: SkillRecord = {
     kind: "skill", id: owner, sourceId: "fixture", source: "notion", sourceScope: "startup-scope",
-    ref: "skill://" + encodeURIComponent(owner) + "/SKILL.md", entrypoint: "SKILL.md",
+    ref: nativeFileRef(owner, "SKILL.md"), entrypoint: "SKILL.md",
     name: "startup", token: "fixture/startup", path, description: "Startup fixture", aliases: [],
     normalizedName: "startup", normalizedAliases: [], normalizedDescription: "startup fixture", autoloadEnabled: false, defaultDiscovery: false,
   };
@@ -256,8 +257,8 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const context = accepted.project();
       await turn();
       assert.deepEqual(f.loads, []);
-      const replacement = "shared_skill:startup:replacement";
-      f.resolve(1, [{ ...record, id: replacement, ref: "skill://" + encodeURIComponent(replacement) + "/SKILL.md" }]);
+      const replacement = "skill://replacement?library=startup";
+      f.resolve(1, [{ ...record, id: replacement, ref: nativeFileRef(replacement, "SKILL.md") }]);
       await refreshing;
       await context;
       assert.match(accepted.submitted, /accepted identity/);

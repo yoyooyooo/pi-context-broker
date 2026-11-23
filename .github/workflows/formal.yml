@@ -10,6 +10,7 @@ on:
       - "package.json"
       - "bun.lock"
       - ".github/workflows/formal.yml"
+      - ".github/ntn-skills-cli-revision"
   push:
     branches: [main, next]
     paths:
@@ -20,6 +21,7 @@ on:
       - "package.json"
       - "bun.lock"
       - ".github/workflows/formal.yml"
+      - ".github/ntn-skills-cli-revision"
   workflow_dispatch:
 
 permissions:
@@ -39,10 +41,22 @@ jobs:
       matrix:
         suite: [observations, consumer-state]
     env:
+      NTN_SKILLS_BUILD_ENTRY: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/cli/dist/ntn-skills.js
+      CONTEXT_BROKER_GRAPH_CORE: ${{ github.workspace }}/.verification/ntn-skills-cli/packages/core/src
       PSTACK_STATECHART_ROOT: ${{ github.workspace }}/.formal-tools/pstack/pstack/skills/statechart
       TLA2TOOLS: ${{ github.workspace }}/.formal-tools/tla2tools-1.7.4.jar
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select frozen CLI input
+        id: cli-input
+        run: echo "revision=$(cat .github/ntn-skills-cli-revision)" >> "$GITHUB_OUTPUT"
+      - name: Checkout the same frozen CLI protocol as CI
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: yoyooyooo/notion-skills-cli
+          ref: ${{ steps.cli-input.outputs.revision }}
+          path: .verification/ntn-skills-cli
+          persist-credentials: false
       - name: Checkout the frozen statechart implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,6 +76,13 @@ jobs:
         with:
           bun-version: 1.4.3
       - run: bun install --frozen-lockfile
+      - name: Build the selected CLI protocol
+        working-directory: .verification/ntn-skills-cli
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+      - name: Prepare the exact protocol for source regressions
+        run: bun run prepare:ref
       - name: Obtain the exact TLC jar
         run: |
           curl --fail --location --retry 2 --output "$TLA2TOOLS" https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar

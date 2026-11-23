@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test, setSystemTime } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
@@ -42,31 +43,30 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   const resourceText = new Map<string, string>(), resourceReads: string[] = [];
   const ensure = async (path: string) => { await mkdir(path, { recursive: true }); };
   for (const [index, name] of ["root", "required", "member"].entries()) {
-    const id = "shared_skill:controlled:" + name;
+    const id = nativeSkillId("controlled", String(name));
     const metadata: ContentRecord = {
       id, kind: "skill", name, alias: name, description: withBodyCard && name === "member" ? 'Controlled member <metadata> & "原文".' : "Controlled " + name, enabled: true, default_context: index === 0,
-      entrypoint: "SKILL.md", ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
+      entrypoint: "SKILL.md", ref: nativeFileRef(id, "SKILL.md"),
       locator: { type: "shared_skill", library_id: "controlled", skill_id: name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
         database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" },
     };
     const body = "\ufeff---\r\nname: " + name + "\r\n---\r\nExact " + name + " <instructions>.\r\n"
-      + (withBodyCard && name === "root" ? '\r\n## Members\r\n\r\n- [member](skill://shared_skill%3Acontrolled%3Amember/SKILL.md) — Controlled member <metadata> & "原文".\r\n' : "");
+      + (withBodyCard && name === "root" ? '\r\n## Members\r\n\r\n- [member](skill://member/SKILL.md?library=controlled) — Controlled member <metadata> & "原文".\r\n' : "");
     const snapshotId = "s_" + hash(name), path = join(directory, name, "SKILL.md");
     await mkdir(join(directory, name), { recursive: true });
     await writeFile(path, body);
     let selected: SkillRecord = {
       ...metadata, source: "notion", sourceId: "controlled", sourceScope: identityScope, body, path, snapshotId, versionId: hash(body),
       aliases: [], normalizedAliases: [], normalizedName: name, normalizedDescription: metadata.description, autoloadEnabled: true, defaultDiscovery: false,
-      preparationBinding: { record: metadata, scope: identityScope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId },
+      preparationBinding: { record: metadata, scope: identityScope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(metadata.ref, snapshotId) },
       preparationDirectory: { files: [], required: [], candidates: [], references: [] },
     };
     if (withShortRefs) {
       const resource = "Exact " + name + " resource bytes.\r\n";
       resourceText.set(id, resource);
-      selected.preparationBinding = { ...selected.preparationBinding!, ref: selected.preparationBinding!.ref + "&file_id=main-" + name };
       const files = [{ path: "SKILL.md", bytes: Buffer.byteLength(body), sha256: hash(body), ref: selected.preparationBinding.ref },
         { path: "resources/guide.md", bytes: Buffer.byteLength(resource), sha256: hash(resource),
-          ref: metadata.ref.replace("SKILL.md", "resources/guide.md") + "?snapshot=" + snapshotId + "&file_id=guide-" + name }];
+          ref: withNativeSnapshot(metadata.ref.replace("SKILL.md", "resources/guide.md"), snapshotId) }];
       selected.fileBindings = [
         { file_id: "main-" + name, path: "SKILL.md", page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0") },
         { file_id: "guide-" + name, path: "resources/guide.md", page_id: "00000000-0000-4000-8000-" + String(index + 100).padStart(12, "0") },
@@ -101,7 +101,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
-  const install = async (prepareGraph: (purpose: PreparationPurpose, signal: AbortSignal | undefined, policy: ConsumptionPolicy | undefined, requested: readonly SkillRecord[], pins: ReadonlyMap<string, string> | undefined) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs" | "resolveRelativeReference" | "resolveNamedReference" | "sessionBinding">> = {}, adapter?: HostCapabilities) => {
+  const install = async (prepareGraph: (purpose: PreparationPurpose, signal: AbortSignal | undefined, policy: ConsumptionPolicy | undefined, requested: readonly SkillRecord[], pins: ReadonlyMap<string, string> | undefined) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs" | "resolveRelativeReference" | "resolveSkillReference" | "sessionBinding">> = {}, adapter?: HostCapabilities) => {
     let host: HostSkills;
     host = await installHostSkills(api, {
       config: { sources },
@@ -533,12 +533,12 @@ test("Pi dollar injection reuses an exact canonical card while retaining every s
 test("Pi dollar injection uses the current logical selector without confusing it with the physical page UUID", async () => {
   const f = await dollarCatalogFixture(), original = f.root.preparationBinding!;
   const record = original.record, ref = record.ref;
-  const selected: SkillRecord = { ...f.root, ...record, preparationBinding: { ...original, record, ref: ref + "?snapshot=" + original.snapshot_id } };
+  const selected: SkillRecord = { ...f.root, ...record, preparationBinding: { ...original, record, ref: withNativeSnapshot(ref, original.snapshot_id) } };
   const injected = buildInjectedContextMessage(selected, selected.name), before = JSON.stringify(injected);
   expect((await catalogProjection(f, [f.head, injected])).catalog).not.toContain('Controlled member &lt;metadata&gt;');
   expect(JSON.stringify(injected)).toBe(before);
   expect(sourceBodyLoaded([injected], selected)).toBe(true);
-  const wrongMain = { ...selected, preparationBinding: { ...selected.preparationBinding!, ref: selected.preparationBinding!.ref.replace(encodeURIComponent(record.id), "00000000-0000-4000-8000-000000000001") } };
+  const wrongMain = { ...selected, preparationBinding: { ...selected.preparationBinding!, ref: nativeFileRef(nativeSkillId(record.locator.library_id, "00000000-0000-4000-8000-000000000001"), "SKILL.md", selected.snapshotId) } };
   expect((await catalogProjection(f, [f.head, buildInjectedContextMessage(wrongMain, wrongMain.name)])).catalog).toContain('Controlled member &lt;metadata&gt;');
   expect(f.calls).toEqual(["use"]);
 });
@@ -620,8 +620,8 @@ test("Pi dollar catalog reuse rejects foreign identities, fixed relations and ch
     record => { record.sourceScope = "b".repeat(64); },
     record => { record.preparationBinding!.version_id = "another-version"; },
     record => { record.preparationBinding!.snapshot_id = "s_" + "b".repeat(64); },
-    record => { record.preparationBinding!.record.id = "shared_skill:controlled:other-root"; },
-    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, id: "shared_skill:controlled:other-member" }]; },
+    record => { record.preparationBinding!.record.id = "skill://other-root?library=controlled"; },
+    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, id: "skill://other-member?library=controlled" }]; },
     record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, ref: f.member.preparationBinding!.ref }]; },
     record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, kind: "router" }]; },
     record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, name: "another-member" }]; },
@@ -657,8 +657,8 @@ function catalogCards(catalog: string) {
 test("Pi dollar catalog reuse preserves same-name sources, owners and newly observed descriptions", async () => {
   const f = await fixture(true, false, "pi", scope, true), head: AgentMessage = { role: "system", content: "Native rules" };
   f.sources.push({ id: "other-source", type: "notion", prefetch: false });
-  const id = "shared_skill:controlled:other-member";
-  const otherOwner = { ...f.member, id, token: "other-owner-member", ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
+  const id = "skill://other-member?library=controlled";
+  const otherOwner = { ...f.member, id, token: "other-owner-member", ref: nativeFileRef(id, "SKILL.md"),
     locator: { ...f.member.locator!, skill_id: "other-member", page_id: "00000000-0000-4000-8000-000000000004" } };
   const otherSource = { ...f.member, sourceId: "other-source", token: "other-source-member" };
   const { search, host } = await f.install(undefined, { getRecords: async () => ({ records: [...f.records, otherOwner, otherSource].map(record => ({
@@ -827,7 +827,7 @@ test("Pi keeps descriptions for incomplete, foreign, fixed and stale generated c
   expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "metadata-changed",
     content: changed.content, details: changed.details, isError: false }])).catalog).toContain('>Controlled member</card>');
   f.root.preparationDirectory!.candidates[0]!.description = f.member.description;
-  f.root.preparationDirectory!.candidates[0]!.ref = f.member.ref + "?snapshot=s_" + hash("historical-member");
+  f.root.preparationDirectory!.candidates[0]!.ref = withNativeSnapshot(f.member.ref, "s_" + hash("historical-member"));
   const fixed = await tool.execute("fixed-candidate", { ref: f.root.ref }, undefined, undefined, f.ctx);
   expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "fixed-candidate",
     content: fixed.content, details: fixed.details, isError: false }])).catalog).toContain('>Controlled member</card>');
@@ -979,7 +979,7 @@ test("one cancelled native preparation cannot cancel another waiter or return la
 
 test("failed exact-file validation and output budget do not commit an explicit refreshed selection", async () => {
   const f = await fixture(), { tool } = await f.install();
-  await expect(tool.execute("invalid", { ref: f.root.ref + "?file_id=foreign", refresh: true }, undefined, undefined, f.ctx)).rejects.toThrow();
+  await expect(tool.execute("invalid", { ref: f.root.ref + "&file_id=foreign", refresh: true }, undefined, undefined, f.ctx)).rejects.toThrow();
   expect(f.persisted).toEqual([]);
   const g = await fixture(), tiny = await g.install(async purpose => [{ ...g.graph(purpose), budget: { ...g.graph(purpose).budget, maxContextBytes: 1 } }]);
   await expect(tiny.tool.execute("budget", { ref: g.root.ref, refresh: true }, undefined, undefined, g.ctx)).rejects.toThrow("PREPARE_CONTEXT_BUDGET");
@@ -1115,7 +1115,7 @@ test("relative read preserves a target's already selected snapshot when its curr
       return [oneRecordGraph(f, old, purpose)];
     }, { resolveRelativeReference: async () => current.ref!,
       ...(!discovered ? { getRecords: async () => ({ records: [f.root], failures: [] }),
-        resolveNamedReference: async (ref: string) => ({ ref, record: current }) } : {}),
+        resolveSkillReference: async (ref: string) => ({ ref, record: current }) } : {}),
       sessionBinding: (record, ctx) => sessionSelection(ctx).scopes.get(scope)?.bindings.get(record.id!),
       persistGraphs: (graphs, ctx, mode) => persistSessionSelection(f.api, ctx, graphs, mode) });
     const read = await nativeRead(f, "../member/SKILL.md", "kept-target-version", f.root.preparationBinding!.ref);
@@ -1134,7 +1134,7 @@ test("relative lookup stays in its containing configured source and rejects fore
     await f.install(async purpose => [oneRecordGraph(f, f.member, purpose)], {
       getRecords: async () => ({ records: [f.root], failures: [] }),
       resolveRelativeReference: async () => f.member.ref!,
-      resolveNamedReference: async (ref, _ctx, _signal, refresh, sourceId) => {
+      resolveSkillReference: async (ref, _ctx, _signal, refresh, sourceId) => {
         lookups.push({ ref, refresh, sourceId });
         return { ref, record: foreign ? { ...f.member, sourceId: "other-source" } : f.member };
       },
@@ -1182,9 +1182,9 @@ test("short-ref directory projection preserves older pins, non-main references a
   const relation = (name: string, ref: string) => ({ id: f.root.id!, ref, kind: "skill", name, description: name, availability: "available" });
   const main = f.root.preparationBinding!.ref, resource = f.root.entryManifest!.files.find(file => file.path !== "SKILL.md")!.ref;
   const unchanged = [
-    relation("old-pin", f.root.ref + "?snapshot=" + oldPin),
+    relation("old-pin", withNativeSnapshot(f.root.ref, oldPin)),
     relation("unfixed-resource", f.root.ref!.replace("SKILL.md", "resources/guide.md")),
-    relation("unfixed-file-id", f.root.ref + "?file_id=main-root"),
+    relation("unfixed-file-id", f.root.ref + "&file_id=main-root"),
     relation("other-selector", f.member.ref!),
   ];
   f.root.preparationDirectory!.references = [...unchanged, relation("fixed-main", main), relation("fixed-resource", resource)];
@@ -1663,7 +1663,7 @@ test(code + " does not taint tracked inspection content in another " + boundary,
     if (deny) {
       if (code === "AUTH_REQUIRED") throw new SourceError(code, "controlled");
       if (f.root.locator?.type !== "shared_skill") throw new Error("Expected physical shared owner");
-      throw exactDenial({ ...f.root, ref: "skill://" + f.root.locator.page_id + "/SKILL.md" }, code);
+      throw exactDenial({ ...f.root, ref: "https://www.notion.so/" + f.root.locator.page_id.replaceAll("-", "") }, code);
     }
     return [{ ...(showingOther ? other : f).graph(purpose), sourceId: showingOther ? sourceId : "controlled" }];
   }, { getRecords: async () => ({ records: (showingOther ? other : f).records.map(record => ({

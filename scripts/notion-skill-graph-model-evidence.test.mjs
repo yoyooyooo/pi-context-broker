@@ -7,7 +7,7 @@ import { channel } from 'node:diagnostics_channel';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { catalogFacets, graphSourceViews, observeGraphSdk, graphSourceAccounting } from './notion-skill-graph-model-evidence.mjs';
 import { observeGraphGate, GRAPH_GATE_TOOLS } from './notion-skill-graph-model.mjs';
-import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
+import { skillIdentity, skillFileRef, nativeReferenceSettings } from './skill-ref-fixture.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
 import { registerHooks } from 'node:module';
@@ -31,11 +31,11 @@ const emptyMetrics = { trace_enabled: true, total_requests: 0, trace_dropped: 0,
 function sourceFixture(owner = 'root', resources = [{ path: 'guide.md', content: 'Complete resource bytes.\n' }]) {
   const body = '# Complete source\nUse the resource when needed.\n', resource = resources[0].content;
   const scope = 'a'.repeat(64), snapshot = 's_' + hash(body), version = hash('version-controlled');
-  const id = 'shared_skill:library-controlled:' + owner, uuid = '11111111-2222-4333-8444-555555555555';
-  const rootRef = 'skill://' + encodeURIComponent(id) + '/SKILL.md';
+  const id = skillIdentity('library-controlled', owner), uuid = '11111111-2222-4333-8444-555555555555';
+  const rootRef = skillFileRef(id, 'SKILL.md');
   const record = { id, ref: rootRef, kind: 'skill', entrypoint: 'SKILL.md', name: 'Root', alias: 'root', description: 'Controlled complete source', enabled: true,
     locator: { type: 'shared_skill', library_id: 'library-controlled', skill_id: owner, database_id: uuid, data_source_id: uuid, page_id: uuid }, default_context: true };
-  const ref = (name, file) => 'skill://' + encodeURIComponent(id) + '/' + name + '?snapshot=' + snapshot + '&file_id=' + file;
+  const ref = name => skillFileRef(id, name, snapshot);
   const files = [{ path: 'SKILL.md', bytes: Buffer.byteLength(body), sha256: hash(body), ref: ref('SKILL.md', 'file-main') },
     ...resources.map((file, index) => ({ path: file.path, bytes: Buffer.byteLength(file.content), sha256: hash(file.content), ref: ref(file.path, index ? 'file-resource-' + index : 'file-guide') }))];
   const bindings = files.map((file, index) => ({ path: file.path, file_id: index ? index === 1 ? 'file-guide' : 'file-resource-' + (index - 1) : 'file-main', page_id: uuid }));
@@ -69,7 +69,7 @@ test('one read.paths call proves every complete resource from the selected SDK m
       file_id: fixture.bindings[index + 1].file_id, encoding: 'utf8', content: file.content })) };
   const handlers = new Map(), originalFetch = globalThis.fetch;
   const refs = batch.files.map(file => file.ref), shortRefs = ['sr:R' + 'C'.repeat(22), 'sr:R' + 'D'.repeat(22)], selected = 'sr:S' + 'B'.repeat(22);
-  const identity = { source: 'notion', scope: fixture.scope, id: fixture.id, kind: 'skill', locator: fixture.record.locator, ref: 'skill://' + encodeURIComponent(fixture.id) };
+  const identity = { source: 'notion', scope: fixture.scope, id: fixture.id, kind: 'skill', locator: fixture.record.locator, ref: fixture.id };
   const shortEvent = (ref, target) => ({ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref, target } });
   const branch = [shortEvent(selected, { kind: 'selected', identity, snapshot_id: fixture.snapshot, version_id: fixture.version,
     body_sha256: hash(fixture.body), entrypoint: 'SKILL.md', ref: fixture.node.ref, file_id: 'file-main' }),
@@ -78,7 +78,7 @@ test('one read.paths call proves every complete resource from the selected SDK m
   const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => branch } };
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-      { fs, crypto, path, sourceMode: 'sdk', parseNativeReference, validateResourceReadProjection, cwd: root, responses, cache, output,
+      { fs, crypto, path, sourceMode: 'sdk', ...nativeReferenceSettings, validateResourceReadProjection, cwd: root, responses, cache, output,
         rootRef: fixture.rootRef, model: 'controlled/fake', prompt: 'controlled task' });
     const invoke = (id, input) => {
       handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: input }] } }, ctx);
@@ -98,7 +98,7 @@ test('one read.paths call proves every complete resource from the selected SDK m
     assert.equal((await lines(output)).find(event => event.phase === 'tool-result' && event.toolCallId === 'root-main')?.complete, true);
     handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'root-main', content: mainContent }] } }, ctx);
     for (const [id, paths] of [['unknown', [refs[0], refs[1].replace('notes.md', 'unseen.md')]],
-      ['wrong-owner', [refs[0], refs[1].replace(encodeURIComponent(fixture.id), 'another')]],
+      ['wrong-owner', [refs[0], skillFileRef(skillIdentity('library-controlled', 'another'), 'notes.md', fixture.snapshot)]],
       ['wrong-pin', [refs[0], refs[1].replace(fixture.snapshot, 's_' + 'd'.repeat(64))]],
       ['duplicate', [refs[0], refs[0]]], ['main', [fixture.node.ref]], ['empty', []]]) {
       assert.equal(invoke(id, { paths }).block, true, id);
@@ -156,7 +156,7 @@ test('an explicit fixed resource in the actual frozen user prompt supports scala
   const handlers = new Map(), originalFetch = globalThis.fetch, ctx = { model: { provider: 'controlled', id: 'fake' } };
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-      { fs, crypto, path, sourceMode: 'sdk', parseNativeReference, validateResourceReadProjection, cwd: root, responses, cache, output,
+      { fs, crypto, path, sourceMode: 'sdk', ...nativeReferenceSettings, validateResourceReadProjection, cwd: root, responses, cache, output,
         entryMode: 'discovery-only', model: 'controlled/fake', prompt });
     const invoke = (id, input) => {
       handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: input }] } }, ctx);
@@ -247,7 +247,7 @@ test('Pi observer verifies source modes and effect-bearing native main and scala
   const cache = path.join(root, 'cache'), responses = path.join(root, 'responses'), output = path.join(root, 'observer.jsonl');
   await Promise.all([cache, responses].map(directory => mkdir(directory))); await writeFile(output, '');
   const candidate = 'sr:C' + 'A'.repeat(22), selected = 'sr:S' + 'B'.repeat(22), resourceRef = 'sr:R' + 'C'.repeat(22);
-  const identity = { source: 'notion', scope: fixture.scope, id: fixture.id, kind: 'skill', locator: fixture.record.locator, ref: 'skill://' + encodeURIComponent(fixture.id) };
+  const identity = { source: 'notion', scope: fixture.scope, id: fixture.id, kind: 'skill', locator: fixture.record.locator, ref: fixture.id };
   const branch = [{ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: candidate, target: { kind: 'candidate', identity } } }];
   const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => branch } };
   const rawReceipt = (operation, value) => ({ transport: 'sdk', requestId: operation, operation, status: 'completed', resultObserved: true, value });
@@ -255,7 +255,7 @@ test('Pi observer verifies source modes and effect-bearing native main and scala
   const handlers = new Map(), originalFetch = globalThis.fetch;
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-      { fs, crypto, path, sourceMode: 'sdk', parseNativeReference, cwd: root, responses, cache, output, entryMode: 'discovery-only', model: 'controlled/fake', prompt: 'controlled task' });
+      { fs, crypto, path, sourceMode: 'sdk', ...nativeReferenceSettings, cwd: root, responses, cache, output, entryMode: 'discovery-only', model: 'controlled/fake', prompt: 'controlled task' });
     await handlers.get('session_start')({}, ctx);
     const system = '<skill><name>' + fixture.record.name + '</name><description>' + fixture.record.description + '</description><location>' + candidate + '</location></skill>';
     handlers.get('before_agent_start')({ prompt: 'controlled task', systemPrompt: system }, ctx);

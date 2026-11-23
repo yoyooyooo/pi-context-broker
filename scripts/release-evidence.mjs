@@ -66,17 +66,19 @@ export async function validateSource({ cwd = root, cliRoot, tag, mode }) {
     delete before.version; delete after.version;
     assert.ok(isDeepStrictEqual(before, after), 'Release commit changed more than the version in ' + path);
   }
-  const pins = await Promise.all(['ci', 'publish'].map(async name => {
+  const pin = (await readFile(join(cwd, '.github/ntn-skills-cli-revision'), 'utf8')).trim();
+  assert.match(pin, /^[a-f0-9]{40}$/u, 'The selected CLI input must be one full commit');
+  for (const name of ['ci', 'publish', 'formal']) {
     const text = await readFile(join(cwd, '.github/workflows/' + name + '.yml'), 'utf8');
-    const pin = /repository: yoyooyooo\/notion-skills-cli\s+ref: ([a-f0-9]{40})/.exec(text)?.[1];
-    assert.ok(pin, name + ' must select a full CLI commit'); return pin;
-  }));
-  assert.equal(pins[0], pins[1], 'CI and publish must use the same CLI commit');
-  assert.equal(git(cliRoot, 'rev-parse', 'HEAD'), pins[0], 'Actual CLI checkout differs from the pin');
+    assert.ok(text.includes('cat .github/ntn-skills-cli-revision')
+      && /repository: yoyooyooo\/notion-skills-cli\s+ref: \$\{\{ steps\.cli-input\.outputs\.revision \}\}/u.test(text),
+    name + ' must use the shared CLI revision');
+  }
+  assert.equal(git(cliRoot, 'rev-parse', 'HEAD'), pin, 'Actual CLI checkout differs from the pin');
   assert.equal(git(cliRoot, 'status', '--porcelain', '--untracked-files=no'), '', 'CLI source must be clean');
   return { version: 1, name: packageName, packageVersion: version, tag, mode, channel: 'latest',
     brokerCommit: commit, brokerTree: git(cwd, 'rev-parse', 'HEAD^{tree}'),
-    main, parent, cliRoot: resolve(cliRoot), cliCommit: pins[0], cliTree: git(cliRoot, 'rev-parse', 'HEAD^{tree}') };
+    main, parent, cliRoot: resolve(cliRoot), cliCommit: pin, cliTree: git(cliRoot, 'rev-parse', 'HEAD^{tree}') };
 }
 
 export async function registryDocument(path, fetcher = fetch) {

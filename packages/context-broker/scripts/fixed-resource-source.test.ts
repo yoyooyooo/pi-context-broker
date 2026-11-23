@@ -1,3 +1,5 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
+import { copyReferenceProtocol } from "./fixtures/skill-ref-fixture";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
@@ -24,7 +26,7 @@ async function fixture(options: { proofVersion?: number | null; bytes?: Uint8Arr
   const sdkPath = join(root, "src/ntn-skills-sdk.mjs");
   await writeFile(sdkPath, `
 import { writeFile, symlink } from 'node:fs/promises';
-export const SDK_VERSION = 2, CONSUMER_CONTRACT_VERSION = 1, PACKAGE_VERSION = 'fixed-resource-fixture';
+export const SKILL_REF_VERSION = 2, SDK_VERSION = 2, CONSUMER_CONTRACT_VERSION = 1, PACKAGE_VERSION = 'fixed-resource-fixture';
 export const RESOURCE_READ_CONTRACT_VERSION = 1, CONSUMPTION_EFFECTS_VERSION = 1;
 ${resourceEffectsVersion === null ? "" : `export const RESOURCE_READ_EFFECTS_VERSION = ${resourceEffectsVersion};`}
 ${proofVersion === null ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${proofVersion};`}
@@ -55,22 +57,22 @@ export async function resolveReference(target, options) {
   return state.relativeResponse;
 }
 `);
-  await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills", package_version: "fixed-resource-fixture",
+  await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ ...(await copyReferenceProtocol(join(root, "src"))), version: 1, package: "ntn-skills", package_version: "fixed-resource-fixture",
     sdk_version: 2, consumer_contract_version: 1, resource_read_contract_version: 1, consumption_effects_version: 1,
     ...(resourceEffectsVersion === null ? {} : { resource_read_effects_version: resourceEffectsVersion }),
     ...(proofVersion === null ? {} : { read_output_proof_version: proofVersion }) }));
   const sdk = await import(pathToFileURL(sdkPath).href);
   const boundary = await import(pathToFileURL(join(root, "src/notion-source.ts")).href);
-  const id = "shared_skill:fixed-resource:owner", scope = hash("fixed resource scope"), version = hash("fixed resource version");
-  const snapshot = "s_" + hash(JSON.stringify([scope, id, version])), prefix = "skill://" + encodeURIComponent(id) + "/";
+  const id = "skill://owner?library=fixed-resource", scope = hash("fixed resource scope"), version = hash("fixed resource version");
+  const snapshot = "s_" + hash(JSON.stringify([scope, id, version])), prefix = id;
   const main = "SKILL.md", path = "references/guide.md", bytes = Buffer.from(options.bytes ?? Buffer.from("\ufeffExact resource.\r\nSecond line.\r\n"));
   const content: ContentRecord = { id, kind: "skill", name: "owner", alias: "owner", description: "Fixed resource fixture", default_context: false, enabled: true,
-    entrypoint: main, ref: prefix + main, locator: { type: "shared_skill", library_id: "fixed-resource", skill_id: "owner",
+    entrypoint: main, ref: nativeFileRef(prefix, String(main)), locator: { type: "shared_skill", library_id: "fixed-resource", skill_id: "owner",
       page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
   const source: Extract<SourceConfig, { type: "notion" }> = { id: "notion", type: "notion", cacheDir: join(root, "cache"), activation: { offline: true }, prefetch: false };
   const record: SkillRecord = { ...content, source: "notion", sourceId: source.id, sourceScope: scope, path: join(root, "metadata/SKILL.md"),
     aliases: [], normalizedAliases: [], normalizedName: "owner", normalizedDescription: content.description, autoloadEnabled: false };
-  const ref = prefix + path + "?snapshot=" + snapshot + "&file_id=guide";
+  const ref = nativeFileRef(prefix, String(path), String(snapshot));
   const response = { record: content, entrypoint: main, scope, snapshot_id: snapshot, version_id: version, path, ref, source: "local_snapshot",
     freshness: { policy: "pinned" }, materialization: { manifest_complete: true, local_files_ready: false, materialized_paths: [path], loaded: false },
     bytes: bytes.length, sha256: hash(bytes), entrypoint_sha256: hash("independent main commitment"),
@@ -114,7 +116,7 @@ test("batch source keeps zero-write effects and omits retired SDK options with e
 });
 
 test("Source-relative resolution keeps the containing resource identity without materializing either owner", async () => {
-  const f = await fixture(), ref = "skill://shared_skill%3Afixed-resource%3Atarget/SKILL.md", observed: ConsumptionEffects[] = [];
+  const f = await fixture(), ref = "skill://target/SKILL.md?library=fixed-resource", observed: ConsumptionEffects[] = [];
   f.state.relativeResponse = { version: 1, from: f.ref, ref, effects: noConsumptionWrites() };
   expect(await f.boundary.resolveNotionRelativeReference(f.record, f.ref, "../../target/SKILL.md", f.source, f.root, undefined,
     { readOnly: true, observeEffects: value => observed.push(value) })).toBe(ref);
@@ -125,10 +127,10 @@ test("Source-relative resolution keeps the containing resource identity without 
 });
 
 test("Source-relative identity rejects mismatched bases, foreign libraries, malformed output and late cancellation", async () => {
-  const f = await fixture(), ref = "skill://shared_skill%3Afixed-resource%3Atarget/SKILL.md";
+  const f = await fixture(), ref = "skill://target/SKILL.md?library=fixed-resource";
   const read = (signal?: AbortSignal) => f.boundary.resolveNotionRelativeReference(f.record, f.ref, "../../target/SKILL.md", f.source, f.root, signal);
-  for (const changed of [{ version: 2 }, { from: f.prefix + "SKILL.md" }, { ref: "skill://shared_skill%3Aforeign%3Atarget/SKILL.md" },
-    { ref: "../target/SKILL.md" }, { ref: f.prefix + "SKILL.md" }, { ref: f.ref.replace(f.snapshot, "s_" + "c".repeat(64)) }]) {
+  for (const changed of [{ version: 2 }, { from: nativeFileRef(f.prefix, "SKILL.md") }, { ref: "skill://target/SKILL.md?library=foreign" },
+    { ref: "../target/SKILL.md" }, { ref: nativeFileRef(f.prefix, "SKILL.md") }, { ref: f.ref.replace(f.snapshot, "s_" + "c".repeat(64)) }]) {
     f.state.relativeResponse = { version: 1, from: f.ref, ref, effects: noConsumptionWrites(), ...changed };
     await expect(read()).rejects.toBeDefined();
   }
@@ -191,7 +193,7 @@ test("one scalar output read publishes exact text with an independent owner comm
   const f = await fixture(), result = await f.read();
   expect(result.selection).toEqual({ scope: f.record.sourceScope, owner: f.record.id, snapshot_id: f.snapshot, version_id: f.response.version_id });
   expect(result.ownerBinding.body_sha256).toBe(f.response.entrypoint_sha256);
-  expect(result.ownerBinding.ref).toBe(f.prefix + f.main + "?snapshot=" + f.snapshot + "&file_id=main");
+  expect(result.ownerBinding.ref).toBe(nativeFileRef(f.prefix, String(f.main), String(f.snapshot)));
   expect(result.file).toEqual({ requested_ref: f.ref, ref: f.ref, path: f.path, file_id: "guide", bytes: f.bytes.length, sha256: hash(f.bytes), output: join(f.resourceRoot, f.path) });
   expect(await readFile(result.file.output)).toEqual(f.bytes);
   expect(Object.keys(result).sort()).toEqual(["entrypoint", "file", "ownerBinding", "selection"]);
@@ -213,13 +215,13 @@ test("scalar output preserves empty and binary resources beyond the batch maximu
   }
 });
 
-test("stable File IDs accept old path hints and main aliases retain the main route", async () => {
+test("fixed reads reject a former path and preserve the exact main route", async () => {
   const f = await fixture(), old = f.ref.replace(f.path, "former/guide.md");
-  expect((await f.read(old)).file).toMatchObject({ requested_ref: old, ref: f.ref, path: f.path, file_id: "guide" });
+  await expect(f.read(old)).rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
   const main = await fixture();
-  main.state.response = { ...main.response, path: main.main, ref: main.prefix + main.main + "?snapshot=" + main.snapshot + "&file_id=main",
+  main.state.response = { ...main.response, path: main.main, ref: nativeFileRef(main.prefix, String(main.main), String(main.snapshot)),
     sha256: hash(main.bytes), entrypoint_sha256: hash(main.bytes) };
-  expect(await main.read(main.ref.replace("file_id=guide", "file_id=main"))).toBeUndefined();
+  expect(await main.read(nativeFileRef(main.prefix, main.main, main.snapshot))).toBeUndefined();
   expect(main.sdk.calls).toHaveLength(1); expect(await exists(main.resourceRoot)).toBe(false);
 });
 
@@ -241,13 +243,22 @@ test("scalar output rejects foreign identities and malformed proof before immuta
     { override: { output: "/foreign/output" }, code: "SOURCE_PREPARATION_INVALID" },
     { override: { bytes: -1 }, code: "SOURCE_RESPONSE_INVALID" },
     { override: { reused: "yes" }, code: "SOURCE_PREPARATION_INVALID" },
-    { override: { file_bindings: [] }, code: "SOURCE_IDENTITY_MISMATCH" },
+    { override: { file_bindings: [{ file_id: "same", path: "references/guide.md", page_id: "00000000-0000-4000-8000-000000000001" }, { file_id: "same", path: "another.md", page_id: "00000000-0000-4000-8000-000000000002" }] }, code: "SOURCE_RESPONSE_INVALID" },
   ];
   for (const { override, code } of cases) {
     const f = await fixture(); f.state.overrides = override;
     await expect(f.read()).rejects.toMatchObject({ code });
     expect(await exists(f.resourceRoot)).toBe(false);
   }
+});
+
+test("a fixed Source resource preserves its exact path proof without inventing a native File ID", async () => {
+  const f = await fixture();
+  f.state.overrides = { file_bindings: [] };
+  const result = await f.read();
+  expect(result!.file).toMatchObject({ path: f.path, ref: f.ref });
+  expect(result!.file).not.toHaveProperty("file_id");
+  expect(result!.ownerBinding.ref).toBe(nativeFileRef(f.prefix, f.main, f.snapshot));
 });
 
 test("corrupt or symlinked SDK output and cancellation never publish ready resource bytes", async () => {

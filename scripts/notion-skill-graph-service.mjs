@@ -1,3 +1,4 @@
+import { nativeSkillId } from '../packages/context-broker/src/native-reference.ts';
 // Controlled HTTPS service for the installed CLI/Pi multi-node A/B session harness.
 // Run with Bun. All cache creation belongs to the installed public CLI consumer.
 import assert from 'node:assert/strict';
@@ -145,7 +146,7 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: 0, tls: { key: Bun.file(
   pending = result.then(() => undefined, () => undefined);
   return result;
 } });
-const info = { version: 1, kind: 'controlled-notion-native-graph-https', pid: process.pid, origin: server.url.origin, cert, db: library.skills.database_id, database: library.skills.database_id, data_source_id: library.skills.data_source_id, library_id: library.library_id, view: viewId, view_id: viewId, pageIds: fixture.pageIds, pages: { root, required, optional }, logical_ids: { root: `shared_skill:${library.library_id}:a`, required: `shared_skill:${library.library_id}:leaf-0`, optional: `shared_skill:${library.library_id}:leaf-1` }, control, ledger: ledgerPath, cli_repo: repo, token, initial_revision: revision, no_consumer_cache_seed: true, production_requests: 0 };
+const info = { version: 1, kind: 'controlled-notion-native-graph-https', pid: process.pid, origin: server.url.origin, cert, db: library.skills.database_id, database: library.skills.database_id, data_source_id: library.skills.data_source_id, library_id: library.library_id, view: viewId, view_id: viewId, pageIds: fixture.pageIds, pages: { root, required, optional }, logical_ids: { root: nativeSkillId(library.library_id, 'a'), required: nativeSkillId(library.library_id, 'leaf-0'), optional: nativeSkillId(library.library_id, 'leaf-1') }, control, ledger: ledgerPath, cli_repo: repo, token, initial_revision: revision, no_consumer_cache_seed: true, production_requests: 0 };
 await writeFile(infoPath, JSON.stringify(info, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 process.stdout.write(JSON.stringify({ status: 'ready', info: infoPath, origin: server.url.origin }) + '\n');
 let stopping = false;

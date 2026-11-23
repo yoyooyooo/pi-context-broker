@@ -1,6 +1,9 @@
 import type { SkillRecord } from "./types";
+import { skillRefProtocol } from "./skill-ref-protocol.ts";
 
-export type ExactNativeReference = { selector: string; path: string; snapshot?: string; fileId?: string };
+/** Host projection only. selector is a canonical root URI, or a physical page
+ * adapter input before qualification. The shared protocol owns its grammar. */
+export type ExactNativeReference = { selector: string; path: string; snapshot?: string };
 export type NativeFileBinding = { file_id: string; page_id: string; path: string };
 
 /** A relative Notion read names the actual containing file, independently of
@@ -9,11 +12,13 @@ export function relativeReadInput(input: Record<string, unknown>): { from: strin
   if (!Object.hasOwn(input, "from")) return undefined;
   const { from, path } = input;
   if (typeof from !== "string" || typeof path !== "string" || !path.trim()
-    || path.startsWith("/") || path.startsWith("~") || /[\\:?#\p{Cc}\p{Cf}\p{Cs}]/u.test(path)
+    || path.startsWith("/") || path.startsWith("~") || /[\\\p{Cc}\p{Cf}\p{Cs}]/u.test(path)
     || Object.hasOwn(input, "paths") || input.refresh === true) throw invalid();
+  if (path.startsWith("skill://")) parseNativeReference(path);
+  else if (/[:?#]/u.test(path)) throw invalid();
   if (!/^sr:[SR][A-Za-z0-9_-]{22}$/.test(from)) {
     const reference = parseNativeReference(from);
-    if (!reference.selector.startsWith("shared_skill:") || !reference.snapshot || !reference.path) throw invalid();
+    if (!hasExactNativeOwner(reference) || !reference.snapshot || !reference.path) throw invalid();
   }
   return { from, path };
 }
@@ -24,25 +29,41 @@ function invalid(): Error {
 
 /** Decode the CLI reference wire format without interpreting names or aliases. */
 export function parseNativeReference(value: string): ExactNativeReference {
-  const match = /^skill:\/\/([^/?#]+)(?:\/([^?#]*))?(?:\?([^#]*))?$/.exec(value);
-  if (!match) throw invalid();
+  const protocol = skillRefProtocol();
   try {
-    const selector = decodeURIComponent(match[1]!);
-    const path = decodeURIComponent(match[2] ?? "");
-    if (!selector || /[\/\p{Cc}\p{Cf}\p{Cs}]/u.test(selector)
-      || /[\\:\p{Cc}\p{Cf}\p{Cs}]/u.test(path)
-      || path.split("/").some(part => part === "." || part === "..")
-      || path.startsWith("/") || path.includes("//")) throw invalid();
-    const query = new URLSearchParams(match[3] ?? "");
-    if ([...query.keys()].some(key => key !== "snapshot" && key !== "file_id")
-      || query.getAll("snapshot").length > 1 || query.getAll("file_id").length > 1) throw invalid();
-    const snapshot = query.get("snapshot") ?? undefined;
-    const fileId = query.get("file_id") ?? undefined;
-    if (snapshot !== undefined && !/^s_[a-f0-9]{64}$/.test(snapshot)) throw invalid();
-    if (fileId !== undefined && (!selector.startsWith("shared_skill:") || !path || !fileId
-      || fileId.trim() !== fileId || fileId.length > 256 || /[\p{Cc}\p{Cf}\p{Cs}]/u.test(fileId))) throw invalid();
-    return { selector, path, ...(snapshot === undefined ? {} : { snapshot }), ...(fileId === undefined ? {} : { fileId }) };
+    const parsed = protocol.parseSkillRef(value);
+    const selector = protocol.formatSkillRef({ ...parsed, path: "", selection: { kind: "current" } });
+    const snapshot = protocol.skillRefSnapshot(parsed);
+    return { selector, path: parsed.path, ...(snapshot === undefined ? {} : { snapshot }) };
   } catch { throw invalid(); }
+}
+
+export function formatNativeReference(reference: ExactNativeReference): string {
+  const protocol = skillRefProtocol(), owner = protocol.parseSkillRef(reference.selector);
+  return protocol.formatSkillRef({ ...owner, path: reference.path,
+    selection: reference.snapshot === undefined ? { kind: "current" } : { kind: "fixed", snapshotId: reference.snapshot } });
+}
+export function nativeFileRef(identity: string, path: string, snapshot?: string): string {
+  skillRefProtocol().parseSkillIdentity(identity);
+  return formatNativeReference({ selector: identity, path, ...(snapshot === undefined ? {} : { snapshot }) });
+}
+export function nativeSkillId(libraryId: string, skillId: string): string {
+  return skillRefProtocol().formatSkillIdentity({ libraryId, skillId });
+}
+export function withNativeSnapshot(value: string, snapshot: string): string {
+  return formatNativeReference({ ...parseNativeReference(value), snapshot });
+}
+export function hasExactNativeOwner(reference: ExactNativeReference): boolean {
+  const protocol = skillRefProtocol();
+  try { protocol.parseSkillIdentity(reference.selector); return true; } catch { return false; }
+}
+export function nativeReferenceLibrary(reference: ExactNativeReference): string {
+  return skillRefProtocol().parseSkillIdentity(reference.selector).libraryId;
+}
+export function bindNativeReference(reference: ExactNativeReference, libraryId: string): ExactNativeReference {
+  const protocol = skillRefProtocol();
+  return parseNativeReference(protocol.formatSkillRef(protocol.bindSkillRef(
+    protocol.parseSkillRef(formatNativeReference(reference)), libraryId)));
 }
 
 /** A public Notion page address selects a physical page, never its v query's View. */
@@ -70,20 +91,27 @@ export function parseNotionReference(value: string): ExactNativeReference {
   return page ? { selector: page, path: "" } : parseNativeReference(value);
 }
 
-/** Stable file identity wins over its former path; the selected snapshot owns the binding. */
+/** A fixed path is interpreted only in its selected owner. Its verified
+ * manifest supplies a native File binding or a frozen Source route. */
 export function nativeResourcePath(reference: ExactNativeReference, record: SkillRecord): string {
   if (!record.ref || parseNativeReference(record.ref).selector !== reference.selector) throw invalid();
   if (reference.snapshot && record.snapshotId !== reference.snapshot) {
     throw Object.assign(new Error("Requested snapshot does not match the selected owner"), { code: "SOURCE_IDENTITY_MISMATCH" });
   }
-  if (reference.fileId === undefined) return reference.path || record.entrypoint || "SKILL.md";
-  const bindings = record.fileBindings?.filter(binding => binding.file_id === reference.fileId) ?? [];
-  if (bindings.length !== 1) {
-    throw Object.assign(new Error("Stable File binding is unavailable in this snapshot"), { code: "SHARED_FILE_BINDING_UNAVAILABLE" });
-  }
-  const binding = bindings[0]!;
-  if (record.fileBindings?.some(other => other !== binding && (other.page_id === binding.page_id || other.path === binding.path))) {
+  const path = reference.path || record.entrypoint;
+  if (!path) throw invalid();
+  if (record.entryManifest && record.entryManifest.files.filter(file => file.path === path).length !== 1)
+    throw Object.assign(new Error("The selected manifest has no unique file at this path"), { code: "FILE_NOT_FOUND" });
+  nativeFileBinding(record, path);
+  return path;
+}
+
+/** Undefined is valid for a verified Source file without a projected File row. */
+export function nativeFileBinding(record: Pick<SkillRecord, "fileBindings">, path: string): NativeFileBinding | undefined {
+  const matches = record.fileBindings?.filter(binding => binding.path === path) ?? [];
+  if (matches.length > 1) throw Object.assign(new Error("Stable File binding is ambiguous"), { code: "SHARED_FILE_ID_CONFLICT" });
+  const binding = matches[0];
+  if (binding && record.fileBindings?.some(other => other !== binding && (other.file_id === binding.file_id || other.page_id === binding.page_id)))
     throw Object.assign(new Error("Stable File binding is ambiguous"), { code: "SHARED_FILE_ID_CONFLICT" });
-  }
-  return binding.path;
+  return binding;
 }

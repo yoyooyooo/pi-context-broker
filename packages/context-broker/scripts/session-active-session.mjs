@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -38,14 +39,14 @@ const directory = await mkdtemp(join(evidenceRoot, 'session-active-session-')), 
 const scope = 'e'.repeat(64);
 function prepared(revision, rootName = 'root') {
   const records = [rootName, 'required'].map(name => {
-    const id = 'shared_skill:controlled:' + name;
+    const id = nativeSkillId("controlled", String(name));
     const metadata = { id, kind: 'skill', name, alias: name, description: name, enabled: true, default_context: false,
-      entrypoint: 'SKILL.md', ref: 'skill://' + encodeURIComponent(id) + '/SKILL.md',
+      entrypoint: 'SKILL.md', ref: nativeFileRef(id, "SKILL.md"),
       locator: { type: 'shared_skill', library_id: 'controlled', skill_id: name, page_id: '00000000-0000-4000-8000-000000000001', database_id: '00000000-0000-4000-8000-000000000002', data_source_id: '00000000-0000-4000-8000-000000000003' } };
     const body = `Complete controlled ${name} instructions ${revision}.\n`, snapshotId = 's_' + hash(name + revision);
     return { ...metadata, source: 'notion', sourceId: 'controlled', sourceScope: scope, body, snapshotId, versionId: hash(body),
       path: join(directory, 'immutable', revision, name, 'SKILL.md'), aliases: [], normalizedName: name, normalizedAliases: [], normalizedDescription: name, autoloadEnabled: false,
-      preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + '?snapshot=' + snapshotId } };
+      preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(metadata.ref, snapshotId) } };
   });
   const vector = { version: 1, kind: 'observed_version_vector', purpose: 'use', scope, roots: [records[0].id],
     required: [{ from: records[0].id, to: records[1].id, ref: records[1].preparationBinding.ref }], bindings: records.map(record => record.preparationBinding) };

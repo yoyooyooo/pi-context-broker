@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { skillFileRef, nativeReferenceSettings } from './skill-ref-fixture.mjs';
 import { mkdtemp, readFile, realpath, mkdir, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -607,7 +608,7 @@ async function driveIntentStopping(config, fault, inspect) {
       save, rows, json: async file => JSON.parse(await readFile(file, 'utf8')), hash: intentHash,
       root: path.resolve(import.meta.dirname, '..'), console: { log() {} }, dailyRouteContract, verifyDailyRouteState,
       createOwnedGraphProject, inspectOwnedGraphProject, verificationCliEnvironment: () => ({}), systemTempRoot: async () => root,
-      intentDoctor: async () => ({ config, executionScope, oracle: { target: { scope: 'scope', logicalId: 'shared_skill:library:target' } },
+      intentDoctor: async () => ({ config, executionScope, oracle: { target: { scope: 'scope', logicalId: 'skill://target?library=library' } },
         semantic: { sourceBody: { sha256: 'b'.repeat(64) } }, catalog: { records: [] },
         artifacts: { packageRoot: '/controlled/broker' }, host: { identity: '/controlled/pi' }, report: {} }),
       sourceObserver: async control => { const file = join(control, 'source.mjs'); await writeFile(file, ''); return file; },
@@ -1007,7 +1008,7 @@ test('query POSTs are metadata but authoring POSTs/PATCHs remain writes', () => 
 });
 test('the actual observer distinguishes imported instructions from model-authored quotations', () => {
   const handlers = new Map(), events = [], marker = 'EXACT_SOURCE_MARKER';
-  observe({ on(name, handler) { handlers.set(name, handler); } }, { fs: { appendFileSync(_path, line) { events.push(JSON.parse(line)); } }, crypto, path, model: 'magpie/group/worker', provider: 'magpie', id: 'group/worker', marker, alias: 'owned', selected: { physicalSelector: '00000000-0000-4000-8000-000000000001', selector: 'selected', id: 'selected' }, cache: '/owned/cache', output: '/owned/events' });
+  observe({ on(name, handler) { handlers.set(name, handler); } }, { fs: { appendFileSync(_path, line) { events.push(JSON.parse(line)); } }, crypto, path, ...nativeReferenceSettings, model: 'magpie/group/worker', provider: 'magpie', id: 'group/worker', marker, alias: 'owned', selected: { physicalSelector: '00000000-0000-4000-8000-000000000001', selector: 'selected', id: 'selected' }, cache: '/owned/cache', output: '/owned/events' });
   const ctx = { model: { provider: 'magpie', id: 'group/worker' } };
   handlers.get('context')({ messages: [{ role: 'user', content: marker }, { role: 'assistant', content: [{ type: 'thinking', thinking: marker }] }] }, ctx);
   assert.equal(events.at(-1).skillBodies, 1);
@@ -1107,20 +1108,20 @@ test('a fixed surface control changes the same session from native-read degradat
   const handlers = new Map(), active = [], events = [], originalFetch = globalThis.fetch;
   const ctx = { model: { provider: 'magpie', id: 'group/flash-free' } };
   try {
-    observe({ on(name, handler) { handlers.set(name, handler); }, async setActiveTools(tools) { active.push(tools); } }, { fs: { ...fs, appendFileSync(_path, line) { events.push(JSON.parse(line)); } }, crypto, path, model: 'magpie/group/flash-free', provider: 'magpie', id: 'group/flash-free', marker: 'SOURCE', alias: 'owned', selected: { id: 'shared_skill:lib:owned', selector: 'shared_skill:lib:owned', physicalSelector: '00000000-0000-4000-8000-000000000001', entry: 'SKILL.md' }, cache, cwd: root, output: join(root, 'events'), publicGraph: true, surfaceFile });
+    observe({ on(name, handler) { handlers.set(name, handler); }, async setActiveTools(tools) { active.push(tools); } }, { fs: { ...fs, appendFileSync(_path, line) { events.push(JSON.parse(line)); } }, crypto, path, ...nativeReferenceSettings, model: 'magpie/group/flash-free', provider: 'magpie', id: 'group/flash-free', marker: 'SOURCE', alias: 'owned', selected: { id: 'skill://owned?library=lib', selector: 'skill://owned?library=lib', physicalSelector: '00000000-0000-4000-8000-000000000001', entry: 'SKILL.md' }, cache, cwd: root, output: join(root, 'events'), publicGraph: true, surfaceFile });
     await handlers.get('before_agent_start')({ systemPrompt: '' }, ctx);
     assert.deepEqual(active.at(-1), ['read']);
     handlers.get('before_provider_request')({ payload: { model: 'group/flash-free', tools: [{ function: { name: 'read' } }], messages: [] } }, ctx);
-    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: ['skill://shared_skill%3Alib%3Aowned/SKILL.md'] } }).block, true);
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: ['skill://owned/SKILL.md?library=lib'] } }).block, true);
     await writeFile(surfaceFile, JSON.stringify({ surface: 'public-tools' }));
     await handlers.get('before_agent_start')({ systemPrompt: '' }, ctx);
     assert.deepEqual(active.at(-1), ['read', 'notion_list', 'notion_use']);
     assert.throws(() => handlers.get('before_provider_request')({ payload: { model: 'group/flash-free', tools: [{ function: { name: 'read' } }] } }, ctx), /frozen case surface/);
-    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: ['skill://shared_skill%3Alib%3Aother/SKILL.md'] } }).block, true);
-    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: 'skill://shared_skill%3Alib%3Aowned/SKILL.md' } }), undefined);
-    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: ['skill://shared_skill%3Alib%3Aowned/SKILL.md'] } }), undefined);
-    assert.equal(handlers.get('tool_call')({ toolName: 'skill_prepare', input: { roots: ['skill://shared_skill%3Alib%3Aowned/SKILL.md'], purpose: 'use' } }).block, true);
-    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: 'skill://shared_skill%3Alib%3Aowned/SKILL.md', purpose: 'inspect' } }).block, true);
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: ['skill://other/SKILL.md?library=lib'] } }).block, true);
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: 'skill://owned/SKILL.md?library=lib' } }), undefined);
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: ['skill://owned/SKILL.md?library=lib'] } }), undefined);
+    assert.equal(handlers.get('tool_call')({ toolName: 'skill_prepare', input: { roots: ['skill://owned/SKILL.md?library=lib'], purpose: 'use' } }).block, true);
+    assert.equal(handlers.get('tool_call')({ toolName: 'notion_use', input: { ref: 'skill://owned/SKILL.md?library=lib', purpose: 'inspect' } }).block, true);
     await writeFile(surfaceFile, JSON.stringify({ surface: 'unknown' }));
     await assert.rejects(() => handlers.get('before_agent_start')({ systemPrompt: '' }, ctx), /Unknown frozen tool surface/);
   } finally { globalThis.fetch = originalFetch; }
@@ -1128,24 +1129,24 @@ test('a fixed surface control changes the same session from native-read degradat
 
 test('the observer accepts OS aliases only through verified entry receipts, including an unmaterialized resource', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'model-cache-alias-'))), cache = join(root, 'cache');
-  const scope = 'b'.repeat(64), snapshot = 's_' + 'c'.repeat(64), id = 'shared_skill:library:owned';
+  const scope = 'b'.repeat(64), snapshot = 's_' + 'c'.repeat(64), id = 'skill://owned?library=library';
   const main = 'SOURCE_A\n', resource = 'REFERENCE_A\n', digest = value => crypto.createHash('sha256').update(value).digest('hex');
   const directory = join(cache, 'scopes', scope, 'records', digest(id), 'entries', snapshot), tree = join(directory, 'tree');
   await mkdir(tree, { recursive: true }); await writeFile(join(tree, 'SKILL.md'), main);
   const bindings = [{ file_id: 'main-file', page_id: '00000000-0000-4000-8000-000000000001', path: 'SKILL.md' }, { file_id: 'resource-file', page_id: '00000000-0000-4000-8000-000000000002', path: 'references/checklist.md' }];
-  const ref = file => `skill://${encodeURIComponent(id)}/${file.path}?snapshot=${snapshot}&file_id=${file.file_id}`;
+  const ref = file => skillFileRef(id, file.path, snapshot);
   const receipt = { version: 1, projection: 'entry', manifest_complete: true, scope, id, snapshot_id: snapshot, version_id: 'owned-version', entrypoint: 'SKILL.md', ref: ref(bindings[0]), files: bindings.map((file, index) => ({ path: file.path, bytes: Buffer.byteLength(index ? resource : main), sha256: digest(index ? resource : main), ref: ref(file) })), file_bindings: bindings };
   await writeFile(join(directory, '.broker-entry.json'), JSON.stringify(receipt));
   const alias = join(root, 'cache-alias'); await symlink(cache, alias, 'dir');
   const mainAlias = join(alias, path.relative(cache, tree), 'SKILL.md'), resourceAlias = join(alias, path.relative(cache, tree), 'references/checklist.md');
   const handlers = new Map(), events = [], originalFetch = globalThis.fetch;
   try {
-    observe({ on(name, handler) { handlers.set(name, handler); } }, { fs: { ...fs, appendFileSync(_path, line) { events.push(JSON.parse(line)); } }, crypto, path, model: 'magpie/group/flash-free', provider: 'magpie', id: 'group/flash-free', marker: 'SOURCE_A', alias: 'owned', selected: { id, selector: id, physicalSelector: bindings[0].page_id, kind: 'skill', entry: 'SKILL.md', ref: `skill://${encodeURIComponent(id)}/SKILL.md` }, cwd: root, cache, output: join(root, 'events') });
+    observe({ on(name, handler) { handlers.set(name, handler); } }, { fs: { ...fs, appendFileSync(_path, line) { events.push(JSON.parse(line)); } }, crypto, path, ...nativeReferenceSettings, model: 'magpie/group/flash-free', provider: 'magpie', id: 'group/flash-free', marker: 'SOURCE_A', alias: 'owned', selected: { id, selector: id, physicalSelector: bindings[0].page_id, kind: 'skill', entry: 'SKILL.md', ref: skillFileRef(id, 'SKILL.md') }, cwd: root, cache, output: join(root, 'events') });
     handlers.get('before_provider_request')({ payload: { model: 'group/flash-free', messages: [{ role: 'user', content: main }] } }, { model: { provider: 'magpie', id: 'group/flash-free' } });
     const call = (toolCallId, target) => handlers.get('tool_call')({ toolName: 'read', toolCallId, input: { path: target } });
     assert.equal(call('main', mainAlias), undefined);
-    const childSettings = { model: 'magpie/group/flash-free', provider: 'magpie', id: 'group/flash-free', marker: 'SOURCE_A', alias: 'owned', selected: { id, selector: id, physicalSelector: bindings[0].page_id, kind: 'skill', entry: 'SKILL.md', ref: `skill://${encodeURIComponent(id)}/SKILL.md` }, cwd: root, cache, output: join(root, 'child-events') };
-    const childScript = `import assert from 'node:assert/strict';import * as fs from 'node:fs';import * as crypto from 'node:crypto';import * as path from 'node:path';const handlers=new Map();(${observe.toString()})({on(name,handler){handlers.set(name,handler)}},{...${JSON.stringify(childSettings)},fs,crypto,path});assert.equal(handlers.get('tool_call')({toolName:'read',toolCallId:'home-main',input:{path:${JSON.stringify('~/' + path.relative(root, join(tree, 'SKILL.md')))}}}),undefined);assert.equal(handlers.get('tool_call')({toolName:'read',toolCallId:'traversal',input:{path:'~/cache/../cache/SKILL.md'}}).block,true);`;
+    const childSettings = { model: 'magpie/group/flash-free', provider: 'magpie', id: 'group/flash-free', marker: 'SOURCE_A', alias: 'owned', selected: { id, selector: id, physicalSelector: bindings[0].page_id, kind: 'skill', entry: 'SKILL.md', ref: skillFileRef(id, 'SKILL.md') }, cwd: root, cache, output: join(root, 'child-events') };
+    const childScript = `import { nativeReferenceSettings } from ${JSON.stringify(new URL('./skill-ref-fixture.mjs', import.meta.url).href)};import assert from 'node:assert/strict';import * as fs from 'node:fs';import * as crypto from 'node:crypto';import * as path from 'node:path';const handlers=new Map();(${observe.toString()})({on(name,handler){handlers.set(name,handler)}},{...${JSON.stringify(childSettings)},...nativeReferenceSettings,fs,crypto,path});assert.equal(handlers.get('tool_call')({toolName:'read',toolCallId:'home-main',input:{path:${JSON.stringify('~/' + path.relative(root, join(tree, 'SKILL.md')))}}}),undefined);assert.equal(handlers.get('tool_call')({toolName:'read',toolCallId:'traversal',input:{path:'~/cache/../cache/SKILL.md'}}).block,true);`;
     const child = spawnSync(process.execPath, ['--input-type=module', '-e', childScript], { cwd: root, env: { ...process.env, HOME: root }, encoding: 'utf8' });
     assert.equal(child.status, 0, child.stderr || 'An exact advertised ~/ spelling must resolve against the actual child HOME');
     assert.equal(call('resource', resourceAlias), undefined, 'A complete manifest authorizes the exact pending resource path without claiming body readiness');
@@ -1153,7 +1154,7 @@ test('the observer accepts OS aliases only through verified entry receipts, incl
     handlers.get('tool_result')({ toolName: 'read', toolCallId: 'resource', input: { path: resourceAlias }, content: [{ type: 'text', text: resource }], isError: false });
     assert.equal(events.at(-1).receiptValidated, true); assert.equal(events.at(-1).resourceSuccess, true);
     const shortMain = 'sr:S' + 's'.repeat(22), shortResource = 'sr:R' + 'r'.repeat(22), shortCandidate = 'sr:C' + 'c'.repeat(22);
-    const identity = { source: 'notion', scope, id, kind: 'skill', ref: `skill://${encodeURIComponent(id)}` };
+    const identity = { source: 'notion', scope, id, kind: 'skill', ref: id };
     const selectedTarget = { kind: 'selected', identity, snapshot_id: snapshot, version_id: 'owned-version', body_sha256: digest(main), entrypoint: 'SKILL.md', ref: ref(bindings[0]), file_id: 'main-file' };
     const shortEntries = [
       { version: 1, ref: shortCandidate, target: { kind: 'candidate', identity } },
@@ -1198,7 +1199,7 @@ test('the shared installed Pi help boundary permits advertised files without cla
   const piHelpBoundary = createPiHelpBoundary({ fs, path, crypto, executable });
   const handlers = new Map(), events = [], originalFetch = globalThis.fetch;
   try {
-    observe({ on(name, handler) { handlers.set(name, handler); } }, { fs: { ...fs, appendFileSync(_path, line) { events.push(JSON.parse(line)); } }, crypto, path, model: 'magpie/group/flash-free', provider: 'magpie', id: 'group/flash-free', marker: 'NOTION_SOURCE', alias: 'owned', selected: { id: 'shared_skill:library:owned', selector: 'shared_skill:library:owned', physicalSelector: '00000000-0000-4000-8000-000000000001', entry: 'SKILL.md' }, cwd: root, cache, output: join(root, 'events'), piHelpBoundary });
+    observe({ on(name, handler) { handlers.set(name, handler); } }, { fs: { ...fs, appendFileSync(_path, line) { events.push(JSON.parse(line)); } }, crypto, path, ...nativeReferenceSettings, model: 'magpie/group/flash-free', provider: 'magpie', id: 'group/flash-free', marker: 'NOTION_SOURCE', alias: 'owned', selected: { id: 'skill://owned?library=library', selector: 'skill://owned?library=library', physicalSelector: '00000000-0000-4000-8000-000000000001', entry: 'SKILL.md' }, cwd: root, cache, output: join(root, 'events'), piHelpBoundary });
     const call = (toolCallId, file) => handlers.get('tool_call')({ toolName: 'read', toolCallId, input: { path: file } });
     assert.equal(call('not-advertised', readme).block, true);
     piHelpBoundary.observeProvider({ messages: [{ role: 'system', content: `<docs>\nPi documentation (read only when asked):\n- Main documentation: ${readme}\n- Additional docs: ${join(installed, 'docs')}\n</docs>` }] });

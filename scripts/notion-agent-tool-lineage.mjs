@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { isAbsolute, resolve } from 'node:path';
-import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
+import { parseNativeReference, nativeFileRef, hasExactNativeOwner } from '../packages/context-broker/src/native-reference.ts';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const nonempty = value => typeof value === 'string' && value.length > 0;
@@ -75,7 +75,7 @@ function preparedReadTransition(call, tasks, session, evidence) {
   const resource = short ? original.path.startsWith('sr:R') : canonical?.path !== 'SKILL.md';
   require(call.provenance.kind === 'native-tool-call' && call.name === 'read' && result.isError === false
     && object(original) && Object.keys(original).every(key => ['path', 'refresh'].includes(key))
-    && (short || canonical?.path && /^s_[a-f0-9]{64}$/u.test(canonical.snapshot ?? '') && /^file-[a-f0-9]{64}$/u.test(canonical.fileId ?? ''))
+    && (short || canonical?.path && /^s_[a-f0-9]{64}$/u.test(canonical.snapshot ?? ''))
     && (original.refresh === undefined || typeof original.refresh === 'boolean') && !(resource && original.refresh === true),
   'Only a completed top-level whole-file registered short or fixed File read has a reviewed rewrite');
   const reader = inspectedCompactReadImplementation(event);
@@ -118,38 +118,36 @@ function preparedReadTransition(call, tasks, session, evidence) {
   if (resource) require(/^sr:S[A-Za-z0-9_-]{22}$/u.test(target.owner ?? ''), 'A resource needs its selected owner reference');
   const ownerTarget = resource ? targetFor(target.owner) : target, identity = ownerTarget?.identity;
   require(identity?.source === 'notion' && digest(identity.scope) && nonempty(identity.id) && identity.kind === 'skill'
-    && object(identity.locator) && identity.ref === 'skill://' + encodeURIComponent(identity.id),
+    && object(identity.locator) && identity.ref === identity.id && hasExactNativeOwner(parseNativeReference(identity.id)),
   'The prior native branch must bind the exact Notion owner and scope');
-  const fixed = (ref, path, snapshot, fileId) => {
+  const fixed = (ref, path, snapshot) => {
     const parsed = parseNativeReference(ref);
-    return parsed.selector === identity.id && parsed.path === path && parsed.snapshot === snapshot && parsed.fileId === fileId;
+    return parsed.selector === identity.id && parsed.path === path && parsed.snapshot === snapshot;
   };
   if (ownerTarget.kind === 'selected') require(/^s_[a-f0-9]{64}$/u.test(ownerTarget.snapshot_id ?? '')
     && digest(ownerTarget.version_id) && digest(ownerTarget.body_sha256) && ownerTarget.entrypoint === 'SKILL.md'
-    && /^file-[a-f0-9]{64}$/u.test(ownerTarget.file_id ?? '')
-    && fixed(ownerTarget.ref, 'SKILL.md', ownerTarget.snapshot_id, ownerTarget.file_id),
+    && fixed(ownerTarget.ref, 'SKILL.md', ownerTarget.snapshot_id),
   'The selected owner must retain its complete fixed main-File binding');
-  if (canonical) require(fixed(original.path, resource ? target.path : 'SKILL.md', ownerTarget.snapshot_id,
-    resource ? target.file_id : ownerTarget.file_id), 'The original complete reference must bind the prior fixed File before any explicit inspection');
+  if (canonical) require(fixed(original.path, resource ? target.path : 'SKILL.md', ownerTarget.snapshot_id), 'The original complete reference must bind the prior fixed File before any explicit inspection');
   const binding = resource ? undefined : proof.binding, record = binding?.record;
   const scope = resource ? proof.scope : binding?.scope, owner = resource ? proof.id : record?.id;
   const snapshot = resource ? proof.snapshot_id : binding?.snapshot_id, version = resource ? proof.version_id : binding?.version_id;
   const bodyHash = resource ? proof.sha256 : proof.bodySha256, relative = resource ? proof.path : 'SKILL.md';
-  const fileId = resource ? proof.file_id : parseNativeReference(binding?.ref ?? '').fileId;
+  const fileId = resource ? proof.file_id : undefined;
   require(scope === identity.scope && owner === identity.id && /^s_[a-f0-9]{64}$/u.test(snapshot ?? '') && digest(version)
-    && digest(bodyHash) && /^file-[a-f0-9]{64}$/u.test(fileId ?? '') && Number.isSafeInteger(proof.bytes) && proof.bytes >= (resource ? 0 : 1),
+    && digest(bodyHash) && (fileId === undefined || nonempty(fileId)) && Number.isSafeInteger(proof.bytes) && proof.bytes >= (resource ? 0 : 1),
   'The receipt needs the complete immutable owner and File identity');
   if (resource) {
     require(ownerTarget.kind === 'selected' && snapshot === ownerTarget.snapshot_id && version === ownerTarget.version_id
       && target.path === relative && relative !== 'SKILL.md' && target.ref === proof.ref && target.file_id === fileId
-      && target.bytes === proof.bytes && target.sha256 === bodyHash && fixed(proof.ref, relative, snapshot, fileId)
+      && target.bytes === proof.bytes && target.sha256 === bodyHash && fixed(proof.ref, relative, snapshot)
       && proof.loaded === false && proof.delivered_complete_text === true && !('files' in proof)
       && (proof.purpose === undefined || proof.purpose === 'inspect'),
     'The scalar receipt must match the prior resource-to-selected-owner binding, not a batch or another version');
   } else {
     require(record.kind === identity.kind && isDeepStrictEqual(record.locator, identity.locator) && record.entrypoint === 'SKILL.md'
-      && record.ref === identity.ref + '/SKILL.md' && binding.body_sha256 === bodyHash && binding.snapshot_id === proof.snapshotId
-      && fixed(binding.ref, 'SKILL.md', snapshot, fileId)
+      && record.ref === nativeFileRef(identity.ref, 'SKILL.md') && binding.body_sha256 === bodyHash && binding.snapshot_id === proof.snapshotId
+      && fixed(binding.ref, 'SKILL.md', snapshot)
       && proof.identity === JSON.stringify(['notion', scope, 'skill', record.locator.type, owner])
       && proof.contentIdentity === JSON.stringify([scope, owner]), 'The main receipt must retain the original exact Notion owner');
     if (original.refresh === true) require(proof.purpose === 'inspect' && proof.readStatus?.purpose === 'inspect'
@@ -176,21 +174,26 @@ function preparedReadTransition(call, tasks, session, evidence) {
       && manifest.entrypoint === 'SKILL.md' && manifest.ref === (resource ? ownerTarget.ref : binding.ref)
       && observation.manifest?.path === manifestPath && observation.manifest.realpath === manifestPath
       && Array.isArray(manifest.files) && manifest.files.length > 0 && Array.isArray(manifest.file_bindings)
-      && manifest.files.length === manifest.file_bindings.length, 'The complete entry manifest must retain this owner and snapshot');
+      && manifest.files.length >= manifest.file_bindings.length, 'The complete entry manifest must retain this owner and snapshot');
     const paths = new Set(), ids = new Set(), pages = new Set();
     for (const file of manifest.files) {
       const bindings = manifest.file_bindings.filter(value => value.path === file.path), fileBinding = bindings[0];
-      require(bindings.length === 1 && nonempty(file.path) && !paths.has(file.path) && digest(file.sha256)
-        && Number.isSafeInteger(file.bytes) && file.bytes >= 0 && /^file-[a-f0-9]{64}$/u.test(fileBinding.file_id ?? '')
-        && nonempty(fileBinding.page_id) && !ids.has(fileBinding.file_id) && !pages.has(fileBinding.page_id)
-        && fixed(file.ref, file.path, snapshot, fileBinding.file_id), 'Every manifest member needs its unique fixed File identity');
-      paths.add(file.path); ids.add(fileBinding.file_id); pages.add(fileBinding.page_id);
+      require(bindings.length <= 1 && nonempty(file.path) && !paths.has(file.path) && digest(file.sha256)
+        && Number.isSafeInteger(file.bytes) && file.bytes >= 0 && fixed(file.ref, file.path, snapshot),
+      'Every manifest member needs its unique fixed path and content evidence');
+      paths.add(file.path);
+      if (fileBinding) {
+        require(nonempty(fileBinding.file_id) && nonempty(fileBinding.page_id)
+          && !ids.has(fileBinding.file_id) && !pages.has(fileBinding.page_id), 'Native File bindings must be unique');
+        ids.add(fileBinding.file_id); pages.add(fileBinding.page_id);
+      }
     }
+    require(manifest.file_bindings.every(binding => paths.has(binding.path)), 'Native bindings cannot name an undeclared file');
     const mainBinding = manifest.file_bindings.find(value => value.path === 'SKILL.md');
     const file = manifest.files.find(value => value.path === relative), fileBinding = manifest.file_bindings.find(value => value.path === relative);
-    require(mainBinding?.page_id === identity.locator.page_id && file?.bytes === proof.bytes && file.sha256 === bodyHash
-      && file.ref === (resource ? proof.ref : binding.ref) && fileBinding?.file_id === fileId,
-    'The materialized file must retain its complete bytes and physical File binding');
+    require((mainBinding === undefined || mainBinding.page_id === identity.locator.page_id) && file?.bytes === proof.bytes && file.sha256 === bodyHash
+      && file.ref === (resource ? proof.ref : binding.ref) && (!resource || fileBinding?.file_id === fileId),
+    'The materialized file must retain its complete bytes and any native File binding');
     if (!resource && proof.directory !== undefined) require(isDeepStrictEqual(proof.directory.files, manifest.files),
       'The inspected complete directory cannot be replaced by a smaller materialization manifest');
   }

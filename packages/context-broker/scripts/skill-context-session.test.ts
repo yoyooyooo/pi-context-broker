@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { recordIdentity } from "../src/discovery-records";
@@ -18,7 +19,7 @@ function canonical(value: unknown): string {
     .map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 }
 function record(name: string, body: string): SkillRecord & { preparationBinding: PreparationBinding; body: string } {
-  const id = "shared_skill:projection:" + name, ref = "skill://" + encodeURIComponent(id) + "/SKILL.md";
+  const id = nativeSkillId("projection", String(name)), ref = nativeFileRef(id, "SKILL.md");
   const metadata: ContentRecord = { id, kind: "skill", name, alias: name, description: name, default_context: false, enabled: true,
     entrypoint: "SKILL.md", ref, locator: { type: "shared_skill", library_id: "projection", skill_id: name,
       database_id: "db", data_source_id: "data", page_id: name } };
@@ -26,7 +27,7 @@ function record(name: string, body: string): SkillRecord & { preparationBinding:
   return { ...metadata, source: "notion", sourceId: "controlled", sourceScope: scope, body, snapshotId, versionId: hash(body),
     path: "/immutable/" + name + "/SKILL.md", aliases: [], normalizedAliases: [], normalizedName: name,
     normalizedDescription: name, autoloadEnabled: false,
-    preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: ref + "?snapshot=" + snapshotId } };
+    preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(ref, snapshotId) } };
 }
 const alpha = record("alpha", '\ufeff---\r\nname: alpha\r\n---\r\n## Members\r\n作者 <body> 标记和 "content":\\ 引号。🧭\r\n```json\r\n{"graphs":"author-owned"}\r\n```\r\n');
 const beta = record("beta", "不同的完整正文。\n" + alpha.body);

@@ -5,6 +5,7 @@ import { activeNotionSession } from "./fixtures/active-notion-session";
 import { createActiveSourceRestorer } from "../src/session-recovery";
 import { sourceDeliveryReceipt } from "../src/session-source-snapshot";
 import { DEFAULT_RESOURCE_READ_BUDGET } from "../src/resource-read-types";
+import { parseNativeReference } from "../src/native-reference";
 
 test("restored bodies retain active task roots and the shared Required ownership after compact", async () => {
   const h = await activeNotionSession();
@@ -70,7 +71,7 @@ test("a missing shared Required withholds incomplete roots and restores an indep
   const h = await activeNotionSession();
   try {
     const graph = await h.seed(["root", "second", "independent"]), history = JSON.stringify(h.branch);
-    h.f.state.consume = async input => input.targets.some(target => target.includes(encodeURIComponent(h.record("required").id!)))
+    h.f.state.consume = async input => input.targets.some(target => parseNativeReference(target).selector === h.record("required").id)
       ? h.failed("SNAPSHOT_MISSING") : h.ready(input);
     const turn = await h.turn("Continue whatever is available.", graph.records.filter(record => record.name === "root" || record.name === "second"));
     expect(turn.error).toBeUndefined(); expect(turn.provider).toBe(true); expect(turn.aborts).toBe(0);

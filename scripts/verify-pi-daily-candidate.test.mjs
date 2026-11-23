@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { skillFileRef, pinSkillRef, nativeReferenceSettings } from './skill-ref-fixture.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
@@ -105,7 +107,7 @@ test('candidate source preserves local discovery and refuses ambiguous daily sou
 });
 
 const publicCli = { mode: 'original-create-recovery', operationId: 'original-operation', entry: { path: '/frozen/ntn-skills.js' }, database: 'owned-library', target: 'original-page',
-  originalPlan: { path: '/evidence/original-plan.json' }, refPrefix: 'skill://original-owner/', outputRoot: '/evidence/agent-output',
+  originalPlan: { path: '/evidence/original-plan.json' }, ownerRef: 'skill://original-owner?library=owned-library', outputRoot: '/evidence/agent-output',
   inputFiles: ['/evidence/original-plan.json', '/evidence/original-error.json'] };
 const cliCommand = 'node /frozen/ntn-skills.js';
 const reviewCommand = cliCommand + ' ctl library create recovery review /evidence/original-plan.json --entry owned-library --target original-page --output /evidence/agent-output/review.json';
@@ -122,12 +124,14 @@ test('public CLI task permits help and only the bound original recovery and stri
   assert.equal(reviewCandidateCliCommand(apply, publicCli).dryRun, false);
   assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl library create recovery reconcile --entry owned-library --target original-page /evidence/original-plan.json', publicCli).kind, 'reconcile');
   assert.equal(reviewCandidateCliCommand(reviewCommand + ' --max-requests 100 --duration-ms 60000', publicCli).kind, 'review');
-  const read = cliCommand + " read 'skill://original-owner/references/policy.md?snapshot=fixed&file_id=original-file' --database owned-library --read-only --json --metrics";
+  const fixed = skillFileRef(publicCli.ownerRef, 'references/policy.md', 's_' + 'a'.repeat(64));
+  const main = skillFileRef(publicCli.ownerRef, 'SKILL.md', 's_' + 'a'.repeat(64));
+  const read = cliCommand + " read '" + fixed + "' --database owned-library --read-only --json --metrics";
   assert.equal(reviewCandidateCliCommand(read, publicCli).kind, 'read');
-  assert.equal(reviewCandidateCliCommand(read, publicCli).argv[3], 'skill://original-owner/references/policy.md?snapshot=fixed&file_id=original-file');
+  assert.equal(reviewCandidateCliCommand(read, publicCli).argv[3], fixed);
   assert.equal(reviewCandidateCliCommand(cliCommand + ' read --json --metrics --read-only --database owned-library --path references/policy.md original-page', publicCli).kind, 'read');
-  assert.equal(reviewCandidateCliCommand(cliCommand + " read references/policy.md --from 'skill://original-owner/SKILL.md?snapshot=fixed&file_id=original-file' --database owned-library --read-only --json --metrics", publicCli).kind, 'read');
-  assert.equal(reviewCandidateCliCommand(cliCommand + " files 'skill://original-owner/SKILL.md?snapshot=s_" + 'a'.repeat(64) + "&file_id=original-file' --database owned-library --metrics", publicCli).kind, 'files');
+  assert.equal(reviewCandidateCliCommand(cliCommand + " read references/policy.md --from '" + main + "' --database owned-library --read-only --json --metrics", publicCli).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + " files '" + main + "' --database owned-library --metrics", publicCli).kind, 'files');
 });
 
 test('public CLI scope rejects shell composition, replacement plans, owners and unbounded output', () => {
@@ -204,14 +208,14 @@ test('public CLI guard admits only the exact host spill from an approved Bash re
 const maintenanceCli = { ...publicCli, mode: 'owned-maintenance-readonly', sourceId: 'notion', nodeExecutable: '/frozen/node',
   builtinFiles: ['/frozen/builtin-skills/ntn-skills-maintain/SKILL.md', '/frozen/builtin-skills/ntn-skills-maintain/references/operations.md'] };
 const maintenanceBranch = () => {
-  const identity = { source: 'notion', id: 'original-owner', ref: 'skill://original-owner',
+  const identity = { source: 'notion', id: publicCli.ownerRef, ref: publicCli.ownerRef,
     locator: { type: 'shared_skill', page_id: 'original-page', database_id: 'owned-library' } };
   return [
     { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: 'sr:C' + 'A'.repeat(22), target: { kind: 'candidate', identity } } },
     { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: 'sr:S' + 'A'.repeat(22), target: { kind: 'selected', identity,
-      snapshot_id: 's_' + 'a'.repeat(64), ref: 'skill://original-owner/SKILL.md?snapshot=s_' + 'a'.repeat(64) } } },
+      snapshot_id: 's_' + 'a'.repeat(64), ref: skillFileRef(publicCli.ownerRef, 'SKILL.md', 's_' + 'a'.repeat(64)) } } },
     { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: 'sr:R' + 'A'.repeat(22), target: { kind: 'resource',
-      owner: 'sr:S' + 'A'.repeat(22), ref: 'skill://original-owner/references/one.md?snapshot=s_' + 'a'.repeat(64) } } },
+      owner: 'sr:S' + 'A'.repeat(22), ref: skillFileRef(publicCli.ownerRef, 'references/one.md', 's_' + 'a'.repeat(64)) } } },
   ];
 };
 
@@ -222,7 +226,7 @@ test('read-only maintenance uses the scoped public audit, original operation and
     cliCommand + ' ctl operation show original-operation --target original-page --entry owned-library',
     cliCommand + ' ctl operation reconcile original-operation --entry owned-library --target original-page',
     cliCommand + ' read original-page --database owned-library --authoring --read-only --json --metrics',
-    cliCommand + " read 'skill://original-owner/references/one.md?snapshot=s_" + 'a'.repeat(64) + "' --database owned-library --read-only --json --metrics",
+    cliCommand + " read '" + skillFileRef(publicCli.ownerRef, 'references/one.md', 's_' + 'a'.repeat(64)) + "' --database owned-library --read-only --json --metrics",
   ]) assert.ok(reviewCandidateCliCommand(command, maintenanceCli).kind, command);
   assert.equal(reviewCandidateCliCommand('/frozen/node /frozen/ntn-skills.js --help', maintenanceCli).kind, 'help');
   assert.throws(() => reviewCandidateCliCommand('/other/node /frozen/ntn-skills.js --help', maintenanceCli));
@@ -292,7 +296,7 @@ test('read-only onboarding uses public JSON without turning optional metrics int
   for (const policy of [maintenanceCli, publicCli]) {
     assert.equal(reviewCandidateCliCommand(command, policy).kind, 'read');
     assert.equal(reviewCandidateCliCommand(command + ' --metrics', policy).kind, 'read');
-    const files = cliCommand + " files '" + policy.refPrefix + '?snapshot=s_' + 'a'.repeat(64) + "' --database owned-library";
+    const files = cliCommand + " files '" + pinSkillRef(policy.ownerRef, 's_' + 'a'.repeat(64)) + "' --database owned-library";
     assert.equal(reviewCandidateCliCommand(files, policy).kind, 'files');
     assert.equal(reviewCandidateCliCommand(files + ' --metrics', policy).kind, 'files');
   }
@@ -314,7 +318,7 @@ const auditGuard = () => {
     writeSync: (_fd, value) => records.push(JSON.parse(value)), closeSync() {},
     readFileSync(path) { reads.push(path); if (!files.has(path)) throw new Error('missing original'); return files.get(path); } },
   output: '/evidence/guard.jsonl', policy: maintenanceCli, sha,
-  review: new Function('return (' + reviewCandidateCliCommand.toString() + ')')(),
+  review: new Function('parseNativeReference', 'return (' + reviewCandidateCliCommand.toString() + ')')(nativeReferenceSettings.parseNativeReference),
   auditReportBinding: new Function('return (' + candidate.candidateAuditReportBinding.toString() + ')')() });
   return { handlers, records, files, reads,
     call(command, id) { return handlers.get('tool_call')({ toolName: 'bash', toolCallId: id, input: { command } }); } };
@@ -408,7 +412,7 @@ test('maintenance guard admits builtin discovery, exact CLI metadata and current
     ['notion_use', { ref: branch[0].data.ref }],
     ['read', { path: branch[2].data.ref }],
     ['read', { paths: [branch[2].data.ref] }],
-    ['read', { path: 'skill://original-owner/references/one.md' }],
+    ['read', { path: skillFileRef(publicCli.ownerRef, 'references/one.md') }],
   ];
   for (const [toolName, input] of calls) assert.equal(handlers.get('tool_call')({ toolName, toolCallId: 'call-' + records.length, input }, ctx), undefined);
   handlers.get('session_shutdown')({});
@@ -423,6 +427,8 @@ test('maintenance guard fails before I/O for foreign handles, conflicting paths,
   for (const [toolName, input] of [
     ['read', { path: '/unrelated/secret' }],
     ['read', { path: 'skill://another-owner/SKILL.md' }],
+    ['read', { path: 'skill://original-owner/SKILL.md?library=foreign-library' }],
+    ['read', { path: skillFileRef(publicCli.ownerRef, 'SKILL.md') + '&file_id=main' }],
     ['read', { path: branch[2].data.ref, paths: [branch[2].data.ref] }],
     ['read', { paths: [branch[2].data.ref], limit: 1 }],
     ['notion_use', { ref: 'sr:C' + 'B'.repeat(22) }],
@@ -443,14 +449,14 @@ test('maintenance guard fails before I/O for foreign handles, conflicting paths,
 });
 
 test('maintenance policy survives serialization without product-module or private Store access', () => {
-  const review = new Function('return (' + candidate.reviewCandidateMaintenanceTool.toString() + ')')();
+  const review = new Function('parseNativeReference', 'return (' + candidate.reviewCandidateMaintenanceTool.toString() + ')')(nativeReferenceSettings.parseNativeReference);
   assert.ok(review('notion_use', { ref: maintenanceBranch()[0].data.ref }, maintenanceCli, maintenanceBranch()));
   assert.throws(() => review('notion_use', { ref: maintenanceBranch()[0].data.ref }, maintenanceCli, []));
 });
 
 test('maintenance rejects the retired readOnly key for owner tools and otherwise allowed local files', () => {
   const handlers = new Map(), rows = [], branch = maintenanceBranch();
-  const review = new Function('return (' + candidate.reviewCandidateMaintenanceTool.toString() + ')')();
+  const review = new Function('parseNativeReference', 'return (' + candidate.reviewCandidateMaintenanceTool.toString() + ')')(nativeReferenceSettings.parseNativeReference);
   const guard = new Function('return (' + candidateCliGuard.toString() + ')')();
   guard({ on(name, fn) { handlers.set(name, fn); } }, {
     fs: { openSync: () => 1, writeSync: (_fd, text) => rows.push(JSON.parse(text)), closeSync() {} },
@@ -510,14 +516,14 @@ test('maintenance starts only with the actual candidate native read executor and
 });
 
 function maintenancePayloadFixture() {
-  const owner = 'shared_skill:owned-library:owned-skill', scope = 'a'.repeat(64), snapshot = 's_' + 'b'.repeat(64), version = 'c'.repeat(64);
+  const owner = 'skill://owned-skill?library=owned-library', scope = 'a'.repeat(64), snapshot = 's_' + 'b'.repeat(64), version = 'c'.repeat(64);
   const expectedBodies = ['Main complete authored body.', 'First complete reference.', 'Second complete reference.'].map((text, index) => {
     const path = ['SKILL.md', 'guides/one.md', 'references/two.md'][index], file_id = 'file-' + String(index + 1).repeat(64);
     return { path: '/oracle/' + path, text, sha256: sha(text), bytes: Buffer.byteLength(text), binding: { owner, scope,
-      snapshot_id: snapshot, version_id: version, path, file_id, ref: 'skill://' + encodeURIComponent(owner) + '/' + path + '?snapshot=' + snapshot + '&file_id=' + file_id } };
+      snapshot_id: snapshot, version_id: version, path, file_id, ref: skillFileRef(owner, path, snapshot) } };
   });
   const config = { requireUse: true, expectedBodies, bodies: expectedBodies.map(body => ({ sha256: body.sha256, occurrences: 1 })),
-    publicCli: { ...maintenanceCli, refPrefix: 'skill://' + encodeURIComponent(owner) + '/', bodyCountScope: 'broker-plus-unchanged-cli' },
+    publicCli: { ...maintenanceCli, ownerRef: owner, bodyCountScope: 'broker-plus-unchanged-cli' },
     proofs: [{ binding: { record: { id: owner }, snapshot_id: snapshot } }, ...expectedBodies.slice(1).map(body => ({ scope, snapshot_id: snapshot, file_id: body.binding.file_id, sha256: body.sha256 }))] };
   const nativeMessages = [], calls = [], tasks = [], guard = [], messages = [];
   const add = (id, name, args, content, details = {}) => {
@@ -729,17 +735,19 @@ test('candidate plan is nonexecuting and rejects unfrozen body claims', () => {
 function currentArtifactReceiptFixture() {
   const identity = (path, bytes) => ({ path, bytes: Buffer.byteLength(bytes), sha256: sha(bytes) });
   const rawCli = identity('/owned/cli/dist/ntn-skills.js', 'raw CLI'), rawSdk = identity('/owned/cli/dist/sdk.js', 'raw SDK');
+  const rawRef = identity('/owned/cli/dist/skill-ref.cjs', 'selected pure protocol');
+  const notices = identity('/owned/cli/THIRD_PARTY_NOTICES.md', 'Selected third-party notices');
   const embeddedCli = identity('/owned/installed/dist/ntn-skills.mjs', 'embedded CLI');
   const embeddedSdk = identity('/owned/installed/dist/ntn-skills-sdk.mjs', 'embedded SDK');
   const runtime = { version: 1, package: 'ntn-skills', package_version: '0.1.0', sdk_version: 2,
     consumer_contract_version: 1, resource_read_contract_version: 1, read_output_proof_version: 1,
     catalog_directory_contract_version: 1, command_output_proof_version: 1, consumption_effects_version: 1,
-    content_search_contract_version: 1,
-    resource_read_effects_version: 1, cli_sha256: embeddedCli.sha256, sdk_sha256: embeddedSdk.sha256 };
+    content_search_contract_version: 1, skill_ref_version: 2,
+    resource_read_effects_version: 1, cli_sha256: embeddedCli.sha256, sdk_sha256: embeddedSdk.sha256, ref_sha256: rawRef.sha256 };
   const actual = {
-    buildInput: { package: 'ntn-skills', version: '0.1.0', manifest: identity('/owned/cli/package.json', '{"name":"ntn-skills"}'), cli: rawCli, sdk: rawSdk },
+    buildInput: { package: 'ntn-skills', version: '0.1.0', manifest: identity('/owned/cli/package.json', '{"name":"ntn-skills"}'), cli: rawCli, sdk: rawSdk, ref: rawRef, notices },
     package: { name: 'pi-context-broker', version: '0.1.0', installed: '/owned/installed', archive: identity('/owned/broker.tgz', 'archive bytes') },
-    runtime: { ...runtime, hashes: { cli: embeddedCli.sha256, sdk: embeddedSdk.sha256 } },
+    runtime: { ...runtime, hashes: { cli: embeddedCli.sha256, sdk: embeddedSdk.sha256, ref: rawRef.sha256 } },
   };
   const notRun = ['Pi session', 'provider/model', 'live Notion', 'OMP', 'Tern'];
   const artifact = { version: 2, status: 'passed', startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z',
@@ -777,6 +785,8 @@ test('candidate rejects incomplete or altered current source, archive, runtime a
     ['manifest hash', value => { value.buildInput.manifest.sha256 = '0'.repeat(64); }],
     ['raw CLI hash', value => { value.buildInput.cli.sha256 = '0'.repeat(64); }],
     ['raw SDK hash', value => { value.buildInput.sdk.sha256 = '0'.repeat(64); }],
+    ['raw protocol hash', value => { value.buildInput.ref.sha256 = '0'.repeat(64); }],
+    ['notices hash', value => { value.buildInput.notices.sha256 = '0'.repeat(64); }],
     ['raw CLI bytes', value => { value.buildInput.cli.bytes++; }],
     ['source path', value => { value.buildInput.manifest.path = '/another/package.json'; }],
     ['archive hash', value => { value.package.archive.sha256 = '0'.repeat(64); }],
@@ -784,6 +794,8 @@ test('candidate rejects incomplete or altered current source, archive, runtime a
     ['runtime hash', value => { value.runtime.sdk_sha256 = '0'.repeat(64); }],
     ['runtime verified hash', value => { value.runtime.hashes.cli = '0'.repeat(64); }],
     ['runtime capability', value => { delete value.runtime.consumer_contract_version; }],
+    ['protocol version', value => { value.runtime.skill_ref_version = 1; }],
+    ['protocol runtime hash', value => { value.runtime.ref_sha256 = '0'.repeat(64); }],
     ['missing SDK proof', value => { delete value.currentSdk; }],
     ['failed SDK', value => { value.currentSdk.status = 'failed'; }],
     ['altered installed package', value => { value.currentSdk.package_unchanged = false; }],
@@ -849,7 +861,7 @@ test('only the owned project task can classify a hash-bound inventory call separ
 test('task observer does not transform provider input or register tools/providers', () => {
   const handlers = new Map(), writes = [];
   const fs = { openSync: () => 1, readFileSync: () => Buffer.from(body), writeSync: (_fd, line) => writes.push(JSON.parse(line)), closeSync: () => {} };
-  observeCandidateTask({ on(name, fn) { handlers.set(name, fn); } }, { fs, crypto: { createHash }, output: '/owned/task.jsonl', bodyFiles: [file], inspectPayload: candidatePayloadBodies });
+  observeCandidateTask({ on(name, fn) { handlers.set(name, fn); } }, { fs, crypto: { createHash }, ...nativeReferenceSettings, output: '/owned/task.jsonl', bodyFiles: [file], inspectPayload: candidatePayloadBodies });
   const payload = { messages: [{ content: body }] }, before = structuredClone(payload);
   assert.equal(handlers.get('before_provider_request')({ payload }), undefined); assert.deepEqual(payload, before);
   assert.equal(writes.at(-1).bodies[0].occurrences, 1);
@@ -859,7 +871,7 @@ test('task observer does not transform provider input or register tools/provider
 test('task extension reload after a real fork boundary keeps one exclusive ledger and unique payload files', async () => {
   const root = await mkdtemp('/tmp/candidate-task-fork-'), output = join(root, 'tasks.jsonl'), payloadDirectory = join(root, 'payloads');
   await mkdir(payloadDirectory);
-  const source = candidate.candidateTaskExtensionSource({ output, payloadDirectory, bodyFiles: [] });
+  const source = candidate.candidateTaskExtensionSource({ referenceParser: fileURLToPath(new URL('../packages/context-broker/src/native-reference.ts', import.meta.url)), output, payloadDirectory, bodyFiles: [] });
   const extension = number => import('data:text/javascript;base64,' + Buffer.from(source).toString('base64') + '#' + number);
   const host = () => { const handlers = new Map(); return { handlers, on: (name, fn) => handlers.set(name, fn) }; };
   const first = host(), second = host();
@@ -891,7 +903,7 @@ test('task extension reload after a real fork boundary keeps one exclusive ledge
 test('a fork without successful observer rebinding cannot seal as complete', () => {
   const handlers = new Map(), writes = [];
   const fs = { openSync: () => 1, writeSync: (_fd, line) => writes.push(JSON.parse(line)), closeSync: () => {} };
-  observeCandidateTask({ on: (name, fn) => handlers.set(name, fn) }, { fs, crypto: { createHash }, output: '/owned/incomplete.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies });
+  observeCandidateTask({ on: (name, fn) => handlers.set(name, fn) }, { fs, crypto: { createHash }, ...nativeReferenceSettings, output: '/owned/incomplete.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies });
   handlers.get('session_shutdown')({ reason: 'fork' }); handlers.get('session_shutdown')({ reason: 'quit' });
   assert.equal(writes.at(-1).complete, false);
 });
@@ -902,7 +914,7 @@ test('binary resources keep exact identity without becoming UTF-8 model text or 
   const fs = { openSync: () => 1, readFileSync: path => path === binary.path ? png : Buffer.from(body),
     writeSync: (_fd, line) => writes.push(JSON.parse(line)), closeSync: () => {} };
   const api = { on(name, fn) { handlers.set(name, fn); } };
-  const options = { fs, crypto: { createHash }, output: '/owned/task.jsonl', bodyFiles: [file, binary], inspectPayload: candidatePayloadBodies };
+  const options = { fs, crypto: { createHash }, ...nativeReferenceSettings, output: '/owned/task.jsonl', bodyFiles: [file, binary], inspectPayload: candidatePayloadBodies };
   observeCandidateTask(api, options);
   assert.deepEqual(writes[0].nonTextBodies, [{ sha256: binary.sha256, bytes: binary.bytes }]);
   const payload = { messages: [{ content: body }] }, before = structuredClone(payload);
@@ -923,7 +935,7 @@ test('interaction provenance snapshots actual registered files without altering 
     writeFileSync: (path, bytes) => { assert.ok(path.startsWith('/owned/tool-results/')); saved.set(path, bytes); },
     writeSync: (_fd, line) => writes.push(JSON.parse(line)), closeSync: () => {} };
   observeCandidateTask({ on: (name, fn) => handlers.set(name, fn), getAllTools: () => [{ name: 'ask_user', sourceInfo: source }] },
-    { fs, crypto: { createHash }, output: '/owned/tasks.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies, toolResultDirectory: '/owned/tool-results' });
+    { fs, crypto: { createHash }, ...nativeReferenceSettings, output: '/owned/tasks.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies, toolResultDirectory: '/owned/tool-results' });
   const event = { toolName: 'ask_user', toolCallId: 'actual-call', input: { question: 'Which source?' } }, before = structuredClone(event);
   handlers.get('tool_call')(event, { mode: 'rpc' });
   assert.deepEqual(event, before);
@@ -941,17 +953,17 @@ test('interaction provenance snapshots actual registered files without altering 
 
 function preparedObservationFixture({ kind = 'candidate', storage = 'entry', refresh = false, canonical = false } = {}) {
     const handlers = new Map(), rows = [], saved = new Map(), reads = [], baseDir = '/installed/pi-compact-ui';
-    const probes = [], id = 'read-call', scope = 'a'.repeat(64), owner = 'shared_skill:library-test:skill-test', snapshot = 's_' + 'b'.repeat(64);
+    const probes = [], id = 'read-call', scope = 'a'.repeat(64), owner = 'skill://skill-test?library=library-test', snapshot = 's_' + 'b'.repeat(64);
     const resource = kind === 'resource', relative = resource ? 'references/rates.md' : 'SKILL.md';
     const mainBody = Buffer.from('完整正文\n'), resourceBody = Buffer.from('精确资源\n'), body = resource ? resourceBody : mainBody;
     const path = '/cache/notion/scopes/' + scope + '/records/' + sha(owner) + '/' +
       (storage === 'resource' ? 'resources' : 'entries') + '/' + snapshot + '/tree/' + relative;
-    const manifestPath = path.slice(0, -('/tree/' + relative).length) + '/.broker-entry.json', ref = 'skill://' + encodeURIComponent(owner);
+    const manifestPath = path.slice(0, -('/tree/' + relative).length) + '/.broker-entry.json', ref = owner;
     const mainId = 'file-' + 'd'.repeat(64), resourceId = 'file-' + 'f'.repeat(64);
-    const mainRef = ref + '/SKILL.md?snapshot=' + snapshot + '&file_id=' + mainId;
-    const resourceRef = ref + '/references/rates.md?snapshot=' + snapshot + '&file_id=' + resourceId;
+    const mainRef = skillFileRef(owner, 'SKILL.md', snapshot);
+    const resourceRef = skillFileRef(owner, 'references/rates.md', snapshot);
     const locator = { type: 'shared_skill', page_id: 'page', database_id: 'db' };
-    const binding = { record: { id: owner, kind: 'skill', locator, entrypoint: 'SKILL.md', ref: ref + '/SKILL.md' },
+    const binding = { record: { id: owner, kind: 'skill', locator, entrypoint: 'SKILL.md', ref: skillFileRef(owner, 'SKILL.md') },
       scope, snapshot_id: snapshot, version_id: 'c'.repeat(64), body_sha256: sha(mainBody), ref: mainRef };
     const manifest = { version: 1, projection: 'entry', manifest_complete: true, scope, id: owner, snapshot_id: snapshot,
       version_id: binding.version_id, ref: binding.ref, entrypoint: 'SKILL.md',
@@ -969,7 +981,7 @@ function preparedObservationFixture({ kind = 'candidate', storage = 'entry', ref
     const source = { origin: 'package', scope: 'user', source: 'npm:pi-compact-ui', baseDir, path: baseDir + '/index.ts' };
     const api = { on: (name, fn) => handlers.set(name, fn), getAllTools: () => [{ name: 'read', sourceInfo: source }],
       getCommands: () => [{ name: 'context-broker', sourceInfo: { origin: 'package', baseDir: '/broker', path: '/broker/src/index.ts' } }] };
-    observeCandidateTask(api, { fs, crypto: { createHash }, output: '/owned/task.jsonl', bodyFiles: [],
+    observeCandidateTask(api, { fs, crypto: { createHash }, ...nativeReferenceSettings, output: '/owned/task.jsonl', bodyFiles: [],
       inspectPayload: candidatePayloadBodies, toolResultDirectory: '/owned/results' });
     const selectedRef = 'sr:S' + 'o'.repeat(22), shortResource = 'sr:R' + 'r'.repeat(22);
     const identity = { source: 'notion', scope, id: owner, kind: 'skill', locator, ref };
@@ -1279,8 +1291,8 @@ test('normal-management state reuses only the existing process roots and never t
   const stateRoot = join(scratch, 'run-owned'), selected = [];
   for (const [index, content] of ['before\n', 'edited\n'].entries()) {
     const snapshot_id = 's_' + sha('snapshot-' + index), file_id = 'file-' + sha('reference');
-    const ref = 'skill://owner/references/render.md?snapshot=' + snapshot_id + '&file_id=' + file_id;
-    const value = { ok: true, record: { id: 'owner', locator: { database_id: 'owned-database' } }, scope: sha('scope'), snapshot_id,
+    const owner = 'skill://owner?library=owned-library', ref = skillFileRef(owner, 'references/render.md', snapshot_id);
+    const value = { ok: true, record: { id: owner, locator: { database_id: 'owned-database' } }, scope: sha('scope'), snapshot_id,
       version_id: sha('version-' + index), path: 'references/render.md', ref, source: 'local_snapshot', freshness: { policy: 'pinned' },
       content, range: { start: 1, end: 2, total_lines: 2 }, has_more: false,
       file_bindings: [{ path: 'references/render.md', file_id }], effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' } };
@@ -1316,7 +1328,7 @@ test('normal-management state reuses only the existing process roots and never t
 });
 
 test('existing-state reads block unintended tools before execution and require actual complete none-effects results', () => {
-  const refs = ['skill://owner/references/render.md?snapshot=old', 'skill://owner/references/render.md?snapshot=edited'];
+  const refs = ['old', 'edited'].map(value => skillFileRef('skill://owner?library=owned-library', 'references/render.md', 's_' + sha(value)));
   const handlers = new Map(), rows = [];
   let writeFails = false;
   const fs = { openSync: () => 1, writeSync: (_fd, line) => { if (writeFails) throw new Error('receipt unavailable'); rows.push(JSON.parse(line)); }, closeSync: () => {} };

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { parseNativeReference, hasExactNativeOwner } from '../packages/context-broker/src/native-reference.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
@@ -6,7 +7,7 @@ import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { consumptionCostExtensionSource, readConsumptionCostEvents } from './skill-consumption-cost.mjs';
@@ -231,17 +232,15 @@ export async function prepareCandidatePrintState(config, { stateRoot, previous, 
     assert.equal(typeof value.content, 'string'); assert.equal(value.has_more, false);
     assert.deepEqual(value.range, { start: 1, end: value.content.split('\n').length, total_lines: value.content.split('\n').length });
     assert.deepEqual(value.effects, { version: 1, remote_writes: 'none', author_content: 'unchanged' });
-    const url = new URL(value.ref), binding = value.file_bindings?.filter(file => file.path === value.path);
-    assert.equal(url.protocol, 'skill:'); assert.equal(decodeURIComponent(url.hostname), value.record.id);
-    assert.equal(decodeURIComponent(url.pathname.slice(1)), value.path); assert.equal(url.hash, '');
-    assert.equal(url.searchParams.get('snapshot'), value.snapshot_id); assert.equal([...url.searchParams].length, 2);
-    assert.equal(binding?.length, 1); assert.equal(url.searchParams.get('file_id'), binding[0].file_id);
-    assert.match(binding[0].file_id, /^file-[a-f0-9]{64}$/u);
+    const ref = parseNativeReference(value.ref), binding = value.file_bindings?.filter(file => file.path === value.path) ?? [];
+    assert.equal(ref.selector, value.record.id); assert.equal(ref.path, value.path); assert.equal(ref.snapshot, value.snapshot_id);
+    assert.ok(binding.length <= 1);
+    if (binding.length) assert.match(binding[0].file_id, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/u);
     const body = { bytes: Buffer.byteLength(value.content), sha256: hash(value.content) };
     assert.ok(config.expectedBodies?.some(expected => expected.sha256 === body.sha256 && expected.bytes === body.bytes), 'Bind the existing complete public body expectation');
     reads.push({ receipt: { path: expected.path, bytes: bytes.length, sha256: expected.sha256 }, ref: value.ref,
       id: value.record.id, scope: value.scope, snapshot_id: value.snapshot_id, version_id: value.version_id,
-      path: value.path, file_id: binding[0].file_id, ...body, characters: value.content.length });
+      path: value.path, file_id: binding[0]?.file_id, ...body, characters: value.content.length });
   }
   assert.equal(new Set(reads.map(read => read.ref)).size, 2);
   for (const key of ['id', 'scope', 'path', 'file_id']) assert.equal(reads[0][key], reads[1][key], 'Read the two versions of the same original reference');
@@ -436,16 +435,17 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
     check(positional[0] === policy.target && typeof policy.description === 'string' && flags.get('--description') === policy.description,
       'Update only the original page to the exact authorized Description');
   } else if (consumer) {
-    const owner = value => value === policy.target || value?.startsWith(policy.refPrefix);
+    const canonical = value => { try { return parseNativeReference(value).selector === policy.ownerRef; } catch { return false; } };
+    const owner = value => value === policy.target || canonical(value);
     const relativeFile = value => typeof value === 'string' && value.length > 0 && !value.startsWith('/') && !value.includes(':')
       && !value.split('/').some(part => part === '' || part === '.' || part === '..');
-    check(owner(positional[0]) || relativeFile(positional[0]) && flags.get('--from')?.startsWith(policy.refPrefix), 'Read only the original owner');
-    if (flags.has('--from')) check(flags.get('--from').startsWith(policy.refPrefix) && relativeFile(positional[0]) && !flags.has('--path'), 'Resolve only an original owner relative file');
+    check(owner(positional[0]) || relativeFile(positional[0]) && canonical(flags.get('--from')), 'Read only the original owner');
+    if (flags.has('--from')) check(canonical(flags.get('--from')) && relativeFile(positional[0]) && !flags.has('--path'), 'Resolve only an original owner relative file');
     if (flags.has('--path')) check(relativeFile(flags.get('--path')), 'Use an original owner relative file path');
     if (read) {
       check(flags.get('--json'), 'Read output needs public JSON; optional metrics never grant authorization');
       check(flags.get('--read-only'), 'Post-recovery inspection must prohibit remote writes');
-    } else check(positional[0].startsWith(policy.refPrefix) && /[?&]snapshot=s_[a-f0-9]{64}(?:&|$)/u.test(positional[0]),
+    } else check(canonical(positional[0]) && parseNativeReference(positional[0]).snapshot !== undefined,
       'List only the original immutable owner pin');
     check(!(flags.has('--refresh') && flags.has('--offline')), 'Use one public freshness policy');
   } else {
@@ -531,16 +531,10 @@ export function reviewCandidateMaintenanceTool(tool, input, policy, branch = [])
   check(!Object.hasOwn(input, 'readOnly'), 'readOnly is not a current public tool option; omit it. Notion consumption does not write remotely.');
   const fields = allowed => check(Object.keys(input).every(key => allowed.includes(key)), 'Unknown maintenance tool option');
   const canonical = value => {
-    if (typeof value !== 'string' || !value.startsWith(policy.refPrefix)) return false;
-    try {
-      const url = new URL(value), path = decodeURIComponent(url.pathname).slice(1);
-      return url.protocol === 'skill:' && !url.username && !url.password && !url.port && !url.hash
-        && path.length > 0 && !path.includes('\\') && !path.split('/').some(part => !part || part === '.' || part === '..')
-        && [...url.searchParams.keys()].every(key => ['snapshot', 'file_id'].includes(key));
-    } catch { return false; }
+    try { return parseNativeReference(value).selector === policy.ownerRef; } catch { return false; }
   };
-  const ownerIdentity = identity => identity?.source === 'notion' && identity.id === decodeURIComponent(new URL(policy.refPrefix).hostname)
-    && identity.ref === policy.refPrefix.slice(0, -1) && identity.locator?.page_id === policy.target && identity.locator?.database_id === policy.database;
+  const ownerIdentity = identity => identity?.source === 'notion' && identity.id === policy.ownerRef
+    && identity.ref === policy.ownerRef && identity.locator?.page_id === policy.target && identity.locator?.database_id === policy.database;
   const reference = (value, selectedOnly = false) => {
     if (!selectedOnly && canonical(value)) return true;
     if (typeof value !== 'string' || !/^sr:[CSR][A-Za-z0-9_-]{22}$/u.test(value)) return false;
@@ -722,7 +716,7 @@ export function candidatePayloadBodies(value, expectedBodies) {
   });
 }
 
-export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, branchDirectory, toolResultDirectory, hostOutput, projectRoot, inspectProject }) {
+export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, branchDirectory, toolResultDirectory, hostOutput, projectRoot, inspectProject, parseNativeReference }) {
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const oracleStarted = process.hrtime.bigint();
   const nonTextBodies = [];
@@ -763,36 +757,31 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     const scope = resource ? proof?.scope : binding?.scope, owner = resource ? proof?.id : binding?.record?.id;
     const snapshot = resource ? proof?.snapshot_id : binding?.snapshot_id, version = resource ? proof?.version_id : binding?.version_id;
     const relative = resource ? proof?.path : 'SKILL.md', bodyHash = resource ? proof?.sha256 : proof?.bodySha256;
-    const fixed = (ref, expectedPath, expectedSnapshot, fileId) => {
-      const match = /^skill:\/\/([^/?#]+)\/([^?#]+)\?([^#]+)$/u.exec(ref ?? '');
-      if (!match) return false;
+    const fixed = (ref, expectedPath, expectedSnapshot) => {
       try {
-        const query = new URLSearchParams(match[3]);
-        return decodeURIComponent(match[1]) === owner && decodeURIComponent(match[2]) === expectedPath
-          && [...query.keys()].length === 2 && query.getAll('snapshot').length === 1 && query.getAll('file_id').length === 1
-          && query.get('snapshot') === expectedSnapshot && query.get('file_id') === fileId;
+        const parsed = parseNativeReference(ref);
+        return parsed.selector === owner && parsed.path === expectedPath && parsed.snapshot === expectedSnapshot;
       } catch { return false; }
     };
     if (proof?.version !== (resource ? 2 : 3) || proof.toolCallId !== message.toolCallId
       || !/^[a-f0-9]{64}$/u.test(scope ?? '') || !/^s_[a-f0-9]{64}$/u.test(snapshot ?? '') || !/^[a-f0-9]{64}$/u.test(version ?? '')
       || !/^[a-f0-9]{64}$/u.test(bodyHash ?? '') || !Number.isSafeInteger(proof.bytes) || proof.bytes < (resource ? 0 : 1)
       || identity?.source !== 'notion' || identity.scope !== scope || identity.id !== owner || identity.kind !== 'skill'
-      || identity.ref !== 'skill://' + encodeURIComponent(owner) || !identity.locator
+      || identity.ref !== owner || !identity.locator
       || typeof relative !== 'string' || !relative || /[\\:\p{Cc}\p{Cf}\p{Cs}]/u.test(relative)
       || relative.split('/').some(part => !part || part === '.' || part === '..')) return;
     if (ownerTarget.kind === 'selected' && (!/^s_[a-f0-9]{64}$/u.test(ownerTarget.snapshot_id ?? '')
-      || !/^[a-f0-9]{64}$/u.test(ownerTarget.version_id ?? '') || !/^file-[a-f0-9]{64}$/u.test(ownerTarget.file_id ?? '')
+      || !/^[a-f0-9]{64}$/u.test(ownerTarget.version_id ?? '')
       || !/^[a-f0-9]{64}$/u.test(ownerTarget.body_sha256 ?? '') || ownerTarget.entrypoint !== 'SKILL.md'
-      || !fixed(ownerTarget.ref, 'SKILL.md', ownerTarget.snapshot_id, ownerTarget.file_id))) return;
+      || !fixed(ownerTarget.ref, 'SKILL.md', ownerTarget.snapshot_id))) return;
     if (pending.originalInput.path.startsWith('skill://') && (pending.target.ref !== pending.originalInput.path
-      || !fixed(pending.originalInput.path, resource ? pending.target.path : 'SKILL.md', ownerTarget.snapshot_id,
-        resource ? pending.target.file_id : ownerTarget.file_id))) return;
+      || !fixed(pending.originalInput.path, resource ? pending.target.path : 'SKILL.md', ownerTarget.snapshot_id))) return;
     if (resource) {
       const target = pending.target;
       if (ownerTarget.kind !== 'selected' || ownerTarget.snapshot_id !== snapshot || ownerTarget.version_id !== version
         || relative === 'SKILL.md' || target.path !== relative || target.ref !== proof.ref || target.file_id !== proof.file_id
-        || target.bytes !== proof.bytes || target.sha256 !== bodyHash || !/^file-[a-f0-9]{64}$/u.test(proof.file_id ?? '')
-        || !fixed(proof.ref, relative, snapshot, proof.file_id) || proof.loaded !== false || proof.delivered_complete_text !== true
+        || target.bytes !== proof.bytes || target.sha256 !== bodyHash || proof.file_id !== undefined && (typeof proof.file_id !== 'string' || !proof.file_id)
+        || !fixed(proof.ref, relative, snapshot) || proof.loaded !== false || proof.delivered_complete_text !== true
         || 'files' in proof || proof.purpose !== undefined && proof.purpose !== 'inspect') return;
     } else {
       if (binding.record?.entrypoint !== 'SKILL.md' || binding.snapshot_id !== proof.snapshotId
@@ -1004,13 +993,14 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
 /** Pi forks replace the extension API inside one process. Keep one exclusive
  * ledger and payload counter, and rebind only after that real lifecycle event. */
 export function candidateTaskExtensionSource(settings) {
-  return "import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
+  assert.ok(isAbsolute(settings.referenceParser ?? ''), 'The task observer requires its selected installed reference parser');
+  return "import {parseNativeReference} from " + JSON.stringify(pathToFileURL(settings.referenceParser).href) + ";import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
     + ';const inspectProject=' + candidateProjectInspection.toString()
     + ';const settings=' + JSON.stringify(settings)
     + ';const key=Symbol.for("context-broker/verification-task-observers/v1");'
     + 'export default api=>{const registry=globalThis[key]??=new Map();const prior=registry.get(settings.output);'
     + 'if(prior){if(prior.settings!==JSON.stringify(settings))throw new Error("TASK_OBSERVER_SETTINGS_CHANGED");prior.observer.bind(api);return;}const observer=(' + observeCandidateTask.toString()
-    + ')(api,{fs,crypto,inspectPayload,inspectProject,...settings});registry.set(settings.output,{observer,settings:JSON.stringify(settings)});};\n';
+    + ' )(api,{fs,crypto,inspectPayload,inspectProject,parseNativeReference,...settings});registry.set(settings.output,{observer,settings:JSON.stringify(settings)});};\n';
 }
 
 export function containsProof(value, expected) {
@@ -1031,18 +1021,16 @@ export function candidateMaintenanceBodyContract(config) {
     const expected = config.bodies.find(item => item.sha256 === body.sha256), binding = body.binding;
     assert.ok(expected && digest(body.sha256) && Number.isSafeInteger(body.bytes) && body.bytes > 0);
     assert.equal(expected.occurrences, 1); assert.notEqual(expected.receiptRequired, false);
-    assert.equal(binding?.owner, decodeURIComponent(new URL(policy.refPrefix).hostname));
+    assert.equal(binding?.owner, policy.ownerRef);
     assert.ok(digest(binding.scope) && /^s_[a-f0-9]{64}$/u.test(binding.snapshot_id) && digest(binding.version_id));
-    assert.ok(/^file-[a-f0-9]{64}$/u.test(binding.file_id));
-    const ref = new URL(binding.ref);
-    assert.equal(ref.protocol, 'skill:'); assert.equal(decodeURIComponent(ref.hostname), binding.owner);
-    assert.equal(ref.username, ''); assert.equal(ref.password, ''); assert.equal(ref.port, '');
-    assert.equal(decodeURIComponent(ref.pathname.slice(1)), binding.path);
-    assert.equal(ref.searchParams.get('snapshot'), binding.snapshot_id); assert.equal(ref.searchParams.get('file_id'), binding.file_id);
-    assert.equal([...ref.searchParams].length, 2); assert.equal(ref.hash, '');
+    if (binding.file_id !== undefined) assert.match(binding.file_id, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/u);
+    const ref = parseNativeReference(binding.ref);
+    assert.equal(ref.selector, binding.owner); assert.equal(ref.path, binding.path); assert.equal(ref.snapshot, binding.snapshot_id);
   }
   assert.equal(config.expectedBodies.filter(body => body.binding.path === 'SKILL.md').length, 1);
-  for (const key of ['path', 'file_id', 'ref']) assert.equal(new Set(config.expectedBodies.map(body => body.binding[key])).size, 3);
+  for (const key of ['path', 'ref']) assert.equal(new Set(config.expectedBodies.map(body => body.binding[key])).size, 3);
+  const nativeIds = config.expectedBodies.map(body => body.binding.file_id).filter(id => id !== undefined);
+  assert.equal(new Set(nativeIds).size, nativeIds.length);
   for (const key of ['owner', 'scope', 'snapshot_id', 'version_id']) assert.equal(new Set(config.expectedBodies.map(body => body.binding[key])).size, 1);
   return config.expectedBodies;
 }
@@ -1326,6 +1314,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   const cli = await packageClosure(config.cliRoot, config.cliArchive, config.cliArchiveSha256);
   const embedded = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills.mjs'));
   const sdk = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills-sdk.mjs'));
+  const ref = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills-ref.cjs'));
   const standalone = await fileIdentity(join(config.cliRoot, 'dist/ntn-skills.js'));
   const runtime = await json(join(config.brokerRoot, 'dist/ntn-skills-runtime.json'));
   assert.equal(embedded.sha256, config.embeddedCliSha256); assert.equal(sdk.sha256, config.embeddedSdkSha256);
@@ -1337,14 +1326,20 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   assert.ok(typeof sdkImport === 'string' && sdkImport.startsWith('./'));
   const inputSdk = await fileIdentity(resolve(config.cliRoot, sdkImport)); assert.ok(inside(await realpath(config.cliRoot), inputSdk.realpath));
   assert.equal(cliManifest.name, 'ntn-skills');
+  const refEntry = cliManifest.exports?.['./ref']?.require;
+  assert.ok(typeof refEntry === 'string' && refEntry.startsWith('./'));
+  const inputRef = await fileIdentity(resolve(config.cliRoot, refEntry));
+  assert.ok(inside(await realpath(config.cliRoot), inputRef.realpath));
+  assert.equal(ref.sha256, inputRef.sha256, 'Bundled and selected pure protocol bytes must match');
   const brokerManifest = await json(join(config.brokerRoot, 'package.json'));
   assert.equal(brokerManifest.name, 'pi-context-broker');
   const receiptIdentity = file => ({ path: file.realpath, bytes: file.bytes, sha256: file.sha256 });
   const hashes = verifyBundledRuntime({ manifest: runtime, expectedVersion: cliManifest.version,
-    cliBytes: await readFile(embedded.path), sdkBytes: await readFile(sdk.path) });
+    cliBytes: await readFile(embedded.path), sdkBytes: await readFile(sdk.path), refBytes: await readFile(ref.path) });
   validateCandidateArtifactReceipt(artifact, {
     buildInput: { package: cliManifest.name, version: cliManifest.version, manifest: receiptIdentity(await fileIdentity(cliManifestPath)),
-      cli: receiptIdentity(standalone), sdk: receiptIdentity(inputSdk) },
+      cli: receiptIdentity(standalone), sdk: receiptIdentity(inputSdk), ref: receiptIdentity(inputRef),
+      notices: receiptIdentity(await fileIdentity(join(config.cliRoot, "THIRD_PARTY_NOTICES.md"))) },
     package: { name: brokerManifest.name, version: brokerManifest.version, installed: await realpath(config.brokerRoot), archive: receiptIdentity(broker.archive) },
     runtime: { ...runtime, hashes },
   });
@@ -1363,6 +1358,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
     previous = await json(receipt.path);
     assert.equal(previous.scope, config.scope); assert.equal(previous.status, 'passed'); assert.equal(previous.plan.database, config.database);
     assert.equal(previous.artifacts.embedded.sha256, embedded.sha256); assert.equal(previous.artifacts.sdk.sha256, sdk.sha256);
+    assert.equal(previous.artifacts.ref.sha256, ref.sha256);
     assert.ok(inside(previous.evidence, previous.session.artifact.path));
     const session = await fileIdentity(previous.session.artifact.path); assert.equal(session.sha256, previous.session.artifact.sha256);
   }
@@ -1380,7 +1376,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   const costExtension = join(control, 'cost.mjs'), transportExtension = join(control, 'transport.mjs'), taskExtension = join(control, 'tasks.mjs'), sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: 'daily-candidate', clockId }), { mode: 0o600, flag: 'wx' });
   await writeFile(transportExtension, providerTransportExtensionSource({ output: transport, checkoutRoot: root, clockId }), { mode: 0o600, flag: 'wx' });
-  await writeFile(taskExtension, candidateTaskExtensionSource({ output: tasks, bodyFiles: config.expectedBodies ?? [] }), { mode: 0o600, flag: 'wx' });
+  await writeFile(taskExtension, candidateTaskExtensionSource({ referenceParser: join(config.brokerRoot, "src/native-reference.ts"), output: tasks, bodyFiles: config.expectedBodies ?? [] }), { mode: 0o600, flag: 'wx' });
   await writeFile(sourcePreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: root, clockId, cliPath: embedded.realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { mode: 0o600, flag: 'wx' });
   const state = join(cwd, 'ntn/state');
   await writeFile(sdkPreload, "import fs from 'node:fs'; import fsPromises from 'node:fs/promises'; import {channel} from 'node:diagnostics_channel'; import {createHash} from 'node:crypto'; import {syncBuiltinESMExports} from 'node:module'; import {isMainThread} from 'node:worker_threads';\n"
@@ -1398,7 +1394,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
     args.push('--session', resumedSession);
   }
   const result = { version: 1, scope: config.scope, status: 'running', evidence, plan, ownership, host, hostArtifact: await fileIdentity(host.identity), harness, before: before.safe,
-    artifacts: { brokerArchive: broker.archive, brokerFilesSha256: broker.sha256, cliArchive: cli.archive, embedded, sdk, standalone, inputSdk, runtime, artifactReceipt, buildInput: artifact.buildInput },
+    artifacts: { brokerArchive: broker.archive, brokerFilesSha256: broker.sha256, cliArchive: cli.archive, embedded, sdk, ref, standalone, inputSdk, inputRef, runtime, artifactReceipt, buildInput: artifact.buildInput },
     launch: { cwd, args, normalHome: true, normalAgentDir: true, targetExtensionArgument: false, sourceCommandConfigured: false, normalTools: true, normalMcpAndContext: true, sourceStateStartsEmpty: !previous,
       resume: previous ? { source: previous.session.artifact, copiedOwnedSessionOnly: true, originalSessionPreserved: true, sourceCache: 'original-owned-warm-state' } : null },
     turns: config.turns.map(turn => ({ id: turn.id, status: 'not_run' })), semanticReview: 'required', globalDailyActivation: 'not_tested', modifications: { globalSettings: 0, dailySourceConfig: 0, credentialCopies: 0 } };
@@ -1680,7 +1676,9 @@ export async function runCandidatePrint(config) {
       for (const path of Object.values(cliPolicy.stateRoots)) assert.equal(await exists(path), false, 'The cold author task needs its own initially empty state roots');
     }
     assert.equal(cliPolicy.database, config.database); assert.ok(isAbsolute(cliPolicy.outputRoot) && inside(config.evidenceRoot, cliPolicy.outputRoot));
-    assert.ok(cliPolicy.refPrefix.startsWith('skill://') && cliPolicy.refPrefix.endsWith('/'));
+    assert.ok(hasExactNativeOwner(parseNativeReference(cliPolicy.ownerRef)));
+    assert.equal(parseNativeReference(cliPolicy.ownerRef).path, '');
+    assert.equal(parseNativeReference(cliPolicy.ownerRef).snapshot, undefined);
     assert.deepEqual(Object.keys(cliPolicy.stateRoots).sort(), ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME', 'NTN_SKILLS_DATA_HOME'].sort());
     assert.ok(Object.values(cliPolicy.stateRoots).every(isAbsolute));
     const intent = cliPolicy.mode === 'original-create-recovery' ? cliPolicy.originalPlan : cliPolicy.managementIntent;
@@ -1701,7 +1699,7 @@ export async function runCandidatePrint(config) {
     const actual = await identity(body.path);
     assert.equal(actual.sha256, body.sha256); assert.equal(actual.bytes, body.bytes); assert.ok(body.bytes > 0);
   }
-  const baselineFiles = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json'].map(path => identity(join(config.brokerRoot, path))));
+  const baselineFiles = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json', 'dist/ntn-skills-ref.cjs'].map(path => identity(join(config.brokerRoot, path))));
   const runtime = await json(join(config.brokerRoot, 'dist/ntn-skills-runtime.json'));
   assert.equal(runtime.cli_sha256, baselineFiles[2].sha256); assert.equal(runtime.sdk_sha256, baselineFiles[3].sha256);
   if (cliPolicy?.mode === 'owned-maintenance-readonly') assert.deepEqual(cliProtected[0], baselineFiles[2], 'The discovered maintenance CLI must be this candidate bundled runtime');
@@ -1756,7 +1754,7 @@ export async function runCandidatePrint(config) {
     + guardCandidateInputIdentity.toString() + ')(api,{fs,crypto,output:' + JSON.stringify(inputGuardLedger) + ',expected:'
     + JSON.stringify({ entry: baselineFiles[1], cwd: forkBinding.cwd, provider: 'magpie', model: 'group/worker', thinkingLevel: 'high',
       nativeSkillCount: 69, promptSha256: hash(config.prompt) }) + '});\n', { flag: 'wx', mode: 0o600 });
-  if (cliPolicy) await writeFile(cliGuard, "import fs from 'node:fs';import crypto from 'node:crypto';const sha=value=>crypto.createHash('sha256').update(value).digest('hex');const review=" + reviewCandidateCliCommand.toString()
+  if (cliPolicy) await writeFile(cliGuard, "import {parseNativeReference} from " + JSON.stringify(pathToFileURL(join(config.brokerRoot, "src/native-reference.ts")).href) + ";import fs from 'node:fs';import crypto from 'node:crypto';const sha=value=>crypto.createHash('sha256').update(value).digest('hex');const review=" + reviewCandidateCliCommand.toString()
     + ';const maintenanceReview=' + reviewCandidateMaintenanceTool.toString()
     + ';const auditReportBinding=' + candidateAuditReportBinding.toString()
     + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,maintenanceReview,auditReportBinding,sha,output:' + JSON.stringify(cliGuardLedger)
@@ -1764,7 +1762,7 @@ export async function runCandidatePrint(config) {
   if (completionBudgetSource) await writeFile(completionBudgetExtension, completionBudgetSource, { flag: 'wx', mode: 0o600 });
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: config.id, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(transportExtension, providerTransportExtensionSource({ output: transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
-  await writeFile(taskExtension, candidateTaskExtensionSource({ output: tasks, bodyFiles: config.expectedBodies ?? [],
+  await writeFile(taskExtension, candidateTaskExtensionSource({ referenceParser: join(config.brokerRoot, "src/native-reference.ts"), output: tasks, bodyFiles: config.expectedBodies ?? [],
     payloadDirectory: payloads, hostOutput, projectRoot: project?.root ?? null }), { flag: 'wx', mode: 0o600 });
   await writeFile(sourcePreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: root, clockId, cliPath: baselineFiles[2].realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { flag: 'wx', mode: 0o600 });
   await writeFile(sdkPreload, "import fs from 'node:fs';import {channel} from 'node:diagnostics_channel';import {createHash} from 'node:crypto';import {isMainThread} from 'node:worker_threads';const hash=value=>createHash('sha256').update(value).digest('hex');\n"

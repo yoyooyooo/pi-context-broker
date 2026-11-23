@@ -69,15 +69,15 @@ function fixtureCli(failure = null) {
   const send = value => console.log(JSON.stringify({ ...value, request_metrics: metrics }));
   if (failure) { send({ ok: false, error: { code: failure, operation_id: 'original-unknown' } }); process.exitCode = 1; return; }
   const state = process.env.NTN_SKILLS_HOME;
-  const root = 'skill://shared_skill%3Atest%3Aone/SKILL.md', id = 'shared_skill:test:one', scope = 'a'.repeat(64);
+  const root = 'skill://one/SKILL.md?library=test', id = 'skill://one?library=test', scope = 'a'.repeat(64);
   const body = '# Fixture\n', version = digest(body), snapshot = 's_' + digest(JSON.stringify([scope, id, version]));
-  const ref = root + '?snapshot=' + snapshot;
+  const ref = root + '&snapshot=' + snapshot;
   const record = { id, kind: 'skill', name: 'Fixture', alias: 'fixture', description: 'Driver fixture', enabled: true,
     default_context: false, entrypoint: 'SKILL.md', ref: root,
     locator: { type: 'shared_skill', library_id: 'test', skill_id: 'one', page_id: '00000000-0000-4000-8000-000000000002',
       database_id: '00000000-0000-4000-8000-000000000001', data_source_id: '00000000-0000-4000-8000-000000000003' } };
   const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: digest(body), ref };
-  const object = path.join(state, 'objects', digest(body)), cached = fs.existsSync(object), pinned = args[1]?.includes('?snapshot=');
+  const object = path.join(state, 'objects', digest(body)), cached = fs.existsSync(object), pinned = args[1]?.includes('&snapshot=');
   if (pinned && !cached) { send({ ok: false, error: { code: 'SNAPSHOT_MISSING' } }); process.exitCode = 1; return; }
   if (args[0] === 'prepare') {
     fs.mkdirSync(path.dirname(object), { recursive: true }); fs.writeFileSync(object, body);
@@ -101,7 +101,7 @@ test('frozen four-state run retains failed partial samples, 1+N boundaries, setu
   if (process.platform !== 'darwin') return;
   const cli = join(base, 'fixture.cjs'); await writeFile(cli, '(' + fixtureCli.toString() + ')();\n', { mode: 0o600 });
   const config = { command: [process.execPath, cli], database: '00000000-0000-4000-8000-000000000001',
-    root: 'skill://shared_skill%3Atest%3Aone/SKILL.md', evidenceRoot: join(base, 'runs'), timeoutMs: 2000,
+    root: 'skill://one/SKILL.md?library=test', evidenceRoot: join(base, 'runs'), timeoutMs: 2000,
     samples: { cold: 1, warm: 1, 'expired-unchanged': 1, partial: 1 } };
   const checked = await doctor(config);
   assert.equal(checked.cliVersion, 'source-driver-fixture v1');
@@ -129,7 +129,7 @@ test('frozen four-state run retains failed partial samples, 1+N boundaries, setu
   const failed = operations.find(operation => operation.id === 'partial-001-prepare');
   assert.equal(failed.receipt.errorCode, 'SNAPSHOT_MISSING');
   assert.equal(failed.receipt.costs.sourceHttpAttempts, 0);
-  assert.ok(failed.receipt.args[1].includes('?snapshot='));
+  assert.ok(failed.receipt.args[1].includes('&snapshot='));
   await assert.rejects(() => executePlan(plan), /already started/);
   const graph = JSON.parse(await readFile(operations.find(operation => operation.id === 'cold-001-prepare').receipt.stdout.path, 'utf8'));
   const identity = sourceIdentity(graph);
@@ -153,7 +153,7 @@ function resourceFixtureCli() {
   }
   const state = process.env.NTN_SKILLS_HOME, changed = state.includes('cold-002');
   const content = changed ? 'Changed resource\n' : 'Resource\n', main = '# Main\n';
-  const id = 'shared_skill:test:one', scope = 'a'.repeat(64), root = 'skill://shared_skill%3Atest%3Aone/SKILL.md';
+  const id = 'skill://one?library=test', scope = 'a'.repeat(64), root = 'skill://one/SKILL.md?library=test';
   const version_id = digest(content), snapshot_id = 's_' + digest(version_id);
   const record = { id, ref: root, entrypoint: 'SKILL.md', locator: { database_id: '00000000-0000-4000-8000-000000000001' } };
   const file_bindings = [{ file_id: 'main', path: 'SKILL.md' }, { file_id: 'resource', path: 'references/example.md' }];
@@ -164,14 +164,14 @@ function resourceFixtureCli() {
   fs.writeFileSync(path.join(state, 'snapshots', snapshot_id + '.json'), JSON.stringify(manifest));
   for (const file of bodies) fs.writeFileSync(path.join(state, 'objects', digest(file.content)), file.content);
   send({ ok: true, record, scope, snapshot_id, version_id, entrypoint: 'SKILL.md', file_bindings,
-    ref: 'skill://shared_skill%3Atest%3Aone/references/example.md?snapshot=' + snapshot_id + '&file_id=resource',
+    ref: 'skill://one/references/example.md?library=test&snapshot=' + snapshot_id,
     path: 'references/example.md', content, range: { start: 1, end: 2, total_lines: 2 }, has_more: false, source: 'notion' });
 }
 
 test('resource-only cold samples run one read, preserve complete-cache observations and fail changed source without dropping it', async () => {
   const cli = join(base, 'resource-fixture.cjs'); await writeFile(cli, '(' + resourceFixtureCli.toString() + ')();\n', { mode: 0o600 });
   const config = { command: [process.execPath, cli], database: '00000000-0000-4000-8000-000000000001',
-    root: 'skill://shared_skill%3Atest%3Aone/SKILL.md', resourcePath: 'references/example.md', pipeline: 'resource-only',
+    root: 'skill://one/SKILL.md?library=test', resourcePath: 'references/example.md', pipeline: 'resource-only',
     evidenceRoot: join(base, 'resource-runs'), timeoutMs: 2000, samples: { cold: 2, warm: 0, 'expired-unchanged': 0, partial: 0 } };
   const plan = await freezePlan(config);
   assert.deepEqual(plan.pipeline, ['read-one-current-resource', 'observe-owned-cache-without-another-cli']);
@@ -195,7 +195,7 @@ test('resource-only cold samples run one read, preserve complete-cache observati
 test('inspect-current measures one public prepare per empty cold state and retains root-ready timing', async () => {
   const cli = join(base, 'inspect-fixture.cjs'); await writeFile(cli, '(' + fixtureCli.toString() + ')();\n', { mode: 0o600 });
   const config = { command: [process.execPath, cli], database: '00000000-0000-4000-8000-000000000001',
-    root: 'skill://shared_skill%3Atest%3Aone/SKILL.md', pipeline: 'inspect-current',
+    root: 'skill://one/SKILL.md?library=test', pipeline: 'inspect-current',
     evidenceRoot: join(base, 'inspect-runs'), timeoutMs: 2000, samples: { cold: 2, warm: 0, 'expired-unchanged': 0, partial: 0 } };
   const plan = await freezePlan(config);
   assert.deepEqual(plan.pipeline, ['prepare-one-current-inspect']);
@@ -223,7 +223,7 @@ test('inspect-current measures one public prepare per empty cold state and retai
 test('inspect-current stops after the original failed operation and retains its recovery state', async () => {
   const cli = join(base, 'inspect-unknown.cjs'); await writeFile(cli, '(' + fixtureCli.toString() + ')("WRITE_OUTCOME_UNKNOWN");\n', { mode: 0o600 });
   const config = { command: [process.execPath, cli], database: '00000000-0000-4000-8000-000000000001',
-    root: 'skill://shared_skill%3Atest%3Aone/SKILL.md', pipeline: 'inspect-current',
+    root: 'skill://one/SKILL.md?library=test', pipeline: 'inspect-current',
     evidenceRoot: join(base, 'inspect-failed-runs'), timeoutMs: 2000, samples: { cold: 3, warm: 0, 'expired-unchanged': 0, partial: 0 } };
   const plan = await freezePlan(config), report = await executePlan(plan);
   assert.equal(report.operationCount, 1);

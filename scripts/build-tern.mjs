@@ -8,6 +8,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { brokerInputs, fileInventory, selectedCliInputs } from "./next-build-identity.mjs";
+import { selectedSkillRef } from "./prepare-skill-ref.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const sourceInputs = await fileInventory(root, brokerInputs);
@@ -51,6 +52,7 @@ const selectedNotices = await readFile(join(selectedCli.directory, "THIRD_PARTY_
 });
 if (selectedNotices.length === 0) throw new Error("The selected ntn-skills THIRD_PARTY_NOTICES.md must not be empty");
 const selectedInputs = await fileInventory(selectedCli.directory, selectedCliInputs);
+const referenceProtocol = await selectedSkillRef(selectedCli.directory);
 if (createHash("sha256").update(selectedNotices).digest("hex") !== selectedInputs.files.find(file => file.path === "THIRD_PARTY_NOTICES.md").sha256)
   throw new Error("Selected CLI third-party notices changed while freezing the build input");
 const selectedRequire = createRequire(selectedCli.manifest);
@@ -60,6 +62,7 @@ if (typeof sdkImport !== "string" || !sdkImport.startsWith("./")) throw new Erro
 const sdkEntry = resolve(selectedCli.directory, sdkImport);
 const selectedSdkApi = await import(pathToFileURL(sdkEntry).href);
 const requiredConstants = {
+  SKILL_REF_VERSION: 2,
   SDK_VERSION: 2, CONSUMER_CONTRACT_VERSION: 1, CONSUMPTION_EFFECTS_VERSION: 1,
   CATALOG_DIRECTORY_CONTRACT_VERSION: 1, READ_OUTPUT_PROOF_VERSION: 1,
   RESOURCE_READ_CONTRACT_VERSION: 1, RESOURCE_READ_EFFECTS_VERSION: 1,
@@ -128,6 +131,7 @@ const sdkResult = await build({
 if (!sdkResult.success || !sdkResult.outputs[0]) throw new AggregateError(sdkResult.logs, "Notion SDK build failed");
 const sdkCode = await sdkResult.outputs[0].text();
 const runtimeManifest = { version: 1, package: "ntn-skills", package_version: selectedCli.metadata.version,
+  skill_ref_version: 2, ref_sha256: referenceProtocol.ref_sha256,
   sdk_version: 2, consumer_contract_version: 1, ...(resourceReadVersion === undefined ? {} : { resource_read_contract_version: resourceReadVersion }),
   ...(readOutputProofVersion === undefined ? {} : { read_output_proof_version: readOutputProofVersion }),
   ...(catalogDirectoryVersion === undefined ? {} : { catalog_directory_contract_version: catalogDirectoryVersion }),
@@ -200,6 +204,7 @@ for (const directory of [join(brokerOutput, "dist"), ...(buildTern ? [query] : [
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, "ntn-skills.mjs"), cliCode);
   await writeFile(join(directory, "ntn-skills-sdk.mjs"), sdkCode);
+  await writeFile(join(directory, "ntn-skills-ref.cjs"), referenceProtocol.bytes);
   await writeFile(join(directory, "ntn-skills-runtime.json"), JSON.stringify(runtimeManifest, null, 2) + "\n");
   await writeFile(join(directory, "NOTICES.txt"), notices);
   const builtinRoot = join(directory, "builtin-skills");
@@ -257,7 +262,7 @@ if ((await fileInventory(selectedCli.directory, selectedCliInputs)).sha256 !== s
 await writeFile(join(brokerOutput, "dist/next-build.json"), JSON.stringify({
   version: 1, kind: "broker-build", input_roots: brokerInputs, source: sourceInputs,
   selected_cli: selectedInputs,
-  artifacts: await fileInventory(brokerOutput, ["dist/ntn-skills.mjs", "dist/ntn-skills-sdk.mjs", "dist/ntn-skills-runtime.json", "dist/completion.mjs", "dist/builtin-skills", "dist/NOTICES.txt"]),
+  artifacts: await fileInventory(brokerOutput, ["dist/ntn-skills.mjs", "dist/ntn-skills-sdk.mjs", "dist/ntn-skills-ref.cjs", "dist/ntn-skills-runtime.json", "dist/completion.mjs", "dist/builtin-skills", "dist/NOTICES.txt"]),
   toolchain: { bun: Bun.version, node: process.version },
 }, null, 2) + "\n");
 console.log(buildTern ? "Built standalone broker query and Tern plugin query" : `Built standalone broker package at ${brokerOutput}`);

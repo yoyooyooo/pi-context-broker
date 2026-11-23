@@ -270,6 +270,44 @@ Pi 为 Notion 记录提供归属当前会话分支的不透明引用。它们是
 | `sr:S` | 选中主文的确切 scope、record、snapshot、version、File 和正文 hash | `notion_use` 与完整原生主文 read |
 | `sr:R` | 属于某个 `sr:S` 的资源，固定 owner、path、File、bytes 和 hash | 准备结果的目录或原生 read 的 `skill-directory` 尾部 |
 
+### 精确 Skill 引用
+
+统一协议为 `skill://<稳定-skill-id>[/<path>][?library=<逻辑-library-id>][&snapshot=<snapshot-id>]`。
+CLI、SDK 与 Broker 共享 `ntn-skills/ref`，均要求 `SKILL_REF_VERSION = 2`。
+消费时复制返回的引用。`sr:C`、`sr:S`、`sr:R` 属于当前会话分支；可移植身份使用 canonical `skill://`。
+
+| 引用 | 含义 |
+| --- | --- |
+| `skill://architect` | 已明确绑定的 Library 中稳定 ID 为 `architect` 的 Skill；读取其所选版本的主入口。 |
+| `skill://architect/references/review.md` | 该 Skill 的准确文件路径；Library 来自实际包含链接的所选文件或入口已绑定的库。 |
+| `skill://architect?library=team` | 完整当前身份 `{ libraryId: "team", skillId: "architect" }`。 |
+| `skill://architect/references/review.md?library=test` | 显式指定另一套已配置 Library 中的目标，独立校验目标权限与所选快照。 |
+| `skill://architect?library=team&snapshot=s_<64位十六进制>` | 从指定不可变 manifest 选择该 Skill 的主入口。 |
+
+`library` 是逻辑 Library 身份，不是 Notion 表的 UUID、source alias、显示名或缓存目录。
+省略它需要真实上下文：实际包含链接的所选文件，或命令/source 入口明确绑定的一套库。
+没有上下文就报错；全局只找到一个同名 Skill 也不能补出作用域。
+记录的 `id` 是完整 root URI，`ref` 带明确主文路径；locator 中的 `shared_skill` 仅保留为 Notion adapter 类型。
+
+URI 中只使用稳定 Skill ID，不以 name、alias 或物理页面 ID 兜底。
+新 ID 使用小写 ASCII 字母、数字、`.`、`_`、`-`；改显示名不会改变 ID。
+文件路径保持大小写，空格和 Unicode 按路径段编码。重复或未知 query、编码后的分隔符、越界路径与 fragment 都拒绝。
+省略 path 表示 Skill 本身，读取时使用对应 current/fixed manifest 的主入口，不把所有 kind 都写死为 `SKILL.md`。
+
+固定引用只在目标所选 manifest 中解析。路径或旧字节缺失时，不切到当前版本。
+原生 File ID 保留为内部 binding 证据；冻结 Source 文件可以没有投影的 Notion File 行。
+公开 `file_id` 参数与旧 `shared_skill:…` 前缀不再接受。迁移旧 File-ID 引用必须先核对原 manifest，
+再生成准确路径 URI；直接删参数可能读到另一个文件。
+
+同一 Skill 内的文档继续使用相对路径。跨 Skill 优先写稳定 URI；只有实际包含链接的文件保留可靠
+Source 原路径与固定 revision 时，才可解析跨 Skill 相对路径。缓存布局不构成相邻关系。
+`read({path:"skill://architect/references/review.md", from:FIXED_CONTAINING_FILE_REF})`
+从包含文件绑定省略的 Library；同 owner 继承该文件的 pin，跨 owner 保持目标自己的会话 pin。
+显式跨 Library 还需要目标来源自己的配置与权限。
+Members 与 Requires 仍是同库关系：Requires 显式维护；导入只在 Members 省略时，才可能从准确、有效且
+唯一的链接推断成员。不确定就跳过，显式空列表保留，后续人工关系修改不被自动覆盖。
+读取引用本身既不激活 Requires，也不修改这两类关系。
+
 `notion_use({ref:REF})` 接受返回的 `sr:C`、`sr:S` 或 canonical 主入口 `skill://` 引用；`ref` 也可以是本次需要一起使用的多个根。它加载根与完整 Requires 闭包，以应用其指令。介绍、摘要或检查 Skill 使用原生 `read({path:REF})`，不启用 Requires。资源复制系统返回的准确引用。按需发现的 `notion_ctl({refs:[REF]})` 可导出固定 `sr:S`、`sr:R` 的 canonical 证明，未固定的 `sr:C` 不能提供该证明。
 
 读取相对链接时，`read({path:RELATIVE_PATH, from:FIXED_CONTAINING_FILE_REF})`
@@ -327,7 +365,7 @@ Pi 只在 provider 投影中替换本扩展拥有的旧指引，不重写原始 
 
 Pi 与 OMP 的选中 Skill payload 在完整正文旁提供经过转义的 `skill-directory` 和按任务读取资源的指引。Notion 记录还提供选中版本的 pinned `skill-ref` 与 `snapshot-id`。Pi 的 `hash`、`basename` 模式隐藏本地目录后，原生工具仍可使用公开的固定引用及准备结果中的资源目录。使用 CLI 后备路径的宿主继续保留来源/数据库范围，执行 `files SNAPSHOT` 或 `read SNAPSHOT --path RELATIVE`。已加载正文的提示明确保留用户任务边界：加载不授权执行工作流、环境探测或前置动作；介绍只把这些指令作为内容说明。
 
-普通本地 Skill 保留 Pi 原生发现和 read。显式配置的 filesystem source 继续使用其元数据目录与选中快照机制。Notion source 发布所选 View 的 Skill 与 Router 元数据；`default_context` 通过 View filter 影响成员名单，Prompt 保持仅显式调用。Pi 显示作者名称、明确来源和准确入口引用。read 只检查所请求内容；`notion_use`、`/skill:` 与 `$` 准备所选指令及 Requires，Members 在选中前保持候选。复制宿主实际公布的名称或引用。OMP 保留 `notion-ui-alpha` 等 qualified 名称、`skill://notion-ui-alpha` 别名及 metadata 路径激活；别名不改写 Notion 记录名称。
+普通本地 Skill 保留 Pi 原生发现和 read。显式配置的 filesystem source 继续使用其元数据目录与选中快照机制。Notion source 发布所选 View 的 Skill 与 Router 元数据；`default_context` 通过 View filter 影响成员名单，Prompt 保持仅显式调用。Pi 显示作者名称、明确来源和准确入口引用。read 只检查所请求内容；`notion_use`、`/skill:` 与 `$` 准备所选指令及 Requires，Members 在选中前保持候选。复制宿主实际公布的名称或引用。OMP 保留 `notion-ui-alpha` 等宿主名称与 metadata 路径激活；这些展示名称不成为 Skill ID，可移植链接使用返回的 canonical 引用。
 
 目录注册后，显式配置的预取预算可对初始 View 中最多 `maxNodes` 个可用 Skill/Router 根发起一次公开 `prepare --purpose inspect --priority prefetch`。预取不展开 Members、不准备 Requires 闭包、不读取 Prompt、不导出宿主目录、不追加会话锁，也不投递正文。`maxBytes` 限制完整成功 preparation JSON 与每份主文，不是网络传输配额；`maxTimeMs` 限制任务生命周期，`rateShare` 使用同一 CLI 调度器的独立低优先级通道。前台选择或资源读取会取消预热，不等其迟到回调；服务压力推迟预热，不增加后台重试。前台等待者独立持有取消状态。激活仍校验 CLI 缓存资格，正文默认五分钟，失败不隐式回退旧内容。切会话取消所属工作；移出 View 不移除当前会话已加载的指令。
 
@@ -361,7 +399,7 @@ Pi 保留已接受的原生 `/skill:` 输入与图片，不由宿主提前执行
 
 Pi 的 Notion Skill/Router 路径对每个来源图调用一次 SDK v2 `consume`，同次取得已校验的图、完整主文和完整文件 manifest。Broker 发布入口前核对根、scope、物理 owner 与 File 绑定。每次操作独立持有 environment、cwd、runtime 与 abort signal。缺失或不兼容的 SDK 明确返回 `SOURCE_SDK_UNAVAILABLE` 或 `SOURCE_SDK_INCOMPATIBLE`，无 CLI 回退；OMP/Tern 工作延后。
 
-完整文件 manifest 带有准确 ref、File ID、hash 与字节数，宿主初始只在 `entry` 投影中保存主文。标量资源使用 SDK `readSkill` 的准确 File ref 与自有 output，批量资源使用 `readResources`。两者都核对 scope、owner、选定内容、File ID 与完整 bytes/hash，只发布请求文件；二进制保持字节。未知路径、中断输出和不匹配结果不能成为 ready。缓存字节缺失时，只有当前权威仍匹配所选内容才可重新取得，不提供远端历史快照恢复。
+完整文件 manifest 带有准确路径 ref、hash 与字节数；独立 native binding 保留可选 File ID，冻结 Source 文件可以没有投影的 File 行。宿主初始只在 `entry` 投影中保存主文。标量资源使用 SDK `readSkill` 的准确 File ref 与自有 output，批量资源使用 `readResources`。两者都核对 scope、owner、选定内容、存在的 native File binding 与完整 bytes/hash，只发布请求文件；二进制保持字节。未知路径、中断输出和不匹配结果不能成为 ready。缓存字节缺失时，只有当前权威仍匹配所选内容才可重新取得，不提供远端历史快照恢复。
 
 公开准备结果分别报告 `manifest_complete`、`local_files_ready`、`materialized_paths` 和 `loaded`。成功的原生资源结果携带 `contextBrokerResource`，包含确切文件身份与 hash；仅当实际返回文本包含完整预期字节时，`delivered_complete_text` 才为 true。资源回执不是主指令 loaded 回执。即使没有下载资源分块，当前元数据或权限校验仍可能发起请求。
 
@@ -459,7 +497,7 @@ members:
 
 如果文件是 `SKILL.md`，Context Broker 可以从 frontmatter 读取 `name` 和 `description`。只有需要覆盖 metadata 时，才需要手写这两个字段。
 
-远端成员固定使用 `{type: remote, source: {namespace: production}, id: notion_page:<UUID>, locator: {type: notion_page, page_id: <UUID>, database_id: <UUID>, data_source_id: <UUID>}, ref: skill://<UUID>/SKILL.md}`。`ref` 可附加 `?snapshot=s_<sha256>` 固定版本，不填写 path、scope 或 cached path。`source.namespace` 精确匹配已启用配置源的 namespace，未配置 namespace 时匹配该源 id；不从 label 推测，也不通过 catalog 授予凭据权限。
+远端成员固定使用 `{type: remote, source: {namespace: production}, id: "skill://review?library=team", locator: {type: shared_skill, library_id: team, skill_id: review, page_id: <UUID>, database_id: <UUID>, data_source_id: <UUID>}, ref: "skill://review/SKILL.md?library=team"}`。`ref` 可附加 `&snapshot=s_<sha256>` 固定版本，不填写 path、scope 或 cached path。`source.namespace` 精确匹配已启用配置源的 namespace，未配置 namespace 时匹配该源 id；不从 label 推测，也不通过 catalog 授予凭据权限。
 
 Broker 在源目录发现后按当前凭据范围内的 record、完整 locator、kind 和 ref 解析成员，只读元数据。未知、离线或歧义成员保留在索引中并明确标记 unavailable，同时进入 doctor 诊断；本地成员继续可用。Agent 按需读取成员 ref。已有远端 Router 可直接作为 `kind: router` 加同一 remote 身份字段的 catalog record（入口为 ROUTER.md），不重复生成页面或成员；已交接的 scene 应移除重复的本地 Router 与规则。
 

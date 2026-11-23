@@ -13,6 +13,7 @@ async function fixture(options: { sdk?: boolean; sdkVersion?: number; sdkManifes
   await copyFile(new URL("../src/notion-sdk.ts", import.meta.url), join(root, "src/notion-sdk.ts"));
   const module = join(root, "dist/ntn-skills-sdk.mjs");
   if (options.sdk !== false) await writeFile(module, `
+export const SKILL_REF_VERSION = 2;
 export const SDK_VERSION = ${options.sdkVersion ?? 2};
 export const CONSUMER_CONTRACT_VERSION = 1;
 export const PACKAGE_VERSION = ${JSON.stringify(options.packageVersion ?? "fixture-1")};
@@ -69,7 +70,7 @@ ${options.relativeResolver ? `
 export async function resolveReference(target, options) {
   calls.push({ operation: 'resolve', target, options });
   options.onRequestMetrics?.({ total_requests: 0, trace: [] });
-  return { version: 1, from: options.from, ref: 'skill://shared_skill%3Alibrary%3Atarget/SKILL.md', effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' } };
+  return { version: 1, from: options.from, ref: 'skill://target/SKILL.md?library=library', effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' } };
 }
 ` : ""}
 ${options.resourceVersion === undefined ? "" : `
@@ -82,7 +83,7 @@ export async function readResources(input, options) {
 }
 `}
 `);
-  await writeFile(join(root, "dist/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills",
+  await writeFile(join(root, "dist/ntn-skills-runtime.json"), JSON.stringify({ version: 1, skill_ref_version: 2, package: "ntn-skills",
     package_version: options.manifestVersion ?? options.packageVersion ?? "fixture-1", sdk_version: options.sdkManifestVersion ?? options.sdkVersion ?? 2, consumer_contract_version: 1,
     ...(options.contentSearch ? { content_search_contract_version: options.contentManifestVersion ?? options.contentVersion ?? 1 } : {}),
     ...(options.resourceVersion === undefined ? {} : { resource_read_contract_version: options.resourceManifestVersion ?? options.resourceVersion }),
@@ -101,12 +102,12 @@ test("missing bundled SDK fails without selecting another CLI or SDK", async () 
 
 test("relative identity resolution is one scoped SDK operation and missing capability never falls back to read", async () => {
   const older = await fixture(), current = await fixture({ relativeResolver: true });
-  const from = "skill://shared_skill%3Alibrary%3Aroot/playbooks/prototype.md?snapshot=s_" + "a".repeat(64);
+  const from = "skill://root/playbooks/prototype.md?library=library&snapshot=s_" + "a".repeat(64);
   const signal = new AbortController().signal, options = { sourceId: "selected", from, database: "db", cwd: "/owned", signal, offline: true, env: { SDK_TEST_ID: "identity" } };
   await expect(older.boundary.resolveNotionReferenceSdk("../../target/SKILL.md", options)).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
   expect((await import(pathToFileURL(older.module).href)).calls).toHaveLength(0);
   expect(await current.boundary.resolveNotionReferenceSdk("../../target/SKILL.md", options)).toMatchObject({ version: 1, from,
-    ref: "skill://shared_skill%3Alibrary%3Atarget/SKILL.md", effects: { remote_writes: "none", author_content: "unchanged" } });
+    ref: "skill://target/SKILL.md?library=library", effects: { remote_writes: "none", author_content: "unchanged" } });
   const calls = (await import(pathToFileURL(current.module).href)).calls;
   expect(calls).toHaveLength(1);
   expect(calls[0]).toMatchObject({ operation: "resolve", target: "../../target/SKILL.md", options: { from, database: "db", cwd: "/owned", offline: true } });

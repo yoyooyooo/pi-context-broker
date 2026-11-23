@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { nativeResourcePath, parseNativeReference } from "./native-reference";
+import { nativeResourcePath, nativeFileBinding, parseNativeReference } from "./native-reference";
 import {
   SESSION_SHORT_REF_ENTRY, SESSION_SHORT_REF_PREFIX, bindCandidate, bindCandidates, bindSelected, bindResource,
   reduceSessionShortRefs, resolveSessionShortRef, exportSessionShortRef,
@@ -77,7 +77,7 @@ export function assertShortRefSnapshot(value: HostShortRefResolution, snapshot: 
   catch { return fail("SHORT_REF_OWNER_MISMATCH"); }
   const files = manifest.files.filter(file => file.path === actualPath), expectedFile = value.file;
   if (files.length !== 1 || actualPath !== expectedFile.path || files[0]!.sha256 !== expectedFile.sha256
-    || files[0]!.bytes !== expectedFile.bytes) fail("SHORT_REF_OWNER_MISMATCH");
+    || files[0]!.bytes !== expectedFile.bytes || nativeFileBinding(snapshot, actualPath)?.file_id !== expectedFile.file_id) fail("SHORT_REF_OWNER_MISMATCH");
   try {
     if (!isDeepStrictEqual(parseNativeReference(files[0]!.ref), parseNativeReference(expectedFile.ref))) fail("SHORT_REF_OWNER_MISMATCH");
   } catch { fail("SHORT_REF_OWNER_MISMATCH"); }

@@ -1,3 +1,4 @@
+import { withNativeSnapshot, parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -224,17 +225,14 @@ export function fixedMainFailureTarget(selection, messages, ref, database) {
   const files = proofs[0].directory.files.filter(file => file.path === record.entrypoint);
   assert.equal(files.length, 1); assert.equal(files[0].ref, ref);
   assert.equal(files[0].sha256, delivered[0].body_sha256); assert.equal(files[0].bytes, delivered[0].bytes);
-  const fixed = new URL(ref), current = new URL(record.ref);
-  assert.equal(fixed.protocol, 'skill:'); assert.equal(current.protocol, 'skill:');
-  assert.equal(decodeURIComponent(fixed.hostname), record.id); assert.equal(fixed.host, current.host);
-  assert.equal(decodeURIComponent(fixed.pathname.slice(1)), record.entrypoint); assert.equal(fixed.pathname, current.pathname);
-  assert.equal(current.search, ''); assert.equal(fixed.hash, ''); assert.equal(current.hash, '');
-  assert.deepEqual([...fixed.searchParams.keys()].sort(), ['file_id', 'snapshot']);
-  assert.equal(fixed.searchParams.get('snapshot'), binding.snapshot_id);
-  const fileId = fixed.searchParams.get('file_id'); assert.ok(fileId);
-  const target = record.ref + '?snapshot=' + binding.snapshot_id;
-  fixed.searchParams.delete('file_id'); assert.equal(fixed.href, target, 'Only the proven main File ID may be omitted from a graph target');
-  return { ref, target, owner: record.id, scope: binding.scope, snapshot: binding.snapshot_id, database, entrypoint: record.entrypoint, fileId };
+  const fixed = parseNativeReference(ref), current = parseNativeReference(record.ref);
+  assert.equal(fixed.selector, record.id); assert.equal(fixed.selector, current.selector);
+  assert.equal(fixed.path, record.entrypoint); assert.equal(fixed.path, current.path);
+  assert.equal(current.snapshot, undefined); assert.equal(fixed.snapshot, binding.snapshot_id);
+  const target = withNativeSnapshot(record.ref, binding.snapshot_id);
+  assert.equal(ref, target, 'The graph target retains the exact selected main reference');
+  return { ref, target, owner: record.id, scope: binding.scope, snapshot: binding.snapshot_id, database, entrypoint: record.entrypoint };
+
 }
 
 export function failedSourceEvidence(receipts, expected) {
@@ -570,7 +568,7 @@ export async function runGraphSession(options) {
     await stage('resumed-refresh-keeps-b', [], b.nodes, []);
     await stopHost();
     const fixedA = firstSelection.delivery.find(receipt => receipt.id === info.logical_ids.root);
-    assert.ok(fixedA && new URL(fixedA.ref).searchParams.get('snapshot') === fixedA.snapshot_id);
+    assert.ok(fixedA && parseNativeReference(fixedA.ref).snapshot === fixedA.snapshot_id);
     const fixedMain = fixedMainFailureTarget(firstSelection, await json(join(evidence, 'cold-root-required-a-messages.json')), fixedA.ref, info.database);
     const fixedCheckState = await stateFor('unavailable-fixed-cli');
     const fixedCheck = await publicCommand(fixedCheckState, ['read', fixedA.ref]);

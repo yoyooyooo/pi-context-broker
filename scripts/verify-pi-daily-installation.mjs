@@ -440,13 +440,17 @@ async function run(config) {
     assert.equal(embedded.sha256, config.embeddedCliSha256);
     const embeddedSdk = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills-sdk.mjs'));
     assert.equal(embeddedSdk.sha256, config.embeddedSdkSha256);
+    const embeddedRef = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills-ref.cjs'));
     const sdkManifest = await json(join(config.brokerRoot, 'dist/ntn-skills-runtime.json'));
     assert.equal(sdkManifest.version, 1); assert.equal(sdkManifest.package, 'ntn-skills');
     assert.equal(sdkManifest.cli_sha256, embedded.sha256); assert.equal(sdkManifest.sdk_sha256, embeddedSdk.sha256);
+    assert.equal(sdkManifest.skill_ref_version, 2); assert.equal(sdkManifest.ref_sha256, embeddedRef.sha256);
+    const selectedRef = await fileIdentity(join(config.cliRoot, 'dist/ref.cjs'));
+    assert.equal(embeddedRef.sha256, selectedRef.sha256);
     const standalone = await fileIdentity(join(config.cliRoot, 'dist/ntn-skills.js'));
     assert.equal(standalone.sha256, config.cliEntrySha256);
     const shim = await verifyDailyCliShim(config);
-    result.artifacts = { broker: { root: broker.root, archive_sha256: broker.archive.sha256, published_files: broker.file_count, files_sha256: broker.sha256 }, embedded, embeddedSdk, sdkManifest, standalone, cli_shim: shim };
+    result.artifacts = { broker: { root: broker.root, archive_sha256: broker.archive.sha256, published_files: broker.file_count, files_sha256: broker.sha256 }, embedded, embeddedSdk, embeddedRef, sdkManifest, standalone, selectedRef, cli_shim: shim };
     result.configuration_before = before;
     const resolvedHost = await resolveHost('pi');
     const host = { ...resolvedHost, launcher: await fileIdentity(resolvedHost.path), parent_pid: process.pid }; result.host = host;

@@ -30,6 +30,14 @@
 
 源码漂移默认阻断。先读 diff、判断模型映射或产品缺陷，再更新精确 hash。仅刷新 hash 不算审阅。source coverage 只绑定实际状态 owner、守卫和必要测试；包 pin/build、指导文案与安装配置由各自集成检查负责，不伪装成有限模型的证明前提。
 
+### Skill 引用与固定文件
+
+Skill 引用 v2 使用完整 root URI 表达 Library 与稳定 Skill ID；资格模型中的 scope 仍是来源和授权范围，不能被 URI 的 `library` 参数替代。实际入口先用配对 CLI 的纯协议解析，再进入现有资格、选择和交付守卫。Notion 页面地址的当前查询与实际物理权限拒绝保留独立证据，不能把形似 UUID 的 Skill ID 解释成页面。
+
+固定文件按选定 owner、snapshot 和精确 path 查 manifest。原生 File ID 只作为内部 binding，Source 文件可以没有对应 File 行。短引用的同一路径不能换绑另一 File ID，同一原生 File ID 也不能在同一固定 owner 下改路径。`check-consumer-state-mutations.mjs` 的两项 `fixed-resource-*` 检查直接破坏这两个实现守卫；报告以 `concrete_obligations` 标明其边界，`properties` 为空。既有有限 TLA 未建模 File ID 与路径的对应关系，不从模型通过推导这个关系正确。
+
+两套 coverage 的 `current_review.skill_reference_v2` 记录实际 owner、caller 和回放对应。URI 文法、Library 绑定、Source 相对路径及所选包字节分别由 CLI 引用模型、协议和集成测试验证；这里保留原有模型、独立规则清单和负例。
+
 ## CI 和 Skill
 
 `.github/workflows/formal.yml` 运行 observations 与 consumer-state 两个 suite，沿同一 runner 和独立规则清单。短期 artifact 保存本次报告、输入、原 TLC 和 Mermaid；不维护多份旧图或历史成绩。远端结果以具体提交的实际 workflow 为准，本地通过不能代替远端 CI。

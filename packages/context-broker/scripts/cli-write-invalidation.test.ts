@@ -9,7 +9,7 @@ const { decodeCliWriteOutput, installCliWriteInvalidation } = await import(pathT
 const { hostCliScope } = await import(pathToFileURL(join(runtime.root, "src/host-command.ts")).href);
 const db = "22222222-2222-4222-8222-222222222222", otherDb = "22222222-2222-4222-8222-222222222223";
 const page = "11111111-1111-4111-8111-111111111111", ds = "33333333-3333-4333-8333-333333333333";
-const operation = "import:current-1", skill = "skill:one", library = { library_id: "lib:current", database_id: db, data_source_id: ds };
+const operation = "import:current-1", skill = "skill-one", library = { library_id: "lib:current", database_id: db, data_source_id: ds };
 const prefix = hostCliScope().command;
 const quote = (word: string) => "'" + word.replaceAll("'", "'\\''") + "'";
 const command = (...args: string[]) => [...prefix, ...args].map(quote).join(" ");
@@ -31,8 +31,8 @@ const sources: SourceConfig[] = [
   { id: "unbound", type: "notion" },
 ];
 function record(sourceId: string, locator: ContentRecord["locator"] = { type: "shared_skill", ...library, skill_id: skill, page_id: page }): SkillRecord {
-  return { id: "shared_skill:lib%3Acurrent:skill%3Aone", kind: "skill", name: "visible name", alias: "visible-name", description: "Current item",
-    default_context: false, enabled: true, entrypoint: "SKILL.md", ref: "skill://shared_skill%3Alib%253Acurrent%3Askill%253Aone/SKILL.md",
+  return { id: "skill://skill-one?library=lib%3Acurrent", kind: "skill", name: "visible name", alias: "visible-name", description: "Current item",
+    default_context: false, enabled: true, entrypoint: "SKILL.md", ref: "skill://skill-one/SKILL.md?library=lib%3Acurrent",
     locator, source: "notion", sourceId, sourceScope: "b".repeat(64), aliases: [], autoloadEnabled: true,
     path: "/metadata/SKILL.md", normalizedName: "visible-name", normalizedAliases: [], normalizedDescription: "Current item" };
 }

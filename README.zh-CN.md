@@ -162,7 +162,9 @@ Pi 的 Notion 消费入口为 `notion_list`、原生 `read` 和 `notion_use`。l
 
 Pi 可用一次 `read({ paths: [...] })` 读取同一 Skill 快照中最多 16 个选中资源，输入使用固定 `sr:R` 句柄或带 snapshot 的 `skill://` 文件引用。文本完整交付；二进制返回已验证的文件信息与本地路径。普通 `read({ path, offset?, limit? })` 保持 Pi 原生行为。选择、预算和投递语义见[固定资源批读](./packages/context-broker/docs/fixed-resource-batches.md)。
 
-读取 Notion Skill 正文中的相对链接时，使用 `read({ path: "../review/SKILL.md", from: FIXED_CONTAINING_FILE_REF })`。`from` 是实际包含链接的文件，复制返回的 `sr:S`、`sr:R` 或固定 canonical File ref；嵌套文档不能一律用主文作基准。跨 Skill 需要可靠的当前 Source 贡献映射，缓存目录不会重建仓库中的相邻关系。解析后继续使用目标自己已选的会话快照，只做检查，不激活 Requires 或修改 Members。`from` 不能与资源批读或 `refresh: true` 合用。详见[相对文件读取](./packages/context-broker/docs/fixed-resource-batches.md#relative-paths-from-a-selected-file)。
+可移植 Skill 链接统一使用 `skill://<稳定-skill-id>[/<path>][?library=<逻辑-library-id>][&snapshot=<id>]`，例如 `skill://architect/references/review.md?library=team`。只有实际包含链接的所选文件或入口明确绑定的库，才能补足省略的 `library`。显示名和 alias 用于发现，URI 只按稳定 ID 解析。旧 `shared_skill:…` 前缀与公开 `file_id` 参数不再接受；作用域、固定主入口和迁移要求见[精确 Skill 引用](./packages/context-broker/docs/reference.zh-CN.md#精确-skill-引用)。
+
+读取 Notion Skill 正文中的相对链接时，使用 `read({ path: "../review/SKILL.md", from: FIXED_CONTAINING_FILE_REF })`。`from` 是实际包含链接的文件，复制返回的 `sr:S`、`sr:R` 或固定 canonical File ref；嵌套文档不能一律用主文作基准。跨 Skill 需要可靠的 Source 原路径、固定 revision 和精确贡献映射，缓存目录不会重建仓库中的相邻关系。解析后继续使用目标自己已选的会话快照，只做检查，不激活 Requires 或修改 Members。`from` 不能与资源批读或 `refresh: true` 合用。详见[相对文件读取](./packages/context-broker/docs/fixed-resource-batches.md#relative-paths-from-a-selected-file)。
 
 Pi 按需发现的 `notion_ctl` 还管理当前 Notion 工作集。`working_set:"show"` 显示活跃根、共享 Requires 和 UTF-8 指令字节；`"budget"` 加 `max_bytes` 设置明确的 Session 上限；`"release"` 加准确 `roots` 停止应用这些根，其他根仍需要的依赖会保留。释放保留原始会话历史、固定快照与 Notion 数据，默认不自动淘汰。详见[工作集控制](./packages/context-broker/docs/skill-consumption-runtime.md#当前工作集预算与显式释放)。
 

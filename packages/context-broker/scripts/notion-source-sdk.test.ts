@@ -24,6 +24,31 @@ test("custom Notion CLI configuration is retired with an actionable upgrade erro
   expect(normalizeSources([{ type: "notion", id: "current", database: uuid(10) }])?.[0]).not.toHaveProperty("command");
 });
 
+test("a fixed source lookup skips only a descriptor-proven Library mismatch", async () => {
+  const f = await fixture(), unrelated = { ...f.source, id: "unrelated", database: uuid(90) };
+  const ownFiles = f.state.listFiles.bind(f.state);
+  f.state.listFiles = (target, options) => {
+    if (options.database === unrelated.database) throw Object.assign(new Error("Verified foreign Library descriptor"), { code: "LIBRARY_SCOPE_MISMATCH" });
+    return ownFiles(target, options);
+  };
+  const selected = await f.boundary.resolveNotionReference(f.files[1]!.ref, [unrelated, f.source], f.root);
+  expect(selected.ref).toBe(f.files[1]!.ref);
+  expect(selected.record.sourceId).toBe(f.source.id);
+  expect(f.calls.map(call => [call.operation, call.options.database])).toEqual([["files", unrelated.database], ["files", f.source.database]]);
+});
+
+for (const code of ["SKILL_NOT_FOUND", "ACCESS_DENIED", "CATALOG_INCOMPLETE"])
+test("fixed " + code + " cannot be hidden by another configured source", async () => {
+  const f = await fixture(), unresolved = { ...f.source, id: "unresolved", database: uuid(90) };
+  const ownFiles = f.state.listFiles.bind(f.state);
+  f.state.listFiles = (target, options) => {
+    if (options.database === unresolved.database) throw Object.assign(new Error("Unproven source failure"), { code });
+    return ownFiles(target, options);
+  };
+  await expect(f.boundary.resolveNotionReference(f.files[1]!.ref, [unresolved, f.source], f.root)).rejects.toMatchObject({ code });
+  expect(f.calls.map(call => call.operation)).toEqual(["files"]);
+});
+
 test("current Skill, Router and Prompt loads use one SDK consume and retain the complete file directory", async () => {
   for (const kind of ["skill", "router", "prompt"] as const) {
     const f = await fixture(kind), loaded = await f.boundary.loadNotionSkill(f.selected, f.source, f.root);
@@ -53,7 +78,7 @@ test("Source main and sparse Notion bindings retain every source path and exact 
     expect(loaded.preparationBinding?.ref).not.toContain("file_id=");
     expect(loaded.fileBindings?.map(binding => binding.path)).toEqual(boundPaths);
     expect(loaded.entryManifest?.files).toEqual([...f.files].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-    for (const file of f.files) expect(file.ref.includes("file_id=")).toBe(boundPaths.includes(file.path));
+    for (const file of f.files) expect(file.ref).not.toContain("file_id=");
     for (const file of f.files.slice(1)) {
       const path = await f.boundary.loadNotionResource(loaded, file.path, f.source, f.root);
       expect(await readFile(path)).toEqual(f.bytes.get(file.path));

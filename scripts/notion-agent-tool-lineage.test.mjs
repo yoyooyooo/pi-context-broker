@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { skillFileRef } from './skill-ref-fixture.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation, inspectedLocalReadEvidence } from './notion-agent-tool-lineage.mjs';
@@ -30,13 +31,13 @@ const inspect = value => correlateNotionAgentToolAttempts(value);
 const codes = value => inspect(value).diagnostics.map(problem => problem.code);
 
 function preparedFixture() {
-  const id = 'actual-read', scope = 'a'.repeat(64), owner = 'shared_skill:library-test:skill-test';
+  const id = 'actual-read', scope = 'a'.repeat(64), owner = 'skill://skill-test?library=library-test';
   const snapshot = 's_' + 'b'.repeat(64), version = 'c'.repeat(64), fileId = 'file-' + 'd'.repeat(64);
   const original = { path: 'sr:Cl_Zoi4sBM-mbsLglJeO1BA' }, body = Buffer.from('完整正文\n');
   const path = '/cache/notion/scopes/' + scope + '/records/' + sha(owner) + '/entries/' + snapshot + '/tree/SKILL.md';
-  const input = { path }, ref = 'skill://' + encodeURIComponent(owner), fixed = ref + '/SKILL.md?snapshot=' + snapshot + '&file_id=' + fileId;
+  const input = { path }, ref = owner, fixed = skillFileRef(owner, 'SKILL.md', snapshot);
   const locator = { type: 'shared_skill', database_id: 'database', data_source_id: 'source', page_id: 'page', library_id: 'library-test', skill_id: 'skill-test' };
-  const record = { id: owner, kind: 'skill', locator, entrypoint: 'SKILL.md', ref: ref + '/SKILL.md' };
+  const record = { id: owner, kind: 'skill', locator, entrypoint: 'SKILL.md', ref: skillFileRef(owner, 'SKILL.md') };
   const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: sha(body), ref: fixed };
   const rendered = body.toString() + '\n<notion-effects>readonly</notion-effects>';
   const proof = { version: 3, identity: JSON.stringify(['notion', scope, 'skill', 'shared_skill', owner]), contentIdentity: JSON.stringify([scope, owner]),
@@ -168,7 +169,7 @@ function selectedPreparedFixture({ resource = false, storage = 'entry', refresh 
     snapshot_id: binding.snapshot_id, version_id: binding.version_id, body_sha256: binding.body_sha256,
     entrypoint: 'SKILL.md', ref: binding.ref, file_id: mainBinding.file_id };
   const body = Buffer.from('精确资源\n'), fileId = 'file-' + 'f'.repeat(64), relative = 'references/rates.md';
-  const fixed = 'skill://' + encodeURIComponent(owner) + '/' + relative + '?snapshot=' + binding.snapshot_id + '&file_id=' + fileId;
+  const fixed = skillFileRef(owner, relative, binding.snapshot_id);
   const file = { path: relative, bytes: body.length, sha256: sha(body), ref: fixed };
   const fileBinding = { path: relative, file_id: fileId, page_id: 'resource-page' };
   evidence.manifest.files = [main, file]; evidence.manifest.file_bindings = [mainBinding, fileBinding];

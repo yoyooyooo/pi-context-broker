@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
@@ -9,9 +10,9 @@ import type { AgentMessage } from "../src/types";
 import { noConsumptionWrites, type ConsumptionEffects } from "../src/consumption-effects";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
-const selection: ResourceReadSelection = { scope: "resource-scope", owner: "shared_skill:lib:resources", snapshot_id: "s_" + "a".repeat(64), version_id: "b".repeat(64) };
+const selection: ResourceReadSelection = { scope: "resource-scope", owner: "skill://resources?library=lib", snapshot_id: "s_" + "a".repeat(64), version_id: "b".repeat(64) };
 function file(path: string, content: string | Buffer, fileId = path): ResourceReadSourceFile {
-  const ref = "skill://" + encodeURIComponent(selection.owner) + "/" + path + "?snapshot=" + selection.snapshot_id + "&file_id=" + encodeURIComponent(fileId);
+  const ref = nativeFileRef(selection.owner, String(path), String(selection.snapshot_id));
   return { requested_ref: ref, ref, file_id: fileId, path, bytes: Buffer.byteLength(content), sha256: hash(content),
     encoding: typeof content === "string" ? "utf8" : "base64", content: typeof content === "string" ? content : content.toString("base64"),
     ...(typeof content === "string" ? {} : { output: "/owned/resources/" + path }) };
@@ -84,9 +85,9 @@ test("source hashes, stable File identities, output encoding and duplicates are 
   expect(() => compile("bad", [{ ...files[3]!, output: "relative.bin" }])).toThrow("inconsistent");
   expect(() => compile("bad", [{ ...first, ref: first.ref.replace(selection.snapshot_id, "s_" + "c".repeat(64)) }])).toThrow("inconsistent");
   const moved = { ...first, requested_ref: first.requested_ref.replace("/references/guide.md?", "/old/guide.md?") };
-  expect(compile("moved", [moved]).details.contextBrokerResource.files[0]?.requested_ref).toBe(moved.requested_ref);
-  const pathOnly = { ...first, requested_ref: first.requested_ref.split("&file_id=")[0]! };
-  expect(compile("path-only", [pathOnly]).details.contextBrokerResource.files[0]?.file_id).toBe(first.file_id);
+  expect(() => compile("moved", [moved])).toThrow("inconsistent");
+  const pathOnly = { ...first, file_id: undefined };
+  expect(compile("path-only", [pathOnly]).details.contextBrokerResource.files[0]?.file_id).toBeUndefined();
 });
 
 test("batch receipt rejects detached, changed, reordered and unknown-field evidence", () => {
@@ -94,7 +95,7 @@ test("batch receipt rejects detached, changed, reordered and unknown-field evide
   const variants = [
     { ...proof, loaded: true }, { ...proof, toolCallId: "" }, { ...proof, unknown: true },
     { ...proof, files: [...proof.files].reverse() }, { ...proof, files: proof.files.slice(1) },
-    { ...proof, selection: { ...selection, owner: "shared_skill:lib:other" } },
+    { ...proof, selection: { ...selection, owner: "skill://other?library=lib" } },
     { ...proof, files: proof.files.map((value, index) => index ? value : { ...value, sha256: "0".repeat(64) }) },
     { ...proof, files: proof.files.map((value, index) => index ? value : { ...value, bytes: value.bytes + 1 }) },
     { ...proof, files: proof.files.map((value, index) => index ? value : { ...value, delivery: { ...value.delivery, start: 0 } }) },
@@ -189,8 +190,8 @@ test("known permission revocation derives a complete non-source batch projection
 
 test("a changed selected owner snapshot retires every verified old batch resource without changing stored files", () => {
   const original=message("old-fixed-batch"),before=JSON.stringify(original),next="s_"+"b".repeat(64);
-  const metadata={id:selection.owner,kind:"skill" as const,name:"Resources",alias:"resources",description:"Resources",enabled:true,default_context:false,entrypoint:"SKILL.md",ref:"skill://"+encodeURIComponent(selection.owner)+"/SKILL.md",locator:{type:"shared_skill" as const,library_id:"lib",skill_id:"resources",page_id:"main",database_id:"db",data_source_id:"data"}};
-  const binding={record:metadata,scope:selection.scope,snapshot_id:next,version_id:"version-2",body_sha256:hash("main-v2"),ref:metadata.ref+"?snapshot="+next};
+  const metadata={id:selection.owner,kind:"skill" as const,name:"Resources",alias:"resources",description:"Resources",enabled:true,default_context:false,entrypoint:"SKILL.md",ref:nativeFileRef(selection.owner, "SKILL.md"),locator:{type:"shared_skill" as const,library_id:"lib",skill_id:"resources",page_id:"main",database_id:"db",data_source_id:"data"}};
+  const binding={record:metadata,scope:selection.scope,snapshot_id:next,version_id:"version-2",body_sha256:hash("main-v2"),ref:withNativeSnapshot(metadata.ref, next)};
   const selected={scopes:new Map([[selection.scope,{scope:selection.scope,bindings:new Map([[selection.owner,binding]]),retired:new Map(),graphs:[],selectionId:"next"}]])};
   const projected=projectSelectedSourceMessages([original],selected),text=sourceMessageText(projected[0]?.content);
   expect(text).not.toContain("Exact resource");expect(text).not.toContain("第一行");expect(text).toContain("superseded");

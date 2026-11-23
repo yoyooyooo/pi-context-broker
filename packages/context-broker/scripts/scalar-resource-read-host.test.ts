@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -22,11 +23,11 @@ const canonical = (value: unknown): string => value === null || typeof value !==
     : "{" + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 async function fixture(protectMain = true, withSessionBinding = false, currentInspection = false, outsideCatalog = false) {
   const root = await mkdtemp(join(tmpdir(), "broker-scalar-resource-host-"));
-  const id = "shared_skill:scalar:owner", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
-  const base = "skill://" + encodeURIComponent(id) + "/";
-  const ref = (path: string, file?: string) => base + path + "?snapshot=" + snapshot + (file ? "&file_id=" + file : "");
+  const id = "skill://owner?library=scalar", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
+  const base = id;
+  const ref = (path: string) => nativeFileRef(base, String(path), String(snapshot));
   const content: ContentRecord = { id, kind: "skill", name: "Owner", alias: "owner", description: "Scalar resource owner", default_context: false, enabled: true,
-    entrypoint: "SKILL.md", ref: base + "SKILL.md", locator: { type: "shared_skill", library_id: "scalar", skill_id: "owner",
+    entrypoint: "SKILL.md", ref: nativeFileRef(base, "SKILL.md"), locator: { type: "shared_skill", library_id: "scalar", skill_id: "owner",
       page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
   const metadata: SkillRecord = { ...content, source: "notion", sourceId: "notion", sourceScope: scope, path: join(root, "metadata/SKILL.md"),
     aliases: [], normalizedAliases: [], normalizedName: "owner", normalizedDescription: content.description, autoloadEnabled: false, defaultDiscovery: false };
@@ -38,9 +39,9 @@ async function fixture(protectMain = true, withSessionBinding = false, currentIn
     { path: "references/guide.md", file_id: "guide", data: text },
     { path: "references/empty.md", file_id: "empty", data: "" },
     { path: "assets/image.png", file_id: "image", data: binary },
-  ].map(file => ({ ...file, ref: ref(file.path, file.file_id), output: join(entryRoot, file.path), bytes: Buffer.byteLength(file.data), sha256: hash(file.data) }));
+  ].map(file => ({ ...file, ref: ref(file.path), output: join(entryRoot, file.path), bytes: Buffer.byteLength(file.data), sha256: hash(file.data) }));
   for (const file of files) await writeFile(file.output, file.data);
-  const ownerBinding = { record: content, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash(body), ref: ref("SKILL.md", "main") };
+  const ownerBinding = { record: content, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash(body), ref: ref("SKILL.md") };
   const manifestFiles = [{ path: "SKILL.md", bytes: Buffer.byteLength(body), sha256: hash(body), ref: ownerBinding.ref }, ...files];
   const selected: SkillRecord = { ...metadata, body, path: join(entryRoot, "SKILL.md"), snapshotId: snapshot, versionId: version, preparationBinding: ownerBinding,
     preparationDirectory: { files: manifestFiles, required: [], candidates: [], references: [] },
@@ -98,9 +99,9 @@ async function fixture(protectMain = true, withSessionBinding = false, currentIn
       state.calls.push(requested_ref); state.signal = signal; await state.wait?.();
       if (state.resourceFailure) throw state.resourceFailure;
       const parsed = parseNativeReference(requested_ref);
-      if (state.unsupported || parsed.fileId === "main" || parsed.fileId === undefined && parsed.path === "SKILL.md") return undefined;
-      const file = files.find(file => parsed.fileId === undefined ? file.path === parsed.path : file.file_id === parsed.fileId);
-      if (!file) throw new Error("Unexpected fixture resource");
+      if (state.unsupported || parsed.path === "SKILL.md") return undefined;
+      const file = files.find(file => file.path === parsed.path);
+      if (!file) throw new SourceError("FILE_NOT_FOUND", "notion");
       return state.transform({ selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding, entrypoint: content.entrypoint,
         file: { requested_ref, ref: file.ref, path: file.path, file_id: file.file_id, bytes: file.bytes, sha256: file.sha256, output: file.output } });
     },
@@ -110,7 +111,7 @@ async function fixture(protectMain = true, withSessionBinding = false, currentIn
       return { selection: { scope, owner: id, snapshot_id: snapshot, version_id: version }, ownerBinding,
         manifest: {}, manifest_sha256: hash("controlled resource manifest"), budget: DEFAULT_RESOURCE_READ_BUDGET, machine: {}, effects: noConsumptionWrites(),
         files: refs.map(requested_ref => {
-          const parsed = parseNativeReference(requested_ref), file = files.find(file => parsed.fileId ? parsed.fileId === file.file_id : parsed.path === file.path);
+          const parsed = parseNativeReference(requested_ref), file = files.find(file => parsed.path === file.path);
           if (!file) throw new Error("Unexpected fixture resource");
           const identity = { requested_ref, ref: file.ref, path: file.path, file_id: file.file_id, bytes: file.bytes, sha256: file.sha256 };
           return typeof file.data === "string" ? { ...identity, encoding: "utf8" as const, content: file.data }
@@ -312,27 +313,25 @@ test("native partial text, empty files and images retain their content and truth
   expect(f.state.mainReads + f.state.graphReads).toBe(0);
 });
 
-test("stable resource File IDs resolve old hints while main hints and main aliases retain preparation", async () => {
+test("resources require exact fixed paths and the manifest main retains preparation", async () => {
   const f = await fixture();
-  for (const path of [f.ref("old.md", "guide"), f.ref("references/guide.md")]) {
-    const result = await f.read({ path });
-    expect(result.content).toEqual([{ type: "text", text: f.text }]);
-    expect(result.details).toHaveProperty("contextBrokerReadDisplay.files", [{ ref: path, path: "references/guide.md" }]);
-    expect(f.state.nativeInputs.at(-1)?.path).toBe(f.files[0]!.output);
-  }
+  await expect(f.read({ path: f.ref("old.md") })).rejects.toThrow("FILE_NOT_FOUND");
+  await expect(f.read({ path: f.ref("old.md") + "&file_id=guide" })).rejects.toThrow("SOURCE_REFERENCE_INVALID");
+  expect(f.state.nativeInputs).toHaveLength(0);
+  const path = f.ref("references/guide.md"), result = await f.read({ path });
+  expect(result.content).toEqual([{ type: "text", text: f.text }]);
+  expect(result.details).toHaveProperty("contextBrokerReadDisplay.files", [{ ref: path, path: "references/guide.md" }]);
+  expect(f.state.nativeInputs.at(-1)?.path).toBe(f.files[0]!.output);
   expect(f.state.mainReads + f.state.graphReads).toBe(0);
-  const resource = await fixture(false);
-  expect((await resource.read({ path: resource.ref("SKILL.md", "guide") })).content).toEqual([{ type: "text", text: resource.text }]);
-  expect(resource.state.calls).toHaveLength(0); expect(resource.state.mainReads).toBe(1); expect(resource.state.resourceReads).toBe(1);
-  const main = await fixture(false), input = { path: main.ref("old-resource.md", "main") };
-  const result = await main.read(input), delivered = await main.finish("scalar-call", input, result);
-  expect(main.state.calls).toHaveLength(1); expect(main.state.mainReads).toBe(1); expect(result.content).toEqual([{ type: "text", text: main.body }]);
+  const main = await fixture(false), input = { path: main.ref("SKILL.md") };
+  const mainResult = await main.read(input), delivered = await main.finish("scalar-call", input, mainResult);
+  expect(main.state.calls).toHaveLength(0); expect(main.state.mainReads).toBe(1); expect(mainResult.content).toEqual([{ type: "text", text: main.body }]);
   expect(delivered.details).toHaveProperty("contextBrokerRead"); expect(delivered.details).not.toHaveProperty("contextBrokerResource");
   main.metadata.name = "Renamed catalog owner"; main.selected.name = "Renamed selected owner";
   expect(JSON.parse(JSON.stringify(delivered)).details).toHaveProperty("contextBrokerReadDisplay", {
     version: 1, source: "notion", kind: "skill", name: "Owner", sourceId: "notion", scope: main.metadata.sourceScope, ref: input.path,
   });
-  expect(main.state.calls).toHaveLength(1); expect(main.state.mainReads).toBe(1); expect(main.state.graphReads).toBe(0);
+  expect(main.state.calls).toHaveLength(0); expect(main.state.mainReads).toBe(1); expect(main.state.graphReads).toBe(0);
 });
 
 test("short scalar resources retain independent owner and file commitments without new branch bindings", async () => {
@@ -361,7 +360,7 @@ test("foreign scalar selections fail before native read and never trigger prepar
     value => ({ ...value, selection: { ...value.selection, owner: "foreign" } }),
     value => ({ ...value, selection: { ...value.selection, snapshot_id: "s_" + hash("foreign") } }),
     value => ({ ...value, file: { ...value.file, requested_ref: f.ref("other.md") } }),
-    value => ({ ...value, file: { ...value.file, ref: f.ref("references/guide.md", "other") } }),
+    value => ({ ...value, file: { ...value.file, ref: f.ref("references/another.md") } }),
     value => ({ ...value, file: { ...value.file, output: "relative.md" } }),
   ];
   for (const transform of mutations) {
@@ -386,7 +385,7 @@ test("canonical resources retain prepared and loaded owner and file commitments 
       await f.host.activate(f.metadata, f.ctx); expect(f.state.mainReads).toBe(1);
       f.state.mainReads = 0; f.state.loaded = true;
     }
-    const input = { path: f.ref("old-guide.md", "guide") };
+    const input = { path: f.ref("references/guide.md") };
     expect((await f.read(input)).content).toEqual([{ type: "text", text: f.text }]);
     const mutations: Array<(value: FixedResourceRead) => FixedResourceRead> = [
       value => ({ ...value, ownerBinding: { ...value.ownerBinding, body_sha256: hash("same pin, different owner") } }),
@@ -456,12 +455,12 @@ test("fixed scalar reads preserve source blocking and selected session snapshot 
 });
 
 test("unfixed, selected, candidate and ordinary paths retain their existing routes", async () => {
-  for (const kind of ["unfixed", "selected", "candidate", "main", "main-file-id", "ordinary"] as const) {
+  for (const kind of ["unfixed", "selected", "candidate", "main", "ordinary"] as const) {
     const f = await fixture(false);
-    const path = kind === "unfixed" ? f.files[0]!.ref.split("?")[0]!
+    const path = kind === "unfixed" ? nativeFileRef(f.metadata.id!, f.files[0]!.path)
       : kind === "selected" ? f.short.selected(f.ctx, f.selected)
       : kind === "candidate" ? f.short.candidate(f.ctx, f.metadata)
-      : kind === "main" ? f.ref("SKILL.md") : kind === "main-file-id" ? f.ref("SKILL.md", "main") : f.files[0]!.output;
+      : kind === "main" ? f.ref("SKILL.md") : f.files[0]!.output;
     await f.read({ path });
     expect(f.state.calls).toHaveLength(0); expect(f.state.mainReads).toBe(kind === "ordinary" ? 0 : 1);
   }

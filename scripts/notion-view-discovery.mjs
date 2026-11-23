@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { database, firstViewId, unflaggedCanary, missingCanary, missingPageId } from './notion-integration-fixture.mjs';
@@ -63,9 +64,9 @@ export function verifyPartialViewCoverage({ host, context, response, entries, fi
   assert.equal(record.name, fixture.name); assert.equal(record.alias, fixture.alias);
   assert.equal(record.locator.type, 'shared_skill');
   assert.equal(record.enabled, true);
-  assert.equal(record.id, 'shared_skill:' + record.locator.library_id + ':' + record.locator.skill_id);
-  const owner = 'skill://' + encodeURIComponent(record.id);
-  assert.equal(record.ref, owner + '/' + record.entrypoint);
+  assert.equal(record.id, nativeSkillId(record.locator.library_id, record.locator.skill_id));
+  const owner = record.id;
+  assert.equal(record.ref, nativeFileRef(owner, record.entrypoint));
   const views = [...directory.matchAll(/<view\b([^>]*)>/gu)];
   assert.equal(views.length, 1);
   const attributes = Object.fromEntries([...views[0][1].matchAll(/([a-z_]+)="([^"]*)"/gu)].map(match => [match[1], decodeCatalogText(match[2])]));

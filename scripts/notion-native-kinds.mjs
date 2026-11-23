@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
+import { parseNativeReference, hasExactNativeOwner, nativeFileRef, withNativeSnapshot } from '../packages/context-broker/src/native-reference.ts';
 
 const kinds = ['skill', 'prompt', 'router'];
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -22,8 +23,8 @@ export function validateNativeKindsConfig(input) {
   assert.deepEqual(Object.keys(input.refs ?? {}).sort(), [...kinds].sort(), 'Select one existing Skill, Prompt and Router');
   for (const kind of kinds) {
     const ref = input.refs[kind];
-    const match = typeof ref === 'string' && /^skill:\/\/([^/?#]+)\/(SKILL|PROMPT|ROUTER)\.md$/.exec(ref);
-    assert.ok(match && match[2].toLowerCase() === kind && decodeURIComponent(match[1]).startsWith('shared_skill:'), 'Each selection must be an exact unpinned shared public entry ref of the declared kind');
+    const parsed = parseNativeReference(ref);
+    assert.ok(hasExactNativeOwner(parsed) && parsed.path === kind.toUpperCase() + '.md' && parsed.snapshot === undefined, 'Each selection must be an exact unpinned public entry ref of the declared kind');
   }
   assert.equal(new Set(Object.values(input.refs)).size, 3, 'The three kinds must be distinct objects');
   return input;
@@ -62,7 +63,7 @@ export async function prepareNativeKinds({ config, database, evidence, invoke })
     assert.equal(record.kind, kind);
     assert.equal(record.enabled, true);
     assert.equal(record.locator?.type, 'shared_skill');
-    assert.equal(record.ref, `skill://${encodeURIComponent(record.id)}/${record.entrypoint}`);
+    assert.equal(record.ref, nativeFileRef(record.id, record.entrypoint));
     assert.equal(record.entrypoint, kind.toUpperCase() + '.md');
     assert.match(record.locator.page_id ?? '', /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/);
     const folder = join(evidence, 'native-kinds-oracles', kind);
@@ -73,7 +74,7 @@ export async function prepareNativeKinds({ config, database, evidence, invoke })
     assert.equal(read.scope, listed.scope);
     assert.match(read.snapshot_id ?? '', /^s_[a-f0-9]{64}$/);
     assert.match(read.version_id ?? '', /^[a-f0-9]{64}$/);
-    assert.equal(read.ref, `${record.ref}?snapshot=${read.snapshot_id}`);
+    assert.equal(read.ref, withNativeSnapshot(record.ref, read.snapshot_id));
     assert.equal(read.path, record.entrypoint);
     assert.equal(read.entrypoint, record.entrypoint);
     assert.ok(typeof read.content === 'string' && read.content.trim(), 'The configured native body must be nonempty');

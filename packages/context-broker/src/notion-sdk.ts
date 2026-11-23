@@ -38,6 +38,7 @@ type Options = {
 };
 type RuntimeOptions = Omit<Options, "sourceId"> & { metrics?: boolean; onRequestMetrics?: (snapshot: unknown) => void };
 type Sdk = {
+  SKILL_REF_VERSION: 2;
   SDK_VERSION: 2;
   CONSUMER_CONTRACT_VERSION: 1;
   PACKAGE_VERSION: string;
@@ -77,7 +78,7 @@ function observationErrorCode(error: unknown): string | null {
   return object(error) && typeof error.code === "string" && /^[A-Z][A-Z0-9_]{0,127}$/.test(error.code) ? error.code : null;
 }
 function compatible(value: unknown): value is Sdk {
-  return object(value) && value.SDK_VERSION === 2 && value.CONSUMER_CONTRACT_VERSION === 1
+  return object(value) && value.SKILL_REF_VERSION === 2 && value.SDK_VERSION === 2 && value.CONSUMER_CONTRACT_VERSION === 1
     && typeof value.PACKAGE_VERSION === "string" && value.PACKAGE_VERSION.length > 0
     && typeof value.consume === "function" && typeof value.decodeConsumeResult === "function" && typeof value.readSkill === "function" && typeof value.parseDuration === "function";
 }
@@ -93,7 +94,7 @@ async function loadBundledSdk(): Promise<Sdk> {
     let manifest: unknown;
     try { manifest = JSON.parse(await readFile(new URL("./ntn-skills-runtime.json", location), "utf8")); }
     catch { throw new NotionSdkError("SOURCE_SDK_UNAVAILABLE"); }
-    if (!object(manifest) || manifest.version !== 1 || manifest.package !== "ntn-skills" || manifest.package_version !== sdk.PACKAGE_VERSION
+    if (!object(manifest) || manifest.version !== 1 || manifest.skill_ref_version !== 2 || manifest.package !== "ntn-skills" || manifest.package_version !== sdk.PACKAGE_VERSION
       || manifest.sdk_version !== sdk.SDK_VERSION || manifest.consumer_contract_version !== sdk.CONSUMER_CONTRACT_VERSION) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     resourceContractVersion = manifest.resource_read_contract_version;
     readOutputProofVersion = manifest.read_output_proof_version;

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { parseNativeReference, hasExactNativeOwner } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -143,9 +144,8 @@ async function configuration(path) {
   assert.ok(Object.keys(value).every(key => ['command', 'database', 'root', 'evidenceRoot', 'resourcePath', 'timeoutMs', 'samples', 'pipeline'].includes(key)), 'Unknown config field');
   assert.ok(Array.isArray(value.command) && value.command.length > 0 && isAbsolute(value.command[0]) && value.command.every(arg => typeof arg === 'string' && arg.length > 0 && !arg.includes('\0')), 'command must be absolute executable argv');
   assert.match(value.database, /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i);
-  const root = new URL(value.root);
-  assert.equal(root.protocol, 'skill:');
-  assert.ok(decodeURIComponent(root.hostname).startsWith('shared_skill:') && root.pathname.length > 1 && !root.search && !root.hash, 'root must be an unfixed exact shared main ref');
+  const root = parseNativeReference(value.root);
+  assert.ok(hasExactNativeOwner(root) && root.path && root.snapshot === undefined, 'root must be an unfixed exact main ref');
   assert.ok(isAbsolute(value.evidenceRoot), 'evidenceRoot must be absolute');
   if (value.resourcePath !== undefined) assert.ok(typeof value.resourcePath === 'string' && value.resourcePath && !isAbsolute(value.resourcePath) && !value.resourcePath.split('/').includes('..') && !/[\\\0?#]/u.test(value.resourcePath), 'resourcePath must be a relative path');
   const samples = value.samples ?? defaults;
@@ -163,7 +163,7 @@ function pipelineMode(config) {
   const mode = config.pipeline ?? 'prepare-fixed-main';
   assert.ok(['prepare-fixed-main', 'resource-only', 'inspect-current'].includes(mode), 'Unknown source pipeline');
   if (mode === 'resource-only') {
-    assert.ok(config.resourcePath && config.resourcePath !== decodeURIComponent(new URL(config.root).pathname.slice(1)), 'Select a resource distinct from the main file');
+    assert.ok(config.resourcePath && config.resourcePath !== parseNativeReference(config.root).path, 'Select a resource distinct from the main file');
     assert.ok(config.samples.cold > 0 && ['warm', 'expired-unchanged', 'partial'].every(group => config.samples[group] === 0), 'resource-only currently measures independent cold samples');
   }
   if (mode === 'inspect-current') {
@@ -280,14 +280,14 @@ function validateRead(value, node) {
  * Missing other objects remain observations, never evidence that they were delivered. */
 async function observeResource(plan, item, value, state) {
   assert.equal(value?.ok, true); assert.equal(value.has_more, false); assert.equal(typeof value.content, 'string');
-  const requested = new URL(plan.config.root), returned = new URL(value.ref);
-  assert.equal(value.record.id, decodeURIComponent(requested.hostname));
+  const requested = parseNativeReference(plan.config.root), returned = parseNativeReference(value.ref);
+  assert.equal(value.record.id, requested.selector);
   assert.equal(value.record.locator.database_id, plan.config.database);
-  assert.equal(value.entrypoint, decodeURIComponent(requested.pathname.slice(1)));
+  assert.equal(value.entrypoint, requested.path);
   assert.equal(value.path, plan.config.resourcePath);
-  assert.equal(decodeURIComponent(returned.hostname), value.record.id);
-  assert.equal(returned.protocol, 'skill:'); assert.equal(decodeURIComponent(returned.pathname.slice(1)), value.path);
-  assert.match(value.snapshot_id, /^s_[a-f0-9]{64}$/); assert.equal(returned.searchParams.get('snapshot'), value.snapshot_id);
+  assert.equal(returned.selector, value.record.id);
+  assert.equal(returned.path, value.path);
+  assert.match(value.snapshot_id, /^s_[a-f0-9]{64}$/); assert.equal(returned.snapshot, value.snapshot_id);
   const lines = value.content.split('\n').length;
   assert.deepEqual(value.range, { start: 1, end: lines, total_lines: lines });
   assert.equal(await realpath(state), state);
@@ -405,9 +405,9 @@ export async function executePlan(plan) {
     if (graph?.ok === true && graph.status === 'ready') try {
       identity = sourceIdentity(graph); nodes = graph.nodes.filter(node => node.state === 'prepared');
       assert.equal(graph.roots.length, 1); assert.equal(graph.roots[0].target, target);
-      const requestedRoot = new URL(plan.config.root), selectedRoot = nodes.find(node => node.id === graph.roots[0].id);
-      assert.equal(selectedRoot?.record?.id, decodeURIComponent(requestedRoot.hostname));
-      assert.equal(selectedRoot?.path, decodeURIComponent(requestedRoot.pathname.slice(1)));
+      const requestedRoot = parseNativeReference(plan.config.root), selectedRoot = nodes.find(node => node.id === graph.roots[0].id);
+      assert.equal(selectedRoot?.record?.id, requestedRoot.selector);
+      assert.equal(selectedRoot?.path, requestedRoot.path);
       assert.equal(selectedRoot?.record?.locator?.database_id, plan.config.database);
       if (inspectOnly) {
         assert.equal(graph.purpose, 'inspect'); assert.equal(graph.graph_lock.purpose, 'inspect');

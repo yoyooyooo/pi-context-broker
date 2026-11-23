@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, setSystemTime, test } from "bun:test";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -10,9 +11,9 @@ import type { SkillRecord } from "../src/types";
 
 type Session = Awaited<ReturnType<typeof activeNotionSession>>;
 function addShopping(h: Session) {
-  const id = "shared_skill:current-source:shopping";
+  const id = "skill://shopping?library=current-source";
   const record = { ...h.f.record, id, name: "shopping", alias: "shopping", description: "Shopping draft",
-    ref: "skill://" + encodeURIComponent(id) + "/SKILL.md", enabled: true, default_context: false,
+    ref: nativeFileRef(id, "SKILL.md"), enabled: true, default_context: false,
     locator: { ...h.f.record.locator, skill_id: "shopping", page_id: "00000000-0000-4000-8000-000000000099" } };
   h.f.state.catalog = { ...h.f.state.catalog, count: h.f.state.catalog.count + 1, records: [...h.f.state.catalog.records, record] };
   return record;
@@ -378,12 +379,12 @@ test("the canonical fixed main emitted by working_set supports inspect and adopt
     const old = await h.seed(), root = old.records.find(record => record.name === "root")!;
     const shown = await h.tool("notion_ctl").execute("show", { working_set: "show" }, undefined, undefined, h.ctx);
     const fixed = JSON.parse(sourceMessageText(shown.content)).roots[0];
-    expect(fixed).toBe(root.preparationBinding!.ref); expect(fixed).toContain("&file_id=main-root");
+    expect(fixed).toBe(root.preparationBinding!.ref); expect(fixed).not.toContain("file_id=");
     h.revise("root", "Current canonical-root comparison B.\n");
-    for (const forged of [fixed.replace("file_id=main-root", "file_id=other"), fixed.replace("/SKILL.md?", "/references/guide.md?")]) {
+    for (const [forged, code] of [[fixed + "&file_id=other", "SOURCE_REFERENCE_INVALID"], [fixed.replace("/SKILL.md?", "/references/guide.md?"), "PREPARE_ROOT_NOT_MAIN"]]) {
       const count = h.f.calls.filter(call => call.operation === "consume").length;
-      await expect(h.read(forged, true)).rejects.toThrow("PREPARE_ROOT_NOT_MAIN");
-      await expect(h.tool("notion_use").execute("forged", { ref: forged, refresh: true }, undefined, undefined, h.ctx)).rejects.toThrow("PREPARE_ROOT_NOT_MAIN");
+      await expect(h.read(forged!, true)).rejects.toThrow(code!);
+      await expect(h.tool("notion_use").execute("forged", { ref: forged, refresh: true }, undefined, undefined, h.ctx)).rejects.toMatchObject({ code });
       expect(h.f.calls.filter(call => call.operation === "consume")).toHaveLength(count);
       expect(h.selected().scopes.get(root.sourceScope!)?.bindings.get(root.id!)?.snapshot_id).toBe(root.snapshotId);
     }
@@ -622,7 +623,7 @@ test("a Required omitted from fresh metadata is rejected by role before its miss
     expect(h.f.calls.length).toBe(calls);
     expect(h.selected()).toEqual(before); expect(h.active()).toEqual(active);
     const missing = await h.tool("notion_use").execute("ordinary-absent-reference", {
-      ref: "skill://shared_skill%3Acurrent-source%3Aabsent/SKILL.md",
+      ref: "skill://absent/SKILL.md?library=current-source",
     }, undefined, undefined, h.ctx).catch(error => error);
     expect(missing.code).toBe("SOURCE_REFERENCE_MISSING");
     expect(missing.message).not.toContain("Enabled=false");
@@ -773,9 +774,9 @@ test("current and forged owner snapshot or File references gain no historical re
     const rejected = [
       required.ref!,
       exact.replace(required.snapshotId!, "s_" + "d".repeat(64)),
-      exact.replace("file_id=main-required", "file_id=another-file"),
-      exact.replace(encodeURIComponent(required.id!), encodeURIComponent("shared_skill:current-source:another-owner")),
-      exact.replace(encodeURIComponent(required.id!), "required"),
+      exact + "&file_id=another-file",
+      nativeFileRef(nativeSkillId("current-source", "another-owner"), required.entrypoint!, required.snapshotId),
+      nativeFileRef(nativeSkillId("foreign-library", "required"), required.entrypoint!, required.snapshotId),
     ];
     const before = h.f.calls.filter(call => call.operation === "consume").length;
     for (const ref of rejected) {
@@ -866,24 +867,24 @@ test("a fresh reference lookup cannot hide changed scope behind an unexpired ear
 });
 
 
-for (const denial of ["physical", "stable"] as const) test("physical owner rebind preserves the exact " + denial + " denial boundary for old active content", async () => {
+for (const denial of ["physical", "physical-details", "stable"] as const) test("physical owner rebind preserves the exact " + denial + " denial boundary for old active content", async () => {
   const h = await activeNotionSession();
   try {
     const old = await h.seed(["root", "independent"]), root = old.records.find(record => record.name === "root")!;
     const independent = old.records.find(record => record.name === "independent")!, ref = h.fixedRef(root);
     if (root.locator?.type !== "shared_skill") throw new Error("Expected physical shared owner");
-    const id = "shared_skill:current-source:rebound", current = { ...root.preparationBinding!.record, id, name: "rebound", alias: "rebound",
-      ref: "skill://" + encodeURIComponent(id) + "/SKILL.md", locator: { ...root.locator, skill_id: "rebound" } };
+    const id = "skill://rebound?library=current-source", current = { ...root.preparationBinding!.record, id, name: "rebound", alias: "rebound",
+      ref: nativeFileRef(id, "SKILL.md"), locator: { ...root.locator, skill_id: "rebound" } };
     h.f.state.catalog = { ...h.f.state.catalog, records: h.f.state.catalog.records.map(record => record.id === root.id ? current : record) };
     await h.command("context-broker").handler("refresh", h.ctx);
-    const target = { ...root, ...current, ref: denial === "physical" ? "skill://" + root.locator.page_id + "/SKILL.md" : current.ref };
-    h.f.state.consume = async () => h.failed("ACCESS_DENIED", target);
+    const target = { ...root, ...current, ref: denial === "physical" ? "https://www.notion.so/" + root.locator.page_id.replaceAll("-", "") : current.ref };
+    h.f.state.consume = async () => h.failed("ACCESS_DENIED", target, denial === "physical-details" ? { page_id: root.locator!.page_id } : {});
     await expect(h.read(current.ref, true)).rejects.toThrow("ACCESS_DENIED");
     h.f.state.consume = async input => h.ready(input);
     const fixed = await h.read(ref).then(value => ({ value }), error => ({ error }));
     const continued = await h.turn("Continue the previously confirmed task without changing its selection.", old.records);
     const text = payloadText(continued);
-    if (denial === "physical") {
+    if (denial !== "stable") {
       expect(fixed).toMatchObject({ error: { message: expect.stringContaining("ACCESS_DENIED") } });
       expect(text).not.toContain(root.body!.trim());
     } else {

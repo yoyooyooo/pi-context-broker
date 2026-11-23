@@ -14,8 +14,8 @@ const uuid = (n: number) => "00000000-0000-4000-8000-" + n.toString().padStart(1
 const database = uuid(10), dataSource = uuid(11), page = uuid(1), scope = "a".repeat(64);
 const exists = (path: string) => stat(path).then(() => true, () => false);
 function sharedRecord(): ContentRecord {
-  return { id: "shared_skill:current-source:entry", kind: "skill", name: "entry", alias: "entry", description: "Current shared item", default_context: false, enabled: true,
-    entrypoint: "SKILL.md", ref: "skill://shared_skill%3Acurrent-source%3Aentry/SKILL.md",
+  return { id: "skill://entry?library=current-source", kind: "skill", name: "entry", alias: "entry", description: "Current shared item", default_context: false, enabled: true,
+    entrypoint: "SKILL.md", ref: "skill://entry/SKILL.md?library=current-source",
     locator: { type: "shared_skill", library_id: "current-source", skill_id: "entry", page_id: page, database_id: database, data_source_id: dataSource } };
 }
 function hostRecord(): SkillRecord {
@@ -93,7 +93,7 @@ test("disabled records are hidden while duplicate logical or physical identities
   const f = await currentNotionFixture();
   f.state.catalog.records = [{ ...f.record, enabled: false }];
   expect(await f.boundary.discoverNotionSource(f.source, f.root)).toHaveLength(0);
-  for (const second of [f.record, { ...f.record, id: "shared_skill:current-source:other", ref: "skill://shared_skill%3Acurrent-source%3Aother/SKILL.md",
+  for (const second of [f.record, { ...f.record, id: "skill://other?library=current-source", ref: "skill://other/SKILL.md?library=current-source",
     locator: { ...f.record.locator, skill_id: "other" } }]) {
     f.state.catalog = { ...f.state.catalog, records: [f.record, second], count: 2 };
     await expect(f.boundary.discoverNotionSource(f.source, f.root)).rejects.toMatchObject({ code: "SOURCE_RESPONSE_INVALID" });
@@ -125,7 +125,7 @@ test("a partial SDK catalog retains exact returned records without claiming alia
   expect(f.calls.every(call => call.operation === "list")).toBe(true);
 });
 
-test("current names reuse complete catalog metadata and fixed names use one files operation", async () => {
+test("contextual stable IDs bind to an explicit source and fixed IDs use one files operation", async () => {
   const f = await currentNotionFixture();
   const current = await f.boundary.resolveNotionReference("skill://entry/SKILL.md", [f.source], f.root);
   expect(current.record.id).toBe(f.record.id); expect(current.ref).toBe(f.record.ref);
@@ -149,7 +149,7 @@ test("a fixed alias cannot silently switch owners and source errors preserve the
 });
 
 test("shared identity encoding and exact selectors preserve the logical and physical owner", () => {
-  expect(sharedSkillId("lib:team", "skill:one")).toBe("shared_skill:lib%3Ateam:skill%3Aone");
+  expect(sharedSkillId("lib:team", "skill-one")).toBe("skill://skill-one?library=lib%3Ateam");
   expect(sharedSkillId("../unsafe", "skill")).toBeUndefined();
   const record = hostRecord(), precise = preciseRecordToken(record);
   expect(precise).toContain(page.replaceAll("-", "")); expect(matchesPreciseRecordToken(precise, record)).toBe(true);

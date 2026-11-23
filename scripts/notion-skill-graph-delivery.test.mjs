@@ -7,6 +7,7 @@ import { isAbsolute, join } from 'node:path';
 import { setTimeout as pause } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { skillIdentity, skillFileRef, pinSkillRef } from './skill-ref-fixture.mjs';
 import { verifySessionReceipts, nextGraphTool } from './notion-skill-graph.mjs';
 import { deliveryEvidence, nextSessionTool, unchangedSelection, fixedMainFailureTarget, failedSourceEvidence, sourceLedgerEvidence } from './notion-skill-graph-session.mjs';
 import { systemTempRoot } from './verification-paths.mjs';
@@ -74,7 +75,7 @@ test('failed refresh must keep the exact prior scope, graph lock, pin and delive
 });
 
 function failedSource({ fixed = false } = {}) {
-  const ref = fixed ? 'skill://selected/SKILL.md?snapshot=s_' + hash('old A') + '&file_id=main-a' : 'skill://selected/SKILL.md';
+  const ref = skillFileRef(skillIdentity('library', 'selected'), 'SKILL.md', fixed ? 's_' + hash('old A') : undefined);
   const code = fixed ? 'SNAPSHOT_MISSING' : 'CATALOG_INCOMPLETE', dataSource = { id: 'controlled-skills', database: 'controlled-database' };
   return {
     expected: { commands: [fixed ? 'files' : 'prepare'], ref, code, ...(fixed ? {} : { dataSource }) },
@@ -160,7 +161,7 @@ test('fixed failure permits the original fixed target and only the existing meta
 
 function fixedMainFixture() {
   const value = fixture(), node = value.nodes[0], binding = node.binding;
-  const target = binding.record.ref + '?snapshot=' + binding.snapshot_id;
+  const target = pinSkillRef(binding.record.ref, binding.snapshot_id);
   const selection = { status: 'passed', delivery: deliveryEvidence([value.message], value.nodes, 'stage'), selectedGraph: { kind: 'selected_graph', scopes: value.nodes.map((item, index) => ({
     scope: item.scope, nodes: [{ binding: item.binding, selected: true, loaded: true }], graph_locks: [value.message.details.contextBrokerPreparation.graphs[index].graph_lock],
   })) } };
@@ -302,7 +303,7 @@ test('installed refresh fault intercepts required metadata, preserves unrelated 
     const state = join(directory, 'source-state.json'), ledger = join(directory, 'processes.jsonl'); await writeFile(ledger, '');
     await writeFile(state, JSON.stringify({ cli, cliSha256: hash(await readFile(cli)), cwd: directory, responses, ledger,
       env: isolatedEnv({ base: join(directory, 'consumer'), agentDir: join(directory, 'consumer-agent'), NOTION_API_TOKEN: token, NOTION_API_BASE_URL: info.origin, NODE_EXTRA_CA_CERTS: info.cert, NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000' }) }));
-    const ref = 'skill://' + encodeURIComponent(info.logical_ids.root) + '/SKILL.md';
+    const ref = skillFileRef(info.logical_ids.root, 'SKILL.md');
     const result = spawnSync(process.execPath, [fileURLToPath(new URL('./notion-skill-graph-session.mjs', import.meta.url)), '--source', state, 'prepare', ref, '--purpose', 'use', '--database', info.database, '--refresh'], { encoding: 'utf8', timeout: 125000 });
     await writeFile(join(directory, 'prepare.stdout.json'), result.stdout); await writeFile(join(directory, 'prepare.stderr.log'), result.stderr);
     const observed = (await readFile(info.ledger, 'utf8')).split('\n').filter(Boolean).map(JSON.parse), faults = observed.filter(row => row.fault);
@@ -390,13 +391,13 @@ function rendered(message) {
 
 function fixture({ version = 2, sameIdentityAcrossScopes = false } = {}) {
   const nodes = [0, 1].map(index => {
-    const scope = (index ? 'b' : 'a').repeat(64), id = 'shared_skill:' + (sameIdentityAcrossScopes ? 'same' : index);
+    const scope = (index ? 'b' : 'a').repeat(64), skillId = sameIdentityAcrossScopes ? 'same' : String(index), id = skillIdentity('library', skillId);
     const body = '\ufeff# Author 🧭\r\n<body>literal</body> "content" \\ ' + (sameIdentityAcrossScopes ? 'same' : index) + '\r\n';
     const snapshot = 's_' + hash(sameIdentityAcrossScopes ? 'same snapshot' : 'snapshot ' + index);
-    const ref = 'skill://' + encodeURIComponent(id) + '/SKILL.md?snapshot=' + snapshot + '&file_id=main-' + index;
+    const ref = skillFileRef(id, 'SKILL.md', snapshot);
     const record = { id, kind: 'skill', name: '原始内容 ' + index, alias: 'source-' + index, description: 'Source oracle', entrypoint: 'SKILL.md',
-      ref: 'skill://' + encodeURIComponent(id) + '/SKILL.md', default_context: false,
-      locator: { type: 'shared_skill', database_id: 'database', data_source_id: 'source', library_id: 'library', skill_id: id, page_id: 'page-' + index } };
+      ref: skillFileRef(id, 'SKILL.md'), default_context: false,
+      locator: { type: 'shared_skill', database_id: 'database', data_source_id: 'source', library_id: 'library', skill_id: skillId, page_id: 'page-' + index } };
     const binding = { record, scope, snapshot_id: snapshot, version_id: hash('version ' + index), body_sha256: hash(body), ref };
     return { id, scope, record, body, content: body, snapshot_id: snapshot, bytes: Buffer.byteLength(body), body_sha256: hash(body), binding,
       modelRef: 'sr:S' + (index ? 'c' : 'd').repeat(22), directory: { files: [{ path: 'SKILL.md', ref, bytes: Buffer.byteLength(body), sha256: hash(body) }], required: [], candidates: [], references: [] } };

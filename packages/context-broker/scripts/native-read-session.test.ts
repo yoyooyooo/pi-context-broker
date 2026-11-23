@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, realpath, writeFile } from "node:fs/promises";
@@ -15,7 +16,7 @@ import { noConsumptionWrites, unknownConsumptionEffects, type ConsumptionEffects
 import type { ReadDisplaySnapshot } from "../src/read-display";
 import type { AgentMessage, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "../src/types";
 const a = "s_" + "a".repeat(64), b = "s_" + "b".repeat(64);
-const record = { kind: "skill", sourceId: "notion", sourceScope: "scope", source: "notion", id: "record", name: "example", token: "notion/example", path: "/immutable/SKILL.md", metadataIndexPath: "/metadata/SKILL.md", description: "Example", aliases: [], normalizedName: "example", normalizedDescription: "example", normalizedAliases: [], autoloadEnabled: false, body: "---\nname: example\n---\nExact native instructions.\n", snapshotId: a, locator: { type: "shared_skill", library_id: "lib", skill_id: "skill", page_id: "p", database_id: "d", data_source_id: "ds" } } satisfies SkillRecord;
+const record = { kind: "skill", sourceId: "notion", sourceScope: "scope", source: "notion", id: "skill://skill?library=lib", name: "example", token: "notion/example", path: "/immutable/SKILL.md", metadataIndexPath: "/metadata/SKILL.md", description: "Example", aliases: [], normalizedName: "example", normalizedDescription: "example", normalizedAliases: [], autoloadEnabled: false, body: "---\nname: example\n---\nExact native instructions.\n", snapshotId: a, locator: { type: "shared_skill", library_id: "lib", skill_id: "skill", page_id: "p", database_id: "d", data_source_id: "ds" } } satisfies SkillRecord;
 const result = (): AgentMessage => ({ role: "toolResult", toolName: "read", toolCallId: "read-1", isError: false, content: [{ type: "text", text: record.body }], details: { contextBrokerRead: nativeReadReceipt(record, "read-1", record.body) } });
 
 test("a complete successful native read counts as loaded without injecting a second body", () => {
@@ -48,8 +49,8 @@ test("v3 native receipts prove only the exact full prefix and retain the appende
   expect(hasLoadedSkill([projected[1]!], record)).toBe(false);
   expect(projected.map(value => value.toolCallId)).toEqual(["prefix-read", "second-read"]);
   expect(JSON.stringify([message, duplicate])).toBe(stored);
-  const retiredBinding = { record: { ...record, alias: record.name, enabled: true, default_context: false, entrypoint: "SKILL.md", ref: "skill://record/SKILL.md" },
-    scope: "scope", snapshot_id: a, version_id: createHash("sha256").update(record.body).digest("hex"), body_sha256: createHash("sha256").update(record.body).digest("hex"), ref: "skill://record/SKILL.md?snapshot=" + a };
+  const retiredBinding = { record: { ...record, alias: record.name, enabled: true, default_context: false, entrypoint: "SKILL.md", ref: "skill://skill/SKILL.md?library=lib" },
+    scope: "scope", snapshot_id: a, version_id: createHash("sha256").update(record.body).digest("hex"), body_sha256: createHash("sha256").update(record.body).digest("hex"), ref: "skill://skill/SKILL.md?library=lib&snapshot=" + a };
   const retired = projectSelectedSourceMessages([message], { scopes: new Map([["scope", {
     scope: "scope", bindings: new Map(), retired: new Map([[record.id, retiredBinding]]), graphs: [], selectionId: "new",
   }]]) });
@@ -171,13 +172,13 @@ test("trusted native or dollar injection coalesces rereads, never user XML or fo
   expect(hasLoadedSkill([injected], { ...record, body: record.body + "changed" })).toBe(false);
 });
 
-function resourceResult(toolCallId: string, { scope = "scope", id = "shared_skill:lib:skill", snapshotId = a, fileId = "guide", body = "Exact supporting resource.\n" } = {}) {
+function resourceResult(toolCallId: string, { scope = "scope", id = "skill://skill?library=lib", snapshotId = a, fileId = "guide", body = "Exact supporting resource.\n" } = {}) {
   const path = "references/guide.md";
   return {
     role: "toolResult", toolName: "read", toolCallId, isError: false, content: [{ type: "text", text: body }],
     details: { contextBrokerResource: {
       version: 1, toolCallId, id, scope, snapshot_id: snapshotId, file_id: fileId, path,
-      ref: "skill://" + encodeURIComponent(id) + "/" + path + "?snapshot=" + snapshotId + "&file_id=" + encodeURIComponent(fileId),
+      ref: nativeFileRef(id, String(path), String(snapshotId)),
       bytes: Buffer.byteLength(body), sha256: createHash("sha256").update(body).digest("hex"),
       delivered_complete_text: true, loaded: false,
     } },
@@ -196,7 +197,7 @@ test("repeated complete resource reads retain one provider body and every stored
   expect(deduplicateSourceReads(projected)).toBe(projected);
   // Compaction can discard earlier copies; the remaining real read still owns its full body.
   expect(deduplicateSourceReads([messages[2]!])[0]).toBe(messages[2]);
-  const owner = { ...record, id: "shared_skill:lib:skill" };
+  const owner = { ...record, id: "skill://skill?library=lib" };
   for (const active of [messages, projected]) {
     expect(hasLoadedSkill(active, owner)).toBe(false);
     expect(sessionSourceSnapshot(active, owner)).toBeUndefined();
@@ -223,15 +224,15 @@ test("scalar resource confirmations never attest their own text and empty resour
 });
 
 test("resource deduplication preserves different scopes, owners, snapshots, File IDs and bodies", () => {
-  for (const identity of [{ scope: "other" }, { id: "shared_skill:lib:other" }, { snapshotId: b }, { fileId: "other" }, { body: "Changed resource.\n" }]) {
+  for (const identity of [{ scope: "other" }, { id: "skill://other?library=lib" }, { snapshotId: b }, { fileId: "other" }, { body: "Changed resource.\n" }]) {
     const messages = [resourceResult("first"), resourceResult("second", identity)];
     expect(deduplicateSourceReads(messages)).toBe(messages);
   }
 });
 
 test("batch resource receipts never load or rebind a main even when the resource contains identical instructions", () => {
-  const owner = { ...record, id: "shared_skill:lib:skill" }, body = record.body, path = "references/instructions.md";
-  const ref = "skill://" + encodeURIComponent(owner.id) + "/" + path + "?snapshot=" + a + "&file_id=instructions";
+  const owner = { ...record, id: "skill://skill?library=lib" }, body = record.body, path = "references/instructions.md";
+  const ref = nativeFileRef(owner.id, String(path), String(a));
   const batch = { selection: { scope: "scope", owner: owner.id, snapshot_id: a, version_id: "a".repeat(64) },
     files: [{ requested_ref: ref, ref, file_id: "instructions", path, bytes: Buffer.byteLength(body),
       sha256: createHash("sha256").update(body).digest("hex"), encoding: "utf8" as const, content: body }] };
@@ -253,8 +254,8 @@ test("incomplete or mismatched resource receipts never suppress a read", () => {
     { ...second, content: [...second.content, { type: "image", data: "AA==" }] },
     changedProof({ delivered_complete_text: false }), changedProof({ loaded: true }), changedProof({ version: 2 }),
     changedProof({ scope: "" }), changedProof({ bytes: proof.bytes + 1 }), changedProof({ sha256: "0".repeat(64) }),
-    changedProof({ ref: proof.ref.replace("lib%3Askill", "lib%3Aforeign") }),
-    changedProof({ ref: proof.ref.replace(a, b) }), changedProof({ ref: proof.ref.replace("file_id=guide", "file_id=foreign") }),
+    changedProof({ ref: proof.ref.replace("skill://skill/", "skill://foreign/") }),
+    changedProof({ ref: proof.ref.replace(a, b) }), changedProof({ ref: proof.ref + "&file_id=foreign" }),
     changedProof({ path: "references/other.md" }),
   ];
   for (const message of invalid) {
@@ -268,7 +269,7 @@ function pathResourceResult(toolCallId: string, identity: { scope?: string; id?:
   const result = resourceResult(toolCallId, identity), proof = result.details.contextBrokerResource;
   const path = identity.path ?? proof.path;
   return { ...result, details: { contextBrokerResource: { ...proof, file_id: undefined, path,
-    ref: "skill://" + encodeURIComponent(proof.id) + "/" + path + "?snapshot=" + proof.snapshot_id,
+    ref: nativeFileRef(proof.id, String(path), String(proof.snapshot_id)),
   } } };
 }
 
@@ -282,7 +283,7 @@ test("verified resources without File IDs deduplicate by exact owner, snapshot a
     expect(projected[1]?.details).toEqual({ contextBrokerResource: { ...messages[1]!.details.contextBrokerResource, delivered_complete_text: false } });
     expect(deduplicateSourceReads(projected)).toBe(projected);
     expect(deduplicateSourceReads([history[2]!])[0]).toBe(history[2]);
-    const owner = { ...record, id: "shared_skill:lib:skill" };
+    const owner = { ...record, id: "skill://skill?library=lib" };
     expect(hasLoadedSkill(projected, owner)).toBe(false);
     expect(sessionSourceSnapshot(projected, owner)).toBeUndefined();
     expect(sessionSourceBindings(projected, "scope")).toEqual([]);
@@ -291,7 +292,7 @@ test("verified resources without File IDs deduplicate by exact owner, snapshot a
 });
 
 test("path-only resource identity keeps scopes, owners, snapshots, paths, hashes and explicit File IDs separate", () => {
-  for (const identity of [{ scope: "other" }, { id: "shared_skill:lib:other" }, { snapshotId: b }, { path: "references/other.md" }, { body: "Changed resource.\n" }]) {
+  for (const identity of [{ scope: "other" }, { id: "skill://other?library=lib" }, { snapshotId: b }, { path: "references/other.md" }, { body: "Changed resource.\n" }]) {
     const messages = [pathResourceResult("first"), pathResourceResult("second", identity)];
     expect(deduplicateSourceReads(messages)).toBe(messages);
   }
@@ -308,9 +309,9 @@ test("path fallback rejects null, invalid and mismatched File IDs and incomplete
     ...[null, "", 0, false, [], {}].map(file_id => changed({ file_id })),
     changed({ file_id: "guide" }), changed({ ref: proof.ref + "&file_id=guide" }),
     changed({ file_id: null, ref: proof.ref + "&file_id=null" }),
-    changed({ path: "", ref: "skill://" + encodeURIComponent(proof.id) + "/?snapshot=" + proof.snapshot_id }),
+    changed({ path: "", ref: nativeFileRef(proof.id, "", String(proof.snapshot_id)) }),
     changed({ path: "references/other.md" }), changed({ ref: proof.ref.replace(a, b) }),
-    changed({ ref: proof.ref.replace("lib%3Askill", "lib%3Aforeign") }),
+    changed({ ref: proof.ref.replace("skill://skill/", "skill://foreign/") }),
     changed({ delivered_complete_text: false }), changed({ loaded: true }),
     changed({ bytes: proof.bytes + 1 }), changed({ sha256: "0".repeat(64) }),
     { ...second, content: "partial" }, { ...second, isError: true }, { ...second, toolCallId: "detached" },
@@ -346,12 +347,12 @@ test("real hook sequence marks only the completed entry result and reuses its ac
   expect(loads).toEqual([undefined, a, undefined]);
 });
 
-test("cold native refs select an outside-View owner and resolve stable File ID in the requested snapshot", async () => {
+test("cold native refs select an outside-View owner and require its exact fixed manifest path", async () => {
   const root = await mkdtemp(join(tmpdir(), "broker-exact-read-"));
   await mkdir(join(root, "moved"));
   await writeFile(join(root, "SKILL.md"), record.body);
   await writeFile(join(root, "moved/resource.md"), "RESOURCE");
-  const owner = { ...record, id: "shared_skill:lib:skill", ref: "skill://shared_skill%3Alib%3Askill/SKILL.md", path: join(root, "SKILL.md"), metadataIndexPath: undefined, defaultDiscovery: false, fileBindings: [
+  const owner: SkillRecord = { ...record, id: "skill://skill?library=lib", ref: "skill://skill/SKILL.md?library=lib", entrypoint: "SKILL.md", path: join(root, "SKILL.md"), metadataIndexPath: undefined, defaultDiscovery: false, fileBindings: [
     { file_id: "main", page_id: "p", path: "SKILL.md" },
     { file_id: "resource", page_id: "r", path: "moved/resource.md" },
   ] };
@@ -362,6 +363,7 @@ test("cold native refs select an outside-View owner and resolve stable File ID i
   await installHostSkills(api, {
     config: {}, getRecords: async () => ({ records: [{ ...owner, body: undefined }], failures: [] }),
     loadRecord: async (_record, _signal, pin) => { pins.push(pin); return owner; },
+    loadResource: async (_record, path) => join(root, path),
   }, createPiHostAdapter(api));
   async function read(path: string) {
     const input = { path };
@@ -369,23 +371,28 @@ test("cold native refs select an outside-View owner and resolve stable File ID i
     for (const listener of events.get("tool_call") ?? []) values.push(await listener({ toolName: "read", toolCallId: "exact", input } as never, ctx));
     return { input, values };
   }
-  const cold = await read("skill://shared_skill%3Alib%3Askill/old.md?snapshot=" + a + "&file_id=resource");
+  owner.entryManifest = { version: 1, root, receipt: "fixture", manifest_id: "fixture", manifest_complete: true, local_files_ready: true, materialized_paths: ["SKILL.md", "moved/resource.md"], files: [
+    { path: "SKILL.md", ref: nativeFileRef(owner.id, "SKILL.md", a), bytes: Buffer.byteLength(owner.body!), sha256: createHash("sha256").update(owner.body!).digest("hex") },
+    { path: "moved/resource.md", ref: nativeFileRef(owner.id, "moved/resource.md", a), bytes: 8, sha256: createHash("sha256").update("RESOURCE").digest("hex") }
+  ] };
+  const cold = await read(nativeFileRef(owner.id, "moved/resource.md", a));
   expect(cold.input.path).toBe(await realpath(join(root, "moved/resource.md")));
   expect(pins).toEqual([a]);
-  const missing = await read("skill://shared_skill%3Alib%3Askill/SKILL.md?snapshot=" + a + "&file_id=foreign");
-  expect(JSON.stringify(missing.values)).toContain("SHARED_FILE_BINDING_UNAVAILABLE");
-  const unknown = await read("skill://shared_skill%3Alib%3Askill/SKILL.md?scope=other");
+  const missing = await read(nativeFileRef(owner.id, "old.md", a));
+  expect(JSON.stringify(missing.values)).toContain("FILE_NOT_FOUND");
+  expect(JSON.stringify((await read(nativeFileRef(owner.id, "moved/resource.md", a) + "&file_id=resource")).values)).toContain("SOURCE_REFERENCE_INVALID");
+  const unknown = await read("skill://skill/SKILL.md?library=lib&scope=other");
   expect(JSON.stringify(unknown.values)).toContain("SOURCE_REFERENCE_INVALID");
   const oldAlias = await read("skill://same-name/SKILL.md");
   expect(JSON.stringify(oldAlias.values)).toContain("SOURCE_REFERENCE_MISSING");
-  expect(() => parseNativeReference(owner.ref + "?snapshot=" + a + "&snapshot=" + b)).toThrow();
+  expect(() => parseNativeReference(withNativeSnapshot(owner.ref, a + "&snapshot=" + b))).toThrow();
 });
 
 
 test("precise references bypass unrelated metadata failure without an Agent list step", async () => {
   const root = await mkdtemp(join(tmpdir(), "broker-exact-lookup-"));
   await writeFile(join(root, "SKILL.md"), record.body);
-  const owner = { ...record, id: "shared_skill:lib:skill", ref: "skill://shared_skill%3Alib%3Askill/SKILL.md", entrypoint: "SKILL.md", path: join(root, "SKILL.md"), metadataIndexPath: undefined, defaultDiscovery: false };
+  const owner = { ...record, id: "skill://skill?library=lib", ref: "skill://skill/SKILL.md?library=lib", entrypoint: "SKILL.md", path: join(root, "SKILL.md"), metadataIndexPath: undefined, defaultDiscovery: false };
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;
   const ctx: ExtensionContext = { cwd: root, hasUI: false, mode: "rpc" };
@@ -397,7 +404,7 @@ test("precise references bypass unrelated metadata failure without an Agent list
     lookupReference: async () => { lookups++; return { records: [{ ...owner, body: undefined }], failures: [{ sourceId: "other", namespace: "other", type: "notion", code: "NOTION_FORBIDDEN", message: "Unrelated source cannot be listed" }] }; },
     loadRecord: async (_record, _signal, pin) => { pins.push(pin); return owner; },
   }, createPiHostAdapter(api));
-  const input = { path: owner.ref + "?snapshot=" + a };
+  const input = { path: withNativeSnapshot(owner.ref, a) };
   const replies = [];
   for (const listener of events.get("tool_call") ?? []) replies.push(await listener({ toolName: "read", toolCallId: "exact-unrelated", input } as never, ctx));
   expect(replies.some(reply => reply && typeof reply === "object" && "block" in reply && reply.block)).toBe(false);
@@ -412,7 +419,7 @@ async function logicalReferenceFixture(options: { use?: boolean; shortRefs?: boo
   await mkdir(join(root, "references"));
   await writeFile(join(root, "references/guide.md"), "Fixed historical resource.");
   const owner: SkillRecord = { ...record, name: "URI Example", alias: "uri-example", normalizedName: "uri-example",
-    id: "shared_skill:lib:skill", ref: "skill://shared_skill%3Alib%3Askill/SKILL.md", entrypoint: "SKILL.md",
+    id: "skill://skill?library=lib", ref: "skill://skill/SKILL.md?library=lib", entrypoint: "SKILL.md",
     token: "notion/uri-example", path: join(root, "SKILL.md"), metadataIndexPath: undefined, defaultDiscovery: false,
     ...(options.shortRefs ? { sourceScope: "a".repeat(64), enabled: true, default_context: false,
       locator: { type: "shared_skill" as const, library_id: "lib", skill_id: "skill", page_id: "00000000-0000-4000-8000-000000000001",
@@ -427,14 +434,13 @@ async function logicalReferenceFixture(options: { use?: boolean; shortRefs?: boo
   const state = { calls: [] as string[], loads: [] as Array<string | undefined>, refreshes: [] as Array<boolean | undefined>, graphRoots: [] as Array<Array<string | undefined>>,
     resolve: async (value: string, _signal?: AbortSignal) => {
       const ref = parseNativeReference(value);
-      if (![owner.name, owner.alias].includes(ref.selector)) throw Object.assign(new Error("Not found"), { code: "SKILL_NOT_FOUND" });
-      return { record: { ...owner, body: undefined }, ref: "skill://shared_skill%3Alib%3Askill/" + (ref.path || owner.entrypoint)
-        + (ref.snapshot ? "?snapshot=" + ref.snapshot : "") };
+      if (ref.selector !== "skill://skill") throw Object.assign(new Error("Not found"), { code: "SKILL_NOT_FOUND" });
+      return { record: { ...owner, body: undefined }, ref: nativeFileRef(owner.id!, ref.path || owner.entrypoint!, ref.snapshot) };
     } };
   const host = await installHostSkills(api, {
     config: { sources: [{ type: "notion", id: "notion", prefetch: false }] },
     getRecords: async () => ({ records: [{ ...owner, body: undefined, snapshotId: undefined }], failures: [] }),
-    resolveNamedReference: async (value: string, _ctx: ExtensionContext, signal?: AbortSignal, refresh?: boolean) => {
+    resolveSkillReference: async (value: string, _ctx: ExtensionContext, signal?: AbortSignal, refresh?: boolean) => {
       state.calls.push(value); state.refreshes.push(refresh); return state.resolve(value, signal);
     },
     resolveCurrentRoot: async () => ({ record: { ...owner, body: undefined }, ref: owner.ref! }),
@@ -458,42 +464,42 @@ async function logicalReferenceFixture(options: { use?: boolean; shortRefs?: boo
     } };
 }
 
-test("SC25 use resolves names into exact canonical roots and applies refresh to name discovery", async () => {
+test("SC25 use binds stable IDs to the selected entry and applies explicit refresh", async () => {
   const f = await logicalReferenceFixture({ use: true });
   try {
-    const names = ["skill://URI%20Example/SKILL.md", "skill://uri-example/SKILL.md"];
+    const names = ["skill://skill", "skill://skill/SKILL.md"];
     await expect(f.use({ ref: names })).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
     expect(f.state.graphRoots).toEqual([[f.owner.ref, f.owner.ref]]); expect(f.state.calls).toEqual(names);
     await expect(f.use({ ref: names[0], refresh: true })).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
     expect(f.state.refreshes.at(-1)).toBe(true);
     const calls = f.state.calls.length;
-    await expect(f.use({ ref: "skill://URI%20Example/SKILL.md?snapshot=" + a, refresh: true })).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
+    await expect(f.use({ ref: "skill://skill/SKILL.md?snapshot=" + a, refresh: true })).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
     expect(f.state.calls).toHaveLength(calls + 1); expect(f.state.graphRoots).toHaveLength(3);
     await expect(f.use({ ref: f.owner.ref })).rejects.toMatchObject({ code: "CONTROLLED_PREPARATION" });
     expect(f.state.calls).toHaveLength(calls + 1);
   } finally { await f.emit("session_shutdown"); }
 });
 
-test.each(["URI Example", "uri-example"])("SC25 logical URI %s uses authoritative resolution and retains the canonical fast path", async selector => {
+test.each(["URI Example", "uri-example"])("SC25 display name or alias %s cannot replace a stable Skill ID", async selector => {
   const f = await logicalReferenceFixture();
   try {
     const canonical = await f.read(f.owner.ref!);
     expect(canonical.input.path).toBe(await realpath(f.owner.path));
     expect(f.state.calls).toEqual([]);
     const ref = "skill://" + encodeURIComponent(selector) + "/SKILL.md", logical = await f.read(ref);
-    expect(logical.values.filter(value => value && typeof value === "object" && "block" in value && value.block)).toEqual([]);
-    expect(logical.input.path).toBe(await realpath(f.owner.path));
-    expect(f.state.calls).toEqual([ref]);
+    expect(logical.values.some(value => value && typeof value === "object" && "block" in value && value.block)).toBe(true);
+    expect(logical.input.path).toBe(ref);
+    expect(f.state.calls).toEqual(selector === "URI Example" ? [] : [ref]);
   } finally { await f.emit("session_shutdown"); }
 });
 
-test("SC25 fixed historical name retains the requested owner and snapshot", async () => {
-  const f = await logicalReferenceFixture(), ref = "skill://Old%20Name/references/guide.md?snapshot=" + a;
+test("SC25 a stable ID retains its fixed snapshot after the display name changes", async () => {
+  const f = await logicalReferenceFixture(), ref = "skill://skill/references/guide.md?snapshot=" + a;
   try {
     f.state.resolve = async value => {
       expect(value).toBe(ref);
       return { record: { ...f.owner, name: "Old Name", alias: "old-name", body: undefined },
-        ref: "skill://shared_skill%3Alib%3Askill/references/guide.md?snapshot=" + a };
+        ref: "skill://skill/references/guide.md?library=lib&snapshot=" + a };
     };
     const result = await f.read(ref);
     expect(result.values.filter(value => value && typeof value === "object" && "block" in value && value.block)).toEqual([]);
@@ -502,35 +508,35 @@ test("SC25 fixed historical name retains the requested owner and snapshot", asyn
   } finally { await f.emit("session_shutdown"); }
 });
 
-test("SC25 name failures cannot fall back to the projected directory or weaken fixed URI checks", async () => {
+test("SC25 scoped identity failures cannot fall back to names or weaken fixed URI checks", async () => {
   const f = await logicalReferenceFixture();
   try {
     for (const code of ["CATALOG_INCOMPLETE", "SKILL_AMBIGUOUS", "CONTENT_DISABLED", "SNAPSHOT_CONFLICT"]) {
       f.state.resolve = async () => { throw Object.assign(new Error(code), { code }); };
-      expect(JSON.stringify((await f.read("skill://URI%20Example/SKILL.md")).values)).toContain(code);
+      expect(JSON.stringify((await f.read("skill://skill/SKILL.md")).values)).toContain(code);
     }
     expect(f.state.loads).toEqual([]);
     const calls = f.state.calls.length;
-    expect(JSON.stringify((await f.read("skill://URI%20Example/guide.md?snapshot=" + a + "&file_id=guide")).values)).toContain("SOURCE_REFERENCE_INVALID");
+    expect(JSON.stringify((await f.read("skill://skill/guide.md?snapshot=" + a + "&file_id=guide")).values)).toContain("SOURCE_REFERENCE_INVALID");
     expect(f.state.calls).toHaveLength(calls);
     expect((await f.read(f.owner.ref!)).input.path).toBe(await realpath(f.owner.path));
     expect(f.state.calls).toHaveLength(calls);
   } finally { await f.emit("session_shutdown"); }
 });
 
-test.each(["abort", "session_switch"])("SC25 name resolution cannot publish after %s", async boundary => {
+test.each(["abort", "session_switch"])("SC25 entry-scoped resolution cannot publish after %s", async boundary => {
   const f = await logicalReferenceFixture(), entered = Promise.withResolvers<void>(), released = Promise.withResolvers<void>();
   const resolve = f.state.resolve;
   try {
     f.state.resolve = async (value, signal) => { entered.resolve(); await released.promise; return resolve(value, signal); };
-    const pending = f.read("skill://URI%20Example/SKILL.md");
+    const pending = f.read("skill://skill/SKILL.md");
     const didEnter = await Promise.race([entered.promise.then(() => true), pending.then(() => false)]);
     expect(didEnter).toBe(true);
     if (boundary === "abort") f.controller.abort(); else await f.emit("session_switch");
     released.resolve();
     const result = await pending;
     expect(JSON.stringify(result.values)).toContain("CANCELLED");
-    expect(result.input.path).toBe("skill://URI%20Example/SKILL.md");
+    expect(result.input.path).toBe("skill://skill/SKILL.md");
     expect(f.state.loads).toEqual([]);
   } finally { released.resolve(); await f.emit("session_shutdown"); }
 });
@@ -547,7 +553,7 @@ test.each([
   const f = await logicalReferenceFixture({ shortRefs: true, use: tool === "notion_use" }), entered = Promise.withResolvers<void>(), released = Promise.withResolvers<void>();
   try {
     f.state.resolve = async () => { entered.resolve(); await released.promise; throw new SourceReferenceAmbiguity("notion", ambiguityCandidates(f.owner)); };
-    const pending = (tool === "read" ? f.read("skill://URI%20Example/SKILL.md") : f.use({ ref: "skill://URI%20Example/SKILL.md" }))
+    const pending = (tool === "read" ? f.read("skill://skill/SKILL.md") : f.use({ ref: "skill://skill/SKILL.md" }))
       .then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error }));
     await entered.promise;
     if (boundary === "abort") f.controller.abort(); else await f.emit("session_switch");
@@ -574,7 +580,7 @@ test("SC04 candidate errors expose only safe metadata and reject mismatched fixe
     const candidates = ambiguityCandidates(f.owner);
     candidates[0]!.record.body = "PRIVATE_BODY"; candidates[0]!.record.path = "/private/machine-path";
     f.state.resolve = async () => { throw new SourceReferenceAmbiguity("notion", candidates); };
-    let error: unknown; try { await f.use({ ref: "skill://URI%20Example/SKILL.md" }); } catch (value) { error = value; }
+    let error: unknown; try { await f.use({ ref: "skill://skill/SKILL.md" }); } catch (value) { error = value; }
     expect(error).toBeInstanceOf(SourceReferenceAmbiguity);
     if (!(error instanceof SourceReferenceAmbiguity)) throw new Error("Expected the actual registered ambiguity error");
     const output = JSON.parse(error.message);
@@ -587,10 +593,10 @@ test("SC04 candidate errors expose only safe metadata and reject mismatched fixe
     }
     const persisted = f.entries.length;
     f.state.resolve = async () => { throw new SourceReferenceAmbiguity("notion", candidates); };
-    expect(JSON.stringify((await f.read("skill://URI%20Example/SKILL.md?snapshot=" + a)).values)).toContain("SOURCE_IDENTITY_MISMATCH");
+    expect(JSON.stringify((await f.read("skill://skill/SKILL.md?snapshot=" + a)).values)).toContain("SOURCE_IDENTITY_MISMATCH");
     expect(f.entries).toHaveLength(persisted); expect(f.state.loads).toEqual([]); expect(f.state.graphRoots).toEqual([]);
     f.state.resolve = async () => { throw Object.assign(new SourceError("SKILL_AMBIGUOUS", "notion"), { details: { token: "PRIVATE_TOKEN", candidates } }); };
-    const ordinary = JSON.stringify((await f.read("skill://URI%20Example/SKILL.md")).values);
+    const ordinary = JSON.stringify((await f.read("skill://skill/SKILL.md")).values);
     expect(ordinary).toContain("SKILL_AMBIGUOUS");
     expect(ordinary).not.toContain("PRIVATE_TOKEN"); expect(ordinary).not.toContain('"candidates"');
     expect(f.entries).toHaveLength(persisted);
@@ -601,17 +607,17 @@ test("known permission revocation withholds only verified scalar source bytes, n
   const own=resourceResult("revoked"),foreign=resourceResult("foreign",{scope:"another"});
   const user:AgentMessage={role:"user",content:"Exact supporting resource.\n"};
   const messages=[own,foreign,user],before=JSON.stringify(messages);
-  const projected=projectSelectedSourceMessages(messages,{scopes:new Map()},(scope,id)=>scope==='scope'&&id==='shared_skill:lib:skill' ? "unavailable" : undefined);
+  const projected=projectSelectedSourceMessages(messages,{scopes:new Map()},(scope,id)=>scope==='scope'&&id==="skill://skill?library=lib" ? "unavailable" : undefined);
   expect(sourceMessageText(projected[0]?.content)).toContain('Source access is no longer available');
   expect(projected[0]?.details).toMatchObject({contextBrokerResource:{delivered_complete_text:false,loaded:false}});
   expect(projected[1]).toBe(foreign);expect(projected[2]).toBe(user);expect(JSON.stringify(messages)).toBe(before);
 });
 
 test("an explicit new main selection retires old scalar references while preserving current and foreign pins", () => {
-  const id="shared_skill:lib:skill",old=resourceResult("old-policy",{id}),current=resourceResult("new-policy",{id,snapshotId:b,body:"New policy\n"});
-  const foreign=resourceResult("other-owner",{id:"shared_skill:another:owner"});
-  const metadata={...record,id,alias:record.name,enabled:true,default_context:false,entrypoint:"SKILL.md",ref:"skill://shared_skill%3Alib%3Askill/SKILL.md"};
-  const binding={record:metadata,scope:"scope",snapshot_id:b,version_id:"new-version",body_sha256:createHash("sha256").update("New instructions").digest("hex"),ref:metadata.ref+"?snapshot="+b};
+  const id="skill://skill?library=lib",old=resourceResult("old-policy",{id}),current=resourceResult("new-policy",{id,snapshotId:b,body:"New policy\n"});
+  const foreign=resourceResult("other-owner",{id:"skill://owner?library=another"});
+  const metadata={...record,id,alias:record.name,enabled:true,default_context:false,entrypoint:"SKILL.md",ref:"skill://skill/SKILL.md?library=lib"};
+  const binding={record:metadata,scope:"scope",snapshot_id:b,version_id:"new-version",body_sha256:createHash("sha256").update("New instructions").digest("hex"),ref:withNativeSnapshot(metadata.ref, b)};
   const selection={scopes:new Map([["scope",{scope:"scope",bindings:new Map([[id,binding]]),retired:new Map(),graphs:[],selectionId:"new-current"}]])};
   const source=[old,current,foreign],before=JSON.stringify(source),projected=projectSelectedSourceMessages(source,selection);
   expect(sourceMessageText(projected[0]?.content)).not.toContain("Exact supporting resource");
@@ -630,10 +636,10 @@ test("CTX02 scalar retirement preserves this operation's effects outside the ver
         details: { effects, contextBrokerResource: { ...original.details.contextBrokerResource, version: 2,
           delivery: { start: 0, end: body.length, encoding: "raw" } } } };
       const stored = JSON.stringify(message);
-      const metadata = { ...record, id: "shared_skill:lib:skill", alias: record.name, default_context: false,
-        entrypoint: "SKILL.md", ref: "skill://shared_skill%3Alib%3Askill/SKILL.md" };
+      const metadata = { ...record, id: "skill://skill?library=lib", alias: record.name, default_context: false,
+        entrypoint: "SKILL.md", ref: "skill://skill/SKILL.md?library=lib" };
       const binding = { record: metadata, scope: "scope", snapshot_id: b, version_id: "new-version",
-        body_sha256: createHash("sha256").update("New instructions").digest("hex"), ref: metadata.ref + "?snapshot=" + b };
+        body_sha256: createHash("sha256").update("New instructions").digest("hex"), ref: withNativeSnapshot(metadata.ref, b) };
       const selection = { scopes: new Map([["scope", { scope: "scope", bindings: new Map([[metadata.id, binding]]),
         retired: new Map(), graphs: [], selectionId: "new" }]]) };
       for (const projected of [projectSelectedSourceMessages([message], selection),

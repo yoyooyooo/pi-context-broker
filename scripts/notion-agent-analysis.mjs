@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { parseNativeReference, hasExactNativeOwner } from '../packages/context-broker/src/native-reference.ts';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -877,7 +878,10 @@ export async function verifyNotionAgentContentSearch(expected, observed, binding
       .every(key => matches[0].locator[key] === record.locator[key]),
   'CONTENT_MATCH_WRONG_OWNER', 'The returned match must name the independently read owner and physical source');
   const match = matches[0];
-  demand(nonempty(match.ref) && match.ref === record.ref && !match.ref.includes('?') && match.entrypoint === record.entrypoint &&
+  let reference;
+  try { reference = parseNativeReference(match.ref); } catch { reference = undefined; }
+  demand(reference && hasExactNativeOwner(reference) && reference.selector === record.id && reference.snapshot === undefined
+    && reference.path === record.entrypoint && match.ref === record.ref && match.entrypoint === record.entrypoint &&
     match.match?.kind === 'notion_remote_match' && match.match.representation === representation && sameDatabase(match.match.pageId, matchPageId),
   'CONTENT_MATCH_WRONG_REPRESENTATION', 'The discovery reference must remain current and the remote page must map to the read Skill or File');
   const deliveries = [];

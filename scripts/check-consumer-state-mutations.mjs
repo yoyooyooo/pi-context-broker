@@ -7,6 +7,26 @@ import { createHash } from "node:crypto";
 
 const cases = [
   {
+    "name": "fixed-resource-path-binding",
+    "file": "src/session-short-ref.ts",
+    "old": "return JSON.stringify([\"resource\", value.owner, value.path]);",
+    "replacement": "return JSON.stringify([\"resource\", value.owner, value.path, value.file_id ?? null]);",
+    "test": "session-short-ref.test.ts",
+    "pattern": "fixed paths never repair an old spelling through a stable File ID",
+    "properties": [],
+    "concrete_obligations": ["One fixed owner and path cannot acquire a different native File binding. This path-to-File mapping is outside the finite TLA variables."]
+  },
+  {
+    "name": "fixed-resource-native-binding",
+    "file": "src/session-short-ref.ts",
+    "old": "&& previous.path !== value.path) fail(\"SHORT_REF_CONFLICT\");",
+    "replacement": "&& false) fail(\"SHORT_REF_CONFLICT\");",
+    "test": "session-short-ref.test.ts",
+    "pattern": "fixed paths never repair an old spelling through a stable File ID",
+    "properties": [],
+    "concrete_obligations": ["One native File binding cannot move to another path within one fixed owner. This native binding uniqueness is outside the finite TLA variables."]
+  },
+  {
     "name": "content-qualification-publication",
     "file": "src/consumer-observation.ts",
     "old": "    revision++;\n    for (const changed of changes) changed();",
@@ -381,12 +401,15 @@ try {
     const directory = path.join(out, item.name);
     fs.mkdirSync(directory);
     for (const name of ["src", "scripts"]) fs.cpSync(path.join(pkg, name), path.join(directory, name), { recursive: true, errorOnExist: true, force: false });
+    fs.mkdirSync(path.join(directory, "dist"));
+    for (const name of ["ntn-skills-ref.cjs", "ntn-skills-runtime.json"])
+      fs.copyFileSync(path.join(pkg, "dist", name), path.join(directory, "dist", name));
     fs.copyFileSync(path.join(pkg, "package.json"), path.join(directory, "package.json"));
     fs.symlinkSync(path.join(pkg, "node_modules"), path.join(directory, "node_modules"), "dir");
     const originalFile = path.join(pkg, item.file), file = path.join(directory, item.file);
     const original = fs.readFileSync(file, "utf8"), originalHash = hash(Buffer.from(original));
     assert.equal(original.split(item.old).length, 2, item.name + ": guard changed; review the mutation");
-    const entry = { name: item.name, properties: item.properties, source: path.relative(repository, originalFile),
+    const entry = { name: item.name, properties: item.properties, ...(item.concrete_obligations ? { concrete_obligations: item.concrete_obligations } : {}), source: path.relative(repository, originalFile),
       sourceSha256: originalHash, test: item.test, pattern: item.pattern,
       testSha256: hash(fs.readFileSync(path.join(pkg, "scripts", item.test))), phases: [], restored: false, originalWorkspaceUnchanged: false };
     summary.cases.push(entry); save();

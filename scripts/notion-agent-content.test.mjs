@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { skillFileRef } from './skill-ref-fixture.mjs';
 import { createHash } from 'node:crypto';
 import { verifyNotionAgentContentSearch } from './notion-agent-analysis.mjs';
 
@@ -12,7 +13,7 @@ function fixture({ supporting = false } = {}) {
   };
   const query = 'copper lantern checkpoint', page = '11111111-1111-4111-8111-111111111111';
   const database = '22222222-2222-4222-8222-222222222222', filePage = '33333333-3333-4333-8333-333333333333';
-  const owner = 'shared_skill:library:handover', ref = 'skill://' + encodeURIComponent(owner) + '/SKILL.md';
+  const owner = 'skill://handover?library=library', ref = skillFileRef(owner, 'SKILL.md');
   const resourcePath = supporting ? 'references/checklist.md' : 'SKILL.md', bodyKey = 'target@A/' + resourcePath;
   const body = { ...artifact('/owned/oracles/body.md', Buffer.from('# Handover\n\nUse the ' + query + ' before closing the handover.\n')),
     object: 'target', version: 'A', resourcePath };
@@ -95,8 +96,8 @@ test('content proof rejects wrong mode, unsafe coverage, unrelated owners and un
     ['invalid grant epoch', f => { f.value.connection.grantEpoch = 1; }, 'CONTENT_RESULT_CONTRACT_MISMATCH'],
     ['wrong Skill owner', f => { f.value.records[0].id = 'other'; }, 'CONTENT_MATCH_WRONG_OWNER'],
     ['wrong physical Skill', f => { f.value.records[0].locator.page_id = 'other'; }, 'CONTENT_MATCH_WRONG_OWNER'],
-    ['snapshot ref', f => { f.value.records[0].ref += '?snapshot=old'; }, 'CONTENT_MATCH_WRONG_REPRESENTATION'],
-    ['File ref', f => { f.value.records[0].ref += '?file_id=file'; }, 'CONTENT_MATCH_WRONG_REPRESENTATION'],
+    ['snapshot ref', f => { f.value.records[0].ref += '&snapshot=s_' + '0'.repeat(64); }, 'CONTENT_MATCH_WRONG_REPRESENTATION'],
+    ['File ref', f => { f.value.records[0].ref += '&file_id=file'; }, 'CONTENT_MATCH_WRONG_REPRESENTATION'],
     ['wrong remote page', f => { f.value.records[0].match.pageId = 'other'; }, 'CONTENT_MATCH_WRONG_REPRESENTATION'],
     ['no provider delivery', f => f.skipDelivery(), 'CONTENT_NOT_DELIVERED'],
     ['another process', f => { f.source[0].pid = 43; }, 'CONTENT_SDK_CALL_UNPROVEN'],

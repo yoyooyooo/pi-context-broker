@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { createSessionShortRefHost, isSessionShortRefInput, matchesShortRefSource, assertShortRefSource, assertShortRefSnapshot } from "../src/session-short-ref-host";
@@ -9,12 +10,12 @@ const uuid = (id: number) => "00000000-0000-4000-8000-" + String(id).padStart(12
 const scope = hash("source A"), foreignScope = hash("source B");
 function code(action: () => unknown, expected: string) { expect(action).toThrow(expect.objectContaining({ code: expected })); }
 function fixture(version = "one") {
-  const id = "shared_skill:bridge:owner", base = "skill://" + encodeURIComponent(id) + "/", body = "instructions " + version;
+  const id = "skill://owner?library=bridge", base = id, body = "instructions " + version;
   const snapshot = "s_" + hash("snapshot " + version), resource = "resources/guide.md";
   const record: ContentRecord = { id, kind: "skill", name: "Owner", alias: "owner", description: "metadata", default_context: false, enabled: true,
-    entrypoint: "SKILL.md", ref: base + "SKILL.md", locator: { type: "shared_skill", library_id: "bridge", skill_id: "owner", page_id: uuid(1), database_id: uuid(10), data_source_id: uuid(11) } };
-  const files = [{ path: "SKILL.md", bytes: Buffer.byteLength(body), sha256: hash(body), ref: base + "SKILL.md?snapshot=" + snapshot + "&file_id=main" },
-    { path: resource, bytes: 8, sha256: hash("resource"), ref: base + resource + "?snapshot=" + snapshot + "&file_id=guide" }];
+    entrypoint: "SKILL.md", ref: nativeFileRef(base, "SKILL.md"), locator: { type: "shared_skill", library_id: "bridge", skill_id: "owner", page_id: uuid(1), database_id: uuid(10), data_source_id: uuid(11) } };
+  const files = [{ path: "SKILL.md", bytes: Buffer.byteLength(body), sha256: hash(body), ref: nativeFileRef(base, "SKILL.md", String(snapshot)) },
+    { path: resource, bytes: 8, sha256: hash("resource"), ref: nativeFileRef(base, String(resource), String(snapshot)) }];
   const metadata: SkillRecord = { ...record, source: "notion", sourceId: "configured-source", sourceScope: scope, path: "/private/metadata/SKILL.md",
     aliases: [], normalizedAliases: [], normalizedName: "owner", normalizedDescription: "metadata", autoloadEnabled: false };
   const selected: SkillRecord = { ...metadata, body, path: "/private/cache/SKILL.md", snapshotId: snapshot, versionId: hash("version " + version),
@@ -38,8 +39,8 @@ function session() {
 function directoryRecords(count: number): SkillRecord[] {
   const f = fixture();
   return Array.from({ length: count }, (_, index): SkillRecord => {
-    const skill = "member-" + index, id = "shared_skill:bridge:" + skill;
-    return { ...f.metadata, id, ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
+    const skill = "member-" + index, id = nativeSkillId("bridge", String(skill));
+    return { ...f.metadata, id, ref: nativeFileRef(id, "SKILL.md"),
       locator: { type: "shared_skill", library_id: "bridge", skill_id: skill, page_id: uuid(index + 100), database_id: uuid(10), data_source_id: uuid(11) } };
   });
 }
@@ -184,18 +185,20 @@ test("resource result assertions reject changed bytes, renamed same-pin paths an
   assertShortRefSnapshot(resolved, f.selected);
   for (const changed of [
     { ...f.files[1]!, sha256: hash("changed") }, { ...f.files[1]!, bytes: 999 },
-    { ...f.files[1]!, ref: f.files[1]!.ref.replace("file_id=guide", "file_id=another") },
+    { ...f.files[1]!, ref: f.files[1]!.ref.replace("resources/guide.md", "resources/another.md") },
   ]) {
     const snapshot = { ...f.selected, entryManifest: { ...f.selected.entryManifest!, files: [f.files[0]!, changed] } };
     code(() => assertShortRefSnapshot(resolved, snapshot), "SHORT_REF_OWNER_MISMATCH");
   }
   const moved = { ...f.selected, fileBindings: f.selected.fileBindings!.map(file => file.file_id === "guide" ? { ...file, path: "moved.md" } : file) };
   code(() => assertShortRefSnapshot(resolved, moved), "SHORT_REF_OWNER_MISMATCH");
+  const rebound = { ...f.selected, fileBindings: f.selected.fileBindings!.map(file => file.file_id === "guide" ? { ...file, file_id: "another" } : file) };
+  code(() => assertShortRefSnapshot(resolved, rebound), "SHORT_REF_OWNER_MISMATCH");
 });
 
 test("invalid resource display writes neither a resource nor its new owner", () => {
   const h = session(), f = fixture();
-  code(() => h.host.resource(h.ctx, f.selected, f.files[1]!.ref.replace("file_id=guide", "file_id=missing")), "SHORT_REF_OWNER_MISMATCH");
+  code(() => h.host.resource(h.ctx, f.selected, f.files[1]!.ref.replace("resources/guide.md", "resources/missing.md")), "SHORT_REF_OWNER_MISMATCH");
   expect(h.state.writes).toBe(0);
   expect(h.state.branch).toEqual([]);
   const malformed = { ...f.selected, sourceScope: foreignScope };

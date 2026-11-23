@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { parseNativeReference, formatNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, readdir, writeFile, appendFile, cp, realpath } from 'node:fs/promises';
@@ -85,17 +86,16 @@ export function verifyPublicReadBoundary({ authored, admitted, read, preparation
   for (const key of ['scope', 'ownerId', 'path']) assert.equal(selected[key], expected[key]);
   for (const key of ['snapshot', 'fileId', 'sha256', 'bytes']) if (selected[key] !== undefined) assert.equal(selected[key], expected[key]);
   for (const [key, value] of Object.entries(expected)) assert.equal(read[key], value, 'The complete read must match the independent fixture ' + key);
-  const resultRef = new URL(read.ref); assert.equal(resultRef.protocol, 'skill:');
-  assert.equal(decodeURIComponent(resultRef.hostname), expected.ownerId); assert.equal(decodeURIComponent(resultRef.pathname.slice(1)), expected.path);
-  assert.equal(resultRef.searchParams.get('snapshot'), expected.snapshot); assert.equal(resultRef.searchParams.get('file_id'), expected.fileId);
-  if (resultRef.searchParams.has('scope')) assert.equal(resultRef.searchParams.get('scope'), expected.scope);
+  const resultRef = parseNativeReference(read.ref);
+  assert.equal(resultRef.selector, expected.ownerId); assert.equal(resultRef.path, expected.path);
+  assert.equal(resultRef.snapshot, expected.snapshot);
   assert.ok(preparation && closed && preparation.requestId === closed.requestId && closed.code === 0);
   assert.equal(preparation.command, preparation.args[0]);
   const argv = preparation.args[0] === 'ctl' ? preparation.args.slice(1) : preparation.args;
   assert.equal(argv[0], 'prepare'); assert.equal(argv[argv.indexOf('--purpose') + 1], 'inspect');
-  const ref = new URL(argv[1]); assert.equal(ref.protocol, 'skill:');
-  assert.equal(decodeURIComponent(ref.hostname), expected.ownerId); assert.equal(decodeURIComponent(ref.pathname.slice(1)), expected.path);
-  for (const [parameter, key] of [['snapshot', 'snapshot'], ['file_id', 'fileId']]) if (ref.searchParams.has(parameter)) assert.equal(ref.searchParams.get(parameter), expected[key]);
+  const ref = parseNativeReference(argv[1]);
+  assert.equal(ref.selector, expected.ownerId); assert.equal(ref.path, expected.path);
+  if (ref.snapshot !== undefined) assert.equal(ref.snapshot, expected.snapshot);
   const [authoredAt, admittedAt, preparedAt, closedAt, readAt] = [authored.at, admitted.at, preparation.at, closed.at, read.at].map(Date.parse);
   assert.ok([authoredAt, admittedAt, preparedAt, closedAt, readAt].every(Number.isFinite));
   assert.ok(authoredAt <= admittedAt && admittedAt <= readAt && authoredAt <= preparedAt && preparedAt <= closedAt && closedAt <= readAt,
@@ -264,8 +264,8 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
         const candidate = searches.at(-1).records.find(record => record.availability === 'available' && !record.in_default_view);
         const discovered = [...source.slice(source.indexOf('## Members')).matchAll(/\[([^\]]+)\]\((skill:\/\/[^)]+)\)/g)].find(match => match[1] === candidate.name)?.[2];
         assert.ok(discovered, 'Omitting the main path must use an actually visible canonical member ref');
-        const reference = new URL(discovered); reference.pathname = ''; reference.search = '';
-        selected = { name: 'notion_use', arguments: { ref: reference.href } };
+        const reference = parseNativeReference(discovered);
+        selected = { name: 'notion_use', arguments: { ref: formatNativeReference({ ...reference, path: '', snapshot: undefined }) } };
       } else if (!source.includes(fixture.graph.resource.content)) {
         const ref = /\[the ledger evidence\]\((skill:\/\/[^)]+)\)/.exec(source)?.[1];
         assert.ok(ref, 'The resource ref must come from the actual prepared main');
@@ -273,13 +273,12 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
         if (resourceLocation === 'alias' || resourceLocation === 'unqualified-ref') {
           const prepared = parsedResults.find(result => result?.ok === true && result.status === 'ready' && Array.isArray(result.records));
           const owner = prepared?.records.find(record => record.content.includes('GRAPH_MEMBER_OPTIONAL_BODY'));
-          const fileId = new URL(ref).searchParams.get('file_id');
+          const reference = parseNativeReference(ref);
           const resources = owner?.directory.files.filter(file => file.path !== 'SKILL.md' && file.path !== 'ROUTER.md') ?? [];
-          const resource = resources.find(file => file.ref.startsWith('skill://') && new URL(file.ref).searchParams.get('file_id') === fileId)
-            ?? (resources.length === 1 ? resources[0] : undefined);
-          assert.ok(owner && fileId && resource, 'The discovered canonical resource and actual directory must identify one resource before changing its input form');
+          const resource = resources.find(file => file.path === reference.path);
+          assert.ok(owner && resource, 'The discovered canonical resource and actual directory must identify one resource before changing its input form');
           if (resourceLocation === 'unqualified-ref') {
-            const input = new URL(ref); input.pathname = resource.path; input.searchParams.delete('snapshot'); input.searchParams.delete('file_id'); target = input.href;
+            target = formatNativeReference({ ...reference, path: resource.path, snapshot: undefined });
           } else {
             assert.equal(typeof owner.path, 'string', 'The legacy filesystem alias scenario requires an actually advertised physical owner path; a short ref must not be converted into an invented path');
             target = join(dirname(owner.path), resource.path).replace(/^\/private\/tmp\//, '/tmp/');
@@ -442,13 +441,13 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
         assert.ok(providers.some(event => event.sequence > main.sequence && event.contents.filter(file => file.ref === main.ref && file.sha256 === main.sha256).length === 1));
         const prepared = observed.find(event => event.phase === 'preparation-result' && event.complete);
         const prepareCall = observed.find(event => event.phase === 'authored-tool-call' && event.toolCallId === prepared.toolCallId);
-        assert.equal(new URL(prepareCall.input.ref).pathname, '', 'The actual public use input must omit the optional main path');
+        assert.equal(parseNativeReference(prepareCall.input.ref).path, '', 'The actual public use input must omit the optional main path');
         const authored = observed.find(event => event.phase === 'authored-tool-call' && event.toolCallId === memberReadCall);
         const admitted = observed.find(event => event.phase === 'tool-call' && event.toolCallId === memberReadCall);
         const read = observed.find(event => event.phase === 'tool-result' && event.toolCallId === memberReadCall && event.complete);
         const ledger = await rows(join(evidence, 'source-processes.jsonl'));
         const preparation = ledger.find(event => event.phase === 'spawn' && ['prepare', 'ctl'].includes(event.command) && event.args.includes('inspect') && event.args.some(arg => {
-          try { return new URL(arg).protocol === 'skill:' && decodeURIComponent(new URL(arg).hostname) === read.ownerId; } catch { return false; }
+          try { return parseNativeReference(arg).selector === read.ownerId; } catch { return false; }
         }));
         const closed = ledger.find(event => event.phase === 'close' && event.requestId === preparation?.requestId && event.code === 0);
         const authoredRead = verifyPublicReadBoundary({ authored, admitted, read, preparation, closed, expected: { ownerId: fixture.graph.member.record.id,

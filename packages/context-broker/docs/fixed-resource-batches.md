@@ -36,11 +36,11 @@ read({ path: "../../reference.md", from: "sr:R…" })
 ```
 
 Copy `from` from the actual selected main or supporting file. It accepts a valid
-`sr:S`, `sr:R`, or fixed canonical `skill://shared_skill%3A.../path?snapshot=s_...`
+`sr:S`, `sr:R`, or fixed canonical `skill://architect/path?library=team&snapshot=s_...`
 File ref. An unfixed `sr:C` candidate is not a containing-file selection. The base
-is the real File binding, including a renamed File whose old path is only a hint.
-`path` must be a relative file path; absolute paths, `~/`, URIs, queries and fragments
-are rejected. `from` cannot be combined with `paths` or `refresh: true`.
+is the exact selected owner, manifest and path. An old path is not a rename hint.
+`path` accepts a relative file path or a `skill://` reference; the latter binds an omitted
+Library from `from`. Absolute paths, `~/`, queries or fragments on relative paths are rejected. `from` cannot be combined with `paths` or `refresh: true`.
 
 The paired SDK resolves identity before Broker reads the target. A target mapped
 to the containing owner stays in its fixed selection. A cross-Skill link requires
@@ -94,11 +94,11 @@ bytes. A directory query failure does not establish a physical-page refusal.
 
 The paired SDK must advertise this capability. Missing capability fails before
 dispatch; there is no custom command or old SDK route. OMP/Tern are deferred.
-Canonical paths naming the main entrypoint use the existing main
-route, including when they carry a File ID; this avoids an extra main read.
-A stale main-path hint whose File ID identifies a resource still resolves on
-that existing route. A resource-path hint whose File ID identifies the main
-is recognized by the source and continues through normal main preparation.
+A pathless URI selects the entrypoint declared by its selected manifest. An exact
+main path uses the existing main route. Resources require their exact manifest paths;
+a former path cannot be repaired by a File ID. Public `file_id` parameters are rejected.
+Native File IDs are checked through internal manifest bindings, while frozen Source
+files retain their own route, byte count and hash without requiring a Notion File row.
 
 One batch enters one source-runtime operation and one SDK `readResources` call.
 It does not loop over `readSkill`, launch a CLI for every file, or invoke

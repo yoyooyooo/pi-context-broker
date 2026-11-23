@@ -1,3 +1,4 @@
+import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
@@ -77,15 +78,11 @@ export function graphSourceViews(receipts) {
         const bytes = Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8');
         assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
         assert.equal(declared[0].bytes, file.bytes); assert.equal(declared[0].sha256, file.sha256);
-        const ref = new URL(file.ref), requested = new URL(file.requested_ref);
+        const ref = parseNativeReference(file.ref), requested = parseNativeReference(file.requested_ref);
         for (const parsed of [ref, requested]) {
-          assert.equal(parsed.protocol, 'skill:'); assert.equal(decodeURIComponent(parsed.hostname), selection.owner);
-          assert.equal(parsed.searchParams.get('snapshot'), selection.snapshot_id);
+          assert.equal(parsed.selector, selection.owner); assert.equal(parsed.path, file.path);
+          assert.equal(parsed.snapshot, selection.snapshot_id);
         }
-        assert.equal(ref.searchParams.get('file_id') ?? undefined, file.file_id);
-        if (requested.searchParams.has('file_id')) assert.equal(requested.searchParams.get('file_id'), file.file_id);
-        else assert.equal(requested.pathname, ref.pathname);
-        assert.equal(ref.pathname.slice(1).split('/').map(decodeURIComponent).join('/'), file.path);
         const identity = file.file_id ?? file.path;
         assert.ok(!paths.has(file.path) && !identities.has(identity), 'A resource operation cannot duplicate a selected file');
         paths.add(file.path); identities.add(identity);

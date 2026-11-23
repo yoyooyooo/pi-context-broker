@@ -388,8 +388,9 @@ test("release source binds one annotated version-only commit to current main and
   f.git("-C", cliRoot, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-m", "CLI");
   const cliCommit = f.git("-C", cliRoot, "rev-parse", "HEAD");
   mkdirSync(join(f.repo, ".github/workflows"));
-  for (const name of ["ci", "publish"]) writeFileSync(join(f.repo, ".github/workflows", name + ".yml"),
-    "repository: yoyooyooo/notion-skills-cli\nref: " + cliCommit + "\n");
+  writeFileSync(join(f.repo, ".github/ntn-skills-cli-revision"), cliCommit + "\n");
+  for (const name of ["ci", "publish", "formal"]) writeFileSync(join(f.repo, ".github/workflows", name + ".yml"),
+    "cat .github/ntn-skills-cli-revision\nrepository: yoyooyooo/notion-skills-cli\nref: ${{ steps.cli-input.outputs.revision }}\n");
   const path = join(f.repo, "packages/context-broker/package.json");
   writeFileSync(path, JSON.stringify({ name: candidate.name, version: "1.0.0" }));
   f.git("add", "."); f.git("commit", "-m", "source baseline");

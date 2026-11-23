@@ -27,11 +27,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select frozen CLI input
+        id: cli-input
+        run: echo "revision=$(cat .github/ntn-skills-cli-revision)" >> "$GITHUB_OUTPUT"
       - name: Checkout pinned CLI SDK
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: yoyooyooo/notion-skills-cli
-          ref: 44873bf1e251eb9527db78ad080e00aa6d3178b1
+          ref: ${{ steps.cli-input.outputs.revision }}
           path: .verification/ntn-skills-cli
           persist-credentials: false
       - name: Set up Bun

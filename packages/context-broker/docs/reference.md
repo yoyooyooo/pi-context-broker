@@ -255,7 +255,7 @@ When a new Pi session has no Notion `$` candidates, check its enabled source con
 
 
 
-Catalog provenance accepts only `role: content`; an omitted role has the same meaning. Every current record belongs to its declared database/data-source pair and a successful `coverage.queried_data_sources` query. A configured database selector limits that content database. Source ID, namespace and credential scope remain bound through metadata registration and exact-ref activation. The logical `shared_skill:LIBRARY:SKILL` identity and its physical page UUID are checked separately. A direct read does not prove directory completeness; a partial catalog retains exact available records and an explicit coverage failure.
+Catalog provenance accepts only `role: content`; an omitted role has the same meaning. Every current record belongs to its declared database/data-source pair and a successful `coverage.queried_data_sources` query. A configured database selector limits that content database. Source ID, namespace and credential scope remain bound through metadata registration and exact-ref activation. The logical `skill://SKILL?library=LIBRARY` identity and its physical page UUID are checked separately. A direct read does not prove directory completeness; a partial catalog retains exact available records and an explicit coverage failure.
 
 Record identity is `JSON.stringify([sourceId, sourceScope, kind, locator.type, id])`; source is independently local/notion. Filesystem identities use the real file path. Automatic Notion completion normally inserts `$alias@namespace`, adding a page ID for collisions; accepted identities are captured synchronously by the current preparation gate before any asynchronous work. A new draft accepted while that submission runs cannot replace its identity or be cleared when the earlier turn ends.
 
@@ -282,6 +282,48 @@ Git and mixed Skills expose one complete current file directory. The CLI/SDK own
 | `sr:C` | An authorized catalog candidate; no selected snapshot | `notion_list` and View metadata |
 | `sr:S` | A selected main with exact scope, record, snapshot, version, File and body hash | `notion_use` and a complete native main read |
 | `sr:R` | One resource bound to an `sr:S` owner, path, File, bytes and hash | The prepared directory or native read's `skill-directory` footer |
+
+### Exact Skill references
+
+The shared protocol is `skill://<stable-skill-id>[/<path>][?library=<logical-library-id>][&snapshot=<snapshot-id>]`.
+The CLI, SDK and Broker use the same `ntn-skills/ref` implementation and require `SKILL_REF_VERSION = 2`.
+Copy returned references for consumption. `sr:C`, `sr:S` and `sr:R` are branch-local handles;
+canonical `skill://` references carry the portable identity.
+
+| Reference | Meaning |
+| --- | --- |
+| `skill://architect` | The stable Skill ID `architect` in an explicitly bound Library context. Reading chooses its selected entrypoint. |
+| `skill://architect/references/review.md` | One exact path within that Skill, using the containing selected file's Library or the Library bound at the entry boundary. |
+| `skill://architect?library=team` | The complete current identity `{ libraryId: "team", skillId: "architect" }`. |
+| `skill://architect/references/review.md?library=test` | An explicit target in another configured Library, with that target's own authorization and selected snapshot. |
+| `skill://architect?library=team&snapshot=s_<64-hex-digits>` | That Skill's entrypoint from the specified immutable manifest. |
+
+`library` identifies a logical Library, not a Notion database UUID, source alias, display name or cache directory.
+Omitting it requires authority: the actual containing selected file, or one Library explicitly bound by the command/source entry.
+An unscoped reference fails; finding only one similarly named Skill does not supply a scope.
+Each current record's `id` is its full root URI; `ref` includes its explicit main path.
+The `shared_skill` locator tag remains a Notion adapter type, separate from URI identity.
+
+The URI selector is the stable Skill ID, never a name, alias or physical page fallback.
+New IDs use lowercase ASCII letters, digits, `.`, `_` and `-`; renaming a Skill does not change its ID.
+Authors preserve path case and use percent encoding for spaces and Unicode path segments.
+The parser rejects duplicate or unknown query parameters, encoded separators, escaping paths and fragments.
+A pathless URI selects a Skill; it does not hardcode `SKILL.md` when the selected manifest declares another entrypoint.
+
+Fixed references resolve only within the target's selected manifest. A missing path or missing historical bytes
+never falls back to the current version. Native File IDs remain internal binding evidence; frozen Source files
+can have no projected Notion File row. Public `file_id` parameters and the old `shared_skill:…` prefix are rejected.
+Migrating an old File-ID reference requires checking its exact old manifest before emitting the corresponding path URI;
+removing the parameter without that check can silently select a different file.
+
+Use relative paths for documents inside one Skill. For cross-Skill links, prefer a stable URI unless the containing
+file retains a verified original Source path and revision. Cache layout never authorizes a sibling relationship.
+`read({ path: "skill://architect/references/review.md", from: FIXED_CONTAINING_FILE_REF })` binds an omitted Library
+from the containing file. The same owner retains that file's pin; another owner retains its own session pin.
+Explicit cross-Library references require a separately authorized configured source.
+Members and Requires remain same-Library relationships: Requires is explicit; import may infer omitted Members
+only from exact, active, unambiguous links. Uncertain links are skipped, an explicit empty list is kept, and later
+manual relationship edits are not replaced. A reference neither activates Requires nor edits either relationship.
 
 `notion_use({ref:REF})` accepts a returned `sr:C`, `sr:S` or canonical main-entry `skill://` reference; `ref` may also be an array of roots needed together. It loads the roots and complete Requires closure to apply their instructions. To introduce, summarize or inspect a Skill, use native `read({path:REF})`; inspection does not activate Requires. Resources use their supplied exact refs. The deferred `notion_ctl({refs:[REF]})` exports canonical proofs for fixed `sr:S`/`sr:R` bindings; an unfixed `sr:C` cannot provide that proof.
 
@@ -349,7 +391,7 @@ A complete Skill body supplied by the host/Broker or returned by a successful re
 
 Pi and OMP selected Skill payloads include an escaped `skill-directory` and task-scoped resource guidance beside the complete body. Notion records also include the selected pinned `skill-ref` and `snapshot-id`. In Pi, native reference reads remain usable when `hash` or `basename` hides the local directory; use the advertised fixed reference and the available preparation directory for resources. Hosts using CLI fallback keep the source/database scope with `files SNAPSHOT` or `read SNAPSHOT --path RELATIVE`. The loaded-body statement explicitly preserves the user's task boundaries: loading a Skill does not authorize its workflow, environment probes or prerequisite actions. Inspection describes those instructions as content.
 
-Ordinary local Skills keep Pi's native discovery and read behavior. Explicitly configured filesystem sources retain their metadata catalog and selected snapshot behavior. Notion sources advertise the selected View's Skill and Router metadata; `default_context` influences membership through the View filter, and Prompt remains explicit-only. Pi shows authored names with an explicit source and accurate entry reference. Read inspects only the requested content; `notion_use`, `/skill:` and `$` prepare selected instructions and Requires. Members remain candidates until selected. Use the exact name/ref advertised by that host. OMP retains qualified names such as `notion-ui-alpha`, its `skill://notion-ui-alpha` alias and metadata-path activation; these aliases do not rename the underlying Notion record.
+Ordinary local Skills keep Pi's native discovery and read behavior. Explicitly configured filesystem sources retain their metadata catalog and selected snapshot behavior. Notion sources advertise the selected View's Skill and Router metadata; `default_context` influences membership through the View filter, and Prompt remains explicit-only. Pi shows authored names with an explicit source and accurate entry reference. Read inspects only the requested content; `notion_use`, `/skill:` and `$` prepare selected instructions and Requires. Members remain candidates until selected. Use the exact name/ref advertised by that host. OMP retains qualified host names such as `notion-ui-alpha` and metadata-path activation. Those UI labels do not become Skill IDs; portable links use the returned canonical reference.
 
 After catalog registration, an explicitly configured prefetch budget may issue one public `prepare --purpose inspect --priority prefetch` for at most `maxNodes` available Skill/Router roots from the initial View. It does not expand Members, prepare the Required closure, read Prompts, export host directories, append session locks or deliver bodies. `maxBytes` bounds the complete successful preparation JSON and each main instruction; it is not a network transfer quota. `maxTimeMs` bounds the owner lifetime, and `rateShare` uses a separate low-priority admission lane in the same CLI scheduler. Foreground selection or resource reading cancels warming without waiting for its late callback. Service pressure defers warming; it does not add background retries. Foreground waiters retain independent cancellation ownership. Activation validates CLI cache eligibility, with a five-minute content default and no silent stale fallback. Session changes cancel owned work; removing a View entry preserves instructions already loaded in the current session.
 
@@ -383,7 +425,7 @@ Native invocation arguments can include the selected `$` reference without addin
 
 Pi's Notion Skill/Router path calls SDK v2 `consume` once per source graph. It returns the validated graph, complete main bodies and complete file manifests together. Broker checks roots, scope, physical owner and File bindings before publishing entries. Each operation owns its environment, cwd, runtime and abort signal. Missing or incompatible SDKs fail with `SOURCE_SDK_UNAVAILABLE` or `SOURCE_SDK_INCOMPATIBLE`; there is no CLI fallback. OMP/Tern work is deferred.
 
-The complete file manifest carries exact refs, File IDs, hashes and byte lengths. The host initially stores only the main in an `entry` projection. Scalar resources use SDK `readSkill` with an exact File ref and owned output; batch resources use `readResources`. Both verify scope, owner, selected content, File ID and complete bytes/hash, and publish only requested files. Binary resources remain bytes. Unknown paths, interrupted output and mismatches cannot become ready. Missing cached bytes can be reacquired only while current authority still matches the selection; there is no remote historical-snapshot recovery.
+The complete file manifest carries exact path refs, hashes and byte lengths. Separate native File bindings retain File IDs when present; a frozen Source file may have no projected File row. The host initially stores only the main in an `entry` projection. Scalar resources use SDK `readSkill` with an exact File ref and owned output; batch resources use `readResources`. Both verify scope, owner, selected content, any native File binding and complete bytes/hash, and publish only requested files. Binary resources remain bytes. Unknown paths, interrupted output and mismatches cannot become ready. Missing cached bytes can be reacquired only while current authority still matches the selection; there is no remote historical-snapshot recovery.
 
 Public preparation results report `manifest_complete`, `local_files_ready` and `materialized_paths` separately from `loaded`. A successful native resource result carries `contextBrokerResource` with the exact file identity and hash; `delivered_complete_text` is true only when the actual returned text has the complete expected bytes. This is never a main-instruction loaded receipt. Current metadata or permission checks may still make requests even when no resource chunk is downloaded.
 
@@ -487,7 +529,7 @@ Remote members use one explicit identity shape, without a filesystem path:
 members:
   - type: remote
     source: { namespace: production }
-    id: shared_skill:team:review
+    id: skill://review?library=team
     locator:
       type: shared_skill
       library_id: team
@@ -495,12 +537,12 @@ members:
       page_id: 11111111-1111-4111-8111-111111111111
       database_id: 22222222-2222-4222-8222-222222222222
       data_source_id: 33333333-3333-4333-8333-333333333333
-    ref: skill://shared_skill%3Ateam%3Areview/SKILL.md
+    ref: skill://review/SKILL.md?library=team
 ```
 
-`source.namespace` selects the enabled configured source's `namespace` (or its `id` when no namespace is configured). It never selects by label or credential scope. Resolution uses the current credential-scoped source directory and verifies the full locator, kind and canonical ref; optional `?snapshot=s_<sha256>` pins the member read. Catalog scope and cached path fields are rejected. Missing, offline or ambiguous members remain in the index with an explicit unavailable code and doctor diagnostic; local members remain usable. Index generation reads metadata only, and agents read the selected member's ref on demand.
+`source.namespace` selects the enabled configured source's `namespace` (or its `id` when no namespace is configured). It never selects by label or credential scope. Resolution uses the current credential-scoped source directory and verifies the full locator, kind and canonical ref; optional `&snapshot=s_<sha256>` pins the member read. Catalog scope and cached path fields are rejected. Missing, offline or ambiguous members remain in the index with an explicit unavailable code and doctor diagnostic; local members remain usable. Index generation reads metadata only, and agents read the selected member's ref on demand.
 
-Remote declarations accept only the current `shared_skill` identity. `notion_page` and `notion_subscription` declarations fail explicitly, even if their page UUID matches a current record. Update the authored catalog from the current source's returned ID, locator and canonical ref. Names, physical-page coincidence and old pins cannot authorize an implicit identity conversion. Disabled records, source failures, ambiguous owners and physical-location mismatches remain explicit failures; validation reads metadata only.
+Remote declarations require a complete root URI identity and the current `shared_skill` locator. `notion_page` and `notion_subscription` declarations fail explicitly, even if their page UUID matches a current record. Update the authored catalog from the current source's returned ID, locator and canonical ref. Names, physical-page coincidence and old pins cannot authorize an implicit identity conversion. Disabled records, source failures, ambiguous owners and physical-location mismatches remain explicit failures; validation reads metadata only.
 
 Local Router declarations also remain discoverable when their entry is absent (`ENOENT`/`ENOTDIR`) or exceeds the discovery scan limit (`LOCAL_ENTRY_TOO_LARGE`). Retain their declared name, path, ref and id, an explicit unavailable reason and, for oversized entries, byte count and maximum bytes. These declarations still count as Routers; discovery does not read their unavailable entry bodies.
 

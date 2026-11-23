@@ -1,3 +1,4 @@
+import { nativeSkillId } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -835,7 +836,7 @@ async function observeSourceCheckpoint(bindings, alias) {
   if (skill) {
     assert.equal(propertyText(skill, context.library.skills.property_ids, 'Skill ID'), owned.skillId);
     identity.pageId = skill.id; identity.name = propertyText(skill, context.library.skills.property_ids, 'Name');
-    identity.owner = 'shared_skill:' + context.library.library_id + ':' + owned.skillId;
+    identity.owner = nativeSkillId(context.library.library_id, owned.skillId);
     identity.url = skill.url; bindings.public[alias + '.url'] = skill.url; bindings.public[alias + '.name'] = identity.name;
   }
   return { source, skill };

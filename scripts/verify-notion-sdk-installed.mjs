@@ -1,3 +1,4 @@
+import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -54,7 +55,8 @@ if (!worker) {
   const runtime = JSON.parse(await readFile(join(packageRoot, 'dist/ntn-skills-runtime.json'), 'utf8'));
   verifyBundledRuntime({ manifest: runtime, expectedVersion: runtime.package_version,
     cliBytes: await readFile(join(packageRoot, 'dist/ntn-skills.mjs')),
-    sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')) });
+    sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')),
+    refBytes: await readFile(join(packageRoot, 'dist/ntn-skills-ref.cjs')) });
   const { startSdkSourceFixture } = await import(pathToFileURL(options.get('--source-http-helper')).href);
   const service = await startSdkSourceFixture(fixture, join(out, 'source.jsonl'));
   const fixtureEnv = JSON.parse(await readFile(fixture.env, 'utf8'));
@@ -196,10 +198,10 @@ if (!worker) {
       const from = loaded.entryManifest.files.find(file => file.path === containing).ref;
       const ref = await resolveNotionRelativeReference(loaded, from, relative, source, out, undefined,
         { observeEffects: value => effects.push(value) });
-      const target = new URL(ref);
-      assert.equal(decodeURIComponent(target.hostname), loaded.id);
-      assert.equal(decodeURIComponent(target.pathname.slice(1)), targetPath);
-      assert.equal(target.searchParams.get('snapshot'), loaded.snapshotId);
+      const target = parseNativeReference(ref);
+      assert.equal(target.selector, loaded.id);
+      assert.equal(target.path, targetPath);
+      assert.equal(target.snapshot, loaded.snapshotId);
     }
     assert.equal(effects.length, 2); effects.forEach(value => assert.deepEqual(value, noWrites));
     for (const event of sdkEvents.slice(before).filter(event => event.event === 'end')) {

@@ -1,3 +1,5 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot, parseNativeReference, bindNativeReference } from "../../src/native-reference";
+import { copyReferenceProtocol } from "./skill-ref-fixture";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { cp, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
@@ -26,7 +28,7 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
   await writeFile(join(root, "src/ntn-skills.mjs"), "throw new Error('Unexpected management command in SDK source fixture');\n");
   const module = join(root, "src/ntn-skills-sdk.mjs");
   await writeFile(module, [
-    "export const SDK_VERSION=2, CONSUMER_CONTRACT_VERSION=1, PACKAGE_VERSION='current-source-fixture';",
+    "export const SKILL_REF_VERSION=2, SDK_VERSION=2, CONSUMER_CONTRACT_VERSION=1, PACKAGE_VERSION='current-source-fixture';",
     "export const CONSUMPTION_EFFECTS_VERSION=1, READ_OUTPUT_PROOF_VERSION=1, CATALOG_DIRECTORY_CONTRACT_VERSION=1;",
     "export const CONTENT_SEARCH_CONTRACT_VERSION=1;",
     "export const calls=[]; let state; export function configure(value){state=value;}",
@@ -40,16 +42,16 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     "export async function listCatalog(options){calls.push({operation:'list',options}); return state.list(options);}",
     "export async function contentSearch(input,options){calls.push({operation:'content-search',contentInput:input,options}); return state.contentSearch(input,options);}",
   ].join("\n"));
-  await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ version: 1, package: "ntn-skills", package_version: "current-source-fixture",
+  await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ ...(await copyReferenceProtocol(join(root, "src"))), version: 1, package: "ntn-skills", package_version: "current-source-fixture",
     sdk_version: 2, consumer_contract_version: 1, consumption_effects_version: 1, read_output_proof_version: 1, catalog_directory_contract_version: 1, content_search_contract_version: 1 }));
   const sdk = await import(pathToFileURL(module).href);
   const boundary: typeof import("../../src/notion-source") = await import(pathToFileURL(join(root, "src/notion-source.ts")).href);
   const offset = (fixture.identity ?? 0) * 100, library = fixture.identity === undefined ? "current-source" : "current-source-" + fixture.identity;
-  const scope = hash("authorized source"), id = "shared_skill:" + library + ":entry", main = { skill: "SKILL.md", router: "ROUTER.md", prompt: "PROMPT.md" }[kind];
+  const scope = hash("authorized source"), id = nativeSkillId(String(library), "entry"), main = { skill: "SKILL.md", router: "ROUTER.md", prompt: "PROMPT.md" }[kind];
   const body = fixture.body ?? "\ufeff# Current " + kind + "\r\nKeep all author bytes.\r\n";
   const version = hash(body), core = process.env.CONTEXT_BROKER_GRAPH_CORE;
   const record: ContentRecord = { id, kind, name: fixture.name ?? "entry", alias: fixture.name ?? "entry", description: "Current source", default_context: false, enabled: true,
-    entrypoint: main, ref: "skill://" + encodeURIComponent(id) + "/" + main,
+    entrypoint: main, ref: nativeFileRef(id, String(main)),
     locator: { type: "shared_skill", library_id: library, skill_id: "entry", page_id: uuid(offset + 1), database_id: uuid(offset + 10), data_source_id: uuid(offset + 11) } };
   const selection = { scope, record, version_id: version };
   // Paired checks use the actual current producer. Standalone host tests treat
@@ -64,7 +66,7 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
   const files = [...bytes].map(([path, value]) => {
     const binding = bindings.find(item => item.path === path);
     return { path, bytes: value.length, sha256: hash(value),
-      ref: "skill://" + encodeURIComponent(id) + "/" + path + "?snapshot=" + snapshot + (binding ? "&file_id=" + binding.file_id : "") };
+      ref: nativeFileRef(id, String(path), String(snapshot)) };
   });
   const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash(body), ref: files[0]!.ref };
   const source: Extract<SourceConfig, { type: "notion" }> = { type: "notion", id: "notion", database: uuid(offset + 10), cacheDir: join(root, "cache"), activation: { maxAge: "1s" }, prefetch: false };
@@ -104,13 +106,17 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     directory: undefined as unknown,
     paired: undefined as unknown,
     filesResponse: undefined as unknown,
-    resolve: (target: string, _catalog: unknown): unknown => ({ record, scope, ref: target.replace("entry/", encodeURIComponent(id) + "/") }),
+    resolve: (target: string, _catalog: unknown): unknown => {
+      const ref = bindNativeReference(parseNativeReference(target), library);
+      if (ref.selector !== id) throw Object.assign(new Error("Exact ID unavailable"), { code: "SKILL_NOT_FOUND" });
+      return { record, scope, ref: nativeFileRef(id, ref.path || main, ref.snapshot) };
+    },
     resolveRelative: (_target: string, _options: Runtime): unknown => { throw new Error("Unexpected Source-relative reference"); },
     list(options: Runtime): unknown {
       if (options.directory) return state.paired ?? { version: 1, catalog: { ok: true, value: state.catalog }, directory: { ok: true, value: state.directory ?? state.catalog } };
       return options.defaultView || options.view ? state.directory ?? state.catalog : state.catalog;
     },
-    listFiles(_target: string, _options: Runtime): unknown { return state.filesResponse ?? { record, scope, snapshot_id: snapshot, version_id: version, entrypoint: main, ref: binding.ref, freshness: { policy: "pinned" }, files, snapshot_aliases: [record.name, record.alias] }; },
+    listFiles(_target: string, _options: Runtime): unknown { return state.filesResponse ?? { record, scope, snapshot_id: snapshot, version_id: version, entrypoint: main, ref: binding.ref, freshness: { policy: "pinned" }, files }; },
     afterConsume: undefined as (() => void) | undefined,
     transform: (value: ReturnType<typeof result>): unknown => value,
     decoded: 0,

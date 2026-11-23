@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
@@ -28,7 +29,7 @@ const within = (base, target) => { const value = relative(base, target); return 
 const disjoint = (a, b) => !within(a, b) && !within(b, a);
 const modelSelectors = ['magpie/group/flash-free', 'magpie/group/worker'];
 const permissionFailure = text => /insufficient (?:permission|quota)|not authorized|api key.*(?:invalid|denied)|please upgrade|无权限使用|额度不足|账户.*(?:无权|欠费)/i.test(text);
-export const GRAPH_GATE_HARNESS_VERSION = 18;
+export const GRAPH_GATE_HARNESS_VERSION = 19;
 export const GRAPH_GATE_TOOLS = Object.freeze(['read', 'notion_list', 'notion_use']);
 export async function graphHarnessIdentity() {
   const files = await Promise.all(['notion-skill-graph-model.mjs', 'notion-skill-graph-model-evidence.mjs', 'skill-preparation-evidence.mjs', 'verify-skill-graph-contract.mjs', 'notion-skill-graph-project.mjs', 'notion-skill-graph-observer-smoke.mjs', 'notion-skill-retained-proof.mjs', 'notion-skill-source-proof.ts', 'notion-pi-help.mjs', 'notion-skill-graph.mjs', 'notion-integration-model.mjs', 'verify-pi-notion-model-cache.mjs'].map(async name => {
@@ -42,15 +43,15 @@ export function graphObserverModule(settings, referenceParser) {
   return "import * as fs from 'node:fs';\nimport * as crypto from 'node:crypto';\nimport * as path from 'node:path';\nimport { graphSourceViews } from " + JSON.stringify(new URL('./notion-skill-graph-model-evidence.mjs', import.meta.url).href)
     + ';\nimport { verifyConsumptionEffects, verifyPreparationEvidence, generatedDescriptionEvidence, visibleDiscoveryCards, captureInjectionReceipts, injectedDescriptionEvidence } from ' + JSON.stringify(new URL('./skill-preparation-evidence.mjs', import.meta.url).href)
     + ';\nimport { dailyRouteContract } from ' + JSON.stringify(new URL('./verify-skill-graph-contract.mjs', import.meta.url).href)
-    + ';\nimport { parseNativeReference } from ' + JSON.stringify(referenceParser)
+    + ';\nimport { parseNativeReference, nativeFileRef, hasExactNativeOwner, bindNativeReference, nativeReferenceLibrary } from ' + JSON.stringify(referenceParser)
     + ';\nimport { validateResourceReadProjection } from ' + JSON.stringify(new URL('./resource-read-projection.ts', referenceParser).href)
-    + ";\nexport default function(api) { const settings = " + JSON.stringify(settings) + '; const piHelpBoundary = (' + createPiHelpBoundary.toString() + ')({fs,crypto,path,executable:settings.piExecutable}); (' + observeGraphGate.toString() + ')(api, { ...settings, fs, crypto, path, piHelpBoundary, parseNativeReference, validateResourceReadProjection }); }\n';
+    + ";\nexport default function(api) { const settings = " + JSON.stringify(settings) + '; const piHelpBoundary = (' + createPiHelpBoundary.toString() + ')({fs,crypto,path,executable:settings.piExecutable}); (' + observeGraphGate.toString() + ')(api, { ...settings, fs, crypto, path, piHelpBoundary, parseNativeReference, nativeFileRef, hasExactNativeOwner, bindNativeReference, nativeReferenceLibrary, validateResourceReadProjection }); }\n';
 }
 
 export function graphCatalogEvidence(observation, config) {
   const catalogs = observation.filter(event => event.phase === 'catalog');
   assert.ok(catalogs.length, 'An actual native catalog observation is required');
-  const ownerId = decodeURIComponent(config.rootRef.split('/')[2]);
+  const ownerId = parseNativeReference(config.rootRef).selector;
   for (const catalog of catalogs) {
     assert.equal(catalog.stage, 'before_provider_request', 'Only the actual provider system payload proves catalog visibility');
     assert.ok(['pending', 'ready'].includes(catalog.state), 'An unavailable or unobserved catalog cannot prove discovery');
@@ -186,8 +187,9 @@ export function observeGraphGate(api, settings) {
       ancestor = parent;
     }
   };
-  const makeRef = (id, path, snapshot, fileId) => `skill://${encodeURIComponent(id)}/${path.split('/').map(encodeURIComponent).join('/')}?snapshot=${snapshot}${fileId ? '&file_id=' + encodeURIComponent(fileId) : ''}`;
-  if (typeof settings.parseNativeReference !== 'function') throw new Error('Graph observation requires the installed product reference parser');
+  for (const name of ['parseNativeReference', 'nativeFileRef', 'hasExactNativeOwner', 'bindNativeReference', 'nativeReferenceLibrary'])
+    if (typeof settings[name] !== 'function') throw new Error('Graph observation requires the installed product reference protocol');
+  const makeRef = settings.nativeFileRef;
   const parseRef = value => {
     if (typeof value !== 'string') return undefined;
     try { return value.startsWith('sr:') ? shortReference(value) : settings.parseNativeReference(value); } catch { return undefined; }
@@ -268,65 +270,6 @@ export function observeGraphGate(api, settings) {
     } catch (error) { if (includeFailures) throw error; return []; }
   });
   const sourceViews = () => graphSourceViews(sourceResponses());
-  const submittedNameClaim = input => {
-    const parsed = parseRef(input);
-    if (!submittedUser || !input.startsWith('skill://') || !parsed || parsed.snapshot !== undefined || parsed.fileId !== undefined
-      || parsed.path && parsed.path !== 'SKILL.md' || /^(?:shared_skill:|notion_page:|notion_subscription:|upstream:)/u.test(parsed.selector)
-      || /^[a-f0-9-]{32,36}$/iu.test(parsed.selector)) return undefined;
-    const word = value => value !== undefined && /[\p{L}\p{N}\p{M}_.-]/u.test(value);
-    let start = settings.prompt.indexOf(parsed.selector);
-    while (start !== -1) {
-      const end = start + parsed.selector.length;
-      if (!word([...settings.prompt.slice(0, start)].at(-1)) && !word([...settings.prompt.slice(end)][0]))
-        return { kind: 'submitted-name', selector: parsed.selector, path: parsed.path,
-          promptSha256: submittedUser.promptSha256, promptSequence: submittedUser.sequence,
-          providerPayloadSha256: submittedUser.providerPayloadSha256, span: { start, end },
-          sourceFilesBefore: sourceResponses({ includeFailures: true }).map(item => item.observerResponseFile) };
-      start = settings.prompt.indexOf(parsed.selector, start + 1);
-    }
-    return undefined;
-  };
-  const resolveSubmittedName = claim => {
-    if (claim?.kind !== 'submitted-name') return claim;
-    const fresh = sourceResponses({ includeFailures: true }).filter(item => !claim.sourceFilesBefore.includes(item.observerResponseFile));
-    const operation = item => item.transport === 'sdk' ? item.operation : item.command;
-    const catalogs = fresh.filter(item => operation(item) === 'list');
-    const candidates = [];
-    if (!catalogs.length) return undefined;
-    for (const item of catalogs) {
-      if (!item.observerCompleted || typeof item.requestId !== 'string') return undefined;
-      const projections = graphSourceViews([item]);
-      if (projections.directoryFailures.length || !projections.directories.length) return undefined;
-      for (const { value, facet } of projections.directories) {
-        if (!/^[a-f0-9]{64}$/u.test(value.scope)
-          || !Array.isArray(value.records) || value.count !== value.records.length
-          || !Array.isArray(value.coverage?.failed_sources) || value.coverage.failed_sources.length) return undefined;
-        // A successful background View/search/page is observed cost, not name
-        // authority. A complete ordinary catalog is still required below; failed
-        // or unattributed list work cannot be discarded as background activity.
-        if (facet === 'directory' || value.coverage.method === 'explicit_view' || ['view', 'view_selection', 'view_query', 'profile', 'capability_directory', 'query', 'limit', 'cursor', 'has_more', 'next_cursor', 'total_count'].some(key => key in value)) continue;
-        if (value.coverage.exhaustive !== true || value.coverage.search_index_limited !== false
-          || new Set(value.records.map(record => record.id)).size !== value.records.length) return undefined;
-        for (const record of value.records) {
-          if (record.enabled === false || ![record.name, record.alias].includes(claim.selector)) continue;
-          const parsed = parseRef(record.ref), path = record.entrypoint ?? parsed?.path;
-          if (!parsed || parsed.selector !== record.id || !path || path !== parsed.path || !['skill', 'router'].includes(record.kind)
-            || claim.path && claim.path !== path) return undefined;
-          candidates.push({ scope: value.scope, ownerId: record.id, path, record, selectionRequestId: item.requestId });
-        }
-      }
-    }
-    const unique = [...new Map(candidates.map(item => [canonical([item.scope, item.ownerId, item.path, item.record.locator ?? null]), item])).values()];
-    if (unique.length !== 1) return undefined;
-    const selected = unique[0], readIds = new Set(fresh.filter(item => item.observerCompleted
-      && (operation(item) === 'read' || operation(item) === 'consume' && item.value?.preparation?.purpose === 'inspect')).map(item => item.requestId));
-    const reads = sourceViews().entries.filter(item => readIds.has(item.requestId) && typeof item.requestId === 'string'
-      && item.value.scope === selected.scope && item.value.record?.id === selected.ownerId && item.value.path === selected.path);
-    if (reads.length !== 1) return undefined;
-    return { scope: selected.scope, ownerId: selected.ownerId, path: selected.path,
-      nameResolution: { selector: claim.selector, promptSha256: claim.promptSha256, promptSequence: claim.promptSequence,
-        selectionRequestId: selected.selectionRequestId, readRequestId: reads[0].requestId } };
-  };
   function shortReference(value) {
     if (!/^sr:[CSR][A-Za-z0-9_-]{22}$/.test(value)) throw new Error('Invalid session reference');
     const bindings = new Map();
@@ -349,7 +292,7 @@ export function observeGraphGate(api, settings) {
     if (!records.some(({ record, scope }) => scope === identity.scope && record.id === identity.id && record.kind === identity.kind
       && same(record.locator, identity.locator) && settings.parseNativeReference(record.ref).selector === raw.selector)) throw new Error('Session reference lacks an authorized observed owner');
     if (target.kind === 'candidate') {
-      if (raw.path || raw.snapshot !== undefined || raw.fileId !== undefined) throw new Error('Candidate reference cannot contain a pin');
+      if (raw.path || raw.snapshot !== undefined) throw new Error('Candidate reference cannot contain a pin');
     } else {
       if (owner.kind !== 'selected') throw new Error('Resource owner must be a selected reference');
       const entry = facts.entries.find(item => item.value.record.id === identity.id && item.value.scope === identity.scope
@@ -361,13 +304,17 @@ export function observeGraphGate(api, settings) {
           .find(node => node.state === 'prepared' && node.id === identity.id && node.binding.snapshot_id === owner.snapshot_id);
         const file = prepared?.files.find(file => file.path === target.path);
         if (!file || file.ref !== target.ref || file.sha256 !== target.sha256 || file.bytes !== target.bytes
-          || raw.fileId !== target.file_id || target.path === owner.entrypoint) throw new Error('Resource session reference lacks its immutable manifest');
-      } else if (raw.path !== owner.entrypoint || raw.fileId !== owner.file_id) throw new Error('Selected reference changed its main file');
+          || entry.value.file_bindings?.find(binding => binding.path === target.path)?.file_id !== target.file_id || target.path === owner.entrypoint) throw new Error('Resource session reference lacks its immutable manifest');
+      } else if (raw.path !== owner.entrypoint) throw new Error('Selected reference changed its main file');
     }
     return { ...raw, scope: identity.scope };
   }
   const resolveMainReference = parsed => {
     if (!parsed) return parsed;
+    if (!settings.hasExactNativeOwner(parsed)) {
+      if (!root || !settings.hasExactNativeOwner(root)) return undefined;
+      parsed = settings.bindNativeReference(parsed, settings.nativeReferenceLibrary(root));
+    }
     const views = sourceViews();
     const candidates = [...views.directories.map(item => ({ value: item.value, records: item.value.records })),
       ...views.entries.map(item => ({ value: item.value, records: [item.value.record], pin: item.value.snapshot_id })),
@@ -381,24 +328,9 @@ export function observeGraphGate(api, settings) {
       });
     });
     const exact = candidates.filter(candidate => candidate.ownerId === parsed.selector);
-    const names = exact.length ? [] : candidates.filter(candidate => [candidate.record.name, candidate.record.alias].includes(parsed.selector)
+    if (parsed.path) return parsed;
+    const matched = exact.filter(candidate => (parsed.scope === undefined || parsed.scope === candidate.scope)
       && (parsed.snapshot === undefined || candidate.pin === parsed.snapshot));
-    // Source receipts may corroborate an actually disclosed owner; a hidden full
-    // catalog alone never authorizes a guessed name. Fixed names use that pin's
-    // historical record, not a current directory's renamed owner.
-    const named = names.filter(candidate => [...discovered].some(([ref, proof]) => {
-      const prior = parseRef(ref);
-      return prior && (prior.selector === candidate.ownerId || [candidate.record.name, candidate.record.alias].includes(prior.selector))
-        && (proof.scope === undefined || proof.scope === candidate.scope)
-        && (parsed.snapshot === undefined || prior.snapshot === parsed.snapshot);
-    }));
-    if (parsed.path && !names.length) return parsed;
-    const matched = (names.length ? named : exact).filter(candidate => (parsed.scope === undefined || parsed.scope === candidate.scope)
-      && (parsed.snapshot === undefined || candidate.pin === parsed.snapshot || [...discovered].some(([ref, proof]) => {
-        const prior = parseRef(ref);
-        return prior?.selector === candidate.ownerId && prior.path === candidate.path && prior.snapshot === parsed.snapshot
-          && (proof.scope === undefined || proof.scope === candidate.scope);
-      })));
     const unique = [...new Map(matched.map(candidate => [JSON.stringify([candidate.scope, candidate.ownerId, candidate.path]), candidate])).values()];
     return unique.length === 1 ? { ...parsed, selector: unique[0].ownerId, path: parsed.path || unique[0].path, scope: unique[0].scope } : undefined;
   };
@@ -432,7 +364,7 @@ export function observeGraphGate(api, settings) {
             const actual = join(contentRoot, item.path), hash = partial ? item.sha256 : item.hash;
             if (!inside(contentRoot, actual) || !/^[a-f0-9]{64}$/.test(hash) || !Number.isSafeInteger(item.bytes) || item.bytes < 0) throw new Error('Snapshot resource escaped its verified owner');
             const binding = publicRead.file_bindings?.find(binding => binding.path === item.path);
-            const main = item.path === mainPath, ref = makeRef(ownerId, item.path, snapshot, binding?.file_id);
+            const main = item.path === mainPath, ref = makeRef(ownerId, item.path, snapshot);
             if (partial && item.ref !== ref) throw new Error('Entry file ref differs from its scope/owner/snapshot binding');
             const declared = { ref, logicalId: main ? ownerId : binding?.file_id ?? ownerId + '/' + item.path, ownerId, scope: receipt.scope, snapshot, version: publicRead.version_id, sha256: hash, bytes: item.bytes, path: item.path, actual, actuals: [actual], fileId: binding?.file_id, role: main ? 'entrypoint' : 'resource', kind: publicRead.record.kind, projection: receipt.projection, manifestSha256: digest(receiptBytes) };
             let bytes;
@@ -465,9 +397,10 @@ export function observeGraphGate(api, settings) {
         || value.bytes !== output.bytes || value.sha256 !== output.sha256 || digest(output.content) !== output.sha256
         || Buffer.byteLength(output.content) !== output.bytes || value.entrypoint_sha256 !== owner.body_sha256
         || value.version_id !== owner.binding.version_id) throw new Error('Observed scalar resource differs from its selected owner manifest');
-      files.push({ ref: value.ref, logicalId: parsed.fileId ?? value.record.id + '/' + value.path, ownerId: value.record.id,
+      const fileId = value.file_bindings?.find(binding => binding.path === value.path)?.file_id;
+      files.push({ ref: value.ref, logicalId: fileId ?? value.record.id + '/' + value.path, ownerId: value.record.id,
         scope: value.scope, snapshot: value.snapshot_id, version: value.version_id, sha256: output.sha256, bytes: output.bytes,
-        path: value.path, actual: output.path, actuals: [output.path], fileId: parsed.fileId, role: 'resource', kind: value.record.kind,
+        path: value.path, actual: output.path, actuals: [output.path], fileId, role: 'resource', kind: value.record.kind,
         projection: 'selected-resource', content: output.content, materialized: true, sourceOutputObserved: true });
     }
     for (const observed of outputs.resources) {
@@ -479,7 +412,7 @@ export function observeGraphGate(api, settings) {
       for (const file of selected) {
         const parsed = parseRef(file.ref), declared = owner.files.find(item => item.path === file.path);
         if (!parsed || !declared || declared.ref !== file.ref || declared.sha256 !== file.sha256 || declared.bytes !== file.bytes
-          || parsed.selector !== selection.owner || parsed.snapshot !== selection.snapshot_id || parsed.fileId !== file.file_id) throw new Error('Observed resource batch differs from its selected immutable manifest');
+          || parsed.selector !== selection.owner || parsed.snapshot !== selection.snapshot_id || manifest.file_bindings?.find(binding => binding.path === file.path)?.file_id !== file.file_id) throw new Error('Observed resource batch differs from its selected immutable manifest');
         if (file.encoding !== 'utf8') continue;
         files.push({ ref: file.ref, logicalId: file.file_id ?? selection.owner + '/' + file.path, ownerId: selection.owner,
           scope: selection.scope, snapshot: selection.snapshot_id, version: selection.version_id, sha256: file.sha256, bytes: file.bytes,
@@ -497,7 +430,7 @@ export function observeGraphGate(api, settings) {
     return [...unique.values()];
   };
   const hostIndexProof = (input, source) => {
-    if (source.role !== 'entrypoint' || source.projection !== 'entry' || !source.fileId) return undefined;
+    if (source.role !== 'entrypoint' || source.projection !== 'entry') return undefined;
     const main = canonicalReadPath(input);
     if (!main || ![...advertisedPaths].some(path => canonicalReadPath(path) === main)) return undefined;
     let directory = settings.path.dirname(main);
@@ -582,7 +515,7 @@ export function observeGraphGate(api, settings) {
     if (raw && !parsed) return false;
     if (discovered.has(input) || advertisedPaths.has(input)) return true;
     if (parsed) return [...discovered].some(([ref, proof]) => { const old = resolveMainReference(parseRef(ref)); return old && old.selector === parsed.selector && old.path === parsed.path
-      && (parsed.fileId === undefined || old.fileId === parsed.fileId) && (parsed.scope === undefined || (old.scope === undefined || old.scope === parsed.scope) && (proof.scope === undefined || proof.scope === parsed.scope))
+      && (parsed.scope === undefined || (old.scope === undefined || old.scope === parsed.scope) && (proof.scope === undefined || proof.scope === parsed.scope))
       && (parsed.snapshot === undefined || old.snapshot === parsed.snapshot || !raw.path && parsed.scope !== undefined); });
     const actual = canonicalReadPath(input);
     return actual && (Boolean(hostIndexAlias(input)) || [...discovered.keys(), ...advertisedPaths].some(path => !parseRef(path) && canonicalReadPath(path) === actual)
@@ -598,7 +531,7 @@ export function observeGraphGate(api, settings) {
       const reference = unescape(/\bref="([^"]+)"/.exec(match[1])?.[1] ?? ''), selected = resolveMainReference(parseRef(reference));
       const delivered = files.filter(file => file.role === 'entrypoint' && selected?.selector === file.ownerId && selected.path === file.path
         && selected.snapshot === file.snapshot && (selected.scope === undefined || selected.scope === file.scope)
-        && (selected.fileId === undefined || selected.fileId === file.fileId) && copies(match[2], file.content) === 1
+        && copies(match[2], file.content) === 1
         && contents.filter(content => content.ref === file.ref && content.scope === file.scope && content.sha256 === file.sha256).length === 1
         && hasOwnerDelivery(value, file));
       if (delivered.length === 1) {
@@ -613,7 +546,6 @@ export function observeGraphGate(api, settings) {
       if (!actual || !suppliedRef) continue;
       const matches = files.filter(file => file.actuals.includes(actual) && file.ownerId === suppliedRef.selector
         && file.path === suppliedRef.path && file.snapshot === suppliedRef.snapshot
-        && (suppliedRef.fileId === undefined || suppliedRef.fileId === file.fileId)
         && contents.some(content => content.ref === file.ref && content.scope === file.scope && content.sha256 === file.sha256));
       if (matches.length !== 1) continue;
       const file = matches[0];
@@ -635,18 +567,14 @@ export function observeGraphGate(api, settings) {
   };
   const fileIdentity = file => ({ scope: file.scope, ownerId: file.ownerId, path: file.path, snapshot: file.snapshot,
     fileId: file.fileId, sha256: file.sha256, bytes: file.bytes });
-  const refMatchesFile = (parsed, file, allowFileAlias = false) => parsed && parsed.selector === file.ownerId
-    && (parsed.path === file.path || allowFileAlias && parsed.fileId !== undefined)
-    && (parsed.scope === undefined || parsed.scope === file.scope)
-    && (parsed.snapshot === undefined || parsed.snapshot === file.snapshot)
-    && (parsed.fileId === undefined || parsed.fileId === file.fileId);
-  const targetFor = (input, body, { expected, selection, includePending = false } = {}) => {
-    const original = parseRef(input), parsed = selection && original
-      ? { ...original, selector: selection.ownerId, scope: selection.scope, path: selection.path }
-      : resolveMainReference(original);
+  const refMatchesFile = (parsed, file) => parsed && parsed.selector === file.ownerId
+    && parsed.path === file.path && (parsed.scope === undefined || parsed.scope === file.scope)
+    && (parsed.snapshot === undefined || parsed.snapshot === file.snapshot);
+  const targetFor = (input, body, { expected, includePending = false } = {}) => {
+    const parsed = resolveMainReference(parseRef(input));
     const alias = parsed ? undefined : hostIndexAlias(input);
     let available = exportedFiles({ includePending });
-    if (parsed) available = available.filter(file => refMatchesFile(parsed, file, true));
+    if (parsed) available = available.filter(file => refMatchesFile(parsed, file));
     else if (alias) available = available.filter(file => file.ref === alias.ref && file.scope === alias.scope && file.ownerId === alias.ownerId
       && file.snapshot === alias.snapshot && file.fileId === alias.fileId && file.path === alias.path && file.sha256 === alias.sha256 && file.bytes === alias.bytes);
     else if (root && [...advertisedPaths].some(path => canonicalReadPath(path) === canonicalReadPath(input))) available = available.filter(file => file.ownerId === root.selector && file.role === 'entrypoint');
@@ -663,9 +591,8 @@ export function observeGraphGate(api, settings) {
       || Object.keys(input).some(key => !['path', 'offset', 'limit'].includes(key))) return undefined;
     const offset = input.offset ?? 1, limit = input.limit;
     if (!Number.isSafeInteger(offset) || offset < 1 || !Number.isSafeInteger(limit) || limit < 1) return undefined;
-    const claim = resolveSubmittedName(call.claim);
-    if (call.claim?.kind === 'submitted-name' && !claim) return undefined;
-    const source = targetFor(call.input, undefined, { expected: call.expected, selection: call.claim?.kind === 'submitted-name' ? claim : undefined });
+    const claim = call.claim;
+    const source = targetFor(call.input, undefined, { expected: call.expected });
     if (!call.expected && !matchesClaim(claim, source)) return undefined;
     if (!source) return undefined;
     const lines = source.content.split('\n'), start = offset - 1, end = Math.min(start + limit, lines.length);
@@ -686,12 +613,11 @@ export function observeGraphGate(api, settings) {
       const target = wasDiscovered(input) ? targetFor(input, undefined, { includePending: true }) : undefined;
       return target ? fileIdentity(target) : undefined;
     }
-    const available = exportedFiles({ includePending: true }).filter(file => refMatchesFile(parsed, file, true)
+    const available = exportedFiles({ includePending: true }).filter(file => refMatchesFile(parsed, file)
       && [...discovered].some(([ref, proof]) => {
         const prior = resolveMainReference(parseRef(ref));
         return prior && prior.selector === parsed.selector && prior.path === parsed.path
-          && (parsed.fileId === undefined || prior.fileId === parsed.fileId)
-          && refMatchesFile(prior, file, parsed.fileId !== undefined) && (proof.scope === undefined || proof.scope === file.scope);
+          && refMatchesFile(prior, file) && (proof.scope === undefined || proof.scope === file.scope);
       }));
     return available.length === 1 ? fileIdentity(available[0]) : undefined;
   };
@@ -699,14 +625,14 @@ export function observeGraphGate(api, settings) {
     const parsed = resolveMainReference(parseRef(input));
     if (!parsed || !wasDiscovered(input)) return undefined;
     const owners = sourceViews().directories.flatMap(item => (item.value.records ?? []).filter(record => record.id === parsed.selector)
-      .map(record => ({ scope: item.value.scope, ownerId: record.id, path: parsed.path, snapshot: parsed.snapshot, fileId: parsed.fileId })))
+      .map(record => ({ scope: item.value.scope, ownerId: record.id, path: parsed.path, snapshot: parsed.snapshot })))
       .filter(owner => parsed.scope === undefined || parsed.scope === owner.scope);
     const unique = [...new Map(owners.map(owner => [owner.scope + '/' + owner.ownerId, owner])).values()];
     return unique.length === 1 ? unique[0] : undefined;
   };
   const matchesClaim = (claim, file) => claim && file && claim.scope === file.scope && claim.ownerId === file.ownerId
-    && (claim.path === file.path || claim.fileId !== undefined && claim.fileId === file.fileId)
-    && (claim.snapshot === undefined || claim.snapshot === file.snapshot) && (claim.fileId === undefined || claim.fileId === file.fileId);
+    && claim.path === file.path
+    && (claim.snapshot === undefined || claim.snapshot === file.snapshot);
   const metadataCursors = new Map();
   const checkedMetadata = (content, call, details) => {
     const value = JSON.parse(content), outputs = sourceViews();
@@ -764,7 +690,7 @@ export function observeGraphGate(api, settings) {
       verifyDirectoryRefs(item.directory, proof.directory);
       const explicitRoot = graph.roots.includes(owner);
       for (const { parsed } of selected.filter(item => item.parsed.selector === owner)) {
-        if (!parsed || parsed.path !== file.path || parsed.scope && parsed.scope !== file.scope || parsed.snapshot && parsed.snapshot !== file.snapshot || parsed.fileId && parsed.fileId !== file.fileId) throw new Error('Prepared main changed an explicit pin or File ID');
+        if (!parsed || parsed.path !== file.path || parsed.scope && parsed.scope !== file.scope || parsed.snapshot && parsed.snapshot !== file.snapshot) throw new Error('Prepared main changed an explicit path or pin');
       }
       return { ...file, preparationProof: { purpose: 'use', explicitRoot,
         roots: selected.map(({ parsed }) => graphs.filter(graph => parsed.scope === undefined || parsed.scope === graph.scope).flatMap(graph => graph.publicReceipt.value.nodes).find(node => node.state === 'prepared' && node.id === parsed.selector).binding.ref),
@@ -848,7 +774,7 @@ export function observeGraphGate(api, settings) {
           ?? /<skill-ref>\s*([^<]+)\s*<\/skill-ref>/.exec(match[2])?.[1]?.trim() ?? '');
         const selected = resolveMainReference(parseRef(reference)), start = match.index + match[0].indexOf('>') + 1;
         return selected?.selector === file.ownerId && selected.path === file.path && selected.snapshot === file.snapshot
-          && (selected.scope === undefined || selected.scope === file.scope) && (selected.fileId === undefined || selected.fileId === file.fileId)
+          && (selected.scope === undefined || selected.scope === file.scope)
           && proof.delivery?.start >= start && proof.delivery.end <= start + match[2].length && copies(match[2], file.content) === 1;
       });
       if (wrappers.length !== 1) return undefined;
@@ -1220,22 +1146,22 @@ export function observeGraphGate(api, settings) {
     for (const part of message.content ?? []) if (part.type === 'toolCall') {
       const input = JSON.parse(JSON.stringify(part.arguments)), selected = part.name === 'read' ? input?.paths ?? input?.path : input;
       const requested = typeof selected?.ref === 'string' ? [selected.ref] : selected?.ref;
-      let nameSelection;
+      let referenceSelection;
       if (part.name === 'read' && typeof selected === 'string') {
         const raw = parseRef(selected), resolved = resolveMainReference(raw), expected = discoveredReadIdentity(selected);
-        const claim = discoveredReadClaim(selected) ?? (expected ? undefined : submittedNameClaim(selected));
-        if (claim?.kind === 'submitted-name' || raw && resolved && raw.selector !== resolved.selector)
-          nameSelection = { expected, claim };
+        const claim = discoveredReadClaim(selected);
+        if (raw && resolved && raw.selector !== resolved.selector)
+          referenceSelection = { expected, claim };
       }
       const selectedRoots = part.name === 'notion_use' && Array.isArray(requested)
         ? requested.map(ref => ({ ref, parsed: resolveMainReference(parseRef(ref)) })) : undefined;
       const discovered = part.name === 'notion_use' ? Array.isArray(requested) && requested.length > 0 && requested.every(ref => wasDiscovered(ref))
-        : part.name === 'read' && (typeof selected === 'string' ? wasDiscovered(selected) || Boolean(nameSelection?.claim)
+        : part.name === 'read' && (typeof selected === 'string' ? wasDiscovered(selected) || Boolean(referenceSelection?.claim)
           : Array.isArray(selected) && selected.length > 0 && selected.every(ref => typeof ref === 'string' && wasDiscovered(ref)));
       const observed = record({ phase: 'authored-tool-call', source: 'assistant-message-end', toolCallId: part.id, tool: part.name, input,
-        argumentsSha256: digest(JSON.stringify(input)), discovered, nameSelection, selectedRoots });
+        argumentsSha256: digest(JSON.stringify(input)), discovered, referenceSelection, selectedRoots });
       assistantCalls.set(part.id, { tool: part.name, input, sequence: observed.sequence, at: observed.at, argumentsSha256: observed.argumentsSha256,
-        nameSelection, selectedRoots });
+        referenceSelection, selectedRoots });
     }
     const value = text(message.content);
     if (value.trim()) record({ phase: 'assistant-final', success: ['stop', 'length'].includes(message.stopReason), stopReason: message.stopReason ?? null, text: value, sha256: digest(value), bytes: Buffer.byteLength(value) });
@@ -1261,12 +1187,12 @@ export function observeGraphGate(api, settings) {
       && new Set(batchTargets.map(target => target.fileId ?? target.path)).size === batchTargets.length
       && input.every((ref, index) => targetFor(ref, undefined, { expected: batchTargets[index], includePending: true })?.role === 'resource');
     // Broker may finish source work before this observer's tool_call callback.
-    // Freeze a name's authority at the received model call; new receipts can
+    // Freeze the selected reference authority at the received model call; new receipts can
     // verify that selection, but cannot silently rebind its owner or scope.
-    const expected = authored?.nameSelection ? authored.nameSelection.expected
+    const expected = authored?.referenceSelection ? authored.referenceSelection.expected
       : batch ? batchTargets : event.toolName === 'read' && typeof input === 'string' ? discoveredReadIdentity(input) : undefined;
     const claim = event.toolName === 'read' && typeof input === 'string'
-      ? authored?.nameSelection ? authored.nameSelection.claim : discoveredReadClaim(input) : undefined;
+      ? authored?.referenceSelection ? authored.referenceSelection.claim : discoveredReadClaim(input) : undefined;
     const requested = typeof input?.ref === 'string' ? [input.ref] : input?.ref;
     const selectedRoots = event.toolName === 'notion_use' ? authored?.selectedRoots : undefined;
     const discoveredBefore = event.toolName === 'notion_use'
@@ -1295,7 +1221,7 @@ export function observeGraphGate(api, settings) {
     const authoredProof = authored ? { authoredSequence: authored.sequence, authoredAt: authored.at, argumentsSha256: authored.argumentsSha256 } : {};
     calls.set(event.toolCallId, { toolCallId: event.toolCallId, input, projectPath, category, discovered: discoveredBefore, expected, claim, selectedRoots, validationAttempt, ...authoredProof, origin: authored ? 'model' : 'unknown', sequence: sequence + 1, allowed });
     record({ phase: 'tool-call', toolCallId: event.toolCallId, tool: event.toolName, input, category, allowed, discovered: discoveredBefore, expected, claim, selectedRoots, validationAttempt, ...authoredProof, origin: authored ? 'model' : 'unknown' });
-    if (!allowed) return { block: true, reason: 'This gate permits owned project reads, advertised Pi help, notion_list, disclosed read/use references, and current-main attempts for complete names in the submitted frozen user request.' };
+    if (!allowed) return { block: true, reason: 'This gate permits owned project reads, advertised Pi help, notion_list and disclosed exact read/use references.' };
   });
   api.on('tool_result', (event, ctx) => {
     refreshContext(ctx);
@@ -1395,9 +1321,8 @@ export function observeGraphGate(api, settings) {
         || digest(body) !== resourceProof.sha256 || Buffer.byteLength(body) !== resourceProof.bytes
         || !['', '\n'].includes(suffix))) throw new Error('Native resource differs from its full source span');
     } catch (error) { nativeProofError = error.message; }
-    const claim = resolveSubmittedName(call?.claim);
-    const named = call?.claim?.kind === 'submitted-name';
-    let target = !nativeProofError && call?.allowed && (!named || claim) ? targetFor(call.input, body, { expected: call.expected, selection: named ? claim : undefined }) : undefined;
+    const claim = call?.claim;
+    let target = !nativeProofError && call?.allowed ? targetFor(call.input, body, { expected: call.expected }) : undefined;
     if (target && resourceProof && (target.role !== 'resource' || resourceProof.id !== target.ownerId || resourceProof.scope !== target.scope
       || resourceProof.snapshot_id !== target.snapshot || resourceProof.version_id !== target.version || resourceProof.ref !== target.ref
       || resourceProof.path !== target.path || resourceProof.file_id !== target.fileId)) {
@@ -1430,7 +1355,7 @@ export function observeGraphGate(api, settings) {
     }
     const complete = Boolean(target && !event.isError && !event.parentToolCallId && call?.allowed);
     const partialRead = !complete && !event.isError ? verifiedPartialRead(call, content) : undefined;
-    record({ phase: 'tool-result', toolCallId: event.toolCallId, tool: 'read', origin: call?.origin ?? 'unknown', discovered: call?.discovered ?? false, callSequence: call?.sequence, requested: call?.input, complete, error: nativeProofError ?? (event.isError || !target && !partialRead ? 'native read did not match one complete immutable file' : null), ...(partialRead ? { partialRead } : {}), ...(target ? { ref: target.ref, logicalId: target.logicalId, ownerId: target.ownerId, scope: target.scope, snapshot: target.snapshot, sha256: digest(body), bytes: Buffer.byteLength(body), role: target.role, path: target.path, fileId: target.fileId, content: body, ...(named ? { nameResolution: claim.nameResolution } : {}) } : { sha256: digest(content), bytes: Buffer.byteLength(content) }) });
+    record({ phase: 'tool-result', toolCallId: event.toolCallId, tool: 'read', origin: call?.origin ?? 'unknown', discovered: call?.discovered ?? false, callSequence: call?.sequence, requested: call?.input, complete, error: nativeProofError ?? (event.isError || !target && !partialRead ? 'native read did not match one complete immutable file' : null), ...(partialRead ? { partialRead } : {}), ...(target ? { ref: target.ref, logicalId: target.logicalId, ownerId: target.ownerId, scope: target.scope, snapshot: target.snapshot, sha256: digest(body), bytes: Buffer.byteLength(body), role: target.role, path: target.path, fileId: target.fileId, content: body } : { sha256: digest(content), bytes: Buffer.byteLength(content) }) });
     if (partialRead) deliveredTools.set(event.toolCallId, { toolCallId: event.toolCallId, tool: event.toolName, content });
     if (complete) {
       discover(body, 'successful native read', target, bindHostIndex(call.input, target));
@@ -1640,7 +1565,7 @@ export async function graphSelectionPreflight(config) {
     for (const prompt of prompts) await rpc.prompt(prompt);
     controlled.assertComplete();
     result.defaultDiscovery = verifyCatalogProvider(await rows(output), await rows(provider), config);
-    const id = decodeURIComponent(config.rootRef.split('/')[2]);
+    const id = parseNativeReference(config.rootRef).selector;
     let record;
     const deadline = Date.now() + 90000;
     while (Date.now() < deadline && !record) {
@@ -1794,33 +1719,10 @@ export function graphSourceAttribution({ observation, responses, sourceLedger, o
         : authored.input?.path !== call.input : JSON.stringify(authored.input) !== JSON.stringify(call.input))
       || owner.snapshot !== undefined && read.snapshot !== owner.snapshot) return admittedAt;
     if (call.tool === 'read') {
-      let fileId = read.fileId;
-      try { fileId ??= new URL(read.ref).searchParams.get('file_id') ?? undefined; } catch { return admittedAt; }
+      const fileId = read.fileId;
       const expected = Array.isArray(call.expected) ? call.expected[read.resourceBatchProof?.index] : call.expected;
       let claim = call.claim;
-      if (authored.nameSelection && JSON.stringify(authored.nameSelection) !== JSON.stringify({ expected, claim })) return admittedAt;
-      if (claim?.kind === 'submitted-name') {
-        const proof = read.nameResolution, provider = observation.find(event => event.phase === 'provider-request' && event.sequence === claim.promptSequence);
-        const catalogs = sourceViews.directories.filter(item => item.requestId === proof?.selectionRequestId && item.facet !== 'directory');
-        if (sourceViews.directoryFailures.some(item => item.requestId === proof?.selectionRequestId)) return admittedAt;
-        const catalog = catalogs.length === 1 ? catalogs[0].value : undefined;
-        const records = catalog?.records?.filter(record => record.enabled !== false && [record.name, record.alias].includes(claim.selector));
-        const sources = sourceViews.entries.filter(item => item.requestId === proof?.readRequestId);
-        const source = sources.length === 1 ? sources[0] : undefined;
-        if (!authored.nameSelection || !proof || proof.selector !== claim.selector || proof.promptSha256 !== claim.promptSha256
-          || proof.promptSequence !== claim.promptSequence || !provider || provider.sequence >= authored.sequence
-          || provider.observedPayloadSha256 !== claim.providerPayloadSha256 || !provider.sourceTextHashes?.some(item => item.sha256 === claim.promptSha256)
-          || !catalog || catalog.scope !== read.scope || catalog.count !== catalog.records.length || records.length !== 1
-          || catalog.coverage?.exhaustive !== true || catalog.coverage.search_index_limited !== false || catalog.coverage.failed_sources?.length !== 0
-          || catalog.coverage.method === 'explicit_view' || ['view', 'view_selection', 'view_query', 'profile', 'capability_directory', 'query', 'limit', 'cursor', 'has_more', 'next_cursor', 'total_count'].some(key => key in catalog)
-          || new Set(catalog.records.map(record => record.id)).size !== catalog.records.length
-          || records[0].id !== read.ownerId || records[0].entrypoint !== read.path || claim.path && claim.path !== read.path
-          || !source || source.value.scope !== read.scope || source.value.record.id !== read.ownerId || source.value.path !== read.path
-          || source.value.snapshot_id !== read.snapshot || typeof source.value.content !== 'string'
-          || hash(source.value.content) !== read.sha256 || Buffer.byteLength(source.value.content) !== read.bytes
-          || source.operation !== 'read' && !sourceViews.preparations.some(item => item.requestId === source.requestId && item.value.purpose === 'inspect')) return admittedAt;
-        claim = { scope: catalog.scope, ownerId: records[0].id, path: records[0].entrypoint };
-      }
+      if (authored.referenceSelection && JSON.stringify(authored.referenceSelection) !== JSON.stringify({ expected, claim })) return admittedAt;
       if (expected ? expected.scope !== read.scope || expected.ownerId !== read.ownerId || expected.path !== read.path
         || expected.snapshot !== read.snapshot || expected.fileId !== fileId || expected.sha256 !== read.sha256 || expected.bytes !== read.bytes
         : !claim || claim.scope !== read.scope || claim.ownerId !== read.ownerId || claim.path !== read.path
@@ -1890,9 +1792,9 @@ export function graphTrace({ config, oracle, observation, responses, sourceLedge
         : result.exactToolOutputCopies >= 1 || result.records?.length > 0 && result.records.every(record => record.providerCopies === 1))));
     assert.ok(observed, 'A successful discovery/preparation tool output must reach an actual provider with matching output or verified body hashes');
   }
-  if (config.gate === 'A' && oracle.roots?.B?.ref) assert.ok(!reads.some(read => read.ownerId === decodeURIComponent(oracle.roots.B.ref.split('/')[2])), 'Gate A cannot read the ordinary root as a bridge, including a pinned ref');
+  if (config.gate === 'A' && oracle.roots?.B?.ref) assert.ok(!reads.some(read => read.ownerId === parseNativeReference(oracle.roots.B.ref).selector), 'Gate A cannot read the ordinary root as a bridge, including a pinned ref');
   const actualPrepare = graphSourceViews(responses).preparations.filter(item => item.value.status === 'ready').map(item => item.value);
-  const rootPreparation = actualPrepare.find(value => value.purpose === 'use' && value.roots?.some(root => root.id === decodeURIComponent(config.rootRef.split('/')[2])));
+  const rootPreparation = actualPrepare.find(value => value.purpose === 'use' && value.roots?.some(root => root.id === parseNativeReference(config.rootRef).selector));
   assert.ok(rootPreparation, 'The selected root must use the actual SDK consume or explicit command preparation');
   const selected = rootPreparation.nodes.filter(node => node.state === 'prepared');
   assert.ok(!selected.some(node => node.id === oracle.target.logicalId), 'The optional target cannot be silently promoted into the required closure');
@@ -2272,7 +2174,7 @@ async function main(args) {
     sampling: 'matrix runs 1 cold process, 2 warm new processes on the same complete CLI/Broker caches, then 2 more frozen submissions in the second warm live session; failures remain samples; raw values and medians, no p95',
     artifacts: 'Retain the actual final verbatim. Extract only complete fenced files with explicit relative filenames; a valid SKILL.md and all local links must be present. Prose alone remains plan-only. exercise --command-json records only an existing-project-check. exercise --review binds an independent private review to the full files, original result, exact Node invocation and finite budget, then runs that helper in a separate owned project copy. Evidence and cleanup accept its separate evidence root. Completion is execution evidence, with feature and semantic acceptance still independently reviewed; failed model prerequisites remain blocked.',
     retainedSourceProof: 'Optional config.retainedSourceProofRepo names the absolute frozen CLI source tree. After Pi closes, only unresolved retained chunks with actual observed bundle IDs trigger the independent Effect collector. Its immutable metadata proof, process ledger and HTTP costs are retained separately; it cannot add model reads, resources or loaded state. Missing proof remains observation-incomplete.',
-    oracleIdentity: 'Target logicalId is the full public record.id (shared_skill:library:skill_id); resource logicalId is its observed stable file_id (fallback owner/path only for historical snapshots without file IDs). All refs are canonical actual read refs including snapshot and available file_id.',
+    oracleIdentity: 'Target logicalId is the complete canonical root Skill URI. Resource logicalId is its verified native file_id, or the owner/path for a frozen Source file without a File row. Public refs contain the exact owner, path and snapshot; File bindings remain internal manifest evidence.',
   };
   if (action === '--source') { await sourceCommand(args.shift(), args); return; }
   const options = {};

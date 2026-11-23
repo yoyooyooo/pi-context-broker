@@ -63,16 +63,19 @@ test("Pi relative reads pass the exact containing file to preparation and remove
   expect(inputs).toEqual([{ path: "../../member/SKILL.md", from, offset: 2 }]);
   expect(f.calls[0]).toMatchObject({ input: { path: "/fixed-target/SKILL.md", offset: 2 } });
   expect(f.calls[0]).not.toHaveProperty("input.from");
+  await f.current().execute("contextual-uri", { path: "skill://target/SKILL.md", from }, undefined, undefined, f.ctx);
+  expect(inputs[1]).toEqual({ path: "skill://target/SKILL.md", from });
+  expect(f.calls[1]).not.toHaveProperty("input.from");
   expect(f.current().parameters).toMatchObject({ properties: { from: { type: "string", description: expect.stringContaining("actual file containing") } } });
   for (const input of [
     { path: "../member/SKILL.md", from: "sr:C" + "a".repeat(22) },
-    { path: "../member/SKILL.md", from: "skill://shared_skill%3Alib%3Aroot/SKILL.md" },
+    { path: "../member/SKILL.md", from: "skill://root/SKILL.md?library=lib" },
     { path: "../member/SKILL.md", from: null }, { path: "/absolute.md", from },
-    { path: "~/home.md", from }, { path: "C:\\target.md", from }, { path: "skill://target/SKILL.md", from },
+    { path: "~/home.md", from }, { path: "C:\\target.md", from },
     { path: "../member/SKILL.md#section", from }, { path: "../member/SKILL.md", from, refresh: true },
     { paths: [from], from },
   ]) await expect(f.current().execute("invalid-relative", input, undefined, undefined, f.ctx)).rejects.toBeDefined();
-  expect(inputs).toHaveLength(1); expect(f.calls).toHaveLength(1);
+  expect(inputs).toHaveLength(2); expect(f.calls).toHaveLength(2);
 });
 
 test("Pi read advertises an object schema without provider-rejected top-level combinators", async () => {

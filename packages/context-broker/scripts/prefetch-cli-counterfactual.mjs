@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { parseNativeReference, hasExactNativeOwner } from '../src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -22,7 +23,7 @@ const required = key => { const value = options.get(key); assert(value, key + ' 
 const command = JSON.parse(required('--command-json'));
 assert(Array.isArray(command) && command.length === 2 && command.every(value => typeof value === 'string' && isAbsolute(value)), 'Use exact installed Node and CLI entry paths');
 const graph = required('--graph'), entry = required('--entry'), rootId = required('--root-id'), evidenceRoot = required('--evidence-root');
-assert(/^graph-[a-f0-9]{64}$/.test(graph) && /^shared_skill:/.test(rootId) && isAbsolute(evidenceRoot));
+assert(/^graph-[a-f0-9]{64}$/.test(graph) && hasExactNativeOwner(parseNativeReference(rootId)) && isAbsolute(evidenceRoot));
 const samples = Number(options.get('--samples') ?? 1);
 assert(Number.isSafeInteger(samples) && samples >= 1 && samples <= 3);
 await mkdir(evidenceRoot, { recursive: true });

@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -16,10 +17,10 @@ const cases = [
   ["--option", "%2D-option"], ["A_B", "a_b"], ["Café", "café"], ["Café", "café"], ["dot.name", "dot.name"],
 ] as const;
 const records = cases.map(([rawName, alias], index) => {
-  const skill = "name-" + index, id = "shared_skill:current-source:" + skill;
+  const skill = "name-" + index, id = nativeSkillId("current-source", String(skill));
   return { ...runtime.record, id, name: rawName.trim(), alias,
     locator: { ...runtime.record.locator, skill_id: skill, page_id: "11111111-1111-4111-8111-" + String(index + 1).padStart(12, "0") },
-    ref: "skill://" + encodeURIComponent(id) + "/SKILL.md" };
+    ref: nativeFileRef(id, "SKILL.md") };
 });
 runtime.state.catalog = { ...runtime.state.catalog, records, count: records.length };
 const source = { ...runtime.source, id: "official", namespace: "naming.prod" };
@@ -48,7 +49,9 @@ for (const [index, record] of records.entries()) {
   assert.equal(recordIdentity(match.record), choice.identity); assert.equal(match.record.ref, record.ref);
   assert.equal(parseNativeReference(match.record.ref!).selector, record.id);
   const aliasRef = "skill://" + encodeURIComponent(record.alias) + "/" + record.entrypoint;
-  assert.equal(parseNativeReference(aliasRef).selector, record.alias, "Percent payload is decoded once");
+  if (/^[a-z0-9][a-z0-9._-]{0,199}$/.test(record.alias))
+    assert.notEqual(parseNativeReference(aliasRef).selector, record.id, "A valid ID spelling is still not the differently identified record");
+  else assert.throws(() => parseNativeReference(aliasRef), "Display aliases outside the stable ID grammar cannot enter the reference protocol");
   rows.push({ name: record.name, alias: record.alias, query: requests[0]!.query, identity: choice.identity, ref: choice.ref });
 }
 const same = remote.filter(record => record.alias === "same-alias");
