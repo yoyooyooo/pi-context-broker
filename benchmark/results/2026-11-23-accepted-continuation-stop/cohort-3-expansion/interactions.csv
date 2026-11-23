@@ -1,0 +1,4 @@
+"kind","id","metric","unit","currency","status","estimate","interval_status","lcb","ucb","reason","origin","confirmation"
+"model_environment_interaction","gpt62-grok46-environment","quality","ratio_difference","","unknown","","unavailable","","","Incomplete matched four-cell observations","preregistered-plan","false"
+"model_environment_interaction","gpt62-grok46-environment","time","milliseconds","","unknown","","unavailable","","","Incomplete matched four-cell observations","preregistered-plan","false"
+"model_environment_interaction","gpt62-grok46-environment","cost","currency","","unknown","","unavailable","","","Missing or incompatible currency cost","preregistered-plan","false"

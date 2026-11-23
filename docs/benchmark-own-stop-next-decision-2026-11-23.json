@@ -1,0 +1,726 @@
+{
+  "version": 1,
+  "kind": "public-own-partial-stop-next-decision-draft",
+  "status": "awaiting_user_decision_and_explicit_contract_implementation",
+  "approved": false,
+  "user_approval": null,
+  "execution_authority": null,
+  "execution_ready": false,
+  "requested_action": "Retain the exact closed80 history including the known-zero Git admission invalid; after a reviewed and frozen explicit continuation contract plus actual user acceptance, execute only the original59 never-started reservations once.",
+  "physical_history": {
+    "physical": 80,
+    "completed": 80,
+    "execution_unresolved": 0,
+    "registered_scopes": 9,
+    "valid": 71,
+    "invalid": 9,
+    "valid_overall_outcomes": {
+      "pass": 17,
+      "fail": 12,
+      "unknown": 42
+    },
+    "effective_unknown_usage_runs": 5,
+    "original_completion_unknown_usage_runs": 6
+  },
+  "budget": {
+    "retained_physical": 80,
+    "own_remaining": 17,
+    "engineering_remaining": 42,
+    "requested_future": 59,
+    "approved_total_ceiling": 139,
+    "hard_limit": 144,
+    "unallocated": 5,
+    "additional_budget": 0,
+    "retry_reservations": 0
+  },
+  "allocation_transition": {
+    "parent_accepted_history": 66,
+    "additional_closed": 14,
+    "fully_consumed_allocation": {
+      "id": "continuation-unstarted-followup-11",
+      "reservations": 11
+    },
+    "partial_original_allocation": {
+      "id": "own-product-confirmation-2",
+      "original_limit": 20,
+      "spent": 3,
+      "never_started_to_transfer": 17
+    },
+    "new_own_identity_proposed_only": true,
+    "other_seven_allocations_unchanged": true
+  },
+  "stop": {
+    "run_id": "benchmark-own-product-confirmation-2-003",
+    "slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+    "physical_ordinal": 80,
+    "source_order": 2,
+    "runtime_status": "admission_rejected",
+    "validity": "invalid",
+    "outcome": "not_applicable",
+    "stop_batch": true,
+    "reason_code": "BENCHMARK_ADMISSION_MISMATCH",
+    "expected_git_version": "2.50.1",
+    "observed_git_version": "2.39.5 (Apple Git-154)",
+    "model_http_requests": 0,
+    "guarded_fetch_attempts": 0,
+    "reconciliation_complete": true,
+    "other_http_requests": 8,
+    "usage_unknown": false,
+    "zero_network_claim": false,
+    "zero_invoice_claim": false,
+    "retry_allowed": false
+  },
+  "own": {
+    "original_experiment_id": "benchmark-own-product-confirmation-2",
+    "original_scope_id": "own-product-confirmation-2",
+    "original_phase": "confirmation",
+    "original_scientific_slots": 20,
+    "original_selected_slots": 20,
+    "already_started": 3,
+    "valid": 2,
+    "overall_unknown": 2,
+    "business_pass": 2,
+    "invalid": 1,
+    "unstarted": 17,
+    "analysis_unresolved": 18,
+    "execution_unresolved": 0,
+    "proposed_scope_id": "own-product-confirmation-unstarted-17-1",
+    "proposed_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+    "proposed_authority_role": null,
+    "identity_status": "proposal only; no plan or registration exists",
+    "excluded_started_slots": [
+      {
+        "source_order": 0,
+        "slot_id": "m0-e1--continuation-01-a-n16-r2--r0",
+        "run_id": "benchmark-own-product-confirmation-2-001",
+        "result_status": "completed",
+        "must_never_retry": true
+      },
+      {
+        "source_order": 1,
+        "slot_id": "m0-e0--continuation-01-a-n16-r2--r0",
+        "run_id": "benchmark-own-product-confirmation-2-002",
+        "result_status": "completed",
+        "must_never_retry": true
+      },
+      {
+        "source_order": 2,
+        "slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+        "run_id": "benchmark-own-product-confirmation-2-003",
+        "result_status": "admission_rejected",
+        "must_never_retry": true
+      }
+    ],
+    "remaining_slots": [
+      {
+        "source_order": 3,
+        "prospective_selected_order": 0,
+        "slot_id": "m0-e1--explicit-01-a-n16-r1--r0",
+        "case_id": "explicit-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "pair_id": "m0-explicit-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "cold-skill-operator-1",
+        "cold_precommitted": true
+      },
+      {
+        "source_order": 4,
+        "prospective_selected_order": 1,
+        "slot_id": "m0-e1--equivalent-01-a-n16-r1--r0",
+        "case_id": "equivalent-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "pair_id": "m0-equivalent-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "root-dispatcher",
+        "cold_precommitted": false
+      },
+      {
+        "source_order": 5,
+        "prospective_selected_order": 2,
+        "slot_id": "m0-e0--equivalent-01-a-n16-r1--r0",
+        "case_id": "equivalent-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "pair_id": "m0-equivalent-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "root-dispatcher",
+        "cold_precommitted": false
+      },
+      {
+        "source_order": 6,
+        "prospective_selected_order": 3,
+        "slot_id": "m0-e0--task-switch-01-a-n16-r2--r0",
+        "case_id": "task-switch-01-a-n16-r2",
+        "condition_id": "m0-e0",
+        "pair_id": "m0-task-switch-01-a-n16-r2-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "cold-skill-operator-1",
+        "cold_precommitted": true
+      },
+      {
+        "source_order": 7,
+        "prospective_selected_order": 4,
+        "slot_id": "m0-e1--task-switch-01-a-n16-r2--r0",
+        "case_id": "task-switch-01-a-n16-r2",
+        "condition_id": "m0-e1",
+        "pair_id": "m0-task-switch-01-a-n16-r2-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "cold-skill-operator-1",
+        "cold_precommitted": true
+      },
+      {
+        "source_order": 8,
+        "prospective_selected_order": 5,
+        "slot_id": "m0-e1--complementary-01-a-n16-r1--r0",
+        "case_id": "complementary-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "pair_id": "m0-complementary-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "root-dispatcher",
+        "cold_precommitted": false
+      },
+      {
+        "source_order": 9,
+        "prospective_selected_order": 6,
+        "slot_id": "m0-e0--complementary-01-a-n16-r1--r0",
+        "case_id": "complementary-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "pair_id": "m0-complementary-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "root-dispatcher",
+        "cold_precommitted": false
+      },
+      {
+        "source_order": 10,
+        "prospective_selected_order": 7,
+        "slot_id": "m0-e0--references-01-a-n16-r1--r0",
+        "case_id": "references-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "pair_id": "m0-references-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "cold-skill-operator-1",
+        "cold_precommitted": true
+      },
+      {
+        "source_order": 11,
+        "prospective_selected_order": 8,
+        "slot_id": "m0-e1--references-01-a-n16-r1--r0",
+        "case_id": "references-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "pair_id": "m0-references-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "cold-skill-operator-1",
+        "cold_precommitted": true
+      },
+      {
+        "source_order": 12,
+        "prospective_selected_order": 9,
+        "slot_id": "m0-e1--scripts-assets-01-a-n16-r1--r0",
+        "case_id": "scripts-assets-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "pair_id": "m0-scripts-assets-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "root-dispatcher",
+        "cold_precommitted": false
+      },
+      {
+        "source_order": 13,
+        "prospective_selected_order": 10,
+        "slot_id": "m0-e0--scripts-assets-01-a-n16-r1--r0",
+        "case_id": "scripts-assets-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "pair_id": "m0-scripts-assets-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "root-dispatcher",
+        "cold_precommitted": false
+      },
+      {
+        "source_order": 14,
+        "prospective_selected_order": 11,
+        "slot_id": "m0-e0--implicit-01-a-n16-r1--r0",
+        "case_id": "implicit-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "pair_id": "m0-implicit-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "root-dispatcher",
+        "cold_precommitted": false
+      },
+      {
+        "source_order": 15,
+        "prospective_selected_order": 12,
+        "slot_id": "m0-e1--implicit-01-a-n16-r1--r0",
+        "case_id": "implicit-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "pair_id": "m0-implicit-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "root-dispatcher",
+        "cold_precommitted": false
+      },
+      {
+        "source_order": 16,
+        "prospective_selected_order": 13,
+        "slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+        "case_id": "no-skill-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "pair_id": "m0-no-skill-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "cold-skill-operator-1",
+        "cold_precommitted": true
+      },
+      {
+        "source_order": 17,
+        "prospective_selected_order": 14,
+        "slot_id": "m0-e0--no-skill-01-a-n16-r1--r0",
+        "case_id": "no-skill-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "pair_id": "m0-no-skill-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "cold-skill-operator-1",
+        "cold_precommitted": true
+      },
+      {
+        "source_order": 18,
+        "prospective_selected_order": 15,
+        "slot_id": "m0-e0--ambiguity-01-a-n16-r1--r0",
+        "case_id": "ambiguity-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "pair_id": "m0-ambiguity-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "root-dispatcher",
+        "cold_precommitted": false
+      },
+      {
+        "source_order": 19,
+        "prospective_selected_order": 16,
+        "slot_id": "m0-e1--ambiguity-01-a-n16-r1--r0",
+        "case_id": "ambiguity-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "pair_id": "m0-ambiguity-01-a-n16-r1-r0",
+        "repeat": 0,
+        "seed": 20261123,
+        "operator_id": "root-dispatcher",
+        "cold_precommitted": false
+      }
+    ],
+    "scientific_claim": "Continuation of one original20-position design. Old3 and future17 retain separate actual owning plans; no second20-slot denominator, fresh-material confirmation, replacement invalid or new blind-start claim.",
+    "original_selection_seal_opening_products_material_statistics_retained": true
+  },
+  "cold": {
+    "logical_operator_id": "cold-skill-operator-1",
+    "same_original_operator_required": true,
+    "original_cold_start_count": 1,
+    "original_committed_slots": 8,
+    "attempted": 1,
+    "invalid": 1,
+    "valid_business_episodes": 0,
+    "remaining_within_own17": 7,
+    "remaining_source_orders": [
+      3,
+      6,
+      7,
+      10,
+      11,
+      16,
+      17
+    ],
+    "operator_input_tokens": null,
+    "operator_output_tokens": null,
+    "operator_cost": null,
+    "operator_usage_status": "unknown; accounted separately from subject usage",
+    "proposed_handoffs": [
+      {
+        "operator_id": "cold-skill-operator-1",
+        "source_orders": [
+          3
+        ],
+        "maximum_new_episodes": 1,
+        "released": false
+      },
+      {
+        "operator_id": "root-dispatcher",
+        "source_orders": [
+          4,
+          5
+        ],
+        "maximum_new_episodes": 2,
+        "released": false
+      },
+      {
+        "operator_id": "cold-skill-operator-1",
+        "source_orders": [
+          6,
+          7
+        ],
+        "maximum_new_episodes": 2,
+        "released": false
+      },
+      {
+        "operator_id": "root-dispatcher",
+        "source_orders": [
+          8,
+          9
+        ],
+        "maximum_new_episodes": 2,
+        "released": false
+      },
+      {
+        "operator_id": "cold-skill-operator-1",
+        "source_orders": [
+          10,
+          11
+        ],
+        "maximum_new_episodes": 2,
+        "released": false
+      },
+      {
+        "operator_id": "root-dispatcher",
+        "source_orders": [
+          12,
+          13,
+          14,
+          15
+        ],
+        "maximum_new_episodes": 4,
+        "released": false
+      },
+      {
+        "operator_id": "cold-skill-operator-1",
+        "source_orders": [
+          16,
+          17
+        ],
+        "maximum_new_episodes": 2,
+        "released": false
+      },
+      {
+        "operator_id": "root-dispatcher",
+        "source_orders": [
+          18,
+          19
+        ],
+        "maximum_new_episodes": 2,
+        "released": false
+      }
+    ]
+  },
+  "engineering": {
+    "scopes": 7,
+    "selected_reservations": 42,
+    "model_execution_windows": 15,
+    "models_serial": true,
+    "existing_runner5_and_sequence_executable": false,
+    "entries": [
+      {
+        "allocation_id": "continuation-codemode-24",
+        "work_index": 4,
+        "experiment_id": "benchmark-codemode-24-1",
+        "selected_reservations": 24,
+        "fixed_run_windows": [
+          8,
+          8,
+          8
+        ],
+        "existing_setup_sha256": "ba03e7c8335252b72745c27662c700aad88d3bab456b1583707811d983917de0",
+        "existing_schedule_sha256": "7c511376ccaf75647d2e39d9393d9f38cb7fcfe578591769e13c363645a14577",
+        "proposed_predecessor_scope_id": "own-product-confirmation-unstarted-17-1",
+        "scientific_setup_schedule_products_materials_unchanged": true
+      },
+      {
+        "allocation_id": "continuation-scale-implicit-n64-r1",
+        "work_index": 5,
+        "experiment_id": "benchmark-scale-implicit-n64-r1-1",
+        "selected_reservations": 2,
+        "fixed_run_windows": [
+          1,
+          1
+        ],
+        "existing_setup_sha256": "6cb54e7404e1906b3b9142f0339f41a705cc2c0cc12dcf4c58e2a140866119dd",
+        "existing_schedule_sha256": "4b36246876023b27487934e384c7b302ee3d1a674451894788199a923646cd12",
+        "proposed_predecessor_scope_id": "continuation-codemode-24",
+        "scientific_setup_schedule_products_materials_unchanged": true
+      },
+      {
+        "allocation_id": "continuation-scale-implicit-n256-r1",
+        "work_index": 5,
+        "experiment_id": "benchmark-scale-implicit-n256-r1-1",
+        "selected_reservations": 2,
+        "fixed_run_windows": [
+          1,
+          1
+        ],
+        "existing_setup_sha256": "553ff36d3e094ae3cd94f85c2499eb9aaccc576dee8d30ab67c595a842d960b7",
+        "existing_schedule_sha256": "78de2af7579e45a135b04f4e4d8b1ef6d142674adbcd9bd161de01b973c2e5e0",
+        "proposed_predecessor_scope_id": "continuation-scale-implicit-n64-r1",
+        "scientific_setup_schedule_products_materials_unchanged": true
+      },
+      {
+        "allocation_id": "continuation-scale-references-n16-r2",
+        "work_index": 5,
+        "experiment_id": "benchmark-scale-references-n16-r2-1",
+        "selected_reservations": 2,
+        "fixed_run_windows": [
+          1,
+          1
+        ],
+        "existing_setup_sha256": "4e02f7c3543f172843967cd8d197cb00c7c67d4a99457619aca156ad4e53bdab",
+        "existing_schedule_sha256": "c267385c9fc0b9d8f9de634ba0ad4096ea3bdf09656804c9cb6d087de5f949d4",
+        "proposed_predecessor_scope_id": "continuation-scale-implicit-n256-r1",
+        "scientific_setup_schedule_products_materials_unchanged": true
+      },
+      {
+        "allocation_id": "continuation-scale-references-n16-r4",
+        "work_index": 5,
+        "experiment_id": "benchmark-scale-references-n16-r4-1",
+        "selected_reservations": 2,
+        "fixed_run_windows": [
+          1,
+          1
+        ],
+        "existing_setup_sha256": "027b2ea4a1e10782c58b1b1620a294440ef997b9d55f380ecfc163a7759ebb69",
+        "existing_schedule_sha256": "7c2a4745cfd3b25f5c7fadef93ad1d4c1467428999644679c46e2c1c7c23024c",
+        "proposed_predecessor_scope_id": "continuation-scale-references-n16-r2",
+        "scientific_setup_schedule_products_materials_unchanged": true
+      },
+      {
+        "allocation_id": "continuation-scale-tariff-n16-r8",
+        "work_index": 5,
+        "experiment_id": "benchmark-scale-tariff-n16-r8-1",
+        "selected_reservations": 2,
+        "fixed_run_windows": [
+          1,
+          1
+        ],
+        "existing_setup_sha256": "e98c8e5b038b40d5f0b9d696b9a2d626b42b6c8eddb1a67f18d2074fdbe2a35f",
+        "existing_schedule_sha256": "a3bec6d9c21f2df38133abd8792e42b0ef99a1f67a3feaa0f627bd8850d4fda2",
+        "proposed_predecessor_scope_id": "continuation-scale-references-n16-r4",
+        "scientific_setup_schedule_products_materials_unchanged": true
+      },
+      {
+        "allocation_id": "continuation-store-fault-8",
+        "work_index": 6,
+        "experiment_id": "benchmark-store-fault-8-1",
+        "selected_reservations": 8,
+        "fixed_run_windows": [
+          4,
+          4
+        ],
+        "existing_setup_sha256": "a6d721ff9cf5022b7f8e1d5e476597eac0d7cedb1f35c0f3a2b9115af671eacb",
+        "existing_schedule_sha256": "3cc1c9728df502fccf165bb4d5c03aedc979baa22d0f0280bc871d459bd1b31c",
+        "proposed_predecessor_scope_id": "continuation-scale-tariff-n16-r8",
+        "scientific_setup_schedule_products_materials_unchanged": true
+      }
+    ]
+  },
+  "model_condition": {
+    "variant": "gpt-6.2-sol",
+    "parameters": {
+      "thinkingLevel": "medium",
+      "maxTokens": 4096
+    },
+    "existing_connection_binding_unchanged": true,
+    "collector_version": "1.1.0",
+    "normalizer_version": "1.1.0"
+  },
+  "window": {
+    "existing": {
+      "start": "2026-11-23T08:16:05.930Z",
+      "end": "2026-11-24T08:16:05.930Z"
+    },
+    "proposed_change": {
+      "requires_explicit_approval": true,
+      "conditional_on_need_after_preparation": true,
+      "maximum_new_windows": 1,
+      "duration_hours": 24,
+      "start": null,
+      "end": null,
+      "created": false,
+      "automatic_renewal": false,
+      "actual_times_must_be_recorded_before_future_dispatch": true
+    }
+  },
+  "path_repair": {
+    "proof_status": "passed",
+    "independent_review_status": "passed",
+    "scope": "original Own003 reference/broker condition only, capture-only; future authorized launch must re-observe actual tool identity",
+    "cold_operator_wrapper_exercised": false,
+    "other_conditions_validated": false,
+    "full_original_expectation_equal": true,
+    "model_http_requests": 0,
+    "guarded_fetch_attempts": 0,
+    "other_http_requests": 8,
+    "local_contract_capture_requests": 1,
+    "earlier_pre_capture_failure_retained": true,
+    "business_execution_resumed": false,
+    "original_stop_preserved": true,
+    "physical_before": 80,
+    "physical_after": 80,
+    "active_leases_before": 0,
+    "active_leases_after": 0,
+    "runtime_contract_activated": false
+  },
+  "implementation": {
+    "existing_v3_supported": false,
+    "new_contract_implemented": false,
+    "new_controller_frozen": false,
+    "new_authority_created": false,
+    "blockers": [
+      {
+        "id": "partial-allocation",
+        "function": "scopesAfter/readHistoryExtension",
+        "guards": [
+          "HISTORY_EXTENSION_PARTIAL_SCOPE",
+          "HISTORY_EXTENSION_SLOT_ORDER",
+          "HISTORY_EXTENSION_SCOPE_COUNT_CHANGED"
+        ],
+        "reason": "Every consumed allocation must start and complete its full reservation_limit. Own3/20 fails; whole-allocation sums/deletions cannot replace20 by17.",
+        "source_file": "benchmark/campaign-history-extension.mjs",
+        "source_sha256": "05435bd3a9d99633f377e1e82394fde2822a3068904b5d1d3d6f1e614c7fc676"
+      },
+      {
+        "id": "terminal-kind-and-known-zero",
+        "function": "readHistoryExtension",
+        "guards": [
+          "HISTORY_EXTENSION_STOP_USAGE_MUST_REMAIN_UNKNOWN",
+          "HISTORY_EXTENSION_RUNTIME_USAGE_CHANGED",
+          "HISTORY_EXTENSION_UNKNOWN_LIST_CHANGED"
+        ],
+        "reason": "Terminal invalid+unknown tokens, runtime invalid+usage_unknown true and attempts>0 are required; terminal ID is added to unknown_usage_run_ids. Own003 is admission_rejected, known zero, and must not enlarge unknown IDs. The retained terminal slot is also currently taken from the last full-plan slot.",
+        "source_file": "benchmark/campaign-history-extension.mjs",
+        "source_sha256": "05435bd3a9d99633f377e1e82394fde2822a3068904b5d1d3d6f1e614c7fc676"
+      },
+      {
+        "id": "confirmation-followup-phase",
+        "function": "assertProtocolExecution",
+        "guards": [
+          "FOLLOWUP_PILOT_ONLY"
+        ],
+        "reason": "UNSTARTED_FOLLOWUP is pilot-only; Own is confirmation. Relabeling would change the scientific contract.",
+        "source_file": "benchmark/finite-campaign.mjs",
+        "source_sha256": "3c0aad2e26e6ad364c4d00c6fde8be24f458706423a9fdb4e74d1a831a15d3a3"
+      },
+      {
+        "id": "followup-source",
+        "function": "assertAuthorizedProtocol",
+        "guards": [
+          "FOLLOWUP_SOURCE_NOT_STOPPED_SCOPE"
+        ],
+        "reason": "Outside the exact Grok alias exception, source must be the original approved stopped pilot_scope. Own has finite campaign_scope/acceptance.",
+        "source_file": "benchmark/finite-campaign.mjs",
+        "source_sha256": "3c0aad2e26e6ad364c4d00c6fde8be24f458706423a9fdb4e74d1a831a15d3a3"
+      },
+      {
+        "id": "known-confirmation-material",
+        "function": "assertConfirmationUnexposed",
+        "guards": [
+          "FINITE_CONFIRMATION_KNOWN_MATERIAL_EXPOSURE"
+        ],
+        "reason": "Original Own materials will be in accepted80 history; a new confirmation fails known-material exposure. Continuation must explicitly retain the original design and exposure, without omitting history or claiming fresh material.",
+        "source_file": "benchmark/finite-campaign.mjs",
+        "source_sha256": "3c0aad2e26e6ad364c4d00c6fde8be24f458706423a9fdb4e74d1a831a15d3a3"
+      }
+    ],
+    "required_finite_contract": [
+      "Accept exact immutable closed physical80, retaining original failures, known costs, effective unknown5/original unknown6; no future failure exemption.",
+      "Consume completed11; retire original Own20 with3 spent and transfer exactly17 never-started source slots to new identity. Retain other7 allocations,139/144/spare5.",
+      "Validate exact Git admission stop with original run/slot/reservation/runtime/normalized/transport evidence and complete zero-model reconciliation. Never recast it as unknown, passed or retriable.",
+      "Explicitly continue the same confirmation20 design, retaining seal/opening/products/material/statistics, source orders and started-slot exclusion. Preserve exposure, no fresh confirmation claim.",
+      "Independently review/freeze new source, obtain actual user acceptance, write a separate authority and exact new runtime/predecessor/controller bindings before dispatch. Later core or unknown-usage stops remain blocking."
+    ]
+  },
+  "future_stop_policy": {
+    "new_core_stop_blocks_dispatch": true,
+    "new_unknown_usage_blocks_dispatch": true,
+    "automatic_retry": false,
+    "automatic_route_switch": false,
+    "automatic_budget_extension": false
+  },
+  "source_refs": [
+    {
+      "id": "stopped80-census",
+      "sha256": "5dbe9f334ada482781b729643692f0fa187e6e658651bf5356842cf4b12a4152"
+    },
+    {
+      "id": "original-own-plan",
+      "sha256": "1617dc2717295caa4a32d8a66229ca805bdf24efd0b6cf7fe5d214e1ba0d6822"
+    },
+    {
+      "id": "original-own-closed-ledger",
+      "sha256": "c8e51f86a4217923a1b698eb29bbd99f511e527c3170fa83e0618cfa1b72309d"
+    },
+    {
+      "id": "original-own-primary-analysis",
+      "sha256": "c4f47ee018e48b3402d7dac8fcabee1c41a292d350ef3d065d0c0ccc8dc15825"
+    },
+    {
+      "id": "own003-independent-diagnosis",
+      "sha256": "7eb1ed8533571cbc3502cf97e5d3c767a49d4f1b159a9f40aecb0d978e859433"
+    },
+    {
+      "id": "original-selection2",
+      "sha256": "fb682401131f82fe20561616bb1eddd4407670a9126cfde75c503f84f5273af8"
+    },
+    {
+      "id": "original-seal-receipt",
+      "sha256": "74b6c6565a3ca613610a2fae19fc764d13ab9fb398c89edf5af5fe3e72b95e47"
+    },
+    {
+      "id": "original-opening-receipt",
+      "sha256": "5c81a53ad5a1e81334b06aef26dce129054b48401394430a97b182b7b7650681"
+    },
+    {
+      "id": "current-authority3",
+      "sha256": "bfb9a3973d50623ef168fb6a2f9c1962eec035de06f4fcca6f29034d186d55b9"
+    },
+    {
+      "id": "current-cache2-controller",
+      "sha256": "f867b853127820b9b266cdcad9ba05946b4b4b8a7747e580238ac84517dcf5e5"
+    },
+    {
+      "id": "own17-data",
+      "sha256": "0078ca151941a0fd497e35293da70dd27e26f5bf46a35643a6afb1b498da4aa7"
+    },
+    {
+      "id": "engineering42-data",
+      "sha256": "0ee60715f266f8cf5682ef7d3c02f3ebb81d66b2c85f6818dea5f6bd29b321dc"
+    },
+    {
+      "id": "v3-static-feasibility",
+      "sha256": "5f1042756daa6ebb61cba0bdbb3364d1c333840312092207e5d5ad736cc25cd2"
+    },
+    {
+      "id": "path-repair-proof",
+      "sha256": "152b945cc223610c87a1e6853fd611d4efaf38acaf84c1c3b265bd81dd36313b"
+    },
+    {
+      "id": "path-repair-independent-review",
+      "sha256": "9ec86c078eef1312b7920772fe44dbcddd61de32684e416ba01fbb385a1d51a4"
+    },
+    {
+      "id": "path-repair-runtime-contract",
+      "sha256": "56174adfb560ef84772f99406e9353a5407d4100c7686852c70c0ab9c46df9fd"
+    },
+    {
+      "id": "cold-stop-root-review",
+      "sha256": "53be95e3b57f26992269bbe73883e70aba29be33aff7c50ddd95e1436b89ec53"
+    },
+    {
+      "id": "cold-operator-usage-closeout",
+      "sha256": "2dd42bb9c6ff007d7c520a5b44e480ea9065af8e5a7d3a80c917ebd1878dd495"
+    }
+  ]
+}

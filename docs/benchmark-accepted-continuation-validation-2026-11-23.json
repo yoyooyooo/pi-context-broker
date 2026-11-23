@@ -1,0 +1,325 @@
+{
+  "version": 1,
+  "kind": "accepted-continuation-public-validation",
+  "status": "passed",
+  "evidence_completed_at": "2026-11-23T17:52:33.420Z",
+  "release": {
+    "directory": "benchmark/results/2026-11-23-accepted-continuation-stop",
+    "manifest_file_sha256": "7a3754dced03c8302cd2cd2d28fbfc0a5333b2a890f292e74ac0da5eeb0608ca",
+    "manifest_semantic_sha256": "0cf45777c37681eaba186ac8e6093e205ecc2b00c305d59f5cc460494abb2952",
+    "manifest_bytes": 807513,
+    "inventory_member_files": 2982,
+    "inventory_member_bytes": 160608873,
+    "files_including_manifest": 2983,
+    "bytes_including_manifest": 161416386,
+    "inventory_including_manifest_sha256": "16207f11596bb17154208df1a76ac40d238c5721228faf6c621157ca1b8ff21d",
+    "inventory_digest_format": "SHA-256 of Node JSON.stringify of the array sorted by path.localeCompare, each entry ordered as path, bytes, sha256.",
+    "publication_version": "1.0.6"
+  },
+  "assembly": {
+    "exit_code": 0,
+    "completed_at": "2026-11-23T17:47:25.766004+00:00",
+    "status": "assembled-and-replayed",
+    "replay_status": "verified",
+    "packages_replayed": 7,
+    "recovery_audits_verified": 1,
+    "history": "linked_not_replayed",
+    "historical_reservations": 13,
+    "physical_reservations": 80,
+    "model_requests": 0,
+    "recorded_result_sha256": "21289ed5bc90f9472790dd78c51a099b1be49a648213fce6a969c88c184ccc9d",
+    "recorded_stdout_sha256": "c2e69871b16e3da0bc050a6f7b1b6eb84afcef4550ad51ca47e4c79e4cccf811"
+  },
+  "isolated_replay": {
+    "exit_code": 0,
+    "completed_at": "2026-11-23T17:52:33.433355+00:00",
+    "status": "passed",
+    "isolation_canaries": {
+      "public_readable": true,
+      "private_sources_denied": true,
+      "private_writes_denied": true,
+      "public_writes_denied": true,
+      "network_denied": true,
+      "inherited_credentials": false
+    },
+    "public_inventory_unchanged": true,
+    "original_export_unchanged": true,
+    "future_dispatch_status": "blocked_by_retained_new_stop_or_unknown",
+    "model_requests": 0,
+    "ledger_writes": 0,
+    "notion_writes": 0,
+    "credential_changes": 0,
+    "recorded_receipt_sha256": "fc287870023aad24082d55daf7346631485b31a1e21c71a56c077a3097821029",
+    "recorded_result_sha256": "c8a0c85c7200a53b027e4b0257393576f63f32cc782975d22e573a580821177e",
+    "helper_source_sha256": "14171ec41f4f2e9abd0e61f6cba6ce0cd85603db682377065f5e160a2e2ce13f",
+    "aggregate": {
+      "status": "verified",
+      "packages_replayed": 7,
+      "recovery_audits_verified": 1,
+      "history": "linked_not_replayed",
+      "historical_reservations": 13,
+      "physical_reservations": 80,
+      "model_requests": 0
+    },
+    "packages": [
+      {
+        "name": "cohort-3-gate",
+        "status": "verified",
+        "analysis_sha256": "8a7a7f2353af9448dd91f3bc8c909338423fd8c76ae845cc792179e1846a96c8",
+        "original_analysis_sha256": "daab2d367fd8a4224bd8afda0ab933e1611ecdaa9ca3957aaf11774658c75a1c",
+        "model_requests": 0,
+        "public_files": 551,
+        "public_bytes": 32065681,
+        "public_manifest_file_sha256": "39fabdf75af0e0e8c553f0e1758ca0cbd84308ee0473ce632ccfdf4a9a78d86f",
+        "public_inventory_sha256": "148a60a60a8752870271300be5e05398855f5f3c3df9cb745b464ced1cb7048d",
+        "regenerated_report_files": 13,
+        "regenerated_report_manifest_file_sha256": "ba7c95cd79d6ecd1af1d6d3736bd0bd65bea5658d44c0ab4551b0d8334fb2527",
+        "identical_analysis_tables_and_quality_chart": 9,
+        "chart_title_differences": [
+          {
+            "file": "input.svg",
+            "public": "Cumulative input",
+            "replay": "Cumulative input across actual attempts"
+          },
+          {
+            "file": "time.svg",
+            "public": "Capped time",
+            "replay": "Capped time across the full fixed denominator"
+          }
+        ]
+      },
+      {
+        "name": "cohort-3-expansion",
+        "status": "verified",
+        "analysis_sha256": "81e82d760ddbcad23004dc5d54bb651ba66d7f2478c56a3fb65378e31be05646",
+        "original_analysis_sha256": "f47f7d9f187d6c9bed0d89b88ea3e6c143ef71ccd82266687b59de0bd74300ed",
+        "model_requests": 0,
+        "public_files": 795,
+        "public_bytes": 56670465,
+        "public_manifest_file_sha256": "9c2c9d815e24d3beaf826ea9df330610b33bdcf3b40ecdcf40354e89a4187b42",
+        "public_inventory_sha256": "7ec8fa3b68aac77c8d161bea56323b6e64b1936c228417540a5912917923581a",
+        "regenerated_report_files": 13,
+        "regenerated_report_manifest_file_sha256": "abf388f82be8de49a5e62cbdce13d6f5e2fdeac5ea3a69d1ebb533bac2122712",
+        "identical_analysis_tables_and_quality_chart": 9,
+        "chart_title_differences": [
+          {
+            "file": "input.svg",
+            "public": "Cumulative input",
+            "replay": "Cumulative input across actual attempts"
+          },
+          {
+            "file": "time.svg",
+            "public": "Capped time",
+            "replay": "Capped time across the full fixed denominator"
+          }
+        ]
+      },
+      {
+        "name": "grok-alias-invalid1",
+        "status": "verified",
+        "analysis_sha256": "e97f7c824fdd4dbbe725138b5c54feabb2bdf0be82e5ac52632da04198bbf41a",
+        "original_analysis_sha256": "3d73deaafc769a16c354089fc2351a36793c6ae3fc0258d1fb187c303915baa2",
+        "model_requests": 0,
+        "public_files": 164,
+        "public_bytes": 3367121,
+        "public_manifest_file_sha256": "9ee595c87a38ffc9d055a516424601b3aee8472aba8b2f78266252eeb024dbd3",
+        "public_inventory_sha256": "ff435a63b74c2af3531d9848c6aa5526146d6ca1a748382facbe8846dff554c3",
+        "regenerated_report_files": 13,
+        "regenerated_report_manifest_file_sha256": "eb13708ad41060be554f93474d97d39b33040f1bcc3552c564628791f4fd7cdf",
+        "identical_analysis_tables_and_quality_chart": 9,
+        "chart_title_differences": [
+          {
+            "file": "input.svg",
+            "public": "Cumulative input",
+            "replay": "Cumulative input across actual attempts"
+          },
+          {
+            "file": "time.svg",
+            "public": "Capped time",
+            "replay": "Capped time across the full fixed denominator"
+          }
+        ]
+      },
+      {
+        "name": "grok-followup7",
+        "status": "verified",
+        "analysis_sha256": "b11caa821731a440fc57b22a83eff914d4b552c8286804189bc7581e857ffa49",
+        "original_analysis_sha256": "4e5a4e0cf1f1ccd8d4b2f6eb2c0022af16f37ef4ae27bede75b17315e3c9e2a6",
+        "model_requests": 0,
+        "public_files": 334,
+        "public_bytes": 15316077,
+        "public_manifest_file_sha256": "03c8502104e2acb3c30a4008d8bc017e3d437e724cb2d8ccacf42dea8ae95dbb",
+        "public_inventory_sha256": "4c62363fc04559f1a6f48fc3a8043af3fc918c145182fcf11c6db495290de31d",
+        "regenerated_report_files": 13,
+        "regenerated_report_manifest_file_sha256": "6d1f3821975be59331b8aebff74b8abf51f1b2488d7370e64e0596fe3b6c368c",
+        "identical_analysis_tables_and_quality_chart": 9,
+        "chart_title_differences": [
+          {
+            "file": "input.svg",
+            "public": "Cumulative input",
+            "replay": "Cumulative input across actual attempts"
+          },
+          {
+            "file": "time.svg",
+            "public": "Capped time",
+            "replay": "Capped time across the full fixed denominator"
+          }
+        ]
+      },
+      {
+        "name": "terra-gate8",
+        "status": "verified",
+        "analysis_sha256": "3434992a2344f1ed17b3076115205d3ce0a693834a0427038946c513f57e9149",
+        "original_analysis_sha256": "0577b6413ca5cd7261ebfb3a1f8c45d3ab6be1259d808d912599d8ac69575dbb",
+        "model_requests": 0,
+        "public_files": 328,
+        "public_bytes": 13146088,
+        "public_manifest_file_sha256": "14a1b81e8dab54866b79b059e27a920e87fe0233af838bb8ffbdb6ddddff9458",
+        "public_inventory_sha256": "3eee130e7aa90a708d0f5460dfc7e0337aa155f4b76a20a93791307292807f25",
+        "regenerated_report_files": 13,
+        "regenerated_report_manifest_file_sha256": "a1a5daa341c7d7fd1bf9b797bde9b8d326c17420ed9ab4f0bf38fb758b708601",
+        "identical_analysis_tables_and_quality_chart": 9,
+        "chart_title_differences": [
+          {
+            "file": "input.svg",
+            "public": "Cumulative input",
+            "replay": "Cumulative input across actual attempts"
+          },
+          {
+            "file": "time.svg",
+            "public": "Capped time",
+            "replay": "Capped time across the full fixed denominator"
+          }
+        ]
+      },
+      {
+        "name": "unstarted-followup-11",
+        "status": "verified",
+        "analysis_sha256": "b8d91dff1140273b26f9d2e6562423576733b7741a30d15ac1e6c52dd5e921cb",
+        "original_analysis_sha256": "747ff5086440af485f29163e84357221652f8265ed21fc80e81a864bc8fe74a3",
+        "model_requests": 0,
+        "public_files": 487,
+        "public_bytes": 28265729,
+        "public_manifest_file_sha256": "e8203af2e79b083e89c1139ac0142f1343fd38bd4a64a296d8b5683fe1479ca6",
+        "public_inventory_sha256": "d3881b062682157c24cde77600417840127e6f78b4756309578bbb3b50830055",
+        "regenerated_report_files": 13,
+        "regenerated_report_manifest_file_sha256": "3d56f4c2e4fd81b975ee58142094e8084c124baddcf3013132dfc3f334cfe982",
+        "identical_analysis_tables_and_quality_chart": 9,
+        "chart_title_differences": [
+          {
+            "file": "input.svg",
+            "public": "Cumulative input",
+            "replay": "Cumulative input across actual attempts"
+          },
+          {
+            "file": "time.svg",
+            "public": "Capped time",
+            "replay": "Capped time across the full fixed denominator"
+          }
+        ]
+      },
+      {
+        "name": "own-confirmation-stopped",
+        "status": "verified",
+        "analysis_sha256": "f3f7f387194a14224199959c7740944cd712978809a795aa4473f1f29463d180",
+        "original_analysis_sha256": "a64d52839cdda20162c1d150f4155b4493b2341f3b72563d9325738ccab8d047",
+        "model_requests": 0,
+        "public_files": 251,
+        "public_bytes": 9247931,
+        "public_manifest_file_sha256": "a9c0067a0185387a71d95a98294d3f200e4837c6ef5bfa7bf03a38c4dab47b8d",
+        "public_inventory_sha256": "1ee031c1cddb4fc33ed548e57e3c9444cbaf73e099f9a908582a75bdafdf5b6b",
+        "regenerated_report_files": 13,
+        "regenerated_report_manifest_file_sha256": "724f83ed788899de1350c6656d87e6c5938a193effb623d518ccca43914ee834",
+        "identical_analysis_tables_and_quality_chart": 9,
+        "chart_title_differences": [
+          {
+            "file": "input.svg",
+            "public": "Cumulative input",
+            "replay": "Cumulative input across actual attempts"
+          },
+          {
+            "file": "time.svg",
+            "public": "Capped time",
+            "replay": "Capped time across the full fixed denominator"
+          }
+        ]
+      }
+    ]
+  },
+  "accounting_interpretation": {
+    "accepted_history_reservations": 66,
+    "current_physical_reservations": 80,
+    "new_reservations_since_acceptance": 14,
+    "new_usage_unknown_since_acceptance": 0,
+    "effective_usage_unknown_episodes": 5,
+    "original_completion_usage_unknown_episodes": 6,
+    "complete_request_count_episodes": 79,
+    "complete_request_count_subtotal": 367,
+    "complete_token_count_episodes": 75,
+    "complete_token_count_subtotal": {
+      "input": 1932498,
+      "output": 54790
+    },
+    "observed_token_lower_bound": {
+      "input": 1936374,
+      "output": 54826
+    },
+    "additional_partial_request_observation": {
+      "run_id": "benchmark-terra-6-1-approved-gate-1-008",
+      "input": 3876,
+      "output": 36,
+      "complete_episode_usage": null
+    },
+    "whole_campaign_complete_totals": {
+      "actual_model_http_requests": null,
+      "complete_input_tokens": null,
+      "complete_output_tokens": null,
+      "complete_currency_cost": null
+    },
+    "retained_new_unknown_usage_baseline": "original linked 13 reservations, before the accepted 66",
+    "retained_new_unknown_usage_run_ids": [
+      "benchmark-two-model-cohort-3-expansion-021",
+      "benchmark-terra-6-1-approved-gate-1-008"
+    ],
+    "unaccepted_unknown_usage_run_ids": [],
+    "unaccepted_stop_run_ids": [
+      "benchmark-own-product-confirmation-2-003"
+    ],
+    "future_dispatch_status": "blocked_by_retained_new_stop_or_unknown"
+  },
+  "binary_policy_validation": {
+    "accepted_identities": [
+      {
+        "kind": "source-bytes",
+        "purpose": "public-synthetic-fixture",
+        "bytes": 6,
+        "sha256": "72ee7e95938b82284a312ea248777aad5e5220a20242ccf98d103d33427fc681"
+      },
+      {
+        "kind": "source-bytes",
+        "purpose": "public-synthetic-fixture",
+        "bytes": 6,
+        "sha256": "588031955e97b0f8647a98716ceec23e4e2452e9f49e89779ea50bc22c12c846"
+      }
+    ],
+    "generator_domain_candidates": 254,
+    "accepted": 2,
+    "rejected": 252,
+    "tests_passed": 48,
+    "tests_failed": 0,
+    "tests_skipped": 0,
+    "recorded_test_stdout_sha256": "e1b376be166dcfbf4bd4cb0420fb3a161ca99a9a734b07d09f045a0024b67a53",
+    "assembler_source_sha256": "65669d86efe7e961530f4f1ec42f71fd4b764312cb28dee8992bd834ef40b74e",
+    "publisher_source_sha256": "219791be176bf722248c3a2a3d73738647f2dd97cc6aadab1877391e6858f236"
+  },
+  "limitations": [
+    "Original private file contents, hidden hash chains and private grading are not replayed.",
+    "The pinned original13 history remains linked, not replayed by this release.",
+    "A successful public replay grants no dispatch permission.",
+    "This file is an allowlisted projection of recorded observations. Private recorder paths, sandbox policy paths, credentials and private source contents are not included.",
+    "Operating-system isolation results are observations from this run; this JSON alone does not recreate that private environment.",
+    "The public release keeps each plan denominator separate. Code Mode 24, scale 10 and fault 8 are accepted allocations, not configured experimental denominators.",
+    "The eight cold Skill positions belong to the Own20 design. One invalid cold episode has executed and seven remain unstarted; operator-side usage is unknown.",
+    "Analysis, CSVs and quality.svg are byte-identical after replay; input.svg and time.svg have only the explicitly listed title substitutions."
+  ]
+}
