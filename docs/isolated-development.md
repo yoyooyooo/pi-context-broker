@@ -138,6 +138,33 @@ This does not permit `NODE_OPTIONS` or disabling TLS verification.
 Builds use the same environment allowlist as runs and record only the passed
 variable names. They do not inherit credentials or proxy settings implicitly.
 
+When an earlier owned build has a useful Bun cache, explicitly pin its inventory
+and copy it into a new build's private cache:
+
+```sh
+node scripts/paired-environment.mjs build --root /absolute/owned/feature-env \
+  --id next-build --bun-cache-from /absolute/owned/prior-env/builds/prior-build \
+  --bun-cache-sha256 REVIEWED_INVENTORY_SHA256
+```
+
+Obtain that SHA-256 from this module's exported `inventory` function over the
+selected build's `build-state/cache/bun`. Both cache options are required together.
+The source must be an owned paired build with a terminal build or failure receipt
+and no surviving recorded build process group. A failed build can supply cache
+bytes without becoming a successful build. The source stays unchanged; the new
+cache must not already exist. Every file is copied, including nested
+`node_modules` paths. Internal symlinks are relocated into the new cache;
+external links are refused. Copies have separate inodes, including on APFS.
+
+`bun-cache-seed.json` records the source hash, relocated target hash, link mapping,
+process evidence and both source/target lock hashes. It is bound into `build.json`
+and checked with the build; later checks do not require the old cache to remain.
+The hash proves the selected local bytes, not package archive SRI authenticity.
+Different lockfiles are allowed: normal frozen-lockfile, ignore-scripts,
+copyfile installation still runs and fetches missing packages normally. Package
+builds, typechecks and the complete pairing checks remain required. With neither
+option, each build retains its existing fresh-cache behavior.
+
 Each build gets a new ID. It copies the current tracked files and nonignored
 untracked files from both task clones into private source snapshots, using the
 Git file lists. It installs each snapshot's dependencies in that build, then
