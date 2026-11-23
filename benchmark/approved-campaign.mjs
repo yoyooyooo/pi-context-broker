@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fingerprint } from './protocol.mjs';
+import { ALIAS_REVISION, readAliasRevisionStop } from './campaign-alias-revision.mjs';
+import { verifyApparatusBridge } from './apparatus-bridge.mjs';
 
 export const APPROVED_CAMPAIGN = 'benchmark-approved-prospective-campaign';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -58,8 +60,8 @@ async function decision(reference) {
 function assertShape(value) {
   keys(value, ['version', 'kind', 'id', 'user_approval', 'proposal', 'predecessor', 'environment_root', 'pilot_ledger_root',
     'history', 'history_checkpoint_sha256', 'max_scheduled_episodes', 'new_reservation_ceiling', 'total_reservation_ceiling',
-    'allocations', 'authorization_sha256'], 'APPROVED_CAMPAIGN_SHAPE');
-  assert.equal(value.version, 1); assert.equal(value.kind, APPROVED_CAMPAIGN); assert.ok(safe(value.id));
+    'allocations', 'authorization_sha256', ...(value.version === 2 ? ['revision'] : [])], 'APPROVED_CAMPAIGN_SHAPE');
+  assert.ok([1, 2].includes(value.version)); assert.equal(value.kind, APPROVED_CAMPAIGN); assert.ok(safe(value.id));
   assert.equal(value.authorization_sha256, fingerprint({ ...value, authorization_sha256: null }), 'APPROVED_CAMPAIGN_CHANGED');
   assert.ok(canonical(value.environment_root) && canonical(value.pilot_ledger_root));
   assert.equal(value.max_scheduled_episodes, 144);
@@ -85,7 +87,7 @@ function assertShape(value) {
 }
 
 async function verifyApproval(value) {
-  assertShape(value);
+  assertShape(value); assert.equal(value.version, 1);
   const { approval, proposal, proposalReference } = await decision(value.user_approval);
   assert.deepEqual(value.proposal, proposalReference, 'APPROVAL_PROPOSAL_CHANGED');
   assert.equal(value.history.scheduled_episodes, approval.existing_reservations, 'APPROVAL_BASELINE_COUNT_CHANGED');
@@ -143,7 +145,7 @@ export async function prepareApprovedCampaign({ id, userApproval, predecessor, e
 export async function readApprovedCampaign(reference) {
   const value = await verified(reference);
   assert.ok(inside(value.environment_root, reference.path), 'APPROVAL_DOCUMENT_OUTSIDE_OWNER');
-  return verifyApproval(value);
+  return value.version === 2 ? verifyRevision(value) : verifyApproval(value);
 }
 
 export function approvedCampaignBinding(reference, value, allocationId) {
@@ -164,4 +166,86 @@ export function assertApprovedCampaignBinding(binding) {
   assert.equal(new Set(boundary.unknown_usage_run_ids).size, boundary.unknown_usage_run_ids.length);
   assert.ok(Number.isSafeInteger(binding.campaign_limit) && binding.campaign_limit <= 144 && binding.campaign_limit > boundary.scheduled_episodes);
   return binding;
+}
+
+function exactHistoricalPrefix(current, previous) {
+  assert.equal(current.scheduled_episodes, previous.scheduled_episodes + 1, 'ALIAS_REVISION_BASELINE_COUNT');
+  for (const key of ['reservations', 'episodes']) assert.deepEqual(current[key].slice(0, previous.scheduled_episodes), previous[key], 'ALIAS_REVISION_BASELINE_CHANGED');
+  assert.equal(current.plans.length, previous.plans.length + 1);
+  for (const plan of previous.plans) assert.deepEqual(current.plans.find(item => item.plan.path === plan.plan.path), plan, 'ALIAS_REVISION_HISTORY_OWNER_CHANGED');
+  assert.deepEqual(current.unknown_usage_run_ids, previous.unknown_usage_run_ids, 'ALIAS_REVISION_NEW_UNKNOWN');
+}
+
+function remainingAllocations(parent, stopped, followupId) {
+  assert.ok(safe(followupId) && !parent.allocations.some(item => item.id === followupId), 'ALIAS_REVISION_FRESH_ALLOCATION_REQUIRED');
+  return parent.allocations.map(item => item.id === stopped.allocation.id
+    ? { id: followupId, work_index: item.work_index, role: 'unstarted_followup', reservation_limit: 7 }
+    : structuredClone(item));
+}
+
+async function verifyRevision(value) {
+  assertShape(value); assert.equal(value.version, 2);
+  const revision = value.revision;
+  keys(revision, ['kind', 'parent_authorization', 'retained_stop', 'followup_allocation_id', 'apparatus_bridges'], 'ALIAS_REVISION_SHAPE');
+  assert.equal(revision.kind, ALIAS_REVISION);
+  const parentValue = await verified(revision.parent_authorization);
+  assert.equal(parentValue.version, 1, 'ALIAS_REVISION_ORIGINAL_APPROVAL_ONLY');
+  assert.ok(inside(parentValue.environment_root, revision.parent_authorization.path));
+  const original = await verifyApproval(parentValue), parent = original.value;
+  for (const field of ['user_approval', 'proposal', 'environment_root', 'pilot_ledger_root', 'max_scheduled_episodes', 'total_reservation_ceiling'])
+    assert.deepEqual(value[field], parent[field], 'ALIAS_REVISION_ORIGINAL_AUTHORITY_CHANGED');
+  assert.notEqual(value.id, parent.id);
+  exactHistoricalPrefix(value.history, parent.history);
+  const stop = revision.retained_stop;
+  const stopped = await readAliasRevisionStop({ parent, parentReference: revision.parent_authorization, predecessor: value.predecessor,
+    sourcePlan: stop.source_plan, metadata: stop.metadata });
+  assert.deepEqual(stop, stopped.retained, 'ALIAS_REVISION_STOP_BINDING_CHANGED');
+  const last = value.history.episodes.at(-1);
+  assert.equal(last.run_id, stop.run_id); assert.equal(last.pilot_ordinal, stop.ordinal);
+  assert.equal(last.episode_sha256, stop.episode_sha256); assert.equal(last.experiment_id, stopped.source.id);
+  assert.equal(last.directory, stopped.event.result.normalized_directory);
+  assert.equal(last.admission, 'invalid'); assert.equal(last.stop_batch, true); assert.equal(last.core_evidence, 'incomplete');
+  assert.equal(last.quality_credit, 'excluded_from_new_scope');
+  assert.equal(last.analysis_revision, undefined); assert.equal(last.collection_recovery, undefined);
+  assert.deepEqual(last.budget_usage, stop.budget_usage);
+  assert.deepEqual(value.history.reservations.at(-1), { ordinal: stop.ordinal, reference: stop.reservation });
+  const owner = value.history.plans.find(item => item.plan.path === stop.source_plan.path);
+  assert.deepEqual(owner, { plan: stop.source_plan, ledger: stop.source_ledger, analysis_revision: null });
+  for (const key of usageKeys) {
+    assert.equal(value.history.known_subtotal[key], parent.history.known_subtotal[key] + stop.budget_usage[key], 'ALIAS_REVISION_COST_CHANGED');
+    assert.equal(value.history.total_usage[key], parent.history.total_usage[key] === null ? null : parent.history.total_usage[key] + stop.budget_usage[key]);
+  }
+  assert.equal(value.history.total_usage_status, parent.history.total_usage_status);
+  assert.equal(value.history.monetary_status, parent.history.monetary_status);
+  assert.equal(value.new_reservation_ceiling, parent.new_reservation_ceiling - 1, 'ALIAS_REVISION_BUDGET_CHANGED');
+  assert.deepEqual(value.allocations, remainingAllocations(parent, stopped, revision.followup_allocation_id), 'ALIAS_REVISION_ALLOCATION_CHANGED');
+  assert.ok(Array.isArray(revision.apparatus_bridges) && revision.apparatus_bridges.length <= 1, 'ALIAS_REVISION_SINGLE_APPARATUS_BRIDGE');
+  const apparatusBridges = [];
+  for (const reference of revision.apparatus_bridges) {
+    keys(reference, ['path', 'sha256'], 'ALIAS_REVISION_APPARATUS_REFERENCE');
+    const preview = await verified(reference);
+    const bridge = await verifyApparatusBridge(reference, { environmentRoot: value.environment_root,
+      sourceBuildId: preview.source_build?.id, targetBuildId: preview.target_build?.id });
+    assert.equal(bridge.status, 'passed');
+    assert.ok(stopped.source.protocol.environments.some(environment => fingerprint(environment.build) === fingerprint(bridge.source_build.identity)),
+      'ALIAS_REVISION_APPARATUS_SOURCE_CHANGED');
+    apparatusBridges.push(bridge);
+  }
+  return { value, approval: original.approval, proposal: original.proposal, original, retainedAliasStop: stopped, apparatusBridges };
+}
+
+/** Data-only engineering revision under the original user decision. No new user
+ * decision is invented, and the original authorization document is not changed. */
+export async function prepareApprovedCampaignRevision({ id, parentAuthorization, predecessor, history, followupAllocationId, sourcePlan, metadata, apparatusBridges = [] }) {
+  const original = await readApprovedCampaign(parentAuthorization), parent = original.value;
+  assert.equal(parent.version, 1, 'ALIAS_REVISION_ORIGINAL_APPROVAL_ONLY');
+  const stopped = await readAliasRevisionStop({ parent, parentReference: parentAuthorization, predecessor, sourcePlan, metadata });
+  const value = { version: 2, kind: APPROVED_CAMPAIGN, id, user_approval: structuredClone(parent.user_approval), proposal: structuredClone(parent.proposal),
+    predecessor: structuredClone(predecessor), environment_root: parent.environment_root, pilot_ledger_root: parent.pilot_ledger_root,
+    history: structuredClone(history), history_checkpoint_sha256: fingerprint(history), max_scheduled_episodes: parent.max_scheduled_episodes,
+    new_reservation_ceiling: parent.new_reservation_ceiling - 1, total_reservation_ceiling: parent.total_reservation_ceiling,
+    allocations: remainingAllocations(parent, stopped, followupAllocationId),
+    revision: { kind: ALIAS_REVISION, parent_authorization: cleanReference(parentAuthorization),
+      retained_stop: stopped.retained, followup_allocation_id: followupAllocationId, apparatus_bridges: apparatusBridges.map(cleanReference) }, authorization_sha256: null };
+  value.authorization_sha256 = fingerprint(value); await verifyRevision(value); return value;
 }
