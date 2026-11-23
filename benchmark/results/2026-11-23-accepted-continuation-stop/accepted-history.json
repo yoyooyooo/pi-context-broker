@@ -1,0 +1,1168 @@
+{
+  "version": 1,
+  "kind": "public-accepted-campaign-history",
+  "source_sha256": "bfb9a3973d50623ef168fb6a2f9c1962eec035de06f4fcca6f29034d186d55b9",
+  "authorization_sha256": "929cd314e0bd63daf240991c60049e52412f30c29c41eeb14d697857a8d5ab59",
+  "history_checkpoint_sha256": "44942a05680966e0fdaf4939c76b2d450477bdc97cde32726b9207ef06c1c3a0",
+  "scheduled_episodes": 66,
+  "original_linked_history": 13,
+  "maximum_scheduled_episodes": 144,
+  "total_reservation_ceiling": 139,
+  "remaining_reservation_ceiling": 73,
+  "parent_authorization_source_sha256": "58866ae25dfa7575f2027051a845a4c4228a471c05ad4cabf354fe1e1112d357",
+  "user_approval_source_sha256": "a909b5a0ac8f2157bf28b30aa6e4047d580fdaa973c83c19b3954cd6e7285aa9",
+  "episodes": [
+    {
+      "ordinal": 1,
+      "run_id": "benchmark-route-gate-1-001",
+      "experiment_id": "benchmark-route-gate-1",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "960a31d2ea24bf0a483e970460ad760b5961158ec4bb4681fb86306318a5a538",
+      "source_episode_sha256": "c1f3323887329413f660c5435de2bacf26b46d3f1016c102adad48d96e295f42",
+      "admission": "invalid",
+      "budget_usage": {
+        "model_requests": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "duration_ms": 7509.257333
+      },
+      "core_evidence": "incomplete",
+      "stop_batch": true
+    },
+    {
+      "ordinal": 2,
+      "run_id": "benchmark-route-gate-3-002",
+      "experiment_id": "benchmark-route-gate-3",
+      "slot_id": "m0-e1--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "d5c16d64827237dab2c747c2164699d23c213a31a0e9b679f3041aa95a098ad9",
+      "source_episode_sha256": "bbafb982ea0e4ca2dcda1c731b40cba217e636817bbd1415e3915600f2175e80",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 4,
+        "input_tokens": 23621,
+        "output_tokens": 769,
+        "duration_ms": 18183.183125
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 3,
+      "run_id": "benchmark-route-gate-3-003",
+      "experiment_id": "benchmark-route-gate-3",
+      "slot_id": "m2-e1--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "ad90e2d17c3853f9d6c8ef23dd654a48a56b79f648ee63c236cb8345a1b2fb1a",
+      "source_episode_sha256": "002ed195227a15f0940d0c08ea7f0e5d6ca2d6fc77e3b13eeae82463cc2f17a4",
+      "admission": "invalid",
+      "budget_usage": {
+        "model_requests": 1,
+        "input_tokens": null,
+        "output_tokens": null,
+        "duration_ms": 6082.845083
+      },
+      "core_evidence": "incomplete",
+      "stop_batch": true
+    },
+    {
+      "ordinal": 4,
+      "run_id": "benchmark-two-model-admission-1-001",
+      "experiment_id": "benchmark-two-model-admission-1",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "ab87e4d38b351c39611e1aa6484acd8880df5f0b5acadc927feccd66622cf90e",
+      "source_episode_sha256": "41bd80551eddd433a13d88020766b2ecbaefc25490632ddc4961c41a6f48251e",
+      "admission": "invalid",
+      "budget_usage": {
+        "model_requests": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "duration_ms": 19078.471458
+      },
+      "core_evidence": "incomplete",
+      "stop_batch": true
+    },
+    {
+      "ordinal": 5,
+      "run_id": "benchmark-two-model-admission-2-001",
+      "experiment_id": "benchmark-two-model-admission-2",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "2aee8bb533a487d4ec67f943f44691a3ce7be245bcc53f477ccd1f70bfa312bf",
+      "source_episode_sha256": "852b6585a946210127031879c2010656cb46ddb6c9f1bebde2f7b33d678e2dc8",
+      "admission": "invalid",
+      "budget_usage": {
+        "model_requests": 1,
+        "input_tokens": null,
+        "output_tokens": null,
+        "duration_ms": 8751.283791
+      },
+      "core_evidence": "incomplete",
+      "stop_batch": true
+    },
+    {
+      "ordinal": 6,
+      "run_id": "benchmark-two-model-admission-3-001",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "8e665446163e79b3034f571e8d27900b136ff1b3c1bd55325a43df7b479142a2",
+      "source_episode_sha256": "fd2f484a7b4e9513ae34d7cd3ec621b1ad3e9b4fc7cfd41f103a0634da1b72b9",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 12084,
+        "output_tokens": 125,
+        "duration_ms": 14343.528667
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 7,
+      "run_id": "benchmark-two-model-admission-3-002",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e1--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "5521b586b2ceb6d3a93bd6f25dd09c0402081e3866881e607dd026994213ed1d",
+      "source_episode_sha256": "3b5520bfac9095c95f479fb5bf3e48f81c189d2fa5014d08c17bed419a264d3f",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 11154,
+        "output_tokens": 123,
+        "duration_ms": 9731.469583
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 8,
+      "run_id": "benchmark-two-model-admission-3-003",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "a47895831073f378be01190fb3f0c02e652831d34d26669e04402c91688f3d21",
+      "source_episode_sha256": "b7b14b3118952cd9bd5130411b67657397437d04f655a7bfe7828df72e9c9ce6",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 11001,
+        "output_tokens": 156,
+        "duration_ms": 14375.883625
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 9,
+      "run_id": "benchmark-two-model-admission-3-004",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e0--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "ded6aa1fbbaa28962f71db20680b3aa631703e4822108389901ffd27cee7d159",
+      "source_episode_sha256": "e246cfa169062413b0de16ebb2facef3be2736001e304ed6707300a8f987ba31",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 11938,
+        "output_tokens": 156,
+        "duration_ms": 21528.009333
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 10,
+      "run_id": "benchmark-two-model-admission-3-005",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e0--no-skill-03-a-n16-r1--r0",
+      "reservation_source_sha256": "76eb89ed41c7e9878b69159f6ce85091402816622d50320104db844c3138719d",
+      "source_episode_sha256": "c16972bb5f499c3a3cdffc82752d090539630a4ddf039979febc70363b0600c0",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 6,
+        "input_tokens": 27668,
+        "output_tokens": 323,
+        "duration_ms": 30963.165250000002
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 11,
+      "run_id": "benchmark-two-model-admission-3-006",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m0-e1--no-skill-03-a-n16-r1--r0",
+      "reservation_source_sha256": "a87cf4aeebc1f29e19d52de5b53b703609a218f6b516db4aa70c2a5b450d71be",
+      "source_episode_sha256": "29c472536594eac2ef6361f09204dbb3a7db852cd25119694778ee4a87126378",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 10,
+        "input_tokens": 39784,
+        "output_tokens": 292,
+        "duration_ms": 25144.1835
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 12,
+      "run_id": "benchmark-two-model-admission-3-007",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m1-e1--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "d5f9d485ad9f796ad21550f5730c7cdc4ecfc649e3d43cd2380010a2e23100a5",
+      "source_episode_sha256": "8e05f316ae88cd68ed8a276f37ec9e7ea08185719b755294b5450b4e3f5add7d",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 5,
+        "input_tokens": 34746,
+        "output_tokens": 2195,
+        "duration_ms": 33935.893
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 13,
+      "run_id": "benchmark-two-model-admission-3-008",
+      "experiment_id": "benchmark-two-model-admission-3",
+      "slot_id": "m1-e0--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "6f5884ef19aa18b0a982981a5d3cd3a941e805b71ab54c7441a38a0b24dbff79",
+      "source_episode_sha256": "930e6a3db4f63cf44d7715f8ff2467b4ddfc9177cfb940e62e834b922da6f0f9",
+      "admission": "invalid",
+      "budget_usage": {
+        "model_requests": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "duration_ms": 180065.80120800002
+      },
+      "core_evidence": "incomplete",
+      "stop_batch": true
+    },
+    {
+      "ordinal": 14,
+      "run_id": "benchmark-two-model-cohort-3-gate-001",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "7c210f0f3e6d08c5d0dee8cc1eba39481bbed8ba7e16e4557b0eb9c23b1a2dd2",
+      "source_episode_sha256": "b03ce4de40447d6c1f5dce694d25b9d819ca91616fab640b0e19e982db7077f0",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 12123,
+        "output_tokens": 125,
+        "duration_ms": 16519.21275
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 15,
+      "run_id": "benchmark-two-model-cohort-3-gate-002",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e1--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "fafe2e97641ec0dee2a2701cc1889992074f07bb7fa50cec9c37ce04e043fa8d",
+      "source_episode_sha256": "41c2658b53d64690a96cdf068a9c591e463da93be10cc97361f30eeb51732d56",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 11450,
+        "output_tokens": 216,
+        "duration_ms": 14625.105
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 16,
+      "run_id": "benchmark-two-model-cohort-3-gate-003",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "7d3591cdeb619453df61a2b222e3bac8771cdefafa2919ea07184c749d62b75e",
+      "source_episode_sha256": "c7f130823d3dcb31344f702e069aa34933ad07e6a92e1ad531cfdeda2cc6631e",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 11238,
+        "output_tokens": 128,
+        "duration_ms": 12472.016083
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 17,
+      "run_id": "benchmark-two-model-cohort-3-gate-004",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e0--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "0183cc81a49572e97e1fc9237e5735ee777d4a90bed49967df6e1248beceda17",
+      "source_episode_sha256": "b1bdda6d6e252b85aac66c80c3b8a5b3eeea13a2f28d2fb09f34df92935b665b",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 11964,
+        "output_tokens": 157,
+        "duration_ms": 26155.775290999998
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 18,
+      "run_id": "benchmark-two-model-cohort-3-gate-005",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e0--no-skill-03-a-n16-r1--r0",
+      "reservation_source_sha256": "804feae93ad702998773fc3cf41f0458cb547af0f5db5b1f66a24cd34f855364",
+      "source_episode_sha256": "f4ebb2ace77a5f4d57daa4b1dca396de0a8cd46018d8885b9529a5a16539ef2d",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 9,
+        "input_tokens": 43361,
+        "output_tokens": 372,
+        "duration_ms": 65181.369417
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 19,
+      "run_id": "benchmark-two-model-cohort-3-gate-006",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e1--no-skill-03-a-n16-r1--r0",
+      "reservation_source_sha256": "9e83187a098d5b4d1d9bd4eedf795d2aeb7fe33a6fcfdb8227c1b13a6dd7c899",
+      "source_episode_sha256": "bc45a8991139b98b2ae4b02baf8c002d3636fb25be143629eb677ea3254015fc",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 10,
+        "input_tokens": 40332,
+        "output_tokens": 326,
+        "duration_ms": 52477.633959
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 20,
+      "run_id": "benchmark-two-model-cohort-3-gate-007",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e1--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "c25b119226f7d301274b47f4f06c9189c90f5aaefaea78d2061bd5c2c6c2bf45",
+      "source_episode_sha256": "4224457c6103332188dee4d413f2feb4c878400c155b7dabae6013ae152aa17e",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 7,
+        "input_tokens": 42736,
+        "output_tokens": 2320,
+        "duration_ms": 46283.670541
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 21,
+      "run_id": "benchmark-two-model-cohort-3-gate-008",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e0--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "231b05b66d999689f2d960ebf848dadb452b414510d258667087405514f3d38f",
+      "source_episode_sha256": "4243b6a3a03c811121ceb216cec6633440ce9bdb0aec5102cae166d1f34b9a9c",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 18163,
+        "output_tokens": 1396,
+        "duration_ms": 35572.419
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 22,
+      "run_id": "benchmark-two-model-cohort-3-gate-009",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+      "reservation_source_sha256": "8d91ff7a96240cf42e5cf082fd06feffcbddf1d3de01205d0a0fc82ae2c041d5",
+      "source_episode_sha256": "992c794f202ab0387cf395157e864444da21f29dbe604dc131167c8c53282022",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 4,
+        "input_tokens": 17432,
+        "output_tokens": 274,
+        "duration_ms": 46987.432
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 23,
+      "run_id": "benchmark-two-model-cohort-3-gate-010",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m0-e1--explicit-01-a-n16-r1--r0",
+      "reservation_source_sha256": "bad007a4c3d462a363c7a883e6773582f646255f20a9403bb6896e8902a826ad",
+      "source_episode_sha256": "be09378fbb68611ba1c1e080edeaaf16204089e7c6f9ec4cf06697dc6f31e1ee",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 4,
+        "input_tokens": 16236,
+        "output_tokens": 370,
+        "duration_ms": 17677.950959
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 24,
+      "run_id": "benchmark-two-model-cohort-3-gate-011",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e1--no-skill-03-a-n16-r1--r0",
+      "reservation_source_sha256": "19c3264321e1362a637115fe48caf014ca62ed3600ada2a3dbc94db3e8e3cec1",
+      "source_episode_sha256": "5a4e05d98998d6b66a2f319790229ca3b31edd6e8d154e41e56f054625cc0387",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 5,
+        "input_tokens": 33236,
+        "output_tokens": 1156,
+        "duration_ms": 23897.332833
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 25,
+      "run_id": "benchmark-two-model-cohort-3-gate-012",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e0--no-skill-03-a-n16-r1--r0",
+      "reservation_source_sha256": "c57bd3da2bfd70b383c749b61ac8e16cbf48c962950750326ae666fe7decf5ff",
+      "source_episode_sha256": "43be766aef436bc5a8406d8703304acb74da12c184504ef5d834af545bf28a68",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 6,
+        "input_tokens": 53236,
+        "output_tokens": 2062,
+        "duration_ms": 47036.000083
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 26,
+      "run_id": "benchmark-two-model-cohort-3-gate-013",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e0--explicit-01-a-n16-r1--r0",
+      "reservation_source_sha256": "86550993bd58c7c5be5240aacd0c14138313363f99d2ceb48c3b7aaa0fb84b62",
+      "source_episode_sha256": "49c3e7ce25f3d778b16c9ad8d3bab600ff9ef59245294769b0ea3160a15293f7",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 5,
+        "input_tokens": 27986,
+        "output_tokens": 950,
+        "duration_ms": 32955.391584000005
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 27,
+      "run_id": "benchmark-two-model-cohort-3-gate-014",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e1--explicit-01-a-n16-r1--r0",
+      "reservation_source_sha256": "e008c91c40e16a62d0d245e8428d071db0811255a337ac0a8b4030b622cee9c1",
+      "source_episode_sha256": "e748cc5829a6ecd355398f71a058acbc0f3bac2e8a0f9384575123a1b67c4910",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 5,
+        "input_tokens": 25261,
+        "output_tokens": 1007,
+        "duration_ms": 15928.505915999998
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 28,
+      "run_id": "benchmark-two-model-cohort-3-gate-015",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e1--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "35ef319bf4695634af73d6e8dc4ad250d1ca31a8acd9ffb5b6c3753dffcf15cc",
+      "source_episode_sha256": "ce72a0b9e6e75ea62fdbf6e1ed4eefa1220ee9b7c3eed198d573eca868469e07",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 14451,
+        "output_tokens": 541,
+        "duration_ms": 11668.514708
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 29,
+      "run_id": "benchmark-two-model-cohort-3-gate-016",
+      "experiment_id": "benchmark-two-model-cohort-3-gate",
+      "slot_id": "m1-e0--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "a612b2c09c626522a698c7d324431b0acd43e3f6c52cc40aee1b8a365006ae4d",
+      "source_episode_sha256": "ca5a400e9c69eb4ecf2957c2d5f5b96040bb4e51e9cb2057d4cd778ef2cc70ff",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 15650,
+        "output_tokens": 500,
+        "duration_ms": 20685.401375
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 30,
+      "run_id": "benchmark-two-model-cohort-3-expansion-001",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--ambiguity-01-a-n16-r1--r0",
+      "reservation_source_sha256": "c6303fa3fc0d480c4986fd13d7b9cdd67b40c56c45e7eec38f4793974a331970",
+      "source_episode_sha256": "2fa2b386d7344fbf20aa1c7b695d308738b1c55ba8230f29f1dcc105be47342a",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 15689,
+        "output_tokens": 581,
+        "duration_ms": 28531.580707999998
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 31,
+      "run_id": "benchmark-two-model-cohort-3-expansion-002",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--ambiguity-01-a-n16-r1--r0",
+      "reservation_source_sha256": "f08047c5457f0f408ca6a9ba644ee564ffae7448e6ebe90d8ae0779673493d24",
+      "source_episode_sha256": "192508d413a1c9ee52da05f99351e14018b8e228da0b1221afe5cc0feff0da2a",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 14410,
+        "output_tokens": 504,
+        "duration_ms": 10145.743042
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 32,
+      "run_id": "benchmark-two-model-cohort-3-expansion-003",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e1--continuation-01-a-n16-r2--r0",
+      "reservation_source_sha256": "7a176c1c9601b1ad0db5abb3123d23da329aab55ba890507a1fcf6278ff54c3c",
+      "source_episode_sha256": "ee1c84a0919a6f97a51d4dc3f2e947b0d40b36df3c78fb0365ef76f7b91f6340",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 7,
+        "input_tokens": 31116,
+        "output_tokens": 729,
+        "duration_ms": 39731.99425
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 33,
+      "run_id": "benchmark-two-model-cohort-3-expansion-004",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e0--continuation-01-a-n16-r2--r0",
+      "reservation_source_sha256": "1a3ed6544ff11c6ccd900e3378e7ecffa6a7fb72260e5fcd4b4f3b00a4b0bf45",
+      "source_episode_sha256": "0334978ac0d0967c1abcad10989536f6132864e11c997009eb1106758ac040b3",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 7,
+        "input_tokens": 31870,
+        "output_tokens": 400,
+        "duration_ms": 55869.16375
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 34,
+      "run_id": "benchmark-two-model-cohort-3-expansion-005",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--references-01-a-n16-r1--r0",
+      "reservation_source_sha256": "d6ed08a9173ca56d5c4b32d8894b147f4c69313bbef36d9382b988e622fdf87b",
+      "source_episode_sha256": "7f27dfd04488a2e320fddc48d324a2b20d0150d5c75e7a183b755eee14dbac1a",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 4,
+        "input_tokens": 22563,
+        "output_tokens": 1024,
+        "duration_ms": 71031.658916
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 35,
+      "run_id": "benchmark-two-model-cohort-3-expansion-006",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--references-01-a-n16-r1--r0",
+      "reservation_source_sha256": "49c475770a0b22dc2b90002d00b35928daca6b5cd64a82ea4f8c8edd8485e5a4",
+      "source_episode_sha256": "da76e6bcc8f31d20eb5e26f091a02d57e50dd822ac911584da3237b18a4d2070",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 6,
+        "input_tokens": 32740,
+        "output_tokens": 1349,
+        "duration_ms": 19021.526333
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 36,
+      "run_id": "benchmark-two-model-cohort-3-expansion-007",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--scripts-assets-01-a-n16-r1--r0",
+      "reservation_source_sha256": "d124cda450f63043a037150e3a0edd8028f041795d9fba870ffcd988dbf7dc72",
+      "source_episode_sha256": "eccc2ba111cd4e5951637e7e57d3078768cd6088b469260afa7023241b33892b",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 6,
+        "input_tokens": 33154,
+        "output_tokens": 1366,
+        "duration_ms": 19658.376541999998
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 37,
+      "run_id": "benchmark-two-model-cohort-3-expansion-008",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--scripts-assets-01-a-n16-r1--r0",
+      "reservation_source_sha256": "75995aea83586f5d3141d45f428920c00d7762bc2e11d1e61b684d78f33b5ba1",
+      "source_episode_sha256": "adeda365e1c4f5dc7bb3ad58e5cac08b9dcebe3149906747efa74fa562f780c8",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 7,
+        "input_tokens": 44082,
+        "output_tokens": 2342,
+        "duration_ms": 49990.889624999996
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 38,
+      "run_id": "benchmark-two-model-cohort-3-expansion-009",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--complementary-01-a-n16-r1--r0",
+      "reservation_source_sha256": "31c68cbd084e1a9b4c01ff5cacb1f67ee04391cedc3dbd5b6a4d11e683e01f71",
+      "source_episode_sha256": "726d7affcbb148a874e60f6ad4655f22e3135c172c0af9bdc0427eeb660dce97",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 4,
+        "input_tokens": 23651,
+        "output_tokens": 996,
+        "duration_ms": 40197.366917
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 39,
+      "run_id": "benchmark-two-model-cohort-3-expansion-010",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--complementary-01-a-n16-r1--r0",
+      "reservation_source_sha256": "1fec0a146b5938794dd38b04192990c6fc6a20d5aa9278e0fefbdf20b8907134",
+      "source_episode_sha256": "6c2f56de3ce322a60a68379fce18a15ff1a8bdb49814527ab7e818c4c35348ac",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 6,
+        "input_tokens": 34779,
+        "output_tokens": 1327,
+        "duration_ms": 22908.834
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 40,
+      "run_id": "benchmark-two-model-cohort-3-expansion-011",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e1--complementary-01-a-n16-r1--r0",
+      "reservation_source_sha256": "878bec292f5a74c4e5338cc8d6dbb14e691bad8bd239950d695611fe54c59a1b",
+      "source_episode_sha256": "9b1a80a38302c9d4765c3f315963f246ac070d67d9ca15046cada5312746d99f",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 4,
+        "input_tokens": 17258,
+        "output_tokens": 713,
+        "duration_ms": 27519.733833000002
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 41,
+      "run_id": "benchmark-two-model-cohort-3-expansion-012",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e0--complementary-01-a-n16-r1--r0",
+      "reservation_source_sha256": "7c5812b92332ec4cd2675d708ad6a49729070a8b6fe8c4550cb72d919498309d",
+      "source_episode_sha256": "82a51a71a5852da0fc0e8d6b3b9ba93d2b42edcc8462d6dd826046a7fa8c222c",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 5,
+        "input_tokens": 23496,
+        "output_tokens": 521,
+        "duration_ms": 58547.145209
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 42,
+      "run_id": "benchmark-two-model-cohort-3-expansion-013",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e0--task-switch-01-a-n16-r2--r0",
+      "reservation_source_sha256": "595fa0d4b9fcafde60f5789e7cbd9a44e0006395e8bc263f99a1f0b4db2470d8",
+      "source_episode_sha256": "2c7b26fa28ab599c280bb705b72dbb19c540c3fd0d0ef555710c597e26807ce9",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 7,
+        "input_tokens": 31720,
+        "output_tokens": 401,
+        "duration_ms": 46502.333208000004
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 43,
+      "run_id": "benchmark-two-model-cohort-3-expansion-014",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e1--task-switch-01-a-n16-r2--r0",
+      "reservation_source_sha256": "b0b3cbfe4fa31f0186fd92520e19a3f59f160d5f0065f2016d02bd4921e1b484",
+      "source_episode_sha256": "20367639cf6dc17f2b37431ad53fa18ab4d17e31d4ee967180af0065ce45f625",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 7,
+        "input_tokens": 30999,
+        "output_tokens": 495,
+        "duration_ms": 38591.394875
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 44,
+      "run_id": "benchmark-two-model-cohort-3-expansion-015",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--equivalent-01-a-n16-r1--r0",
+      "reservation_source_sha256": "2e43708679ff7402879009b1d54e253f3eb97b3976f471d17a6983334f24e55f",
+      "source_episode_sha256": "7790267d971eb40cef5a31a274ab57fba39ad6af2ddccb13918f53e412eef266",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 7,
+        "input_tokens": 44967,
+        "output_tokens": 1349,
+        "duration_ms": 26550.226
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 45,
+      "run_id": "benchmark-two-model-cohort-3-expansion-016",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--equivalent-01-a-n16-r1--r0",
+      "reservation_source_sha256": "651e37edce62aa5174d5963ce9cfb60a8596d30ac2f84e2bfc12083f7306ceac",
+      "source_episode_sha256": "eb8783f612a819996be08d34d6d291cfa8cac604c9cf09f083b5cf74ac95a631",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 6,
+        "input_tokens": 37466,
+        "output_tokens": 1321,
+        "duration_ms": 46285.459209
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 46,
+      "run_id": "benchmark-two-model-cohort-3-expansion-017",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e0--references-01-a-n16-r1--r0",
+      "reservation_source_sha256": "15b65b438fdc20f9a6f0968226b82a3204909e8dd7bc4ef537d8f0a0a44405df",
+      "source_episode_sha256": "6a896d3a411f9a9dd7f3dd4bc45206448251ac694c41b926cc6639f9a68d798d",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 6,
+        "input_tokens": 27127,
+        "output_tokens": 486,
+        "duration_ms": 89585.467458
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 47,
+      "run_id": "benchmark-two-model-cohort-3-expansion-018",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e1--references-01-a-n16-r1--r0",
+      "reservation_source_sha256": "a4fae8542f6837e7149b26d070faa1c70eaf43ad4a50ff5061a73956c8bd7238",
+      "source_episode_sha256": "51e2ed4e2dfc32c1392d12340b16eacd56df981aedc032f64171aa3f4f4bc801",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 6,
+        "input_tokens": 25534,
+        "output_tokens": 625,
+        "duration_ms": 68565.016292
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 48,
+      "run_id": "benchmark-two-model-cohort-3-expansion-019",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e1--continuation-01-a-n16-r2--r0",
+      "reservation_source_sha256": "c2e7a621a59f5883c4f5978989bc793acc480a9752bc5548942f42845fb39969",
+      "source_episode_sha256": "63a09d7309e610f100fa64d2b713b15c52592b1b0dc033a5a0a7925941c408c7",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 8,
+        "input_tokens": 45022,
+        "output_tokens": 1239,
+        "duration_ms": 25917.942083
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 49,
+      "run_id": "benchmark-two-model-cohort-3-expansion-020",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m1-e0--continuation-01-a-n16-r2--r0",
+      "reservation_source_sha256": "bcb8f264a1ef3649a8ef20341713f1a503d5e3972f47cf5a29b5c0ab2fb7e912",
+      "source_episode_sha256": "c78e98b45f3a5ff365ffe06db40ce705138266a94b98849e5d435ab214f6b7ca",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 7,
+        "input_tokens": 41356,
+        "output_tokens": 1212,
+        "duration_ms": 45163.910916
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 50,
+      "run_id": "benchmark-two-model-cohort-3-expansion-021",
+      "experiment_id": "benchmark-two-model-cohort-3-expansion",
+      "slot_id": "m0-e0--scripts-assets-01-a-n16-r1--r0",
+      "reservation_source_sha256": "946d180f80ca4b3b9c80b2d214bf906f218e766ed89886e9db28fadb3e7991dc",
+      "source_episode_sha256": "974c5b7a554ebd89b033360a29e56fa112cc62366d04ae0aa802a5b0abee8f01",
+      "admission": "invalid",
+      "budget_usage": {
+        "model_requests": 1,
+        "input_tokens": null,
+        "output_tokens": null,
+        "duration_ms": 51219.460167000005
+      },
+      "core_evidence": "incomplete",
+      "stop_batch": true
+    },
+    {
+      "ordinal": 51,
+      "run_id": "benchmark-grok-4-7-approved-gate-1-attempt-2-001",
+      "experiment_id": "benchmark-grok-4-7-approved-gate-1-attempt-2",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "b1f702c185b12cc5743a28cdeb27f5b48d1a4ca02738488d3c647c68e4200550",
+      "source_episode_sha256": "5f44fbd50331dd515a9c2392ffc839da58af7a15b9c46957ff7770295dd75de4",
+      "admission": "invalid",
+      "budget_usage": {
+        "model_requests": 1,
+        "input_tokens": 5789,
+        "output_tokens": 349,
+        "duration_ms": 12427.293291000002
+      },
+      "core_evidence": "incomplete",
+      "stop_batch": true
+    },
+    {
+      "ordinal": 52,
+      "run_id": "benchmark-grok-4-7-unstarted-7-1-001",
+      "experiment_id": "benchmark-grok-4-7-unstarted-7-1",
+      "slot_id": "m0-e1--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "30f5762e596359737e325297c0157dfc413c5a4473d4cebaf510fd68d9628b82",
+      "source_episode_sha256": "bd325724aa93d6335ef79dae142fc35e5b8e6285434763087155fb5ce8d53f47",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 4,
+        "input_tokens": 23995,
+        "output_tokens": 701,
+        "duration_ms": 17950.0055
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 53,
+      "run_id": "benchmark-grok-4-7-unstarted-7-1-002",
+      "experiment_id": "benchmark-grok-4-7-unstarted-7-1",
+      "slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "02ec1d8a7c7ddf6df5f0346f17a368ee35fbb41d396e4f1c8fdf0eb987677489",
+      "source_episode_sha256": "23d0f4cff324fbd3238629b418931bae175e08879931d940cbb614865680d19c",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 17897,
+        "output_tokens": 774,
+        "duration_ms": 14578.355667
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 54,
+      "run_id": "benchmark-grok-4-7-unstarted-7-1-003",
+      "experiment_id": "benchmark-grok-4-7-unstarted-7-1",
+      "slot_id": "m0-e0--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "00bfe788567e14496350ed59884aabe2d1cade2b28916cb533dfea92acf2c70d",
+      "source_episode_sha256": "d56d1223136469c89efe08c0c07072d7a4c0bafca1bb3addfb14bac0064188bb",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 20377,
+        "output_tokens": 1438,
+        "duration_ms": 37538.7245
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 55,
+      "run_id": "benchmark-grok-4-7-unstarted-7-1-004",
+      "experiment_id": "benchmark-grok-4-7-unstarted-7-1",
+      "slot_id": "m0-e0--no-skill-03-a-n16-r1--r0",
+      "reservation_source_sha256": "1319ef16115457d7c795f086344a814e986a017ccff9ab9486ca6d2102691b55",
+      "source_episode_sha256": "683b2b685a5eedfe58b33f47d770310db85c662b004a038c4e8f7c75e681190b",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 8,
+        "input_tokens": 73847,
+        "output_tokens": 1916,
+        "duration_ms": 54189.119249999996
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 56,
+      "run_id": "benchmark-grok-4-7-unstarted-7-1-005",
+      "experiment_id": "benchmark-grok-4-7-unstarted-7-1",
+      "slot_id": "m0-e1--no-skill-03-a-n16-r1--r0",
+      "reservation_source_sha256": "146b6b37a3a757096f9307688a77ff72128c11a788c831252d8c692cd333eee3",
+      "source_episode_sha256": "9fe50617e7464a9872df35131ce1db9d9cd10327ecb5e345232721b569bb2737",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 9,
+        "input_tokens": 89306,
+        "output_tokens": 2112,
+        "duration_ms": 79556.63875
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 57,
+      "run_id": "benchmark-grok-4-7-unstarted-7-1-006",
+      "experiment_id": "benchmark-grok-4-7-unstarted-7-1",
+      "slot_id": "m0-e1--explicit-01-a-n16-r1--r0",
+      "reservation_source_sha256": "948740f19ab19f0bd33342acbfb997b39a784c285e11ed69014c3d033dac2951",
+      "source_episode_sha256": "f42d8af77058bdf7e1cda4597c2b1ff7856e41ef00cb0991eaefda5314e4ba9e",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 4,
+        "input_tokens": 24052,
+        "output_tokens": 855,
+        "duration_ms": 19141.666291999998
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 58,
+      "run_id": "benchmark-grok-4-7-unstarted-7-1-007",
+      "experiment_id": "benchmark-grok-4-7-unstarted-7-1",
+      "slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+      "reservation_source_sha256": "4e2ad96947671033a5ad91a9503e8f17468bafa3cca4677cb85bae31912a24e3",
+      "source_episode_sha256": "1fe095154714bfc3b94247aa6d874217cdabe1f27df74cee8cd5040b061d012d",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 4,
+        "input_tokens": 25858,
+        "output_tokens": 906,
+        "duration_ms": 41508.088167
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 59,
+      "run_id": "benchmark-terra-6-1-approved-gate-1-001",
+      "experiment_id": "benchmark-terra-6-1-approved-gate-1",
+      "slot_id": "m0-e0--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "5ff770a396f86483f221c4cfff826d83ea8212df957bd3f0319df4c8dc37c489",
+      "source_episode_sha256": "fd59451a27d72dbb8ee4181761e5e342d866c3d25cff33d524439f3c02e6027d",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 12155,
+        "output_tokens": 131,
+        "duration_ms": 44787.487583
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 60,
+      "run_id": "benchmark-terra-6-1-approved-gate-1-002",
+      "experiment_id": "benchmark-terra-6-1-approved-gate-1",
+      "slot_id": "m0-e1--no-skill-02-a-n16-r1--r0",
+      "reservation_source_sha256": "8af3383a76a1eec85eed634f64404828c7d9b8dab865714d7ce64d29abb87376",
+      "source_episode_sha256": "9cdb87a50b283173352014fbfda93c8aa4060fdfccc82502996d1e91a6db9814",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 11657,
+        "output_tokens": 190,
+        "duration_ms": 24271.826333
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 61,
+      "run_id": "benchmark-terra-6-1-approved-gate-1-003",
+      "experiment_id": "benchmark-terra-6-1-approved-gate-1",
+      "slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "d8089ce01d678b454f0043094850fdd95b84a4ce8f4f92f1906c1b27207782c3",
+      "source_episode_sha256": "3708fe4d31ff6542b7f5b61572da46fa4997f0ff0530c46cda99d71dd20aadb0",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 11417,
+        "output_tokens": 101,
+        "duration_ms": 12645.402459
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 62,
+      "run_id": "benchmark-terra-6-1-approved-gate-1-004",
+      "experiment_id": "benchmark-terra-6-1-approved-gate-1",
+      "slot_id": "m0-e0--no-skill-01-a-n16-r1--r0",
+      "reservation_source_sha256": "c9a2695feb9203eeec096e59089ae9ce92f0c27b4abf603e3e24f1739cd4ba44",
+      "source_episode_sha256": "965ebcf6f677ab3560d5803e6206d9c6769ff55e0834c1634c273a3a02915b01",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 3,
+        "input_tokens": 12013,
+        "output_tokens": 147,
+        "duration_ms": 38913.646959000005
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 63,
+      "run_id": "benchmark-terra-6-1-approved-gate-1-005",
+      "experiment_id": "benchmark-terra-6-1-approved-gate-1",
+      "slot_id": "m0-e0--no-skill-03-a-n16-r1--r0",
+      "reservation_source_sha256": "2e18a6f814cc569aa2c5895470c9d63cd8be32407bfc2c8d606a1c4a32852aec",
+      "source_episode_sha256": "1764c9670127627e60e2aecb0607e08e11af0e25f489b1c8373fa2b047cd6b21",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 4,
+        "input_tokens": 17248,
+        "output_tokens": 243,
+        "duration_ms": 27474.632708
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 64,
+      "run_id": "benchmark-terra-6-1-approved-gate-1-006",
+      "experiment_id": "benchmark-terra-6-1-approved-gate-1",
+      "slot_id": "m0-e1--no-skill-03-a-n16-r1--r0",
+      "reservation_source_sha256": "58ac6c10bfc5ef86c0f4081bb3aea2843b9b0d942da933d6e1d4d95e30c5ab4e",
+      "source_episode_sha256": "89cb850a6215a014bb2d8c7bab640f44ce9231756d44918463942d1c8f037b20",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 5,
+        "input_tokens": 19710,
+        "output_tokens": 240,
+        "duration_ms": 49709.92325
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 65,
+      "run_id": "benchmark-terra-6-1-approved-gate-1-007",
+      "experiment_id": "benchmark-terra-6-1-approved-gate-1",
+      "slot_id": "m0-e1--explicit-01-a-n16-r1--r0",
+      "reservation_source_sha256": "a99236b5d67fc2bef9ea0c271bda41a5704c57769602507248297c2aaaaa29e9",
+      "source_episode_sha256": "af29e98192412a4a73c00f6dbd6bcfbb3c99534dc00964e4c66c50a7449008b8",
+      "admission": "valid",
+      "budget_usage": {
+        "model_requests": 4,
+        "input_tokens": 16217,
+        "output_tokens": 350,
+        "duration_ms": 17445.15625
+      },
+      "core_evidence": "complete",
+      "stop_batch": false
+    },
+    {
+      "ordinal": 66,
+      "run_id": "benchmark-terra-6-1-approved-gate-1-008",
+      "experiment_id": "benchmark-terra-6-1-approved-gate-1",
+      "slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+      "reservation_source_sha256": "fb2200c7e900ef49095610e108d7f3d8b707950c481d3fcd41f343f88430238d",
+      "source_episode_sha256": "51d389cf5f23b1a135f0e9f464b76feafe7d8e5186c10d4764bb57873f2ccf6c",
+      "admission": "invalid",
+      "budget_usage": {
+        "model_requests": 2,
+        "input_tokens": null,
+        "output_tokens": null,
+        "duration_ms": 51941.436291
+      },
+      "core_evidence": "incomplete",
+      "stop_batch": true
+    }
+  ],
+  "unknown_usage_run_ids": [
+    "benchmark-route-gate-3-003",
+    "benchmark-terra-6-1-approved-gate-1-008",
+    "benchmark-two-model-admission-2-001",
+    "benchmark-two-model-admission-3-008",
+    "benchmark-two-model-cohort-3-expansion-021"
+  ],
+  "retained_stop_run_ids": [
+    "benchmark-route-gate-1-001",
+    "benchmark-route-gate-3-003",
+    "benchmark-two-model-admission-1-001",
+    "benchmark-two-model-admission-2-001",
+    "benchmark-two-model-admission-3-008",
+    "benchmark-two-model-cohort-3-expansion-021",
+    "benchmark-grok-4-7-approved-gate-1-attempt-2-001",
+    "benchmark-terra-6-1-approved-gate-1-008"
+  ],
+  "retained_stop": {
+    "ordinal": 66,
+    "run_id": "benchmark-terra-6-1-approved-gate-1-008",
+    "source_slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+    "allocation_id": "approved-terra-6-1-route-gate-1",
+    "source_plan_sha256": "413d6a7f4a09360563bac4fc27ccccf1441dbc052bc01b90c6255be3adb72c8e",
+    "source_ledger_sha256": "aa279d9f43aa6b60e56e53c8e555c876ae5a32e63671e259a8d5d4f0c85417ed",
+    "reservation_source_sha256": "fb2200c7e900ef49095610e108d7f3d8b707950c481d3fcd41f343f88430238d",
+    "episode_file_sha256": "9889f926f6b6f3da9b26dabd037e229d6ef33dcd36e614c2b47372892824c4eb",
+    "episode_sha256": "51d389cf5f23b1a135f0e9f464b76feafe7d8e5186c10d4764bb57873f2ccf6c",
+    "runtime_result_sha256": "720b47bfac0052079be5233e919fea6728c4e214887174632962ff1eaa5113b7"
+  },
+  "verification_scope": "Exact authority3 verified privately with original evidence; public replay compares bound66 projections. Linked original13 snapshots do not expose core or stop fields. No later stop is accepted."
+}
