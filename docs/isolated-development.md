@@ -154,6 +154,14 @@ inventory also covers the finished source snapshots and all installed build
 dependencies. Treat those build directories as frozen; command runs receive
 separate writable copies.
 
+Build and check both compare the complete selected CLI inventory with the
+Broker's actual receipt. They use `selectedCliInputs` from the frozen Broker
+source when exported. A snapshot without that export uses the original four
+inputs: `package.json`, `dist/ntn-skills.js`, `dist/sdk.js` and `skills`.
+An explicit declaration must include all four; additional declared inputs such
+as `THIRD_PARTY_NOTICES.md` remain required. Missing or changed selected bytes
+fail even when the outer package inventories match.
+
 A successful build returns `build_id` and its `root`. Copy that `build_id` into
 the following commands:
 
