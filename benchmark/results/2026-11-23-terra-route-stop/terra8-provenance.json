@@ -1,0 +1,348 @@
+{
+  "kind": "public-terra8-publication-provenance",
+  "publication_status": "verified_package",
+  "scope": "route_gate_only",
+  "original_collector_version": "1.1.0",
+  "collector_1_2_applied": false,
+  "publication_version": "1.0.6",
+  "publisher_source_sha256": "219791be176bf722248c3a2a3d73738647f2dd97cc6aadab1877391e6858f236",
+  "source_report_files_sha256": {
+    "analysis.json": "b7d4a54f9e1b34ef4ae163430bcb28496c8e16b41adc66b28cdcb8154c3fe07e",
+    "analysis-input.json": "118e1775ae7ae2c558063f41d76156d1fa4820a0d34d4295f370b3feb31f1ec2",
+    "report-manifest.json": "198aeca1dd474fe0924420eecf3e12bf1832c21c8992b737825762a8c3870702"
+  },
+  "source_pins": {
+    "control/terra-6-1-approved-gate-1/plan.json": "413d6a7f4a09360563bac4fc27ccccf1441dbc052bc01b90c6255be3adb72c8e",
+    "control/terra-6-1-approved-gate-1/ledger.jsonl": "aa279d9f43aa6b60e56e53c8e555c876ae5a32e63671e259a8d5d4f0c85417ed",
+    "controllers/benchmark-controller-campaign-revision-1/source/benchmark/cli.mjs": "e9c9f44f66768a8e1d5aa476e3770ad3304bf83b33398eec1e09cb4083314f5d",
+    "controllers/benchmark-controller-campaign-revision-1/source/benchmark/collect.mjs": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15",
+    "broker/benchmark/publish.mjs": "219791be176bf722248c3a2a3d73738647f2dd97cc6aadab1877391e6858f236",
+    "control/publication-cohort-2/input.cohort-3-stopped.ready-3.json": "38f0e73e3d95f2012b0388386c0ca8e13739703e8af1840ed57487a35f443987",
+    "control/resume-20261123/status-review/terra8-report-verification-001.json": "66e90dc7ba20a531229e7e7ba4b7aeb15571a982bce96a25e0f6299884a2087b",
+    "control/resume-20261123/status-review/census-005.json": "4e1b5f3cdc947a5a9deb6634326d092b5def54bbf215a9431a0cf66049d223d1",
+    "control/resume-20261123/terra-route-gate-check-1/rejection-receipt.json": "5f5a6d1df889aa678c6e232ec39d2b207fb39cb17086fa1bd63f8969f74982c3",
+    "control/resume-20261123/terra-campaign-stop-1.json": "e82923747c4632c5f57dad5f7e6c490697e846aad02758eec0e5810e0fe3b3f4"
+  },
+  "source_analysis_sha256": "0577b6413ca5cd7261ebfb3a1f8c45d3ab6be1259d808d912599d8ac69575dbb",
+  "public_analysis_sha256": "3434992a2344f1ed17b3076115205d3ce0a693834a0427038946c513f57e9149",
+  "source_protocol_sha256": "600ab3a630bd2e2bf2e2f65ed4a4d6031ee0de93e6ec0a5004bdbf6119617026",
+  "public_protocol_sha256": "ffa80b0a5e9ba84e25eefb4d85b8b9302e1c75e12a408a44ebcb5c44e89eda35",
+  "source_episode_sha256": [
+    "fd59451a27d72dbb8ee4181761e5e342d866c3d25cff33d524439f3c02e6027d",
+    "9cdb87a50b283173352014fbfda93c8aa4060fdfccc82502996d1e91a6db9814",
+    "3708fe4d31ff6542b7f5b61572da46fa4997f0ff0530c46cda99d71dd20aadb0",
+    "965ebcf6f677ab3560d5803e6206d9c6769ff55e0834c1634c273a3a02915b01",
+    "1764c9670127627e60e2aecb0607e08e11af0e25f489b1c8373fa2b047cd6b21",
+    "89cb850a6215a014bb2d8c7bab640f44ce9231756d44918463942d1c8f037b20",
+    "af29e98192412a4a73c00f6dbd6bcfbb3c99534dc00964e4c66c50a7449008b8",
+    "51d389cf5f23b1a135f0e9f464b76feafe7d8e5186c10d4764bb57873f2ccf6c"
+  ],
+  "public_episode_sha256": [
+    "e8f3aeda8b81dcddc56cd8e5c4c73fde87db0ab3c6121ede4e50481725c8a90b",
+    "642bb35a58b25e1de08702a6d9e0bcb64494030ec930f21849dd84f8bc7a2b0d",
+    "c0ac3ab44ee43cbb91e484250d6244762eb404ef324afc5e9f9c109bb07e94bf",
+    "7c14fd606bfd000d4649de8549bd3b7f42d49d0e1fa3cc544c6f998210e36549",
+    "d5886cb84a3a821e928b15b50c728ad8e2fc5a5fb6764e47a593f467da00934e",
+    "77c2c7b0eada43dfd97aa66e689386d4a3eecdfd4949665879f8e39f03b1fa6c",
+    "8e32e8f98afe86dbe92dd3f81a09b6e8385d6292a77e0b43c5f3a28167f14143",
+    "c46a488fb66cc8cda3ab390524c50d199526991ffaf40ce052bcd7f480cd0fe9"
+  ],
+  "unchanged_analysis_meaning_sha256": "acee3f00df0c2ab762286b7ad41df7987fafa236c03822cd4971be34a8581db5",
+  "public_manifest_sha256": "b05ce305557961e77b8ad7ea1cb8fc9f60f2e98d8006ce0f5765ce6df9d3f85f",
+  "public_manifest_file_sha256": "788959e7da4184a8524193830d06d8f451121e0efc627c11f8439d7b2fa9b0f3",
+  "public_inventory_sha256": "65b162037821556e95899cb0eccf13b93331b95d67b1774cc0481bc7d077c0ac",
+  "public_files": 328,
+  "public_bytes": 13145593,
+  "raw_source_mapping_count": 298,
+  "raw_mapping_sha256": "33b5cb7182a5ab1f1bcaaefb3c6598951798ea21bb6c0bfd5b52e22a5e90ff29",
+  "sample_counts": {
+    "planned": 8,
+    "physical": 8,
+    "valid": 7,
+    "invalid": 1,
+    "unresolved": 1,
+    "unstarted": 0
+  },
+  "complete_contract_among_valid": {
+    "pass": 4,
+    "fail": 0,
+    "unknown": 3
+  },
+  "business_among_valid": {
+    "pass": 7,
+    "fail": 0
+  },
+  "invalid_raw_business_status": "fail",
+  "invalid_business_failure_counted_among_valid": false,
+  "unresolved_slot": {
+    "condition": "m0-e0",
+    "environment": "Broker",
+    "case": "explicit-01-a-n16-r1",
+    "run_id": "benchmark-terra-6-1-approved-gate-1-008",
+    "status": "unresolved_invalid_execution"
+  },
+  "accounting": {
+    "actual_subject_requests": 27,
+    "complete_episode_subtotal": {
+      "episodes": 7,
+      "actual_requests": 25,
+      "input_tokens": 100417,
+      "output_tokens": 1402
+    },
+    "invalid_episode": {
+      "actual_requests": 2,
+      "input_total": null,
+      "output_total": null,
+      "request1_known_input": 3876,
+      "request1_known_output": 36,
+      "request2_input": null,
+      "request2_output": null
+    },
+    "observed_attempt_token_subtotal": {
+      "input_tokens": 104293,
+      "output_tokens": 1438
+    },
+    "scope_input_total": null,
+    "scope_output_total": null,
+    "monetary_cost_status": "unknown_unpriced",
+    "interpretation": "Known token subtotals are incomplete observations. Unknown usage is not replaced with zero."
+  },
+  "terminal_failure": {
+    "run_id": "benchmark-terra-6-1-approved-gate-1-008",
+    "ordinal": 66,
+    "admission": "invalid",
+    "admission_reasons": [
+      "runtime_not_a_business_episode:invalid"
+    ],
+    "stop_batch": true,
+    "stop_reason": "subject_requested_stop",
+    "runtime_error_code": "BENCHMARK_USAGE_UNKNOWN",
+    "actual_sends": 2,
+    "third_send": false,
+    "http_status": 200,
+    "content_type": "text/event-stream",
+    "response_entity_bytes": 6984,
+    "transport_error_name": "AbortError",
+    "transport_error_code": 20,
+    "done_events": 0,
+    "nonnull_finish_reason_events": 0,
+    "raw_request2_usage_observed": false,
+    "reported_model_status": "matched",
+    "sdk_error": "Upstream response stream was interrupted",
+    "interpretation": "A partial response stream was captured without exact provider usage. The evidence does not establish the underlying abort cause or quantify unreported tokens. SDK zero-valued placeholders are not exact provider usage.",
+    "diagnostic_source": {
+      "file": "terra8-terminal-cause-002.json",
+      "sha256": "f5deeb4a55c3d950d8ab7e617ddaf98d6189735297a72063f4ac498e51379955"
+    },
+    "public_refs": {
+      "request1_usage": {
+        "source_sha256": "ece2e115fefa4600bf89a903df5f8fa29d3d9390bf43a8b190a4d5349aae374a",
+        "public_sha256": "551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "path": "terra8/raw/551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "line": 93,
+        "type": "provider_stream_event"
+      },
+      "request2_first_stream": {
+        "source_sha256": "ece2e115fefa4600bf89a903df5f8fa29d3d9390bf43a8b190a4d5349aae374a",
+        "public_sha256": "551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "path": "terra8/raw/551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "line": 120,
+        "type": "provider_stream_event"
+      },
+      "request2_last_stream": {
+        "source_sha256": "ece2e115fefa4600bf89a903df5f8fa29d3d9390bf43a8b190a4d5349aae374a",
+        "public_sha256": "551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "path": "terra8/raw/551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "line": 164,
+        "type": "provider_stream_event"
+      },
+      "transport_failure": {
+        "source_sha256": "5d7058bca111059702a707c02803d9c56c6bc7bcb589ec5404e4b7ac1950ad0e",
+        "public_sha256": "89d1d8608e7fe7c0455a00277ef77129f26e0c08a4020d5fa1790024da13ece6",
+        "path": "terra8/raw/89d1d8608e7fe7c0455a00277ef77129f26e0c08a4020d5fa1790024da13ece6",
+        "line": 82
+      },
+      "sdk_error": {
+        "source_sha256": "ece2e115fefa4600bf89a903df5f8fa29d3d9390bf43a8b190a4d5349aae374a",
+        "public_sha256": "551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "path": "terra8/raw/551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "line": 167,
+        "type": "session_event"
+      },
+      "missing_usage": {
+        "source_sha256": "ece2e115fefa4600bf89a903df5f8fa29d3d9390bf43a8b190a4d5349aae374a",
+        "public_sha256": "551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "path": "terra8/raw/551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "line": 168,
+        "type": "request_usage_accounted"
+      },
+      "reported_model_match": {
+        "source_sha256": "ece2e115fefa4600bf89a903df5f8fa29d3d9390bf43a8b190a4d5349aae374a",
+        "public_sha256": "551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "path": "terra8/raw/551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "line": 169,
+        "type": "reported_model_checked"
+      },
+      "retry_intent": {
+        "source_sha256": "ece2e115fefa4600bf89a903df5f8fa29d3d9390bf43a8b190a4d5349aae374a",
+        "public_sha256": "551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "path": "terra8/raw/551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "line": 172,
+        "type": "session_event"
+      },
+      "retry_blocked": {
+        "source_sha256": "ece2e115fefa4600bf89a903df5f8fa29d3d9390bf43a8b190a4d5349aae374a",
+        "public_sha256": "551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "path": "terra8/raw/551e2bac237e12e40d72e7093fafb25d5f44c356500d6299f56aff77fba960fe",
+        "line": 176,
+        "type": "model_request_blocked"
+      }
+    }
+  },
+  "route_gate": {
+    "status": "rejected",
+    "error": "FINITE_ORIGINAL_CORE_STOP",
+    "exit_code": 1,
+    "passed_gate_written": false,
+    "model_requests": 0,
+    "source": {
+      "file": "rejection-receipt.json",
+      "sha256": "5f5a6d1df889aa678c6e232ec39d2b207fb39cb17086fa1bd63f8969f74982c3"
+    }
+  },
+  "paired_analysis_decisions": [
+    {
+      "candidate": "m0-e0",
+      "reference": "m0-e1",
+      "decision": {
+        "stage": "no_acceptance_claim",
+        "status": "descriptive"
+      }
+    }
+  ],
+  "campaign_stop": {
+    "physical_reservations": 66,
+    "completed": 66,
+    "active_leases": 0,
+    "all_later_paid_dispatch_paused": true,
+    "source": {
+      "file": "terra-campaign-stop-1.json",
+      "sha256": "e82923747c4632c5f57dad5f7e6c490697e846aad02758eec0e5810e0fe3b3f4"
+    },
+    "future_dispatch_permission": "No permission to cross this new stop is asserted by this publication."
+  },
+  "campaign_usage_history": {
+    "effective_unknown_runs": {
+      "before": 4,
+      "after": 5,
+      "run_ids": [
+        "benchmark-two-model-cohort-3-expansion-021",
+        "benchmark-route-gate-3-003",
+        "benchmark-two-model-admission-2-001",
+        "benchmark-two-model-admission-3-008",
+        "benchmark-terra-6-1-approved-gate-1-008"
+      ]
+    },
+    "original_completion_unknown_runs": {
+      "before": 5,
+      "after": 6,
+      "run_ids": [
+        "benchmark-two-model-cohort-3-expansion-021",
+        "benchmark-route-gate-3-002",
+        "benchmark-route-gate-3-003",
+        "benchmark-two-model-admission-2-001",
+        "benchmark-two-model-admission-3-008",
+        "benchmark-terra-6-1-approved-gate-1-008"
+      ]
+    },
+    "earlier_originals_preserved": true,
+    "new_unknown_run_only": "benchmark-terra-6-1-approved-gate-1-008",
+    "census": {
+      "file": "census-005.json",
+      "sha256": "4e1b5f3cdc947a5a9deb6634326d092b5def54bbf215a9431a0cf66049d223d1"
+    },
+    "previous_census": {
+      "file": "census-004.json",
+      "sha256": "96ce55dcb9c3dc6c9531e1b8cbe18c78400a9b36b9df113e760f6cffa4031dcf"
+    }
+  },
+  "registration": {
+    "id": "approved-terra-6-1-route-gate-1",
+    "file": "scope-registration-007.json",
+    "sha256": "119923064a6fb91962ac7853770a4ffab0b206d4bf655a8495fb834f6bb3529d",
+    "amendment_file": "finite-campaign-amendment.json",
+    "amendment_sha256": "7b6dfad24fd8734927c8ea261aef36195f13597314de6e2335a9397b1ca9ce21",
+    "verification_boundary": "Original registration references are audit pointers; public replay does not rerun the private campaign ledger."
+  },
+  "privacy": {
+    "policy": {
+      "credentials": "[REDACTED]",
+      "explicit_identifier_count": 259,
+      "explicit_path_prefix_count": 4,
+      "explicit_secret_count": 0,
+      "http_request_paths": "Observed HTTP URL paths retain route structure; URL credentials and private identifiers remain redacted",
+      "identifier_word_count": 52,
+      "identifier_words": "Whole-token replacement bounded by Unicode letters, digits, underscore and hyphen; longer public identifiers remain intact",
+      "identities": "deterministic pseudonyms; not an irreversible-anonymization claim",
+      "paths": "machine paths and caller-supplied roots replaced",
+      "reviewed_binary_artifacts": [
+        {
+          "bytes": 6,
+          "kind": "source-bytes",
+          "purpose": "public-synthetic-fixture",
+          "sha256": "72ee7e95938b82284a312ea248777aad5e5220a20242ccf98d103d33427fc681"
+        }
+      ],
+      "terminal_username_count": 1,
+      "terminal_usernames": "POSIX long-listing owner fields; whole-token usernames from separator-terminated home components, listings, explicitly declared home roots, or explicit username input",
+      "version": "1.0.6"
+    },
+    "transformation_counts": {
+      "credential_values": 45,
+      "explicit_identifiers": 13541,
+      "identifier_words": 7122,
+      "machine_paths": 11465,
+      "private_endpoints": 90,
+      "terminal_usernames": 11465,
+      "uuid_identifiers": 1359
+    }
+  },
+  "replay": {
+    "status": "verified",
+    "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+    "network_denied": true,
+    "source_contents_denied": true,
+    "source_metadata_permitted_for_path_resolution": true,
+    "inherited_credentials": false,
+    "source_read_canary": "EPERM or EACCES required",
+    "network_canary": "Loopback listen rejected with EPERM or EACCES",
+    "inventory_exact": true,
+    "inventory_unchanged_after_replay": true,
+    "regenerated_report_files": 13,
+    "regenerated_report_bytes": 402895,
+    "regenerated_report_manifest_file_sha256": "a1a5daa341c7d7fd1bf9b797bde9b8d326c17420ed9ab4f0bf38fb758b708601",
+    "identical_analysis_tables_and_quality_chart": 9,
+    "chart_title_differences": [
+      {
+        "file": "input.svg",
+        "public": "Cumulative input",
+        "replay": "Cumulative input across actual attempts"
+      },
+      {
+        "file": "time.svg",
+        "public": "Capped time",
+        "replay": "Capped time across the full fixed denominator"
+      }
+    ]
+  },
+  "publication_subject_model_requests": 0,
+  "ledger_writes": 0,
+  "notion_writes": 0,
+  "source_changes": 0,
+  "analysis_registrations": 0,
+  "reanalysis": 0,
+  "original_files_preserved": 867,
+  "auxiliary_agent_tokens": "unknown",
+  "auxiliary_agent_cost": "unknown",
+  "identity_rule": "The public projection and replay describe the same eight physical executions. They add no samples; planned slots remain eight."
+}
