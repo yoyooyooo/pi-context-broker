@@ -7,11 +7,15 @@ import { pathToFileURL } from "node:url";
 const runtime = await currentNotionFixture();
 const packageRoot = join(runtime.root, "src/builtin-skills");
 const packageEntry = join(packageRoot, "ntn-skills-maintain/SKILL.md");
+const syncEntry = join(packageRoot, "ntn-skills-sync/SKILL.md");
 const privatePackageBody = "# Packaged maintenance body must not be preloaded.\n";
+const privateSyncBody = "# Packaged sync body must not be preloaded.\n";
 await mkdir(join(packageRoot, "ntn-skills"), { recursive: true });
 await mkdir(join(packageRoot, "ntn-skills-maintain"), { recursive: true });
+await mkdir(join(packageRoot, "ntn-skills-sync"), { recursive: true });
 await writeFile(join(packageRoot, "ntn-skills/SKILL.md"), "# Packaged consumption body.\n");
 await writeFile(packageEntry, privatePackageBody);
+await writeFile(syncEntry, privateSyncBody);
 const { buildCliGuidance, buildInjectedPayload, installSkillGuidance } = await import(pathToFileURL(join(runtime.root, "src/index.ts")).href);
 const { installHostSkills } = await import(pathToFileURL(join(runtime.root, "src/host-skills.ts")).href);
 const { hostCliScope } = await import(pathToFileURL(join(runtime.root, "src/host-command.ts")).href);
@@ -28,13 +32,17 @@ const config: ConfigFile = { sources: [
 const text = (tools?: readonly string[]) => String(buildCliGuidance(config, tools).content);
 const guidanceText = (messages: AgentMessage[]) => String(messages.find(message => message.customType === "ntn-skills-guidance")?.content);
 
-// Bound routing prose independently of the required host-local locator. The
+// Bound routing prose independently of the required host-local locators. The
 // public paired runner deliberately puts TMPDIR under a potentially long path.
-// Check the exact locator occurs once before excluding only its encoded bytes.
+// Check each exact locator occurs once before excluding only its encoded bytes.
 const routingBytes = (guidance: string): number => {
-  const locator = JSON.stringify(packageEntry);
-  expect(guidance.split(locator)).toHaveLength(2);
-  return Buffer.byteLength(guidance) - Buffer.byteLength(locator);
+  let bytes = Buffer.byteLength(guidance);
+  for (const entry of [packageEntry, syncEntry]) {
+    const locator = JSON.stringify(entry);
+    expect(guidance.split(locator)).toHaveLength(2);
+    bytes -= Buffer.byteLength(locator);
+  }
+  return bytes;
 };
 
 test("native Pi guidance is a bounded routing contract, not a duplicated CLI tutorial", () => {
@@ -124,24 +132,26 @@ test("an existing conversation replaces old guidance before a named availability
   expect(await h.project("context_with_system", projected)).toBe(projected);
 });
 
-test("maintenance reads the connected Notion workflow before any management command", () => {
-  const routed = text(["read", "notion_list", "notion_use", "bash"]);
-  expect(routed).toContain("read ntn-skills-maintain's exact ref");
-  expect(routed).toContain("task's source/library");
-  expect(routed).toContain("absent/pending: notion_list there");
-  expect(routed).toContain("failed/partial/offline is not absence");
-  expect(routed).toContain("Edited item: inspect only.");
-  expect(routed).toContain("Builtins: explicit offline/bootstrap only");
-  expect(routed).toContain("To apply: notion_use(ref), same ref + Requires");
-  expect(routed).not.toContain("ctl builtin read");
-  expect(routed).not.toContain("/configured");
-  expect(routed).not.toContain("/must-not-appear");
-  const readonly = text(["read", "notion_list", "notion_use"]);
-  expect(readonly).toContain("read ntn-skills-maintain's exact ref");
-  expect(readonly).not.toContain("ctl builtin read");
+test("all host branches default maintenance and sync to the paired package independently of the write source", () => {
+  for (const tools of [undefined, full, ["read", "notion_list", "notion_use", "bash"], ["read", "notion_list", "notion_use"], ["read", "skill_search"]]) {
+    const routed = text(tools);
+    expect(routed).toContain("Default product maintenance/sync");
+    for (const entry of [packageEntry, syncEntry]) expect(routed).toContain(`read(${JSON.stringify(entry)})`);
+    expect(routed).toContain("no Notion copy needed");
+    expect(routed).toContain("Select write source separately");
+    expect(routed).toContain("Explicit Notion workflow: read exact ref in chosen source");
+    expect(routed).toContain("Pending/failed: no builtin fallback");
+    expect(routed).toContain("Edited item: inspect only.");
+    for (const forbidden of ["ntn-skills-maintain's exact ref", "absent/pending:", "Builtins: explicit offline/bootstrap only", "/configured", "/must-not-appear", privatePackageBody.trim(), privateSyncBody.trim()])
+      expect(routed).not.toContain(forbidden);
+  }
+  const native = text(["read", "notion_list", "notion_use", "bash"]);
+  expect(native).toContain("To apply: notion_use(ref), same ref + Requires");
+  expect(native).toContain("Business Skills: equal same-name local/Notion fits: clarify");
+  expect(native).not.toContain("ctl builtin read");
 });
 
-test("maintenance adoption advertises only an available closure-loading route", () => {
+test("explicit Notion workflow adoption advertises only an available closure-loading route", () => {
   const inspect = text(["read", "notion_list"]);
   expect(inspect).toContain("Inspect only; adoption unavailable");
   expect(inspect).not.toContain("notion_use(ref)");
@@ -161,18 +171,25 @@ test("maintenance adoption advertises only an available closure-loading route", 
   expect(text(["read", "skill_search"])).toContain("Inspect only; adoption unavailable");
 });
 
-test("maintenance preserves native capability limits and explicit offline/bootstrap fallback", () => {
-  expect(text(["notion_list", "notion_use", "bash"])).toContain("Maintenance: CLI read");
-  expect(text(["read", "notion_use", "bash"])).toContain("absent/pending: CLI list there");
-  expect(text(["read", "notion_use"])).toContain("report unavailable discovery");
-  expect(text(["notion_list", "notion_use"])).not.toContain("Maintenance:");
-  expect(text(["bash"])).toContain("task's source/library");
-  expect(text(["bash"])).not.toContain("ctl builtin read");
+test("workflow guidance preserves native capability limits and the explicit no-source bootstrap route", () => {
+  expect(text(["notion_list", "notion_use", "bash"])).toContain("Explicit Notion workflow: CLI read");
+  expect(text(["read", "notion_use", "bash"])).toContain("CLI list there if needed");
+  expect(text(["read", "notion_use"])).toContain("discovery unavailable");
+  expect(text(["notion_list", "notion_use"])).not.toContain("Explicit Notion workflow:");
+  for (const tools of [["bash"], ["notion_list", "notion_use", "bash"]]) {
+    const routed = text(tools);
+    expect(routed).toContain("exact ref in chosen source");
+    for (const name of ["ntn-skills-maintain", "ntn-skills-sync"])
+      expect(routed).toContain(JSON.stringify([...hostCliScope().command, "ctl", "builtin", "read", `notion/${name}`, "--json"]));
+    expect(routed).not.toContain(packageEntry);
+    expect(routed).not.toContain(syncEntry);
+  }
   for (const tools of [undefined, ["bash"]]) {
     const bootstrap = String(buildCliGuidance({ sources: [] }, tools).content);
     expect(bootstrap).toContain("bootstrap");
     expect(bootstrap).toContain("offline");
     expect(bootstrap).toContain("ctl builtin read notion/ntn-skills-maintain");
+    expect(bootstrap).toContain("ctl builtin read notion/ntn-skills-sync");
     expect(bootstrap).not.toContain("ntn-skills-maintain's exact ref");
   }
 });
@@ -283,7 +300,7 @@ function guidanceHarness(host: "pi" | "omp" = "pi", known = true, settings: Conf
   return { api, handlers, project, tools: (next: string[]) => { active = next; } };
 }
 
-test("cold and offline Pi guidance exposes the paired package entry without preloading it", async () => {
+test("cold and offline Pi guidance exposes both paired package entries without preloading them", async () => {
   for (const offline of [false, true]) {
     const settings: ConfigFile = { sources: [{ id: "selected", type: "notion", database: "selected-database",
       discovery: { offline }, activation: { offline } }] };
@@ -293,11 +310,13 @@ test("cold and offline Pi guidance exposes the paired package entry without prel
     expect(before?.message?.customType).toBe("ntn-skills-guidance");
     const message = String(before?.message?.content);
     expect(message).toContain(JSON.stringify(packageEntry));
-    expect(message).toContain("explicit offline/bootstrap/installed-package");
-    expect(message).toContain("No fallback for pending/failed Notion");
+    expect(message).toContain(JSON.stringify(syncEntry));
+    expect(message).toContain("Default product maintenance/sync");
+    expect(message).toContain("Pending/failed: no builtin fallback");
     expect(message).toContain("never search other installations");
-    expect(message).toContain("task's source/library");
+    expect(message).toContain("exact ref in chosen source");
     expect(message).not.toContain(privatePackageBody.trim());
+    expect(message).not.toContain(privateSyncBody.trim());
     expect(message).not.toContain("ctl builtin read");
     expect(message).not.toContain("selected-database");
     const history = [{ role: "user", content: "Explain packaged maintenance instructions offline." }];
@@ -308,22 +327,26 @@ test("cold and offline Pi guidance exposes the paired package entry without prel
   }
 });
 
-test("offline package guidance respects the active read capability", async () => {
+test("paired package guidance respects the active read capability", async () => {
   const h = guidanceHarness();
   h.tools(["read", "notion_list", "notion_use"]);
   const native = await h.project("context_with_system", []);
   expect(guidanceText(native)).toContain(JSON.stringify(packageEntry));
+  expect(guidanceText(native)).toContain(JSON.stringify(syncEntry));
   h.tools(["notion_list", "notion_use"]);
   const unavailable = await h.project("context_with_system", native);
   expect(guidanceText(unavailable)).not.toContain(packageEntry);
+  expect(guidanceText(unavailable)).not.toContain(syncEntry);
   expect(guidanceText(unavailable)).toContain("Packaged help requires read or bash");
   h.tools(["notion_list", "notion_use", "bash"]);
   const cli = await h.project("context_with_system", unavailable);
   expect(guidanceText(cli)).toContain("ntn-skills.mjs");
   expect(guidanceText(cli)).toContain('"ctl","builtin","read","notion/ntn-skills-maintain","--json"');
-  expect(guidanceText(cli)).toContain("explicit offline/bootstrap/installed-package");
+  expect(guidanceText(cli)).toContain('"ctl","builtin","read","notion/ntn-skills-sync","--json"');
+  expect(guidanceText(cli)).toContain("Default product maintenance/sync");
   expect(guidanceText(cli)).not.toContain(packageEntry);
   expect(guidanceText(cli)).not.toContain(privatePackageBody.trim());
+  expect(guidanceText(cli)).not.toContain(privateSyncBody.trim());
 });
 
 test("Pi with no enabled Notion source omits new and stale guidance without touching local history", async () => {

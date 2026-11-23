@@ -176,6 +176,23 @@ export function agentWorkflowProjectSettings(settings, scenario) {
   return { ...structuredClone(settings), compaction: { ...settings.compaction, keepRecentTokens } };
 }
 
+export async function bindPairedWorkflowEvidence(bindings, brokerRoot, scenario) {
+  const expectedBodies = new Set((scenario?.turns ?? []).flatMap(turn => turn.expect)
+    .filter(expect => expect.kind === 'body').map(expect => expect.body));
+  for (const name of ['maintain', 'sync']) {
+    const object = 'paired-' + name, body = object + '@A/SKILL.md';
+    if (!expectedBodies.has(body)) continue;
+    const path = join(brokerRoot, 'dist/builtin-skills/ntn-skills-' + name, 'SKILL.md');
+    const file = await identity(path);
+    assert.equal(bindings.private.objects[object], undefined, 'The paired package owner is reserved for the actual loaded candidate');
+    assert.equal(bindings.private.bodies[body], undefined, 'The paired package body is reserved for the actual loaded candidate');
+    bindings.private.objects[object] = { kind: 'local', name: 'ntn-skills-' + name, path,
+      owner: 'package:' + file.realpath, currentVersion: 'A', versions: { A: { bodyKeys: [body] } } };
+    bindings.private.bodies[body] = { ...file, observedPath: path, object, version: 'A',
+      resourcePath: 'SKILL.md', origin: 'paired-package' };
+  }
+}
+
 async function input(config) {
   assert.equal(config.version, 1); assert.equal(config.scope, 'notion-agent-workflow');
   const fields = ['version', 'scope', 'scenarioFile', 'scenarioId', 'profile', 'bindingsFile', 'brokerRoot', 'cliRoot', 'sourceId', 'database', 'packageIndex', 'evidenceRoot', 'model', 'thinkingLevel', 'timeoutMs', 'catalogTimeoutMs', 'viewId', 'retestOf'];
@@ -201,15 +218,7 @@ async function input(config) {
   }
   if (actualPackagePaths.length) bindings.private.facts['package-maintenance-path'] = { anyOf: [...new Set(actualPackagePaths)] };
   const declared = corpus.scenarios.find(item => item.id === config.scenarioId);
-  if (corpus.fixtures[declared?.fixture]?.environment?.offline === true) {
-    const path = join(config.brokerRoot, 'dist/builtin-skills/ntn-skills-maintain/SKILL.md');
-    const file = await identity(path), body = 'paired-maintain@A/SKILL.md';
-    assert.equal(bindings.private.objects['paired-maintain'], undefined, 'The paired package owner is reserved for the actual loaded candidate');
-    bindings.private.objects['paired-maintain'] = { kind: 'local', name: 'ntn-skills-maintain', path,
-      owner: 'package:' + file.realpath, currentVersion: 'A', versions: { A: { bodyKeys: [body] } } };
-    bindings.private.bodies[body] = { ...file, observedPath: path, object: 'paired-maintain', version: 'A',
-      resourcePath: 'SKILL.md', origin: 'paired-package' };
-  }
+  await bindPairedWorkflowEvidence(bindings, config.brokerRoot, declared);
   const scenario = bindAgentScenario(corpus, config.scenarioId, bindings, { profile: config.profile });
   assert.ok(bindings.private.fixture?.root && bindings.private.fixture?.runId, 'Use a real owned fixture binding');
   assert.equal(bindings.private.fixture.entry.replaceAll('-', ''), config.database.replaceAll('-', ''), 'The fixture and candidate must use the same library');

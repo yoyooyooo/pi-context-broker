@@ -1036,20 +1036,7 @@
     },
     "consultation": {
       "kind": "native-management",
-      "objects": [
-        {
-          "id": "maintain",
-          "name": "ntn-skills-maintain",
-          "description": "Connected library maintenance guidance",
-          "placement": "builtin",
-          "initial": "A",
-          "versions": {
-            "A": {
-              "files": []
-            }
-          }
-        }
-      ],
+      "objects": [],
       "facts": {
         "total-local": {
           "anyOf": [
@@ -1154,7 +1141,7 @@
         }
       },
       "environment": {
-        "catalog": "pending"
+        "catalog": "normal"
       }
     },
     "consultation-filtered-view": {
@@ -4406,10 +4393,9 @@
               "topic": "description-question"
             },
             {
-              "kind": "resource",
-              "object": "maintain",
-              "version": "A",
-              "path": "SKILL.md"
+              "kind": "body",
+              "body": "paired-maintain@A/SKILL.md",
+              "occurrences": 1
             },
             {
               "kind": "tool-attempts",
@@ -4417,9 +4403,50 @@
               "max": 0
             },
             {
-              "kind": "visibility",
-              "object": "maintain",
-              "stage": "source-pending"
+              "kind": "tool-attempts",
+              "tool": "notion_list",
+              "max": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cold-source-sync-consultation",
+      "fixture": "consultation",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily",
+        "no-native-skills"
+      ],
+      "turns": [
+        {
+          "id": "first",
+          "prompt": "我想把外部仓库的 Skills 同步到这个 Notion 库。先解释需要我提供哪些信息，不要执行同步或创建内容。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "body",
+              "body": "paired-sync@A/SKILL.md",
+              "occurrences": 1
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_list",
+              "max": 0
             }
           ]
         }
@@ -4439,7 +4466,7 @@
       "turns": [
         {
           "id": "first",
-          "prompt": "我想在 Notion 创建一个 Skill。先说说你还需要我提供什么信息。",
+          "prompt": "请先查看 Notion 库中 {{maintain.name}} 这份团队流程，说明创建 Skill 需要我提供哪些信息；现在只查看，不创建任何内容。",
           "expect": [
             {
               "kind": "completed"
