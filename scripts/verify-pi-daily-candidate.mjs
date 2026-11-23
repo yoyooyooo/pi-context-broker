@@ -192,14 +192,19 @@ export function candidateSourceConfig(original, { sourceId, database, cacheDir, 
   return config;
 }
 
+export function candidateOwnedStateEnvironment(stateRoot, inherited = {}) {
+  assert.ok(isAbsolute(stateRoot));
+  return { ...inherited, NTN_SKILLS_HOME: join(stateRoot, 'ntn/state'), NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'ntn/config'),
+    NTN_SKILLS_CACHE_HOME: join(stateRoot, 'ntn/cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data'),
+    NTN_SKILLS_SCHEDULER_ROOT: join(stateRoot, 'ntn/scheduler') };
+}
+
 /** Reuse normal management state explicitly, without copying or inspecting private Store files. */
 export async function prepareCandidatePrintState(config, { stateRoot, previous, environment = process.env, home = homedir() }) {
   assert.ok(isAbsolute(stateRoot));
   assert.ok(previous?.sourceState?.ownership !== 'existing-user' && previous?.sourceState?.mode !== 'normal-management',
     'An external management Store cannot become an owned resume origin');
-  const env = { NTN_SKILLS_HOME: join(stateRoot, 'ntn/state'), NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'ntn/config'),
-    NTN_SKILLS_CACHE_HOME: join(stateRoot, 'ntn/cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data') };
-  if (config.existingState === undefined) return { stateRoot, ownedPaths: [stateRoot], env };
+  if (config.existingState === undefined) return { stateRoot, ownedPaths: [stateRoot], env: candidateOwnedStateEnvironment(stateRoot) };
   const policy = config.existingState;
   assert.equal(policy.mode, 'normal-management');
   assert.equal(config.resumeFrom, undefined); assert.equal(previous, undefined); assert.equal(config.publicCli, undefined);
@@ -240,7 +245,7 @@ export async function prepareCandidatePrintState(config, { stateRoot, previous, 
   }
   assert.equal(new Set(reads.map(read => read.ref)).size, 2);
   for (const key of ['id', 'scope', 'path', 'file_id']) assert.equal(reads[0][key], reads[1][key], 'Read the two versions of the same original reference');
-  return { stateRoot, ownedPaths: [stateRoot], env: { ...env, ...roots },
+  return { stateRoot, ownedPaths: [stateRoot], env: { ...roots, NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data') },
     sourceState: { mode: policy.mode, ownership: 'existing-user', roots, reads } };
 }
 
@@ -1374,7 +1379,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
     + 'if(isMainThread&&process.ppid===' + process.pid + '){const sdk=(' + observeGraphSdk.toString() + ')({channel,fs,safeMetrics:safeRequestMetrics,paths:' + JSON.stringify({ ledger: sdkLedger, responses, outputRoot: sourceCache }) + '});\n'
     + 'const objects=(' + observeOwnedObjectReads.toString() + ')({fs,fsPromises,hash,objects:' + JSON.stringify(join(state, 'objects'))
     + ',record:row=>fs.appendFileSync(' + JSON.stringify(objects) + ',JSON.stringify({monotonicNs:process.hrtime.bigint().toString(),...row})+"\\n",{mode:0o600})});syncBuiltinESMExports();let done=false;const finish=()=>{if(!done){done=true;objects.finish();sdk.close();}};process.once("beforeExit",finish);process.once("exit",finish);}\n', { mode: 0o600, flag: 'wx' });
-  const env = { ...process.env, CONTEXT_BROKER_CONFIG: sourcePath, NTN_SKILLS_HOME: state, NTN_SKILLS_CONFIG_HOME: join(cwd, 'ntn/config'), NTN_SKILLS_CACHE_HOME: join(cwd, 'ntn/cache'), NTN_SKILLS_DATA_HOME: join(cwd, 'ntn/data'), NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000',
+  const env = { ...candidateOwnedStateEnvironment(cwd, process.env), CONTEXT_BROKER_CONFIG: sourcePath, NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000',
     BROKER_E2E_PROCESS_LEDGER: join(evidence, 'owned-processes.jsonl'), NODE_OPTIONS: [process.env.NODE_OPTIONS, '--import=' + JSON.stringify(sourcePreload), '--import=' + JSON.stringify(sdkPreload)].filter(Boolean).join(' ') };
   const args = ['--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel, '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
   let resumedSession;

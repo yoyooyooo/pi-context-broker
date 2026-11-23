@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as candidate from './verify-pi-daily-candidate.mjs';
@@ -1210,11 +1211,32 @@ test('resource observation seals neither a symlink nor mismatched or partial imm
   }
 });
 
+test('owned candidate children keep all five roots private with no scheduler or an inherited shared scheduler', async () => {
+  const stateRoot = join(process.cwd(), 'owned-candidate-state');
+  const directories = { NTN_SKILLS_HOME: 'state', NTN_SKILLS_CONFIG_HOME: 'config', NTN_SKILLS_CACHE_HOME: 'cache',
+    NTN_SKILLS_DATA_HOME: 'data', NTN_SKILLS_SCHEDULER_ROOT: 'scheduler' };
+  const keys = [...Object.keys(directories), 'HOME'];
+  const source = 'process.stdout.write(JSON.stringify(Object.fromEntries(' + JSON.stringify(keys) + '.map(key=>[key,process.env[key]]))))';
+  for (const scheduler of [undefined, '/shared/request-engine']) {
+    const inherited = { ...process.env, HOME: '/normal/home', ...Object.fromEntries(Object.keys(directories).map(key => [key, '/shared/' + key])) };
+    if (scheduler === undefined) delete inherited.NTN_SKILLS_SCHEDULER_ROOT;
+    else inherited.NTN_SKILLS_SCHEDULER_ROOT = scheduler;
+    const before = { ...inherited };
+    const print = await candidate.prepareCandidatePrintState({}, { stateRoot, environment: inherited });
+    for (const env of [candidate.candidateOwnedStateEnvironment(stateRoot, inherited), { ...inherited, ...print.env }]) {
+      const observed = JSON.parse(execFileSync(process.execPath, ['-e', source], { env, encoding: 'utf8' }));
+      for (const [key, directory] of Object.entries(directories)) assert.equal(observed[key], join(stateRoot, 'ntn', directory));
+      assert.equal(observed.HOME, inherited.HOME);
+    }
+    assert.deepEqual(inherited, before);
+  }
+});
+
 test('normal-management state reuses only the existing process roots and never transfers cleanup or resume ownership', async t => {
   const scratch = await mkdtemp('/tmp/notion-existing-state-proof-');
   t.diagnostic(JSON.stringify({ ownedScratch: [scratch], cleanup: 'Retained for evidence-first system Trash cleanup.' }));
   const roots = { NTN_SKILLS_HOME: '/normal/state/ntn-skills', NTN_SKILLS_CONFIG_HOME: '/normal/config/ntn-skills', NTN_SKILLS_CACHE_HOME: '/normal/cache/ntn-skills' };
-  const environment = { XDG_STATE_HOME: '/normal/state', XDG_CONFIG_HOME: '/normal/config', XDG_CACHE_HOME: '/normal/cache' };
+  const environment = { XDG_STATE_HOME: '/normal/state', XDG_CONFIG_HOME: '/normal/config', XDG_CACHE_HOME: '/normal/cache', NTN_SKILLS_SCHEDULER_ROOT: '/normal/shared-scheduler' };
   const stateRoot = join(scratch, 'run-owned'), selected = [];
   for (const [index, content] of ['before\n', 'edited\n'].entries()) {
     const snapshot_id = 's_' + sha('snapshot-' + index), file_id = 'file-' + sha('reference');
@@ -1236,6 +1258,9 @@ test('normal-management state reuses only the existing process roots and never t
   assert.equal(normal.sourceState.ownership, 'existing-user'); assert.equal(normal.sourceState.mode, 'normal-management');
   assert.equal(normal.stateRoot, stateRoot); assert.deepEqual(normal.ownedPaths, [stateRoot]);
   assert.deepEqual(normal.env, { ...roots, NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data') });
+  const observedScheduler = execFileSync(process.execPath, ['-e', 'process.stdout.write(process.env.NTN_SKILLS_SCHEDULER_ROOT)'],
+    { env: { ...environment, ...normal.env }, encoding: 'utf8' });
+  assert.equal(observedScheduler, environment.NTN_SKILLS_SCHEDULER_ROOT);
   assert.equal(normal.sourceState.reads.length, 2);
   const fresh = await candidate.prepareCandidatePrintState({}, options);
   assert.equal(fresh.sourceState, undefined); assert.equal(fresh.env.NTN_SKILLS_HOME, join(stateRoot, 'ntn/state'));
