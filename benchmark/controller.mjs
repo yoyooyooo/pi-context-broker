@@ -10,6 +10,7 @@ import { writeAnalysisReport } from './analysis/report.mjs';
 import { verifyExecutionImplementation } from './implementation.mjs';
 import { verifyZeroSendRepair } from './resumption.mjs';
 import { readEpisodeFixtureBindings } from './fixture-dispatch.mjs';
+import { verifyCollectionRecovery, verifyCollectionRecoveryResults } from './collection-recovery.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
@@ -126,30 +127,49 @@ export function executionForSlot({ plan, bindings, slotBindings, slot }) {
   return { condition, model, binding, candidate, expectation };
 }
 
-export async function executeBatchPlan({ plan, maximumNewEpisodes = Infinity, analysisRevisionFile }) {
+export async function executeBatchPlan({ plan, maximumNewEpisodes = Infinity, analysisRevisionFile, collectionRecoveryFile }) {
   const { input, bindings, slotBindings } = await loadExecution(plan);
   const status = await batchStatus(input.control_root);
   const analysisRevisionReference = analysisRevisionFile ? { path: analysisRevisionFile, sha256: sha(await readFile(analysisRevisionFile)) }
     : status.analysis_revision;
+  assert.ok(!collectionRecoveryFile || !analysisRevisionReference, 'Collection recovery and analysis revision cannot be combined');
+  const collectionRecoveryReference = collectionRecoveryFile
+    ? { path: collectionRecoveryFile, sha256: sha(await readFile(collectionRecoveryFile)) } : null;
+  let collectionRecovery = collectionRecoveryReference
+    ? await verifyCollectionRecovery({ reference: collectionRecoveryReference, plan }) : null;
+  if (collectionRecovery?.repairs.some(item => !status.episodes.some(episode => episode.run_id === item.run_id)))
+    assert.equal(maximumNewEpisodes, 0, 'Recover retained collection with --limit 0 before starting another slot');
   let analysisRevision = null;
   if (analysisRevisionReference) {
     const { verifyAnalysisRevision } = await import('./revision.mjs');
     analysisRevision = await verifyAnalysisRevision({ reference: analysisRevisionReference, plan });
   }
-  const implementation = analysisRevision?.implementation ?? input.implementation;
+  const implementation = collectionRecovery?.implementation ?? analysisRevision?.implementation ?? input.implementation;
   await verifyExecutionImplementation(implementation);
   if (input.resumption) await verifyZeroSendRepair({ reference: input.resumption.repair, environmentRoot: input.environment_root });
   const argsFor = slot => executionForSlot({ plan, bindings, slotBindings, slot });
   async function storeResult(raw, slot, reanalysisOf) {
     const { condition, model, binding } = argsFor(slot);
-    const output = join(raw.root, 'benchmark/normalized');
-    const result = await collect(raw, plan, slot, condition, model, binding, output, reanalysisOf);
+    if (collectionRecoveryReference) {
+      await verifyExecutionImplementation(implementation);
+      collectionRecovery = await verifyCollectionRecovery({ reference: collectionRecoveryReference, plan });
+    }
+    const projected = collectionRecovery?.projectedBindings.find(item => item.case_id === binding.id);
+    assert.ok(!collectionRecovery || projected, 'Collection recovery has no frozen case projection');
+    const output = collectionRecovery
+      ? join(input.control_root, 'collection-repair-results', raw.run_id) : join(raw.root, 'benchmark/normalized');
+    // Only postprocessing receives the path projection. Subject execution below
+    // keeps the original frozen binding, input, materials and startup expectation.
+    const result = await collect(raw, plan, slot, condition, model, projected?.binding ?? binding, output, reanalysisOf);
     const episodeBudget = plan.protocol.policies.budgets.find(budget => budget.id === condition.budget_id)?.episode ?? null;
-    return completedEpisodeRecord(raw, result, { episodeBudget });
+    return { ...completedEpisodeRecord(raw, result, { episodeBudget }),
+      ...(collectionRecoveryReference ? { collection_recovery: collectionRecoveryReference } : {}) };
   }
   return runBatch({ plan, maximumNewEpisodes, pilotLedgerRoot: input.pilot_ledger_root, analysisRevisionReference, analysisRevision,
     executeEpisode: async ({ slot, runId, budget }) => {
       await verifyExecutionImplementation(implementation);
+      if (collectionRecoveryReference)
+        collectionRecovery = await verifyCollectionRecovery({ reference: collectionRecoveryReference, plan });
       const { condition, model, binding, candidate, expectation } = argsFor(slot);
       const now = Date.now();
       assert.ok(now >= Date.parse(model.backend.window.start) && now <= Date.parse(model.backend.window.end), 'The declared model route window has expired');
@@ -176,6 +196,7 @@ export async function analyzeBatch({ root, outputDirectory, reanalysis = false }
   const plan = validateBatchPlan(await readJson(join(root, 'plan.json'))), status = await batchStatus(root);
   const reportRelative = relative(plan.execution.environment_root, outputDirectory);
   assert.ok(reportRelative && !reportRelative.startsWith('..') && !isAbsolute(reportRelative), 'Reports must remain within the task-owned environment');
+  const recovery = await verifyCollectionRecoveryResults(plan, status.episodes);
   const episodes = [];
   const { bindings, slotBindings } = await loadExecution(plan);
   for (const finished of status.episodes) {
@@ -188,7 +209,9 @@ export async function analyzeBatch({ root, outputDirectory, reanalysis = false }
     const runRoot = finished.result.run_root, resultPath = join(runRoot, 'benchmark/runtime/episode-result.json');
     const raw = { root: runRoot, run_id: finished.run_id, result_path: resultPath, shared: await readJson(join(runRoot, 'result.json')), episode: await readJson(resultPath) };
     raw.status = raw.episode.status;
-    const result = await collect(raw, plan, slot, condition, model, slotBindings.get(slot.slot_id)?.binding ?? bindings.find(b => b.id === slot.case_id),
+    const originalBinding = slotBindings.get(slot.slot_id)?.binding ?? bindings.find(b => b.id === slot.case_id);
+    const collectionBinding = recovery?.projectedBindings.find(item => item.case_id === slot.case_id)?.binding ?? originalBinding;
+    const result = await collect(raw, plan, slot, condition, model, collectionBinding,
       join(outputDirectory, 'reanalysis', finished.run_id), finished.result.episode_sha256);
     episodes.push(result.bundle.episode);
   }

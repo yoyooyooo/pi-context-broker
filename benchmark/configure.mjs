@@ -13,6 +13,7 @@ import { runSubject, verifyTurnRuntimeBuild } from './execute.mjs';
 import { executionImplementation, verifyExecutionImplementation, instrumentationIdentity } from './implementation.mjs';
 import { prepareZeroSendResumption } from './resumption.mjs';
 import { pilotScopePolicy, preparePilotScope, verifyPilotScope } from './pilot-scope.mjs';
+import { prepareMaterialOwnership, verifyMaterialOwnership } from './material-ownership.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = async (path, value) => {
@@ -53,6 +54,18 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     if (existing.execution.pilot_scope) await verifyPilotScope(existing);
     const bindings = await readJson(existing.execution.case_bindings_file);
     assert.equal(sha(await readFile(existing.execution.case_bindings_file)), existing.execution.case_bindings_sha256);
+    if (proof.material_original_bindings) {
+      const bytes = await readFile(proof.material_original_bindings.path);
+      assert.equal(sha(bytes), proof.material_original_bindings.sha256);
+      const originals = JSON.parse(bytes);
+      for (const item of proof.material_ownership) {
+        const original = originals.find(binding => binding.id === item.case_id);
+        assert.equal(fingerprint(original), item.original_binding_sha256);
+        const projected = await verifyMaterialOwnership({ binding: original, reference: item.reference,
+          environmentRoot: setup.environment_root });
+        assert.deepEqual(projected.binding, bindings.find(binding => binding.id === item.case_id));
+      }
+    }
     await readEpisodeFixtureBindings({ id: existing.id, registration: existing.execution.episode_fixtures,
       environmentRoot: setup.environment_root, controlRoot: root, cases: bindings, slots: existing.slots,
       candidates: existing.execution.conditions, runtime: existing.execution.runtime });
@@ -82,6 +95,26 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     const shared = await bindMaterializedCases({ cases: cases.filter(binding => !binding.events.length), materialization });
     cases = cases.map(binding => shared.find(item => item.id === binding.id) ?? binding);
     for (const candidate of setup.candidates) if (candidate.mode === 'broker') assert.equal(candidate.notion_entry, materialization.entry);
+  }
+  // Imported evidence must already have an owned, verified closure before any
+  // startup capture or provider execution. Shared material keeps one native root.
+  const materialOwnership = [];
+  let materialOriginalBindings = null;
+  if (cases.some(binding => binding.materialization_proof)) {
+    const originalFile = join(root, 'material-original-case-bindings.json');
+    await save(originalFile, cases);
+    materialOriginalBindings = { path: originalFile, sha256: sha(await readFile(originalFile)) };
+    const projectedCases = [];
+    for (const binding of cases) {
+      if (!binding.materialization_proof) { projectedCases.push(binding); continue; }
+      const materialId = fingerprint({ materialization_proof: binding.materialization_proof,
+        skills_root: binding.skills_root, skill_inventory: binding.skill_inventory });
+      const projected = await prepareMaterialOwnership({ binding,
+        directory: join(root, 'material-ownership', materialId), environmentRoot: setup.environment_root });
+      materialOwnership.push({ case_id: binding.id, original_binding_sha256: fingerprint(binding), reference: projected.reference });
+      projectedCases.push(projected.binding);
+    }
+    cases = projectedCases;
   }
   const bindingsFile = join(root, 'case-bindings.json'); await save(bindingsFile, cases);
   const modelsFile = join(root, 'models.json');
@@ -211,6 +244,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   await save(join(root, 'configuration-proof.json'), { version: 1, setup_sha256: fingerprint(setup), plan_sha256: plan.plan_sha256,
     status: 'ready', capture_count: results.length, covered_case_conditions: expanded.length, actual_model_requests: 0,
     capture_scope: 'shared-identical-startup-inputs; every episode independently verifies public-input bytes and actual startup/final-request contracts',
+    material_original_bindings: materialOriginalBindings, material_ownership: materialOwnership,
     frozen_slot_materializations: prepared.slots.size,
     capture_refs: results.map(result => ({ run_id: result.raw.run_id, case_ids: result.members.map(member => member.binding.id),
       ...(result.slot ? { slot_id: result.slot.slot_id, materialization: prepared.slots.get(result.slot.slot_id).ref } : {}), expectation: result.expectation })) });
