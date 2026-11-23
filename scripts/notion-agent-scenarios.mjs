@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
+import { validateAgentFixtureAuthoring } from './notion-agent-authoring.mjs';
 
 export const AGENT_PROFILES = Object.freeze(['daily', 'no-native-skills']);
 export const AGENT_FIXTURE_KINDS = Object.freeze(['mixed-rules', 'native-management', 'versioned-graph', 'upstream-projection']);
@@ -50,7 +51,7 @@ export function validateAgentFixtureRecipe(recipe) {
   assert.ok(Array.isArray(recipe.objects), 'fixture.objects must be an array');
   const aliases = new Set();
   for (const item of recipe.objects) {
-    keys(item, ['id', 'name', 'description', 'placement', 'initial', 'versions', 'source'],
+    keys(item, ['id', 'name', 'description', 'placement', 'initial', 'versions', 'source', 'authoring'],
       ['id', 'name', 'description', 'placement', 'initial', 'versions'], 'fixture.object');
     id(item.id, 'fixture.object.id'); assert.ok(!aliases.has(item.id), 'fixture: duplicate object ' + item.id); aliases.add(item.id);
     string(item.name, item.id + '.name'); string(item.description, item.id + '.description');
@@ -84,6 +85,7 @@ export function validateAgentFixtureRecipe(recipe) {
       for (const property of ['enabled', 'defaultContext']) if (value[property] !== undefined)
         assert.equal(typeof value[property], 'boolean', item.id + '.' + property + ' must be boolean');
     }
+    validateAgentFixtureAuthoring(item);
   }
   for (const item of recipe.objects) for (const value of Object.values(item.versions))
     for (const alias of [...(value.requires ?? []), ...(value.members ?? [])])
