@@ -7,8 +7,9 @@ import { canonicalJson, fingerprint } from './protocol.mjs';
 import { scoreExperiment } from './analysis/compare.mjs';
 import { renderAnalysisMarkdown, renderMetricSvg, reportTables, toCsv } from './analysis/report.mjs';
 import { verifyArtifactFiles, verifyBundle } from './evidence/store.mjs';
+import { OFFLINE_REPORT_SOURCE_FILES } from './offline-source-files.mjs';
 
-export const PUBLICATION_VERSION = '1.0.5';
+export const PUBLICATION_VERSION = '1.0.6';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const within = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
@@ -26,10 +27,6 @@ const usernamePattern = /^[\p{L}_][\p{L}\p{N}_.-]*\$?$/u;
 const projectedUsername = /^\[username:[a-f0-9]{20}\]$/;
 const escapeRegex = value => value.replace(/[.*+?^{}$()|[\]\\]/g, '\\$&');
 const wholeIdentifierPattern = value => new RegExp('(?<![\\p{L}\\p{N}_-])' + escapeRegex(value) + '(?![\\p{L}\\p{N}_-])', 'gu');
-const executableFiles = ['benchmark/protocol.mjs', 'benchmark/metrics.json', 'benchmark/schemas/protocol.schema.json',
-  'benchmark/schemas/environment-manifest.schema.json', 'benchmark/analysis/compare.mjs', 'benchmark/analysis/statistics.mjs',
-  'benchmark/analysis/report.mjs', 'benchmark/analysis/metrics.mjs', 'benchmark/evidence/store.mjs', 'benchmark/evidence/normalize.mjs',
-  'benchmark/reported-model.mjs', 'benchmark/provider-binding.mjs'];
 const asList = value => value === undefined ? [] : (assert.ok(Array.isArray(value) && value.every(x => typeof x === 'string' && x.length), 'Redaction lists contain nonempty strings'), value);
 const unique = values => [...new Set(values)];
 const alias = (kind, value) => '[' + kind + ':' + hash(kind + '\0' + value).slice(0, 20) + ']';
@@ -414,7 +411,7 @@ export async function writePublicEvidencePackage({ directory, input, analysis, r
   for (const [name, metric, title] of [['quality', 'verified_quality', 'Verified business quality'], ['input', 'input_total', 'Cumulative input'], ['time', 'capped_time', 'Capped time']])
     files.set(name + '.svg', Buffer.from(renderMetricSvg(publicAnalysis, { metric, title })));
   const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  for (const name of executableFiles) files.set('offline/' + name, await readFile(join(repository, name)));
+  for (const name of OFFLINE_REPORT_SOURCE_FILES) files.set('offline/' + name, await readFile(join(repository, name)));
   files.set('replay.mjs', Buffer.from(replaySource));
   const sourceBytes = await readFile(fileURLToPath(import.meta.url));
   files.set('sanitizer-source.mjs', sourceBytes);
