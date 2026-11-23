@@ -34,11 +34,14 @@ import { createFinalRequestLedger, type FinalRequestLedger } from "./final-reque
 import { RECOVERY_NOTICE, assertActiveContextDelivery, type ActiveContextRestoration } from "./session-recovery";
 import { activeSources, activeSelection } from "./session-active";
 import { assertWorkingSetBudget, exportWorkingSet, releaseWorkingSetRoots, setWorkingSetBudget, WorkingSetBudgetError } from "./session-working-set";
+import { CONTENT_SEARCH_MAX_RESULTS, CONTENT_SEARCH_TIMEOUT_MS, contentSearchFailure, type ContentSearchRequest, type ContentSearchOptions, type ContentSearchResult } from "./content-search";
+import { createContentPublication } from "./content-publication";
 
 export type HostSkillOptions = {
   config: ConfigFile;
   getRecords(ctx?: ExtensionContext, signal?: AbortSignal, refreshSourceIds?: readonly string[]): Promise<DiscoveryResult<SkillRecord>>;
   metadataInvalidated?(ctx: ExtensionContext): boolean;
+  contentSearch?(input: ContentSearchRequest, sourceId: string, ctx: ExtensionContext, options: ContentSearchOptions): Promise<ContentSearchResult>;
   lookupReference?(ctx: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
   resolveNamedReference?(ref: string, ctx: ExtensionContext, signal?: AbortSignal, refresh?: boolean, sourceId?: string): Promise<{ record: SkillRecord; ref: string }>;
   resolveRelativeReference?(record: SkillRecord, from: string, path: string, ctx: ExtensionContext, signal: AbortSignal, policy: ConsumptionPolicy): Promise<string>;
@@ -483,16 +486,80 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return metadataReadiness;
   }
 
+  async function searchContent(input: Record<string, unknown>, ctx: ExtensionContext, readSignal: AbortSignal) {
+    if (typeof input.query !== "string" || !input.query.trim()
+      || input.cursor !== undefined || Number(input.limit ?? 20) > CONTENT_SEARCH_MAX_RESULTS) throw hostError("INVALID_ARGUMENT");
+    const enabledSources = () => (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
+    const sources = enabledSources();
+    if (input.source === undefined && sources.length !== 1)
+      throw Object.assign(new Error("Choose one configured Notion source for content search."), { code: "CONTENT_SOURCE_REQUIRED" });
+    const sourceId = typeof input.source === "string" ? input.source : sources[0]?.id;
+    const source = sources.find(value => value.id === sourceId);
+    if (!source || source.type !== "notion") throw hostError("SOURCE_UNAVAILABLE");
+    if (!source.database?.trim())
+      throw Object.assign(new Error("Content search requires a configured Notion source with an explicit library entry."), { code: "CONTENT_SOURCE_REQUIRED" });
+    if (source.discovery?.offline) throw hostError("CONTENT_SEARCH_OFFLINE");
+    const requestedConfiguration = JSON.stringify(source);
+    const deadline = Date.now() + CONTENT_SEARCH_TIMEOUT_MS;
+    const signal = AbortSignal.any([readSignal, ...(ctx.signal ? [ctx.signal] : []), AbortSignal.timeout(CONTENT_SEARCH_TIMEOUT_MS)]);
+    revalidateMetadata(ctx, input.refresh === true ? [source.id] : undefined);
+    await ready(signal);
+    const sourceConfiguration = () => {
+      const current = enabledSources().find(value => value.id === source.id);
+      return current && !options.metadataInvalidated?.(ctx) ? JSON.stringify(current) : undefined;
+    };
+    if (sourceConfiguration() !== requestedConfiguration) throw preparationCancelled();
+    const publication = createContentPublication({
+      ctx, deadline, signal: AbortSignal.any([signal, metadataController.signal]),
+      current: () => ({ task: generation, metadata: metadataGeneration, qualification: observations.revision(), source: sourceConfiguration() }),
+      onQualificationChange: observations.onChange,
+    });
+    try {
+      publication.assertCurrent();
+      if (!options.contentSearch) throw hostError("SOURCE_SDK_INCOMPATIBLE");
+      // Preserve case, Unicode and whitespace. Authorization resumes this exact
+      // request, and neither the host nor the SDK broadens its selected source.
+      const request = { query: input.query, limit: Number(input.limit ?? 20) };
+      const present = adapter.presentAuthorization;
+      // Absence of a callback tells the SDK not to create an OAuth flight or
+      // listener. A cached credential may still serve a noninteractive search.
+      const onAuthorize: ContentSearchOptions["onAuthorize"] = present && ctx.hasUI && ctx.mode === "tui" && ctx.ui?.custom
+        ? async request => {
+          publication.assertCurrent();
+          await present({ ...request, signal: AbortSignal.any([request.signal, publication.signal]),
+            deadline: Math.min(request.deadline, deadline) }, ctx);
+          publication.assertCurrent();
+        } : undefined;
+      const result = await publication.wait(signal => options.contentSearch!(request, source.id, ctx, {
+        signal, deadline, ...(onAuthorize ? { onAuthorize } : {}),
+      }));
+      publication.assertCurrent();
+      const output = { ok: true, state: "known", search_in: "content", source: source.id, count: result.records.length,
+        next_cursor: null, pagination: "not_supported", coverage: result.coverage, exhaustive: false, partial: result.partial,
+        result_id: result.resultId, connection: result.connection,
+        records: result.records.map(record => ({ ...record, source: source.id, availability: "available" })), notices: result.notices,
+        match_semantics: "Notion remote matches may include titles or stored projections. They do not prove exact fixed Skill or resource bytes match, and no result does not establish absence." };
+      return { content: [{ type: "text" as const, text: JSON.stringify(output) }], details: output };
+    } catch (error) {
+      // This guard also covers empty/error/denial responses. Retired requests
+      // expose only a local cancellation, never the remote diagnostic.
+      publication.assertCurrent();
+      const output = contentSearchFailure(error);
+      return { content: [{ type: "text" as const, text: JSON.stringify(output) }], details: output };
+    } finally { publication.close(); }
+  }
+
   if (sourceToolsEnabled) host.registerTool?.({
     name: listToolName, label: piConsumption ? "List Notion Skills" : "Skill search",
-    description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.${piConsumption ? " For named Notion Skill existence or availability questions, set query to the name and refresh:true, even when already listed or previously absent. Answer existence and stated-purpose questions from metadata; read or use the Skill only when the user asks to inspect or apply its instructions. Also refresh after writes or to request the latest directory; selected Skill versions stay fixed. Report matching availability. Only fresh online results with exhaustive coverage and no failures establish that no available match was found in the searched scope; stale, offline, failed or partial results cannot establish current absence." : ""}`,
+    description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.${piConsumption ? " For named Notion Skill existence or availability questions, set query to the name and refresh:true, even when already listed or previously absent. Answer existence and stated-purpose questions from metadata; read or use the Skill only when the user asks to inspect or apply its instructions. Also refresh after writes or to request the latest directory; selected Skill versions stay fixed. Report matching availability. Only fresh online results with exhaustive coverage and no failures establish that no available match was found in the searched scope; stale, offline, failed or partial results cannot establish current absence. Use search_in:content only when the user asks to search Skill content. Content mode requires a nonempty query and one configured source, performs an authorized remote Notion search, and may request foreground OAuth. Content results are always non-exhaustive and do not prove exact fixed Skill or supporting-file bytes match. Content mode has no cursor; limit is at most 50. It never adopts or changes task instructions." : ""}`,
     parameters: { type: "object", properties: {
-      query: { type: "string", description: "A short name or description keyword; empty lists the directory." },
-      source: { type: "string", description: "Optional configured source ID to disambiguate directories." },
-      limit: { type: "integer", minimum: 1, maximum: 100, description: "Maximum metadata entries, default 20." },
+      query: { type: "string", description: piConsumption ? "A short name or description keyword; empty lists the metadata directory. Content search requires a nonempty user-requested query." : "A short name or description keyword; empty lists the directory." },
+      source: { type: "string", description: piConsumption ? "Configured source ID. Optional for metadata; required for content search when more than one Notion source is enabled." : "Optional configured source ID to disambiguate directories." },
+      limit: { type: "integer", minimum: 1, maximum: 100, description: piConsumption ? "Maximum entries, default 20. Content search accepts at most 50 and has no pagination." : "Maximum metadata entries, default 20." },
       ...(piConsumption ? {
-        refresh: { type: "boolean", description: "Refresh metadata for source, or all configured Notion sources when source is omitted. Keeps task pins; configured offline sources remain offline. Cannot combine with cursor." },
-        cursor: { type: "string", description: "Copy next_cursor to continue the same query and metadata publication; restart after refresh." },
+        search_in: { type: "string", enum: ["metadata", "content"], description: "Default metadata searches names and descriptions without MCP or authorization UI. Content explicitly searches remote Notion content in one configured source." },
+        refresh: { type: "boolean", description: "Refresh metadata for source, or all configured Notion sources in metadata mode when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor." },
+        cursor: { type: "string", description: "Metadata only: copy next_cursor to continue the same query and metadata publication; restart after refresh. Content mode rejects all cursors." },
       } : {}),
     }, required: piConsumption ? [] : ["query"], additionalProperties: false },
     strict: true, readsSkillUris: false, loadMode: "essential",
@@ -506,8 +573,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         || input.limit !== undefined && (!Number.isSafeInteger(input.limit) || Number(input.limit) < 1 || Number(input.limit) > 100)
         || input.cursor !== undefined && (typeof input.cursor !== "string" || !piConsumption)
         || input.refresh !== undefined && (typeof input.refresh !== "boolean" || !piConsumption)
+        || input.search_in !== undefined && (!piConsumption || input.search_in !== "metadata" && input.search_in !== "content")
         || input.refresh === true && input.cursor !== undefined
-        || Object.keys(input).some(key => !["query", "source", "limit", ...(piConsumption ? ["cursor", "refresh"] : [])].includes(key))) throw hostError("INVALID_ARGUMENT");
+        || Object.keys(input).some(key => !["query", "source", "limit", ...(piConsumption ? ["cursor", "refresh", "search_in"] : [])].includes(key))) throw hostError("INVALID_ARGUMENT");
+      if (input.search_in === "content") return searchContent(input, ctx, readSignal);
       const query = String(input.query ?? "").trim().toLocaleLowerCase();
       const sourceIds = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => source.id);
       if (piConsumption && input.source !== undefined && !sourceIds.includes(String(input.source))) throw hostError("SOURCE_UNAVAILABLE");

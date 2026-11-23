@@ -92,4 +92,4 @@ Store 故障先用同一固定 snapshot 的公开离线读取证明正文可读�
 
 报告实际执行的场景/profile、候选身份、修复和复验关系，以及仍缺的证据。每个自然 case 是它所声明 C/T 的明确切片；同一原始运行可被多张薄回执引用，但不得重复计成本，不能因某个切片通过就宣称整个 T 或整批通过。
 
-新 Skill/路由或语料变动后运行对应 scripts/notion-agent-scenarios.test.mjs、scripts/notion-agent-onboarding.test.mjs、scripts/verification-skill-routing.test.mjs 与既有合同检查；真实 Agent 结论仍由本次实跑产生。
+新 Skill/路由或语料变动后运行对应 scripts/notion-agent-scenarios.test.mjs、scripts/notion-agent-onboarding.test.mjs、scripts/verification-skill-routing.test.mjs 与既有合同检查；正文检索还运行 notion-agent-content、notion-agent-analysis、notion-agent-metadata、notion-agent-workflow-runtime、skill-consumption-source-observer、notion-skill-graph-model-evidence 的现役测试。真实 Agent 结论仍由本次实跑产生。

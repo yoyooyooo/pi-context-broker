@@ -1144,6 +1144,20 @@ test('offline source assertion measures zero actual source attempts through comp
   assert.equal(result.assertions.find(item => item.kind === 'source-network-attempts').details.actual, 0);
 });
 
+test('content SDK call counts do not claim a known HTTP total or silently prove zero MCP calls', async () => {
+  const f = fixture();
+  f.observed.source = sourceOperation().map(row => row.phase === 'metrics'
+    ? { ...row, observed: false, complete: false, total_requests: null }
+    : { ...row, operation: 'content-search' });
+  const count = await f.run([{ kind: 'source-operation-attempts', operation: 'content-search', min: 1, max: 1 }]);
+  assert.equal(count.status, 'passed');
+  assert.equal(count.assertions.find(row => row.kind === 'source-operation-attempts').details.actual, 1);
+  assert.equal((await f.run([{ kind: 'source-operation-attempts', operation: 'content-search', max: 0 }])).status, 'failed');
+  const network = await f.run([{ kind: 'source-network-attempts', max: 0 }]);
+  assert.equal(network.status, 'blocked');
+  assert.ok(network.assertions.some(row => row.code === 'SOURCE_MCP_METRICS_UNKNOWN'));
+});
+
 test('an authorization-failed HTTP attempt is still network access', async () => {
   const f = fixture(); f.observed.source = sourceOperation([{ status: 403 }]);
   const result = await f.run([{ kind: 'source-network-attempts', max: 0 }]);

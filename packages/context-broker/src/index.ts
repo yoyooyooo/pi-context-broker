@@ -52,6 +52,7 @@ import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss,
 import { createFinalRequestLedger, formatFinalRequestDiagnostic } from "./final-request";
 import { installHostSkills } from "./host-skills";
 import { handleSourceConnection } from "./source-connection";
+import { searchNotionContent } from "./notion-source";
 import { resolveViewDiscovery, createViewCommands, notionDirectorySelections } from "./view-discovery";
 import { createSourceRuntime } from "./source-runtime";
 import { selectPrefetchPlans } from "./prefetch-policy";
@@ -1702,6 +1703,11 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     config,
     finalRequests,
     metadataInvalidated: ctx => unseenChanges(catalogCwd(ctx.cwd ?? process.cwd())).size > 0,
+    contentSearch: (input, sourceId, ctx, operation) => sourceRuntime.foreground(async () => {
+      const source = normalizeSources(config.sources)?.find(source => source.id === sourceId && source.type === "notion" && source.enabled !== false);
+      if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", sourceId);
+      return searchNotionContent(input, source, ctx.cwd ?? process.cwd(), operation);
+    }),
     getRecords: (ctx, signal, refreshSourceIds) => ownCatalog(async owned => {
       // Pi supplies persisted View selection at session_start. Do not start a
       // context-free discovery that the first session immediately cancels.

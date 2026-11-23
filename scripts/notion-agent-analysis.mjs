@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { validateAgentAssertion, validateAgentBindings } from './notion-agent-scenarios.mjs';
 import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation } from './notion-agent-tool-lineage.mjs';
-import { verifyPreparationEvidence } from './skill-preparation-evidence.mjs';
+import { verifyPreparationEvidence, visibleDiscoveryCards } from './skill-preparation-evidence.mjs';
 import { parseSourceObservation } from './skill-consumption-source-observer.mjs';
 import { verifyNotionAgentCliProcesses, verifyNotionAgentSingleProjectionRestore } from './notion-agent-cli-process.mjs';
 
@@ -653,6 +653,51 @@ function mainBodyKey(target, bodies) {
   return selected[0];
 }
 
+function catalogDescriptionCards(messages) {
+  const attributes = text => Object.fromEntries([...text.matchAll(/([a-z_]+)="([^"]*)"/gu)]
+    .map(match => [match[1], xmlText(match[2])]));
+  return messages.filter(message => ['user', 'system'].includes(message.role)).flatMap(message =>
+    [...textOf(message.content).matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(section =>
+      [...section[1].matchAll(/<catalog-cards>([\s\S]*?)<\/catalog-cards>/gu)].flatMap(block =>
+        [...block[1].matchAll(/<group\b([^>]*)>([\s\S]*?)<\/group>/gu)].flatMap(group => {
+          const header = attributes(group[1]);
+          return [...group[2].matchAll(/<card\b([^>]*?)\/>|<card\b([^>]*)>([\s\S]*?)<\/card>/gu)]
+            .filter(card => card[1] === undefined).map(card => {
+              const fields = attributes(card[2]);
+              return { kind: header.kind, source: header.source, name: fields.name,
+                ref: fields.location ?? fields.ref, description: xmlText(card[3]) };
+            });
+        }))));
+}
+
+// The request projector may remove a duplicate description, but the completed
+// lookup's envelope and every other record field still have to reach the model.
+function metadataDescriptionProjection(native, message, request, selection) {
+  try {
+    visibleDiscoveryCards(native);
+    visibleDiscoveryCards({ ...native, content: message.content });
+    const original = JSON.parse(textOf(native.content)), projected = JSON.parse(textOf(message.content));
+    const witnesses = catalogDescriptionCards(request.messages ?? []), omitted = [];
+    for (const [index, record] of projected.records.entries()) {
+      const before = original.records[index];
+      if (isDeepStrictEqual(record, before)) continue;
+      const { description, ...remaining } = before;
+      if (typeof description !== 'string' || !isDeepStrictEqual(record, remaining)
+        || !/^sr:C[A-Za-z0-9_-]{22}$/u.test(record.ref ?? '')) return undefined;
+      const full = native.details.records[index];
+      const refs = (selection?.shortRefs ?? []).filter(row => row.ref === record.ref);
+      if (refs.length !== 1 || !['candidate', 'selected'].includes(refs[0].target?.kind)
+        || refs[0].target.identity?.source !== 'notion' || !nonempty(full.id) || !digest(full.scope)
+        || refs[0].target.identity.id !== full.id || refs[0].target.identity.scope !== full.scope) return undefined;
+      if (!witnesses.some(card => card.ref === record.ref && card.source === record.source
+        && card.kind === record.kind && card.name === record.name && card.description === description)) return undefined;
+      omitted.push({ ref: record.ref, source: record.source, kind: record.kind, name: record.name,
+        owner: full.id, scope: full.scope, descriptionSha256: hash(description), descriptionBytes: Buffer.byteLength(description) });
+    }
+    return omitted.length ? omitted : undefined;
+  } catch { return undefined; }
+}
+
 /** Prove an explicit metadata lookup from its native result, provider payload and
  * observed SDK requests. A continuation also proves the old complete miss was
  * still inside its original TTL when the same process asked again. */
@@ -661,6 +706,7 @@ export async function verifyNotionAgentMetadataLookup(expected, observed, bindin
   need(item?.kind === 'notion' && nonempty(item.name) && nonempty(sourceId),
     'METADATA_IDENTITY_MISSING', 'Metadata lookup requires the independently bound name and configured source');
   const candidates = attempts.filter(call => call.name === 'notion_list' && call.arguments?.query?.trim() === item.name &&
+    (call.arguments.search_in === undefined || call.arguments.search_in === 'metadata') &&
     (call.arguments.source === undefined || call.arguments.source === sourceId) && call.result?.isError === false);
   demand(candidates.length > 0, 'NAMED_METADATA_LOOKUP_MISSING', 'The current turn did not search for the named Skill');
   const call = candidates.at(-1), native = observed.session.branchEntries.find(entry => entry.id === call.native?.resultEntryId);
@@ -681,12 +727,19 @@ export async function verifyNotionAgentMetadataLookup(expected, observed, bindin
   demand(freshness.stale === false && freshness.age_ms < freshness.max_age_ms,
     'METADATA_RESULT_STALE', 'The lookup returned stale metadata');
   demand(freshness.policy === 'refresh', 'METADATA_REFRESH_POLICY_MISMATCH', 'Offline or cache-eligible metadata cannot prove a current named inquiry');
-  const deliveries = [];
+  const deliveries = [], descriptionProjections = [];
   for (const payload of delivery.requests) {
     const task = observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === payload.sha256);
     const raw = JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8'));
-    if ((raw.messages ?? []).some(message => message.role === 'tool' && message.tool_call_id === call.deliveryToolCallId && textOf(message.content) === text))
-      deliveries.push(payload);
+    for (const message of (raw.messages ?? []).filter(message => message.role === 'tool' && message.tool_call_id === call.deliveryToolCallId)) {
+      if (textOf(message.content) === text) { deliveries.push(payload); break; }
+      const descriptions = metadataDescriptionProjection(native.message, message, raw, payload.selection);
+      if (descriptions) {
+        deliveries.push(payload);
+        descriptionProjections.push({ payloadSha256: payload.sha256, descriptions });
+        break;
+      }
+    }
   }
   demand(deliveries.length > 0, 'METADATA_NOT_DELIVERED', 'The completed lookup was not sent to the actual model');
   const matches = value.records.filter(row => row.name === item.name && row.source === sourceId);
@@ -710,7 +763,8 @@ export async function verifyNotionAgentMetadataLookup(expected, observed, bindin
   const proof = { object: expected.object, state: expected.state, toolCallId: call.id, resultEntryId: native.id,
     query: item.name, source: sourceId, sessionId: observed.session.sessionId, pid: call.event.pid,
     resultMonotonicNs: resultNs, freshness, records: matches.map(row => ({ ref: row.ref, name: row.name, availability: row.availability,
-      in_default_view: row.in_default_view })), payloads: deliveries.map(payload => payload.sha256) };
+      in_default_view: row.in_default_view })), payloads: deliveries.map(payload => payload.sha256),
+    ...(descriptionProjections.length ? { descriptionProjections } : {}) };
   if (expected.afterTurn) {
     const continuation = observed.metadataContinuation;
     need(continuation?.previous && Array.isArray(continuation.events), 'METADATA_CONTINUATION_MISSING', 'Keep the earlier turn and external event originals');
@@ -757,6 +811,107 @@ export async function verifyNotionAgentMetadataLookup(expected, observed, bindin
       priorAgeMs: before.freshness.age_ms, elapsedMs, maxAgeMs: before.freshness.max_age_ms, requests: refreshed.map(row => row.requestId), pinsUnchanged: true };
   }
   return proof;
+}
+
+/** A remote match is evidence of discovery, never a fixed-content read or a complete absence proof. */
+export async function verifyNotionAgentContentSearch(expected, observed, bindings, { attempts, delivery, source, readArtifact = readFile }) {
+  const item = bindings.private.objects[expected.object], body = bindings.private.bodies[expected.body];
+  const query = bindings.public[expected.query], configuredSource = observed.visibility?.source;
+  need(item?.kind === 'notion' && nonempty(item.owner) && digest(item.scope) && nonempty(item.pageId) &&
+    body?.object === expected.object && nonempty(query) && nonempty(configuredSource?.sourceId),
+  'CONTENT_FIXTURE_IDENTITY_MISSING', 'Content discovery needs its independently bound owner, body and public query');
+  const sourceId = configuredSource.sourceId;
+  const config = JSON.parse((await verifiedArtifact(configuredSource.configArtifact, readArtifact)).toString('utf8'));
+  const configured = (config.sources ?? []).filter(row => row.type === 'notion' && row.enabled !== false);
+  need(configured.length === 1 && configured[0].id === sourceId && sameDatabase(configured[0].database, configuredSource.database) &&
+    sameDatabase(configuredSource.database, bindings.private.fixture?.entry),
+  'CONTENT_SOURCE_SCOPE_MISMATCH', 'The user-visible source and independently read fixture library must agree');
+  const readbackKey = item.versions?.[body.version]?.readback;
+  const receipt = bindings.private.fixture?.observedReadbacks?.[readbackKey];
+  need(receipt?.status === 'passed' && receipt.object?.owner === item.owner && receipt.object?.scope === item.scope,
+    'CONTENT_READBACK_MISSING', 'The content premise requires the production CLI fixture readback');
+  const sealed = JSON.parse((await verifiedArtifact(receipt.artifact, readArtifact)).toString('utf8'));
+  const { artifact: _artifact, ...receiptValue } = receipt;
+  demand(isDeepStrictEqual(sealed, receiptValue), 'CONTENT_READBACK_CHANGED', 'The fixture receipt changed after independent readback');
+  const raw = JSON.parse((await verifiedArtifact(receipt.rawEvidence, readArtifact)).toString('utf8'));
+  const record = raw.main?.record, bytes = await verifiedArtifact(body, readArtifact);
+  need(record?.id === item.owner && raw.main?.scope === item.scope && record.name === item.name &&
+    sameDatabase(record.locator?.page_id, item.pageId) && typeof record.description === 'string' &&
+    raw.observedFiles?.some(file => file.path === body.resourcePath && file.sha256 === body.sha256 && file.bytes === body.bytes),
+  'CONTENT_READBACK_OWNER_MISMATCH', 'The frozen body and metadata must belong to the same independently read Skill');
+  demand(normalized(bytes.toString('utf8')).includes(normalized(query)) &&
+    !normalized(record.name).includes(normalized(query)) && !normalized(record.description).includes(normalized(query)),
+  'CONTENT_BODY_ONLY_PRECONDITION_MISSING', 'The query must occur in actual content and be absent from its name and description');
+  let matchPageId = item.pageId, representation = 'native';
+  if (body.resourcePath !== 'SKILL.md') {
+    const propertyId = bindings.private.fixture?.library?.files?.property_ids?.Path;
+    const pathOf = page => {
+      const values = Object.values(page.properties ?? {});
+      const property = values.find(value => value.id === propertyId && propertyId !== undefined) ?? page.properties?.Path;
+      return (property?.rich_text ?? []).map(value => value.plain_text ?? value.text?.content ?? '').join('');
+    };
+    const files = (raw.files ?? []).filter(file => pathOf(file) === body.resourcePath);
+    need(files.length === 1 && nonempty(files[0].id), 'CONTENT_FILE_OWNER_MISSING', 'A supporting-file hit needs its independently read physical File');
+    matchPageId = files[0].id; representation = 'supporting_file';
+  }
+  const candidates = attempts.filter(call => call.name === 'notion_list' && call.arguments?.search_in === 'content' &&
+    call.arguments.query === query && (call.arguments.source === undefined || call.arguments.source === sourceId) && call.result?.isError === false);
+  demand(candidates.length > 0, 'CONTENT_SEARCH_MISSING', 'The current turn did not explicitly search content using the public query');
+  const call = candidates.at(-1), native = observed.session.branchEntries.find(entry => entry.id === call.native?.resultEntryId);
+  need(native?.message?.role === 'toolResult' && native.message.toolCallId === call.id && native.message.isError === false,
+    'CONTENT_RESULT_MISSING', 'Content discovery needs its completed native tool result');
+  const content = JSON.parse((await verifiedArtifact(call.result.contentArtifact, readArtifact)).toString('utf8'));
+  demand(isDeepStrictEqual(content, native.message.content), 'CONTENT_RESULT_CHANGED', 'Observed and native content-search results differ');
+  const text = textOf(content), value = JSON.parse(text);
+  need(value.ok === true && value.state === 'known' && value.search_in === 'content' && Array.isArray(value.records),
+    'CONTENT_RESULT_UNAVAILABLE', 'Authorization failure, denial or a pending result cannot prove a remote hit');
+  demand(value.source === sourceId && value.count === value.records.length && value.records.length <= (call.arguments.limit ?? 20) &&
+    value.next_cursor === null && value.pagination === 'not_supported' && value.coverage === 'remote_non_exhaustive' &&
+    value.exhaustive === false && typeof value.partial === 'boolean' && nonempty(value.result_id) &&
+    nonempty(value.connection?.id) && nonempty(value.connection?.grantEpoch),
+  'CONTENT_RESULT_CONTRACT_MISMATCH', 'Remote discovery must preserve its scope, bound and non-exhaustive result contract');
+  demand(call.arguments.cursor === undefined, 'CONTENT_CURSOR_UNSUPPORTED', 'Content discovery cannot resume a metadata or fabricated cursor');
+  const matches = value.records.filter(row => row.id === item.owner && row.source === sourceId);
+  demand(matches.length === 1 && matches[0].name === item.name && matches[0].availability === 'available' && matches[0].enabled === true &&
+    matches[0].locator?.type === 'shared_skill' && ['page_id', 'database_id', 'data_source_id', 'library_id', 'skill_id']
+      .every(key => matches[0].locator[key] === record.locator[key]),
+  'CONTENT_MATCH_WRONG_OWNER', 'The returned match must name the independently read owner and physical source');
+  const match = matches[0];
+  demand(nonempty(match.ref) && match.ref === record.ref && !match.ref.includes('?') && match.entrypoint === record.entrypoint &&
+    match.match?.kind === 'notion_remote_match' && match.match.representation === representation && sameDatabase(match.match.pageId, matchPageId),
+  'CONTENT_MATCH_WRONG_REPRESENTATION', 'The discovery reference must remain current and the remote page must map to the read Skill or File');
+  const deliveries = [];
+  for (const payload of delivery.requests) {
+    const task = observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === payload.sha256);
+    const rawPayload = JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8'));
+    if ((rawPayload.messages ?? []).some(message => message.role === 'tool' && message.tool_call_id === call.deliveryToolCallId && textOf(message.content) === text))
+      deliveries.push(payload);
+  }
+  demand(deliveries.length > 0, 'CONTENT_NOT_DELIVERED', 'The remote result was not sent to the actual model');
+  const callNs = call.event.monotonicNs, resultNs = call.result.monotonicNs;
+  need(/^\d+$/u.test(callNs ?? '') && /^\d+$/u.test(resultNs ?? '') && Number.isSafeInteger(call.event.pid),
+    'CONTENT_CALL_TIMING_MISSING', 'Retain actual source and tool boundaries');
+  const contentStarts = source.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.operation === 'content-search');
+  demand(contentStarts.every(row => row.source_id === sourceId && sameDatabase(row.database, configuredSource.database)),
+    'CONTENT_QUERY_BROADCAST', 'Content discovery may use only the explicitly selected source');
+  const requests = contentStarts.filter(row => row.pid === call.event.pid && /^\d+$/u.test(row.monotonicNs ?? '') &&
+    BigInt(row.monotonicNs) >= BigInt(callNs) && BigInt(row.monotonicNs) <= BigInt(resultNs) &&
+    source.some(end => end.requestId === row.requestId && end.phase === 'completed' && end.status === 'completed' &&
+      /^\d+$/u.test(end.monotonicNs ?? '') && BigInt(end.monotonicNs) <= BigInt(resultNs)));
+  demand(requests.length === 1, 'CONTENT_SDK_CALL_UNPROVEN', 'The result must belong to one completed source SDK call');
+  const before = delivery.requests[0]?.selection;
+  const snapshots = [...delivery.requests.map(payload => payload.selection), observed.selection];
+  need(before && Array.isArray(before.scopes) && Array.isArray(before.active) && snapshots.every(snapshot =>
+    snapshot?.sessionId === observed.session.sessionId && Array.isArray(snapshot.scopes) && Array.isArray(snapshot.active)),
+  'CONTENT_SELECTION_OBSERVATION_MISSING', 'Retain actual selection snapshots before and after discovery');
+  demand(snapshots.every(snapshot => isDeepStrictEqual(snapshot.scopes, before.scopes) && isDeepStrictEqual(snapshot.active, before.active)),
+    'CONTENT_CHANGED_SELECTION', 'Content discovery must preserve task roots, fixed bindings, Requires locks and active sources');
+  return { object: expected.object, query, source: sourceId, toolCallId: call.id, resultEntryId: native.id,
+    records: [{ ref: match.ref, owner: item.owner, pageId: matchPageId, representation }],
+    resultId: value.result_id, partial: value.partial, coverage: value.coverage, exhaustive: false,
+    fixtureReadback: receipt.artifact, bodySha256: body.sha256, payloads: deliveries.map(payload => payload.sha256),
+    sdkRequests: requests.map(row => row.requestId), pinsUnchanged: true, mcpHttpAttempts: null,
+    notClaimed: 'MCP HTTP count, exhaustive search, fixed-content delivery, or exact-match semantics of the remote index' };
 }
 
 /** Analyze one real turn. Only the outside controller receives private bindings.
@@ -1015,7 +1170,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
 
   const interactionProofs = new Map(), toolOwners = new Map();
   let brokerOwner;
-  const sourceRequests = async () => {
+  const sourceRequests = async ({ requireHttpMetrics = true } = {}) => {
     need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Source effects require complete actual tool observations');
     need(observed.sourceCoverage === true && Array.isArray(observed.source), 'SOURCE_COVERAGE_MISSING', 'Complete source observation is required for source effects');
     const source = observed.source, starts = source.filter(row => row.phase === 'started'), attempts = source.filter(row => row.phase === 'attempt');
@@ -1024,7 +1179,9 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       'SOURCE_OPERATION_CORRELATION_MISSING', 'Source attempts need unique observed operations');
     for (const start of starts) {
       const metric = source.filter(row => row.phase === 'metrics' && row.requestId === start.requestId);
-      need(metric.length === 1 && metric[0].observed === true && metric[0].complete === true &&
+      if (requireHttpMetrics) need(start.operation !== 'content-search',
+        'SOURCE_MCP_METRICS_UNKNOWN', 'REST metrics do not establish the hosted MCP or OAuth HTTP count');
+      if (requireHttpMetrics) need(metric.length === 1 && metric[0].observed === true && metric[0].complete === true &&
         Number.isSafeInteger(metric[0].total_requests) && metric[0].total_requests >= 0 &&
         metric[0].total_requests === attempts.filter(row => row.requestId === start.requestId).length,
       'SOURCE_METRICS_UNKNOWN', 'Missing or incomplete metrics cannot prove a source request count');
@@ -1058,7 +1215,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       call.name === 'codemode' && inspectNotionAgentReadOnlyContainer(call, shared.correlation, readOnly).readOnly;
     for (const call of shared.attempts.values())
       need(readOnly(call), 'TOOL_EFFECTS_UNKNOWN', 'An executed tool has effects outside the observed SDK boundary', { tool: call.name, toolCallId: call.id });
-    return { source, attempts, coverage: 'subject-tool-operations-with-complete-SDK-metrics',
+    return { source, attempts, coverage: requireHttpMetrics ? 'subject-tool-operations-with-complete-SDK-metrics' : 'subject-SDK-operation-lifecycle-only',
       interactions: [...interactionProofs.values()], implementations: [...toolOwners.values()],
       backgroundChildren: source.filter(row => row.phase === 'unmatched_child_start').map(row => ({ childId: row.childId, transport: 'unknown' })),
       notClaimed: 'all-host/plugin/descendant traffic; any subject execution tool still requires complete independent effects evidence' };
@@ -1083,6 +1240,18 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           'Building the candidate or writing its command does not prove actual execution',
           { expectedMin: expected.min, observed: shared.cliCandidate.matchedCliCount });
         return { actual: shared.cliCandidate.matchedCliCount, distinctEntries: shared.cliCandidate.distinctEntries };
+      case 'content-search': {
+        const delivery = requireDelivery(), { source } = await sourceRequests({ requireHttpMetrics: false });
+        return verifyNotionAgentContentSearch(expected, observed, bindings, { attempts: [...shared.attempts.values()], delivery, source, readArtifact });
+      }
+      case 'source-operation-attempts': {
+        const { source, coverage } = await sourceRequests({ requireHttpMetrics: false });
+        const starts = source.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.operation === expected.operation);
+        demand(expected.min === undefined || starts.length >= expected.min, 'SOURCE_OPERATIONS_TOO_FEW', 'A required SDK operation is missing');
+        demand(expected.max === undefined || starts.length <= expected.max, 'SOURCE_OPERATIONS_TOO_MANY', 'A forbidden SDK operation was attempted');
+        return { operation: expected.operation, actual: starts.length, requestIds: starts.map(row => row.requestId), coverage,
+          counting: 'SDK calls including failed or cancelled operations; not HTTP attempts' };
+      }
       case 'single-projection-restore': {
         need(shared.cliCandidate, 'CLI_CANDIDATE_EXECUTION_UNPROVEN', 'A completed paired CLI invocation is required');
         const proof = verifyNotionAgentSingleProjectionRestore(shared.cliCandidate);

@@ -63,11 +63,12 @@ const requiredConstants = {
   SDK_VERSION: 2, CONSUMER_CONTRACT_VERSION: 1, CONSUMPTION_EFFECTS_VERSION: 1,
   CATALOG_DIRECTORY_CONTRACT_VERSION: 1, READ_OUTPUT_PROOF_VERSION: 1,
   RESOURCE_READ_CONTRACT_VERSION: 1, RESOURCE_READ_EFFECTS_VERSION: 1,
+  CONTENT_SEARCH_CONTRACT_VERSION: 1,
 };
 for (const [name, version] of Object.entries(requiredConstants)) {
   if (selectedSdkApi[name] !== version) throw new Error(`The current paired ntn-skills SDK requires ${name}=${version}; upgrade the complete selected package`);
 }
-for (const name of ['consume', 'decodeConsumeResult', 'listCatalog', 'listSkill', 'resolveCatalogReference', 'readSkill', 'readResources', 'decodeResourceReadResult', 'parseDuration']) {
+for (const name of ['consume', 'decodeConsumeResult', 'listCatalog', 'listSkill', 'resolveCatalogReference', 'readSkill', 'readResources', 'decodeResourceReadResult', 'parseDuration', 'contentSearch']) {
   if (typeof selectedSdkApi[name] !== 'function') throw new Error(`The current paired ntn-skills SDK must export ${name}`);
 }
 if (selectedSdkApi.PACKAGE_VERSION !== selectedCli.metadata.version) throw new Error('CLI and SDK package versions differ');
@@ -76,6 +77,7 @@ const readOutputProofVersion = selectedSdkApi.READ_OUTPUT_PROOF_VERSION;
 const catalogDirectoryVersion = selectedSdkApi.CATALOG_DIRECTORY_CONTRACT_VERSION;
 const consumptionEffectsVersion = selectedSdkApi.CONSUMPTION_EFFECTS_VERSION;
 const resourceEffectsVersion = selectedSdkApi.RESOURCE_READ_EFFECTS_VERSION;
+const contentSearchVersion = selectedSdkApi.CONTENT_SEARCH_CONTRACT_VERSION;
 const commandOutputProofVersion = selectedSdkApi.COMMAND_OUTPUT_PROOF_VERSION;
 if (commandOutputProofVersion !== undefined && commandOutputProofVersion !== 1) throw new Error('The selected CLI output observation contract is incompatible');
 const selectedSdk = await findPackage("ntn-skills", sdkEntry);
@@ -132,6 +134,7 @@ const runtimeManifest = { version: 1, package: "ntn-skills", package_version: se
   ...(commandOutputProofVersion === undefined ? {} : { command_output_proof_version: commandOutputProofVersion }),
   ...(consumptionEffectsVersion === undefined ? {} : { consumption_effects_version: consumptionEffectsVersion }),
   ...(resourceEffectsVersion === undefined ? {} : { resource_read_effects_version: resourceEffectsVersion }),
+  content_search_contract_version: contentSearchVersion,
   cli_sha256: createHash("sha256").update(cliCode).digest("hex"), sdk_sha256: createHash("sha256").update(sdkCode).digest("hex") };
 const licenseFiles = new Map();
 async function collectLicenses(name, from) {

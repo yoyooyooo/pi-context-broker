@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { access, lstat, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, mkdtemp, open, readFile, realpath, writeFile } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
@@ -147,13 +147,78 @@ export async function prepareWorkflowTemporaryEnvironment(fixture, env) {
   return { env: { ...env, TMPDIR: ownership.temporaryRoot }, projectContext: await identity(path) };
 }
 
-export function agentWorkflowEnvironment(inherited, { stateRoot, sourceConfigPath, evidence }) {
-  const env = { ...inherited, CONTEXT_BROKER_CONFIG: sourceConfigPath, NTN_SKILLS_HOME: join(stateRoot, 'state'),
+export function agentWorkflowEnvironment(inherited, { stateRoot, sourceConfigPath, evidence }, nodeExecArgv = process.execArgv) {
+  // Child Node processes do not inherit their parent's execArgv. Preserve an
+  // explicit standard proxy opt-in for both controller CLI setup and Pi.
+  const proxy = inherited.NODE_USE_ENV_PROXY === undefined && nodeExecArgv.includes('--use-env-proxy') ? { NODE_USE_ENV_PROXY: '1' } : {};
+  const env = { ...inherited, ...proxy, CONTEXT_BROKER_CONFIG: sourceConfigPath, NTN_SKILLS_HOME: join(stateRoot, 'state'),
     NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'config'), NTN_SKILLS_CACHE_HOME: join(stateRoot, 'cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'data'),
     NTN_SKILLS_SCHEDULER_ROOT: join(stateRoot, 'scheduler'),
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', BROKER_E2E_PROCESS_LEDGER: join(evidence, 'owned-processes.jsonl') };
   delete env.NTN_SKILLS_DEV_ROOT;
   return env;
+}
+
+/** Controller setup owns only this run's roots. RPC never receives an OAuth presenter. */
+export async function prepareWorkflowMcpAuthorization(scenario, { cli, node = process.execPath, cwd, env, evidence, expectedCli },
+  { loginTimeoutMs = 300000 } = {}) {
+  if (scenario.fixture.environment?.mcpAuthorization === undefined) return { status: 'not_required' };
+  assert.equal(scenario.fixture.environment.mcpAuthorization, 'cli-login');
+  assert.ok(scenario.turns.some(turn => turn.expect.some(expected => expected.kind === 'content-search')),
+    'Only an explicit content-search scenario may authorize MCP');
+  assert.ok(Number.isSafeInteger(loginTimeoutMs) && loginTimeoutMs > 0 && loginTimeoutMs <= 300000);
+  assert.ok(isAbsolute(cli) && isAbsolute(node) && isAbsolute(cwd) && isAbsolute(evidence));
+  for (const key of ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME', 'NTN_SKILLS_DATA_HOME'])
+    assert.ok(isAbsolute(env[key] ?? '') && inside(evidence, env[key]), 'MCP setup requires the new private run roots');
+  assert.ok(!env.NOTION_MCP_TOKEN?.trim(), 'Explicit login must not reuse an inherited MCP token');
+  assert.deepEqual(await identity(cli), expectedCli, 'The frozen public CLI changed before authorization');
+  const directory = join(evidence, 'mcp-authorization'); await mkdir(directory, { mode: 0o700 });
+  const result = { version: 1, actor: 'fixture-controller', scope: 'pre-agent-mcp-authorization', status: 'running',
+    startedAt: new Date().toISOString(), cli: expectedCli, node: await identity(node),
+    statePolicy: 'new-owned-run-roots; no credential files read or copied', loginTimeoutMs, commands: [],
+    mcpHttpAttempts: null, notClaimed: 'agent discovery, foreground Pi OAuth, or remote HTTP accounting' };
+  await save(join(directory, 'started.json'), result);
+  const run = async (name, args, timeoutMs) => {
+    const stdout = join(directory, name + '.stdout'), stderr = join(directory, name + '.stderr');
+    const out = await open(stdout, 'wx', 0o600), err = await open(stderr, 'wx', 0o600);
+    const command = { argv: [node, cli, ...args], startedAt: new Date().toISOString(), timeoutMs };
+    try {
+      Object.assign(command, await new Promise(resolveCommand => {
+        let timedOut = false, force, timer;
+        const child = spawn(node, [cli, ...args], { cwd, env, stdio: ['ignore', out.fd, err.fd] });
+        child.once('spawn', () => { command.pid = child.pid; });
+        const finish = outcome => { clearTimeout(timer); clearTimeout(force); resolveCommand({ ...outcome, timedOut }); };
+        child.once('error', () => finish({ exitCode: null, signal: null, spawnError: true }));
+        child.once('close', (exitCode, signal) => finish({ exitCode, signal }));
+        timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); force = setTimeout(() => child.kill('SIGKILL'), 2000); }, timeoutMs);
+      }));
+    } finally { await out.close(); await err.close(); }
+    Object.assign(command, { finishedAt: new Date().toISOString(), stdout: await identity(stdout), stderr: await identity(stderr) });
+    result.commands.push(command); await save(join(directory, name + '.json'), command);
+    assert.ok(command.exitCode === 0 && !command.timedOut && !command.spawnError, 'Public MCP ' + name + ' did not complete; retain its private setup evidence');
+    return json(stdout);
+  };
+  try {
+    // Manual opening keeps setup usable with the reviewer's signed-in browser.
+    // The authorization URL stays in this private stderr file, never a subject prompt.
+    const login = await run('login', ['auth', 'mcp', 'login', '--no-browser'], loginTimeoutMs);
+    const readback = await run('status', ['auth', 'mcp', 'status'], 10000);
+    assert.equal(login.ok, true); assert.equal(readback.ok, true);
+    assert.equal(readback.mcp?.oauth, 'ready'); assert.equal(readback.mcp.tokenSource, 'none');
+    assert.equal(readback.mcp.registered, true);
+    assert.ok(typeof readback.mcp.connectionId === 'string' && readback.mcp.connectionId.length > 0 &&
+      typeof readback.mcp.grantEpoch === 'string' && readback.mcp.grantEpoch.length > 0);
+    assert.equal(login.mcp?.connectionId, readback.mcp.connectionId); assert.equal(login.mcp?.grantEpoch, readback.mcp.grantEpoch);
+    result.connection = { id: readback.mcp.connectionId, grantEpoch: readback.mcp.grantEpoch };
+    result.status = 'passed';
+  } catch (error) {
+    result.status = 'failed'; result.error = { code: error.code ?? 'MCP_SETUP_FAILED', message: 'Public CLI authorization setup did not complete' };
+    throw error;
+  } finally {
+    assert.deepEqual(await identity(cli), expectedCli, 'The frozen public CLI changed during authorization');
+    result.finishedAt = new Date().toISOString(); await save(join(directory, 'result.json'), result);
+  }
+  return { ...result, artifact: await identity(join(directory, 'result.json')) };
 }
 
 export async function workflowHostLoader(host, owned, observed, args) {
@@ -237,6 +302,9 @@ export async function planAgentWorkflow(config) {
       ...(projectOverrides.compaction ? ['Owned project compaction.keepRecentTokens=' + projectOverrides.compaction.keepRecentTokens + '; real RPC compaction and model summarization remain unchanged'] : [])],
     projectOverrides,
     limits: { promptTimeoutMs: config.timeoutMs ?? 1_800_000, catalogTimeoutMs: config.catalogTimeoutMs ?? 90000 },
+    mcpAuthorization: scenario.fixture.environment?.mcpAuthorization === 'cli-login'
+      ? { actor: 'fixture-controller', command: ['auth', 'mcp', 'login', '--no-browser'], timeoutMs: 300000, state: 'new-owned-run-roots' }
+      : { status: 'not_required' },
     oracle: 'controller-only files; no tools, expected answers or verification Skill inserted into subject prompts',
     scopeBoundary: 'project candidate using the real daily environment; not a two-machine installed-delivery result' };
 }
@@ -455,6 +523,8 @@ export async function runAgentWorkflow(config) {
     }
   };
   try {
+    result.mcpAuthorization = await prepareWorkflowMcpAuthorization(scenario, { cli: cliFiles[1].path,
+      cwd, env, evidence, expectedCli: cliFiles[1] });
     await start();
     for (let index = 0; index < scenario.turns.length; index++) {
       const declared = corpus.scenarios.find(item => item.id === scenario.id).turns[index], receipt = result.turns[index];

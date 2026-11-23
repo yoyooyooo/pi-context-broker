@@ -40,6 +40,8 @@ export function currentEvidence(freshness: unknown, source: unknown): CurrentEvi
 export function createConsumerObservations(generation: () => number, now = Date.now) {
   const values = new Map<string, Observation>();
   let order = 0;
+  let revision = 0;
+  const changes = new Set<() => void>();
   const current = (ticket: ObservationTicket) => ticket.generation === generation() && !ticket.signal?.aborted;
   const accept = (key: string, ticket: ObservationTicket, next: Observation) => {
     if (!current(ticket)) return false;
@@ -48,9 +50,14 @@ export function createConsumerObservations(generation: () => number, now = Date.
       || next.evidence.validatedAt < previous.evidence.validatedAt
       || !next.live && next.evidence.validatedAt <= previous.evidence.validatedAt)) return false;
     values.set(key, next);
+    revision++;
+    for (const changed of changes) changed();
     return true;
   };
   return {
+    /** Whole-result consumers also fence empty/error publications and deny/allow ABA. */
+    revision: () => revision,
+    onChange(changed: () => void): () => void { changes.add(changed); return () => { changes.delete(changed); }; },
     begin(signal?: AbortSignal): ObservationTicket {
       return { generation: generation(), order: ++order, startedAt: now(), signal };
     },

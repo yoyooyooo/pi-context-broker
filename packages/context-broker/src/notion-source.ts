@@ -18,6 +18,8 @@ import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResour
 import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, resolveNotionCatalogReferenceSdk, resolveNotionReferenceSdk, listNotionFilesSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
 import type { ResourceReadBudget, FixedResourceRead, ResourceReadBatch, ResourceReadFileIdentity, ResourceReadWireFile } from "./resource-read-types";
 import type { ContentRecord, NotionDirectory, NotionDirectorySelection, NotionDirectoryOutcome, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
+import { searchNotionContentSdk } from "./notion-sdk";
+import { decodeContentSearchResult, type ContentSearchRequest, type ContentSearchOptions, type ContentSearchResult } from "./content-search";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
 type Options = ConsumptionPolicy & { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean; snapshotId?: string };
@@ -112,6 +114,17 @@ async function sdkFreshness(source: NotionSource, refresh?: boolean) {
 function sdkOptions(source: NotionSource, cwd: string, signal?: AbortSignal) {
   return { sourceId: source.id, database: source.database, cwd, signal, env: { ...process.env,
     ...(source.requestTimeoutMs === undefined ? {} : { NTN_SKILLS_REQUEST_TIMEOUT_MS: String(source.requestTimeoutMs) }) } };
+}
+/** One configured source enters the SDK; raw MCP candidates never enter Broker. */
+export async function searchNotionContent(input: ContentSearchRequest, source: NotionSource, cwd: string,
+  options: ContentSearchOptions): Promise<ContentSearchResult> {
+  if (source.enabled === false) throw new SourceError("SOURCE_UNAVAILABLE", source.id);
+  if (source.discovery?.offline) throw new SourceError("CONTENT_SEARCH_OFFLINE", source.id);
+  const value = await searchNotionContentSdk(input, { ...sdkOptions(source, cwd, options.signal),
+    deadline: options.deadline, onAuthorize: options.onAuthorize });
+  const result = decodeContentSearchResult(value);
+  if (result.records.length > input.limit) throw new SourceError("CONTENT_SEARCH_RESPONSE_INVALID", source.id);
+  return result;
 }
 function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" | "read" | "list", signal?: AbortSignal, selected?: SkillRecord): Error {
   if (signal?.aborted || object(error) && error.code === "CANCELLED") return new SourceError("SOURCE_CANCELLED", source.id, undefined, { effects: errorConsumptionEffects(error) });

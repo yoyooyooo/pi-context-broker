@@ -47,7 +47,7 @@ export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, expectedVer
   assert.equal(manifest.package, "ntn-skills", "Unexpected bundled package identity");
   assert.equal(manifest.package_version, expectedVersion, "Bundled runtime must match its frozen build input version");
   assert.equal(manifest.sdk_version, 2, "Only the current SDK v2 is supported");
-  for (const capability of ["consumer_contract_version", "consumption_effects_version", "catalog_directory_contract_version", "read_output_proof_version", "resource_read_contract_version", "resource_read_effects_version"])
+  for (const capability of ["consumer_contract_version", "consumption_effects_version", "catalog_directory_contract_version", "read_output_proof_version", "resource_read_contract_version", "resource_read_effects_version", "content_search_contract_version"])
     assert.equal(manifest[capability], 1, `Current runtime capability is required: ${capability}`);
   const hashes = { cli: createHash("sha256").update(cliBytes).digest("hex"), sdk: createHash("sha256").update(sdkBytes).digest("hex") };
   assert.equal(manifest.cli_sha256, hashes.cli, "Bundled CLI bytes do not match its frozen runtime manifest");

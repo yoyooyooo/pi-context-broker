@@ -3694,6 +3694,180 @@
           ]
         }
       }
+    },
+    "content-body-search": {
+      "kind": "native-management",
+      "objects": [
+        {
+          "id": "target",
+          "name": "incident-handover-playbook",
+          "description": "Incident closure and shift handover procedures",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "# Incident handover\n\nThe copper lantern checkpoint requires the outgoing responder to record the recovery owner and next observation time before the handover is closed.\n"
+                }
+              ],
+              "enabled": true,
+              "defaultContext": false
+            }
+          }
+        },
+        {
+          "id": "decoy",
+          "name": "service-review-notes",
+          "description": "Monthly service review agenda",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "# Monthly service review\n\nCompare request volumes and error budgets before scheduling maintenance.\n"
+                }
+              ],
+              "enabled": true,
+              "defaultContext": false
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.phrase": "copper lantern checkpoint"
+      },
+      "facts": {
+        "matched-document": {
+          "anyOf": [
+            "incident-handover-playbook"
+          ]
+        }
+      },
+      "environment": {
+        "catalog": "normal",
+        "mcpAuthorization": "cli-login"
+      }
+    },
+    "content-file-search-holdout": {
+      "kind": "native-management",
+      "objects": [
+        {
+          "id": "target",
+          "name": "archive-intake-handbook",
+          "description": "Procedures for accepting and cataloging archive deposits",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "# Archive intake\n\nThe receiving team uses the [accession checklist](references/accession-checklist.md) to record newly deposited materials.\n"
+                },
+                {
+                  "path": "references/accession-checklist.md",
+                  "content": "# Accession checklist\n\n| Checkpoint | Required record |\n| --- | --- |\n| silver heron accession | Record the donor agreement, box seal and quarantine shelf before intake. |\n"
+                }
+              ],
+              "enabled": true,
+              "defaultContext": false
+            }
+          }
+        },
+        {
+          "id": "decoy",
+          "name": "archive-display-notes",
+          "description": "Rotating public displays and handling labels",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "# Display rotation\n\nUpdate exhibit labels and light exposure records before rotating a public display.\n"
+                }
+              ],
+              "enabled": true,
+              "defaultContext": false
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.phrase": "silver heron accession"
+      },
+      "facts": {
+        "matched-document": {
+          "anyOf": [
+            "archive-intake-handbook"
+          ]
+        }
+      },
+      "environment": {
+        "catalog": "normal",
+        "mcpAuthorization": "cli-login"
+      }
+    },
+    "content-metadata-control": {
+      "kind": "native-management",
+      "objects": [
+        {
+          "id": "target",
+          "name": "incident-handover-playbook",
+          "description": "Incident closure and shift handover procedures",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "# Incident handover\n\nThe copper lantern checkpoint requires the outgoing responder to record the recovery owner and next observation time before the handover is closed.\n"
+                }
+              ],
+              "enabled": true,
+              "defaultContext": false
+            }
+          }
+        },
+        {
+          "id": "decoy",
+          "name": "service-review-notes",
+          "description": "Monthly service review agenda",
+          "placement": "notion",
+          "initial": "A",
+          "versions": {
+            "A": {
+              "files": [
+                {
+                  "path": "SKILL.md",
+                  "content": "# Monthly service review\n\nCompare request volumes and error budgets before scheduling maintenance.\n"
+                }
+              ],
+              "enabled": true,
+              "defaultContext": false
+            }
+          }
+        }
+      ],
+      "public": {
+        "business.phrase": "copper lantern checkpoint"
+      },
+      "facts": {
+        "matched-document": {
+          "anyOf": [
+            "incident-handover-playbook"
+          ]
+        }
+      },
+      "environment": {
+        "catalog": "normal"
+      }
     }
   },
   "scenarios": [
@@ -6594,6 +6768,134 @@
               "all": [
                 "purpose"
               ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "discovery-content-body",
+      "fixture": "content-body-search",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "search",
+          "prompt": "请在当前连接的 Notion 库正文里检索“{{business.phrase}}”，告诉我匹配资料的名称和找到的线索。现在只查找，不把资料选作本次任务的规则。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "content-search",
+              "object": "target",
+              "query": "business.phrase",
+              "body": "target@A/SKILL.md"
+            },
+            {
+              "kind": "source-operation-attempts",
+              "operation": "content-search",
+              "min": 1
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            },
+            {
+              "kind": "output",
+              "all": [
+                "matched-document"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-discovery-content-file",
+      "fixture": "content-file-search-holdout",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "search",
+          "prompt": "档案接收会上有人提到“{{business.phrase}}”。请按这个短语检索当前 Notion 库的正文和附属材料，告诉我它属于哪份资料；先不要采用或修改其中的规则。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "content-search",
+              "object": "target",
+              "query": "business.phrase",
+              "body": "target@A/references/accession-checklist.md"
+            },
+            {
+              "kind": "source-operation-attempts",
+              "operation": "content-search",
+              "min": 1
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
+            },
+            {
+              "kind": "output",
+              "all": [
+                "matched-document"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "discovery-metadata-without-content",
+      "fixture": "content-metadata-control",
+      "contract_ids": [
+        "C08",
+        "T22"
+      ],
+      "profiles": [
+        "daily"
+      ],
+      "turns": [
+        {
+          "id": "metadata",
+          "prompt": "请现在重新核实 Notion 库中是否有 {{target.name}}，只查名称、说明和可用状态，不查正文，也不要将它选作本次任务的规则。",
+          "expect": [
+            {
+              "kind": "completed"
+            },
+            {
+              "kind": "metadata-lookup",
+              "object": "target",
+              "state": "present"
+            },
+            {
+              "kind": "source-operation-attempts",
+              "operation": "content-search",
+              "max": 0
+            },
+            {
+              "kind": "no-semantic-writes"
+            },
+            {
+              "kind": "tool-attempts",
+              "tool": "notion_use",
+              "max": 0
             }
           ]
         }
