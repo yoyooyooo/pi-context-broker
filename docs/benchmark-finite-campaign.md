@@ -179,6 +179,71 @@ builds, modes, cases, and business material. A newly declared route, API, or
 window belongs to the new protocol and is recorded explicitly; matching a
 model variant does not establish equivalence to the old route condition.
 
+## A retained route-alias failure and its unstarted suffix
+
+A version 2 approved campaign document can record one narrowly defined
+engineering revision under its original user decision. This is distinct from
+a same-raw analysis revision: the original result stays invalid, the stopped
+plan stays stopped, and no old observation gains quality credit.
+
+The source must be the first eight-slot route allocation immediately after
+the original approved boundary. Exactly its first slot must have completed
+with one verified model request, fully known usage, and an original
+`BENCHMARK_REPORTED_MODEL_MISMATCH`. Its sole admission failure must be the
+previously undeclared canonical auto-group response label. The verifier reads
+the frozen plan, registration, reservation, closed ledger, normalized episode,
+raw runtime result, provider observations, and pinned local group metadata.
+A different failure, a new usage unknown, multiple started slots, a rewritten
+result, or a source whose label was already declared cannot use this revision.
+
+`readAliasRevisionHistory` in `benchmark/finite-campaign.mjs` reads the original
+approved history plus that exact retained failure. Its inputs are
+`parentAuthorization`, `predecessor`, `sourcePlan`, `metadata`, `planFiles`,
+and `pilotLedgerRoot`. `prepareApprovedCampaignRevision` in
+`benchmark/approved-campaign.mjs` returns a new immutable document from that
+history, the same parent and source references, a new `id`, and a fresh
+`followupAllocationId`. Both functions are data-only; the caller owns any
+exclusive document write.
+
+The revision references the original authorization and original user decision.
+It does not create another decision or edit either existing document. It
+retains the exact earlier reservations and four unknowns, adds the one known
+request to the cost ledger, and subtracts that consumed reservation from the
+approved maximum. Thus the boundary becomes 51, the remaining allocation total
+becomes 88, and the approved total remains 139 within the unchanged hard cap
+of 144. The five unallocated reservations remain unavailable.
+
+Only the stopped route allocation is replaced. Its fresh seven-slot allocation
+uses `unstarted_followup`; all other allocation IDs, roles, work indices, and
+limits remain identical. The first scope using the revised authorization must
+be this follow-up, with the exact stopped scope as predecessor. Later scopes
+use the same revised authorization. The original allocation cannot be reused,
+and this revision cannot be chained into a general stopped-scope exemption.
+
+The new route follow-up preserves the complete original eight-slot scientific
+design and schedules exactly source slots 1 through 7 in their original order.
+The only model-condition change is adding the observed, exact canonical group
+label to the explicitly frozen allowlist. Model route, variant, parameters,
+adapter, API, backend window, material, pairs, and statistical denominator remain
+unchanged. The old first slot is never scheduled again. Even if all seven new
+observations complete, their descriptive report retains one unresolved cell
+out of eight and does not produce a completed eight-observation route gate.
+
+A source build may change only through an explicitly pinned
+`apparatus_bridges` reference in this revision. This optional list contains at
+most one bridge. Its public verifier freshly checks both complete paired
+builds, requires identical CLI and Broker package inventories including build
+receipts and dependencies, and permits only the exact declared
+`broker/benchmark/reported-model.mjs` source change. The source and target
+build identities must deep-equal the actual protocol identities. An absent
+bridge retains the original same-build requirement. A shared commit name,
+renamed build, or package summary cannot substitute for those byte checks.
+
+The earlier eleven-slot follow-up still binds its original stopped expansion
+through the parent authorization. Its full 32-slot denominator remains intact.
+All original history checks and every subsequent core-stop or unknown-usage
+guard continue to apply beyond the revised boundary.
+
 ## Original failures and analysis revisions
 
 New original completed observations must have known, complete usage and no

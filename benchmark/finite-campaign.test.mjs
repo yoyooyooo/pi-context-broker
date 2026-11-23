@@ -12,12 +12,12 @@ import { writeRouteGate, verifyGateReference } from './gate.mjs';
 import { pilotScopePolicy, preparePilotScope, readPilotScopeAmendment, scopeReservationFields } from './pilot-scope.mjs';
 import { PROSPECTIVE_COHORT, readCohortHistory } from './prospective-cohort.mjs';
 import { FINITE_CAMPAIGN, finiteCampaignPolicy, prepareFiniteCampaign, assertFiniteCampaignPlan,
-  readFiniteCampaignAmendment, verifyFiniteCampaign, verifyFiniteCampaignScope, finiteCampaignReservationFields, readFiniteCampaignHistory, verifyFiniteOriginalResults } from './finite-campaign.mjs';
+  readFiniteCampaignAmendment, verifyFiniteCampaign, verifyFiniteCampaignScope, finiteCampaignReservationFields, readFiniteCampaignHistory, readAliasRevisionHistory, verifyFiniteOriginalResults } from './finite-campaign.mjs';
 import { exampleEnvelope } from './analysis/fixtures.mjs';
 import { normalizeEpisode } from './evidence/normalize.mjs';
 import { writeEvidenceBundle } from './evidence/store.mjs';
 import { assessReportedModel } from './reported-model.mjs';
-import { prepareApprovedCampaign, readApprovedCampaign } from './approved-campaign.mjs';
+import { prepareApprovedCampaign, prepareApprovedCampaignRevision, readApprovedCampaign } from './approved-campaign.mjs';
 import { declaredSchedule, UNSTARTED_FOLLOWUP } from './campaign-selection.mjs';
 import { scoreExperiment } from './analysis/compare.mjs';
 
@@ -64,7 +64,7 @@ function fixtureProtocol(id, { scope, modelCount = 2, expansion = false, routing
       'guidance', 'injection', 'return_contract', 'error_contract', 'cache', 'session', 'recovery', 'code_mode'] });
 }
 
-async function resultFor(plan, slot, runId, { attempts = [50], attemptsComplete = true, valid = true, stop = false, outcome = 'pass', omitRouting = false } = {}) {
+async function resultFor(plan, slot, runId, { attempts = [50], attemptsComplete = true, valid = true, stop = false, outcome = 'pass', omitRouting = false, reportedLabel, aliasStop = false } = {}) {
   const root = plan.execution.environment_root, rawRoot = join(root, 'raw'); await mkdir(rawRoot, { recursive: true });
   const rawPath = join(rawRoot, runId + '.json');
   const envelope = exampleEnvelope({ condition: slot.condition_id, caseId: slot.case_id, episodeId: runId,
@@ -76,17 +76,26 @@ async function resultFor(plan, slot, runId, { attempts = [50], attemptsComplete 
     environment_sha256: environment.manifest_sha256, build_id: environment.build.id, analysis_implementation: { files: [] } });
   if (model.routing && !omitRouting) {
     Object.assign(envelope.input.identity, { model_route: model.route, model_routing: model.routing, model_api: model.api, model_provider: model.provider });
+    const label = reportedLabel ?? model.routing.reported_model_ids[0];
     const events = envelope.input.attempts.map(attempt => ({ type: 'provider_stream_event', data: { request_id: attempt.request_id,
       attempt_id: attempt.id, api: model.api, model: model.route, provider: model.provider,
-      event: model.api === 'openai-completions' ? { model: model.routing.reported_model_ids[0] } : { response: { model: model.routing.reported_model_ids[0] } } } }));
+      event: model.api === 'openai-completions' ? { model: label } : { response: { model: label } } } }));
     const text = events.map(event => JSON.stringify(event)).join('\n') + (events.length ? '\n' : '');
     const path = join(rawRoot, runId + '-provider.jsonl'); await writeFile(path, text);
     const artifact = { id: 'provider-events', path, sha256: sha(text), bytes: Buffer.byteLength(text), kind: 'jsonl' }; envelope.input.artifacts.push(artifact);
     for (const [index, attempt] of envelope.input.attempts.entries()) {
       const ref = { artifact_id: artifact.id, sha256: artifact.sha256, line: index + 1 };
-      attempt.reported_model = assessReportedModel({ routing: model.routing, sent: attempt.sent, observations: [{ value: model.routing.reported_model_ids[0],
+      attempt.reported_model = assessReportedModel({ routing: model.routing, sent: attempt.sent, observations: [{ value: label,
         field: model.api === 'openai-completions' ? '/data/event/model' : '/data/event/response/model', bound: true, ref }], refs: [ref] });
     }
+  }
+  if (aliasStop) {
+    envelope.input.admission.reasons = ['reported_model_mismatch', 'runtime_not_a_business_episode:invalid'];
+    const runtime = { status: 'invalid', error: { code: 'BENCHMARK_REPORTED_MODEL_MISMATCH',
+      details: { reported_model: envelope.input.attempts[0].reported_model } },
+      budget: { usage_unknown: false, requests: 1, attempts: 1, input_tokens: attempts[0], output_tokens: 10 } };
+    const path = join(rawRoot, runId + '-runtime.json'), bytes = JSON.stringify(runtime) + '\n'; await writeFile(path, bytes);
+    envelope.input.artifacts.push({ id: 'collection-runtime-result', path, sha256: sha(bytes), bytes: Buffer.byteLength(bytes), kind: 'json' });
   }
   await writeFile(rawPath, envelope.rawText);
   const bundle = normalizeEpisode(envelope.input), episode = bundle.episode, directory = join(root, 'evidence', runId);
@@ -106,7 +115,7 @@ function finitePlan(protocol, execution) {
   return resealPlan({ version: 1, kind: 'benchmark-batch-plan', id: protocol.id, registered_at: protocol.registered_at,
     protocol, execution, slots: scheduleProtocol(protocol), plan_sha256: null });
 }
-async function writeClosedPlan(plan, { startOrdinal, count = plan.slots.length, prefixCount = 0, unknownLast = false, unknownIndices = [] } = {}) {
+async function writeClosedPlan(plan, { startOrdinal, count = plan.slots.length, prefixCount = 0, unknownLast = false, unknownIndices = [], resultOptions } = {}) {
   const rows = prefixCount ? (await readFile(join(plan.execution.control_root, 'ledger.jsonl'), 'utf8')).trimEnd().split('\n').map(JSON.parse).filter(row => row.type !== 'batch_closed') : [];
   const planRef = await reference(join(plan.execution.control_root, 'plan.json'));
   let amendment;
@@ -118,7 +127,7 @@ async function writeClosedPlan(plan, { startOrdinal, count = plan.slots.length, 
       : plan.execution.pilot_scope ? scopeReservationFields(plan, amendment, planRef) : {};
     await save(join(plan.execution.pilot_ledger_root, String(startOrdinal + i).padStart(3, '0') + '.json'), { run_id: runId, experiment_id: plan.id, slot_id: slot.slot_id, ...fields });
     const unknown = unknownIndices.includes(i) || unknownLast && i === count - 1;
-    const result = await resultFor(plan, slot, runId, unknown ? { attempts: [null], valid: false, stop: true } : { outcome: i % 3 === 1 ? 'fail' : 'pass' });
+    const result = await resultFor(plan, slot, runId, resultOptions ?? (unknown ? { attempts: [null], valid: false, stop: true } : { outcome: i % 3 === 1 ? 'fail' : 'pass' }));
     rows.push({ seq: rows.length + 1, type: 'episode_started', ...slot, run_id: runId });
     rows.push({ seq: rows.length + 1, type: 'episode_completed', ...slot, run_id: runId, result });
   }
@@ -207,7 +216,7 @@ async function successor(f, current, sequence) {
     historyPlans: [...f.historyPlans, join(current.plan.execution.control_root, 'plan.json')] };
 }
 
-async function approveStoppedFixture(f) {
+async function approveStoppedFixture(f, { grokRoute = 'grok/fixture-0' } = {}) {
   const history = await readCohortHistory({ planFiles: f.historyPlans, pilotLedgerRoot: f.pilot });
   const stop = history.episodes.at(-1), normalizedPath = join(stop.directory, 'episode.json'), normalized = await read(normalizedPath);
   const allocations = [
@@ -223,7 +232,7 @@ async function approveStoppedFixture(f) {
     campaign_absolute_limit: 144, current_physical_reservations: 50, retained_usage_unknown: 4,
     proposed_new_reservation_ceiling: 89, proposed_total_ceiling: 139, unallocated_headroom: 5,
     work: [11, 8, 8, 20, 24, 10, 8].map((maximum_new_reservations, index) => ({ maximum_new_reservations,
-      ...([1, 2].includes(index) ? { route: 'provider/' + (index === 1 ? 'grok' : 'terra') + '/fixture-0' } : {}) })),
+      ...([1, 2].includes(index) ? { route: 'provider/' + (index === 1 ? grokRoute : 'terra/fixture-0') } : {}) })),
     retained_stop: { run_id: stop.run_id, result_sha256: normalized.admission.refs[0].sha256,
       normalized_episode_sha256: normalized.episode_sha256, current_scope_still_stopped: true, usage_still_unknown: true, invalid_still_retained: true } };
   const proposalPath = join(f.owner, 'proposal.json'); await save(proposalPath, proposal);
@@ -512,4 +521,125 @@ test('actual batch dispatch charges the shared ledger under its campaign lease f
   assert.equal(stopped.completed, 1); assert.equal(calls.get(unknown.plan.id), 1);
   await assert.rejects(runBatch({ plan: unknown.plan, executeEpisode: () => assert.fail('New unknown must stop before callback') }), /ORIGINAL_CORE_STOP/);
   assert.equal((await readdir(f.pilot)).filter(name => /^\d{3}\.json$/.test(name)).length, 54);
+});
+
+test('an exact known alias stop permits only its seven unstarted slots under the original 139 ceiling', async t => {
+  const f = await approveStoppedFixture(await fixture({ modelCount: 2, expansionCount: 21, unknownExpansion: true }), { grokRoute: 'auto/fixture-0' });
+  const originalApprovalBytes = await readFile(f.approval.path);
+  const p = fixtureProtocol('approved-grok', { modelCount: 1, routing: true });
+  p.models[0].route = 'auto/fixture-0'; p.models[0].routing.mode = 'auto-route';
+  const gate = await prepare(f, { id: 'approved-grok', protocol: p });
+  const sourcePlan = await reference(join(gate.plan.execution.control_root, 'plan.json'));
+  await writeClosedPlan(gate.plan, { startOrdinal: 51, count: 1,
+    resultOptions: { valid: false, stop: true, reportedLabel: 'group/auto-fixture-0', aliasStop: true } });
+  const stopped = { ...await successor(f, gate, 3), count: 51 };
+  const sourceLedger = join(gate.plan.execution.control_root, 'ledger.jsonl'), stoppedBytes = await readFile(sourceLedger);
+  const metadataPath = join(f.owner, 'route-metadata.json');
+  await save(metadataPath, { command: ['magpie', 'group', 'auto-fixture-0'], exit_code: 0, stdout: 'Fixture  auto/fixture-0\n' });
+  const inputs = { id: 'alias-revision', parentAuthorization: f.approval, predecessor: stopped.predecessor,
+    followupAllocationId: 'approved-grok-unstarted', sourcePlan, metadata: await reference(metadataPath) };
+  const historyInputs = { ...inputs, planFiles: stopped.historyPlans, pilotLedgerRoot: f.pilot };
+  await assert.rejects(readFiniteCampaignHistory({ planFiles: stopped.historyPlans, pilotLedgerRoot: f.pilot,
+    prospectiveAuthorization: f.approval }), /ORIGINAL_CORE_STOP/);
+  const history = await readAliasRevisionHistory(historyInputs);
+  const revision = await prepareApprovedCampaignRevision({ ...inputs, history });
+  assert.equal(revision.version, 2); assert.equal(revision.history.scheduled_episodes, 51);
+  assert.equal(revision.new_reservation_ceiling, 88); assert.equal(revision.total_reservation_ceiling, 139);
+  assert.equal(revision.max_scheduled_episodes, 144);
+  assert.deepEqual(revision.history.unknown_usage_run_ids, f.approvedDocument.history.unknown_usage_run_ids);
+  assert.equal(revision.history.episodes.at(-1).admission, 'invalid');
+  assert.equal(revision.history.episodes.at(-1).stop_batch, true);
+  assert.equal(revision.history.known_subtotal.model_requests, f.approvedDocument.history.known_subtotal.model_requests + 1);
+  assert.deepEqual(revision.allocations.filter(item => item.id !== inputs.followupAllocationId),
+    f.approvedDocument.allocations.filter(item => item.id !== 'approved-grok'));
+  const revisionPath = join(f.owner, 'alias-revision.json'); await save(revisionPath, revision);
+  const revisionRef = await reference(revisionPath);
+  const revised = { ...stopped, approval: revisionRef };
+  assert.deepEqual((await readApprovedCampaign(revisionRef)).value, revision);
+
+  await t.test('hash, authority, predecessor, allocation and retained-result changes are rejected', async () => {
+    for (const ref of [inputs.parentAuthorization, inputs.metadata, inputs.sourcePlan]) {
+      const bytes = await readFile(ref.path); await writeFile(ref.path, Buffer.concat([bytes, Buffer.from(' ')]));
+      await assert.rejects(readApprovedCampaign(revisionRef), /CHANGED/); await writeFile(ref.path, bytes);
+    }
+    const changedInputs = { ...inputs, predecessor: f.predecessor, history };
+    await assert.rejects(prepareApprovedCampaignRevision(changedInputs));
+    const badHist = structuredClone(history); badHist.unknown_usage_run_ids.push('new-unknown');
+    await assert.rejects(prepareApprovedCampaignRevision({ ...inputs, history: badHist }), /NEW_UNKNOWN/);
+    await assert.rejects(prepareApprovedCampaignRevision({ ...inputs, history, followupAllocationId: 'approved-terra' }), /FRESH_ALLOCATION/);
+    await assert.rejects(prepareApprovedCampaignRevision({ ...inputs, history, parentAuthorization: revisionRef }), /ORIGINAL_APPROVAL_ONLY/);
+    const cases = [
+      value => { value.allocations[1].reservation_limit = 8; value.new_reservation_ceiling = 89; value.total_reservation_ceiling = 140; },
+      value => { value.allocations[0].reservation_limit--; value.allocations[1].reservation_limit++; },
+      value => { value.allocations[0].id = value.allocations[1].id; },
+      value => { value.history.episodes.at(-1).admission = 'valid'; value.history_checkpoint_sha256 = fingerprint(value.history); },
+      value => { value.revision.retained_stop.reported_model_id = 'group/auto-other'; },
+    ];
+    for (const [index, change] of cases.entries()) {
+      const changed = structuredClone(revision); change(changed); changed.authorization_sha256 = fingerprint({ ...changed, authorization_sha256: null });
+      const path = join(f.owner, 'invalid-revision-' + index + '.json'); await save(path, changed);
+      await assert.rejects(readApprovedCampaign(await reference(path)));
+    }
+    await assert.rejects(prepare(revised, { id: 'approved-terra', route: 'terra/fixture-0' }), /FOLLOWUP_FIRST/);
+  });
+
+  const protocol = structuredClone(gate.plan.protocol);
+  protocol.models[0].routing.reported_model_ids.push('group/auto-fixture-0');
+  const selection = { source_plan_sha256: gate.plan.plan_sha256, slot_ids: gate.plan.slots.slice(1).map(slot => slot.slot_id) };
+  const followup = await prepare(revised, { id: inputs.followupAllocationId, role: UNSTARTED_FOLLOWUP, protocol, selection });
+  assert.equal(followup.plan.slots.length, 7);
+  assert.equal(declaredSchedule(followup.plan.protocol).length, 8);
+  assert.deepEqual(followup.plan.slots, gate.plan.slots.slice(1).map((slot, order) => ({ ...slot, order })));
+  assert.equal(followup.amendment.history_exemption.scheduled_episodes, 13);
+  assert.equal(followup.amendment.prospective_authorization.history_boundary.scheduled_episodes, 51);
+  const execution = structuredClone(followup.plan.execution); delete execution.campaign_scope;
+
+  await t.test('no invalid cell, extra alias, route, subject or statistical denominator change is hidden in the repair', async () => {
+    const replay = structuredClone(followup.plan.protocol), replayInput = structuredClone(followup.input);
+    replayInput.selection.slot_ids = gate.plan.slots.slice(0, 7).map(slot => slot.slot_id);
+    replay.policies.campaign.selection = replayInput.selection; sealProtocol(replay);
+    await assert.rejects(prepareFiniteCampaign({ setup: { campaign_scope: replayInput }, protocol: replay, execution, slots: scheduleProtocol(replay) }), /EXACT_UNSTARTED_SUFFIX/);
+    for (const change of [
+      value => value.models[0].routing.reported_model_ids.push('another/fixture-0'),
+      value => { value.models[0].backend.window.end = '2026-11-24T01:00:00Z'; },
+      value => { value.environments[0].build.id = 'other-build'; value.environments[0].manifest_sha256 = fingerprint({ ...value.environments[0], manifest_sha256: null }); },
+      value => { value.policies.statistics.confidence = 0.90; },
+    ]) {
+      const changed = structuredClone(followup.plan.protocol); change(changed); sealProtocol(changed);
+      await assert.rejects(prepareFiniteCampaign({ setup: { campaign_scope: followup.input }, protocol: changed, execution, slots: scheduleProtocol(changed) }));
+    }
+    await assert.rejects(verifyFiniteCampaignScope(gate.plan, { forReservation: true }), /ORIGINAL_CORE_STOP/);
+  });
+
+  const observations = [];
+  const status = await runBatch({ plan: followup.plan, executeEpisode: async ({ plan, slot, runId }) => {
+    const result = await resultFor(plan, slot, runId, { reportedLabel: 'group/auto-fixture-0' });
+    observations.push(await read(join(result.normalized_directory, 'episode.json'))); return result;
+  } });
+  assert.equal(status.completed, 7); assert.equal(observations.length, 7);
+  const report = scoreExperiment({ protocol: followup.plan.protocol, episodes: observations });
+  assert.equal(report.completeness.planned_slots, 8); assert.equal(report.completeness.valid_slots, 7);
+  assert.equal(report.completeness.unresolved_slots.length, 1); assert.equal(report.cost_ledger.actual_runs, 7);
+  const afterFollowup = { ...revised, count: 58, historyPlans: [...revised.historyPlans, join(followup.plan.execution.control_root, 'plan.json')],
+    predecessor: { registration: await reference(join(f.pilot, 'scope-registration-004.json')), amendment: followup.plan.execution.campaign_scope.amendment } };
+  await assert.rejects(prepare(afterFollowup, { id: inputs.followupAllocationId, role: UNSTARTED_FOLLOWUP, protocol, selection }), /ALLOCATION_REUSED/);
+  const terra = await prepare(afterFollowup, { id: 'approved-terra', route: 'terra/fixture-0' });
+  await runBatch({ plan: terra.plan, executeEpisode: ({ plan, slot, runId }) => resultFor(plan, slot, runId) });
+  const afterTerra = { ...afterFollowup, count: 66, historyPlans: [...afterFollowup.historyPlans, join(terra.plan.execution.control_root, 'plan.json')],
+    predecessor: { registration: await reference(join(f.pilot, 'scope-registration-005.json')), amendment: terra.plan.execution.campaign_scope.amendment } };
+  const originalExpansion = await read(f.historyPlans.at(-1));
+  const oldSelection = { source_plan_sha256: originalExpansion.plan_sha256, slot_ids: originalExpansion.slots.slice(21).map(slot => slot.slot_id) };
+  const oldFollowup = await prepare(afterTerra, { id: 'approved-followup', role: UNSTARTED_FOLLOWUP, protocol: originalExpansion.protocol, selection: oldSelection });
+  assert.equal(oldFollowup.plan.slots.length, 11); assert.equal(declaredSchedule(oldFollowup.plan.protocol).length, 32);
+  let unknownCalls = 0;
+  await runBatch({ plan: oldFollowup.plan, executeEpisode: ({ plan, slot, runId }) => {
+    unknownCalls++; return resultFor(plan, slot, runId, { attempts: [null], valid: false, stop: true });
+  } });
+  assert.equal(unknownCalls, 1);
+  await assert.rejects(readFiniteCampaignHistory({ planFiles: [...afterTerra.historyPlans, join(oldFollowup.plan.execution.control_root, 'plan.json')],
+    pilotLedgerRoot: f.pilot, prospectiveAuthorization: revisionRef }), /ORIGINAL_CORE_STOP/);
+  await assert.rejects(runBatch({ plan: oldFollowup.plan, executeEpisode: () => assert.fail('New unknown cannot become another amendment exemption') }), /ORIGINAL_CORE_STOP/);
+  assert.equal((await readdir(f.pilot)).filter(name => /^\d{3}\.json$/.test(name)).length, 67);
+  assert.deepEqual(await readFile(f.approval.path), originalApprovalBytes);
+  assert.deepEqual(await readFile(sourceLedger), stoppedBytes);
 });

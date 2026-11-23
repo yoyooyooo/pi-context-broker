@@ -9,6 +9,7 @@ import { assertScopePlan, readPilotScopeAmendment, readScopeCompletedResults } f
 import { readEvidenceBundle } from './evidence/store.mjs';
 import { scheduleProtocol as expectedSchedule, declaredSchedule, UNSTARTED_FOLLOWUP, assertFollowupSelection } from './campaign-selection.mjs';
 import { readApprovedCampaign, approvedCampaignBinding, assertApprovedCampaignBinding } from './approved-campaign.mjs';
+import { readAliasRevisionStop, assertRetainedAliasEpisode } from './campaign-alias-revision.mjs';
 
 export const FINITE_CAMPAIGN = 'benchmark-finite-campaign';
 export const isFiniteCampaign = value => value?.kind === FINITE_CAMPAIGN;
@@ -272,9 +273,36 @@ export async function readFiniteCampaignHistory({ prospectiveAuthorization, ...o
     assertOriginalCompleted: input => authorized && input.ordinal <= authorized.value.history.scheduled_episodes
       ? undefined : assertOriginalCompleted(input),
     assertModelEvidence: (episode, model, plan) => {
-      if (isFiniteCampaign(plan.protocol.policies.campaign) || isProspectiveCohort(plan.protocol.policies.pilot.scope)) assertCohortModelEvidence(episode, model);
+      if (authorized?.retainedAliasStop && episode.identity.run_id === authorized.retainedAliasStop.retained.run_id)
+        assertRetainedAliasEpisode(episode, model, plan, authorized.retainedAliasStop.retained);
+      else if (isFiniteCampaign(plan.protocol.policies.campaign) || isProspectiveCohort(plan.protocol.policies.pilot.scope)) assertCohortModelEvidence(episode, model);
     } });
   if (authorized) assertPrefix(history, authorized.value.history);
+  return history;
+}
+
+/** Read the exact next, stopped route result for a prospective alias repair.
+ * The retained episode is checked as an invalid mismatch, never as matched. */
+export async function readAliasRevisionHistory({ parentAuthorization, predecessor, sourcePlan, metadata, planFiles, pilotLedgerRoot }) {
+  const parent = await readApprovedCampaign(parentAuthorization);
+  assert.equal(parent.value.version, 1, 'ALIAS_REVISION_ORIGINAL_APPROVAL_ONLY');
+  const stopped = await readAliasRevisionStop({ parent: parent.value, parentReference: parentAuthorization, predecessor, sourcePlan, metadata });
+  assert.equal(pilotLedgerRoot, parent.value.pilot_ledger_root);
+  assert.deepEqual(sorted(planFiles), sorted([...parent.value.history.plans.map(item => item.plan.path), sourcePlan.path]), 'ALIAS_REVISION_HISTORY_PLAN_SET');
+  const history = await readCampaignHistory({ planFiles, pilotLedgerRoot, assertPlan: assertHistoricalPlan,
+    assertOriginalCompleted: input => {
+      if (input.ordinal <= parent.value.history.scheduled_episodes) return;
+      assert.equal(input.ordinal, stopped.retained.ordinal, 'ALIAS_REVISION_SINGLE_RESULT_ONLY');
+      assert.equal(input.plan.plan_sha256, stopped.source.plan_sha256);
+      assert.deepEqual(input.event, stopped.event);
+      assert.equal(input.hasRevision, false, 'ALIAS_REVISION_SOURCE_REINTERPRETED');
+    },
+    assertModelEvidence: (episode, model, plan) => {
+      if (episode.identity.run_id === stopped.retained.run_id) assertRetainedAliasEpisode(episode, model, plan, stopped.retained);
+      else if (isFiniteCampaign(plan.protocol.policies.campaign) || isProspectiveCohort(plan.protocol.policies.pilot.scope)) assertCohortModelEvidence(episode, model);
+    } });
+  assert.equal(history.scheduled_episodes, parent.value.history.scheduled_episodes + 1, 'ALIAS_REVISION_BASELINE_COUNT');
+  assertPrefix(history, parent.value.history);
   return history;
 }
 
@@ -338,10 +366,17 @@ async function authorizedScope(value, context) {
   if (value.version !== 2) return null;
   const binding = value.prospective_authorization;
   if (!context.authorized) context.authorized = await readApprovedCampaign(binding.reference);
+  if (context.reference && fingerprint(binding.reference) !== fingerprint(context.reference)) {
+    const next = await readApprovedCampaign(binding.reference);
+    assert.equal(next.value.version, 2, 'APPROVAL_LINEAGE_CHANGED');
+    assert.deepEqual(next.value.revision.parent_authorization, context.reference, 'APPROVAL_LINEAGE_CHANGED');
+    assert.deepEqual(value.predecessor, next.value.predecessor, 'ALIAS_REVISION_PREDECESSOR_CHANGED');
+    assert.equal(binding.allocation_id, next.value.revision.followup_allocation_id, 'ALIAS_REVISION_FOLLOWUP_FIRST');
+    context.authorized = next;
+  }
   const authorized = context.authorized;
   assert.deepEqual(binding, approvedCampaignBinding(binding.reference, authorized.value, binding.allocation_id), 'APPROVAL_BINDING_CHANGED');
-  if (context.reference) assert.deepEqual(binding.reference, context.reference, 'APPROVAL_LINEAGE_CHANGED');
-  else context.reference = binding.reference;
+  context.reference = binding.reference;
   const allocation = authorized.value.allocations.find(item => item.id === binding.allocation_id);
   assert.equal(value.id, allocation.id, 'APPROVAL_SCOPE_ID_CHANGED'); assert.equal(value.role, allocation.role, 'APPROVAL_SCOPE_ROLE_CHANGED');
   assert.ok(value.reservation_limit <= allocation.reservation_limit, 'APPROVAL_ALLOCATION_LIMIT');
@@ -366,7 +401,15 @@ async function assertAuthorizedProtocol(protocol, execution, slots, value, autho
   }
   assert.equal(candidates.length, 1, 'FOLLOWUP_SOURCE_PLAN_MISSING');
   const source = candidates[0];
-  assert.equal(source.execution.pilot_scope?.amendment.sha256, authorized.value.predecessor.amendment.sha256, 'FOLLOWUP_SOURCE_NOT_STOPPED_SCOPE');
+  const aliasFollowup = authorized.retainedAliasStop && allocation.id === authorized.value.revision.followup_allocation_id;
+  if (aliasFollowup) {
+    assert.equal(source.plan_sha256, authorized.retainedAliasStop.retained.source_plan_sha256, 'ALIAS_REVISION_FOLLOWUP_SOURCE_CHANGED');
+    assert.deepEqual(source.execution.campaign_scope?.amendment, authorized.value.predecessor.amendment, 'FOLLOWUP_SOURCE_NOT_STOPPED_SCOPE');
+    assert.equal(protocol.purpose, source.protocol.purpose, 'ALIAS_REVISION_PURPOSE_CHANGED');
+  } else {
+    const originalApproval = authorized.original?.value ?? authorized.value;
+    assert.equal(source.execution.pilot_scope?.amendment.sha256, originalApproval.predecessor.amendment.sha256, 'FOLLOWUP_SOURCE_NOT_STOPPED_SCOPE');
+  }
   const observed = new Set(authorized.value.history.episodes.filter(item => item.experiment_id === source.id).map(item => item.run_id));
   const unstarted = source.slots.filter(slot => !observed.has(source.id + '-' + String(slot.order + 1).padStart(3, '0')));
   assert.deepEqual(value.selection.slot_ids, unstarted.map(slot => slot.slot_id), 'FOLLOWUP_MUST_USE_EXACT_UNSTARTED_SUFFIX');
@@ -381,10 +424,23 @@ async function assertAuthorizedProtocol(protocol, execution, slots, value, autho
     const before = source.protocol.models.find(item => item.id === original.model_id), after = protocol.models.find(item => item.id === condition.model_id);
     assert.equal(after.routing.model_variant, before.routing.model_variant, 'FOLLOWUP_MODEL_VARIANT_CHANGED');
     assert.deepEqual(after.parameters, before.parameters, 'FOLLOWUP_MODEL_PARAMETERS_CHANGED');
+    if (aliasFollowup) {
+      const expectedModel = structuredClone(before);
+      expectedModel.routing.reported_model_ids.push(authorized.retainedAliasStop.retained.reported_model_id);
+      expectedModel.routing.reported_model_ids.sort();
+      const actualModel = structuredClone(after); actualModel.routing.reported_model_ids.sort();
+      assert.deepEqual(actualModel, expectedModel, 'ALIAS_REVISION_ONLY_EXACT_LABEL_ADDITION');
+    }
     const oldEnvironment = source.protocol.environments.find(item => item.id === original.environment_id);
     const newEnvironment = protocol.environments.find(item => item.id === condition.environment_id);
     assert.equal(newEnvironment.pi.mode, oldEnvironment.pi.mode, 'FOLLOWUP_MODE_CHANGED');
-    assert.deepEqual(newEnvironment.build, oldEnvironment.build, 'FOLLOWUP_SUBJECT_BUILD_CHANGED');
+    if (fingerprint(newEnvironment.build) !== fingerprint(oldEnvironment.build)) {
+      const bridges = (authorized.apparatusBridges ?? []).filter(bridge => bridge.source_build.id === oldEnvironment.build.id
+        && bridge.target_build.id === newEnvironment.build.id);
+      assert.equal(bridges.length, 1, 'FOLLOWUP_SUBJECT_BUILD_CHANGED');
+      assert.deepEqual(oldEnvironment.build, bridges[0].source_build.identity, 'FOLLOWUP_APPARATUS_SOURCE_CHANGED');
+      assert.deepEqual(newEnvironment.build, bridges[0].target_build.identity, 'FOLLOWUP_APPARATUS_TARGET_CHANGED');
+    }
     assert.deepEqual(condition.case_ids, original.case_ids, 'FOLLOWUP_CONDITION_CASES_CHANGED');
   }
   // New route/API/window identities remain explicit in this new protocol. They
