@@ -202,6 +202,107 @@ test('existing raw hash cannot bless a nonexistent line or JSON pointer',async()
   input.timing.duration_ms.refs[0].pointer='/not-present';
   await assert.rejects(()=>verifyBundle(normalizeEpisode(input),{root}),/pointer does not exist/);
 });
+
+async function locatorBundle(text,kind='text') {
+  const root=await mkdtemp(join(tmpdir(),'benchmark-locator-views-'));
+  const {input,rawText}=exampleEnvelope({rawPath:'raw.json'});await writeFile(join(root,'raw.json'),rawText);
+  const artifact={id:'locator',path:'locator.raw',kind,sha256:createHash('sha256').update(text).digest('hex'),bytes:Buffer.byteLength(text)};
+  await writeFile(join(root,artifact.path),text);input.artifacts.push(artifact);
+  const ref=locator=>({artifact_id:artifact.id,sha256:artifact.sha256,...locator});
+  return {root,artifact,ref,bundle:{...normalizeEpisode(input),locators:[]}};
+}
+
+test('each verification rereads and hashes bytes after prior locator success',async()=>{
+  const f=await locatorBundle('{"first":1}', 'json');
+  f.bundle.locators=[f.ref({pointer:'/first'}),f.ref({line:1})];
+  assert.equal((await verifyBundle(f.bundle,{root:f.root})).valid,true);
+  await writeFile(join(f.root,f.artifact.path),'{"first":2}');
+  await assert.rejects(()=>verifyBundle(f.bundle,{root:f.root}),/hash or size mismatch: locator/);
+  await assert.rejects(()=>resolveEvidenceRef(f.ref({pointer:'/first'}),f.bundle.episode.artifacts,{root:f.root}),/hash or size mismatch: locator/);
+});
+
+test('verification views stay local to each evidence root and source mapping',async()=>{
+  const a=await locatorBundle('{"first":1}','json'),b=await locatorBundle('{"second":2}','json');
+  a.bundle.locators=[a.ref({pointer:'/first'})];b.bundle.locators=[b.ref({pointer:'/second'})];
+  const results=await Promise.all([verifyBundle(a.bundle,{root:a.root}),verifyBundle(b.bundle,{root:b.root})]);
+  assert.ok(results.every(result=>result.valid));
+  b.bundle.locators=[b.ref({pointer:'/first'})];
+  await assert.rejects(()=>verifyBundle(b.bundle,{root:b.root}),/pointer does not exist/);
+  await assert.rejects(()=>verifyBundle(a.bundle,{root:b.root}),/hash or size mismatch: locator/);
+  const mapped='mapped.json',pathsBySha256={[a.artifact.sha256]:mapped};
+  await writeFile(join(a.root,mapped),'{"first":1}');
+  assert.equal((await verifyBundle(a.bundle,{root:a.root,pathsBySha256})).valid,true);
+  await writeFile(join(a.root,mapped),'{"first":2}');
+  await assert.rejects(()=>verifyBundle(a.bundle,{root:a.root,pathsBySha256}),/hash or size mismatch: locator/);
+  await assert.rejects(()=>verifyBundle(a.bundle,{root:a.root,pathsBySha256:{[a.artifact.sha256]:join(b.root,b.artifact.path)}}),/outside the supplied evidence root/);
+  assert.equal((await verifyBundle(a.bundle,{root:a.root})).valid,true);
+});
+
+test('private JSON parsing remains lazy and preserves locator error order',async()=>{
+  const f=await locatorBundle('not JSON\n','json');
+  assert.equal((await verifyBundle(f.bundle,{root:f.root})).valid,true);
+  f.bundle.locators=[f.ref({line:1})];
+  assert.equal((await verifyBundle(f.bundle,{root:f.root})).valid,true);
+  f.bundle.locators=[f.ref({line:2}),f.ref({pointer:''})];
+  await assert.rejects(()=>verifyBundle(f.bundle,{root:f.root}),/Raw line locator exceeds artifact: locator/);
+  f.bundle.locators.reverse();
+  await assert.rejects(()=>verifyBundle(f.bundle,{root:f.root}),SyntaxError);
+});
+
+test('JSON views preserve null roots, escaped pointers and own-property bounds',async()=>{
+  const f=await locatorBundle('{"a/b":{"~key":null},"array":[false,0],"empty":""}','json');
+  f.bundle.locators=['','/a~1b/~0key','/array/0','/array/1','/empty'].map(pointer=>f.ref({pointer}));
+  assert.equal((await verifyBundle(f.bundle,{root:f.root})).valid,true);
+  assert.equal(await resolveEvidenceRef(f.ref({pointer:'/a~1b/~0key'}),f.bundle.episode.artifacts,{root:f.root}),null);
+  for(const pointer of ['/a~1b/missing','/array/2','/constructor']) {
+    f.bundle.locators=[f.ref({pointer})];
+    await assert.rejects(()=>verifyBundle(f.bundle,{root:f.root}),/pointer does not exist/);
+  }
+  f.bundle.locators=[f.ref({pointer:'/a~2b'})];
+  await assert.rejects(()=>verifyBundle(f.bundle,{root:f.root}),/exactly one valid line or JSON pointer/);
+  const nil=await locatorBundle('null\n','json');
+  nil.bundle.locators=[nil.ref({pointer:''}),nil.ref({line:1})];
+  assert.equal((await verifyBundle(nil.bundle,{root:nil.root})).valid,true);
+  assert.equal(await resolveEvidenceRef(nil.ref({pointer:''}),nil.bundle.episode.artifacts,{root:nil.root}),null);
+  nil.bundle.locators.push(nil.ref({pointer:'/child'}));
+  await assert.rejects(()=>verifyBundle(nil.bundle,{root:nil.root}),/pointer does not exist/);
+});
+
+test('line views preserve empty files, final newlines and retained empty lines',async()=>{
+  for(const [text,expected] of [['',[]],['one',['one']],['one\n',['one']],['one\n\n',['one','']],['one\r\n',['one\r']]]) {
+    const f=await locatorBundle(text);
+    f.bundle.locators=expected.map((_,index)=>f.ref({line:index+1}));
+    assert.equal((await verifyBundle(f.bundle,{root:f.root})).valid,true);
+    for(const [index,line] of expected.entries())
+      assert.equal(await resolveEvidenceRef(f.ref({line:index+1}),f.bundle.episode.artifacts,{root:f.root}),line);
+    f.bundle.locators.push(f.ref({line:expected.length+1}));
+    await assert.rejects(()=>verifyBundle(f.bundle,{root:f.root}),/Raw line locator exceeds artifact: locator/);
+    await assert.rejects(()=>resolveEvidenceRef(f.bundle.locators.at(-1),f.bundle.episode.artifacts,{root:f.root}),/Evidence line does not exist/);
+  }
+});
+
+test('public JSONL validation retains empty lines for subsequent locator checks',async()=>{
+  const f=await locatorBundle('{"first":1}\n\n','jsonl'),episode=f.bundle.episode,pathsBySha256={};
+  f.bundle.locators=[f.ref({line:1}),f.ref({line:2})];
+  const mapping=episode.artifacts.map(artifact=>{
+    pathsBySha256[artifact.sha256]=artifact.path;
+    const format=artifact.kind==='jsonl'?'jsonl':'json',row={source_sha256:artifact.sha256,public_sha256:artifact.sha256,
+      source_bytes:artifact.bytes,public_bytes:artifact.bytes,public_path:'raw/'+artifact.sha256,format,changed:false,
+      line_locators:format==='jsonl'?'preserved one-to-one':'not a JSONL artifact',
+      inner_hash_claims:'historical original claims; transformed bytes are identified by public_sha256'};
+    artifact.path=row.public_path;artifact.publication={source_sha256:row.source_sha256,source_bytes:row.source_bytes,transformed:false};return row;
+  });
+  const descriptor={raw_mapping_sha256:fingerprint(mapping),raw_mapping:mapping};
+  episode.identity.public_projection={raw_mapping_sha256:descriptor.raw_mapping_sha256};
+  episode.episode_sha256=fingerprint({...episode,episode_sha256:null});
+  const options={root:f.root,pathsBySha256,publicProjection:descriptor};
+  const original=structuredClone(f.bundle);
+  assert.equal((await verifyBundle(f.bundle,options)).valid,true);
+  assert.deepEqual(f.bundle,original);
+  f.bundle.locators.push(f.ref({line:3}));
+  await assert.rejects(()=>verifyBundle(f.bundle,options),/Raw line locator exceeds artifact: locator/);
+});
+
 test('index deduplicates reanalysis and supports stable field queries',()=>{
   const e=exampleEpisode(),other=exampleEpisode({condition:'reference'});
   const index=buildEvidenceIndex([e,e,other]);
