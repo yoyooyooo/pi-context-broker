@@ -110,6 +110,18 @@ export async function assertRetainedObserverStop(scope, terminal, environmentRoo
     episode_sha256: episode.episode_sha256, runtime_result: clean(artifacts[0]), usage: actualUsage };
 }
 
+/** Inherit only the exact continuation ancestor already verified by v5. */
+export function observerRepairContinuationSources(parent, transition, history) {
+  assert.equal(parent.value.version, 5, 'OBSERVER_CONTINUATION_PARENT_VERSION');
+  const previous = parent.confirmationContinuation.transition;
+  assert.deepEqual(previous.scientific_source_plan, transition.scientific_source_plan, 'OBSERVER_CONTINUATION_SCIENTIFIC_SOURCE_CHANGED');
+  const sources = [transition.scientific_source_plan, previous.source_plan, transition.source_plan].map(clean);
+  assert.equal(new Set(sources.map(item => item.path)).size, 3, 'OBSERVER_CONTINUATION_SOURCE_CHAIN_CHANGED');
+  for (const source of sources)
+    assert.equal(history.plans.filter(item => fingerprint(item.plan) === fingerprint(source)).length, 1, 'OBSERVER_CONTINUATION_SOURCE_NOT_IN_HISTORY');
+  return sources;
+}
+
 export async function readObserverRepairHistory({ parent: authorized, parentReference, userApproval, predecessor,
   planFiles, pilotLedgerRoot, expected, currentBoundary = false }) {
   const parent = authorized.value, accepted = await decision(parent, parentReference, userApproval), approval = accepted.value;
@@ -173,7 +185,8 @@ export async function readObserverRepairHistory({ parent: authorized, parentRefe
   const allocations = [{ ...partial.allocation, id: approval.continuation.allocation_id, reservation_limit: remaining }, ...structuredClone(parent.allocations.slice(1))];
   assert.equal(allocations.reduce((sum, item) => sum + item.reservation_limit, 0), approval.approved_remaining_reservations);
   if (currentBoundary) await boundary(pilotLedgerRoot, count, partial.registration.sequence);
-  return { history, allocations, transition, source, repair: accepted.repair, engineeringDesigns: accepted.designs, decision: approval,
+  const continuedSources = observerRepairContinuationSources(authorized, transition, history);
+  return { history, allocations, transition, source, continuedSources, repair: accepted.repair, engineeringDesigns: accepted.designs, decision: approval,
     modelWindow: structuredClone(parent.revision.model_window), retained: { ...stop, source_plan: partial.planReference,
       source_ledger: partial.ledger.reference, reservation: history.reservations.at(-1).reference,
       run_id: terminal.run_id, source_slot_id: terminal.slot_id, allocation_id: partial.allocation.id, ordinal: count } };
@@ -296,5 +309,5 @@ export async function assertObserverRepairContinuation(protocol, execution, slot
     resolveRepairBuild(continuation.repair, environment.build.id, protocol.environments.find(item => item.id === environment.id)?.build.id);
   await assertSameConfirmationDesign(protocol, execution, slots, amendment, continuation, authorized.value.revision.next_allocation_id,
     { observerRepair: continuation.repair });
-  return [continuation.transition.scientific_source_plan, continuation.transition.source_plan];
+  return structuredClone(continuation.continuedSources);
 }

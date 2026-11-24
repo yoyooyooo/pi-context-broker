@@ -7,13 +7,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fingerprint } from './protocol.mjs';
 import { RESOLVE_OBSERVER_FILES, assertResolveObserverSource, assertResolveRepairExpectation,
-  assertResolveRepairInstrumentation, verifyResolveRepairInstrumentation, resolveRepairBuild } from './resolve-observer-repair.mjs';
+  assertResolveRepairInstrumentation, verifyResolveRepairInstrumentation, assertResolveRepairCatalog, verifyResolveRepairCredential, resolveRepairBuild } from './resolve-observer-repair.mjs';
 import { assertObserverRepairSetup, assertObserverRepairEngineeringCases, assertObserverStopObservation,
-  readObserverRepairHistory } from './campaign-observer-repair-continuation.mjs';
+  readObserverRepairHistory, observerRepairContinuationSources } from './campaign-observer-repair-continuation.mjs';
 import { instrumentationIdentity } from './implementation.mjs';
 import { buildCorpus, planCaseVariant } from './corpus/index.mjs';
 import { protocolCaseForVariant } from './planning.mjs';
-import { FINITE_CAMPAIGN, verifyFiniteOriginalResults } from './finite-campaign.mjs';
+import { FINITE_CAMPAIGN, verifyFiniteOriginalResults, assertConfirmationUnexposed } from './finite-campaign.mjs';
 import { inventoryPublicInputs } from './subject.mjs';
 import { normalizeCandidate } from './runtime/episode-evidence.mjs';
 
@@ -273,4 +273,133 @@ test('v6 cannot be chained to accept another stop and ordinary result guards sti
   await assert.rejects(verifyFiniteOriginalResults(plan, [{ ...stopped, type: 'episode_completed' }]), /FINITE_ORIGINAL_CORE_STOP/);
   const unknown = structuredClone(stopped); unknown.result.stop_batch = false; unknown.result.budget_usage.input_tokens = null;
   await assert.rejects(verifyFiniteOriginalResults(plan, [{ ...unknown, type: 'episode_completed' }]), /FINITE_ORIGINAL_UNKNOWN_USAGE/);
+});
+
+
+function catalogFixture() {
+  const make = after => {
+    const protocol = { models: [{ id: 'model-a' }, { id: 'model-b' }], corpus: { cases: [{ id: 'first' }, { id: 'second' }] },
+      conditions: ['model-a', 'model-b'].map((model_id, index) => ({ id: 'm' + index, model_id, environment_id: 'own', case_ids: ['first', 'second'] })),
+      environments: [{ id: 'own', pi: { catalog_sha256: null } }] };
+    const execution = { conditions: Object.fromEntries(protocol.conditions.map(condition => [condition.id, {
+      expectations: Object.fromEntries(condition.case_ids.map(case_id => [case_id, { path: '/capture/' + case_id,
+        sha256: sha(condition.model_id + case_id + after) }])) }])) };
+    return { protocol, execution };
+  };
+  const seal = value => { value.protocol.environments[0].pi.catalog_sha256 = fingerprint(value.protocol.conditions.flatMap(condition =>
+    condition.case_ids.map(case_id => ({ model_id: condition.model_id, case_id, sha256: value.execution.conditions[condition.id].expectations[case_id].sha256 })))); };
+  const source = make(false), current = make(true); seal(source); seal(current); return { source, current, seal };
+}
+
+test('repair catalogs retain the complete ordered model/case mapping and verify both digests', () => {
+  const { source, current, seal } = catalogFixture();
+  const check = (now, before) => assertResolveRepairCatalog(now.protocol, now.execution, before, 'own');
+  check(current, source);
+  for (const side of ['source', 'current']) {
+    for (const mutate of [
+      value => { value.protocol.environments[0].pi.catalog_sha256 = 'f'.repeat(64); },
+      value => { value.execution.conditions.m0.expectations.first.sha256 = 'f'.repeat(64); },
+      value => { value.protocol.conditions[0].case_ids.reverse(); seal(value); },
+      value => { value.protocol.conditions.reverse(); seal(value); },
+      value => { delete value.execution.conditions.m0.expectations.second; },
+      value => { value.execution.conditions.m0.expectations.extra = { sha256: 'f'.repeat(64) }; },
+    ]) {
+      const values = { source: structuredClone(source), current: structuredClone(current) };
+      mutate(values[side]); assert.throws(() => check(values.current, values.source));
+    }
+  }
+  for (const mutate of [
+    value => { value.protocol.models[0].id = value.protocol.conditions[0].model_id = 'different-model'; },
+    value => {
+      value.protocol.corpus.cases[0].id = 'different-case';
+      for (const condition of value.protocol.conditions) {
+        condition.case_ids[0] = 'different-case'; const refs = value.execution.conditions[condition.id].expectations;
+        refs['different-case'] = refs.first; delete refs.first;
+      }
+    },
+    value => { value.protocol.conditions.reverse(); value.protocol.models.reverse(); },
+    value => { value.protocol.corpus.cases.reverse(); for (const condition of value.protocol.conditions) condition.case_ids.reverse(); },
+  ]) {
+    const changed = structuredClone(current); mutate(changed); seal(changed);
+    assert.throws(() => check(changed, source), /RESOLVE_REPAIR_CATALOG_DESIGN_CHANGED/);
+  }
+});
+
+async function credentialFixture(t, editRegistry = () => {}) {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'resolve-credential-test-')));
+  if (process.platform === 'darwin') t.after(() => execFileSync('/usr/bin/trash', [root]));
+  const registry = { providers: { provider: { api: 'openai-completions', baseUrl: 'http://127.0.0.1/v1',
+    apiKey: 'BENCHMARK_MODEL_KEY', models: [{ id: 'original-model' }] } } };
+  editRegistry(registry); const bytes = JSON.stringify(registry), models_sha256 = sha(bytes);
+  const credential = { source_file: '/unread/global/models.json', provider: 'provider', api_key_env: 'BENCHMARK_MODEL_KEY' };
+  const owners = [];
+  for (const name of ['science', 'parent', 'current']) {
+    const control_root = join(root, 'control', name), models_file = join(control_root, 'models.json');
+    await mkdir(control_root, { recursive: true }); await writeFile(models_file, bytes);
+    owners.push({ environment_root: root, control_root, models_file, models_sha256, credential: structuredClone(credential) });
+  }
+  const [original, inherited, execution] = owners;
+  execution.credential.source_file = inherited.models_file;
+  const path = join(inherited.control_root, 'plan.json'); await writeFile(path, JSON.stringify({ execution: inherited }));
+  return { original, inherited, execution, reference: { path, sha256: sha(await readFile(path)) } };
+}
+
+test('credential relocation requires the exact parent frozen registry and unchanged environment descriptor', async t => {
+  const { original, inherited, execution, reference } = await credentialFixture(t);
+  assert.deepEqual(await verifyResolveRepairCredential(execution, original, reference), original.credential);
+  for (const mutate of [
+    value => { value.credential.source_file = original.models_file; },
+    value => { value.credential.source_file = execution.models_file; },
+    value => { value.credential.provider = 'another-provider'; },
+    value => { value.credential.api_key_env = 'ANOTHER_KEY'; },
+    value => { value.credential.headers = { Authorization: 'changed' }; },
+    value => { value.models_sha256 = 'f'.repeat(64); },
+    value => { value.models_file = inherited.models_file; },
+  ]) {
+    const changed = structuredClone(execution); mutate(changed);
+    await assert.rejects(verifyResolveRepairCredential(changed, original, reference));
+  }
+  await assert.rejects(verifyResolveRepairCredential(execution, original, { ...reference, sha256: 'f'.repeat(64) }));
+  await writeFile(execution.models_file, JSON.stringify({ providers: { changed: {} } }));
+  const changed = structuredClone(execution); changed.models_sha256 = sha(await readFile(changed.models_file));
+  await assert.rejects(verifyResolveRepairCredential(changed, original, reference), /RESOLVE_REPAIR_CREDENTIAL_REGISTRY_CHANGED/);
+  for (const edit of [
+    value => { value.providers.provider.apiKey = 'literal-credential'; },
+    value => { value.providers.provider.headers = { Authorization: 'undeclared' }; },
+    value => { value.providers.extra = structuredClone(value.providers.provider); },
+    value => { value.providers.provider.models.push({ id: 'new-model' }); },
+  ]) {
+    const fixture = await credentialFixture(t, edit);
+    await assert.rejects(verifyResolveRepairCredential(fixture.execution, fixture.original, fixture.reference));
+  }
+});
+
+test('v6 inherits the verified intermediate continuation without exempting other material exposure', async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'resolve-ancestors-test-')));
+  if (process.platform === 'darwin') t.after(() => execFileSync('/usr/bin/trash', [root]));
+  const protocol = { phase: 'confirmation', corpus: { cases: [{ id: 'case', material_id: 'original-material',
+    content_sha256: 'a'.repeat(64), prompt_sha256: 'b'.repeat(64), contract_sha256: 'c'.repeat(64),
+    initial_state_sha256: 'd'.repeat(64), authorization_sha256: 'e'.repeat(64) }] } };
+  const refs = [];
+  for (const id of ['science', 'intermediate', 'parent', 'unrelated']) {
+    const path = join(root, id + '.json'); await writeFile(path, JSON.stringify({ id, protocol, execution: {} }));
+    refs.push({ path, sha256: sha(await readFile(path)) });
+  }
+  const transition = { scientific_source_plan: refs[0], source_plan: refs[2] };
+  const parent = { value: { version: 5 }, confirmationContinuation: { transition: { scientific_source_plan: refs[0], source_plan: refs[1] } } };
+  const history = { plans: refs.slice(0, 3).map(plan => ({ plan })) };
+  const sources = observerRepairContinuationSources(parent, transition, history);
+  assert.deepEqual(sources, refs.slice(0, 3));
+  await assertConfirmationUnexposed(protocol, {}, history, sources);
+  await assert.rejects(assertConfirmationUnexposed(protocol, {}, history, [refs[0], refs[2]]), /FINITE_CONFIRMATION_KNOWN_MATERIAL_EXPOSURE/);
+  await assert.rejects(assertConfirmationUnexposed(protocol, {}, history), /FINITE_CONFIRMATION_KNOWN_MATERIAL_EXPOSURE/);
+  await assert.rejects(assertConfirmationUnexposed(protocol, {}, { plans: [...history.plans, { plan: refs[3] }] }, sources), /FINITE_CONFIRMATION_KNOWN_MATERIAL_EXPOSURE/);
+  const changed = structuredClone(protocol); changed.corpus.cases[0].content_sha256 = 'f'.repeat(64);
+  await assert.rejects(assertConfirmationUnexposed(changed, {}, history, sources), /CONFIRMATION_CONTINUATION_MATERIAL_CHANGED/);
+  for (const mutate of [
+    value => { value.value.version = 6; },
+    value => { value.confirmationContinuation.transition.scientific_source_plan = refs[1]; },
+    value => { value.confirmationContinuation.transition.source_plan = refs[3]; },
+    value => { value.confirmationContinuation.transition.source_plan.sha256 = 'f'.repeat(64); },
+  ]) { const changed = structuredClone(parent); mutate(changed); assert.throws(() => observerRepairContinuationSources(changed, transition, history)); }
 });
