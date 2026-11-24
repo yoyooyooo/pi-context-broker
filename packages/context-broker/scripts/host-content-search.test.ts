@@ -8,10 +8,10 @@ import type { ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord, SourceC
 import { activeNotionSession } from "./fixtures/active-notion-session";
 
 const candidate: ContentSearchRecord = {
-  id: "skill://entry?library=controlled", kind: "skill", name: "Content candidate", alias: "entry",
+  id: "skill://entry?library=1031b73d-3a2f-589c-9bdb-ebb50a7eb063", kind: "skill", name: "Content candidate", alias: "entry",
   description: "Outside the default View.", enabled: true, default_context: false, entrypoint: "SKILL.md",
-  ref: "skill://entry/SKILL.md?library=controlled",
-  locator: { type: "shared_skill", library_id: "controlled", skill_id: "entry",
+  ref: "skill://entry/SKILL.md?library=1031b73d-3a2f-589c-9bdb-ebb50a7eb063",
+  locator: { type: "shared_skill", library_id: "1031b73d-3a2f-589c-9bdb-ebb50a7eb063", skill_id: "entry",
     page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000002",
     data_source_id: "00000000-0000-4000-8000-000000000003" },
   match: { kind: "notion_remote_match", pageId: "00000000-0000-4000-8000-000000000001",
@@ -21,7 +21,7 @@ function result(records: ContentSearchRecord[] = [candidate]): ContentSearchResu
   return { kind: "results", records, connection: { id: "selected-connection", grantEpoch: "grant-1" },
     resultId: "result-1", coverage: "remote_non_exhaustive", exhaustive: false, partial: false, notices: [] };
 }
-async function fixture(sources: SourceConfig[] = [{ id: "notion", type: "notion", library: "entry" }]) {
+async function fixture(sources: SourceConfig[] = [{ id: "notion", type: "notion", library: "1031b73d-3a2f-589c-9bdb-ebb50a7eb063" }]) {
   const listeners = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   const tools = new Map<string, Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0]>();
   const branch: SessionEntry[] = [{ id: "user-1", type: "message", message: { role: "user", content: "Search my content." } }];
@@ -29,8 +29,8 @@ async function fixture(sources: SourceConfig[] = [{ id: "notion", type: "notion"
   let dispatches = 0, authorizations = 0, metadata = 0;
   let run: NonNullable<HostSkillOptions["contentSearch"]> = async () => result();
   let loadError: Error = new SourceError("ACCESS_DENIED", "notion");
-  const records: SkillRecord[] = [0, 1].map(index => ({ ...candidate, id: nativeSkillId("controlled", String(index)),
-    ref: nativeFileRef(nativeSkillId("controlled", String(index)), "SKILL.md"), name: "entry-" + index, alias: "entry-" + index,
+  const records: SkillRecord[] = [0, 1].map(index => ({ ...candidate, id: nativeSkillId("1031b73d-3a2f-589c-9bdb-ebb50a7eb063", String(index)),
+    ref: nativeFileRef(nativeSkillId("1031b73d-3a2f-589c-9bdb-ebb50a7eb063", String(index)), "SKILL.md"), name: "entry-" + index, alias: "entry-" + index,
     locator: { ...candidate.locator, skill_id: String(index), page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0") },
     source: "notion", sourceId: "notion", sourceScope: "a".repeat(64), defaultDiscovery: false,
     path: "/controlled/" + index + "/SKILL.md", normalizedName: "entry-" + index, normalizedAliases: [], normalizedDescription: "entry",
@@ -98,7 +98,7 @@ test("default and explicit metadata queries and refresh never dispatch MCP or au
 });
 
 test("content input admission requires one enabled source and rejects metadata cursors before MCP", async () => {
-  const f = await fixture([{ id: "notion", type: "notion", library: "entry" }, { id: "other", type: "notion", library: "other-entry" }]);
+  const f = await fixture([{ id: "notion", type: "notion", library: "1031b73d-3a2f-589c-9bdb-ebb50a7eb063" }, { id: "other", type: "notion", library: "615c5aa9-30c2-5d10-acb5-fb21021ccee7" }]);
   try {
     await expect(f.list(query)).rejects.toMatchObject({ code: "CONTENT_SOURCE_REQUIRED" });
     for (const input of [{ ...query, source: "notion", cursor: "0.abc" }, { ...query, source: "notion", limit: 51 },
@@ -259,7 +259,7 @@ test("source and branch changes retire remote failures before any error publicat
       f.setRun(async () => { started.resolve(); return response.promise; });
       const operation = f.list(query), rejected = operation.then(() => undefined, error => error);
       await started.promise;
-      if (change === "source") f.sources[0]!.library = "another-library";
+      if (change === "source") f.sources[0]!.library = "8b308dab-2daf-5330-922f-812244ff16f9";
       else f.branch[0] = { id: "another-branch", type: "message" };
       response.reject(Object.assign(new Error("PRIVATE_STALE_AUTH_DIAGNOSTIC"), { code: "MCP_AUTH_REQUIRED" }));
       const failure = await rejected;

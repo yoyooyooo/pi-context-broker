@@ -131,7 +131,7 @@ test("Source-relative resolution keeps the containing resource identity without 
 test("Source-relative identity rejects mismatched bases, foreign libraries, malformed output and late cancellation", async () => {
   const f = await fixture(), ref = "skill://target/SKILL.md?library=00000000-0000-4000-8000-000000000099";
   const read = (signal?: AbortSignal) => f.boundary.resolveNotionRelativeReference(f.record, f.ref, "../../target/SKILL.md", f.source, f.root, signal);
-  for (const changed of [{ version: 2 }, { from: nativeFileRef(f.prefix, "SKILL.md") }, { ref: "skill://target/SKILL.md?library=foreign" },
+  for (const changed of [{ version: 2 }, { from: nativeFileRef(f.prefix, "SKILL.md") }, { ref: "skill://target/SKILL.md?library=6a7531bf-74f8-56ac-8b86-703222d552b8" },
     { ref: "../target/SKILL.md" }, { ref: nativeFileRef(f.prefix, "SKILL.md") }, { ref: f.ref.replace(f.snapshot, "s_" + "c".repeat(64)) }]) {
     f.state.relativeResponse = { version: 1, from: f.ref, ref, effects: noConsumptionWrites(), ...changed };
     await expect(read()).rejects.toBeDefined();

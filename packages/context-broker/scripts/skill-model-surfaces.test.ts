@@ -46,12 +46,12 @@ function content(value: unknown): MessageContent {
 }
 const decodeXml = (value: string) => value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 function fixture(key: string, sourceId = "alpha", enabled = true, kind: ContentKind = "skill") {
-  const id = nativeSkillId("surfaces", sourceId + "-" + key);
+  const id = nativeSkillId("a499537f-4ee4-58b0-a4d5-8fa5050414e6", sourceId + "-" + key);
   const entrypoint = kind === "router" ? "ROUTER.md" : "SKILL.md";
   const metadata: ContentRecord = {
     id, kind, name: "Complete Source Name " + key, alias: key, description: "Full description " + key,
     default_context: false, enabled, entrypoint, ref: nativeFileRef(id, String(entrypoint)),
-    locator: { type: "shared_skill", library_id: "surfaces", skill_id: sourceId + "-" + key,
+    locator: { type: "shared_skill", library_id: "a499537f-4ee4-58b0-a4d5-8fa5050414e6", skill_id: sourceId + "-" + key,
       page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000010",
       data_source_id: "00000000-0000-4000-8000-000000000011" },
   };

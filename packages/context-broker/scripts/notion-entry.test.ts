@@ -48,13 +48,13 @@ test("binary batch rejects invalid bytes, traversal, symlinks and cancellation w
 });
 async function entry(nested = false, resourceHasFileId = true) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "broker-entry-boundary-")));
-  const id = "skill://owner?library=entry-test", snapshot = "s_" + hash("entry snapshot"), scope = hash("entry scope");
+  const id = "skill://owner?library=e7b5437d-6cd8-51fd-9db5-a13084be814d", snapshot = "s_" + hash("entry snapshot"), scope = hash("entry scope");
   const main = nested ? "instructions/SKILL.md" : "SKILL.md", resource = "references/guide.md";
   const ref = id;
   const content: ContentRecord = {
     id, kind: "skill", name: "owner", alias: "owner", description: "Entry boundary", default_context: false, enabled: true,
     entrypoint: main, ref: nativeFileRef(ref, String(main)),
-    locator: { type: "shared_skill", library_id: "entry-test", skill_id: "owner", page_id: "00000000-0000-4000-8000-000000000001",
+    locator: { type: "shared_skill", library_id: "e7b5437d-6cd8-51fd-9db5-a13084be814d", skill_id: "owner", page_id: "00000000-0000-4000-8000-000000000001",
       database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" },
   };
   const bytes = new Map([[main, Buffer.from("---\nname: owner\n---\nExact main instructions.\n")], [resource, Buffer.from("Exact resource bytes.\n")]]);

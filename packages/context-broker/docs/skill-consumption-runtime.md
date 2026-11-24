@@ -77,7 +77,7 @@ span；生成 effects footer 仍须精确匹配该次操作，未知不能变成
 
 ## 消费不写远端
 
-Pi `read` 与 `notion_use` 不公开 `readOnly`。携带该旧参数时，无论值为 true 或 false，都在 I/O 前返回 `INVALID_ARGUMENT`。随包 SDK v2 不接收这个参数，当前消费恒零语义写入，不通过首次读取 retention/adoption 或写 Records。旧选择缺少所需本地字节时，明确获取当前候选并重新选择，不承诺远端历史恢复。
+Pi `read` 与 `notion_use` 不公开 `readOnly`。携带该旧参数时，无论值为 true 或 false，都在 I/O 前返回 `INVALID_ARGUMENT`。随包 SDK v3 不接收这个参数，当前消费恒零语义写入，不通过首次读取 retention/adoption 或写 Records。旧选择缺少所需本地字节时，明确获取当前候选并重新选择，不承诺远端历史恢复。
 
 SDK 与构建 manifest 必须具备匹配的消费能力，缺失时在操作前拒绝；旧 `source.command` 同样在配置入口拒绝。此边界由 `notion-sdk.test.ts` 的无 readOnly 能力门槛和当前独立安装 HTTP 检查验证，不依赖用户选一个保护开关。
 
@@ -151,6 +151,6 @@ version-1 `effects` 只包含 `version`、`remote_writes` 和 `author_content`�
 [Broker Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-context-broker/SKILL.md) 按变化路由到现有check、当前SDK/安装与实际Pi助手；[integration](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/SKILL.md) 绑定同一CLI/SDK与真实decoder；[consumer-state](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-consumer-state/SKILL.md) 维护已有模型和守卫。
 
 `bun run check:broker` 与独立安装/current HTTP 只证明各自受控边界。实际 Pi 沿根目录
-`scripts/notion-sdk-pi.mjs` 的当前 SDK v2 场景执行，见[当前验收复现](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/current-context-candidate.md)。
+`scripts/notion-sdk-pi.mjs` 的当前 SDK v3 场景执行，见[当前验收复现](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/current-context-candidate.md)。
 真实 Notion、自然模型、正常安装和原生终端各自报告实际候选与观察，未执行项保持
 not_run。没有当前独立证据时，不宣称 OMP/Tern 或其他宿主已通过。

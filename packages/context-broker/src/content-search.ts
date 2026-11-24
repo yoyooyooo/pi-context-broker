@@ -49,7 +49,7 @@ function locator(value: unknown): NotionLocator {
   const page_id = nonempty(value.page_id, 64), database_id = nonempty(value.database_id, 64), data_source_id = nonempty(value.data_source_id, 64);
   if (![page_id, database_id, data_source_id].every(id => notionPageId(id))) throw invalid();
   const library_id = nonempty(value.library_id, 200), skill_id = nonempty(value.skill_id, 200);
-  if (!sharedSkillId(library_id, skill_id)) throw invalid();
+  if (notionPageId(library_id) !== library_id || !sharedSkillId(library_id, skill_id)) throw invalid();
   return { type: "shared_skill", page_id, database_id, data_source_id, library_id, skill_id };
 }
 function record(value: unknown): ContentSearchRecord {

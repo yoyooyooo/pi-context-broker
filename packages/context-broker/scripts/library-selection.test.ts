@@ -60,6 +60,19 @@ test("requested B is visible before verification and failure blocks defaults ins
   expect((await h.owner.selected(h.ctx))?.library.library_id).toBe(a);
 });
 
+test("malformed Library command arguments are rejected before a new selection is admitted", async () => {
+  const h = harness();
+  await h.owner.selected(h.ctx);
+  for (const input of ["library arbitrary-alias", "library https://evil.example/" + b, "library " + a + " extra"])
+    expect(await h.command(input, h.ctx)).toBe(true);
+  expect(h.branch).toEqual([]);
+  expect(h.refreshed).toEqual([]);
+  expect(h.calls).toEqual([a]);
+  expect(h.notices).toHaveLength(3);
+  expect(h.notices.every(notice => /Choose a Library root page ID or Notion URL|Usage:/.test(notice))).toBe(true);
+  expect((await h.owner.selected(h.ctx))?.library.library_id).toBe(a);
+});
+
 test("fork, rewind, resume and reset follow only active branch Library entries", async () => {
   const h = harness();
   await h.command("library " + a, h.ctx); const parent = h.branch;

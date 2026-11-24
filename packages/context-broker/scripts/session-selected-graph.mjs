@@ -33,11 +33,11 @@ const evidence = resolve(process.env.CONTEXT_BROKER_SESSION_EVIDENCE ?? "/tmp/co
 await mkdir(evidence, { recursive: true });
 const directory = await mkdtemp(join(evidence, "selected-graph-"));
 function record(name, revision) {
-  const id = nativeSkillId("controlled", String(name));
+  const id = nativeSkillId("1031b73d-3a2f-589c-9bdb-ebb50a7eb063", String(name));
   const meta = { id, kind: "skill", name, alias: name, description: "Controlled " + name,
     enabled: true, default_context: name === "root", entrypoint: "SKILL.md",
     ref: nativeFileRef(id, "SKILL.md"),
-    locator: { type: "shared_skill", library_id: "controlled", skill_id: name,
+    locator: { type: "shared_skill", library_id: "1031b73d-3a2f-589c-9bdb-ebb50a7eb063", skill_id: name,
       page_id: "00000000-0000-4000-8000-" + hash(name).slice(0, 12),
       database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
   const body = "---\nname: " + name + "\n---\n" + name + "_VERSION_" + revision + "_FULL_INSTRUCTIONS\n";

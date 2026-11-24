@@ -207,8 +207,8 @@ test("deferred native management exposes only exact enabled source IDs when a CL
   expect(discovered).not.toContain("tool_search");
   for (const routed of [discoverable, discovered]) {
     expect(routed).toContain('["alpha","beta"]');
-    expect(routed).toContain("Choose explicitly");
-    expect(routed).toContain("use returned command/scope, never a global CLI");
+    expect(routed).toContain("null: accepted Library; ID: Source");
+    expect(routed).toContain("Use returned command/scope, never a global CLI");
     expect(routed).toContain("No execution or authorization");
     for (const forbidden of ["/configured", "00000000-0000-4000-8000-000000000101", "00000000-0000-4000-8000-000000000102", "disabled", "must-not-appear", '"local"'])
       expect(routed).not.toContain(forbidden);
@@ -565,8 +565,11 @@ test("ordinary accepted turns freeze CLI Library scope across a later successful
   await h.command("library " + b);
   expect(resultJson(await h.invoke({ cli_source: null })).library).toBe(a);
   expect(resultJson(await h.invoke({ cli_source: "beta" })).library).toBe(b);
-  await h.emit("agent_end");
   await h.emit("input", { source: "interactive", text: "A subsequent task." });
+  expect(resultJson(await h.invoke({ cli_source: null })).library).toBe(a);
+  await h.emit("agent_end");
+  await h.emit("before_agent_start", { prompt: "A subsequent task." });
+  await h.emit("agent_start");
   expect(resultJson(await h.invoke({ cli_source: null })).library).toBe(b);
   await h.emit("agent_end");
   h.deny(a);

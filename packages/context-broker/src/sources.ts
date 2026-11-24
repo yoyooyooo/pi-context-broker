@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { buildRegistryFromRoots, normalizeKey } from "./skill-records";
 import { discoverNotionSource, discoverNotionCatalogAndDirectory, loadNotionSkill, SourceError, ReferenceMiss, sourceFailureMessage } from "./notion-source";
-import { validSharedIdentity } from "./shared-skill-identity";
+import { validSharedRecordId } from "./shared-skill-identity";
 import type { ConsumptionPolicy } from "./consumption-effects";
 import type { ConfigFile, NotionDirectorySelection, NotionDirectoryObservation, NotionListObservation, SkillRecord, SourceConfig, SourcePolicy, ScanConfig, DiscoveryResult, SourceFailure } from "./types";
 
@@ -103,7 +103,7 @@ export function normalizeSources(value: unknown): SourceConfig[] | undefined {
     const library = libraryInput === undefined ? undefined : notionPageId(libraryInput);
     if (libraryInput !== undefined && !library) invalid();
     const profileId = optionalString(raw.profile_id);
-    if (profileId !== undefined && (!library || !validSharedIdentity(profileId))) invalid();
+    if (profileId !== undefined && (!library || !validSharedRecordId(profileId))) invalid();
     return {
       ...common, type: "notion",
       library, default_view_id: optionalString(raw.default_view_id), ...(profileId === undefined ? {} : { profile_id: profileId }), cacheDir: optionalString(raw.cacheDir),

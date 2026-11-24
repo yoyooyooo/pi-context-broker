@@ -167,12 +167,12 @@ test("a verified native create during a pending catalog read makes its first ord
     await h.emit("tool_result", { ...event, isError: false, content: JSON.stringify({ ok: true, contract: "current", action: "create",
       status: "created", state: "ready", skill_id: "shopping", page_id: locator.page_id, files: 1,
       operation_id: "operation-native-create", input_sha256: "c".repeat(64), library: {
-        library_id: locator.database_id, database_id: locator.database_id, data_source_id: locator.data_source_id } }) });
+        library_id: locator.library_id, database_id: locator.database_id, data_source_id: locator.data_source_id } }) });
     const ordinary = list({ query: "shopping", source: "notion" });
     release.resolve();
     for (const result of await Promise.all([pending, ordinary])) expect(result).toMatchObject({ count: 1, records: [{ name: "shopping" }] });
     expect(h.f.calls.filter(call => call.operation === "list" && call.options.refresh)).toHaveLength(2);
-    expect(h.f.calls.every(call => call.operation === "list")).toBe(true);
+    expect(h.f.calls.every(call => ["library-selection", "library", "list"].includes(call.operation))).toBe(true);
   } finally { release.resolve(); await h.close(); }
 });
 
@@ -194,7 +194,7 @@ test("failed or partial metadata refresh cannot report a fresh complete empty di
     expect(partial).toMatchObject({ count: 1, coverage: { exhaustive: false }, records: [{ name: "shopping" }] });
     expect(partial.failures).toContainEqual({ source: "notion", code: "CATALOG_INCOMPLETE" });
     expect(partial.freshness.sources[0].validated_at).toBe(h.f.state.catalog.freshness.validated_at);
-    expect(h.f.calls.every(call => call.operation === "list")).toBe(true);
+    expect(h.f.calls.every(call => ["library-selection", "library", "list"].includes(call.operation))).toBe(true);
   } finally { await h.close(); }
 });
 
@@ -487,7 +487,7 @@ test("refresh rejects promoting an existing Required-only node before acquisitio
   try {
     const old = await h.seed(), root = old.records.find(record => record.name === "root")!;
     const required = old.records.find(record => record.name === "required")!;
-    const before = h.selected(), active = h.active(), calls = h.f.calls.length, entries = h.branch.length;
+    const before = h.selected(), active = h.active(), calls = h.f.calls.filter(call => call.operation !== "library-selection").length, entries = h.branch.length;
     const result = await h.tool("notion_use").execute("refresh-original-task", {
       ref: [root.preparationBinding!.ref, required.preparationBinding!.ref], refresh: true,
     }, undefined, undefined, h.ctx).catch(error => error);
@@ -500,7 +500,7 @@ test("refresh rejects promoting an existing Required-only node before acquisitio
     expect(failure.diagnostic.roots).toEqual([{ scope: root.sourceScope, id: root.id, ref: root.preparationBinding!.ref }]);
     expect(failure.error).toContain("Requires");
     expect(failure.error).toContain("without refresh");
-    expect(h.f.calls.length).toBe(calls);
+    expect(h.f.calls.filter(call => call.operation !== "library-selection").length).toBe(calls);
     expect(h.branch.length).toBe(entries);
     expect(h.selected()).toEqual(before);
     expect(h.active()).toEqual(active);
@@ -776,7 +776,7 @@ test("current and forged owner snapshot or File references gain no historical re
       exact.replace(required.snapshotId!, "s_" + "d".repeat(64)),
       exact + "&file_id=another-file",
       nativeFileRef(nativeSkillId("00000000-0000-4000-8000-000000000099", "another-owner"), required.entrypoint!, required.snapshotId),
-      nativeFileRef(nativeSkillId("foreign-library", "required"), required.entrypoint!, required.snapshotId),
+      nativeFileRef(nativeSkillId("b73b2ea3-0253-5e81-a1e5-c0b91aa3e2e5", "required"), required.entrypoint!, required.snapshotId),
     ];
     const before = h.f.calls.filter(call => call.operation === "consume").length;
     for (const ref of rejected) {

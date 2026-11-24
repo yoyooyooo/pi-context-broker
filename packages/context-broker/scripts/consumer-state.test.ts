@@ -15,7 +15,7 @@ const canonical = (value: unknown): string => value === null || typeof value !==
   : Array.isArray(value) ? "[" + value.map(canonical).join(",") + "]"
   : "{" + Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 const record: SkillRecord = {
-  id: "skill://root?library=bounded", source: "notion", sourceId: "bounded", sourceScope: "a".repeat(64),
+  id: "skill://root?library=6db6717c-b285-55ec-8920-48a53e8e065a", source: "notion", sourceId: "bounded", sourceScope: "a".repeat(64),
   name: "root", description: "root", enabled: true, path: "/immutable/root/SKILL.md", aliases: [],
   normalizedName: "root", normalizedDescription: "root", normalizedAliases: [], autoloadEnabled: true,
 };
@@ -64,11 +64,11 @@ test("FV04 an unrecognized source cannot turn a permission unknown into availabl
 function graph(rootVersion: string, requiredVersion: string): PreparedHostGraph {
   const scope = "a".repeat(64);
   const records = [["root", rootVersion], ["required", requiredVersion]].map(([name, version]): SkillRecord => {
-    const id = nativeSkillId("bounded", String(name));
+    const id = nativeSkillId("6db6717c-b285-55ec-8920-48a53e8e065a", String(name));
     const metadata: ContentRecord = {
       id, kind: "skill", name: name!, alias: name!, description: name!, enabled: true, default_context: false,
       entrypoint: "SKILL.md", ref: nativeFileRef(id, "SKILL.md"),
-      locator: { type: "shared_skill", library_id: "bounded", skill_id: name!,
+      locator: { type: "shared_skill", library_id: "6db6717c-b285-55ec-8920-48a53e8e065a", skill_id: name!,
         page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000002", data_source_id: "00000000-0000-4000-8000-000000000003" },
     };
     const body = "Complete " + name + " instructions " + version + ".\n", snapshotId = "s_" + hash(name + ":" + version);

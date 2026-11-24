@@ -12,7 +12,7 @@ import { parseNativeReference, parseNotionReference, notionPageId, nativeFileRef
 import { currentEvidence } from "./consumer-observation";
 import { consumptionEffects, errorConsumptionEffects, noConsumptionWrites, type ConsumptionPolicy } from "./consumption-effects";
 import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose, type PreparationBinding, type PreparedHostGraph } from "./prepare-protocol";
-import { sharedSkillId, validSharedIdentity } from "./shared-skill-identity";
+import { sharedSkillId, validSharedRecordId } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
 import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch, publishNotionResourceFile } from "./notion-entry";
 import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, resolveNotionCatalogReferenceSdk, resolveNotionReferenceSdk, listNotionFilesSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
@@ -124,6 +124,11 @@ export async function searchNotionContent(input: ContentSearchRequest, source: N
     deadline: options.deadline, onAuthorize: options.onAuthorize });
   const result = decodeContentSearchResult(value);
   if (result.records.length > input.limit) throw new SourceError("CONTENT_SEARCH_RESPONSE_INVALID", source.id);
+  if (source.library !== undefined) {
+    const library = notionPageId(source.library);
+    if (!library || result.records.some(record => record.locator.library_id !== library))
+      throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  }
   return result;
 }
 function sdkFailure(error: unknown, source: NotionSource, operation: "prepare" | "read" | "list", signal?: AbortSignal, selected?: SkillRecord): Error {
@@ -321,7 +326,7 @@ async function catalogPolicy(source: NotionSource, refresh?: boolean) {
 }
 
 async function discoverNotionDirectory(source: NotionSource, cwd: string, options: Options, observed?: Json): Promise<{ catalog: Json; directory: NotionDirectory }> {
-  if (source.profile_id !== undefined && (!validSharedIdentity(source.profile_id) || !source.library)) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
+  if (source.profile_id !== undefined && (!validSharedRecordId(source.profile_id) || !source.library)) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
   if (options.view !== undefined && options.defaultView) throw new SourceError("SOURCE_CONFIG_INVALID", source.id);
   const selectedView = options.view !== undefined || options.defaultView === true;
   const selectedProfile = options.defaultView === true && options.view === undefined ? source.profile_id : undefined;
@@ -366,7 +371,7 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
   if (!selectedView && (result.profile !== undefined || result.capability_directory === true || result.view !== undefined || coverage.method === "explicit_view")) decodeError(source);
   if (selectedProfile !== undefined || result.profile !== undefined) {
     const profile = result.profile;
-    if (!options.defaultView || !object(profile) || profile.library_id !== libraryId || !validSharedIdentity(profile.profile_id) ||
+    if (!options.defaultView || !object(profile) || profile.library_id !== libraryId || !validSharedRecordId(profile.profile_id) ||
       selectedProfile !== undefined && profile.profile_id !== selectedProfile ||
       typeof profile.fingerprint !== "string" || !/^[a-f0-9]{64}$/u.test(profile.fingerprint) ||
       profile.revision_id !== undefined ||

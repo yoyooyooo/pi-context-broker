@@ -70,7 +70,7 @@ test("Pi relative reads pass the exact containing file to preparation and remove
   expect(f.current().parameters).toMatchObject({ properties: { from: { type: "string", description: expect.stringContaining("actual file containing") } } });
   for (const input of [
     { path: "../member/SKILL.md", from: "sr:C" + "a".repeat(22) },
-    { path: "../member/SKILL.md", from: "skill://root/SKILL.md?library=lib" },
+    { path: "../member/SKILL.md", from: "skill://root/SKILL.md?library=93a845c1-6c12-5b02-b395-ecf819622e7f" },
     { path: "../member/SKILL.md", from: null }, { path: "/absolute.md", from },
     { path: "~/home.md", from }, { path: "C:\\target.md", from },
     { path: "../member/SKILL.md#section", from }, { path: "../member/SKILL.md", from, refresh: true },

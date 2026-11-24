@@ -43,15 +43,15 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   const resourceText = new Map<string, string>(), resourceReads: string[] = [];
   const ensure = async (path: string) => { await mkdir(path, { recursive: true }); };
   for (const [index, name] of ["root", "required", "member"].entries()) {
-    const id = nativeSkillId("controlled", String(name));
+    const id = nativeSkillId("1031b73d-3a2f-589c-9bdb-ebb50a7eb063", String(name));
     const metadata: ContentRecord = {
       id, kind: "skill", name, alias: name, description: withBodyCard && name === "member" ? 'Controlled member <metadata> & "原文".' : "Controlled " + name, enabled: true, default_context: index === 0,
       entrypoint: "SKILL.md", ref: nativeFileRef(id, "SKILL.md"),
-      locator: { type: "shared_skill", library_id: "controlled", skill_id: name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
+      locator: { type: "shared_skill", library_id: "1031b73d-3a2f-589c-9bdb-ebb50a7eb063", skill_id: name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
         database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" },
     };
     const body = "\ufeff---\r\nname: " + name + "\r\n---\r\nExact " + name + " <instructions>.\r\n"
-      + (withBodyCard && name === "root" ? '\r\n## Members\r\n\r\n- [member](skill://member/SKILL.md?library=controlled) — Controlled member <metadata> & "原文".\r\n' : "");
+      + (withBodyCard && name === "root" ? '\r\n## Members\r\n\r\n- [member](skill://member/SKILL.md?library=1031b73d-3a2f-589c-9bdb-ebb50a7eb063) — Controlled member <metadata> & "原文".\r\n' : "");
     const snapshotId = "s_" + hash(name), path = join(directory, name, "SKILL.md");
     await mkdir(join(directory, name), { recursive: true });
     await writeFile(path, body);
@@ -620,8 +620,8 @@ test("Pi dollar catalog reuse rejects foreign identities, fixed relations and ch
     record => { record.sourceScope = "b".repeat(64); },
     record => { record.preparationBinding!.version_id = "another-version"; },
     record => { record.preparationBinding!.snapshot_id = "s_" + "b".repeat(64); },
-    record => { record.preparationBinding!.record.id = "skill://other-root?library=controlled"; },
-    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, id: "skill://other-member?library=controlled" }]; },
+    record => { record.preparationBinding!.record.id = "skill://other-root?library=1031b73d-3a2f-589c-9bdb-ebb50a7eb063"; },
+    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, id: "skill://other-member?library=1031b73d-3a2f-589c-9bdb-ebb50a7eb063" }]; },
     record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, ref: f.member.preparationBinding!.ref }]; },
     record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, kind: "router" }]; },
     record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, name: "another-member" }]; },
@@ -657,7 +657,7 @@ function catalogCards(catalog: string) {
 test("Pi dollar catalog reuse preserves same-name sources, owners and newly observed descriptions", async () => {
   const f = await fixture(true, false, "pi", scope, true), head: AgentMessage = { role: "system", content: "Native rules" };
   f.sources.push({ id: "other-source", type: "notion", prefetch: false });
-  const id = "skill://other-member?library=controlled";
+  const id = "skill://other-member?library=1031b73d-3a2f-589c-9bdb-ebb50a7eb063";
   const otherOwner = { ...f.member, id, token: "other-owner-member", ref: nativeFileRef(id, "SKILL.md"),
     locator: { ...f.member.locator!, skill_id: "other-member", page_id: "00000000-0000-4000-8000-000000000004" } };
   const otherSource = { ...f.member, sourceId: "other-source", token: "other-source-member" };
@@ -744,7 +744,7 @@ test("Pi native inspect reuses only its verified generated footer without changi
     { ...read, details: {} },
     { ...read, details: { ...details, contextBrokerRead: { ...proof, identity: JSON.stringify(["another-source", ...identity.slice(1)]) } } },
     { ...read, details: { ...details, contextBrokerRead: { ...proof, binding: { ...binding,
-      record: { ...record, locator: { ...locator, library_id: "another-library" } } } } } },
+      record: { ...record, locator: { ...locator, library_id: "8b308dab-2daf-5330-922f-812244ff16f9" } } } } } },
   ]) {
     expect((await catalogProjection(f, [head, candidate])).catalog).toContain('>Controlled member</card>');
   }

@@ -27,10 +27,10 @@ const canonical = (value: unknown): string => value === null || typeof value !==
       .map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 async function fixture(options: { otherSource?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-resource-host-"));
-  const id = "skill://owner?library=batch", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
+  const id = "skill://owner?library=e1448f62-7e41-528b-9e42-e9b701cb7d98", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
   const base = id, ref = (path: string) => nativeFileRef(base, String(path), String(snapshot));
   const content: ContentRecord = { id, kind: "skill", name: "Owner", alias: "owner", description: "Resource owner metadata", default_context: false, enabled: true,
-    entrypoint: "SKILL.md", ref: nativeFileRef(base, "SKILL.md"), locator: { type: "shared_skill", library_id: "batch", skill_id: "owner",
+    entrypoint: "SKILL.md", ref: nativeFileRef(base, "SKILL.md"), locator: { type: "shared_skill", library_id: "e1448f62-7e41-528b-9e42-e9b701cb7d98", skill_id: "owner",
       page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
   const metadata: SkillRecord = { ...content, source: "notion", sourceId: "notion", sourceScope: scope, path: join(root, "metadata/SKILL.md"),
     aliases: [], normalizedAliases: [], normalizedName: "owner", normalizedDescription: content.description, autoloadEnabled: false, defaultDiscovery: false };
@@ -78,7 +78,7 @@ async function fixture(options: { otherSource?: boolean } = {}) {
     },
     resolveSkillReference: async input => {
       state.resolutionCalls.push(input);
-      const parsed = bindNativeReference(parseNativeReference(input), "batch");
+      const parsed = bindNativeReference(parseNativeReference(input), "e1448f62-7e41-528b-9e42-e9b701cb7d98");
       if (parsed.selector !== id || parsed.snapshot !== snapshot) throw new SourceError("SKILL_NOT_FOUND", "notion");
       return { record: metadata, ref: ref(parsed.path) };
     },
@@ -122,7 +122,7 @@ async function fixture(options: { otherSource?: boolean } = {}) {
       manifest_complete: true, local_files_ready: false, materialized_paths: [] } };
   const short = createSessionShortRefHost(api);
   const confirmTask = async () => {
-    const body = "Complete independent task root instructions.\n", taskId = "skill://task?library=batch";
+    const body = "Complete independent task root instructions.\n", taskId = "skill://task?library=e1448f62-7e41-528b-9e42-e9b701cb7d98";
     const taskMetadata: ContentRecord = { ...content, id: taskId, name: "Task", alias: "task", ref: nativeFileRef(taskId, "SKILL.md"),
       locator: { ...content.locator, skill_id: "task", page_id: "00000000-0000-4000-8000-000000000099" } };
     const taskSnapshot = "s_" + hash("task snapshot");
