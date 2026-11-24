@@ -156,6 +156,18 @@ SDK operations and their metrics remain separate from provider requests and Pi
 tools. The public metrics contain actual HTTP attempt kinds, targets, status,
 byte counts and timing; they do not claim TCP/TLS byte counts.
 
+The retained Benchmark SDK v2 operation set is `list`, `files`, `consume`, `read`,
+`read-resources`, and `resolve`. Mainline `next` uses SDK v3 with additional
+Library and content-search behavior. Resolve observation is backported from
+[next commit b2c441b](https://github.com/yoyooyooo/pi-context-broker/commit/b2c441ba8fe8ed695ff2cf6e6a6579b3895cf31a)
+without changing the frozen experiment's input or attribution schema.
+A completed resolution with a paired start, result and end plus complete
+zero-request metrics is observable without inventing HTTP traffic. Resolution
+alone does not prove body or resource delivery. Unknown operations, invalid IDs,
+duplicate or unpaired events, and missing successful results or terminal events
+remain incomplete evidence. Changes to these observers change runtime and
+collector source identities; they do not repair previously retained episodes.
+
 `notion-source.jsonl` retains the maintained source observer's hash chain.
 `notion-sdk.jsonl` indexes actual SDK lifecycles, and
 `notion-responses/<operation UUID>.json` retains each actual SDK result. For a

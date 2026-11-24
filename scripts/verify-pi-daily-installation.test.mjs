@@ -496,7 +496,7 @@ const sdkHttp = [
   { event: 'http_end', pid: 10, id: '10:1', status: 200, response_request_id: sdkRequestId },
 ];
 
-for (const operation of ['list', 'files']) test(operation + ' host SDK HTTP needs an exact complete operation and independent response request ID', () => {
+for (const operation of ['list', 'files', 'resolve']) test(operation + ' host SDK HTTP needs an exact complete operation and independent response request ID', () => {
   const observation = sdkObservation();
   observation.events = observation.events.map(event => event.operation ? { ...event, operation } : event);
   const result = classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: observation });
@@ -505,6 +505,16 @@ for (const operation of ['list', 'files']) test(operation + ' host SDK HTTP need
   assert.equal(result.sdk[0].attribution.operation, operation);
   assert.equal(result.sdk[0].attribution.requestId, 'sdk:10:one');
   assert.equal(result.sdk[0].attribution.response_bytes, 100);
+});
+
+test('a complete zero-request resolve does not invent daily HTTP traffic', () => {
+  const observation = sdkObservation();
+  observation.events = observation.events.filter(event => event.phase !== 'attempt').map(event =>
+    event.operation ? { ...event, operation: 'resolve' } : event.phase === 'metrics' ? { ...event, total_requests: 0 } : event);
+  assert.deepEqual(classifyDailyHttp([], new Set(), new Set([10]), { sourceObservation: observation }),
+    { source: [], sdk: [], otherPlugins: [], unattributedHostHttp: [] });
+  for (const phase of ['completed', 'metrics']) assert.throws(() => classifyDailyHttp([], new Set(), new Set([10]),
+    { sourceObservation: { ...observation, events: observation.events.filter(event => event.phase !== phase) } }));
 });
 
 test('SDK HTTP rejects absent, ambiguous, failed or mismatched receipt evidence', () => {

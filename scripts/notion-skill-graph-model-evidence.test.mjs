@@ -202,12 +202,17 @@ for (const representation of ['flat', 'combined']) test('SDK observer retains ac
   };
   publish('catalog', 'list', representation === 'flat' ? { scope: fixture.scope, records: [fixture.record] } : pairedCatalogReceipt().value);
   publish('manifest', 'files', fixture.value.entries[0].manifest);
-  publish('consumption', 'consume', fixture.value); observer.close();
-  const receipts = await Promise.all(['catalog', 'manifest', 'consumption'].map(async id => JSON.parse(await readFile(path.join(responses, id + '.json'), 'utf8'))));
+  publish('consumption', 'consume', fixture.value);
+  const resolution = { version: 1, from: fixture.record.ref, ref: fixture.value.entries[0].source_body.ref, effects: [] };
+  publish('resolution', 'resolve', resolution); observer.close();
+  const receipts = await Promise.all(['catalog', 'manifest', 'consumption', 'resolution'].map(async id => JSON.parse(await readFile(path.join(responses, id + '.json'), 'utf8'))));
   assert.deepEqual(receipts[2].value, fixture.value);
+  assert.deepEqual(receipts[3].value, resolution);
+  assert.equal(receipts[3].resultObserved, true); assert.equal(receipts[3].metrics.complete, true);
   assert.deepEqual(graphSourceViews([receipts[1]]), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'File metadata is not a directory, prepared graph or delivered body');
+  assert.deepEqual(graphSourceViews([receipts[3]]), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'Reference resolution alone does not deliver a source body');
   const events = await lines(ledger), accounting = graphSourceAccounting(events, receipts, { sourceMode: 'sdk', requireConsumption: true });
-  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0 }); assert.equal(accounting.actual_http_attempts, 0);
+  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0, resolve: 1 }); assert.equal(accounting.actual_http_attempts, 0);
   assert.throws(() => graphSourceAccounting(events.map(event => event.requestId === 'manifest' ? { ...event, operation: 'future-operation' } : event),
     receipts.map(item => item.requestId === 'manifest' ? { ...item, operation: 'future-operation' } : item), { sourceMode: 'sdk' }), /Unknown SDK operation/);
   assert.throws(() => graphSourceAccounting([], receipts, { sourceMode: 'sdk' }), /missing source observer/);

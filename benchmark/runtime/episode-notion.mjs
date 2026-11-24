@@ -11,7 +11,7 @@ import { canonical } from './episode-evidence.mjs';
 
 const metricChannel = 'context-broker.notion-sdk';
 const resultChannel = 'context-broker.notion-sdk-result';
-const operationsAllowed = new Set(['list', 'files', 'consume', 'read', 'read-resources']);
+const operationsAllowed = new Set(['list', 'files', 'consume', 'read', 'read-resources', 'resolve']);
 const validId = id => typeof id === 'string' && /^[a-f0-9-]{36}$/i.test(id);
 
 /** Only these documented observation clocks/metrics are non-semantic. Catalog
