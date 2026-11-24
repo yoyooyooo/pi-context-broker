@@ -76,7 +76,7 @@ test('failed refresh must keep the exact prior scope, graph lock, pin and delive
 
 function failedSource({ fixed = false } = {}) {
   const ref = skillFileRef(skillIdentity('library', 'selected'), 'SKILL.md', fixed ? 's_' + hash('old A') : undefined);
-  const code = fixed ? 'SNAPSHOT_MISSING' : 'SHARED_GRAPH_METADATA_UNAVAILABLE', dataSource = { id: 'controlled-skills', database: 'controlled-database' };
+  const code = fixed ? 'SNAPSHOT_MISSING' : 'SHARED_GRAPH_METADATA_UNAVAILABLE', dataSource = { id: 'controlled-skills', library: '44444444-4444-4444-8444-444444444444' };
   const cause = { path: 'v1/data_sources/' + dataSource.id + '/query?filter_properties=skill_id', cause_code: 'NOT_FOUND', http_status: 404,
     notion_code: 'object_not_found', phase: 'definitive_rejection' };
   const preparation = { version: 1, purpose: 'use', scope: hash('controlled-scope'), status: 'failed',
@@ -84,7 +84,7 @@ function failedSource({ fixed = false } = {}) {
     required: [], required_closure: [], observed_bindings: [], usage: { prepared_nodes: 0, instruction_bytes: 0 }, errors: [{ target: ref, code, details: structuredClone(cause) }] };
   return {
     expected: { commands: [fixed ? 'files' : 'prepare'], ref, code, ...(fixed ? {} : { dataSource }) },
-    receipt: { id: 'real-cli-operation', command: fixed ? 'files' : 'prepare', args: fixed ? ['files', ref] : ['ctl', 'prepare', ref, '--purpose', 'use', '--database', dataSource.database, '--refresh'],
+    receipt: { id: 'real-cli-operation', command: fixed ? 'files' : 'prepare', args: fixed ? ['files', ref] : ['ctl', 'prepare', ref, '--purpose', 'use', '--library', dataSource.library, '--refresh'],
       code: 1, signal: null, timedOut: false, response: { ok: false, error: { code, ...(fixed ? {} : { details: { ...cause, preparation } }) } },
       metrics: { complete: true, total_requests: fixed ? 0 : 1, trace: fixed ? [] : [{ event: 'attempt', request_kind: 'notion_metadata',
         method: 'POST', target: { data_source_id: dataSource.id }, outcome: 'failure', http_status: 404 }] } },
@@ -123,7 +123,7 @@ test('unavailable fixed evidence rejects a current prepare fallback and refresh 
   for (const mutate of [
     receipt => { receipt.response.error.code = 'CATALOG_INCOMPLETE'; },
     receipt => { receipt.response.error.details.path = 'v1/data_sources/another-source/query'; },
-    receipt => { receipt.args[receipt.args.indexOf('--database') + 1] = 'another-database'; },
+    receipt => { receipt.args[receipt.args.indexOf('--library') + 1] = 'another-database'; },
     receipt => { receipt.response.error.details.cause_code = 'ACCESS_DENIED'; },
     receipt => { receipt.response.error.details.http_status = 403; },
     receipt => { receipt.response.error.details.phase = 'unknown'; },
@@ -155,7 +155,7 @@ for (const command of ['read', 'files']) test('unavailable fixed evidence reject
 
 test('a failed fixed source must use the exact positional ref, not an unrelated flag value', () => {
   const fixed = failedSource({ fixed: true });
-  fixed.receipt.args = ['files', 'skill://selected/SKILL.md', '--database', fixed.expected.ref];
+  fixed.receipt.args = ['files', 'skill://selected/SKILL.md', '--library', fixed.expected.ref];
   assert.throws(() => failedSourceEvidence([fixed.receipt], fixed.expected), /exact requested reference/);
 });
 
@@ -178,12 +178,12 @@ function fixedMainFixture() {
   const selection = { status: 'passed', delivery: deliveryEvidence([value.message], value.nodes, 'stage'), selectedGraph: { kind: 'selected_graph', scopes: value.nodes.map((item, index) => ({
     scope: item.scope, nodes: [{ binding: item.binding, selected: true, loaded: true }], graph_locks: [value.message.details.contextBrokerPreparation.graphs[index].graph_lock],
   })) } };
-  const fixedMain = fixedMainFailureTarget(selection, [value.message], binding.ref, binding.record.locator.database_id);
+  const fixedMain = fixedMainFailureTarget(selection, [value.message], binding.ref, binding.record.locator.library_id);
   const error = { code: 'SNAPSHOT_MISSING', details: { snapshot_id: binding.snapshot_id } };
   const preparation = { version: 1, purpose: 'inspect', scope: binding.scope, status: 'failed',
     roots: [{ target, readiness: 'not_ready' }], nodes: [{ id: node.id, ref: target, roles: ['root'], state: 'failed', error }],
     required: [], required_closure: [], observed_bindings: [], usage: { prepared_nodes: 0, instruction_bytes: 0 }, errors: [{ target, ...error }] };
-  const receipt = { id: 'fixed-main-actual-shape', command: 'prepare', args: ['ctl', 'prepare', target, '--purpose', 'inspect', '--database', fixedMain.database, '--max-age', '0', '--metrics'],
+  const receipt = { id: 'fixed-main-actual-shape', command: 'prepare', args: ['ctl', 'prepare', target, '--purpose', 'inspect', '--library', fixedMain.library, '--max-age', '0', '--metrics'],
     code: 1, signal: null, timedOut: false, response: { ok: false, error: { ...error, details: { ...error.details, preparation } } },
     metrics: { complete: true, total_requests: 1, trace: [{ event: 'attempt', request_kind: 'notion_metadata', method: 'GET', http_status: 200, outcome: 'success' }] } };
   return { ...value, selection, fixedMain, receipt, expected: { commands: ['read', 'files'], ref: binding.ref, code: 'SNAPSHOT_MISSING', fixedMain } };
@@ -201,11 +201,11 @@ test('fixed-main exception requires the first complete root delivery, matching g
     value => { value.message.details.contextBrokerPreparation.records[0].directory.files[0].path = 'guide.md'; },
   ]) {
     const value = fixedMainFixture(); mutate(value);
-    assert.throws(() => fixedMainFailureTarget(value.selection, [value.message], value.expected.ref, value.fixedMain.database));
+    assert.throws(() => fixedMainFailureTarget(value.selection, [value.message], value.expected.ref, value.fixedMain.library));
   }
   const value = fixedMainFixture();
   assert.throws(() => fixedMainFailureTarget(value.selection, [value.message], value.expected.ref, 'another-database'));
-  assert.throws(() => fixedMainFailureTarget(value.selection, [value.message], value.expected.ref.replace('/SKILL.md', '/guide.md'), value.fixedMain.database));
+  assert.throws(() => fixedMainFailureTarget(value.selection, [value.message], value.expected.ref.replace('/SKILL.md', '/guide.md'), value.fixedMain.library));
 });
 
 test('fixed main permits the unique failed inspect preparation without changing owner, pin or main identity', () => {
@@ -247,7 +247,7 @@ test('the full server ledger stays distinct from a cancelled local identity with
   const receipts = [
     { id: 'measured', command: 'read', args: ['read', 'skill://selected/SKILL.md'], code: 1, signal: null, timedOut: false,
       metrics: { complete: true, total_requests: 1, trace: [{ event: 'attempt', method: 'GET', http_status: 404, request_bytes: 0, response_bytes: 17 }] } },
-    { id: 'cancelled', command: 'ctl', args: ['ctl', 'cache', 'identity', '--database', 'owned'], code: null, signal: 'SIGTERM', timedOut: false, stdout: '', stderr: '' },
+    { id: 'cancelled', command: 'ctl', args: ['ctl', 'cache', 'identity', '--library', 'owned'], code: null, signal: 'SIGTERM', timedOut: false, stdout: '', stderr: '' },
   ];
   const processes = receipts.flatMap((receipt, index) => [
     { category: 'installed-cli', event: 'spawn', id: receipt.id, childPid: index + 10, args: receipt.args, at: '2026-11-06T00:00:00Z' },
@@ -317,7 +317,7 @@ test('installed refresh fault intercepts required metadata, preserves unrelated 
     await writeFile(state, JSON.stringify({ cli, cliSha256: hash(await readFile(cli)), cwd: directory, responses, ledger,
       env: isolatedEnv({ base: join(directory, 'consumer'), agentDir: join(directory, 'consumer-agent'), NOTION_API_TOKEN: token, NOTION_API_BASE_URL: info.origin, NODE_EXTRA_CA_CERTS: info.cert, NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000' }) }));
     const ref = skillFileRef(info.logical_ids.root, 'SKILL.md');
-    const result = spawnSync(process.execPath, [fileURLToPath(new URL('./notion-skill-graph-session.mjs', import.meta.url)), '--source', state, 'ctl', 'prepare', ref, '--purpose', 'use', '--database', info.database, '--refresh'], { encoding: 'utf8', timeout: 125000 });
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL('./notion-skill-graph-session.mjs', import.meta.url)), '--source', state, 'ctl', 'prepare', ref, '--purpose', 'use', '--library', info.library_id, '--refresh'], { encoding: 'utf8', timeout: 125000 });
     await writeFile(join(directory, 'prepare.stdout.json'), result.stdout); await writeFile(join(directory, 'prepare.stderr.log'), result.stderr);
     const observed = (await readFile(info.ledger, 'utf8')).split('\n').filter(Boolean).map(JSON.parse), faults = observed.filter(row => row.fault);
     t.diagnostic(JSON.stringify({ cliExit: result.status, faultHits: faults.length, http: observed.length }));
@@ -325,7 +325,7 @@ test('installed refresh fault intercepts required metadata, preserves unrelated 
     assert.equal(result.status, 1); assert.equal(result.signal, null);
     const files = await readdir(responses); assert.equal(files.length, 1);
     const receipt = JSON.parse(await readFile(join(responses, files[0]), 'utf8'));
-    const proof = failedSourceEvidence([receipt], { commands: ['prepare'], ref, code: 'SHARED_GRAPH_METADATA_UNAVAILABLE', dataSource: { id: info.data_source_id, database: info.database } });
+    const proof = failedSourceEvidence([receipt], { commands: ['prepare'], ref, code: 'SHARED_GRAPH_METADATA_UNAVAILABLE', dataSource: { id: info.data_source_id, library: info.library_id } });
     assert.equal(receipt.response.request_metrics.requests.notion_body, 0);
     assert.equal(receipt.response.request_metrics.requests.notion_write, 0);
     assert.equal(faults.length, proof.failedAttempts.length);
@@ -365,7 +365,7 @@ async function commandFixture(t) {
 }
 
 test('session custom command forwards the current ctl views metadata entry unchanged', async t => {
-  const { invoke } = await commandFixture(t), args = ['ctl', 'views', '--database', 'controlled-library', '--max-age', '0'];
+  const { invoke } = await commandFixture(t), args = ['ctl', 'views', '--library', 'controlled-library', '--max-age', '0'];
   const result = invoke(args);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout).argv, args);
@@ -382,7 +382,7 @@ test('session source forwards ctl prepare with metrics and rejects retired root 
 
 test('session custom command keeps legacy views and rejects unrelated ctl or author commands before a CLI spawn', async t => {
   const { invoke, ledger } = await commandFixture(t);
-  for (const args of [['views', '--database', 'controlled-library'], ['ctl', 'doctor'], ['ctl', 'cache', 'identity']]) {
+  for (const args of [['views', '--library', 'controlled-library'], ['ctl', 'doctor'], ['ctl', 'cache', 'identity']]) {
     const result = invoke(args); assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout).argv, args);
   }

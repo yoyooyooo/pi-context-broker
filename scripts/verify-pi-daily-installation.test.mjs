@@ -257,7 +257,7 @@ test('daily plan and launched host receive -ns without replacing normal HOME or 
   const settingsPath = join(f.agent, 'settings.json'), sourcePath = join(f.agent, 'context-broker/config.json');
   const skillPath = join(f.agent, 'skills/kept/SKILL.md'), skill = '# Existing global skill\n';
   const settings = { packages: ['npm:kept-plugin', relative(f.agent, f.broker)], defaultModel: 'kept-model' };
-  const source = { sources: [{ id: 'notion', type: 'notion', database: 'fixture-database', prefetch: false }] };
+  const source = { sources: [{ id: 'notion', type: 'notion', library: '44444444-4444-4444-8444-444444444444', prefetch: false }] };
   await Promise.all([dirname(sourcePath), dirname(skillPath), join(f.broker, 'dist')].map(path => mkdir(path, { recursive: true })));
   await writeFile(settingsPath, JSON.stringify(settings));
   await writeFile(sourcePath, JSON.stringify(source));

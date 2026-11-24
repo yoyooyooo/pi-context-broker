@@ -11,7 +11,7 @@ import { renderHttpWrapper, startLoopbackMock } from './mock-provider-adapter.mj
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
 
 export const scenarios = Object.freeze(['default-view', 'http-cache-recovery', 'http-interruption', 'working-set']);
-export const usage = `Current SDK v2, actual Pi, controlled Notion and provider HTTP.
+export const usage = `Current SDK v3, actual Pi, controlled Notion and provider HTTP.
 node scripts/notion-sdk-pi.mjs doctor|run --package ABS --fixture ABS --source-http-helper ABS [--pi ABS] [--scenario all|${scenarios.join('|')}]
 run additionally requires --out NEW_ABS. --pi selects one explicit installed entry; there is no fallback.
 node scripts/notion-sdk-pi.mjs evidence --evidence ABS
@@ -211,7 +211,7 @@ async function runScenario(name, info, out) {
     onBody: async (record, bytes) => { const file = `provider-${String(wire.length + 1).padStart(3, '0')}.json`; await writeFile(join(base, file), bytes, { mode: 0o600 }); wire.push({ file, sha256: hash(bytes), body: JSON.parse(bytes), record }); } });
   const agentDir = join(base, 'agent'), sessions = join(base, 'sessions');
   await mkdir(join(agentDir, 'context-broker'), { recursive: true }); await mkdir(sessions);
-  const source = { type: 'notion', id: 'current-sdk', namespace: 'current-sdk', database: sample.database,
+  const source = { type: 'notion', id: 'current-sdk', namespace: 'current-sdk', library: sample.notion.library.library_id,
     discovery: { maxAge: '0' }, activation: { maxAge: '0' }, cacheDir: join(base, 'broker-cache'), prefetch: false };
   const config = join(agentDir, 'context-broker/config.yml'), control = join(base, 'control.json');
   await save(config, { sources: [source] }); await save(control, { action: 'none' });
@@ -226,6 +226,8 @@ async function runScenario(name, info, out) {
     CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_LOG_FILE: join(base, 'decisions.jsonl'),
     CURRENT_SDK_EVENTS: join(base, 'sdk.jsonl'), CURRENT_NATIVE_EVENTS: join(base, 'native.jsonl'), CURRENT_CONTROL: control,
     BROKER_E2E_PROCESS_LEDGER: join(base, 'processes.jsonl'), NODE_OPTIONS: '--import=' + preload, CTX_MOCK_PROVIDER_BASE_URL: provider.baseUrl });
+  await mkdir(env.NTN_SKILLS_CONFIG_HOME, { recursive: true });
+  await save(join(env.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: sample.notion.library.library_id });
   const args = ['--no-extensions', '--no-skills', '--no-mcp', '--session-dir', sessions, '--tools', 'read,notion_list,notion_use,notion_ctl',
     '-e', providerExtension, '-e', observerExtension, '-e', join(info.packageRoot, 'src/index.ts'), '--model', 'context-broker-e2e/fake'];
   await save(join(base, 'launch.json'), { host: info.host, command: info.identity.pi, args, cwd: base, runtime: info.identity.runtime,

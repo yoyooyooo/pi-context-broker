@@ -96,7 +96,7 @@ if (!worker) {
       assert.ok(countQueries(fixture.notion.library.skills.data_source_id) >= 2, 'Catalog must page beyond 100 rows');
     result = { ...result, runtime, package_unchanged: true, http_requests: service.requests.length,
       semantic_writes: 0, fixture: options.get('--fixture'),
-      boundary: 'Actual independently installed Broker and SDK v2 against controlled current Notion HTTP.',
+      boundary: 'Actual independently installed Broker and SDK v3 against controlled current Notion HTTP.',
       not_run: ['Pi session', 'provider/model', 'live Notion', 'OMP', 'Tern'] };
     await writeFile(join(out, 'result.json'), JSON.stringify(result, null, 2) + '\n');
   } finally { await service.close(); }
@@ -123,7 +123,7 @@ if (!worker) {
   const { DEFAULT_RESOURCE_READ_BUDGET, normalizeResourceReadBudget } =
     await jiti.import(join(packageRoot, 'src/resource-read-types.ts'));
   const source = { type: 'notion', id: 'current-sdk', namespace: 'current-sdk',
-    database: fixture.database, cacheDir: join(out, 'host-cache'), prefetch: false };
+    library: fixture.notion.library.library_id, cacheDir: join(out, 'host-cache'), prefetch: false };
   let directory, selected, loaded;
   const expectedFile = path => {
     const file = fixture.expected.files.find(file => file.path === path);

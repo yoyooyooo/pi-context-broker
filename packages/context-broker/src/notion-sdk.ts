@@ -54,6 +54,7 @@ type Sdk = {
   SDK_VERSION: 3;
   CONSUMER_CONTRACT_VERSION: 1;
   PACKAGE_VERSION: string;
+  selectLibrary: (options?: RuntimeOptions) => Promise<string>;
   resolveLibrary: (options?: RuntimeOptions) => Promise<SharedLibrary>;
   consume: (input: unknown, options?: RuntimeOptions) => Promise<unknown>;
   decodeConsumeResult: (value: unknown, expected?: unknown) => Promise<unknown>;
@@ -93,7 +94,7 @@ function observationErrorCode(error: unknown): string | null {
 function compatible(value: unknown): value is Sdk {
   return object(value) && value.SKILL_REF_VERSION === 2 && value.SDK_VERSION === 3 && value.CONSUMER_CONTRACT_VERSION === 1
     && typeof value.PACKAGE_VERSION === "string" && value.PACKAGE_VERSION.length > 0
-    && typeof value.resolveLibrary === "function" && typeof value.consume === "function" && typeof value.decodeConsumeResult === "function" && typeof value.readSkill === "function" && typeof value.parseDuration === "function";
+    && typeof value.selectLibrary === "function" && typeof value.resolveLibrary === "function" && typeof value.consume === "function" && typeof value.decodeConsumeResult === "function" && typeof value.readSkill === "function" && typeof value.parseDuration === "function";
 }
 async function loadBundledSdk(): Promise<Sdk> {
   bundledSdk ??= (async () => {
@@ -122,7 +123,7 @@ async function loadBundledSdk(): Promise<Sdk> {
 }
 
 /** Code is shared; every operation still creates and closes its own SDK runtime. */
-async function observed(operation: "library" | "consume" | "read" | "read-resources" | "list" | "files" | "resolve" | "content-search", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
+async function observed(operation: "library-selection" | "library" | "consume" | "read" | "read-resources" | "list" | "files" | "resolve" | "content-search", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
   const { sourceId, ...runtimeOptions } = options;
   const attribution = { source_id: sourceId ?? null, library: options.library ?? null };
   const enabled = observations.hasSubscribers;
@@ -177,6 +178,12 @@ export function consumeNotionSdk(input: unknown, options: Options): Promise<unkn
   // consume returns the public decoder's verified result. Re-running that same
   // decoder would hash the whole graph twice without adding an identity check.
   return observed("consume", options, (sdk, runtime) => sdk.consume(input, runtime));
+}
+/** Resolve the explicit/default root from local config without Notion I/O. */
+export async function selectNotionLibrarySdk(options: Options): Promise<string> {
+  const value = await observed("library-selection", options, (sdk, runtime) => sdk.selectLibrary(runtime));
+  if (typeof value !== "string" || !canonicalUuid(value)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+  return value;
 }
 /** Core alone verifies the root, descriptor and four tables, including empty libraries. */
 export async function resolveNotionLibrarySdk(options: Options): Promise<SharedLibrary> {

@@ -736,7 +736,7 @@ test('default SDK cannot silently accept a profile-only source or unknown transp
 
 async function workerConfigFixture() {
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-worker-authorization-'));
-  const config = { version: 1, gate: 'B', selection: '$poteto-mode@notion', rootRef: 'skill://controlled-ordinary/SKILL.md', database: uuid, viewId: uuid,
+  const config = { version: 1, gate: 'B', selection: '$poteto-mode@notion', rootRef: 'skill://controlled-ordinary/SKILL.md', library: uuid, viewId: uuid,
     extension: path.join(base, 'installed/index.ts'), packagePath: path.join(base, 'package.tgz'), cliCommand: [process.execPath, path.join(base, 'installed/cli.mjs')],
     oraclePath: path.join(base, 'oracle.json'), evidenceRoot: path.join(base, 'evidence'), model: 'magpie/group/worker', previousFailures: [], mode: 'matrix' };
   const receipt = { version: 1, kind: 'explicit-user-worker-authorization', model: 'magpie/group/worker',
@@ -1013,7 +1013,7 @@ function submittedNameSelectionFixture() {
   Object.assign(sourceRead.response.record, { name: 'Visible member', alias: selector, kind: 'skill', entrypoint: 'SKILL.md' });
   const catalog = { requestId: 'named-catalog', command: 'list', code: 0, response: { ok: true, scope: f.read.scope,
     count: 1, records: [structuredClone(sourceRead.response.record)],
-    coverage: { method: 'explicit_database', exhaustive: true, search_index_limited: false, failed_sources: [] } }, metrics: { complete: true, trace: [] } };
+    coverage: { method: 'explicit_library', exhaustive: true, search_index_limited: false, failed_sources: [] } }, metrics: { complete: true, trace: [] } };
   f.value.responses.push(catalog);
   return { ...f, catalog, sourceRead, provider };
 }
@@ -1233,7 +1233,7 @@ async function literalObserverFixture(body, transport, selectedSurface, fileId, 
 }
 
 const nameCatalog = fixture => ({ requestId: 'new-name-selection', command: 'list', code: 0,
-  response: { ok: true, scope: fixture.scope, count: 1, records: [fixture.record], coverage: { method: 'explicit_database', exhaustive: true, failed_sources: [], search_index_limited: false } } });
+  response: { ok: true, scope: fixture.scope, count: 1, records: [fixture.record], coverage: { method: 'explicit_library', exhaustive: true, failed_sources: [], search_index_limited: false } } });
 
 async function nativeMemberObserverFixture(t, resumed = false) {
   const member = { id: 'skill://member?library=controlled', ref: 'skill://member/SKILL.md?library=controlled',

@@ -29,7 +29,7 @@ const ContentSchema = Schema.Struct({ id: Schema.String, kind: Schema.Literals([
 const UUID = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 const HASH = /^[0-9a-f]{64}$/;
 const SNAPSHOT = /^s_[0-9a-f]{64}$/;
-const CLI_CODES: Record<string, true | undefined> = Object.fromEntries("SKILL_NOT_FOUND SKILL_AMBIGUOUS INVALID_SKILL_NAME CATALOG_INCOMPLETE AUTH_REQUIRED ACCESS_DENIED NOTION_UNAVAILABLE NOTION_REQUEST_FAILED NOTION_QUEUE_FULL NOTION_SCHEDULER_UNAVAILABLE RATE_LIMITED CONFIG_ERROR SNAPSHOT_MISSING SNAPSHOT_CONFLICT DATABASE_NOT_FOUND DATABASE_AMBIGUOUS OUTPUT_CONFLICT MARKDOWN_INCOMPLETE INVALID_REFERENCES REFERENCE_PATH_CONFLICT REFERENCE_NOT_FOUND UNSUPPORTED_FILE INPUT_FAILED INVALID_INPUT FILE_TOO_LARGE FILE_NOT_FOUND BINARY_FILE INVALID_REF INVALID_PATH INVALID_RANGE INVALID_ARGUMENT INVALID_ARCHIVE INVALID_SKILL ARCHIVE_TOO_LARGE STATE_CORRUPT STORAGE_ERROR OUTPUT_FAILED CACHE_MISSING CACHE_SCOPE_UNAVAILABLE CACHE_INCOMPLETE INVALID_SNAPSHOT INVALID_RESPONSE NOT_SKILLS_DATABASE DOWNLOAD_FAILED CRYPTO_ERROR INVALID_SOURCE SOURCE_AMBIGUOUS INTERNAL_ERROR INVALID_VIEW VIEW_SCOPE_MISMATCH VIEW_INCOMPLETE VIEW_QUERY_EXPIRED VIEW_MEMBER_UNAVAILABLE NOT_FOUND CONTENT_DISABLED SHARED_PROFILE_INVALID SHARED_PROFILE_SCOPE SHARED_PROFILE_NOT_FOUND SHARED_PROFILE_BASELINE_MISSING SHARED_PROFILE_CONFLICT SHARED_PROFILE_PENDING SHARED_PROFILE_PENDING_CONFLICT SHARED_PROFILE_UNRESOLVED SHARED_PROFILE_STALE SHARED_PROFILE_DISABLED".split(" ").map((code) => [code, true as const]));
+const CLI_CODES: Record<string, true | undefined> = Object.fromEntries("LIBRARY_CONTEXT_REQUIRED LIBRARY_NOT_FOUND LIBRARY_AMBIGUOUS LIBRARY_SCHEMA_CONFLICT LIBRARY_INIT_INCOMPLETE LIBRARY_BINDING_CHANGED LIBRARY_SCOPE_MISMATCH SKILL_NOT_FOUND SKILL_AMBIGUOUS INVALID_SKILL_NAME CATALOG_INCOMPLETE AUTH_REQUIRED ACCESS_DENIED NOTION_UNAVAILABLE NOTION_REQUEST_FAILED NOTION_QUEUE_FULL NOTION_SCHEDULER_UNAVAILABLE RATE_LIMITED CONFIG_ERROR SNAPSHOT_MISSING SNAPSHOT_CONFLICT DATABASE_NOT_FOUND DATABASE_AMBIGUOUS OUTPUT_CONFLICT MARKDOWN_INCOMPLETE INVALID_REFERENCES REFERENCE_PATH_CONFLICT REFERENCE_NOT_FOUND UNSUPPORTED_FILE INPUT_FAILED INVALID_INPUT FILE_TOO_LARGE FILE_NOT_FOUND BINARY_FILE INVALID_REF INVALID_PATH INVALID_RANGE INVALID_ARGUMENT INVALID_ARCHIVE INVALID_SKILL ARCHIVE_TOO_LARGE STATE_CORRUPT STORAGE_ERROR OUTPUT_FAILED CACHE_MISSING CACHE_SCOPE_UNAVAILABLE CACHE_INCOMPLETE INVALID_SNAPSHOT INVALID_RESPONSE NOT_SKILLS_DATABASE DOWNLOAD_FAILED CRYPTO_ERROR INVALID_SOURCE SOURCE_AMBIGUOUS INTERNAL_ERROR INVALID_VIEW VIEW_SCOPE_MISMATCH VIEW_INCOMPLETE VIEW_QUERY_EXPIRED VIEW_MEMBER_UNAVAILABLE NOT_FOUND CONTENT_DISABLED SHARED_PROFILE_INVALID SHARED_PROFILE_SCOPE SHARED_PROFILE_NOT_FOUND SHARED_PROFILE_BASELINE_MISSING SHARED_PROFILE_CONFLICT SHARED_PROFILE_PENDING SHARED_PROFILE_PENDING_CONFLICT SHARED_PROFILE_UNRESOLVED SHARED_PROFILE_STALE SHARED_PROFILE_DISABLED".split(" ").map((code) => [code, true as const]));
 
 export class SourceError extends Error {
   readonly code: string;
@@ -167,6 +167,7 @@ export function sourceFailureMessage(code: string, details?: SourceError["detail
   switch (code) {
     case "SOURCE_COMMAND_UNAVAILABLE": return "Cannot start the bundled management CLI. Reinstall the complete paired pi-context-broker package and check Node.js ^24.22.3 or ^26.13.1.";
     case "SOURCE_COMMAND_UNSUPPORTED": return "Notion source.command is no longer supported. Remove that override and upgrade the complete paired CLI/SDK and pi-context-broker package; keep the source Library root and access configuration.";
+    case "SOURCE_LIBRARY_REQUIRED": return "Notion source.database is retired. Replace it with source.library set to the verified Library root page ID or URL, then reload the paired Broker and SDK.";
     case "SOURCE_CACHE_VERSION_UNSUPPORTED":
     case "SNAPSHOT_MISSING":
     case "SNAPSHOT_NOT_MATERIALIZED": return "This selection is no longer available. Refresh the source and select its current content again.";
@@ -179,7 +180,15 @@ export function sourceFailureMessage(code: string, details?: SourceError["detail
     case "STATE_CORRUPT":
     case "STORAGE_ERROR": return "The local state store could not be read safely. Preserve it for diagnosis and run /context-broker doctor; unrelated conversation can continue.";
     case "STATE_CUTOVER_REQUIRED": return "The local state or configuration uses a retired contract. Choose a fresh NTN_SKILLS_HOME and, if the configuration contains retired bindings, NTN_SKILLS_CONFIG_HOME. Keep the old roots and objects intact for read-only extraction.";
-    case "LIBRARY_CONTEXT_REQUIRED": return "This reference needs a Library. Include library= in the Skill URI, select a Library root at entry, or provide the actual selected containing file.";
+    case "LIBRARY_CONTEXT_REQUIRED": return "Set the CLI global default_library or select /context-broker library ROOT_ID. A complete Skill URI or actual selected containing file can supply an explicit Library for a read.";
+    case "LIBRARY_SOURCE_UNAVAILABLE": return "The selected Library has no enabled Broker Source. Configure source.library for that root and reload, or select another configured Library.";
+    case "LIBRARY_SOURCE_AMBIGUOUS": return "More than one enabled Broker Source resolves to the same Library root. Keep one Source per root and reload.";
+    case "LIBRARY_SELECTION_INVALID": return "The active session branch contains an invalid Library selection. Select a valid Library root explicitly.";
+    case "LIBRARY_NOT_FOUND": return "The selected root has no initialized Library. Check the root ID and connection access, or initialize that root through the authorized CLI workflow.";
+    case "LIBRARY_AMBIGUOUS":
+    case "LIBRARY_SCHEMA_CONFLICT": return "The Library root has conflicting table bindings or schema. Inspect it with the management CLI and repair the binding before consuming it.";
+    case "LIBRARY_INIT_INCOMPLETE": return "Library initialization is incomplete. Resume the existing initialization operation; consumption does not repair or recreate tables.";
+    case "LIBRARY_BINDING_CHANGED": return "The verified Library table binding changed. Inspect the root and select it again after confirming the intended binding.";
     case "LIBRARY_SCOPE_MISMATCH": return "The explicit Library does not match this source's verified Library root. Select the source that owns this Library.";
     case "CURRENT_SCHEMA_REQUIRED": return "This entry lacks the current content schema. An authorized management migration must finish before it can be consumed; reading or refreshing does not perform that migration.";
     case "SHARED_ROUTER_MEMBER_UNAVAILABLE": {
@@ -198,10 +207,10 @@ export function sourceFailureMessage(code: string, details?: SourceError["detail
     case "STATE_UNAVAILABLE": return "The local ntn-skills Store is unavailable. Restore access to the existing state directory before retrying this read.";
     case "NOTION_UNAVAILABLE": return "The direct Notion API request could not complete. Check the connection and run /context-broker doctor.";
     case "SOURCE_PROTOCOL_UNSUPPORTED": return "Update the source CLI to a build with the direct Notion API doctor contract.";
-    case "AUTH_REQUIRED": return "Configure the ntn-skills token with ctl config set-token --stdin or NOTION_API_TOKEN; grant access to the selected Notion database.";
+    case "AUTH_REQUIRED": return "Configure the ntn-skills token with ctl config set-token --stdin or NOTION_API_TOKEN; grant access to the selected Library root and its child tables.";
     case "NOTION_QUEUE_FULL": return "The shared Notion request queue is full. Let the current work finish, then retry this read.";
     case "NOTION_SCHEDULER_UNAVAILABLE": return "The shared Notion request scheduler is unavailable. Check the local scheduler state and run /context-broker doctor.";
-    case "ACCESS_DENIED": return "Grant the existing Notion connection read access to the selected database.";
+    case "ACCESS_DENIED": return "Grant the existing Notion connection read access to the selected Library root and its child tables.";
     case "CONTENT_DISABLED": return "The Skill is disabled (Enabled=false) in Notion. This is not a source connection failure. Enable it before retrying the exact read; catalog metadata may remain cached until refreshed.";
     case "CURRENT_SOURCE_REQUIRED": return "This operation requires a current Source contribution. Migrate its current content if the Source table or binding is missing or historical. For a cross-Skill relative link, use an exact target Skill reference.";
     case "CURRENT_SOURCE_CHANGED": return "The Source revision no longer matches the containing fixed file. Existing selections are unchanged; use a previously issued exact target reference or explicitly inspect current material.";

@@ -33,6 +33,8 @@ ${proofVersion === null ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${proof
 export const calls = [];
 let state;
 export function configure(value) { state = value; }
+export async function selectLibrary() { throw new Error('library selection must not run for fixed resource reads'); }
+export async function resolveLibrary() { throw new Error('library discovery must not run for fixed resource reads'); }
 export function parseDuration() { return 0; }
 export function consume() { throw new Error('main preparation must not run'); }
 export function decodeConsumeResult() { throw new Error('main decoder must not run'); }
@@ -63,11 +65,11 @@ export async function resolveReference(target, options) {
     ...(proofVersion === null ? {} : { read_output_proof_version: proofVersion }) }));
   const sdk = await import(pathToFileURL(sdkPath).href);
   const boundary = await import(pathToFileURL(join(root, "src/notion-source.ts")).href);
-  const id = "skill://owner?library=fixed-resource", scope = hash("fixed resource scope"), version = hash("fixed resource version");
+  const id = "skill://owner?library=00000000-0000-4000-8000-000000000099", scope = hash("fixed resource scope"), version = hash("fixed resource version");
   const snapshot = "s_" + hash(JSON.stringify([scope, id, version])), prefix = id;
   const main = "SKILL.md", path = "references/guide.md", bytes = Buffer.from(options.bytes ?? Buffer.from("\ufeffExact resource.\r\nSecond line.\r\n"));
   const content: ContentRecord = { id, kind: "skill", name: "owner", alias: "owner", description: "Fixed resource fixture", default_context: false, enabled: true,
-    entrypoint: main, ref: nativeFileRef(prefix, String(main)), locator: { type: "shared_skill", library_id: "fixed-resource", skill_id: "owner",
+    entrypoint: main, ref: nativeFileRef(prefix, String(main)), locator: { type: "shared_skill", library_id: "00000000-0000-4000-8000-000000000099", skill_id: "owner",
       page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
   const source: Extract<SourceConfig, { type: "notion" }> = { id: "notion", type: "notion", cacheDir: join(root, "cache"), activation: { offline: true }, prefetch: false };
   const record: SkillRecord = { ...content, source: "notion", sourceId: source.id, sourceScope: scope, path: join(root, "metadata/SKILL.md"),
@@ -116,7 +118,7 @@ test("batch source keeps zero-write effects and omits retired SDK options with e
 });
 
 test("Source-relative resolution keeps the containing resource identity without materializing either owner", async () => {
-  const f = await fixture(), ref = "skill://target/SKILL.md?library=fixed-resource", observed: ConsumptionEffects[] = [];
+  const f = await fixture(), ref = "skill://target/SKILL.md?library=00000000-0000-4000-8000-000000000099", observed: ConsumptionEffects[] = [];
   f.state.relativeResponse = { version: 1, from: f.ref, ref, effects: noConsumptionWrites() };
   expect(await f.boundary.resolveNotionRelativeReference(f.record, f.ref, "../../target/SKILL.md", f.source, f.root, undefined,
     { readOnly: true, observeEffects: value => observed.push(value) })).toBe(ref);
@@ -127,7 +129,7 @@ test("Source-relative resolution keeps the containing resource identity without 
 });
 
 test("Source-relative identity rejects mismatched bases, foreign libraries, malformed output and late cancellation", async () => {
-  const f = await fixture(), ref = "skill://target/SKILL.md?library=fixed-resource";
+  const f = await fixture(), ref = "skill://target/SKILL.md?library=00000000-0000-4000-8000-000000000099";
   const read = (signal?: AbortSignal) => f.boundary.resolveNotionRelativeReference(f.record, f.ref, "../../target/SKILL.md", f.source, f.root, signal);
   for (const changed of [{ version: 2 }, { from: nativeFileRef(f.prefix, "SKILL.md") }, { ref: "skill://target/SKILL.md?library=foreign" },
     { ref: "../target/SKILL.md" }, { ref: nativeFileRef(f.prefix, "SKILL.md") }, { ref: f.ref.replace(f.snapshot, "s_" + "c".repeat(64)) }]) {

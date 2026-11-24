@@ -644,7 +644,7 @@ export async function runIntentCases(configPath, selectedCase) {
     assert.ok(!scratch.startsWith(oracleRoot + '/') && !oracleRoot.startsWith(scratch + '/'), 'Private oracle cannot warm a consumer root');
     const project = await createOwnedGraphProject(cwd, { modelProfile }); assert.equal(project.sha256, config.project.sha256);
     await Promise.all([ledger, owned, observationPath].map(path => writeFile(path, '', { mode: 0o600 })));
-    const source = { type: 'notion', id: 'notion', namespace: 'notion', database: config.source.database,
+    const source = { type: 'notion', id: 'notion', namespace: 'notion', library: config.source.library,
       prefetch: false, cacheDir: cache, requestTimeoutMs: 60000 };
     const brokerConfig = join(control, 'broker.json'); await save(brokerConfig, { skillRoots: [], extraSkillRoots: [], sources: [source] });
     await save(join(output, 'source-config.json'), await json(brokerConfig));
@@ -1171,7 +1171,7 @@ export async function runMatrix(options) {
     const cliExistedBeforeHost = await access(cliRoot).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
     await mkdir(cache, { recursive: true, mode: 0o700 }); const brokerEntriesBeforeHost = (await readdir(cache)).length; await mkdir(sessionDir, { recursive: true, mode: 0o700 });
     const config = join(base, 'broker-' + phase + '.json');
-    await save(config, { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: ledger.command, database: fixture.database, default_view_id: fixture.view, prefetch: false, cacheDir: cache, requestTimeoutMs: 30000, ...(maxAge ? { activation: { maxAge }, discovery: { maxAge } } : {}) }] });
+    await save(config, { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: ledger.command, library: fixture.library_id, default_view_id: fixture.view, prefetch: false, cacheDir: cache, requestTimeoutMs: 30000, ...(maxAge ? { activation: { maxAge }, discovery: { maxAge } } : {}) }] });
     const capture = join(evidence, name + '-observer.jsonl');
     await writeFile(capture, '', { mode: 0o600 });
     const graphCapture = join(evidence, name + '-public-tool-observer.jsonl'); await writeFile(graphCapture, '', { mode: 0o600 });

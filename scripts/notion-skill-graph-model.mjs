@@ -1370,7 +1370,7 @@ export function observeGraphGate(api, settings) {
 export async function readGateConfig(path) {
   assert.ok(isAbsolute(path), '--config must be absolute');
   const input = await json(path);
-  const allowed = ['version', 'gate', 'selection', 'rootRef', 'database', 'viewId', 'profileId', 'sourceMode', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'modelContract', 'thinkingLevel', 'rpcTimeoutMs', 'promptTimeoutMs', 'previousFailures', 'workerAuthorization', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt', 'retainedSourceProofRepo'];
+  const allowed = ['version', 'gate', 'selection', 'rootRef', 'library', 'viewId', 'profileId', 'sourceMode', 'extension', 'packagePath', 'cliCommand', 'oraclePath', 'evidenceRoot', 'model', 'modelContract', 'thinkingLevel', 'rpcTimeoutMs', 'promptTimeoutMs', 'previousFailures', 'workerAuthorization', 'preparation', 'mode', 'reuseReceipt', 'selectionReceipt', 'retainedSourceProofRepo'];
   assert.ok(input && Object.keys(input).every(key => allowed.includes(key)), 'Unknown graph-model configuration field');
   assert.equal(input.version, 1);
   const modelProfile = dailyRouteContract(input);
@@ -1380,7 +1380,7 @@ export async function readGateConfig(path) {
   const prompt = frozenPrompt(input.gate, input.selection);
   assert.match(input.rootRef ?? '', /^skill:\/\/[^/?#]+\/(?:SKILL|ROUTER)\.md$/);
   assert.equal(input.rootRef.endsWith('/ROUTER.md'), input.gate === 'A', 'Gate A selects a Router; Gate B selects a Skill');
-  assert.match(input.database ?? '', /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/);
+  assert.match(input.library ?? '', /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/);
   assert.ok(Boolean(input.viewId) !== Boolean(input.profileId), 'Select exactly one existing root-only View or Profile');
   if (input.viewId) assert.match(input.viewId, /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/);
   if (input.profileId) assert.match(input.profileId, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/);
@@ -1418,7 +1418,7 @@ export async function readGateConfig(path) {
   return { ...input, sourceMode, model, mode, promptTimeoutMs, previousFailures, ...(modelProfile ? { modelProfile } : {}), ...(workerAuthorization ? { workerAuthorization } : {}), prompt };
 }
 
-export const brokerConfiguration = (config, command, cacheDir) => ({ skillRoots: [], extraSkillRoots: [], sources: [{ type: 'notion', id: 'notion', namespace: 'notion', ...(config.sourceMode === 'command' ? { command } : {}), database: config.database, ...(config.viewId ? { default_view_id: config.viewId } : { profile_id: config.profileId }), prefetch: false, cacheDir, requestTimeoutMs: 60000, ...(config.preparation ? { preparation: config.preparation } : {}) }] });
+export const brokerConfiguration = (config, command, cacheDir) => ({ skillRoots: [], extraSkillRoots: [], sources: [{ type: 'notion', id: 'notion', namespace: 'notion', ...(config.sourceMode === 'command' ? { command } : {}), library: config.library, ...(config.viewId ? { default_view_id: config.viewId } : { profile_id: config.profileId }), prefetch: false, cacheDir, requestTimeoutMs: 60000, ...(config.preparation ? { preparation: config.preparation } : {}) }] });
 export async function sourceObserver(control, { ledger, responses, outputRoot, cliEntries }) {
   const file = join(control, 'source-observer.mjs');
   const module = pathToFileURL(fileURLToPath(new URL('./notion-skill-graph-model-evidence.mjs', import.meta.url))).href;
@@ -1436,7 +1436,7 @@ function gateEnvironment(cliPaths, brokerConfig, evidence, owned) {
   return env;
 }
 
-export const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 3, sourceMode: config.sourceMode ?? 'sdk', harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, database: config.database, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, promptTimeoutMs: config.promptTimeoutMs, ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}), ...(config.workerAuthorization ? { workerAuthorizationSha256: config.workerAuthorization.sha256 } : {}), cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
+export const runFingerprint = (config, doctor, oracleSha256, projectSha256) => hash(JSON.stringify({ version: 3, sourceMode: config.sourceMode ?? 'sdk', harness: doctor.harness.sha256, gate: config.gate, rootRef: config.rootRef, selection: config.selection, library: config.library, viewId: config.viewId, profileId: config.profileId, prompt: config.prompt.sha256, model: config.model, promptTimeoutMs: config.promptTimeoutMs, ...(config.modelProfile ? { modelProfile: config.modelProfile } : {}), ...(config.workerAuthorization ? { workerAuthorizationSha256: config.workerAuthorization.sha256 } : {}), cli: doctor.cli.sha256, extension: doctor.extension.sha256, package: doctor.package.sha256, oracleSha256, projectSha256, preparation: config.preparation ?? null }));
 
 export function graphFailureEvidence(error, samples = []) {
   const validationError = { code: error.code ?? 'GRAPH_GATE_FAILED', message: error.code === 'ERR_ASSERTION' || error.code ? error.message : 'Native graph gate did not complete; retained observer and source artifacts identify the boundary' };
@@ -1544,6 +1544,8 @@ export async function graphSelectionPreflight(config) {
   await mkdir(payloads);
   await Promise.all([ledger, owned, provider, output].map(path => writeFile(path, '', { mode: 0o600 })));
   const cliPaths = sourceEnvironment(cli, config.modelProfile), state = join(control, 'source.json'), brokerConfig = join(control, 'broker.json');
+  await mkdir(cliPaths.NTN_SKILLS_CONFIG_HOME, { recursive: true });
+  await save(join(cliPaths.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: config.library });
   await save(state, { command: config.cliCommand, cliPaths, ledger, responses, metadataOnly: true });
   await save(brokerConfig, brokerConfiguration(config, [process.execPath, helper, '--source', state], broker));
   await save(join(evidence, 'source-config.json'), await json(brokerConfig));
@@ -1553,7 +1555,7 @@ export async function graphSelectionPreflight(config) {
   const observer = join(control, 'catalog-observer.mjs');
   await writeFile(observer, graphObserverModule({ sourceMode: config.sourceMode ?? 'sdk', rootRef: config.rootRef, model: controlled.model,
     prompt: prompts[0], cache: broker, cwd, responses, output, payloads, piExecutable: (await resolveHost('pi')).identity }, pathToFileURL(join(dirname(artifacts.extension.path), 'native-reference.ts')).href), { mode: 0o600 });
-  const result = { version: 1, sourceMode: config.sourceMode ?? 'sdk', status: 'running', kind: 'installed-pi-selection-preflight', evidence, scratch, rootRef: config.rootRef, database: config.database, viewId: config.viewId, profileId: config.profileId, artifacts, cliSha256: hash(await readFile(config.cliCommand[1])), files: ['result.json', 'source-config.json', 'source-processes.jsonl', 'owned-processes.jsonl', 'catalog-provider-http.jsonl', 'catalog-observer.jsonl', 'ownership.json'], scope: 'Actual installed Pi commands, ordinary metadata-only turns and real Notion metadata; controlled local provider only, independent of the private oracle and the later cold consumer' };
+  const result = { version: 1, sourceMode: config.sourceMode ?? 'sdk', status: 'running', kind: 'installed-pi-selection-preflight', evidence, scratch, rootRef: config.rootRef, library: config.library, viewId: config.viewId, profileId: config.profileId, artifacts, cliSha256: hash(await readFile(config.cliCommand[1])), files: ['result.json', 'source-config.json', 'source-processes.jsonl', 'owned-processes.jsonl', 'catalog-provider-http.jsonl', 'catalog-observer.jsonl', 'ownership.json'], scope: 'Actual installed Pi commands, ordinary metadata-only turns and real Notion metadata; controlled local provider only, independent of the private oracle and the later cold consumer' };
   await save(join(scratch, 'ownership.json'), { evidence, purpose: 'native-graph-selection', runId: randomUUID() });
   await save(join(evidence, 'ownership.json'), await json(join(scratch, 'ownership.json')));
   await save(join(evidence, 'result.json'), result);
@@ -1899,7 +1901,7 @@ async function runGate(config) {
   assert.ok(config.selectionReceipt, 'Run the public metadata-only selection preflight first');
   const selection = await json(config.selectionReceipt);
   assert.equal(selection.status, 'passed'); assert.equal(selection.kind, 'installed-pi-selection-preflight');
-  assert.equal(selection.selection, config.selection); assert.equal(selection.rootRef, config.rootRef); assert.equal(selection.database, config.database); assert.equal(selection.viewId, config.viewId); assert.equal(selection.profileId, config.profileId);
+  assert.equal(selection.selection, config.selection); assert.equal(selection.rootRef, config.rootRef); assert.equal(selection.library, config.library); assert.equal(selection.viewId, config.viewId); assert.equal(selection.profileId, config.profileId);
   assert.equal(selection.artifacts.extension.sha256, doctor.extension.sha256); assert.equal(selection.cliSha256, doctor.cli.sha256, 'Selection preflight must use the same installed artifacts');
   assert.equal(selection.artifacts.package.sha256, doctor.package.sha256, 'Selection preflight must use the selected package archive');
   assert.equal(selection.artifacts.runtimeSha256, doctor.runtimeSha256, 'Selection preflight must use the same complete installed runtime');
@@ -1946,6 +1948,8 @@ async function runGate(config) {
   const ledger = join(evidence, 'source-processes.jsonl'), owned = join(evidence, 'owned-processes.jsonl'), output = join(evidence, 'observer.jsonl');
   await Promise.all([ledger, owned, output].map(path => writeFile(path, '', { mode: 0o600 })));
   const cliPaths = sourceEnvironment(resolved[0], config.modelProfile);
+  await mkdir(cliPaths.NTN_SKILLS_CONFIG_HOME, { recursive: true });
+  await save(join(cliPaths.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: config.library });
   const statePath = join(control, 'source.json');
   await save(statePath, { command: config.cliCommand, cliPaths, ledger, responses });
   const brokerConfig = join(control, 'broker.json');
@@ -2165,7 +2169,7 @@ async function main(args) {
   const action = args.shift();
   if (!action || action === '--help' || action === 'help') return {
     usage: ['node scripts/notion-skill-graph-model.mjs doctor|selection --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs run --config ABSOLUTE_JSON', 'node scripts/notion-skill-graph-model.mjs exercise --evidence ABSOLUTE_RUN --command-json \'["npm","test"]\'', 'node scripts/notion-skill-graph-model.mjs exercise --evidence ABSOLUTE_RUN --review ABSOLUTE_PRIVATE_REVIEW', 'node scripts/notion-skill-graph-model.mjs evidence|cleanup --evidence ABSOLUTE_RUN_OR_EXERCISE'],
-    config: { version: 1, gate: 'A or B', selection: 'Use exact token returned by the independent selection preflight', selectionReceipt: 'absolute successful selection result.json; required for run', rootRef: 'exact unpinned shared record.ref', database: 'UUID', viewId: 'existing root-only View UUID', sourceMode: 'sdk (default, source.command absent); command explicitly selects the legacy/custom/profile comparison', profileId: 'legacy compatibility only, requires sourceMode command instead of viewId', extension: 'absolute installed Pi entry', packagePath: 'absolute frozen tgz', cliCommand: ['absolute Node', 'absolute installed ntn-skills entry; identity and explicit command mode only'], oraclePath: 'absolute private oracle JSON, kept outside consumer roots; not opened by selection preflight', evidenceRoot: 'absolute retained directory', model: modelSelectors[0], promptTimeoutMs: 300000, previousFailures: [], mode: 'cold (default), warm-new-process or matrix', reuseReceipt: 'absolute complete cache-reuse.json for warm-new-process only' },
+    config: { version: 1, gate: 'A or B', selection: 'Use exact token returned by the independent selection preflight', selectionReceipt: 'absolute successful selection result.json; required for run', rootRef: 'exact unpinned shared record.ref', library: 'UUID', viewId: 'existing root-only View UUID', sourceMode: 'sdk (default, source.command absent); command explicitly selects the legacy/custom/profile comparison', profileId: 'legacy compatibility only, requires sourceMode command instead of viewId', extension: 'absolute installed Pi entry', packagePath: 'absolute frozen tgz', cliCommand: ['absolute Node', 'absolute installed ntn-skills entry; identity and explicit command mode only'], oraclePath: 'absolute private oracle JSON, kept outside consumer roots; not opened by selection preflight', evidenceRoot: 'absolute retained directory', model: modelSelectors[0], promptTimeoutMs: 300000, previousFailures: [], mode: 'cold (default), warm-new-process or matrix', reuseReceipt: 'absolute complete cache-reuse.json for warm-new-process only' },
     consumption: 'Pi 1.4 advertises read, notion_list and notion_use. notion_use is model-only; inspection and resources use read. notion_ctl stays deferred and is not activated for the A/B plan task. Actual SDK results and their matching HTTP metrics are observer-only evidence; roots and Requires still require complete source bytes in actual provider requests. The driver does not claim live or independent acceptance merely because its tests pass.',
     discovery: 'selection uses its own cold scratch, real Notion metadata, actual Pi and three controlled local HTTP provider requests: one public notion_list followed by a second ordinary user turn with ready default metadata. No instruction bodies or real model are requested. Setup attempts/bytes remain a separate ledger. The later task can observe first-turn pending; explicit root consumption never substitutes for the independent ready-directory proof.',
     promptTimeout: 'Optional config.promptTimeoutMs freezes the model-run RPC deadline before launch; default 300000 ms, positive safe timer integer up to 2147483647. The value is retained in doctor/run/matrix/cache evidence and the cache fingerprint. It never changes task or graph assertions.',

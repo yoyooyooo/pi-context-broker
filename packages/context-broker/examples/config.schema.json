@@ -84,7 +84,7 @@
         "type": { "const": "notion" },
         "enabled": { "type": "boolean", "default": true },
         "namespace": { "$ref": "#/$defs/sourceName", "description": "Defaults to id." },
-        "database": { "$ref": "#/$defs/nonemptyString" },
+        "library": { "$ref": "#/$defs/nonemptyString" },
         "cacheDir": { "$ref": "#/$defs/nonemptyString" },
         "discovery": { "$ref": "#/$defs/sourcePolicy" },
         "activation": { "$ref": "#/$defs/sourcePolicy" },

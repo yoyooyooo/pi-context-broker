@@ -15,7 +15,7 @@ function harness(selected = a) {
   const events = new Map<string, unknown[]>();
   const calls: Array<string | undefined> = [], notices: string[] = [];
   let resolve = async (root: string | undefined) => descriptor(root ?? selected);
-  const owner = createLibrarySelection(config, async options => { calls.push(options.library); return resolve(options.library); });
+  const owner = createLibrarySelection(config, async options => { calls.push(options.library); return resolve(options.library); }, async options => options.library ?? selected);
   const ctx: ExtensionContext = { cwd: "/test", sessionManager: { getBranch: () => branch, getSessionId: () => session }, ui: { notify: message => notices.push(message) } };
   const api: ExtensionAPI = { on(name, handler) { events.set(name, [...events.get(name) ?? [], handler]); },
     appendEntry(customType, data) { branch = [...branch, { id: String(branch.length + 1), type: "custom", customType, data }]; } };
@@ -29,7 +29,7 @@ function harness(selected = a) {
 test("SDK default supplies the root; an empty Library needs no discovered Skill", async () => {
   const h = harness();
   const selected = await h.owner.selected(h.ctx);
-  expect(h.calls).toEqual([undefined]);
+  expect(h.calls).toEqual([a]);
   expect(selected?.source).toMatchObject({ id: "a", library: a });
   expect(selected?.library.skills.database_id).not.toBe(selected?.library.library_id);
 });
@@ -81,18 +81,48 @@ test("late B verification cannot append or publish into a different session", as
 test("a root without an enabled Source, duplicate root Sources and missing default fail closed", async () => {
   for (const sources of [[{ type: "notion" as const, id: "a", library: a }],
     [{ type: "notion" as const, id: "a", library: b }, { type: "notion" as const, id: "same", library: b }]]) {
-    const owner = createLibrarySelection({ sources }, async () => descriptor(b));
+    const owner = createLibrarySelection({ sources }, async () => descriptor(b), async () => b);
     await expect(owner.selected()).rejects.toMatchObject({ code: sources.length === 1 ? "LIBRARY_SOURCE_UNAVAILABLE" : "LIBRARY_SOURCE_AMBIGUOUS" });
   }
-  const missing = createLibrarySelection(config, async () => { throw Object.assign(new Error("no default"), { code: "LIBRARY_CONTEXT_REQUIRED" }); });
+  const missing = createLibrarySelection(config, async () => descriptor(a), async () => { throw Object.assign(new Error("no default"), { code: "LIBRARY_CONTEXT_REQUIRED" }); });
   await expect(missing.selected()).rejects.toMatchObject({ code: "LIBRARY_CONTEXT_REQUIRED" });
 });
 
 test("implicit Source binds the one SDK default, and exact foreign routing leaves it unchanged", async () => {
   const owner = createLibrarySelection({ sources: [{ type: "notion", id: "default" }, { type: "notion", id: "b", library: b }] },
-    async options => descriptor(options.library ?? a));
+    async options => descriptor(options.library ?? a), async options => options.library ?? a);
   expect((await owner.selected())?.source).toMatchObject({ id: "default", library: a });
   expect(await owner.route(b, {})).toMatchObject([{ id: "b", library: b }]);
   expect((await owner.selected())?.library.library_id).toBe(a);
   expect(LIBRARY_SELECTION_ENTRY).toBe("ntn-skills-library-selection");
+});
+
+test("a malformed latest selection blocks the branch until an explicit valid replacement", async () => {
+  const h = harness();
+  h.branchTo([{ id: "bad", type: "custom", customType: LIBRARY_SELECTION_ENTRY, data: { version: 1, library: "not-a-root", status: "ready" } }]);
+  expect(() => h.owner.capture(h.ctx)).toThrow("LIBRARY_SELECTION_INVALID");
+  await h.command("library " + b, h.ctx);
+  expect((await h.owner.selected(h.ctx))?.library.library_id).toBe(b);
+});
+
+test("every input rereads local default while root verification and metadata keys reuse the same identity", async () => {
+  let current = a, selections = 0;
+  const verified: string[] = [];
+  const owner = createLibrarySelection({ sources: [{ type: "notion", id: "implicit" }] },
+    async options => { verified.push(options.library!); return descriptor(options.library!); },
+    async options => { selections++; return options.library ?? current; });
+  const first = owner.accept({ cwd: "/test" });
+  expect((await owner.selected(first))?.library.library_id).toBe(a);
+  const same = owner.accept({ cwd: "/test" });
+  await owner.selected(same);
+  expect(owner.key(same)).toBe(owner.key(first));
+  expect(verified).toEqual([a]);
+  current = b;
+  const second = owner.accept({ cwd: "/test" });
+  expect((await owner.selected(second))?.library.library_id).toBe(b);
+  expect(selections).toBe(3); expect(verified).toEqual([a, b]);
+  expect(owner.isCurrent(first)).toBe(false);
+  expect((await owner.selected(first))?.library.library_id).toBe(a);
+  expect(await owner.route(a, first)).toMatchObject([{ id: "implicit", library: a }]);
+  await expect(owner.route(a, second)).rejects.toMatchObject({ code: "LIBRARY_SOURCE_UNAVAILABLE" });
 });

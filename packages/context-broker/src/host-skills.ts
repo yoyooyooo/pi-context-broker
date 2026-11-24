@@ -75,6 +75,7 @@ export type HostSkillOptions = {
 export type PreparedReference = { status: "ready"; record: SkillRecord } | { status: "miss" };
 export type HostSkills = {
   invalidate(): void;
+  turnContext(ctx: ExtensionContext): ExtensionContext;
   refresh(ctx?: ExtensionContext, options?: { preserveTurn?: boolean }): Promise<void>;
   activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord>;
   prepare(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<PreparedReference>;
@@ -374,6 +375,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const observations = createConsumerObservations(() => generation);
   const available = (record: SkillRecord) => observations.state(record) === "available";
   let metadataLists: NonNullable<DiscoveryResult["lists"]> = [];
+  let metadataLibraryKey: string | undefined;
+  let metadataSourceLibraries = new Map<string, string | undefined>();
   const catalogScopes = new Map<string, string>();
   let metadataRetryAt = 0;
   let catalogPublication: Promise<void> = Promise.resolve();
@@ -448,7 +451,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   let acceptedContext: ExtensionContext | undefined;
   const turnContext = (ctx: ExtensionContext) => inheritLibraryContext(ctx, piRun?.entry?.ctx ?? gate.active?.ctx ?? acceptedContext);
   const visibleInLibrary = (record: SkillRecord, ctx: ExtensionContext) => !options.librarySelection || record.source !== "notion"
-    || record.sourceId === libraryContext(ctx)?.peek()?.source.id;
+    || record.sourceId === libraryContext(ctx)?.local()?.source.id && record.locator?.type === "shared_skill"
+      && record.locator.library_id === libraryContext(ctx)?.local()?.root;
   async function ready(signal: AbortSignal = lifecycleController.signal): Promise<void> {
     checkPreparationSignal(signal);
     const cancelled = Promise.withResolvers<never>();
@@ -473,6 +477,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
 
   function revalidateMetadata(ctx: ExtensionContext, refreshSourceIds?: readonly string[]): Promise<void> {
+    if (options.librarySelection && !options.librarySelection.isCurrent(ctx)) return metadataReadiness;
     if (refreshSourceIds?.length) {
       if (metadataPending && refreshSourceIds.every(id => metadataRefreshSources.has(id))) return metadataReadiness;
       const requested = [...new Set([...(metadataPending ? metadataRefreshSources : []), ...refreshSourceIds])];
@@ -486,7 +491,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       failedSourceIds: sourceFailures.map(failure => failure.sourceId), now: Date.now(), retryAt: metadataRetryAt });
     // A legacy metadata producer without freshness cannot acquire freshness by
     // being read again. Its explicit refresh route remains available.
-    if (options.metadataInvalidated?.(ctx) || metadataLists.some(list => list.validatedAt !== undefined) && expired === "refresh") {
+    if (options.librarySelection && options.librarySelection.key(ctx) !== metadataLibraryKey
+      || options.metadataInvalidated?.(ctx) || metadataLists.some(list => list.validatedAt !== undefined) && expired === "refresh") {
       metadataReadiness = refreshMetadata(ctx, false, true);
     }
     return metadataReadiness;
@@ -504,7 +510,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const source = sources.find(value => value.id === sourceId);
     if (!source || source.type !== "notion") throw hostError("SOURCE_UNAVAILABLE");
     if (!source.library?.trim())
-      throw Object.assign(new Error("Content search requires a configured Notion source with an explicit library entry."), { code: "CONTENT_SOURCE_REQUIRED" });
+      throw Object.assign(new Error("Content search requires a verified Library root for the selected Source."), { code: "CONTENT_SOURCE_REQUIRED" });
     if (source.discovery?.offline) throw hostError("CONTENT_SEARCH_OFFLINE");
     const requestedConfiguration = JSON.stringify(source);
     const deadline = Date.now() + CONTENT_SEARCH_TIMEOUT_MS;
@@ -561,11 +567,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.${piConsumption ? " For named Notion Skill existence or availability questions, set query to the name and refresh:true, even when already listed or previously absent. Answer existence and stated-purpose questions from metadata; read or use the Skill only when the user asks to inspect or apply its instructions. Also refresh after writes or to request the latest directory; selected Skill versions stay fixed. Report matching availability. Only fresh online results with exhaustive coverage and no failures establish that no available match was found in the searched scope; stale, offline, failed or partial results cannot establish current absence. Use search_in:content only when the user asks to search Skill content. Content mode requires a nonempty query and one configured source, performs an authorized remote Notion search, and may request foreground OAuth. Content results are always non-exhaustive and do not prove exact fixed Skill or supporting-file bytes match. Content mode has no cursor; limit is at most 50. It never adopts or changes task instructions." : ""}`,
     parameters: { type: "object", properties: {
       query: { type: "string", description: piConsumption ? "A short name or description keyword; empty lists the metadata directory. Content search requires a nonempty user-requested query." : "A short name or description keyword; empty lists the directory." },
-      source: { type: "string", description: piConsumption ? "Configured source ID. Optional for metadata; required for content search when more than one Notion source is enabled." : "Optional configured source ID to disambiguate directories." },
+      source: { type: "string", description: piConsumption ? "Configured source ID. Omission uses this accepted turn's selected Library for metadata and content search." : "Optional configured source ID to disambiguate directories." },
       limit: { type: "integer", minimum: 1, maximum: 100, description: piConsumption ? "Maximum entries, default 20. Content search accepts at most 50 and has no pagination." : "Maximum metadata entries, default 20." },
       ...(piConsumption ? {
         search_in: { type: "string", enum: ["metadata", "content"], description: "Default metadata searches names and descriptions without MCP or authorization UI. Content explicitly searches remote Notion content in one configured source." },
-        refresh: { type: "boolean", description: "Refresh metadata for source, or all configured Notion sources in metadata mode when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor." },
+        refresh: { type: "boolean", description: "Refresh metadata for the explicit source, or this accepted turn's selected Library when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor." },
         cursor: { type: "string", description: "Metadata only: copy next_cursor to continue the same query and metadata publication; restart after refresh. Content mode rejects all cursors." },
       } : {}),
     }, required: piConsumption ? [] : ["query"], additionalProperties: false },
@@ -590,15 +596,20 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (piConsumption && input.source !== undefined && !sourceIds.includes(String(input.source))) throw hostError("SOURCE_UNAVAILABLE");
       const selectedLibrary = await options.librarySelection?.selected(ctx);
       const selectedSources = input.source === undefined ? selectedLibrary ? [selectedLibrary.source.id] : sourceIds : [String(input.source)];
-      revalidateMetadata(ctx, input.refresh === true ? selectedSources : undefined);
-      await ready(readSignal);
-      if (discoveryError) throw discoveryError;
-      const failures = sourceFailures.filter(failure => selectedSources.includes(failure.sourceId));
-      const coverage = selectedSources.map(source => ({ source, exhaustive: catalogCoverage.get(source) ?? null }));
+      const isolated = options.librarySelection && !options.librarySelection.isCurrent(ctx)
+        ? await options.getRecords(ctx, readSignal, input.refresh === true ? selectedSources : undefined) : undefined;
+      if (!isolated) { revalidateMetadata(ctx, input.refresh === true ? selectedSources : undefined); await ready(readSignal); }
+      if (!isolated && discoveryError) throw discoveryError;
+      const listedRecords = isolated?.records ?? [...hostRecords.values()];
+      const listedFailures = isolated?.failures ?? sourceFailures;
+      const listedMetadata = isolated?.lists ?? metadataLists;
+      const listedCoverage = isolated ? new Map((isolated.lists ?? []).map(list => [list.sourceId, list.exhaustive])) : catalogCoverage;
+      const failures = listedFailures.filter(failure => selectedSources.includes(failure.sourceId));
+      const coverage = selectedSources.map(source => ({ source, exhaustive: listedCoverage.get(source) ?? null }));
       const now = Date.now();
       const freshness = selectedSources.map(source => ({ source,
-        ...notionListFreshness(metadataLists.find(list => list.sourceId === source), now) }));
-      const matches = [...hostRecords.values()].filter(record => record.ref && record.source === "notion"
+        ...notionListFreshness(listedMetadata.find(list => list.sourceId === source), now) }));
+      const matches = listedRecords.filter(record => record.ref && record.source === "notion"
         && record.sourceId !== undefined && selectedSources.includes(record.sourceId)
         && (!query || [record.name, record.alias, record.description].some(value => value?.toLocaleLowerCase().includes(query))));
       const catalogKey = createHash("sha256").update(JSON.stringify([metadataGeneration, options.librarySelection?.key(ctx), query, selectedSources,
@@ -624,7 +635,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           availability: observations.state(record),
           ...(observations.denial(record) ? { error_code: observations.denial(record) } : {}),
         })),
-        failures: (piConsumption ? failures : sourceFailures).map(({ sourceId, code }) => ({ source: sourceId, code })),
+        failures: (piConsumption ? failures : listedFailures).map(({ sourceId, code }) => ({ source: sourceId, code })),
       };
       checkPreparationSignal(readSignal);
       const active = host.getActiveTools?.();
@@ -871,8 +882,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
 
   function assertRecordSourceAvailable(record: SkillRecord, failures: readonly SourceFailure[] = sourceFailures): void {
     if (record.sourceId) {
-      const currentScope = catalogScopes.get(record.sourceId);
+      const library = record.locator?.type === "shared_skill" ? record.locator.library_id : undefined;
+      const currentScope = catalogScopes.get(JSON.stringify([record.sourceId, library]));
       if (record.sourceScope && currentScope && record.sourceScope !== currentScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", record.sourceId);
+      if (failures === sourceFailures && options.librarySelection && library !== metadataSourceLibraries.get(record.sourceId)) return;
       const unavailable = failures.find(failure => failure.sourceId === record.sourceId && failure.blocking !== false);
       if (unavailable) throw new SourceError(unavailable.code, unavailable.sourceId);
     }
@@ -1065,7 +1078,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (!deferredPiDiscovery || selection) await ready(signal);
     text = invocationText(text);
     if (discoveryError && (deferredPiDiscovery ? selection : /(?:^|\s)(?:\$[^\s]+|\/skill:[^\s]+)/.test(text))) throw discoveryError;
-    const record = selectedNative ?? nativeRecord(text);
+    const candidate = selectedNative ?? nativeRecord(text);
+    const record = candidate && (selectedNative || visibleInLibrary(candidate, ctx)) ? candidate : undefined;
     if (record) await prepare(record, ctx, signal);
     await options.preflightPrompt?.(text, ctx, signal);
     checkPreparationSignal(signal);
@@ -1189,8 +1203,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         if (metadataGeneration !== selectedGeneration || ctx && options.librarySelection && !options.librarySelection.isCurrent(ctx)) return;
         sourceFailures = result.failures;
         metadataLists = result.lists ?? [];
-        for (const list of metadataLists) if (list.scope) catalogScopes.set(list.sourceId, list.scope);
-        for (const record of next) if (record.sourceId && record.sourceScope) catalogScopes.set(record.sourceId, record.sourceScope);
+        metadataLibraryKey = ctx && options.librarySelection?.key(ctx);
+        metadataSourceLibraries = new Map((ctx ? libraryContext(ctx)?.local()?.sources : undefined)?.map(source => [source.id, source.library])
+          ?? (options.config.sources ?? []).filter(source => source.type === "notion").map(source => [source.id, source.library]));
+        for (const list of metadataLists) if (list.scope) catalogScopes.set(JSON.stringify([list.sourceId, metadataSourceLibraries.get(list.sourceId)]), list.scope);
+        for (const record of next) if (record.sourceId && record.sourceScope) catalogScopes.set(JSON.stringify([record.sourceId,
+          record.locator?.type === "shared_skill" ? record.locator.library_id : undefined]), record.sourceScope);
         metadataRetryAt = sourceFailures.length ? Date.now() + notionCatalogRetryGapMs : 0;
         catalogCoverage = new Map((result.lists ?? []).flatMap(list => typeof list.exhaustive === "boolean" ? [[list.sourceId, list.exhaustive]] : []));
         views = result.views ?? [];
@@ -1221,7 +1239,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         }
         // Pi projects this observation at each provider boundary; View switches do not reload the session.
       } finally { release(); }
-    } catch (error) { if (metadataGeneration === selectedGeneration) { discoveryError = error; metadataRetryAt = Date.now() + notionCatalogRetryGapMs; if (ctx) notify(ctx, error); } }
+    } catch (error) { if (metadataGeneration === selectedGeneration && (!ctx || !options.librarySelection || options.librarySelection.isCurrent(ctx))) { discoveryError = error; metadataRetryAt = Date.now() + notionCatalogRetryGapMs; if (ctx) notify(ctx, error); } }
     finally { if (metadataGeneration === selectedGeneration) { metadataPending = false; metadataRefreshSources = new Set(); } }
   }
 
@@ -1513,14 +1531,20 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (event.source !== "interactive" && event.source !== "rpc") return adapter.continuedInput;
     // A known native choice belongs to the observation visible at acceptance.
     // A directory arriving during preparation must not retarget its name.
-    const selectedNative = deferredPiDiscovery ? nativeRecord(text) : undefined;
+    ctx = options.librarySelection?.accept(ctx) ?? ctx;
     // Synchronous ownership closes the second-Enter gap before this hook's first await.
-    ctx = options.librarySelection?.capture(ctx) ?? ctx;
     acceptedContext = ctx;
     const entry = needsPreparation(text) || options.librarySelection && hasEnabledNotionSource(options.config) ? beginPreparation(event, ctx) : undefined;
     const submissionSignal = entry?.controller.signal ?? lifecycleController.signal;
     const submissionGeneration = generation;
     try {
+      // Only local config selection is awaited here. Remote root verification
+      // remains owned by discovery/consumption after this admission boundary.
+      await options.librarySelection?.identity(ctx).catch(() => undefined);
+      checkPreparationSignal(submissionSignal);
+      if (entry) gate.assertCurrent(entry, ctx);
+      const native = deferredPiDiscovery ? nativeRecord(text) : undefined;
+      const selectedNative = native && visibleInLibrary(native, ctx) ? native : undefined;
       if (deferredPiDiscovery) {
         if (!entry) return adapter.continuedInput;
         // Pi expands /skill before it creates an agent operation. Keep the raw
@@ -1799,7 +1823,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     // bytes; it does not renew source authorization or revive a released root.
     const source = options.config.sources?.find(source => source.id === record.sourceId && source.type === "notion" && source.enabled !== false);
     if (!source) throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId!);
-    const currentScope = catalogScopes.get(source.id), freshScopes = observedScopes.get(source.id);
+    const currentScope = catalogScopes.get(JSON.stringify([source.id, record.locator?.type === "shared_skill" ? record.locator.library_id : undefined])), freshScopes = observedScopes.get(source.id);
     if (currentScope !== record.sourceScope) throw new SourceError(currentScope ? "SOURCE_IDENTITY_MISMATCH" : "SOURCE_UNAVAILABLE", source.id);
     if (freshScopes && (freshScopes.size !== 1 || !freshScopes.has(record.sourceScope!))) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
     if (short) assertShortRefSnapshot(short, record);
@@ -2593,7 +2617,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
 
   const initialMetadata = refresh();
   if (adapter.metadataDiscovery !== "deferred") await initialMetadata;
-  return { invalidate() { metadataGeneration++; metadataController.abort(); generation++; lifecycleController.abort(); lifecycleController = new AbortController(); gate.cancel(false); turnPrompts = undefined; }, refresh: (ctx, settings) => refresh(ctx, true, settings?.preserveTurn), activate, prepare, prepareMany, withPreparedPrompt: async (prompt, ctx, build) => {
+  return { turnContext, invalidate() { metadataGeneration++; metadataController.abort(); generation++; lifecycleController.abort(); lifecycleController = new AbortController(); gate.cancel(false); turnPrompts = undefined; }, refresh: (ctx, settings) => refresh(ctx, true, settings?.preserveTurn), activate, prepare, prepareMany, withPreparedPrompt: async (prompt, ctx, build) => {
     const receipt = handoff?.prompts.includes(prompt) ? handoff : undefined;
     const selectedGeneration = generation;
     try {
