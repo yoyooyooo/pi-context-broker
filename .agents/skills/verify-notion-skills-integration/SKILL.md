@@ -67,14 +67,18 @@ build 如需既有网络代理，同样显式按名称传入；代理的既有 C
 `--pass-env NODE_EXTRA_CA_CERTS` 传入绝对路径，不能传 NODE_OPTIONS 或关闭 TLS 校验。
 不默认继承，回执仅记录变量名。
 无远端选择时核对 Notion token 不继承且 sources 为空，不能只看目录名推断隔离。
-launcher 的 entry 记录 scope、设置 PAIRED_NOTION_LIBRARY 并配置 Broker source；parent
-记录 scope、设置 PAIRED_NOTION_PARENT，不自动创建库。CLI target 和私有 wrapper
-原样传递参数；消费命令显式传 --library，管理命令按各自帮助传 flag 或位置参数，
-例如 ctl library init --library ENTRY，ctl library inspect ENTRY。
-launcher 不替 CLI 选择或校验这些参数，裸 list 不会因 launcher entry 而限定到该库。
+launcher 的 `--library ROOT` 记录 root scope、设置 `PAIRED_NOTION_LIBRARY`，
+配置 Broker `source.library`，并在本 run 私有 CLI config 写 `{default_library: ROOT}`。
+`--parent OUTER_PAGE` 只记录授权外层容器并设置 `PAIRED_NOTION_PARENT`，不自动建库；
+无 Library 选择时私有 CLI config 是 `{}`，不能把唯一 Source 当作默认库。
+CLI target 和私有 wrapper 原样传递参数。消费和管理使用 `--library ROOT`，
+例如 `ctl library init --library ROOT` 只读 attach，`ctl library inspect --library ROOT`
+只读核验；`ctl library init --parent OUTER_PAGE` 才创建专属 root 及其直属四表。
+裸 `list` 读取该 run 的 `default_library`；显式 `--library` 覆盖本次选择。
+只有明确 `list --all` 才跨库发现，且不能据此声称 workspace-exhaustive。
 用 NTN_SKILLS_BUILD_ENTRY 指定真实配套 CLI 运行环境测试，核对 direct/wrapper 的消费
 与管理参数；缺少该输入时 real CLI 子测试 skipped，不能把 fixture argv 检查当成通过。
-明确 entry/parent 不缩小 API 权限；同 token 仍受共享远端限流.
+明确 Library root/parent 不缩小 API 权限；同 token 仍受共享远端限流.
 只记录凭据是否存在，不输出内容。结束后复核未改变日用来源与全局配置。
 
 隔离 smoke 不等于自然旅程或正常日用验收。不要为让任务分支通过而放宽
@@ -97,7 +101,7 @@ node scripts/skill-consumption-contract.mjs check-gates
 ```
 
 `CONTEXT_BROKER_GRAPH_CORE` 让完整 manifest 负例经过真实 SDK decoder；未设时会 skip，不能算通过。
-只接受 SDK v2 和完整必需 capability。构建检查 runtime manifest 与实际 CLI/SDK bundle hash。
+只接受 SDK v3、SKILL_REF_VERSION=2 和完整必需 capability。构建检查 runtime manifest 与实际 CLI/SDK bundle hash。
 子进程删除 `NTN_SKILLS_DEV_ROOT`，不能赋空值；不得继承开发 shim 绕过所选包。
 
 ## 2. 按变化做当前消费检查
@@ -113,6 +117,12 @@ bun test packages/context-broker/scripts/notion-source-sdk.test.ts packages/cont
 发现阶段只取目录，按实际选择获取完整正文/资源；不截断正文或省略文件来减少请求。
 普通消费恒为零语义写入。旧 `readOnly` 参数应在 I/O 前拒绝，不能恢复隐藏写入分支。
 保留缓存年龄、凭据/Store 隔离、取消和迟到结果的 guard；失败不能延长 TTL 或发布不完整目录。
+`selectLibrary` 只读取本地配置，须在零 Notion I/O 下捕获本轮 root；`resolveLibrary`
+另行检查真实 root、完整 children、四 DB/DS 的 parent/schema/relations。fixture 必须
+独立声明这些物理事实，不能用待测 descriptor 反推。root children 读取仍计实际 body
+请求；不能将它改标 metadata 掩盖请求，也不能因此放开 Skill/File 正文读取。
+Broker 每次 input 重读本地默认，已接纳 turn、固定 ref 和 CLI 写后回执保留原绑定。
+显式 `$name@source` 可选择其他已配置 Source；无 `@source` 名称只查当前默认库。
 只有相关语义改变才扩到现有对应测试；完整 CI 使用 `bun run check:broker`，不要重复跑相同范围。
 
 ## 3. 验证实际安装包

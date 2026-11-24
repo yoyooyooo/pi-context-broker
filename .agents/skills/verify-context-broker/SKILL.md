@@ -7,7 +7,7 @@ description: "验证当前 Context Broker 的 Pi 注入、目录与资源消费�
 
 ## 选择当前入口
 
-从 [功能地图](features/README.md) 选择受影响的范围，复用已有测试和实际宿主助手。当前只有 `next` 协议：远端身份是 `shared_skill`，消费经同包 SDK v2。`source.command`、旧 CLI 正文消费和 export 回退都不属于有效验证输入。
+从 [功能地图](features/README.md) 选择受影响的范围，复用已有测试和实际宿主助手。当前只有 `next` 协议：公开引用使用 `skill://`，Library 身份是 canonical root page UUID，消费经同包 SDK v3。`source.command`、旧 CLI 正文消费和 export 回退都不属于有效验证输入。
 
 [验证交接表](../../../docs/verification-routing.md) 指定 CLI 管理、消费、Source 接手与 Broker 的职责。本文负责 Broker 实现与集成边界；自然用户旅程与 Agent 认知交给 [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md)，作者正文和 Notion 多表治理交给 CLI 原有领域 Skill。
 
