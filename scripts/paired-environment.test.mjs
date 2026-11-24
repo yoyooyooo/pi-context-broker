@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { test } from 'node:test';
 import {
-  checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, seedBunCache, validatePiArguments, verifySelectedCliPair,
+  checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, seedBunCache, seedNpmCache, validatePiArguments, verifySelectedCliPair,
 } from './paired-environment.mjs';
 import { fileInventory, selectedCliInputs } from './next-build-identity.mjs';
 
@@ -140,12 +140,14 @@ test('paired environments isolate writable state and detect artifact changes', a
     assert.throws(() => parseArgs(['check', '--root', 'relative']), /absolute/);
     assert.throws(() => parseArgs(['build', '--root', retained, '--', 'unexpected']), /Only run/);
     assert.deepEqual(parseArgs(['build', '--root', retained, '--pass-env', 'HTTPS_PROXY'])['pass-env'], ['HTTPS_PROXY']);
-    assert.equal(parseArgs(['build', '--root', retained])['bun-cache-from'], undefined);
-    assert.throws(() => parseArgs(['build', '--root', retained, '--bun-cache-from', retained]), /together/);
-    assert.throws(() => parseArgs(['build', '--root', retained, '--bun-cache-sha256', 'a'.repeat(64)]), /together/);
-    assert.throws(() => parseArgs(['build', '--root', retained, '--bun-cache-from', 'relative', '--bun-cache-sha256', 'a'.repeat(64)]), /absolute/);
-    assert.throws(() => parseArgs(['build', '--root', retained, '--bun-cache-from', retained, '--bun-cache-sha256', 'bad']), /SHA-256/);
-    assert.equal(parseArgs(['build', '--root', retained, '--bun-cache-from', retained, '--bun-cache-sha256', 'a'.repeat(64)])['bun-cache-sha256'], 'a'.repeat(64));
+    for (const kind of ['bun', 'npm']) {
+      assert.equal(parseArgs(['build', '--root', retained])[kind + '-cache-from'], undefined);
+      assert.throws(() => parseArgs(['build', '--root', retained, '--' + kind + '-cache-from', retained]), /together/);
+      assert.throws(() => parseArgs(['build', '--root', retained, '--' + kind + '-cache-sha256', 'a'.repeat(64)]), /together/);
+      assert.throws(() => parseArgs(['build', '--root', retained, '--' + kind + '-cache-from', 'relative', '--' + kind + '-cache-sha256', 'a'.repeat(64)]), /absolute/);
+      assert.throws(() => parseArgs(['build', '--root', retained, '--' + kind + '-cache-from', retained, '--' + kind + '-cache-sha256', 'bad']), /SHA-256/);
+      assert.equal(parseArgs(['build', '--root', retained, '--' + kind + '-cache-from', retained, '--' + kind + '-cache-sha256', 'a'.repeat(64)])[kind + '-cache-sha256'], 'a'.repeat(64));
+    }
   });
 
   await t.test('inventory detects executable/content changes and rejects external links', async () => {
@@ -275,11 +277,11 @@ test('paired environments isolate writable state and detect artifact changes', a
     }
   });
 
-  await t.test('build checks bind the cache seed receipt without depending on a retained source cache', async () => {
-    const buildId = 'seed-receipt', root = await sealedBuild(rootA, buildId), receipt = join(root, 'bun-cache-seed.json');
+  for (const kind of ['bun', 'npm']) await t.test(kind + ' cache seed receipt remains bound without depending on the retained source cache', async () => {
+    const buildId = kind + '-seed-receipt', root = await sealedBuild(rootA, buildId), receipt = join(root, kind + '-cache-seed.json');
     await writeJson(receipt, { source: { cache_root: '/unavailable/retired-build/cache' }, validation_scope: 'Fixture receipt' });
     const build = await readJson(join(root, 'build.json'));
-    build.bun_cache_seed = { path: receipt, sha256: (await inventory(root)).files.find(file => file.path === 'bun-cache-seed.json').sha256 };
+    build[kind + '_cache_seed'] = { path: receipt, sha256: (await inventory(root)).files.find(file => file.path === kind + '-cache-seed.json').sha256 };
     await writeJson(join(root, 'build.json'), build);
     assert.equal((await checkEnvironment({ root: rootA, build: buildId })).status, 'passed');
     await writeJson(receipt, { source: { cache_root: '/changed-source/cache' } });
@@ -706,7 +708,8 @@ process.exit(0);`;
   });
 });
 
-test('Bun cache seeding copies only pinned idle local inputs into an independent cache', async t => {
+for (const kind of ['bun', 'npm']) test(kind + ' cache seeding copies only pinned idle local inputs into an independent cache', async t => {
+  const seed = kind === 'bun' ? seedBunCache : seedNpmCache;
   const retained = await realpath(await mkdtemp(join(tmpdir(), 'paired-cache-test-')));
   t.diagnostic('Retained cache fixtures (no permanent deletion): ' + retained);
   async function fixture(name, live = false) {
@@ -719,7 +722,7 @@ test('Bun cache seeding copies only pinned idle local inputs into an independent
         await writeFile(join(build, 'source', role, 'bun.lock'), role + (build === target && role === 'broker' ? '-new-lock\n' : '-same-lock\n'));
       }
     }
-    const cache = join(source, 'build-state/cache/bun'), destination = join(target, 'build-state/cache/bun');
+    const cache = join(source, 'build-state/cache', kind), destination = join(target, 'build-state/cache', kind);
     await mkdir(join(cache, 'package@1@@@1/node_modules/nested'), { recursive: true });
     await mkdir(join(cache, 'package'));
     await writeFile(join(cache, 'package@1@@@1/index.js'), 'local cache bytes\n', { mode: 0o700 });
@@ -736,8 +739,9 @@ test('Bun cache seeding copies only pinned idle local inputs into an independent
 
   await t.test('absolute internal aliases relocate; nested node_modules and executable bytes remain independent', async () => {
     const f = await fixture('copy');
-    const ref = await seedBunCache(f.source, f.target, f.selected.sha256), receipt = await readJson(ref.path);
+    const ref = await seed(f.source, f.target, f.selected.sha256), receipt = await readJson(ref.path);
     const copied = await inventory(f.destination);
+    assert.equal(receipt.kind, 'paired-' + kind + '-cache-seed');
     assert.equal(receipt.source.inventory_sha256, f.selected.sha256);
     assert.equal(receipt.target.inventory_sha256, copied.sha256);
     assert.equal(receipt.normalized_source_sha256, copied.sha256);
@@ -754,7 +758,7 @@ test('Bun cache seeding copies only pinned idle local inputs into an independent
     const original = join(f.cache, 'package@1@@@1/index.js'), duplicate = join(f.destination, 'package@1@@@1/index.js');
     assert.notEqual((await stat(original)).ino, (await stat(duplicate)).ino);
     assert.equal((await stat(duplicate)).mode & 0o111, 0o100);
-    await assert.rejects(seedBunCache(f.source, f.target, f.selected.sha256), /EEXIST/);
+    await assert.rejects(seed(f.source, f.target, f.selected.sha256), /EEXIST/);
     await writeFile(duplicate, 'private changed bytes\n'); await chmod(duplicate, 0o600);
     assert.equal(await readFile(original, 'utf8'), 'local cache bytes\n');
     assert.deepEqual(await inventory(f.cache), f.selected);
@@ -762,21 +766,21 @@ test('Bun cache seeding copies only pinned idle local inputs into an independent
 
   await t.test('an incorrect pinned hash fails before reserving the target cache', async () => {
     const f = await fixture('wrong-hash');
-    await assert.rejects(seedBunCache(f.source, f.target, '0'.repeat(64)), /selected SHA-256/);
+    await assert.rejects(seed(f.source, f.target, '0'.repeat(64)), /selected SHA-256/);
     await assert.rejects(stat(f.destination), { code: 'ENOENT' });
   });
 
   await t.test('cache links outside the selected cache are refused', async () => {
     const f = await fixture('external-link');
     await symlink(join(f.source, 'source/cli/bun.lock'), join(f.cache, 'outside'));
-    await assert.rejects(seedBunCache(f.source, f.target, f.selected.sha256), /External symlink/);
+    await assert.rejects(seed(f.source, f.target, f.selected.sha256), /External symlink/);
     await assert.rejects(stat(f.destination), { code: 'ENOENT' });
   });
 
   await t.test('a terminal marker cannot hide a still-running recorded writer', async () => {
     const f = await fixture('active-writer', true);
     try {
-      await assert.rejects(seedBunCache(f.source, f.target, f.selected.sha256), /active recorded process group/);
+      await assert.rejects(seed(f.source, f.target, f.selected.sha256), /active recorded process group/);
       await assert.rejects(stat(f.destination), { code: 'ENOENT' });
     } finally {
       try { process.kill(-f.child.pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
@@ -787,10 +791,10 @@ test('Bun cache seeding copies only pinned idle local inputs into an independent
   await t.test('unfinished sources, unrelated directories and terminal targets are refused', async () => {
     const f = await fixture('boundaries');
     await rename(join(f.source, 'failure.json'), join(f.source, 'retained-failure.json'));
-    await assert.rejects(seedBunCache(f.source, f.target, f.selected.sha256), /terminal build/);
-    await assert.rejects(seedBunCache(f.cache, f.target, f.selected.sha256), /paired build/);
+    await assert.rejects(seed(f.source, f.target, f.selected.sha256), /terminal build/);
+    await assert.rejects(seed(f.cache, f.target, f.selected.sha256), /paired build/);
     await writeJson(join(f.target, 'failure.json'), { status: 'failed' });
-    await assert.rejects(seedBunCache(f.source, f.target, f.selected.sha256), /terminal build/);
+    await assert.rejects(seed(f.source, f.target, f.selected.sha256), /terminal build/);
     await assert.rejects(stat(f.destination), { code: 'ENOENT' });
   });
 });
