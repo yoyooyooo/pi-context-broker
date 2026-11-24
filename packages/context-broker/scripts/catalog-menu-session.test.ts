@@ -79,9 +79,8 @@ try {
   closeSession = () => within(emit("session_shutdown", next), "session cleanup");
   await contextBroker(api);
   assert.ok(metadataTool);
-  // The public tool awaits initial metadata readiness without inventing a session.
-  const bootstrap = await metadataTool.execute("bootstrap-observation", {}, undefined, undefined, { cwd: root });
-  assert.equal(JSON.parse(bootstrap.content[0]!.text).count, 0);
+  // Registration alone performs no selection or directory I/O. An explicit tool
+  // invocation now selects the current Library, so start the real session first.
   assert.deepEqual(fixture.calls, [], "Pi registration must not query a directory before its first session context");
   await emit("session_start", first);
   await within(refreshEntered.promise, "SDK catalogue refresh");

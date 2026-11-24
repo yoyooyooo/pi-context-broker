@@ -6,6 +6,7 @@ import { currentNotionFixture } from "./fixtures/current-notion-source";
 import { normalizeSources } from "../src/sources";
 import { sharedSkillId, validSharedRecordId, validSharedSkillId } from "../src/shared-skill-identity";
 import { preciseRecordToken, matchesPreciseRecordToken } from "../src/discovery-records";
+import { createLibrarySelection } from "../src/library-selection";
 import type { ContentRecord, ExtensionAPI, ExtensionContext, SkillRecord, SourceConfig } from "../src/types";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
@@ -103,6 +104,43 @@ test("Profile and explicit View preserve their chosen authority and never contam
   await expect(f.boundary.discoverNotionSource(source, f.root)).rejects.toMatchObject({ code: "SOURCE_RESPONSE_INVALID" });
 });
 
+test("same-named Profiles in an implicit Source stay bound to each admitted Library", async () => {
+  const first = await currentNotionFixture("skill", { name: "same-name" });
+  const second = await currentNotionFixture("skill", { identity: 1, name: "same-name" });
+  let defaultRoot = first.descriptor.library_id, denied: string | undefined;
+  const profile = (fixture: typeof first, viewId: string) => ({ ...fixture.state.catalog,
+    capability_directory: true, view_selection: "explicit", view: { id: viewId, name: "Work", type: "table",
+      database_id: fixture.descriptor.skills.database_id, data_source_id: fixture.descriptor.skills.data_source_id,
+      url: "https://notion.so/" + fixture.descriptor.skills.database_id + "?v=" + viewId },
+    coverage: { ...fixture.state.catalog.coverage, method: "explicit_view" },
+    profile: { library_id: fixture.descriptor.library_id, profile_id: "work", fingerprint: "c".repeat(64),
+      selection: "profile", source: "notion", freshness: fixture.state.catalog.freshness } });
+  first.state.list = options => {
+    if (options.library === second.descriptor.library_id && denied) throw Object.assign(new Error(denied), { code: denied });
+    return options.library === first.descriptor.library_id ? profile(first, uuid(1000)) : profile(second, uuid(1001));
+  };
+  const owner = createLibrarySelection({ sources: [{ ...first.source, library: undefined, profile_id: "work" }] },
+    async options => options.library === first.descriptor.library_id ? first.descriptor : second.descriptor,
+    async options => options.library ?? defaultRoot);
+  const a = owner.accept({ cwd: first.root }), selectedA = (await owner.selected(a))!;
+  const directoryA = await first.boundary.discoverNotionSource(selectedA.source, first.root, { defaultView: true });
+  defaultRoot = second.descriptor.library_id;
+  const b = owner.accept({ cwd: first.root }), selectedB = (await owner.selected(b))!;
+  const directoryB = await first.boundary.discoverNotionSource(selectedB.source, first.root, { defaultView: true });
+  expect(directoryA[0]?.locator).toMatchObject({ library_id: first.descriptor.library_id, skill_id: "entry" });
+  expect(directoryB[0]?.locator).toMatchObject({ library_id: second.descriptor.library_id, skill_id: "entry" });
+  expect(directoryA[0]?.id).not.toBe(directoryB[0]?.id);
+  expect(owner.key(a)).not.toBe(owner.key(b));
+  expect((await owner.selected(a))?.source.library).toBe(first.descriptor.library_id);
+  for (const code of ["SHARED_PROFILE_NOT_FOUND", "SHARED_PROFILE_DISABLED"]) {
+    denied = code;
+    await expect(first.boundary.discoverNotionSource(selectedB.source, first.root, { defaultView: true })).rejects.toMatchObject({ code });
+  }
+  expect(first.calls.map(call => call.options.library)).toEqual([
+    first.descriptor.library_id, second.descriptor.library_id, second.descriptor.library_id, second.descriptor.library_id]);
+  expect(first.calls.every(call => call.operation === "list" && call.options.profile === "work")).toBe(true);
+});
+
 test("disabled records are hidden while duplicate logical or physical identities reject the entire source", async () => {
   const f = await currentNotionFixture();
   f.state.catalog.records = [{ ...f.record, enabled: false }];
@@ -174,7 +212,8 @@ test("shared identity encoding and exact selectors preserve the logical and phys
   const record = hostRecord(), precise = preciseRecordToken(record);
   expect(precise).toContain(page.replaceAll("-", "")); expect(matchesPreciseRecordToken(precise, record)).toBe(true);
   expect(normalizeSources([{ type: "notion", id: "shared", library: uuid(99), profile_id: "work" }])?.[0]).toMatchObject({ profile_id: "work" });
-  for (const raw of [{ type: "notion", id: "shared", profile_id: "work" }, { type: "notion", id: "shared", library: uuid(99), profile_id: "../unsafe" }])
+  expect(normalizeSources([{ type: "notion", id: "shared", profile_id: "work" }])?.[0]).toMatchObject({ profile_id: "work", library: undefined });
+  for (const raw of [{ type: "notion", id: "shared", profile_id: "../unsafe" }, { type: "notion", id: "shared", library: uuid(99), profile_id: "../unsafe" }])
     expect(() => normalizeSources([raw])).toThrow();
 });
 
@@ -271,7 +310,7 @@ test("a failed current operation dirties its directory without claiming successf
 });
 
 test("a configured display name or old publication receipt never binds a current import", async () => {
-  expect(await observeWrite(currentImportResult(), { entry: "entry" })).toEqual([]);
+  expect(await observeWrite(currentImportResult(), { library: "entry" })).toEqual([]);
   expect(await observeWrite({ ok: true, verified: true, operation: "apply", status: "applied", record: sharedRecord(), scope,
     apply_operation_id: "skill-apply-" + "e".repeat(64) + "." + "f".repeat(64), changes: { files: ["SKILL.md"], removed: [] } })).toEqual([]);
 });

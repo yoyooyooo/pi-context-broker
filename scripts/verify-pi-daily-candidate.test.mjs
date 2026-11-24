@@ -106,11 +106,11 @@ test('candidate source preserves local discovery and refuses ambiguous daily sou
   assert.throws(() => candidateSourceConfig({ ...original, sources: [{ ...original.sources[1], command: ['fake'] }] }, input));
 });
 
-const publicCli = { mode: 'original-create-recovery', operationId: 'original-operation', entry: { path: '/frozen/ntn-skills.js' }, library: 'owned-library', target: 'original-page',
-  originalPlan: { path: '/evidence/original-plan.json' }, ownerRef: 'skill://original-owner?library=owned-library', outputRoot: '/evidence/agent-output',
+const publicCli = { mode: 'original-create-recovery', operationId: 'original-operation', entry: { path: '/frozen/ntn-skills.js' }, library: '76ecd927-8be5-5526-b4d7-18906713e206', target: 'original-page',
+  originalPlan: { path: '/evidence/original-plan.json' }, ownerRef: 'skill://original-owner?library=76ecd927-8be5-5526-b4d7-18906713e206', outputRoot: '/evidence/agent-output',
   inputFiles: ['/evidence/original-plan.json', '/evidence/original-error.json'] };
 const cliCommand = 'node /frozen/ntn-skills.js';
-const reviewCommand = cliCommand + ' ctl library create recovery review /evidence/original-plan.json --library owned-library --target original-page --output /evidence/agent-output/review.json';
+const reviewCommand = cliCommand + ' ctl library create recovery review /evidence/original-plan.json --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page --output /evidence/agent-output/review.json';
 
 test('public CLI task permits help and only the bound original recovery and strict reads', () => {
   assert.equal(reviewCandidateCliCommand(cliCommand + ' --help', publicCli).kind, 'help');
@@ -119,19 +119,19 @@ test('public CLI task permits help and only the bound original recovery and stri
   assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl operation show original-operation', publicCli).kind, 'operation-show');
   assert.equal(reviewCandidateCliCommand(reviewCommand, publicCli).kind, 'review');
   assert.equal(reviewCandidateCliCommand(reviewCommand.replace(' /evidence/original-plan.json', '') + ' /evidence/original-plan.json', publicCli).kind, 'review');
-  const apply = cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --library owned-library --review /evidence/agent-output/review.json --review-id create-restore-' + 'a'.repeat(64);
+  const apply = cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --library 76ecd927-8be5-5526-b4d7-18906713e206 --review /evidence/agent-output/review.json --review-id create-restore-' + 'a'.repeat(64);
   assert.equal(reviewCandidateCliCommand(apply + ' --dry-run', publicCli).dryRun, true);
   assert.equal(reviewCandidateCliCommand(apply, publicCli).dryRun, false);
-  assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl library create recovery reconcile --library owned-library --target original-page /evidence/original-plan.json', publicCli).kind, 'reconcile');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl library create recovery reconcile --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page /evidence/original-plan.json', publicCli).kind, 'reconcile');
   assert.equal(reviewCandidateCliCommand(reviewCommand + ' --max-requests 100 --duration-ms 60000', publicCli).kind, 'review');
   const fixed = skillFileRef(publicCli.ownerRef, 'references/policy.md', 's_' + 'a'.repeat(64));
   const main = skillFileRef(publicCli.ownerRef, 'SKILL.md', 's_' + 'a'.repeat(64));
-  const read = cliCommand + " read '" + fixed + "' --library owned-library --read-only --json --metrics";
+  const read = cliCommand + " read '" + fixed + "' --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics";
   assert.equal(reviewCandidateCliCommand(read, publicCli).kind, 'read');
   assert.equal(reviewCandidateCliCommand(read, publicCli).argv[3], fixed);
-  assert.equal(reviewCandidateCliCommand(cliCommand + ' read --json --metrics --read-only --library owned-library --path references/policy.md original-page', publicCli).kind, 'read');
-  assert.equal(reviewCandidateCliCommand(cliCommand + " read references/policy.md --from '" + main + "' --library owned-library --read-only --json --metrics", publicCli).kind, 'read');
-  assert.equal(reviewCandidateCliCommand(cliCommand + " files '" + main + "' --library owned-library --metrics", publicCli).kind, 'files');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' read --json --metrics --read-only --library 76ecd927-8be5-5526-b4d7-18906713e206 --path references/policy.md original-page', publicCli).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + " read references/policy.md --from '" + main + "' --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics", publicCli).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + " files '" + main + "' --library 76ecd927-8be5-5526-b4d7-18906713e206 --metrics", publicCli).kind, 'files');
 });
 
 test('public CLI scope rejects shell composition, replacement plans, owners and unbounded output', () => {
@@ -140,34 +140,34 @@ test('public CLI scope rejects shell composition, replacement plans, owners and 
     'python private-store.py', reviewCommand.replace('/frozen/ntn-skills.js', '/other/cli.js'),
     reviewCommand.replace('create recovery review /evidence/original-plan.json', 'create /replacement'),
     reviewCommand.replace('/evidence/original-plan.json', '/evidence/replacement-plan.json'),
-    reviewCommand.replace('--library owned-library', '--library another-library'),
+    reviewCommand.replace('--library 76ecd927-8be5-5526-b4d7-18906713e206', '--library 8b308dab-2daf-5330-922f-812244ff16f9'),
     reviewCommand.replace('--target original-page', '--target replacement-page'),
     reviewCommand.replace('/evidence/agent-output/review.json', '/evidence/original-plan.json'),
     reviewCommand.replace('/evidence/agent-output/review.json', '/evidence/agent-output/../outside.json'),
     cliCommand + ' --help > /tmp/overwrite', cliCommand + ' --help$(id)',
     cliCommand + ' ctl operation show another-operation', cliCommand + ' ctl operation resume original-operation',
     reviewCommand + ' --json --metrics', reviewCommand + ' --dry-run', reviewCommand + ' --max-requests 2001',
-    cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --library owned-library',
-    cliCommand + ' ctl library create recovery reconcile /evidence/original-plan.json --library owned-library --target original-page --output /evidence/agent-output/unsupported.json',
-    cliCommand + ' read original-page --library owned-library --json --metrics',
-    cliCommand + ' read another-page --library owned-library --read-only --json --metrics',
-    cliCommand + " read references/policy.md --from skill://another-owner/SKILL.md --library owned-library --read-only --json --metrics",
-    cliCommand + ' read original-page --path ../outside --library owned-library --read-only --json --metrics',
-    cliCommand + ' files original-page --library owned-library --metrics',
-    cliCommand + " files 'skill://another-owner/SKILL.md?snapshot=s_" + 'a'.repeat(64) + "' --library owned-library --metrics",
+    cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' ctl library create recovery reconcile /evidence/original-plan.json --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page --output /evidence/agent-output/unsupported.json',
+    cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --json --metrics',
+    cliCommand + ' read another-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics',
+    cliCommand + " read references/policy.md --from skill://another-owner/SKILL.md --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics",
+    cliCommand + ' read original-page --path ../outside --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics',
+    cliCommand + ' files original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --metrics',
+    cliCommand + " files 'skill://another-owner/SKILL.md?snapshot=s_" + 'a'.repeat(64) + "' --library 76ecd927-8be5-5526-b4d7-18906713e206 --metrics",
   ]) assert.throws(() => reviewCandidateCliCommand(command, publicCli), command);
 });
 
 test('public author update permits one exact Description and rejects every extra mutation', () => {
   const policy = { ...publicCli, mode: 'owned-description-update', description: 'Verified shared author workflow.' };
-  const command = cliCommand + ' update original-page --library owned-library --description "Verified shared author workflow."';
+  const command = cliCommand + ' update original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --description "Verified shared author workflow."';
   assert.equal(reviewCandidateCliCommand(command + ' --dry-run', policy).dryRun, true);
   assert.equal(reviewCandidateCliCommand(command, policy).kind, 'update');
   assert.equal(reviewCandidateCliCommand(command.replace(' original-page', '') + ' original-page', policy).kind, 'update');
   assert.equal(reviewCandidateCliCommand(cliCommand + ' schema update', policy).kind, 'schema');
-  assert.equal(reviewCandidateCliCommand(cliCommand + ' read original-page --library owned-library --json --metrics --read-only', policy).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --json --metrics --read-only', policy).kind, 'read');
   for (const value of [command.replace('original-page', 'another-page'), command.replace('Verified shared', 'Unreviewed'),
-    command.replace('owned-library', 'another-library'), command + ' --enabled true', command + ' --default-context', command + ' --clear-requires',
+    command.replace('76ecd927-8be5-5526-b4d7-18906713e206', '8b308dab-2daf-5330-922f-812244ff16f9'), command + ' --enabled true', command + ' --default-context', command + ' --clear-requires',
     command + ' --name replacement', command + ' --json --metrics', command + '; node private.js', reviewCommand,
     cliCommand + ' ctl operation show original-operation']) assert.throws(() => reviewCandidateCliCommand(value, policy), value);
   assert.throws(() => reviewCandidateCliCommand(command, publicCli));
@@ -209,7 +209,7 @@ const maintenanceCli = { ...publicCli, mode: 'owned-maintenance-readonly', sourc
   builtinFiles: ['/frozen/builtin-skills/ntn-skills-maintain/SKILL.md', '/frozen/builtin-skills/ntn-skills-maintain/references/operations.md'] };
 const maintenanceBranch = () => {
   const identity = { source: 'notion', id: publicCli.ownerRef, ref: publicCli.ownerRef,
-    locator: { type: 'shared_skill', page_id: 'original-page', database_id: 'owned-library' } };
+    locator: { type: 'shared_skill', page_id: 'original-page', library_id: '76ecd927-8be5-5526-b4d7-18906713e206', database_id: '33333333-3333-4333-8333-333333333333' } };
   return [
     { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: 'sr:C' + 'A'.repeat(22), target: { kind: 'candidate', identity } } },
     { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: 'sr:S' + 'A'.repeat(22), target: { kind: 'selected', identity,
@@ -222,11 +222,11 @@ const maintenanceBranch = () => {
 test('read-only maintenance uses the scoped public audit, original operation and authoring read', () => {
   for (const command of [
     cliCommand + ' --help', cliCommand + ' schema ctl audit run',
-    cliCommand + ' ctl audit run --library owned-library --target original-page --depth history --max-requests 80 --duration-ms 60000 --max-bytes 8388608',
-    cliCommand + ' ctl operation show original-operation --target original-page --library owned-library',
-    cliCommand + ' ctl operation reconcile original-operation --library owned-library --target original-page',
-    cliCommand + ' read original-page --library owned-library --authoring --read-only --json --metrics',
-    cliCommand + " read '" + skillFileRef(publicCli.ownerRef, 'references/one.md', 's_' + 'a'.repeat(64)) + "' --library owned-library --read-only --json --metrics",
+    cliCommand + ' ctl audit run --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page --depth history --max-requests 80 --duration-ms 60000 --max-bytes 8388608',
+    cliCommand + ' ctl operation show original-operation --target original-page --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' ctl operation reconcile original-operation --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page',
+    cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --authoring --read-only --json --metrics',
+    cliCommand + " read '" + skillFileRef(publicCli.ownerRef, 'references/one.md', 's_' + 'a'.repeat(64)) + "' --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics",
   ]) assert.ok(reviewCandidateCliCommand(command, maintenanceCli).kind, command);
   assert.equal(reviewCandidateCliCommand('/frozen/node /frozen/ntn-skills.js --help', maintenanceCli).kind, 'help');
   assert.throws(() => reviewCandidateCliCommand('/other/node /frozen/ntn-skills.js --help', maintenanceCli));
@@ -235,18 +235,18 @@ test('read-only maintenance uses the scoped public audit, original operation and
 
 test('read-only maintenance rejects another owner, library, operation, mutations and unscoped audits', () => {
   for (const command of [
-    cliCommand + ' ctl audit run --library another-library --target original-page',
-    cliCommand + ' ctl audit run --library owned-library --target another-page',
-    cliCommand + ' ctl audit run --library owned-library --all',
-    cliCommand + ' ctl audit run --library owned-library --target original-page --max-requests 501',
-    cliCommand + ' ctl operation show another-operation --target original-page --library owned-library',
-    cliCommand + ' ctl operation reconcile original-operation --target another-page --library owned-library',
-    cliCommand + ' ctl operation resume original-operation --target original-page --library owned-library',
-    cliCommand + ' read original-page --library owned-library --authoring --json --metrics',
-    cliCommand + ' read another-page --library owned-library --read-only --json --metrics',
-    cliCommand + ' update original-page --library owned-library --enabled true',
-    cliCommand + ' adopt original-page --library owned-library',
-    cliCommand + ' apply original-page --library owned-library --input /tmp/tree',
+    cliCommand + ' ctl audit run --library 8b308dab-2daf-5330-922f-812244ff16f9 --target original-page',
+    cliCommand + ' ctl audit run --library 76ecd927-8be5-5526-b4d7-18906713e206 --target another-page',
+    cliCommand + ' ctl audit run --library 76ecd927-8be5-5526-b4d7-18906713e206 --all',
+    cliCommand + ' ctl audit run --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page --max-requests 501',
+    cliCommand + ' ctl operation show another-operation --target original-page --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' ctl operation reconcile original-operation --target another-page --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' ctl operation resume original-operation --target original-page --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --authoring --json --metrics',
+    cliCommand + ' read another-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics',
+    cliCommand + ' update original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --enabled true',
+    cliCommand + ' adopt original-page --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' apply original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --input /tmp/tree',
     cliCommand + ' --help; node /private/store.js',
   ]) assert.throws(() => reviewCandidateCliCommand(command, maintenanceCli), command);
 });
@@ -274,29 +274,29 @@ test('maintenance public builtin discovery admits the installed local interface 
 test('an onboarding inspection reads the setup reference and validates only its existing library', () => {
   for (const suffix of [
     'ctl builtin read notion/ntn-skills-maintain --path references/setup.md',
-    'ctl library init --library owned-library',
-    'ctl library inspect owned-library',
-    'ctl library sources list --library owned-library',
-    'list --library owned-library --refresh --json',
-    'list --library owned-library --query original --limit 10 --json',
+    'ctl library init --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library inspect 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library sources list --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    'list --library 76ecd927-8be5-5526-b4d7-18906713e206 --refresh --json',
+    'list --library 76ecd927-8be5-5526-b4d7-18906713e206 --query original --limit 10 --json',
   ]) assert.ok(reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli).kind, suffix);
   for (const suffix of [
-    'ctl library init --parent owned-page', 'ctl library init --library another-library',
-    'ctl library init --library owned-library --parent owned-page',
-    'ctl library sources init --library owned-library',
-    'ctl library sources list --library another-library',
-    'ctl library inspect another-library', 'list --json',
-    'list --library another-library --json', 'list --library owned-library --limit 1000 --json',
-    'ctl library register skills --library owned-library',
+    'ctl library init --parent owned-page', 'ctl library init --library 8b308dab-2daf-5330-922f-812244ff16f9',
+    'ctl library init --library 76ecd927-8be5-5526-b4d7-18906713e206 --parent owned-page',
+    'ctl library sources init --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library sources list --library 8b308dab-2daf-5330-922f-812244ff16f9',
+    'ctl library inspect 8b308dab-2daf-5330-922f-812244ff16f9', 'list --json',
+    'list --library 8b308dab-2daf-5330-922f-812244ff16f9 --json', 'list --library 76ecd927-8be5-5526-b4d7-18906713e206 --limit 1000 --json',
+    'ctl library register skills --library 76ecd927-8be5-5526-b4d7-18906713e206',
   ]) assert.throws(() => reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli), suffix);
 });
 
 test('read-only onboarding uses public JSON without turning optional metrics into an authorization rule', () => {
-  const command = cliCommand + ' read original-page --library owned-library --read-only --json';
+  const command = cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json';
   for (const policy of [maintenanceCli, publicCli]) {
     assert.equal(reviewCandidateCliCommand(command, policy).kind, 'read');
     assert.equal(reviewCandidateCliCommand(command + ' --metrics', policy).kind, 'read');
-    const files = cliCommand + " files '" + pinSkillRef(policy.ownerRef, 's_' + 'a'.repeat(64)) + "' --library owned-library";
+    const files = cliCommand + " files '" + pinSkillRef(policy.ownerRef, 's_' + 'a'.repeat(64)) + "' --library 76ecd927-8be5-5526-b4d7-18906713e206";
     assert.equal(reviewCandidateCliCommand(files, policy).kind, 'files');
     assert.equal(reviewCandidateCliCommand(files + ' --metrics', policy).kind, 'files');
   }
@@ -306,9 +306,9 @@ test('read-only onboarding uses public JSON without turning optional metrics int
 });
 
 const auditRunId = 'audit-33a07e13-071b-4071-a6b4-d76c92834a5a';
-const auditCommand = cliCommand + ' ctl audit run --library owned-library --target original-page --depth history';
+const auditCommand = cliCommand + ' ctl audit run --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page --depth history';
 const auditReportFixture = () => ({ ok: true, report_version: 1, rules_version: 'resource-audit-v3', run_id: auditRunId,
-  entry_id: 'owned-library', selector: { kind: 'skill', page_id: 'original-page' }, inspection_scope: 'reachable_target',
+  library_id: '76ecd927-8be5-5526-b4d7-18906713e206', selector: { kind: 'skill', page_id: 'original-page' }, inspection_scope: 'reachable_target',
   execution: 'completed', coverage: 'partial', severity: { error: 0, warning: 1, info: 0 }, remote_writes: 0,
   next: { state: 'inspect_retained_report', argv: ['ntn-skills', 'ctl', 'audit', 'report', auditRunId], read_only: true } });
 const auditGuard = () => {
@@ -363,7 +363,7 @@ test('reports cannot be preseeded or escape the actual session audit and no repo
     content: [{ type: 'text', text: JSON.stringify(auditReportFixture()) + '\n\nCommand exited with code 4' }] });
   assert.equal(value.call(command, 'bound-report'), undefined);
   assert.deepEqual(value.reads, []);
-  for (const suffix of [' --library owned-library', ' --output /owned/report.json', ' --json', ' extra'])
+  for (const suffix of [' --library 76ecd927-8be5-5526-b4d7-18906713e206', ' --output /owned/report.json', ' --json', ' extra'])
     assert.equal(value.call(command + suffix, 'flag-' + suffix).block, true);
   assert.equal(value.call(cliCommand + ' ctl audit report audit-00000000-0000-0000-0000-000000000000', 'foreign-run').block, true);
   assert.equal(value.call(cliCommand + ' ctl audit resume ' + auditRunId, 'resume').block, true);
@@ -376,7 +376,7 @@ test('incomplete, unregistered, foreign or mutating audit evidence never grants 
   { registeredPath: spill, readFile() { throw new Error('Must not read an unrelated spill'); }, sha }), undefined);
   for (const mutate of [
     report => { report.ok = false; }, report => { report.execution = 'paused'; }, report => { report.remote_writes = 1; },
-    report => { report.library_id = 'another-library'; }, report => { report.selector.page_id = 'another-page'; },
+    report => { report.library_id = '8b308dab-2daf-5330-922f-812244ff16f9'; }, report => { report.selector.page_id = 'another-page'; },
     report => { report.selector.kind = 'all'; }, report => { report.next.read_only = false; },
     report => { report.next.argv.push('--output', '/owned/file'); }, report => { delete report.run_id; },
   ]) {
@@ -427,7 +427,7 @@ test('maintenance guard fails before I/O for foreign handles, conflicting paths,
   for (const [toolName, input] of [
     ['read', { path: '/unrelated/secret' }],
     ['read', { path: 'skill://another-owner/SKILL.md' }],
-    ['read', { path: 'skill://original-owner/SKILL.md?library=foreign-library' }],
+    ['read', { path: 'skill://original-owner/SKILL.md?library=b73b2ea3-0253-5e81-a1e5-c0b91aa3e2e5' }],
     ['read', { path: skillFileRef(publicCli.ownerRef, 'SKILL.md') + '&file_id=main' }],
     ['read', { path: branch[2].data.ref, paths: [branch[2].data.ref] }],
     ['read', { paths: [branch[2].data.ref], limit: 1 }],
@@ -443,7 +443,7 @@ test('maintenance guard fails before I/O for foreign handles, conflicting paths,
     ['tool_search', { query: 'ntn skills maintain', limit: 9 }],
     ['write', { path: '/evidence/new-file', content: 'not authorized' }],
   ]) assert.equal(handlers.get('tool_call')({ toolName, toolCallId: 'blocked-' + records.length, input }, ctx)?.block, true);
-  branch[1].data.target.identity = { ...branch[1].data.target.identity, locator: { page_id: 'another-page', database_id: 'owned-library' } };
+  branch[1].data.target.identity = { ...branch[1].data.target.identity, locator: { page_id: 'another-page', library_id: '76ecd927-8be5-5526-b4d7-18906713e206', database_id: '33333333-3333-4333-8333-333333333333' } };
   assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'foreign-resource', input: { path: branch[2].data.ref } }, ctx)?.block, true);
   handlers.get('session_shutdown')({});
 });
@@ -516,7 +516,7 @@ test('maintenance starts only with the actual candidate native read executor and
 });
 
 function maintenancePayloadFixture() {
-  const owner = 'skill://owned-skill?library=owned-library', scope = 'a'.repeat(64), snapshot = 's_' + 'b'.repeat(64), version = 'c'.repeat(64);
+  const owner = 'skill://owned-skill?library=76ecd927-8be5-5526-b4d7-18906713e206', scope = 'a'.repeat(64), snapshot = 's_' + 'b'.repeat(64), version = 'c'.repeat(64);
   const expectedBodies = ['Main complete authored body.', 'First complete reference.', 'Second complete reference.'].map((text, index) => {
     const path = ['SKILL.md', 'guides/one.md', 'references/two.md'][index], file_id = 'file-' + String(index + 1).repeat(64);
     return { path: '/oracle/' + path, text, sha256: sha(text), bytes: Buffer.byteLength(text), binding: { owner, scope,
@@ -540,7 +540,7 @@ function maintenancePayloadFixture() {
     guard.push({ toolCallId: id, toolName: name, allowed: true });
   };
   const body = expectedBodies[0], ref = 'sr:S' + 'A'.repeat(22);
-  const record = { id: owner, kind: 'skill', locator: { type: 'shared_skill', page_id: config.publicCli.target, database_id: config.publicCli.library } };
+  const record = { id: owner, kind: 'skill', locator: { type: 'shared_skill', page_id: config.publicCli.target, library_id: config.publicCli.library, database_id: '33333333-3333-4333-8333-333333333333' } };
   const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: body.sha256, ref: body.binding.ref };
   const content = JSON.stringify({ ok: true, status: 'ready', purpose: 'use', roots: [ref], records: [{ name: 'Owned', kind: 'skill', ref, content: body.text }] });
   const encoded = JSON.stringify(body.text).slice(1, -1), start = content.indexOf('"content":' + JSON.stringify(body.text)) + '"content":"'.length;
@@ -557,7 +557,7 @@ function maintenancePayloadFixture() {
         ref: b.ref, path: b.path, file_id: b.file_id, sha256: body.sha256, bytes: body.bytes, loaded: false, delivered_complete_text: true,
         delivery: { start: 0, end: body.text.length, encoding: 'raw' } } });
   }
-  add('cli-read', 'bash', { command: cliCommand + ' read original-page --library owned-library --read-only --json --metrics' },
+  add('cli-read', 'bash', { command: cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics' },
     JSON.stringify({ main: expectedBodies[0].text, reference: expectedBodies[1].text }));
   return { config, payload: { model: 'group/worker', messages }, nativeAudit: { calls }, nativeMessages, tasks, guard,
     approvedCliCalls: ['cli-read'], add,
@@ -953,7 +953,7 @@ test('interaction provenance snapshots actual registered files without altering 
 
 function preparedObservationFixture({ kind = 'candidate', storage = 'entry', refresh = false, canonical = false } = {}) {
     const handlers = new Map(), rows = [], saved = new Map(), reads = [], baseDir = '/installed/pi-compact-ui';
-    const probes = [], id = 'read-call', scope = 'a'.repeat(64), owner = 'skill://skill-test?library=library-test', snapshot = 's_' + 'b'.repeat(64);
+    const probes = [], id = 'read-call', scope = 'a'.repeat(64), owner = 'skill://skill-test?library=8368ca66-006e-5da4-82e0-744dfa23c8e8', snapshot = 's_' + 'b'.repeat(64);
     const resource = kind === 'resource', relative = resource ? 'references/rates.md' : 'SKILL.md';
     const mainBody = Buffer.from('完整正文\n'), resourceBody = Buffer.from('精确资源\n'), body = resource ? resourceBody : mainBody;
     const path = '/cache/notion/scopes/' + scope + '/records/' + sha(owner) + '/' +
@@ -962,7 +962,7 @@ function preparedObservationFixture({ kind = 'candidate', storage = 'entry', ref
     const mainId = 'file-' + 'd'.repeat(64), resourceId = 'file-' + 'f'.repeat(64);
     const mainRef = skillFileRef(owner, 'SKILL.md', snapshot);
     const resourceRef = skillFileRef(owner, 'references/rates.md', snapshot);
-    const locator = { type: 'shared_skill', page_id: 'page', database_id: 'db' };
+    const locator = { type: 'shared_skill', library_id: '8368ca66-006e-5da4-82e0-744dfa23c8e8', page_id: 'page', database_id: 'db' };
     const binding = { record: { id: owner, kind: 'skill', locator, entrypoint: 'SKILL.md', ref: skillFileRef(owner, 'SKILL.md') },
       scope, snapshot_id: snapshot, version_id: 'c'.repeat(64), body_sha256: sha(mainBody), ref: mainRef };
     const manifest = { version: 1, projection: 'entry', manifest_complete: true, scope, id: owner, snapshot_id: snapshot,
@@ -1291,15 +1291,15 @@ test('normal-management state reuses only the existing process roots and never t
   const stateRoot = join(scratch, 'run-owned'), selected = [];
   for (const [index, content] of ['before\n', 'edited\n'].entries()) {
     const snapshot_id = 's_' + sha('snapshot-' + index), file_id = 'file-' + sha('reference');
-    const owner = 'skill://owner?library=owned-library', ref = skillFileRef(owner, 'references/render.md', snapshot_id);
-    const value = { ok: true, record: { id: owner, locator: { database_id: 'owned-library' } }, scope: sha('scope'), snapshot_id,
+    const owner = 'skill://owner?library=76ecd927-8be5-5526-b4d7-18906713e206', ref = skillFileRef(owner, 'references/render.md', snapshot_id);
+    const value = { ok: true, record: { id: owner, locator: { library_id: '76ecd927-8be5-5526-b4d7-18906713e206', database_id: '33333333-3333-4333-8333-333333333333' } }, scope: sha('scope'), snapshot_id,
       version_id: sha('version-' + index), path: 'references/render.md', ref, source: 'local_snapshot', freshness: { policy: 'pinned' },
       content, range: { start: 1, end: 2, total_lines: 2 }, has_more: false,
       file_bindings: [{ path: 'references/render.md', file_id }], effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' } };
     const path = join(scratch, 'public-read-' + index + '.json'), bytes = JSON.stringify(value);
     await writeFile(path, bytes, { flag: 'wx' }); selected.push({ path, sha256: sha(bytes), body: { bytes: Buffer.byteLength(content), sha256: sha(content) } });
   }
-  const config = { library: 'owned-library', toolCallCount: 2, expectedBodies: selected.map(value => value.body),
+  const config = { library: '76ecd927-8be5-5526-b4d7-18906713e206', toolCallCount: 2, expectedBodies: selected.map(value => value.body),
     existingState: { mode: 'normal-management', roots, managementReads: selected.map(({ path, sha256 }) => ({ path, sha256 })) } };
   const options = { stateRoot, environment, home: '/normal/home' };
   const before = await Promise.all(selected.map(value => readFile(value.path)));
@@ -1328,7 +1328,7 @@ test('normal-management state reuses only the existing process roots and never t
 });
 
 test('existing-state reads block unintended tools before execution and require actual complete none-effects results', () => {
-  const refs = ['old', 'edited'].map(value => skillFileRef('skill://owner?library=owned-library', 'references/render.md', 's_' + sha(value)));
+  const refs = ['old', 'edited'].map(value => skillFileRef('skill://owner?library=76ecd927-8be5-5526-b4d7-18906713e206', 'references/render.md', 's_' + sha(value)));
   const handlers = new Map(), rows = [];
   let writeFails = false;
   const fs = { openSync: () => 1, writeSync: (_fd, line) => { if (writeFails) throw new Error('receipt unavailable'); rows.push(JSON.parse(line)); }, closeSync: () => {} };
@@ -1377,7 +1377,7 @@ test('paused target audit can resume its original run and report, without replac
   const paused = { ...auditReportFixture(), execution: 'paused', request_totals: { attempts: 3, request_bytes: 20, response_bytes: 30, elapsed_ms: 12, invocations: 1 },
     next: { state: 'audit_paused', read_only: true, argv: ['ntn-skills', 'ctl', 'audit', 'resume', auditRunId] } };
   submit('audit-1', auditCommand, paused, 75);
-  const resume = cliCommand + ' ctl audit resume ' + auditRunId + ' --library owned-library --max-requests 20 --duration-ms 1000';
+  const resume = cliCommand + ' ctl audit resume ' + auditRunId + ' --library 76ecd927-8be5-5526-b4d7-18906713e206 --max-requests 20 --duration-ms 1000';
   submit('resume-1', resume, { ...auditReportFixture(), request_totals: { attempts: 5, request_bytes: 40, response_bytes: 60, elapsed_ms: 20, invocations: 2 } }, 4);
   assert.equal(value.call(cliCommand + ' ctl audit report ' + auditRunId, 'report'), undefined);
   assert.equal(value.call(cliCommand + ' ctl audit resume ' + auditRunId, 'no-longer-paused').block, true);

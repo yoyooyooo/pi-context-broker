@@ -54,7 +54,10 @@ test("requested B is visible before verification and failure blocks defaults ins
   gate.reject(Object.assign(new Error("denied"), { code: "ACCESS_DENIED" }));
   await pending;
   expect(sessionLibrary(h.ctx)).toMatchObject({ library: b, status: "blocked", code: "ACCESS_DENIED" });
-  await expect(h.owner.selected(h.ctx)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  h.resolver(async root => descriptor(root ?? a));
+  const calls = h.calls.length;
+  await expect(h.owner.selected(h.owner.accept(h.ctx))).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  expect(h.calls).toHaveLength(calls);
   expect((await h.owner.selected(accepted))?.library.library_id).toBe(a);
   await h.command("library " + a, h.ctx);
   expect((await h.owner.selected(h.ctx))?.library.library_id).toBe(a);
@@ -121,7 +124,7 @@ test("a malformed latest selection blocks the branch until an explicit valid rep
 test("every input rereads local default while root verification and metadata keys reuse the same identity", async () => {
   let current = a, selections = 0;
   const verified: string[] = [];
-  const owner = createLibrarySelection({ sources: [{ type: "notion", id: "implicit" }] },
+  const owner = createLibrarySelection({ sources: [{ type: "notion", id: "implicit", profile_id: "work" }] },
     async options => { verified.push(options.library!); return descriptor(options.library!); },
     async options => { selections++; return options.library ?? current; });
   const first = owner.accept({ cwd: "/test" });
@@ -133,9 +136,21 @@ test("every input rereads local default while root verification and metadata key
   current = b;
   const second = owner.accept({ cwd: "/test" });
   expect((await owner.selected(second))?.library.library_id).toBe(b);
+  expect((await owner.selected(second))?.source).toMatchObject({ library: b, profile_id: "work" });
+  expect((await owner.selected(first))?.source).toMatchObject({ library: a, profile_id: "work" });
+  expect(owner.key(second)).not.toBe(owner.key(first));
   expect(selections).toBe(3); expect(verified).toEqual([a, b]);
   expect(owner.isCurrent(first)).toBe(false);
   expect((await owner.selected(first))?.library.library_id).toBe(a);
   expect(await owner.route(a, first)).toMatchObject([{ id: "implicit", library: a }]);
   await expect(owner.route(a, second)).rejects.toMatchObject({ code: "LIBRARY_SOURCE_UNAVAILABLE" });
+});
+
+test("an implicit Profile Source cannot choose a Library when the global default is missing", async () => {
+  let resolutions = 0;
+  const owner = createLibrarySelection({ sources: [{ type: "notion", id: "profile", profile_id: "work" }] },
+    async () => { resolutions++; return descriptor(a); },
+    async () => { throw Object.assign(new Error("no default"), { code: "LIBRARY_CONTEXT_REQUIRED" }); });
+  await expect(owner.selected(owner.accept({}))).rejects.toMatchObject({ code: "LIBRARY_CONTEXT_REQUIRED" });
+  expect(resolutions).toBe(0);
 });

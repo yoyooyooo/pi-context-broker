@@ -290,7 +290,7 @@ for (const event of ["session_shutdown", "session_switch", "session_tree", "sess
 assert.deepEqual(changed.splice(0), [], "Every session boundary discards late result ownership");
 
 const managedSource = "git-repository", sourcePage = "44444444-4444-4444-8444-444444444444", sourceTable = "55555555-5555-4555-8555-555555555555";
-const secondSkill = "skill:two", secondPage = "11111111-1111-4111-8111-111111111112";
+const secondSkill = "skill-two", secondPage = "11111111-1111-4111-8111-111111111112";
 const { ok: _targetOk, ...firstTarget } = current;
 const sourceTargets = [{ ...firstTarget, operation_id: "source-target:first" },
   { ...firstTarget, skill_id: secondSkill, page_id: secondPage, operation_id: "source-target:second" }];
@@ -659,5 +659,44 @@ records = [record("alias", { type: "shared_skill", ...library, skill_id: skill, 
 await result(command("ctl", "library", "import", "/staged", "--library", rootUrl, "--skill-id", skill), current);
 await result(command("ctl", "library", "import", "/staged", "--library", rootUrl, "--skill-id", skill), pending, true);
 assert.deepEqual(changed.splice(0), [["personal"], ["personal"]], "Conflicting page ownership excludes that Source while an independently configured root still permits metadata invalidation");
+
+{
+  const scopedListeners = new Map<string, unknown>(), scopedChanges: string[][] = [];
+  const bLibrary = { library_id: otherDb, database_id: "66666666-6666-4666-8666-666666666666", data_source_id: "77777777-7777-4777-8777-777777777777" };
+  const bPage = "88888888-8888-4888-8888-888888888888";
+  const bRecord = (sourceId: string): SkillRecord => ({ ...record(sourceId), id: "skill://skill-one?library=" + otherDb,
+    ref: "skill://skill-one/SKILL.md?library=" + otherDb,
+    locator: { type: "shared_skill", ...bLibrary, skill_id: skill, page_id: bPage } });
+  let admitted: SourceConfig[] = [{ type: "notion", id: "implicit", library: db }];
+  let directory = [record("implicit")], sourceReads = 0, directoryReads = 0;
+  installCliWriteInvalidation({ on(name, handler) { scopedListeners.set(name, handler); } }, {
+    sources: () => { sourceReads++; return admitted; },
+    records: () => { directoryReads++; return directory; },
+    changed: ids => scopedChanges.push(ids),
+  });
+  const scopedEmit = async (name: string, event: unknown) => {
+    const handler = scopedListeners.get(name);
+    assert.equal(typeof handler, "function");
+    await (handler as (event: unknown, context: ExtensionContext) => unknown)(event, ctx);
+  };
+  const pendingA = { toolName: "bash", toolCallId: "accepted-a", input: { command: currentCommand } };
+  await scopedEmit("tool_call", pendingA);
+  const admittedSource = admitted[0]!;
+  if (admittedSource.type !== "notion") throw new Error("Expected Notion Source");
+  admittedSource.library = otherDb;
+  directory = [bRecord("implicit")];
+  await scopedEmit("tool_result", { ...pendingA, content: JSON.stringify(current), isError: false });
+  assert.deepEqual(scopedChanges.splice(0), [["implicit"]], "A late A receipt uses A's call-time binding after the implicit Source moves to B");
+  assert.equal(sourceReads, 1); assert.equal(directoryReads, 1);
+
+  admitted = [{ type: "notion", id: "implicit", library: db }, { type: "notion", id: "explicit-b", library: otherDb }];
+  directory = [record("implicit"), bRecord("explicit-b")];
+  const pendingB = { toolName: "bash", toolCallId: "explicit-b-from-a", input: { command: atEntry(otherDb) } };
+  await scopedEmit("tool_call", pendingB);
+  admitted = [{ type: "notion", id: "implicit", library: db }]; directory = [record("implicit")];
+  await scopedEmit("tool_result", { ...pendingB, content: JSON.stringify({ ...current, library: bLibrary, page_id: bPage }), isError: false });
+  assert.deepEqual(scopedChanges.splice(0), [["explicit-b"]], "An A turn's explicit --library B selects enabled B independently of the default Library");
+  assert.equal(sourceReads, 2); assert.equal(directoryReads, 2);
+}
 assert.equal(runtime.calls.length, 0, "The observer executes no CLI or SDK calls and never injects content");
 console.log("Current CLI import, Source and native Skill invalidation checks passed");

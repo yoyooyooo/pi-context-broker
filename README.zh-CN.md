@@ -93,15 +93,15 @@ Pi 准备选中的 Skill，并把完整指令放入下一次模型请求。点�
 
 ## 连接 Notion 库
 
-先完成 [CLI 快速开始](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.zh-CN.md#快速开始)。CLI 使用 `ctl library init --parent PARENT` 创建新库，使用 `ctl library init --entry ENTRY` 验证现有 current 库结构。将返回的 `library.skills.database_id` 保存为入口，它是 Skills 数据库 ID。已有 current 库无需重新建表，也不必先配置本地 Skill 目录。
+先完成 [CLI 快速开始](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.zh-CN.md#快速开始)。CLI 使用 `ctl library init --parent PARENT` 创建新库，使用 `ctl library init --library ROOT` 验证现有库。返回的 `library.library_id` 就是 Library 根页面 UUID；Skills 等四张直属表的 ID 是物理绑定，不能代替根页面选库。已有 current 库无需重新建表，也不必先配置本地 Skill 目录。
 
 在 Pi 中使用该入口和选定的配置文件预览连接：
 
 ```text
-/context-broker connect personal ENTRY --config /absolute/project/config.json
+/context-broker connect personal ROOT --config /absolute/project/config.json
 ```
 
-把 `ENTRY` 换成返回的库入口，并选择实际使用的绝对配置路径。预览不改配置。确认内容后，执行返回的精确 `--apply` 命令保存 source，再使用同一文件启动 Pi：
+把 `ROOT` 换成返回的 `library.library_id`，并选择实际使用的绝对配置路径。预览不改配置。确认内容后，执行返回的精确 `--apply` 命令保存 source，再使用同一文件启动 Pi：
 
 ```sh
 CONTEXT_BROKER_CONFIG=/absolute/project/config.json pi
@@ -111,6 +111,18 @@ CONTEXT_BROKER_CONFIG=/absolute/project/config.json pi
 
 鉴权、第一个 Skill 和后续管理也由 CLI 快速开始说明。Broker 使用配对的随包 CLI/SDK 及其已配置凭据。凭据不要写入 Broker 配置。
 
+### 为会话选择 Library
+
+Broker 通过同一随包 SDK 读取 CLI 全局 `default_library`，没有第二套全局默认库。每次输入被接收时，`selectLibrary` 只读本地配置；切到新的根身份时，`resolveLibrary` 校验根页面和四张直属表，空库也要验证。外部修改默认配置从下一次输入生效，同根后续输入复用已验证的绑定。
+
+使用 `/context-broker library ROOT_ID_OR_URL` 切换当前会话分支，`/context-broker library default` 回到 CLI 默认选择，不带参数则显示当前库。fork、rewind 和 resume 只继承活跃分支上的选择。语法无效的参数在接收请求前报错；有效根的验证失败则保留 blocked 请求，后续默认操作不能回落旧库。修复后明确重选。
+
+Source 的 `library` 可省略，此时绑定 CLI 默认库；所选根必须恰好匹配一个启用的 Source。仅连接 Source 不改变默认库。`profile_id` 在当次选定的库内解析，跨库同名 Profile 保持独立；当前库缺少或禁用该 Profile 时，不借用另一库的同名项。
+
+每次 interactive/RPC 输入接收后冻结 Library。切库只影响后续输入的默认发现与 CLI 目标，已经接受的任务、发出的短引用、活跃根及快照 pin 保持原身份。普通 `$name` 仅在当次默认库中匹配；明确的 `$name@source`（或配置的 namespace）按需读取对应已启用来源，再冻结其完整根身份。同次输入可以明确选择多个 Source，其结果不改默认库、Profile 或菜单。带完整 `library=ROOT_UUID` 的引用也可以精确指向另一已启用 Source。
+
+Agent 使用 `notion_ctl({cli_source:null})` 取得已接收任务的 CLI 根范围；明确的 Source ID 则选择该来源的根。消费和管理统一使用返回的 `library` 作为 `--library ROOT`。旧 `source.database`、`--database` 和 `--entry` 选库参数不再接受。
+
 ### Source 配置
 
 连接命令会把 source 加入选定文件，也可以在该文件中检查或修改以下选项：
@@ -119,8 +131,8 @@ CONTEXT_BROKER_CONFIG=/absolute/project/config.json pi
 sources:
   - id: notion
     type: notion
-    # 使用 CLI 返回的库入口。
-    database: 00000000-0000-0000-0000-000000000000
+    # 使用 library.library_id：Library 根页面，而非某张表的 ID。
+    library: 00000000-0000-0000-0000-000000000000
     discovery: {maxAge: 5m, offline: false}
     activation: {maxAge: 5m, offline: false}
     prefetch: false
@@ -132,7 +144,7 @@ Pi 通过 `notion_list`、`notion_use` 与原生 `read` 提供会话引用：`sr
 
 每个 Notion source 可选配 `default_view_id`；不配置就用 API 返回的第一个 View。显式 ID 失效会提示，不静默改选；确认没有 View 时默认远程目录为空。Pi 发送普通消息时不等待远程目录，因此首次请求可能显示元数据仍在准备。每次模型请求使用内存中的当前目录，保留本地 Skill 和已加载正文；显式 `$` 选择会在首次请求前完成准备。View 内未勾选 Default Context 的记录可默认发现，View 外已勾选的记录也不会越过筛选。Pi 原生 `read` 检查选中记录或资源，`notion_use` 和显式 `$` 选择准备根与完整 Requires。独立补全仍展示全库元数据。代码或配置文件改变需要重启宿主，会话内切换 View 不需要。
 
-`/context-broker refresh` 刷新元数据，让后续 selection 可以取得新 snapshot，已有会话正文保留。不限定 database 的 Notion 发现可能受搜索索引限制；显式 database 可取得该 database 的 exhaustive coverage。所有字段、scope 隔离、歧义和缓存策略见[source 配置与激活](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。
+`/context-broker refresh` 刷新元数据，让后续 selection 可以取得新 snapshot，已有会话正文保留。默认发现只覆盖所选 Library；完整在线结果只能证明该库内不存在匹配，另一库的同名 Skill 属于不同范围。所有字段、scope 隔离、歧义和缓存策略见[source 配置与激活](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。
 
 Notion 缓存按凭据和远端目录身份共用。全库目录与 View 成员使用不同缓存选择，不会因会话筛选缩小其他会话的 `$` 候选。View 选择写入当前会话分支，进程续接时恢复；新会话独立解析默认值。共享刷新保留已加载工作流的固定快照。[缓存合同](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。
 
@@ -150,7 +162,7 @@ Notion 缓存按凭据和远端目录身份共用。全库目录与 View 成员�
 /context-broker view default
 ```
 
-`views` 按 API 顺序列出候选和可复制的选择命令。`view` 不带参数显示当前名称、ID、来源、选择原因及数量。多个来源时明确写 source ID。选择只影响当前会话；`default` 恢复配置值或首项兜底。这些命令不调用 LLM。下一条普通用户消息发送后，当前名称和描述才随请求交给模型，正文仍按需读取。固定默认值时，在 Notion source 的 `database` 旁填写 `default_view_id: VIEW_UUID`；不按 View 名字约定，也不保证 API 首项就是界面最左项。
+`views` 按 API 顺序列出候选和可复制的选择命令。`view` 不带参数显示当前名称、ID、来源、选择原因及数量。省略 source ID 使用当前选定的 Library，明确指定则查询对应已启用来源。选择只影响当前会话；`default` 恢复配置值或首项兜底。这些命令不调用 LLM。下一条普通用户消息发送后，当前名称和描述才随请求交给模型，正文仍按需读取。固定默认值时，在 Notion source 的 `library` 旁填写 `default_view_id: VIEW_UUID`；不按 View 名字约定，也不保证 API 首项就是界面最左项。
 
 Notion 预取默认为零预算，启动和 View 发现只读取元数据。显式选择 Skill 后才准备完整固定主文；采用指令还会准备 Requires 闭包。资源保留在完整且已验证的文件清单中，实际读取时逐项获取。`prefetch: false` 明确保留这一行为；可选预热需要节点数、字节、时间和速率预算。[Source 配置](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。
 
@@ -162,7 +174,7 @@ Pi 的 Notion 消费入口为 `notion_list`、原生 `read` 和 `notion_use`。l
 
 Pi 可用一次 `read({ paths: [...] })` 读取同一 Skill 快照中最多 16 个选中资源，输入使用固定 `sr:R` 句柄或带 snapshot 的 `skill://` 文件引用。文本完整交付；二进制返回已验证的文件信息与本地路径。普通 `read({ path, offset?, limit? })` 保持 Pi 原生行为。选择、预算和投递语义见[固定资源批读](./packages/context-broker/docs/fixed-resource-batches.md)。
 
-可移植 Skill 链接统一使用 `skill://<稳定-skill-id>[/<path>][?library=<逻辑-library-id>][&snapshot=<id>]`，例如 `skill://architect/references/review.md?library=team`。只有实际包含链接的所选文件或入口明确绑定的库，才能补足省略的 `library`。显示名和 alias 用于发现，URI 只按稳定 ID 解析。旧 `shared_skill:…` 前缀与公开 `file_id` 参数不再接受；作用域、固定主入口和迁移要求见[精确 Skill 引用](./packages/context-broker/docs/reference.zh-CN.md#精确-skill-引用)。
+可移植 Skill 链接统一使用 `skill://<稳定-skill-id>[/<path>][?library=<根页面-UUID>][&snapshot=<id>]`，例如 `skill://architect/references/review.md?library=44444444-4444-4444-8444-444444444444`。只有实际包含链接的所选文件或明确选定的 Library，才能补足省略的 `library`。显示名和 alias 用于发现，URI 只按稳定 ID 解析。旧 `shared_skill:…` 前缀与公开 `file_id` 参数不再接受；作用域、固定主入口和迁移要求见[精确 Skill 引用](./packages/context-broker/docs/reference.zh-CN.md#精确-skill-引用)。
 
 读取 Notion Skill 正文中的相对链接时，使用 `read({ path: "../review/SKILL.md", from: FIXED_CONTAINING_FILE_REF })`。`from` 是实际包含链接的文件，复制返回的 `sr:S`、`sr:R` 或固定 canonical File ref；嵌套文档不能一律用主文作基准。跨 Skill 需要可靠的 Source 原路径、固定 revision 和精确贡献映射，缓存目录不会重建仓库中的相邻关系。解析后继续使用目标自己已选的会话快照，只做检查，不激活 Requires 或修改 Members。`from` 不能与资源批读或 `refresh: true` 合用。详见[相对文件读取](./packages/context-broker/docs/fixed-resource-batches.md#relative-paths-from-a-selected-file)。
 
@@ -203,9 +215,9 @@ CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/d
 
 普通产品维护与 Source 同步默认使用实际配对 CLI 随包提供的 `ntn-skills-maintain`、`ntn-skills-sync` Builtin。Broker 提供安装路径，供普通原生 `read` 读取；只有 shell 的宿主使用配对 CLI 的 `ctl builtin read`。本任务已经完整加载的指引直接复用。新库无需在 Notion 中保存官方 Skill 副本，也无需先搜索 Notion 才能找到这些产品说明。
 
-工作流来源和写入目标分别选择。随包指引不会选定 Notion source 或数据库；数据操作使用用户明确选择的来源对应的 CLI command；消费传入 `--database ENTRY`，管理传入 `--entry ENTRY`，不能隐式取第一个来源。普通业务 Skill 的发现与同名歧义规则保持不变。同名 Notion 页面是用户维护的独立工作流，不能凭名称冒充官方 Builtin。
+工作流来源和写入目标分别选择。随包指引不会选定 Notion source 或 Library；数据操作使用用户明确选择的来源对应的 CLI command，消费和管理都传 `--library ROOT`，不能隐式取第一个来源。普通业务 Skill 的发现与同名歧义规则保持不变。同名 Notion 页面是用户维护的独立工作流，不能凭名称冒充官方 Builtin。
 
-用户明确选择 Notion 团队流程时，在所选来源中读取精确 ref；需要发现时只查询该来源，也可读取默认 View 之外的授权条目。真正采用时调用 `notion_use(ref)` 加载完整 Requires，本任务已准备完整闭包时可复用；被编辑目标仍只 inspect，不激活其工作流。没有原生 use 时可用同来源 CLI 的 `use EXACT_REF --database ENTRY --json`。CLI 使用规范引用，不能消费会话 `sr:` 句柄；没有可用路线就报告无法采用。pending、partial 或访问失败都不能把已选择的流程换成 Builtin。已有任务保留选中版本，只有明确刷新才采用新内容。本地和随包流程继续使用原生消费路线。
+用户明确选择 Notion 团队流程时，在所选来源中读取精确 ref；需要发现时只查询该来源，也可读取默认 View 之外的授权条目。真正采用时调用 `notion_use(ref)` 加载完整 Requires，本任务已准备完整闭包时可复用；被编辑目标仍只 inspect，不激活其工作流。没有原生 use 时可用同来源 CLI 的 `use EXACT_REF --library ROOT_UUID --json`。CLI 使用规范引用，不能消费会话 `sr:` 句柄；没有可用路线就报告无法采用。pending、partial 或访问失败都不能把已选择的流程换成 Builtin。已有任务保留选中版本，只有明确刷新才采用新内容。本地和随包流程继续使用原生消费路线。
 
 只有配置了至少一个未禁用的 `type: notion` source，才在 `$` 候选中显示 `$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin`；尚未连通 Notion 或完成认证也能读取它们。在 Pi 中，零已启用 Notion source 的普通本地会话不暴露 Notion 候选、工具或系统指引。明确需要初始化时，遵循 [CLI 快速开始](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.zh-CN.md)，或通过随包 CLI 的 `ctl builtin read notion/ntn-skills-maintain --path references/setup.md` 读取离线入口。
 

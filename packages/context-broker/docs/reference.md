@@ -16,6 +16,11 @@ Old `source.database`, `--database` and `--entry` selectors are rejected.
 The session command accepts a root UUID, Notion URL or `default`. Invalid arguments
 are rejected before admitting a selection and leave the current selection unchanged.
 
+`profile_id` resolves inside the Library admitted for that input, including Sources
+that omit `library`. Identically named Profiles in two roots stay separate. A missing
+or disabled Profile in the selected root fails there; it never falls back to another
+Library. A CLI global `shared_profile` still applies only to its own `library_id`.
+
 Broker resolves the CLI global `default_library` through the same SDK; it has no
 second global default. Every accepted input uses SDK `selectLibrary` to read local
 selection without Notion I/O. `resolveLibrary` verifies the root and tables, with
@@ -31,6 +36,13 @@ future default discovery, short references and `notion_ctl cli_source: null`.
 Existing tasks, active roots and snapshot pins keep their original identity.
 Fully qualified references can select another enabled Source without switching
 the default. CLI management uses the returned `library` with `--library ROOT`.
+
+Unqualified `$name` and default discovery query only the accepted Library. An
+explicit `$name@source` or configured namespace queries that enabled Source on
+demand, then retains its full root identity. A submission can explicitly use
+several Sources; foreign results never enter the default menu or change a Profile.
+Metadata tools follow the same rule: omit `source` for the accepted Library, or
+supply one exact enabled Source ID.
 
 
 ## Skills
@@ -62,7 +74,7 @@ Review the design for ownership, boundaries, failure modes, and migration cost.
 
 ## Bundled Skills
 
-Ordinary product maintenance and Source sync default to the actual paired package's `ntn-skills-maintain` and `ntn-skills-sync`. Guidance advertises their exact paths for native `read`, or the paired CLI's `ctl builtin read` argv when only shell is available; it does not preload either body. A connected library needs no official Notion copies. Workflow origin and data target are independent: choose the write source and database explicitly, without falling back to the first configured source. Ordinary business Skill discovery remains unchanged.
+Ordinary product maintenance and Source sync default to the actual paired package's `ntn-skills-maintain` and `ntn-skills-sync`. Guidance advertises their exact paths for native `read`, or the paired CLI's `ctl builtin read` argv when only shell is available; it does not preload either body. A connected library needs no official Notion copies. Workflow origin and data target are independent: choose the write Source and Library explicitly, without falling back to the first configured source. Ordinary business Skill discovery remains unchanged.
 
 An explicitly chosen Notion team workflow retains its exact source, record and selected version. Discover it in that source if needed, then inspect its exact ref. Inspection does not adopt it. To apply it, call `notion_use` with that ref to load Requires, unless the closure is already prepared. With shell access and no native use tool, use that source's CLI `use EXACT_REF --library ROOT_UUID --json`; CLI refs must be canonical, never session `sr:` handles. If neither route is available, report unavailable adoption. Generic hosts use their available `skill_prepare` purpose `use` route. Pending, partial or failed access never silently switches the selected workflow to a Builtin. The edited Skill itself stays inspection-only. Local and packaged workflows keep their native selection path; selected instructions persist until explicit refresh.
 
@@ -194,7 +206,7 @@ sources:
     enabled: true
     namespace: notion
     # Consumption uses the paired SDK; management uses the bundled CLI.
-    # Replace this example with your Skills database id/selector.
+    # Replace this example with your Library root page ID.
     library: 00000000-0000-0000-0000-000000000000
     cacheDir: ~/.cache/context-broker/notion
     discovery: {maxAge: 5m, offline: false}
@@ -242,11 +254,11 @@ The current directory is one temporary catalog data message in the final request
 
 Notion UI changes are external to the CLI cache. Exact references fix identity, not freshness: current reads can reuse an eligible observation, while fixed reads preserve history. Broker retains the SDK's original validation time and remote/cache origin. Metadata, read and use update one scoped eligibility owner; older caches or historical pins cannot clear a newer denial. Exact dependency failures update that dependency, not a guessed root. Cancelled/retired operations and older in-flight results cannot replace a newer accepted verification.
 
-Public `notion_list` and the first submission context reach the existing directory TTL without relying on editor completion. Repeated hits do not renew it, and concurrent expiry checks share the existing request owner. Interactive input can retain pending metadata; print/JSON waits at its cancellable context boundary. `notion_list({query?,source?,limit?,cursor?,refresh?,search_in?})` accepts `refresh:true` to verify discovery after a write or request current metadata. A supplied source limits forced acquisition to that configured source; an omitted source selects all enabled configured Notion sources. Offline policy is preserved. This metadata-only operation refreshes the paired catalog/View observation without cancelling the current turn, adopting instructions or replacing selected graph pins and fixed refs. Concurrent forced requests coalesce or widen the same pending acquisition; waiters follow its current publication even if retired work has not settled. `/context-broker refresh` remains the explicit host-wide refresh command.
+Public `notion_list` and the first submission context reach the existing directory TTL without relying on editor completion. Repeated hits do not renew it, and concurrent expiry checks share the existing request owner. Interactive input can retain pending metadata; print/JSON waits at its cancellable context boundary. `notion_list({query?,source?,limit?,cursor?,refresh?,search_in?})` accepts `refresh:true` to verify discovery after a write or request current metadata. A supplied source limits forced acquisition to that configured source; an omitted source selects the accepted turn's Library. Offline policy is preserved. This metadata-only operation refreshes the paired catalog/View observation without cancelling the current turn, adopting instructions or replacing selected graph pins and fixed refs. Concurrent forced requests coalesce or widen the same pending acquisition; waiters follow its current publication even if retired work has not settled. `/context-broker refresh` remains the explicit host-wide refresh command.
 
 ### Explicit remote content search
 
-`notion_list({search_in:"content",query:"a distinctive phrase",source:"team",limit:20})` searches Notion content only when the user's task requests that search. Omitted `search_in` and `search_in:"metadata"` retain metadata discovery and never start MCP or OAuth. Content mode requires a nonempty query, an enabled online Notion source with an explicit library entry, and a limit from 1 to 50. One enabled source may be selected automatically; with multiple sources, supply `source`. The query is sent only to that selected connection after the SDK checks access to the selected physical entry.
+`notion_list({search_in:"content",query:"a distinctive phrase",source:"team",limit:20})` searches Notion content only when the user's task requests that search. Omitted `search_in` and `search_in:"metadata"` retain metadata discovery and never start MCP or OAuth. Content mode requires a nonempty query, an enabled online Notion Source with a verified Library root, and a limit from 1 to 50. Omitting `source` uses the accepted turn's Library; an explicit source ID can select another enabled Source. The query goes only to that connection after the SDK checks its root and table bindings.
 
 The bundled CLI/core owns MCP transport and credentials. REST and MCP credentials remain separate. A configured MCP token takes precedence; rejection does not switch to another OAuth account. Without a usable grant, an explicit foreground content search can show Pi's authorization screen and open the system browser. Esc cancels that search's waiter. Headless, RPC, print and JSON modes do not open a browser; authorization-required output provides `ntn-skills auth mcp login` for an explicit CLI login. The host allows at most six minutes overall, with the SDK's separate five-minute authorization and sixty-second search budgets. Missing callback capability, rejection and timeout end the operation.
 

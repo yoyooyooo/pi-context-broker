@@ -42,7 +42,7 @@ import { createContentPublication } from "./content-publication";
 export type HostSkillOptions = {
   config: ConfigFile;
   librarySelection?: LibrarySelectionOwner;
-  getRecords(ctx?: ExtensionContext, signal?: AbortSignal, refreshSourceIds?: readonly string[]): Promise<DiscoveryResult<SkillRecord>>;
+  getRecords(ctx?: ExtensionContext, signal?: AbortSignal, refreshSourceIds?: readonly string[], sourceId?: string): Promise<DiscoveryResult<SkillRecord>>;
   metadataInvalidated?(ctx: ExtensionContext): boolean;
   contentSearch?(input: ContentSearchRequest, sourceId: string, ctx: ExtensionContext, options: ContentSearchOptions): Promise<ContentSearchResult>;
   lookupReference?(ctx: ExtensionContext, signal?: AbortSignal): Promise<DiscoveryResult<SkillRecord>>;
@@ -400,6 +400,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const preparedForUse = new WeakMap<ActivePreparation, Set<string>>();
   const graphSelectionCommits = new WeakMap<SkillRecord, () => void>();
   function beginPreparation(event: { text?: string; images?: ImageContent[] }, ctx: ExtensionContext): ActivePreparation {
+    if (options.librarySelection && !libraryContext(ctx)) ctx = options.librarySelection.accept(ctx);
     const entry = gate.begin(event, ctx);
     try { options.onPreparation?.(entry); return entry; }
     catch (error) { gate.release(entry); throw error; }
@@ -491,7 +492,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       return metadataReadiness;
     }
     if (metadataPending) return metadataReadiness;
-    const sourceIds = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false
+    const currentLibrary = libraryContext(ctx)?.local();
+    const sourceIds = (options.librarySelection ? currentLibrary ? [currentLibrary.source] : [] : options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false
       && !source.discovery?.offline).map(source => source.id);
     const expired = notionCatalogAction({ offline: false, sourceIds, observations: metadataLists,
       failedSourceIds: sourceFailures.map(failure => failure.sourceId), now: Date.now(), retryAt: metadataRetryAt });
@@ -602,8 +604,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (piConsumption && input.source !== undefined && !sourceIds.includes(String(input.source))) throw hostError("SOURCE_UNAVAILABLE");
       const selectedLibrary = options.librarySelection ? await options.librarySelection.selected(ctx) : undefined;
       const selectedSources = input.source === undefined ? selectedLibrary ? [selectedLibrary.source.id] : sourceIds : [String(input.source)];
-      const isolated = options.librarySelection && !options.librarySelection.isCurrent(ctx)
-        ? await options.getRecords(ctx, readSignal, input.refresh === true ? selectedSources : undefined) : undefined;
+      const explicitSource = input.source !== undefined && selectedLibrary && input.source !== selectedLibrary.source.id ? String(input.source) : undefined;
+      const isolated = explicitSource !== undefined || options.librarySelection && !options.librarySelection.isCurrent(ctx)
+        ? await options.getRecords(ctx, readSignal, input.refresh === true ? selectedSources : undefined, explicitSource) : undefined;
       if (!isolated) { revalidateMetadata(ctx, input.refresh === true ? selectedSources : undefined); await ready(readSignal); }
       if (!isolated && discoveryError) throw discoveryError;
       const listedRecords = isolated?.records ?? [...hostRecords.values()];

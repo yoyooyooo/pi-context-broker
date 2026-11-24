@@ -29,7 +29,7 @@ type SourceBinding = { source: NotionSource } & (
 );
 type CurrentSkillWrite = { library: Library; skillId: string; pageId: string; status: "applied" | "unchanged" };
 type CurrentWrite = { library: Library; pages: ReadonlyMap<string, string>; status: "applied" | "unchanged" | "removed" };
-type CallState = { kind: "pending"; command: string; invocation: Invocation } | { kind: "settled" };
+type CallState = { kind: "pending"; command: string; invocation: Invocation; bindings: SourceBinding[] } | { kind: "settled" };
 
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const uuid = (value: unknown): string | undefined => typeof value === "string" && /^(?:[a-f\d]{32}|[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12})$/i.test(value) ? value.replaceAll("-", "").toLowerCase() : undefined;
@@ -445,9 +445,8 @@ function librarySources(call: Invocation, bindings: SourceBinding[]): string[] {
     .map(binding => binding.source.id);
 }
 
-function affectedSources(call: Invocation, output: CliOutput, records: SkillRecord[]): string[] {
+function affectedSources(call: Invocation, output: CliOutput, bindings: SourceBinding[]): string[] {
   if (output.status === "invalid") return [];
-  const bindings = call.sources.map(source => sourceBinding(source, records));
   if (output.status === "truncated") return librarySources(call, bindings);
   const result = output.result;
   if (result.ok === false) {
@@ -512,11 +511,12 @@ export function decodeCliWriteOutput(body: string): CliOutput {
 
 /** Observe existing bash calls; never run the CLI, follow artifacts or change an active submission. */
 export function installCliWriteInvalidation(api: ExtensionAPI, options: {
-  sources: SourceConfig[] | (() => SourceConfig[]);
-  records(): SkillRecord[];
+  sources: SourceConfig[] | ((ctx: ExtensionContext) => SourceConfig[]);
+  records(ctx: ExtensionContext): SkillRecord[];
   changed(sourceIds: string[], ctx: ExtensionContext): void;
 }): void {
-  const sources = () => (typeof options.sources === "function" ? options.sources() : options.sources).filter((source): source is NotionSource => source.type === "notion" && source.enabled !== false);
+  const sources = (ctx: ExtensionContext) => (typeof options.sources === "function" ? options.sources(ctx) : options.sources)
+    .filter((source): source is NotionSource => source.type === "notion" && source.enabled !== false).map(source => ({ ...source }));
   const calls = new Map<string, CallState>();
   const key = (id: string | undefined, ctx: ExtensionContext): string | undefined => {
     const session = ctx.sessionManager?.getSessionId?.();
@@ -536,8 +536,12 @@ export function installCliWriteInvalidation(api: ExtensionAPI, options: {
       if (previous.kind === "pending" && previous.command !== event.input.command) retain(id, { kind: "settled" });
       return;
     }
-    const call = invocation(event.input.command, sources());
-    if (call) retain(id, { kind: "pending", command: event.input.command, invocation: call });
+    const call = invocation(event.input.command, sources(ctx));
+    if (call) {
+      const records = options.records(ctx);
+      const bindings = call.sources.map(source => sourceBinding(source, records));
+      retain(id, { kind: "pending", command: event.input.command, invocation: call, bindings });
+    }
   });
   api.on("tool_result", (event, ctx) => {
     if (event.toolName !== "bash") return;
@@ -546,7 +550,7 @@ export function installCliWriteInvalidation(api: ExtensionAPI, options: {
     retain(id, { kind: "settled" });
     if (typeof event.input.command === "string" && event.input.command !== state.command) return;
     const output = decodeCliWriteOutput(text(event.content));
-    const ids = affectedSources(state.invocation, output, options.records());
+    const ids = affectedSources(state.invocation, output, state.bindings);
     if (ids.length) options.changed([...new Set(ids)], ctx);
   });
   for (const event of ["session_shutdown", "session_switch", "session_tree", "session_branch"] as const) api.on(event, () => { calls.clear(); });

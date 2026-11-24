@@ -138,6 +138,10 @@ A to B affects later submissions, default discovery and short Skill references.
 An accepted A task and its selected snapshots remain in A. A fully qualified
 `skill://name/SKILL.md?library=ROOT_UUID` can route to another enabled Source
 without changing the session default. Same-name Skills in A and B are distinct.
+Unqualified `$name` and default discovery stay in the accepted Library. An explicit
+`$name@source` (or configured namespace) reads only that enabled Source on demand,
+then retains the returned full Library identity. Several explicit Sources can be
+used in one submission; their results do not change the default, Profile or menu.
 To request the accepted turn's CLI target, use `notion_ctl` with
 `cli_source: null`; the returned `library` is the verified root to pass as
 `--library`. An explicit Source ID chooses that Source's root instead.
