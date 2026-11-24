@@ -1,6 +1,6 @@
 # 当前消费链验证
 
-当前消费是 `next` 单轨：Notion最新内容经同包SDK v2，固定本次选择的字节供会话使用，不在Notion中维护版本历史。先读 [integration Skill](../SKILL.md) 与 [验证交接](../../../../docs/verification-routing.md)。
+当前消费是 `next` 单轨：Notion最新内容经同包SDK v3，固定本次选择的字节供会话使用，不在Notion中维护版本历史。先读 [integration Skill](../SKILL.md) 与 [验证交接](../../../../docs/verification-routing.md)。
 
 ## 状态与必要守卫
 

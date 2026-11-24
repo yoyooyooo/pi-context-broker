@@ -53,7 +53,7 @@ host-prepare、host-refresh、session-refresh、session-recovery 和 read-intent
 重复/缺失正文、schema、原始角色义务和实体摘要。不把这些源码测试标成
 实际 Pi 已经运行过的反例。
 
-当前实际 Pi 使用唯一 SDK v2 driver：
+当前实际 Pi 使用唯一 SDK v3 driver：
 
 ```sh
 node scripts/notion-sdk-pi.mjs doctor --package "$BROKER" --fixture "$FIXTURE" --source-http-helper "$CLI_ROOT/scripts/sdk-source-fixture.mjs" --pi "$PI"
