@@ -136,7 +136,18 @@ SDK/CLI 回归核对，不能只观察名称或工具成功退出。
 有限域包括两个 Library、两个 branch、两轮、一个目录 producer、一次切换和一次取消。
 `SessionFlowEventuallyExplained` 依赖局部动作弱公平与外部观察最终返回，终点包括显式
 拒绝/blocked；它不证明 API 可用、provider 完成或模型任务质量。
-具体源码 guard 与 mutation 在 SDK3 实现审阅后接线；模型初稿和旧 hash 未漂移不能代替此步骤。
+源码对应 `library-selection.ts` 的 `sessionLibrary`、`accept/capture`、`select`、
+`isCurrent` 和 command `current()`，以及 `host-skills.ts` 的 `turnContext`。
+六项 `library-*` mutation 分别破坏每次 input 取默认、blocked、目录 ticket、command
+session、最新 active-branch entry 和 running turn 优先级。失败 B 后的 oracle 会先
+恢复远端，再新接纳一次 input；仍须 blocked 且不得发新 resolver 请求，避免旧的
+rejected Promise 掩盖删守卫缺陷。普通 A turn 与排队 B 分别保留独立上下文；输入
+保护用的 preparation gate 在 `agent_start` 释放，不改变既有 graph 提交协议。
+
+有限模型只建模默认主 Library 和一个显式跨库调用，不穷尽同轮多 Source 的语法。
+`$name@source` 仍是明确 Source 覆盖，按配置绑定实际 root/full ref；无 `@source`
+名称只在当前默认库解析。多库同名、混合 Prompt/Skill、显式多 Source 与 CLI 写后
+失效归具体宿主回归，不能从这个模型通过推出。
 根创建、descriptor v2、实际 DB/DS parent、同 root 换表与原 pending key 属于 CLI 的 LibraryLifecycle。
 
 ## 守卫破坏与诊断
