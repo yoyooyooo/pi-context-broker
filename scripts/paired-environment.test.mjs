@@ -347,7 +347,7 @@ pi:JSON.parse(fs.readFileSync(path.join(process.env.PI_CODING_AGENT_DIR,'setting
       const state = states[index], runRoot = receipts[index].root;
       assert.equal(state.home, process.env.HOME);
       assert.equal(state.cwd, join(runRoot, 'workspace'));
-      assert.deepEqual(state.cli.sources, []);
+      assert.deepEqual(state.cli, {});
       assert.deepEqual(state.broker.sources, []);
       assert.deepEqual(state.broker.skillRoots, []);
       assert.deepEqual(state.pi.packages, []);

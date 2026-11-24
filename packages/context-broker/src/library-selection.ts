@@ -148,8 +148,8 @@ export function createLibrarySelection(config: ConfigFile, resolveLibrary = reso
       return matches;
     },
     async config(ctx?: ExtensionContext): Promise<ConfigFile> {
-      const sources = await this.sources(ctx);
-      return { ...config, sources: [...(config.sources ?? []).filter(source => source.type !== "notion"), ...sources] };
+      const current = await selected(ctx);
+      return { ...config, sources: [...(config.sources ?? []).filter(source => source.type !== "notion"), ...(current ? [current.source] : [])] };
     },
   };
 }

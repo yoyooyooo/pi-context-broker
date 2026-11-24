@@ -169,11 +169,12 @@ try {
   const currentCatalog = structuredClone(runtime.state.catalog);
   const selectedSource = { ...source, id: "runner-source", namespace: "runner", cacheDir: join(root, "runner-cache") };
   const selectedConfig = { sources: [selectedSource] };
-  for (const database of [db, db.replaceAll("-", "").toUpperCase(), "fixture"]) {
+  const libraryRoot = runtime.descriptor.library_id;
+  for (const library of [libraryRoot, libraryRoot.replaceAll("-", "").toUpperCase(), "https://www.notion.so/Library-" + libraryRoot.replaceAll("-", "")]) {
     runtime.state.catalog = currentCatalog;
-    const observed = await discoverSourceCatalog({ sources: [{ ...selectedSource, database }] }, root);
+    const observed = await discoverSourceCatalog({ sources: [{ ...selectedSource, library }] }, root);
     assert.deepEqual(observed.failures, []);
-    assert.equal(observed.records.length, initialRecords.length, "Current physical and configured alias selectors retain the complete directory");
+    assert.equal(observed.records.length, initialRecords.length, "Canonical root IDs and Notion root URLs retain the complete directory");
   }
   const retiredPage = { ...initialRecords[0], id: retired[0]!.id, locator: retired[0]!.locator, ref: retired[0]!.ref };
   const retiredSubscription = { ...initialRecords[1], id: retired[1]!.id, locator: retired[1]!.locator, ref: retired[1]!.ref };

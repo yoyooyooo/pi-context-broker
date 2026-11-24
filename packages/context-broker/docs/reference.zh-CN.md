@@ -20,11 +20,19 @@ Broker 通过同一 SDK 解析 CLI 全局 `default_library`，没有第二套全
 Source 省略 `library` 时只绑定这一个默认库；所选根页面必须恰好匹配一个启用的 Source。
 切库失败保留 blocked 请求，后续默认操作不会回落到之前的库；修复后明确重选。
 命令只接受根 UUID、Notion URL 或 `default`。无效参数在接收选库请求之前报错，不改当前选择。
+`profile_id` 始终在当次接收输入时选定的 Library 内解析，也支持省略 Source 的 `library`。
+跨库同名 Profile 保持独立；当前库缺少 Profile 或 Profile 被禁用时直接失败，不回落另一库。
+CLI 全局 `shared_profile` 仍只匹配它显式绑定的 `library_id`。
 
 每次 interactive/RPC 输入被接收时冻结 Library。A 切 B 只改变后续提交的默认发现、
 新候选范围和 `notion_ctl` 的 `cli_source: null`。已经发出的短引用、已接收任务、活跃根与快照 pin
 保留原身份。带完整 `library=ROOT_UUID` 的引用可路由到其他已启用 Source，
 不改变默认库。CLI 管理和消费统一传返回的根身份：`--library ROOT`。
+
+普通 `$name` 和默认发现只查询当次接收输入时选定的 Library。明确的 `$name@source`
+或配置的 namespace 按需查询对应已启用来源，然后保留其完整根身份。同次输入可以明确使用
+多个 Source；外库结果不会进入默认菜单或改写 Profile。元数据工具省略 `source` 时使用
+已接收任务的 Library，明确指定时只查询该启用的 Source。
 
 
 ## Skills
@@ -50,7 +58,7 @@ Review the design for ownership, boundaries, failure modes, and migration cost.
 
 ## 随包 Skills
 
-普通产品维护与 Source 同步默认使用实际配对包中的 `ntn-skills-maintain`、`ntn-skills-sync`。指引提供普通原生 `read` 所需的精确路径，只有 shell 时提供配对 CLI 的 `ctl builtin read` argv，不预加载正文。已连接的库无需保存官方 Notion 副本。工作流来源与数据目标分别选择：写入 source 和数据库必须明确，不隐式取第一个来源。普通业务 Skill 的发现规则保持不变。
+普通产品维护与 Source 同步默认使用实际配对包中的 `ntn-skills-maintain`、`ntn-skills-sync`。指引提供普通原生 `read` 所需的精确路径，只有 shell 时提供配对 CLI 的 `ctl builtin read` argv，不预加载正文。已连接的库无需保存官方 Notion 副本。工作流来源与数据目标分别选择：写入 Source 和 Library 必须明确，不隐式取第一个来源。普通业务 Skill 的发现规则保持不变。
 
 明确选择的 Notion 团队流程保留精确来源、记录和已选版本。需要发现时查询该来源，再读取精确 ref；查看不代表采用。真正采用时调用 `notion_use` 加载 Requires，已经准备完整闭包时可复用。没有原生 use 工具但有 shell 时，沿所选来源的 CLI 执行 `use EXACT_REF --library ROOT_UUID --json`；CLI ref 必须是规范引用，不能使用会话 `sr:` 句柄。两条路线都不可用则报告无法采用。通用宿主使用实际可用的 `skill_prepare` purpose `use`。pending、partial 或访问失败都不能静默换成 Builtin。被编辑 Skill 本身只 inspect。本地和随包流程保留原生选择路线；已选指引保留到明确刷新。
 
@@ -182,7 +190,7 @@ sources:
     enabled: true
     namespace: notion
     # 消费用配对 SDK；管理用随包 CLI。
-    # 将示例值替换成自己的 Skills database id/selector。
+    # 将示例值替换成自己的 Library 根页面 ID。
     library: 00000000-0000-0000-0000-000000000000
     cacheDir: ~/.cache/context-broker/notion
     discovery: {maxAge: 5m, offline: false}

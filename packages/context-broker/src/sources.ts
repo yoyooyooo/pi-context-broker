@@ -103,7 +103,7 @@ export function normalizeSources(value: unknown): SourceConfig[] | undefined {
     const library = libraryInput === undefined ? undefined : notionPageId(libraryInput);
     if (libraryInput !== undefined && !library) invalid();
     const profileId = optionalString(raw.profile_id);
-    if (profileId !== undefined && (!library || !validSharedRecordId(profileId))) invalid();
+    if (profileId !== undefined && !validSharedRecordId(profileId)) invalid();
     return {
       ...common, type: "notion",
       library, default_view_id: optionalString(raw.default_view_id), ...(profileId === undefined ? {} : { profile_id: profileId }), cacheDir: optionalString(raw.cacheDir),
