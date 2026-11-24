@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:https';
 import { createSecureServer } from 'node:http2';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -956,10 +957,17 @@ test('proxy setup retains source ancestry, failures and pre-send attempts withou
     new Set(), new Set([10]), { sourceObservation: sdkObservation() }), /cannot replace an SDK response/u);
 });
 
-// Require actual ALPN h2; a protocol downgrade cannot satisfy this transport regression.
+// Require actual ALPN h2; keep the selected public fetch and Agent on one handler API.
 test('passive observer preserves H1/H2 bytes and complete Library structure with header/body request IDs', { timeout: 30000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'daily-observer-h1-h2-'));
   const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+  // Select the declared runtime dependency, not Node's version-specific H2 default.
+  const selected = createRequire(process.env.NTN_SKILLS_BUILD_ENTRY ?? new URL('../packages/context-broker/package.json', import.meta.url));
+  const platformManifest = selected.resolve('@effect/platform-node/package.json');
+  const runtime = createRequire(platformManifest), entry = await realpath(runtime.resolve('undici'));
+  const manifest = await realpath(runtime.resolve('undici/package.json'));
+  const dispatcher = { entry, manifest, version: JSON.parse(await readFile(manifest, 'utf8')).version,
+    entry_sha256: hash(await readFile(entry)), platform_manifest: await realpath(platformManifest) };
   const root = '00000000-0000-4000-8000-000000000101', database = '00000000-0000-4000-8000-000000000102', dataSource = '00000000-0000-4000-8000-000000000103';
   const headerId = '00000000-0000-4000-8000-000000000301', bodyId = '00000000-0000-4000-8000-000000000302';
   const marker = 'UNRECORDED_AUTHOR_TEXT_H2_REGRESSION';
@@ -996,14 +1004,20 @@ test('passive observer preserves H1/H2 bytes and complete Library structure with
     const code = [
       "const fs=require('node:fs'),dc=require('node:diagnostics_channel'),crypto=require('node:crypto');",
       "const endpoints=" + JSON.stringify(endpoints) + ",values=" + JSON.stringify(values) + ";",
-      "const retainedFetch=globalThis.fetch;new Function('require',fs.readFileSync(" + JSON.stringify(preload) + ",'utf8'))(require);if(globalThis.fetch!==retainedFetch)throw Error('Observer replaced fetch');",
+      "const retainedGlobalFetch=globalThis.fetch,dispatcher=" + JSON.stringify(dispatcher) + ";const client=require(dispatcher.entry),{Agent}=client,retainedFetch=client.fetch;",
+      "const agents=new Map(endpoints.map(endpoint=>[endpoint.transport,new Agent({allowH2:endpoint.transport==='h2'})]));let activeRequest=null;",
+      "new Function('require',fs.readFileSync(" + JSON.stringify(preload) + ",'utf8'))(require);if(globalThis.fetch!==retainedGlobalFetch||client.fetch!==retainedFetch)throw Error('Observer replaced fetch');",
       "const shapes=[],pending=new WeakMap();let sequence=0;",
       "dc.subscribe('undici:request:create',({request})=>pending.set(request,{sequence:++sequence,origin:String(request.origin),path:request.path,bodyChunks:0,bodyBytes:0}));",
       "dc.subscribe('undici:request:headers',({request,response})=>{const row=pending.get(request),headers=response.headers;const keys=Array.isArray(headers)?headers.filter((_,i)=>i%2===0).map(x=>Buffer.isBuffer(x)?x.toString():String(x)):Object.keys(headers??{});Object.assign(row,{array:Array.isArray(headers),type:typeof headers,keys:keys.map(x=>x.toLowerCase()).filter(x=>['content-type','content-encoding','x-request-id'].includes(x)).sort()});});",
       "dc.subscribe('undici:request:bodyChunkReceived',({request,chunk})=>{const row=pending.get(request);row.bodyChunks++;row.bodyBytes+=chunk.byteLength;});",
       "dc.subscribe('undici:request:trailers',({request})=>shapes.push({...pending.get(request)}));",
-      "(async()=>{const results=[];for(const endpoint of endpoints)for(const source of ['header','body'])for(const [path,value] of Object.entries(values)){const response=await retainedFetch(endpoint.origin+path+'?source='+source),body=await response.text();if(response.status!==200||body!==JSON.stringify(value))throw Error('Response bytes changed');results.push({transport:endpoint.transport,source,path,status:response.status,bytes:Buffer.byteLength(body),sha256:crypto.createHash('sha256').update(body).digest('hex')});}if(globalThis.fetch!==retainedFetch)throw Error('Fetch changed');",
-      "fs.writeFileSync(" + JSON.stringify(clientResult) + ",JSON.stringify({node:process.version,undici:process.versions.undici,fetchUnchanged:true,results,shapes},null,2)+'\\n',{flag:'wx',mode:0o600});process.exit(0);})().catch(error=>{console.error(error.stack);process.exit(1);});",
+      "(async()=>{const results=[];try{for(const endpoint of endpoints)for(const source of ['header','body'])for(const [path,value] of Object.entries(values)){",
+      "activeRequest={transport:endpoint.transport,source,path};const response=await retainedFetch(endpoint.origin+path+'?source='+source,{dispatcher:agents.get(endpoint.transport)}),body=await response.text();",
+      "if(response.status!==200||body!==JSON.stringify(value))throw Error('Response bytes changed');results.push({transport:endpoint.transport,source,path,status:response.status,bytes:Buffer.byteLength(body),sha256:crypto.createHash('sha256').update(body).digest('hex')});}",
+      "}finally{await Promise.all([...agents.values()].map(agent=>agent.close()));}if(globalThis.fetch!==retainedGlobalFetch||client.fetch!==retainedFetch)throw Error('Fetch changed');",
+      "fs.writeFileSync(" + JSON.stringify(clientResult) + ",JSON.stringify({node:process.version,undici:process.versions.undici,client:'selected-undici-fetch',explicitDispatcher:dispatcher,fetchUnchanged:true,selectedFetchUnchanged:true,results,shapes},null,2)+'\\n',{flag:'wx',mode:0o600});process.exit(0);})().catch(error=>{",
+      "const details=value=>({name:value?.name??null,code:value?.code??null,message:value?.message??String(value)});console.error(JSON.stringify({request:activeRequest,node:process.version,builtinUndici:process.versions.undici,client:'selected-undici-fetch',explicitDispatcher:dispatcher,error:details(error),cause:error?.cause?details(error.cause):null}));process.exit(1);});",
     ].join('\n');
     await writeFile(client, code, { flag: 'wx', mode: 0o600 });
     // Trust only this generated local certificate in the owned child; no proxy,
@@ -1023,6 +1037,8 @@ test('passive observer preserves H1/H2 bytes and complete Library structure with
     const rows = raw.trim().split('\n').map(JSON.parse), starts = rows.filter(row => row.event === 'http_start'), ends = rows.filter(row => row.event === 'http_end');
     assert.equal(starts.length, 16); assert.equal(ends.length, 16); assert.equal(consumer.results.length, 16); assert.equal(served.length, 16);
     assert.equal(consumer.fetchUnchanged, true);
+    assert.deepEqual(consumer.explicitDispatcher, dispatcher);
+    assert.equal(consumer.selectedFetchUnchanged, true); assert.equal(consumer.client, 'selected-undici-fetch');
     const expectedKinds = ['page', 'root-children', 'database', 'data_source'];
     for (const [index, start] of starts.entries()) {
       const actual = ends.find(row => row.id === start.id), original = served[index], consumed = consumer.results[index], projection = actual.library_structure;
