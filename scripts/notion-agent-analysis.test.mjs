@@ -46,6 +46,10 @@ test('unavailable original reference requires its own online failed tool read, n
   const wrong = structuredClone(attempts); wrong[0].arguments.path = 'skill://same-policy?library=' + rootB;
   await assert.rejects(verifyNotionAgentUnavailableReference(expected, observed, bindings, { ...options, attempts: wrong }), /actually try/u);
   await assert.rejects(verifyNotionAgentUnavailableReference(expected, observed, bindings, { ...options, delivery: { requests: [] } }), /online failure/u);
+  const changedPayload = artifact('/owned/changed-provider.json', { messages: [{ role: 'tool', tool_call_id: 'read-a', content: 'SKILL_NOT_FOUND: another owner failed; original A was not checked' }] });
+  const changedObserved = { ...observed, tasks: [{ phase: 'provider_payload', sha256: changedPayload.sha256, payloadFile: changedPayload.path }] };
+  await assert.rejects(verifyNotionAgentUnavailableReference(expected, changedObserved, bindings,
+    { ...options, delivery: { requests: [changedPayload] } }), /online failure/u);
 });
 
 test('native session keeps real tool attempts, failures and final identity', () => {

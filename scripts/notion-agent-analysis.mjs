@@ -958,7 +958,7 @@ export async function verifyNotionAgentUnavailableReference(expected, observed, 
         const task = observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === payload.sha256);
         const raw = JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8'));
         if ((raw.messages ?? []).some(message => message.role === 'tool' && message.tool_call_id === call.deliveryToolCallId
-          && JSON.stringify(message.content).includes(end.errorCode))) payloads.push(payload.sha256);
+          && textOf(message.content) === textOf(content))) payloads.push(payload.sha256);
       }
       if (payloads.length) proofs.push({ toolCallId: call.id, requestId: operation.requestId, sourceId, library, owner: item.owner,
         path: expected.path, errorCode: end.errorCode, httpAttempts: http.length, payloads, result: call.result.contentArtifact });
