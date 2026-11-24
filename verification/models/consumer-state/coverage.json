@@ -11,57 +11,66 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "2e8a6c6796a93753329a2fc4720a3e97386a1b7751e1c5a4eb3286d7a6c3f1ef",
+    "packages/context-broker/src/host-skills.ts": "4edc7c05100c7047c9e8074e53fd15130c1c35da6ee2db789ba344b53c01efc5",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "dc3c97493542f11345aadbc35e2b49e351f1047cf5063ed50e09b2177b312622",
-    "packages/context-broker/scripts/consumer-observation.test.ts": "2f07b67ddf22702b2416fc154daf6adc7d9974372e36563f11666c6858509145",
-    "packages/context-broker/scripts/host-prepare.test.ts": "314410342e0da1726fd3794b67418ce0b9205c8165d62e789484a3ab885d8c77",
-    "packages/context-broker/scripts/session-active.test.ts": "5e5870046f6f8268f34b71b07833194026b4b1e61d1aa2b7e3c64e36b2120f28",
-    "packages/context-broker/scripts/native-read-session.test.ts": "36a270ca63a5b5cf82ad9170f1d764c2b074f0bea2ffd05279129e7cffd22ec5",
-    "packages/context-broker/scripts/skill-context-session.test.ts": "6cd7d04bd5805d642b1e44c9338ed598983e0212e54a27ace188557727a88cd8",
-    "packages/context-broker/scripts/consumer-state.test.ts": "0f2b41c5b13ca0c63c813d999eb6bb72524c8d044afd528290f83f8b2006a489",
-    "scripts/check-consumer-state-mutations.mjs": "07c65aeb7a033b932d3119c53347065a066ce4a75e545e95593b06473d8e4d79",
+    "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
+    "packages/context-broker/scripts/host-prepare.test.ts": "a2cd528eacacff58207764b10db77388551207434a8370a2e9b67725163257fc",
+    "packages/context-broker/scripts/session-active.test.ts": "9e6b85e7db03965db5dbe5a2741472c2eee9c32e09f80c484f92f093d0d17186",
+    "packages/context-broker/scripts/native-read-session.test.ts": "a00f16b9c35e3a3a03e31665aff043534bd8385d97e15e4948af9703ff1fcab1",
+    "packages/context-broker/scripts/skill-context-session.test.ts": "f9917449d7af5c0f1c111b8966b8b98717bf8e2cd709f0ba9fd3eb9a7eb891c6",
+    "packages/context-broker/scripts/consumer-state.test.ts": "5af79b5da57a5393f8592e8cc6c1e8c76aed56f0edebdaf009fa83280189cb36",
+    "scripts/check-consumer-state-mutations.mjs": "02ea8b151ea52a06ae714e47916fbb5aa4ac089f0a0eff6e81ead5e366981690",
     "packages/context-broker/src/final-request.ts": "35ecfb52a7321e93fee2579eac8e52d0fed3f5ece5e2bc819bb5f7c4db921e2c",
-    "packages/context-broker/scripts/final-request.test.ts": "f3036e401ee6f2be5fd4738a2d9be9bb134db731c0c99c102e679727def54380",
+    "packages/context-broker/scripts/final-request.test.ts": "a07befc48725aa1438c4949ec41f827bf0f588e06aac74b1b9e26dd379b3f2f2",
     "packages/context-broker/scripts/final-request-undici.test.ts": "bf57522e3cd63a398f05085dbfd04068eade37018a897bf269ee3c2d68836fbd",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
-    "packages/context-broker/scripts/session-active-session.mjs": "078bdbf31785b43052b57f610e5a84f3838ef169a3b5b4170488c22e551277a0",
-    "packages/context-broker/src/index.ts": "9b9785d99024c6d3f4283ad8672412f05d24b8dc04eeb47ddffbd5703c414ec5",
+    "packages/context-broker/scripts/session-active-session.mjs": "453d30268dc2bbe1f70202f919fd80e31d2f570b5848820bbd0e8da28e951169",
+    "packages/context-broker/src/index.ts": "16fc1a7cdded78d543dfbff964b2d5175ac6671db83b2a2e171175dfd392f4ff",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
-    "packages/context-broker/src/notion-source.ts": "643772203b82a5c3a391348c6925fefd6c2d72064e0f8cf1b3e40b10ee6725a4",
+    "packages/context-broker/src/notion-source.ts": "a8a77d98b33a9b6dc4968fbd4ff30c336e87aa45d29ab343d9c76f1ed92b610e",
     "packages/context-broker/src/pi-host-adapter.ts": "3230ccb80a90f1374b08559a432df6d15736c2cb58634bdcf6274108f7c021d2",
-    "packages/context-broker/scripts/host-refresh.test.ts": "132b729c029e92f278a59bb03c4881346291a1e872add0067951478c8e6703c2",
-    "packages/context-broker/scripts/session-refresh.test.ts": "12e75bc82e0c54a59b9c5c1fc703bd04c5c780f5d5907cac1f3d9ffcac9c5b28",
+    "packages/context-broker/scripts/host-refresh.test.ts": "0ff7c7c2e5e887150049eb439522cb73a512971df3a793bde81aea7c64184f1c",
+    "packages/context-broker/scripts/session-refresh.test.ts": "5e3f715774593d8a95cdf4c9869bf010a70c2e792943350b08d2657b6dfe8cf4",
     "packages/context-broker/scripts/session-recovery.test.ts": "e27252382fa86515966b3dc90d1e33dbdbd6324a1fe8d32288d9aaae7dd27cfc",
-    "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "f2fd10601b54103d7b9bc74d51a73f0b5e79cb3dc885f410324f19f26053289d",
-    "packages/context-broker/scripts/resource-read-projection.test.ts": "28cdccffdcd2bb891182f72eac06c0a5a6ad9f2450a604bbb2b85a6f3ed2cd6b",
-    "packages/context-broker/scripts/notion-source-sdk.test.ts": "f35e63549bcced2bacad3896d09ea19fbda75c5b8901a06f1c7edc9a0f33b082",
-    "packages/context-broker/scripts/pi-read-adapter.test.ts": "68cf409fb0946075bd9c56985a459dd60a33044aa5994fbf2f101edb3595698d",
-    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "a518341cf245ab02e0acdd38bc1c3d44e3b8ca12068b91506a52dc5a05658ef4",
-    "packages/context-broker/scripts/notion-entry.test.ts": "d05cda9b673fc9b7af2f2bab3c6efb26b5f6d1ab1aa05b5fc9f982361f5d204a",
+    "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "2313a9df2496d9bb02589cd21ae18899d289d808c3cd8889eeb6fdc9477748e2",
+    "packages/context-broker/scripts/resource-read-projection.test.ts": "5a906e9a1468c0764999557f0e4f8cf011345f4708eeec7a7622581cc3765cf7",
+    "packages/context-broker/scripts/notion-source-sdk.test.ts": "3786836128bb0a4c1b82b49f671e9a7112868a847a383d553381959b2e0c9c9d",
+    "packages/context-broker/scripts/pi-read-adapter.test.ts": "fe3aaac44d90c4610addc8cb26a64fa17414cb9619d0e8e7da15ebebf529355c",
+    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "7a884c7cf8987a2d3076948b9fc35f66ba8d02165d5fa5903751afc598fb7da1",
+    "packages/context-broker/scripts/notion-entry.test.ts": "7ff3897a2cd5aebed74786139c1d565e63ce58023c25774b0757f4ff5e1fc238",
     "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
     "packages/context-broker/scripts/read-intent-status.test.ts": "a7f9efed5d60515cfa667c1baf40d6e4dc289bd0a57731189c48d31c1a941393",
-    "packages/context-broker/scripts/resource-read-host.test.ts": "97619387a42eb67a1ca28aad54bee34840b77a43ed1bf30ea3f3bd6d114e9841",
-    "packages/context-broker/scripts/fixed-resource-source.test.ts": "71045405be46e407d40f75c8b67618cd6187c2aa5a040ca725e06361520b25c6",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "1411774432d57f3cfff2a514d5d9cf237ae4b84f8479b519491bbea67280317d",
+    "packages/context-broker/scripts/fixed-resource-source.test.ts": "0b49d9e14ac4f4c1fe5289714f3f1ecbb9c69baa15f3eb1c4cc2e9b793023275",
     "packages/context-broker/src/resource-read-types.ts": "83bbf31109482048a472e58d580d6a09dcc605435db71528e33343570cbbeebd",
     "packages/context-broker/src/content-publication.ts": "0dbb3fb6e12798474d08856649ebb4282483b7241e9830ac3f55daef81ddd4f8",
-    "packages/context-broker/src/content-search.ts": "6c09904b6c1f86b19c1e67cac324d58cd31e6f62937d09eb956982d3fa29ce3c",
+    "packages/context-broker/src/content-search.ts": "04587a09c4cc526851a010804e01ae200c53ecea10da5591002fadbfb071f6fa",
     "packages/context-broker/src/pi-authorization.ts": "9355d0cdf3347043c17447bc691d1a605b374bded3b60cee8a61b317eb690440",
-    "packages/context-broker/src/notion-sdk.ts": "eb17bac02d15c0e6a9f3a6ceb2a5151d147d525249dd213c205d5a06a5749b76",
-    "packages/context-broker/scripts/host-content-search.test.ts": "2c2212e2f35236c07698152c3bd8932e1eb24e391759397a4be3b486f51217ad",
-    "packages/context-broker/scripts/content-search.test.ts": "c896da707027be2e695063ac17778d322bcc8f25a2cc4185743f876ec98f738f",
+    "packages/context-broker/src/notion-sdk.ts": "bbd1bafc8863f0ab1092c9910019e5623e89b153508ee1c3cafdbedf7dcc5bb9",
+    "packages/context-broker/scripts/host-content-search.test.ts": "5b993bedf74604cd5007070e39440846a88a5812e03313bb19de588d0c187717",
+    "packages/context-broker/scripts/content-search.test.ts": "d88a3e2d8a45ecf43e495235ffc3d5e1617ca9783b437fc70e9e9fc0eff39488",
     "packages/context-broker/scripts/pi-authorization.test.ts": "3b632769f7dc12d672c46155222cbc418cd66da86ae8fe6c592e275231a2ee3d",
-    "packages/context-broker/scripts/fixtures/current-notion-source.ts": "7e25986a3a6c0df9eae6b916c584458e59020cdbfec977ccbb9c54313cd69fcf",
+    "packages/context-broker/scripts/fixtures/current-notion-source.ts": "9a1609097463408c10561cad7e00e350c6155205c81c9d3e2734d023768afce8",
     "packages/context-broker/src/native-reference.ts": "37158660edb67b70a97bef4fb6bfdab70dfb7ef6ea4ad1c2765bd2313647207e",
-    "packages/context-broker/src/shared-skill-identity.ts": "a2387ff67405901a0ae38158439808e24bff0bf1f90059802e227370c741a682",
+    "packages/context-broker/src/shared-skill-identity.ts": "2495065caf4cb7b81227b60bc0c97d50ada7bdfa14a7824750cb9326583f9186",
     "packages/context-broker/src/session-short-ref.ts": "739f598b083740f918108477ea2fd072f001169a7d6eadf29805b53660447541",
     "packages/context-broker/src/session-short-ref-host.ts": "94dd355fc758acff6cd116ea639ae0a2fe70659dbc7ea9f65529b44959efa417",
     "packages/context-broker/src/notion-entry.ts": "b604d794984789c1a619ec8ad44e924d11faf755448080e65c0f17725131be8e",
-    "packages/context-broker/scripts/session-short-ref.test.ts": "262b02d12dd864274cd05c2402eca25cc2deab261bb31e463202e6e0706f87f5",
-    "packages/context-broker/scripts/session-short-ref-host.test.ts": "ad74d3533d1f476a3d65b18e95905294bdfe75a3eaa17853dfefd806cfca768c"
+    "packages/context-broker/scripts/session-short-ref.test.ts": "1eff8fb9000f5ae40eef9cabe53a7d913e18c4590d4d131823de995c2b6a019b",
+    "packages/context-broker/scripts/session-short-ref-host.test.ts": "982cd5b08c52fdc89e340d594f818095a9dd9f4968d030f326d9c636f29cb5e6",
+    "packages/context-broker/src/library-selection.ts": "4c43c6b3d53b175ac2cd266696fcbe1335c6bc05de96194db904c09d894f9657",
+    "packages/context-broker/scripts/library-selection.test.ts": "2dccea88ef3a6561513b32ed9523c96b4dd2712e13c3d529cdfe29e65f92ab36",
+    "packages/context-broker/scripts/skill-guidance.test.ts": "04bfcebdba25a1e9d22d018974743a98eac19cfe998e327a3de0ce2571189673",
+    "packages/context-broker/src/cli-write-invalidation.ts": "b320091423e2d3da7e073cda2d58c46f20ddec8ea8a1bd12d770963a2a9b30f6",
+    "packages/context-broker/scripts/cli-write-invalidation.test.ts": "1469fd9eb3eac1ee2760a86f617091f76d4936836e0da0e0650da6b653cb8466",
+    "packages/context-broker/src/sources.ts": "6d6021a9ee590790e402813caacc6de981192c514c52d004905cb1e4575918ce",
+    "packages/context-broker/scripts/shared-notion-adapter.test.ts": "9b1b4c91ed6004242f63ad76a88c6cb683715458f816e9ca287152dee2f2929e",
+    "packages/context-broker/scripts/soft-miss-regressions.test.ts": "5b54c8e60af86b759435d1a76192c0468c18fe852354b329edc98dba5172761f",
+    "packages/context-broker/scripts/input-guard.test.ts": "032ad7609b29f1e8984ecb1a8c159ed50237d765e65d1ce5c1350df015c86baf"
   },
   "models": {
     "FreshnessPublication": {
@@ -113,7 +122,7 @@
         "final-request.test.ts real deferred-drafts restoration and private role obligations",
         "final-request-undici.test.ts actual Node entity positive/rewrite/concurrency",
         "final-request.test.ts actual working_set report shape, session_effects separation, lost/modified management tool result and malformed consumption effects",
-        "notion-sdk-pi.mjs --scenario working-set: current SDK v2, actual public Pi tools, source HTTP and installed serializer; execution is separate evidence",
+        "notion-sdk-pi.mjs --scenario working-set: current SDK v3, actual public Pi tools, source HTTP and installed serializer; execution is separate evidence",
         "final-request.test.ts: persisted management facts on three ordinary turns, exact wire protection and operation-owned consumption effects; actual 128-entry historical Pi branch replay remains separate execution evidence",
         "read-intent-status.test.ts: inspect/use distinction, exact-version and shared root/Required roles, pending is not confirmed, public/private status binding and both directory projections"
       ]
@@ -141,16 +150,20 @@
     "LibrarySession": {
       "bounds": "Two canonical root identities A/B, two branches, one admitted A turn, one later turn, one pending A directory producer, one validated or failed switch to B, one exact cross-Library call, one original A pin, and at most one independent lifecycle cancellation. Nine scenarios; selection tickets and lifecycle epochs are distinct.",
       "owners": [
-        "session branch Library selection and validation",
-        "turn admission Library binding",
-        "SDK/CLI exact call scope",
-        "directory producer publication ticket",
-        "fixed selection physical owner"
+        "library-selection.ts sessionLibrary and createLibrarySelection select/capture/accept/isCurrent/route",
+        "library-selection.ts createLibraryCommand requested/ready/blocked and current generation/session guard",
+        "host-skills.ts turnContext and input/agent_start/agent_end admission ownership",
+        "host-skills.ts refreshMetadata publication checks and index.ts root-specific catalog key",
+        "index.ts exact configured Source routing; fixed graph/manifest owners retain original bindings"
       ],
       "atomicity": "Validate, commit branch selection, invoke the admitted turn, return directory evidence, restore a branch, and admit the next turn are separate transitions. Committing B does not cancel the admitted A turn. A directory publication stores whether its own scope/selection/epoch ticket was valid at that instant; a later valid switch does not retroactively invalidate a past publication.",
       "fairness": "Weak fairness covers started local actions and return of the bounded acquisition/validation. SessionFlowEventuallyExplained permits an explicit rejection or blocked switch flow; it does not promise Notion availability, provider completion or a successful user task.",
       "replays": [
-        "Actual Broker session/selection/call/publication guard regressions must be bound after implementation review; model input facts do not prove SDK3 wiring, canonical UUID parsing, enabled Source routing or real branch serialization."
+        "library-selection.test.ts: accepted A plus B selection, fresh blocked re-admission after resolver recovery, late different session, active branch rewind/resume, next input local default and verified-root reuse",
+        "skill-guidance.test.ts: ordinary accepted A turn, queued B, successful/failed switch and original CLI scope",
+        "check-consumer-state-mutations.mjs: six library-* real guard mutations with baseline/assertion/restored phases",
+        "soft-miss-regressions.test.ts through input-guard.test.ts: default-only overlapping names and actual OMP/Pi explicit B completion during A-to-C default change; multiple explicit Sources remain concrete obligations outside finite variables",
+        "cli-write-invalidation.test.ts: call-time full Source/record ownership and late A receipt plus explicit B write from A; physical DB/data-source bindings remain internal"
       ]
     }
   },
@@ -950,13 +963,6 @@
     "store_unavailable_diagnostic": "Reviewed the public error boundary: STATE_UNAVAILABLE is retained as the existing CLI code across catalog, body and resource reads, with a message to restore access to the existing Store. Other errors, effect sanitization, denial and all selection/acquisition/cancellation/publication guards are unchanged. The actual SDK regression covers all three operations and retains unknown-error rejection. No finite model transition, bound, case, expected rule or mutation target changed."
   },
   "current_review": {
-    "pi_tool_rendering": {
-      "reviewed_from": "c063a9a74dffa84fcfb90c6c9eb500821a957923",
-      "reviewed_through": "bee95e8ad2f019b340f87cf073aa676c26e90589",
-      "scope": "Pi-only presentation: installHostSkills awaits the optional UI factory at installation, before registering tools, and adds renderCall/renderResult only to list/use definitions. Renderer import failure returns undefined. List/use schemas, execute functions, result payloads, refresh, source and publication guards are byte-identical to the base after removing the three presentation lines. The read resolver registers before session_start to decorate saved read details, without source lookup or execution on replay; native execute, parameters, active-tool selection and session-start registration ownership checks are unchanged. Non-read and post-bind third-party renderers pass through.",
-      "guard_review": "Reviewed Availability, ReadRace, FreshnessPublication, SelectionGraph, DeliveryBoundary and RecoveryClosure mappings: no change to evidence/order/epoch/cancel/authorization, fixed-root or Requires commit, full body/serializer, active/pending projection or recovery guards. Presentation is not a new state writer. Added early-replay and ownership tests preserve existing execution assertions. 74 focused regressions and real Pi list/use/read plus fresh-process resume passed on bee95e8; CI must re-run all existing formal cases and actual guard mutations.",
-      "proof_limit": "No change to finite domains, model actions, rules, cases or mutation targets. These hashes bind reviewed bytes only, not a refinement proof or live UI acceptance."
-    },
     "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
     "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
     "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted.",
@@ -1165,12 +1171,32 @@
       "source_routing": "Only a complete current catalog absence or an explicit descriptor-proven Library mismatch permits trying another configured source. A fixed SKILL_NOT_FOUND, partial catalog or denied response must not be hidden by another source. SNAPSHOT_MISSING retains its dedicated fixed-missing handling and never falls back to current. notion-source-sdk.test.ts exercises the actual source boundary and exact SDK call count.",
       "router_catalog": "Direct remote Router catalog entries use the actual pure parser snapshot selection; the required Library query does not imply a fixed snapshot. Exact source namespace, credential scope, logical owner, physical locator and canonical entry checks still precede selection. remote-catalog.test.ts covers a complete current Router with library query and rejection of its fixed snapshot form. This grammar-to-catalog boundary is a concrete regression obligation, not a new finite model rule.",
       "source_diagnostic": "CURRENT_SOURCE_REQUIRED still covers existing missing or historical Sources table/property bindings as well as cross-Skill relative paths without a Source contribution. The public next-action text preserves current-content migration and points relative links to an exact target reference. Existing acquisition failure regressions continue to require the original code and migration action; no acquisition or model behavior changes."
-    }
+    },
+    "pi_tool_rendering": {
+      "reviewed_from": "c063a9a74dffa84fcfb90c6c9eb500821a957923",
+      "reviewed_through": "bee95e8ad2f019b340f87cf073aa676c26e90589",
+      "scope": "Pi-only presentation: installHostSkills awaits the optional UI factory at installation, before registering tools, and adds renderCall/renderResult only to list/use definitions. Renderer import failure returns undefined. List/use schemas, execute functions, result payloads, refresh, source and publication guards are byte-identical to the base after removing the three presentation lines. The read resolver registers before session_start to decorate saved read details, without source lookup or execution on replay; native execute, parameters, active-tool selection and session-start registration ownership checks are unchanged. Non-read and post-bind third-party renderers pass through.",
+      "guard_review": "Reviewed Availability, ReadRace, FreshnessPublication, SelectionGraph, DeliveryBoundary and RecoveryClosure mappings: no change to evidence/order/epoch/cancel/authorization, fixed-root or Requires commit, full body/serializer, active/pending projection or recovery guards. Presentation is not a new state writer. Added early-replay and ownership tests preserve existing execution assertions. 74 focused regressions and real Pi list/use/read plus fresh-process resume passed on bee95e8; CI must re-run all existing formal cases and actual guard mutations.",
+      "proof_limit": "No change to finite domains, model actions, rules, cases or mutation targets. These hashes bind reviewed bytes only, not a refinement proof or live UI acceptance."
+    },
+    "library_root_pi_rendering_integration": "Reviewed the Library root implementation rebased onto fa758957c799e886dd25069da19c283e9ab97387. Relative to the reviewed Library host, host-skills.ts adds only the optional renderer factory and two renderer spreads before explicit tool fields. All input admission, owner, Library selection, request ordering, publication, cancellation and graph commit guards retain their exact bytes. pi-host-adapter.ts is exactly the reviewed current next implementation. pi-read-adapter.test.ts retains the Library reference fixtures and adds the upstream replay/third-party ownership tests without weakening existing assertions. The consumption command includes both Library selection and renderer suites. Retest the combined source; these hashes are correspondence only, not a refinement proof or live acceptance."
   },
   "library_session_design": {
-    "status": "design_contract_pending_implementation_binding",
+    "status": "implementation_correspondence_reviewed",
     "contract": "The selected branch default, current turn Library, exact call target, directory ticket and fixed pin owner remain separate. Selection changes do not reuse lifecycle cancellation as a universal epoch.",
-    "note": "Production source hashes and mutation anchors are intentionally unchanged until the SDK3/session implementation is reviewed. These cases are design contracts, not an implementation refinement claim.",
-    "independent_oracle": "The first turn owner A, producer payload owner A, saved parent-branch selection A and original pin owner A are retained independently of current selection B."
+    "note": "Six concrete Library guard mutations are bound to reviewed SDK3/session source and independent assertions. All thirty-five prior state mutations remain. Execution pass/fail is reported only by retained frozen-candidate runs; source correspondence is not implementation refinement.",
+    "independent_oracle": "The first turn owner A, producer payload owner A, saved parent-branch selection A and original pin owner A are retained independently of current selection B.",
+    "reviewed_through": "830f79736ebf331dd95062adeb771b2307883f79",
+    "finite_limit": "Primary branch default and one explicit cross-Library call only. Multiple explicit $name@source invocations, names/UUIDs, physical Notion schema and installed host routing are concrete verification obligations."
+  },
+  "library_root_review": {
+    "reviewed_from": "c063",
+    "reviewed_through": "830f79736ebf331dd95062adeb771b2307883f79",
+    "owners": "Reviewed LibrarySelection sessionLibrary/select/capture/accept/isCurrent/route and command generation/session check; host admission and runningContext independently retain the accepted root without turning ordinary input into a deferred content graph. index catalog keys and host publication include the captured Library identity; old A turns can acquire their own result without publishing it as B.",
+    "sdk_and_identity": "SDK3 selectors are canonical root UUIDs, with local selectLibrary distinct from remote resolveLibrary. Source binding and enabled-source routing preserve complete shared Skill roots and fixed refs. Record IDs for Profiles/Views remain a separate bounded record grammar. Existing Source scope/credential, final current-evidence, cancellation, full graph, fixed restoration and provider/turn acknowledgement guards remain.",
+    "explicit_sources": "The default config/discovery path uses only the captured selected Source. Explicit $name@source or namespaced selection obtains that configured Source on demand under the accepted context; its directory is not published into the default menu or Profile. The OMP/Pi soft-miss replay separately holds an explicit B Prompt while the default moves A to C, observes one complete B body/full root, then requires the next input to use C. Unqualified overlapping names never borrow B.",
+    "write_receipts": "CLI write invalidation copies the accepted complete Source map and exact record bindings at tool_call. A later default/config change cannot reinterpret A receipt ownership, while an explicit --library B from A still maps to enabled B. These process-result and mixed-source grammar obligations are concrete tests beyond LibrarySession primary-default/one-explicit-call variables.",
+    "oracle": "The admitted A context, A producer target, original pin and active parent branch are independent expectations. A failed B is tested again after the remote resolver recovers and a fresh admission is made; it remains blocked with zero new resolver calls. Existing UUID/selector fixtures retain foreign/malformed cases and complete-body, denial, cancellation and graph assertions.",
+    "evidence_boundary": "Hashes bind inspected owner/test bytes; they do not claim passing model/mutation/installed/live evidence. LibrarySession enumerates two roots and one explicit call, not arbitrary simultaneous Sources, real UUID parsing, Pi serialization, Notion permissions or remote CAS. Exact case inventories and expected rule/broken sets remain unchanged."
   }
 }
