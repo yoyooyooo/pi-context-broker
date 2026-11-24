@@ -32,6 +32,7 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     "export const CONSUMPTION_EFFECTS_VERSION=1, READ_OUTPUT_PROOF_VERSION=1, CATALOG_DIRECTORY_CONTRACT_VERSION=1;",
     "export const CONTENT_SEARCH_CONTRACT_VERSION=1;",
     "export const calls=[]; let state; export function configure(value){state=value;}",
+    "export async function selectLibrary(options){calls.push({operation:'library-selection',options});return state.selectLibrary(options);}",
     "export async function resolveLibrary(options){calls.push({operation:'library',options});return state.resolveLibrary(options);}",
     "export function parseDuration(value){return value==='1s'?1000:0;}",
     "export function decodeConsumeResult(){throw Error('SDK results must not be decoded twice');}",
@@ -105,6 +106,7 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
   const table = (n: number) => ({ database_id: uuid(offset + n), data_source_id: uuid(offset + n + 1), property_ids: {} });
   const descriptor = { version: 2 as const, library_id: library, operation_id: "fixture-init", skills: table(10), files: table(20), records: table(30), sources: table(40) };
   const state = {
+    selectLibrary: async (options: Runtime) => options.library ?? library,
     resolveLibrary: async (options: Runtime) => {
       if (options.library !== undefined && options.library !== library) throw Object.assign(new Error("Foreign Library"), { code: "LIBRARY_SCOPE_MISMATCH" });
       return descriptor;

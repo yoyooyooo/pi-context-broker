@@ -98,14 +98,14 @@ try {
   assert.equal(matchDiscoveryRecord("not-a-skill", registry).decision, "skip");
 
   const guidance = buildCliGuidance({ sources: [
-    { type: "notion", id: "first", library: "one" },
-    { type: "notion", id: "second", library: "two" },
+    { type: "notion", id: "first", library: "00000000-0000-4000-8000-000000000101" },
+    { type: "notion", id: "second", library: "00000000-0000-4000-8000-000000000102" },
   ] });
   const content = String(guidance.content);
   assert.match(content, /source="first"/);
   assert.match(content, /source="second"/);
-  assert.match(content, /database="one"/);
-  assert.match(content, /database="two"/);
+  assert.match(content, /library="00000000-0000-4000-8000-000000000101"/);
+  assert.match(content, /library="00000000-0000-4000-8000-000000000102"/);
   assert.match(content, /never choose the first source implicitly/);
 
   console.log("bundled builtin checks passed: Notion opt-in gates all discovery and detached completion, disconnected setup still works, offline files/resources, independent source identities and CLI guidance");

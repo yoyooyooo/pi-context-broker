@@ -26,7 +26,7 @@ assert.ok(selectedEntry && isAbsolute(selectedEntry), "NTN_SKILLS_BUILD_ENTRY mu
 const base = await realpath(await mkdtemp(join(tmpdir(), "broker-artifacts-")));
 console.log("Artifact workspace retained: " + base);
 const report = { version: 2, status: "running", startedAt: new Date().toISOString(),
-  boundary: "Independently installed Broker and SDK v2 with controlled current Notion HTTP.",
+  boundary: "Independently installed Broker and SDK v3 with controlled current Notion HTTP.",
   notRun: ["Pi session", "provider/model", "live Notion", "OMP", "Tern"],
   currentSdk: { status: "not_run" } };
 const saveReport = () => writeFile(join(base, "manifest.json"), JSON.stringify(report, null, 2) + "\n");
@@ -159,7 +159,7 @@ try {
   assert.equal(report.currentSdk.child_starts, 0);
   assert.deepEqual(report.currentSdk.not_run, report.notRun);
   report.status = "passed";
-  console.log("Artifact verification passed: installed Broker/SDK v2 current HTTP consumption; Pi session/provider/model not run.");
+  console.log("Artifact verification passed: installed Broker/SDK v3 current HTTP consumption; Pi session/provider/model not run.");
 } catch (error) {
   report.status = "failed"; report.error = { code: error.code ?? error.name, message: error.message };
   throw error;

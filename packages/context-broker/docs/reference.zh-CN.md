@@ -197,7 +197,7 @@ sources:
 | `roots` | Filesystem，必填 | 非空路径数组，指向包含 Skill 的目录 |
 | `scan` | Filesystem | `maxDepth`、`maxSkillBytes` 为非负安全整数，`ignore` 为字符串数组；默认顶层 `scan` |
 | `requireAutoload` | Filesystem | 默认顶层 `requireAutoload`，再默认 `true`；为 true 时，该 source 的发现按 `autoload.enabled` 过滤 |
-| `database` | Notion | 可选 database id/selector；限定发现与选中 SDK/CLI 消费的范围 |
+| `library` | Notion | 可选 Library 根页面 ID 或 Notion URL；省略时绑定 CLI 全局 `default_library`，不会从第一个或唯一 Source 推断默认库 |
 | `default_view_id` | Notion | 可选稳定 View ID；会话选择优先，未配置时使用 API 顺序中的第一个 View |
 | `cacheDir` | Notion | 默认 `~/.cache/context-broker/notion`；保存可重建的元数据索引、当前入口和按需资源；不是内容历史权威 |
 | `discovery` | Notion | 元数据 `list` 策略：`maxAge`、`offline` |
@@ -211,7 +211,7 @@ Source 操作不设总时限。每次网络尝试独立计时；分页和限流�
 
 Notion 元数据统一使用 `listCatalog`。Skill/Router 准备、Prompt 直接加载和有预算的预取均调用 `consume`；支持文件使用 `readSkill` 或当前批量资源操作。配对 SDK 一次返回完整 manifest 与准确主文，Broker 首次只物化主文，保留所有 File 绑定供按需续读；`manifest_complete` 不代表全部文件已经在本地。Prompt 每次显式提交取得本轮内容。`source.command`、CLI prepare/read 回退和完整 export 快照路径已移除。旧包或不完整的包明确失败，需要一起升级配对 CLI/SDK 与 Broker。OMP/Tern 延后。
 
-配对 runtime 只接受 SDK v2，SDK 与 runtime 清单的能力必须一致。消费恒为零语义写入，不再接收 `readOnly` 参数。catalog-directory v1 在一次操作中提供完整目录与 Default View 两份独立投影，全库无关失败不会隐藏有效 View；缺少能力在调用前失败。
+配对 runtime 只接受 SDK v3，SDK 与 runtime 清单的能力必须一致。消费恒为零语义写入，不再接收 `readOnly` 参数。catalog-directory v1 在一次操作中提供完整目录与 Default View 两份独立投影，全库无关失败不会隐藏有效 View；缺少能力在调用前失败。
 
 Git-only 与混合 Skill 都暴露完整的当前文件目录。CLI/SDK 以每文件显式 native、resource 或 source descriptor 决定权威；编辑 Notion 阅读投影不会自动接管 Git/resource 内容，主文以 Notion 为权威。Broker 只消费准确正文和 File 绑定，不执行 adoption、不维护第二套归属。Notion 页面历史和 Git 历史不属于该消费协议。
 
@@ -233,7 +233,7 @@ Notion 网页修改发生在 CLI 缓存之外。精确引用固定身份，不�
 
 ### 显式远程内容搜索
 
-用户要求搜索 Skill 内容时，调用 `notion_list({search_in:"content",query:"独特词句",source:"team",limit:20})`。省略 `search_in` 或使用 `search_in:"metadata"` 保持原元数据查询，不启动 MCP 或 OAuth。内容查询要求非空 query、已启用且在线的 Notion 来源、该来源明确配置的 library entry，以及 1–50 的 limit。只有一个来源时可唯一选择；存在多个来源时必须传 source。SDK 先确认选定物理 entry 的访问，再把 query 发到该连接，不向多个连接广播。
+用户要求搜索 Skill 内容时，调用 `notion_list({search_in:"content",query:"独特词句",source:"team",limit:20})`。省略 `search_in` 或使用 `search_in:"metadata"` 保持原元数据查询，不启动 MCP 或 OAuth。内容查询要求非空 query、已启用且在线的 Notion 来源、已验证的 Library root，以及 1–50 的 limit。省略 source 时使用已接收任务选定的 Library；指定 source 可查询另一已启用来源。SDK 先确认根页面及其表绑定的访问，再把 query 发到该连接，不向多个连接广播。
 
 MCP transport、OAuth 和凭据只由同包 CLI/core 持有。REST 与 MCP 凭据相互独立；显式 MCP Token 优先，其失败不切换到另一个 OAuth 账号。缺少可用 grant 时，显式 Pi 前台内容搜索可以显示授权屏并打开系统浏览器，Esc 只取消当前查询的等待者。headless、RPC、print、JSON 不打开浏览器；授权需求结果提供 `ntn-skills auth mcp login` 供用户主动登录。宿主总预算至多六分钟，SDK 分别限制授权五分钟、搜索六十秒。回调不可用、拒绝和超时都会结束等待。
 
@@ -241,7 +241,7 @@ MCP transport、OAuth 和凭据只由同包 CLI/core 持有。REST 与 MCP 凭�
 
 内容搜索不建立本地全文索引，也不缓存结果页；始终返回 next_cursor:null 和 pagination:not_supported。任何 content cursor，包括旧 metadata cursor，都在 MCP I/O 前拒绝，原 metadata 分页不变。refresh:true 只刷新所选 REST 目录，不承诺刷新远程全文索引。搜索不采用指令，不修改 root/Requires pins 或 active 图。请求、session/branch/tree、来源、metadata 或已接纳资格发生变化时，旧正结果、空结果和错误均不可发布。授权成功只恢复参数未变且仍有效的原请求。
 
-用户点名询问某个 Notion Skill 是否存在或可用时，Agent 必须把名称作为 `query` 调用 `notion_list`，并设置 `refresh:true`。已有会话、先前查到或没查到、默认 View 已显示该名称，都不能省略这次核验；仍遵守用户明确指定的来源。查询只读元数据，保留已选 root/Requires 的固定版本。存在性与声明用途直接依据返回的元数据回答；用户要求检查或采用指令时，再读取或使用正文。只有当前新鲜且完整的查询才能说明搜索范围内未找到可用项；离线、过期、失败或部分结果不能证明当前不存在。 显式 source 只刷新该来源，省略则刷新全部已启用 Notion 来源；离线策略保持不变。后续分页沿返回的 cursor 继续，不再次刷新。Disabled Skill 可以不出现在可用目录中，这不代表对应 Notion 页面不存在。
+用户点名询问某个 Notion Skill 是否存在或可用时，Agent 必须把名称作为 `query` 调用 `notion_list`，并设置 `refresh:true`。已有会话、先前查到或没查到、默认 View 已显示该名称，都不能省略这次核验；仍遵守用户明确指定的来源。查询只读元数据，保留已选 root/Requires 的固定版本。存在性与声明用途直接依据返回的元数据回答；用户要求检查或采用指令时，再读取或使用正文。只有当前新鲜且完整的查询才能说明搜索范围内未找到可用项；离线、过期、失败或部分结果不能证明当前不存在。 显式 source 只刷新该来源，省略则刷新已接收任务选定的 Library；离线策略保持不变。后续分页沿返回的 cursor 继续，不再次刷新。Disabled Skill 可以不出现在可用目录中，这不代表对应 Notion 页面不存在。
 
 当前资格、固定选择与已经交付的文字分别处理。已知禁用阻止新的应用与隐式恢复，不删除已交付的历史解释。已知权限拒绝或认证 scope 变更阻止 Broker 后续受控投递／恢复相应已验证正文，不改写原 session，也不声称能撤回已经发送的请求。明确新选择须完整通过固定文件、身份与响应预算校验才替换旧图，失败保留原选择。
 
@@ -255,9 +255,9 @@ Pi 1.4 只在启动或 reload 时通过 `resources_discover` 收集扩展资源�
 
 OMP 保留原行为：查询目录时不阻塞编辑器，首次普通提交会在调用 provider 前等待当前 View。每轮 `before_agent_start` 生成一份 `<ntn-skills-view-catalog>`，按精确路径移除 Broker 自己的旧目录项，保留其他本地条目和会话正文。新建会话、列举或切换 View 均不自行调用模型。默认零预取预算不会在注册或切换目录时准备正文；显式预算可以在后台准备所选 View 的有限子集，不构成选择或激活。完整目录和 View 查询各自保留覆盖范围，新鲜度或某个页面可读都不能补成完整覆盖。
 
-显式 custom command 的 Broker 元数据 index 持久保存在 `cacheDir`，按 `ctl cache identity [--library SELECTOR]` 返回的凭据与远端目录身份共用。未配置 `command` 的默认来源使用 SDK 发现和 core 目录缓存，不建立这层重复目录权威。Pi/OMP、不同项目、命令写法、source ID/namespace、activation 策略和请求超时不会为同一远端目录另建分区；CLI 在本地将等价 database alias、ID、URL 解析为同一选择。不同凭据或远端查询范围继续隔离。`cacheDir` 显式选择存储位置，默认全局共用；显式相对路径仍按 cwd 解析。command 不支持 identity 能力时沿正常发现路径读取。新进程按原始 `validated_at` 和当前 discovery 策略重新计算年龄，不重置 TTL，也不沿用另一消费端策略算出的 stale 标志。新鲜目录沿用 CLI catalog TTL，默认 60 秒；过期目录先显示，同时只运行一次后台刷新。支持 partial 回调的菜单按 identity 保留位置，新增候选追加，消失候选禁用，提示行不能改草稿。OMP 强制文件补全保留当前候选，下一次编辑器请求采用刷新结果。旧请求取消后立即结束。暂时性刷新失败保留上一份目录、显示原因，5 秒内不重复请求；认证、权限或 scope 失败撤下旧 source 候选。`discovery.offline` 不访问网络。目录刷新不读取正文，选中激活仍校验 scope 与固定快照；`/context-broker refresh` 更新同一份共享目录观察，已加载会话保留其选中快照。
+Notion 元数据发现统一经过随包 SDK。Core 管理凭据、Library 隔离、目录新鲜度与 HTTP 请求预算。`source.command` 已移除。Broker 的 `cacheDir` 只保存可重建的元数据入口和选中主文、资源，不是另一套权威目录。目录按 SDK 的凭据 scope 隔离；source ID、namespace 仍保留在每条选中记录中。显式相对 `cacheDir` 按工作目录解析，不能据此推导跨 Skill 的作者路径。
 
-上述 custom-command 的 catalog format 4 在 `catalogs-v4` 保存不可变观察，按调用 `list` 前排他预约的请求序号选择。延迟旧请求不能替换后预约且已发布的观察，校验时间相同或回退也不改变顺序。TTL 仍使用原始 `validated_at` 和当前消费端策略；最高观察的 receipt 损坏时走权威重建，不退回较旧观察。读取扫描发布目录名并解析一份 receipt；预约、观察和会话可能持有的 metadata index 均保留。旧目录格式留在磁盘供检查，新代码不再读取。不可变导出仍按凭据 scope、record、snapshot 共用。竞争失败方核对同一快照的回执和完整资源一致后，将自己的 stage 改名为 `.retained-stage-*` 供检查；字节不同仍明确报 output conflict。保留内容不自动回收。升级扩展代码后，已有 OMP 会话执行 `/restart`，Pi 启动新进程；`/context-broker refresh` 只刷新数据。双宿主回归见[共享缓存与并发验收](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/session-cache-recovery.md#共享-notion-缓存)。
+目录年龄始终从 SDK 原始 `validated_at` 计算。读取缓存或重启进程不会续期。过期菜单可以在单次后台刷新期间展示已有记录，位置仍绑定精确身份，新增候选追加，消失候选禁用。临时故障保留失败原因和短暂重试间隔；认证、权限或 scope 失败撤下候选。`discovery.offline` 仅使用合格缓存。目录刷新不读取正文，切换 Library 也不改写已接收任务和固定版本。升级扩展后启动新进程；`/context-broker refresh` 只刷新当前代码所读的数据。
 
 新会话没有 Notion `$` 候选时，先核对当前宿主自己的 source 配置和实际安装 Broker 路径，不先改远端数据。Pi 与 OMP 配置独立；安装 Tern companion 不等于已加载 OMP 扩展。当前 SDK 目录发现不设额外的整条操作 deadline，内部每次网络尝试遵循配对 core 的请求预算；目录发现应仅处理元数据并消除逐成员重复请求。旧 Bundle catalog 必须显式转换并回写配置引用后才能交给 Router-only runtime，保留原件并另行迁移目录生成器；普通 refresh 不转换 schema，也不重新执行升级的扩展代码。所选 View 控制原生默认发现；完整 `$alias@namespace` 补全不受 View 限制。
 
@@ -290,7 +290,7 @@ Pi 为 Notion 记录提供归属当前会话分支的不透明引用。它们是
 
 ### 精确 Skill 引用
 
-统一协议为 `skill://<稳定-skill-id>[/<path>][?library=<逻辑-library-id>][&snapshot=<snapshot-id>]`。
+统一协议为 `skill://<稳定-skill-id>[/<path>][?library=<library-root-uuid>][&snapshot=<snapshot-id>]`。
 CLI、SDK 与 Broker 共享 `ntn-skills/ref`，均要求 `SKILL_REF_VERSION = 2`。
 消费时复制返回的引用。`sr:C`、`sr:S`、`sr:R` 属于当前会话分支；可移植身份使用 canonical `skill://`。
 
@@ -298,11 +298,11 @@ CLI、SDK 与 Broker 共享 `ntn-skills/ref`，均要求 `SKILL_REF_VERSION = 2`
 | --- | --- |
 | `skill://architect` | 已明确绑定的 Library 中稳定 ID 为 `architect` 的 Skill；读取其所选版本的主入口。 |
 | `skill://architect/references/review.md` | 该 Skill 的准确文件路径；Library 来自实际包含链接的所选文件或入口已绑定的库。 |
-| `skill://architect?library=team` | 完整当前身份 `{ libraryId: "team", skillId: "architect" }`。 |
-| `skill://architect/references/review.md?library=test` | 显式指定另一套已配置 Library 中的目标，独立校验目标权限与所选快照。 |
-| `skill://architect?library=team&snapshot=s_<64位十六进制>` | 从指定不可变 manifest 选择该 Skill 的主入口。 |
+| `skill://architect?library=44444444-4444-4444-8444-444444444444` | 完整当前身份 `{ libraryId: "44444444-4444-4444-8444-444444444444", skillId: "architect" }`。 |
+| `skill://architect/references/review.md?library=55555555-5555-4555-8555-555555555555` | 显式指定另一套已配置 Library 中的目标，独立校验目标权限与所选快照。 |
+| `skill://architect?library=44444444-4444-4444-8444-444444444444&snapshot=s_<64位十六进制>` | 从指定不可变 manifest 选择该 Skill 的主入口。 |
 
-`library` 是逻辑 Library 身份，不是 Notion 表的 UUID、source alias、显示名或缓存目录。
+`library` 是 Library 根页面的规范 UUID。Skills、Files、Records、Sources 四张表都是它的直系子项。Source alias、显示名和表 ID 不用于选库。
 省略它需要真实上下文：实际包含链接的所选文件，或命令/source 入口明确绑定的一套库。
 没有上下文就报错；全局只找到一个同名 Skill 也不能补出作用域。
 记录的 `id` 是完整 root URI，`ref` 带明确主文路径；locator 中的 `shared_skill` 仅保留为 Notion adapter 类型。
@@ -423,7 +423,7 @@ Pi 保留已接受的原生 `/skill:` 输入与图片，不由宿主提前执行
 
 原生命令参数包含所选 `$` 引用时，同一轮也只发送一份正文。Pi 首次激活与复用均完整保留空格、Tab 或换行分隔后的参数。
 
-Pi 的 Notion Skill/Router 路径对每个来源图调用一次 SDK v2 `consume`，同次取得已校验的图、完整主文和完整文件 manifest。Broker 发布入口前核对根、scope、物理 owner 与 File 绑定。每次操作独立持有 environment、cwd、runtime 与 abort signal。缺失或不兼容的 SDK 明确返回 `SOURCE_SDK_UNAVAILABLE` 或 `SOURCE_SDK_INCOMPATIBLE`，无 CLI 回退；OMP/Tern 工作延后。
+Pi 的 Notion Skill/Router 路径对每个来源图调用一次 SDK v3 `consume`，同次取得已校验的图、完整主文和完整文件 manifest。Broker 发布入口前核对根、scope、物理 owner 与 File 绑定。每次操作独立持有 environment、cwd、runtime 与 abort signal。缺失或不兼容的 SDK 明确返回 `SOURCE_SDK_UNAVAILABLE` 或 `SOURCE_SDK_INCOMPATIBLE`，无 CLI 回退；OMP/Tern 工作延后。
 
 完整文件 manifest 带有准确路径 ref、hash 与字节数；独立 native binding 保留可选 File ID，冻结 Source 文件可以没有投影的 File 行。宿主初始只在 `entry` 投影中保存主文。标量资源使用 SDK `readSkill` 的准确 File ref 与自有 output，批量资源使用 `readResources`。两者都核对 scope、owner、选定内容、存在的 native File binding 与完整 bytes/hash，只发布请求文件；二进制保持字节。未知路径、中断输出和不匹配结果不能成为 ready。缓存字节缺失时，只有当前权威仍匹配所选内容才可重新取得，不提供远端历史快照恢复。
 
@@ -523,7 +523,7 @@ members:
 
 如果文件是 `SKILL.md`，Context Broker 可以从 frontmatter 读取 `name` 和 `description`。只有需要覆盖 metadata 时，才需要手写这两个字段。
 
-远端成员固定使用 `{type: remote, source: {namespace: production}, id: "skill://review?library=team", locator: {type: shared_skill, library_id: team, skill_id: review, page_id: <UUID>, database_id: <UUID>, data_source_id: <UUID>}, ref: "skill://review/SKILL.md?library=team"}`。`ref` 可附加 `&snapshot=s_<sha256>` 固定版本，不填写 path、scope 或 cached path。`source.namespace` 精确匹配已启用配置源的 namespace，未配置 namespace 时匹配该源 id；不从 label 推测，也不通过 catalog 授予凭据权限。
+远端成员固定使用 `{type: remote, source: {namespace: production}, id: "skill://review?library=44444444-4444-4444-8444-444444444444", locator: {type: shared_skill, library_id: 44444444-4444-4444-8444-444444444444, skill_id: review, page_id: <UUID>, database_id: <UUID>, data_source_id: <UUID>}, ref: "skill://review/SKILL.md?library=44444444-4444-4444-8444-444444444444"}`。`ref` 可附加 `&snapshot=s_<sha256>` 固定版本，不填写 path、scope 或 cached path。`source.namespace` 精确匹配已启用配置源的 namespace，未配置 namespace 时匹配该源 id；不从 label 推测，也不通过 catalog 授予凭据权限。
 
 Broker 在源目录发现后按当前凭据范围内的 record、完整 locator、kind 和 ref 解析成员，只读元数据。未知、离线或歧义成员保留在索引中并明确标记 unavailable，同时进入 doctor 诊断；本地成员继续可用。Agent 按需读取成员 ref。已有远端 Router 可直接作为 `kind: router` 加同一 remote 身份字段的 catalog record（入口为 ROUTER.md），不重复生成页面或成员；已交接的 scene 应移除重复的本地 Router 与规则。
 
@@ -646,7 +646,7 @@ Notion source 可选 `default_view_id` 稳定 ID；当前会话选择优先，�
 /context-broker view default
 ```
 
-`views` lists API-ordered choices with exact selection commands. `view` without arguments reports name, ID, source, selection origin and count. Multiple sources require the source ID. Selecting a View changes only the active session; `default` resets to configured selection or first-View fallback. These commands do not call the LLM. The next ordinary user submission receives the new names/descriptions; full Skill bodies remain on demand. A source may set `default_view_id: VIEW_UUID` beside `database` in YAML. Names are never special and API order is not promised to match UI tab order.
+`views` lists API-ordered choices with exact selection commands. `view` without arguments reports name, ID, source, selection origin and count. Omitting the source ID uses the selected Library; an explicit source ID targets another enabled Source. Selecting a View changes only the active session; `default` resets to configured selection or first-View fallback. These commands do not call the LLM. The next ordinary user submission receives the new names/descriptions; full Skill bodies remain on demand. A source may set `default_view_id: VIEW_UUID` beside `library` in YAML. Names are never special and API order is not promised to match UI tab order.
 
 The active-branch custom entry `ntn-skills-view-selection` records version, source ID and canonical View ID. A null View ID resets the session override. It contains no instructions and is not a model message. Resume and branch navigation replay their own entries; parallel sessions never share mutable choice state. Validate a requested View before persisting it. Stale asynchronous callbacks are fenced at session boundaries. View selection does not modify source configuration files, withdraw previously loaded bodies or re-execute the extension.
 

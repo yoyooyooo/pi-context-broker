@@ -28,6 +28,7 @@ export async function contentSearch(input, options) {
   return { kind: 'results', records: [], input, library: options.library };
 }` : ""}
 export const calls = [];
+export async function selectLibrary(options) { calls.push({operation: 'library-selection', options}); return options.library ?? '00000000-0000-4000-8000-000000000099'; }
 export async function resolveLibrary(options) { calls.push({operation: 'library', options}); return {}; }
 export function parseDuration(value) { return value === '1s' ? 1000 : 0; }
 export function decodeConsumeResult() { throw new Error('consume already decoded; duplicate decoder invocation'); }

@@ -795,8 +795,8 @@ function notionWorkflowGuidance(reader: "read" | "CLI read", discovery: "notion_
 
 function buildCliGuidance(config: ConfigFile, activeTools?: readonly string[]): Omit<AgentMessage, "role" | "timestamp"> {
   if (activeTools !== undefined) return buildToolGuidance(config, new Set(activeTools));
-  const sources = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
-  const scopes = sources.length ? sources.map(source => hostCliScope([source])) : [hostCliScope()];
+  const sources = (config.sources ?? []).filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false);
+  const scopes = sources.filter(source => source.library !== undefined).map(source => hostCliScope([source]));
   const content = [
     "<ntn-skills-guidance>",
     "Use ntn-skills to discover, read, maintain and sync Skills when requested by the user.",
@@ -817,7 +817,8 @@ function buildCliGuidance(config: ConfigFile, activeTools?: readonly string[]): 
     }),
     "Append an argument array to its cli executable argv, replacing TERM/EXACT_REF/SNAPSHOT/RELATIVE with task values. Keep the supplied Library root scope on list/read/files.",
     "Each cli scope belongs to the named source and Library. Choose the write target separately from the workflow's origin; never choose the first source implicitly. Keep selected Notion content in its exact source. Failed or partial discovery does not prove absence.",
-    ...(sources.length ? [packagedWorkflowGuidance(new Set(["read"])), notionWorkflowGuidance("read", "CLI list", "the supplied prepared host entry")] : ["For explicitly requested bootstrap or offline help without a connected source, use the supplied CLI with ctl builtin read notion/ntn-skills-maintain or ctl builtin read notion/ntn-skills-sync. This reads packaged instructions, not a Notion projection."]),
+    ...(sources.length ? [packagedWorkflowGuidance(new Set(["read"])), notionWorkflowGuidance("read", "CLI list", "the supplied prepared host entry")] : [`For explicitly requested bootstrap or offline help, append ctl builtin read notion/ntn-skills-maintain or ctl builtin read notion/ntn-skills-sync to ${JSON.stringify(hostCliScope().command)}. This reads packaged instructions.`]),
+    ...(!scopes.length ? ["No verified Library scope is ready for remote CLI commands. Obtain cli_source:null from notion_ctl or skill_graph, or select an accessible Library before using remote CLI operations."] : []),
     "A successful read returns top-level content (the body), pinned ref, and snapshot_id (the files/resource-read target). The record field is metadata. Keep JSON output so ok/error and snapshot identity can be checked.",
     "Choose from supplied metadata; otherwise search with a short name or keyword, broadening an empty query. Select one suitable record before reading its body. Discover through metadata or the CLI, not cache directories.",
     "A complete Skill body supplied by the host/Broker or a successful read is already read. Use it directly. For introductions and summaries, do not reread the entry, list its cache directory, or inspect package/agent metadata.",
@@ -863,7 +864,7 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
         use ? "notion_use(ref)" : tools.has("bash") ? "CLI use EXACT_REF" : undefined)] : []),
       ...(tools.has("notion_ctl") ? ["notion_ctl working_set manages active roots and byte budgets; release preserves shared Requires, history and cache."] : []),
       ...(cliSources.length ? [`CLI management: use cli_source:null for this accepted turn’s Library, or choose an explicit Source. ${tools.has("notion_ctl") ? "notion_ctl cli_source" : "tool_search for notion_ctl, then its cli_source"}. Choose explicitly from ${JSON.stringify(cliSources)}; use returned command/scope, never a global CLI. No execution or authorization.`] : []),
-      ...((!read || !list || !use) && tools.has("bash") ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => {
+      ...((!read || !list || !use) && tools.has("bash") ? (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && source.library !== undefined).map(source => {
         const scope = hostCliScope([source]);
         return `Unavailable native operations can use this source's CLI: ${JSON.stringify({ source: source.id, command: scope.command, library: scope.library, operations: [...(!list || !use ? ["list --query TEXT --json"] : []), ...(!read ? ["read REF --json"] : []), ...(!use ? ["use REF --json"] : [])] })}. CLI refs must be canonical; match the selected record identity in this source's CLI list. Session sr: handles belong to this Pi session.`;
       }) : []),
@@ -873,7 +874,7 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
     return { customType: CLI_GUIDANCE_TYPE, content, display: false };
   }
   const read = tools.has("read"), search = tools.has("skill_search"), prepare = tools.has("skill_prepare"), graph = tools.has("skill_graph"), bash = tools.has("bash");
-  const sources = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
+  const sources = (config.sources ?? []).filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false);
   const fallback = bash && (!read || !search || !prepare);
   const cliList = !search || !prepare;
   const content = [
@@ -894,9 +895,9 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
     ...(fallback ? [
       "The following CLI fallback covers currently unavailable native discovery/read/use operations. It is not a request to run commands or check the environment. Use only the selected source and its supplied Library root scope; keep JSON output and check ok/error.",
       "Failed or partial discovery does not prove absence. An explicitly selected Notion workflow keeps its source and identity; failure never switches it to a packaged workflow.",
-      ...(!sources.length ? ["With no connected source, explicitly requested bootstrap/offline help can use the supplied CLI with ctl builtin read notion/ntn-skills-maintain or ctl builtin read notion/ntn-skills-sync."] : []),
+      ...(!sources.some(source => source.library !== undefined) ? [`No verified Library scope is ready for remote CLI operations. Obtain cli_source:null from notion_ctl or skill_graph, or select an accessible Library. Explicit bootstrap/offline help can append ctl builtin read notion/ntn-skills-maintain or ctl builtin read notion/ntn-skills-sync to ${JSON.stringify(hostCliScope().command)}.`] : []),
       "CLI commands cannot resolve session sr: handles. Use a canonical ref returned by that source's CLI metadata or a fixed snapshot/path from a successful preparation. If native read and prepare are unavailable, use this source's list command to obtain the same candidate's canonical ref, matching its exact record identity rather than guessing a name.",
-      ...(sources.length ? sources.map(source => hostCliScope([source])) : [hostCliScope()]).map(scope => {
+      ...sources.filter(source => source.library !== undefined).map(source => hostCliScope([source])).map(scope => {
         const library = scope.library ? ["--library", scope.library] : [];
         return [
           `<cli${scope.sourceId ? ` source="${escapeAttribute(scope.sourceId)}"` : ""}${scope.library ? ` library="${escapeAttribute(scope.library)}"` : ""}>${escapeText(JSON.stringify(scope.command))}`,
@@ -935,18 +936,21 @@ function projectCliGuidance(messages: AgentMessage[], guidance: Omit<AgentMessag
   return projected;
 }
 
-function installSkillGuidance(pi: ExtensionAPI, config: ConfigFile, paths: HostPathOptions): void {
+function installSkillGuidance(pi: ExtensionAPI, config: ConfigFile, paths: HostPathOptions,
+  configForContext?: (ctx: ExtensionContext) => ConfigFile): void {
   const knownPi = paths.host === "pi" && typeof pi.getActiveTools === "function";
   const enabled = paths.host !== "pi" || hasEnabledNotionSource(config);
-  const legacy = !enabled || knownPi ? undefined : buildCliGuidance(config);
-  const guidance = () => !enabled ? undefined : knownPi ? buildCliGuidance(config, pi.getActiveTools!()) : legacy;
+  const legacy = !enabled || knownPi || configForContext ? undefined : buildCliGuidance(config);
+  const guidance = (ctx: ExtensionContext) => !enabled ? undefined : knownPi
+    ? buildCliGuidance(configForContext?.(ctx) ?? config, pi.getActiveTools!())
+    : configForContext ? buildCliGuidance(configForContext(ctx)) : legacy;
   pi.on("before_agent_start", (_event, ctx) => {
-    const current = guidance();
+    const current = guidance(ctx);
     if (current && !hasCliGuidance(messagesFromActiveSessionContext(ctx), current)) return { message: current };
     return undefined;
   });
-  const project = (event: ContextEvent) => {
-    const current = guidance();
+  const project = (event: ContextEvent, ctx: ExtensionContext) => {
+    const current = guidance(ctx);
     if (!knownPi && current) return hasCliGuidance(event.messages, current) ? undefined
       : { messages: [...event.messages, { ...current, role: "custom", timestamp: Date.now() }] };
     const messages = projectCliGuidance(event.messages, current);
@@ -1342,7 +1346,8 @@ function contextBrokerCommandCompletions(argumentPrefix: string) {
     { value: "doctor", label: "doctor", description: "Diagnose config, catalogs, names, aliases, and routers" },
     { value: "refresh", label: "refresh", description: "Refresh metadata and prepare default source snapshots in background" },
     { value: "sources", label: "sources", description: "Show local source preparation state and freshness" },
-    { value: "connect ", label: "connect", description: "Preview or apply SOURCE ENTRY --config ABSOLUTE_FILE to connect a Notion source" },
+    { value: "connect ", label: "connect", description: "Preview or apply SOURCE LIBRARY_ROOT --config ABSOLUTE_FILE to connect a Notion source" },
+    { value: "library", label: "library", description: "Show current Library or select ROOT_ID, Notion URL, or default for subsequent submissions" },
     { value: "views", label: "views", description: "List Notion Views in API order with exact selection commands" },
     { value: "view", label: "view", description: "Show current View or select [source-id] <view-id|URL|default> for this session" },
     { value: "roots", label: "roots", description: "Show skill roots" },
@@ -1471,7 +1476,7 @@ async function dispatchContextBrokerCommand(args: string, ctx: ExtensionContext,
   const dollarRegistry = await getDollarRegistry(ctx.cwd, ctx);
   const routers = dollarRegistry.filter((record) => recordKind(record) === "router").length;
   ctx.ui?.notify?.(
-    `context-broker status: ${registry.length} configured skills, ${dollarRegistry.length} $ records, ${routers} routers\ncommands: doctor, refresh, roots, catalogs, find <query>, explain <name>, request`,
+    `context-broker status: ${registry.length} configured skills, ${dollarRegistry.length} $ records, ${routers} routers\ncommands: doctor, refresh, library [ROOT_ID|NOTION_URL|default], roots, catalogs, find <query>, explain <name>, request`,
     registry.length > 0 || dollarRegistry.length > 0 ? "info" : "warning",
   );
 }
@@ -1485,7 +1490,6 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   for (const event of ["session_shutdown", "session_before_switch", "session_before_branch", "session_before_tree"] as const) {
     pi.on(event, (_event, ctx) => acceptedSelections.clear(ctx));
   }
-  installSkillGuidance(pi, config, paths);
   const sourceRuntime = createSourceRuntime(
     (record, signal) => loadSourceSkill(record, config, process.cwd(), { signal }), 2, 32,
     (plan, signal) => prefetchNotionSkills(plan, process.cwd(), signal),
@@ -1545,9 +1549,10 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     });
     return promise;
   };
-  const getCatalog = (cwd = process.cwd(), ctx = menuContext) => {
+  const getCatalog = (cwd = process.cwd(), ctx = menuContext): Promise<DiscoveryResult> => {
     if (catalogOwner.signal.aborted) return Promise.reject(catalogOwner.signal.reason);
     ctx = librarySelection.capture(ctx ?? { cwd });
+    if (libraryContext(ctx)?.local() === undefined) return librarySelection.identity(ctx).then(() => getCatalog(cwd, ctx));
     const key = catalogKey(cwd, ctx);
     const entry = dollarRegistryByCwd.get(key);
     const changes = unseenChanges(key);
@@ -1621,7 +1626,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   };
   const currentCatalog = async (cwd = process.cwd(), ctx = menuContext): Promise<DiscoveryResult> => {
     ctx = librarySelection.capture(ctx ?? { cwd });
-    const key = catalogKey(cwd, ctx), result = await getCatalog(cwd, ctx);
+    const result = await getCatalog(cwd, ctx), key = catalogKey(cwd, ctx);
     const sourceIds = (config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && !source.discovery?.offline).map(source => source.id);
     const action = notionCatalogAction({ offline: false, sourceIds, observations: result.lists ?? [],
       failedSourceIds: result.failures.map(failure => failure.sourceId), now: Date.now(), retryAt: notionRetryAt.get(key) });
@@ -1639,6 +1644,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     const registryContext: ExtensionContext = { getSystemPrompt: () => systemPrompt };
     const cwd = catalogCwd(ctx.cwd ?? process.cwd());
     ctx = librarySelection.capture(ctx);
+    await librarySelection.identity(ctx);
     const key = catalogKey(cwd, ctx);
     const pendingCatalog = getCatalog(cwd, ctx);
     const state = dollarRegistryByCwd.get(key)!;
@@ -1798,12 +1804,14 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode, policy) => sourceRuntime.foreground(async () => {
       const groups = new Map<string, SkillRecord[]>();
       for (const record of records) {
-        if (!record.sourceId) throw new SourceError("SOURCE_IDENTITY_MISMATCH", "selection");
-        groups.set(record.sourceId, [...groups.get(record.sourceId) ?? [], record]);
+        if (!record.sourceId || record.locator?.type !== "shared_skill" || !record.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", "selection");
+        const key = JSON.stringify([record.sourceId, record.locator.library_id, record.sourceScope]);
+        groups.set(key, [...groups.get(key) ?? [], record]);
       }
       const prepared = [];
-      for (const [sourceId, roots] of groups) {
+      for (const roots of groups.values()) {
         checkPreparationSignal(signal);
+        const sourceId = roots[0]!.sourceId!;
         const source = normalizeSources(config.sources)?.find(source => source.id === sourceId);
         if (!source || source.type !== "notion" || source.enabled === false) throw new SourceError("SOURCE_UNAVAILABLE", sourceId);
         const messages = ctx ? messagesFromActiveSessionContext(ctx) : [];
@@ -1926,6 +1934,15 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       await host.prepareMany(injections.map(injection => injection.record).filter(record => record.sourceId), ctx, signal);
     },
   }, adapter);
+  pi.on("input", (event, ctx) => {
+    if (event.source === "interactive" || event.source === "rpc") menuContext = librarySelection.capture(ctx);
+    return undefined;
+  });
+  installSkillGuidance(pi, config, paths, ctx => {
+    const captured = librarySelection.capture(host.turnContext(ctx));
+    const selected = libraryContext(captured)?.peek();
+    return { ...config, sources: [...(config.sources ?? []).filter(source => source.type !== "notion"), ...selected?.sources ?? []] };
+  });
   // Host metadata generations must retire before cancelled source promises
   // settle, so no late failure can notify or publish into the closed session.
   pi.on("session_shutdown", async () => {

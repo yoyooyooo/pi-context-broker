@@ -239,7 +239,7 @@ async function configurationSnapshot(config) {
   }
   return {
     settings: { path: settingsPath, sha256: hash(raw), packages: settings.packages.length, selected_index: index, ...selectedIdentity, other_packages_sha256: hash(JSON.stringify(settings.packages.filter((_, i) => i !== index))) },
-    source: { path: sourcePath, sha256: hash(sourceBytes), sources: sources.map(source => ({ id: source.id, type: source.type, database: source.database, default_view_id: source.default_view_id, profile_id: source.profile_id, prefetch: source.prefetch ?? false, command_configured: false })) },
+    source: { path: sourcePath, sha256: hash(sourceBytes), sources: sources.map(source => ({ id: source.id, type: source.type, library: source.library, default_view_id: source.default_view_id, profile_id: source.profile_id, prefetch: source.prefetch ?? false, command_configured: false })) },
   };
 }
 
@@ -496,7 +496,7 @@ async function run(config) {
       if (message.startsWith('/context-broker find ')) result.required_selection = validateDailyFind(reports, config.expectedFindRecord);
       if (message.endsWith('doctor')) {
         assert.ok(reports.some(text => text.includes('direct Notion API 2026-03-11, authentication available')));
-        result.namespace_diagnostics = validateDailyDoctor(reports, namespaceReview, before.source.sources.map(source => source.database), config.expectedFindRecord.selection);
+        result.namespace_diagnostics = validateDailyDoctor(reports, namespaceReview, before.source.sources.map(source => source.library), config.expectedFindRecord.selection);
       }
     }
     const final = safeState(await rpc.command('get_state'));

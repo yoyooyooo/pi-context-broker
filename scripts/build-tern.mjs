@@ -71,7 +71,7 @@ const requiredConstants = {
 for (const [name, version] of Object.entries(requiredConstants)) {
   if (selectedSdkApi[name] !== version) throw new Error(`The current paired ntn-skills SDK requires ${name}=${version}; upgrade the complete selected package`);
 }
-for (const name of ['resolveLibrary', 'consume', 'decodeConsumeResult', 'listCatalog', 'listSkill', 'resolveCatalogReference', 'readSkill', 'readResources', 'decodeResourceReadResult', 'parseDuration', 'contentSearch']) {
+for (const name of ['selectLibrary', 'resolveLibrary', 'consume', 'decodeConsumeResult', 'listCatalog', 'listSkill', 'resolveCatalogReference', 'readSkill', 'readResources', 'decodeResourceReadResult', 'parseDuration', 'contentSearch']) {
   if (typeof selectedSdkApi[name] !== 'function') throw new Error(`The current paired ntn-skills SDK must export ${name}`);
 }
 if (selectedSdkApi.PACKAGE_VERSION !== selectedCli.metadata.version) throw new Error('CLI and SDK package versions differ');

@@ -15,7 +15,10 @@ the root and all four table bindings before use, including an empty Library.
 Old `source.database`, `--database` and `--entry` selectors are rejected.
 
 Broker resolves the CLI global `default_library` through the same SDK; it has no
-second global default. `/context-broker library ROOT` changes only the active
+second global default. Every accepted input uses SDK `selectLibrary` to read local
+selection without Notion I/O. `resolveLibrary` verifies the root and tables, with
+that validation reused for the same root. External default changes affect the
+next input; accepted tasks retain their original root. `/context-broker library ROOT` changes only the active
 session branch; `default` selects the CLI default. A Source without `library`
 binds that default. The selected root must match exactly one enabled Source.
 A failed switch records a blocked request; default operations cannot fall back
@@ -207,7 +210,7 @@ sources:
 | `roots` | Filesystem, required | Nonempty array of paths containing Skills |
 | `scan` | Filesystem | `maxDepth`, `maxSkillBytes` (nonnegative safe integers), `ignore` (string array); defaults to top-level `scan` |
 | `requireAutoload` | Filesystem | Defaults to top-level `requireAutoload`, then `true`; this source's discovery filters on `autoload.enabled` when true |
-| `database` | Notion | Optional database id/selector; scopes discovery and selected SDK/CLI consumption |
+| `library` | Notion | Optional Library root page ID or Notion URL; omission binds the CLI global `default_library`. It is never inferred from the first or only Source. |
 | `default_view_id` | Notion | Optional stable View ID; session selection overrides it, otherwise missing configuration uses the first View in API order |
 | `cacheDir` | Notion | Defaults to `~/.cache/context-broker/notion`; disposable metadata indexes, current prepared entries and on-demand resources |
 | `discovery` | Notion | Metadata `list` policy: `maxAge`, `offline` |
@@ -221,7 +224,7 @@ Source operations have no aggregate deadline. Each network attempt receives its 
 
 Notion metadata uses `listCatalog`. Skill/Router preparation, direct Prompt loading and bounded prefetch all use `consume`; supporting files use `readSkill` or the current batch resource operation. The paired SDK returns the complete manifest and exact main body once. Broker initially materializes the main entry and retains every declared File binding for on-demand reads; `manifest_complete` does not mean every file is local. Each explicit Prompt submission obtains its own material. `source.command`, CLI prepare/read fallback and full-export snapshots are removed. Old or incomplete packages fail explicitly; upgrade the paired CLI/SDK and Broker together. OMP/Tern evolution is deferred.
 
-The paired runtime accepts SDK v2 only, with matching SDK/runtime capabilities. Consumption performs no remote semantic writes and has no `readOnly` option. Catalog-directory v1 provides full-catalog and Default View projections in one operation. Each projection keeps its own result, so an unrelated catalog failure does not hide an accessible View. Missing capability fails before dispatch.
+The paired runtime accepts SDK v3 only, with matching SDK/runtime capabilities. Consumption performs no remote semantic writes and has no `readOnly` option. Catalog-directory v1 provides full-catalog and Default View projections in one operation. Each projection keeps its own result, so an unrelated catalog failure does not hide an accessible View. Missing capability fails before dispatch.
 
 Within the effective outgoing request, a complete Skill or resource body appears once for its exact identity and selected version. Explicit repeated `read` and `notion_use` operations still run, but their model projections can reuse a complete body and generated directory already present in that same request. Each operation retains its own effects. Summaries and past loaded flags are not complete-content witnesses. Original session entries and tool results remain intact. Retiring old source text does not erase an observed or unknown operation outcome. See the [projection contract](skill-consumption-runtime.md#presentation-and-proof).
 
@@ -265,7 +268,7 @@ Pi 1.4 collects extension resource paths through `resources_discover` at startup
 
 OMP retains its existing behavior: discovery does not block its composer, but the first ordinary submission awaits the current View directory before calling the provider. `before_agent_start` rebuilds one `<ntn-skills-view-catalog>` in the system prompt, removes only Broker-owned stale native entries by exact path, and preserves unrelated local entries and conversation bodies. Starting a session, listing Views and changing a View do not themselves call a model. The default zero prefetch budget starts no body preparation when the directory is registered or changed. Explicit budgets can warm a bounded subset of that View without selecting or loading those records. Full-catalog coverage and View-query coverage remain distinct; neither freshness nor an available individual page repairs missing coverage.
 
-All Notion metadata discovery uses the paired in-process SDK. Its core catalog owns credential and database isolation, freshness and HTTP request limits. `source.command` is rejected; there is no custom-command catalog or identity-command fallback. Broker uses `cacheDir` for disposable metadata stubs and selected entry/resource materialization under the SDK credential scope. This directory is not a second authoritative catalog. Its default is global; an explicitly relative path resolves against the working directory. Changing the source ID or namespace does not change the underlying credential scope, and every selection still retains its configured source identity.
+All Notion metadata discovery uses the paired in-process SDK. Its core catalog owns credential and Library isolation, freshness and HTTP request limits. `source.command` is rejected; there is no custom-command catalog or identity-command fallback. Broker uses `cacheDir` for disposable metadata stubs and selected entry/resource materialization under the SDK credential scope. This directory is not a second authoritative catalog. Its default is global; an explicitly relative path resolves against the working directory. Changing the source ID or namespace does not change the underlying credential scope, and every selection still retains its configured source identity.
 
 Catalog age is measured from the SDK's original `validated_at` under the current discovery policy. Reading cached metadata or restarting the process does not renew its TTL. During a process, expired menu metadata can remain visible while one refresh runs. Candidate positions stay bound to identity; new choices are appended and removed choices are disabled, and status rows cannot replace draft text. Cancellation settles a superseded lookup immediately. A transient refresh failure retains prior choices with its failure reason and a five-second retry gap. Authentication, permission and scope failures withdraw those choices. `discovery.offline` uses only eligible local data. Catalog refresh reads no bodies, and selected activation retains its separate authorization, freshness and fixed-binding checks. `/context-broker refresh` reacquires current metadata; it does not reload extension code or alter already loaded conversation bodies.
 
@@ -277,7 +280,7 @@ When a new Pi session has no Notion `$` candidates, check its enabled source con
 
 
 
-Catalog provenance accepts only `role: content`; an omitted role has the same meaning. Every current record belongs to its declared database/data-source pair and a successful `coverage.queried_data_sources` query. A configured database selector limits that content database. Source ID, namespace and credential scope remain bound through metadata registration and exact-ref activation. The logical `skill://architect?library=library-team` identity and its physical page UUID are checked separately. A direct read does not prove directory completeness; a partial catalog retains exact available records and an explicit coverage failure.
+Catalog provenance accepts only `role: content`; an omitted role has the same meaning. Every current record belongs to its declared database/data-source pair and a successful `coverage.queried_data_sources` query. The configured Library root must match catalog `library_id` and every returned record. Physical database and data-source bindings remain independently checked. Source ID, namespace and credential scope remain bound through metadata registration and exact-ref activation. The logical `skill://architect?library=44444444-4444-4444-8444-444444444444` identity and its physical page UUID are checked separately. A direct read does not prove directory completeness; a partial catalog retains exact available records and an explicit coverage failure.
 
 Record identity is `JSON.stringify([sourceId, sourceScope, kind, locator.type, id])`; source is independently local/notion. Filesystem identities use the real file path. Automatic Notion completion normally inserts `$alias@namespace`, adding a page ID for collisions; accepted identities are captured synchronously by the current preparation gate before any asynchronous work. A new draft accepted while that submission runs cannot replace its identity or be cleared when the earlier turn ends.
 
@@ -307,7 +310,7 @@ Git and mixed Skills expose one complete current file directory. The CLI/SDK own
 
 ### Exact Skill references
 
-The shared protocol is `skill://<stable-skill-id>[/<path>][?library=<logical-library-id>][&snapshot=<snapshot-id>]`.
+The shared protocol is `skill://<stable-skill-id>[/<path>][?library=<library-root-uuid>][&snapshot=<snapshot-id>]`.
 The CLI, SDK and Broker use the same `ntn-skills/ref` implementation and require `SKILL_REF_VERSION = 2`.
 Copy returned references for consumption. `sr:C`, `sr:S` and `sr:R` are branch-local handles;
 canonical `skill://` references carry the portable identity.
@@ -316,11 +319,11 @@ canonical `skill://` references carry the portable identity.
 | --- | --- |
 | `skill://architect` | The stable Skill ID `architect` in an explicitly bound Library context. Reading chooses its selected entrypoint. |
 | `skill://architect/references/review.md` | One exact path within that Skill, using the containing selected file's Library or the Library bound at the entry boundary. |
-| `skill://architect?library=team` | The complete current identity `{ libraryId: "team", skillId: "architect" }`. |
-| `skill://architect/references/review.md?library=test` | An explicit target in another configured Library, with that target's own authorization and selected snapshot. |
-| `skill://architect?library=team&snapshot=s_<64-hex-digits>` | That Skill's entrypoint from the specified immutable manifest. |
+| `skill://architect?library=44444444-4444-4444-8444-444444444444` | The complete current identity `{ libraryId: "44444444-4444-4444-8444-444444444444", skillId: "architect" }`. |
+| `skill://architect/references/review.md?library=55555555-5555-4555-8555-555555555555` | An explicit target in another configured Library, with that target's own authorization and selected snapshot. |
+| `skill://architect?library=44444444-4444-4444-8444-444444444444&snapshot=s_<64-hex-digits>` | That Skill's entrypoint from the specified immutable manifest. |
 
-`library` identifies a logical Library, not a Notion database UUID, source alias, display name or cache directory.
+`library` is the canonical UUID of the Library root page. Its Skills, Files, Records and Sources databases are direct children. Source aliases, display names and table IDs do not select a Library.
 Omitting it requires authority: the actual containing selected file, or one Library explicitly bound by the command/source entry.
 An unscoped reference fails; finding only one similarly named Skill does not supply a scope.
 Each current record's `id` is its full root URI; `ref` includes its explicit main path.
@@ -453,7 +456,7 @@ Pi retains accepted native `/skill:` input and images without the host's early u
 
 Native invocation arguments can include the selected `$` reference without adding a second body in the same turn. Pi preserves the full arguments after a space, tab or newline separator, on both first activation and reuse.
 
-Pi's Notion Skill/Router path calls SDK v2 `consume` once per source graph. It returns the validated graph, complete main bodies and complete file manifests together. Broker checks roots, scope, physical owner and File bindings before publishing entries. Each operation owns its environment, cwd, runtime and abort signal. Missing or incompatible SDKs fail with `SOURCE_SDK_UNAVAILABLE` or `SOURCE_SDK_INCOMPATIBLE`; there is no CLI fallback. OMP/Tern work is deferred.
+Pi's Notion Skill/Router path calls SDK v3 `consume` once per source graph. It returns the validated graph, complete main bodies and complete file manifests together. Broker checks roots, scope, physical owner and File bindings before publishing entries. Each operation owns its environment, cwd, runtime and abort signal. Missing or incompatible SDKs fail with `SOURCE_SDK_UNAVAILABLE` or `SOURCE_SDK_INCOMPATIBLE`; there is no CLI fallback. OMP/Tern work is deferred.
 
 The complete file manifest carries exact path refs, hashes and byte lengths. Separate native File bindings retain File IDs when present; a frozen Source file may have no projected File row. The host initially stores only the main in an `entry` projection. Scalar resources use SDK `readSkill` with an exact File ref and owned output; batch resources use `readResources`. Both verify scope, owner, selected content, any native File binding and complete bytes/hash, and publish only requested files. Binary resources remain bytes. Unknown paths, interrupted output and mismatches cannot become ready. Missing cached bytes can be reacquired only while current authority still matches the selection; there is no remote historical-snapshot recovery.
 
@@ -559,15 +562,15 @@ Remote members use one explicit identity shape, without a filesystem path:
 members:
   - type: remote
     source: { namespace: production }
-    id: skill://review?library=team
+    id: skill://review?library=44444444-4444-4444-8444-444444444444
     locator:
       type: shared_skill
-      library_id: team
+      library_id: 44444444-4444-4444-8444-444444444444
       skill_id: review
       page_id: 11111111-1111-4111-8111-111111111111
       database_id: 22222222-2222-4222-8222-222222222222
       data_source_id: 33333333-3333-4333-8333-333333333333
-    ref: skill://review/SKILL.md?library=team
+    ref: skill://review/SKILL.md?library=44444444-4444-4444-8444-444444444444
 ```
 
 `source.namespace` selects the enabled configured source's `namespace` (or its `id` when no namespace is configured). It never selects by label or credential scope. Resolution uses the current credential-scoped source directory and verifies the full locator, kind and canonical ref; optional `&snapshot=s_<sha256>` pins the member read. Catalog scope and cached path fields are rejected. Missing, offline or ambiguous members remain in the index with an explicit unavailable code and doctor diagnostic; local members remain usable. Index generation reads metadata only, and agents read the selected member's ref on demand.
@@ -695,7 +698,7 @@ This response assumes the Skill exists at the example path in a configured root.
 /context-broker view default
 ```
 
-`views` lists API-ordered choices with exact selection commands. `view` without arguments reports name, ID, source, selection origin and count. Multiple sources require the source ID. Selecting a View changes only the active session; `default` resets to configured selection or first-View fallback. These commands do not call the LLM. The next ordinary user submission receives the new names/descriptions; full Skill bodies remain on demand. A source may set `default_view_id: VIEW_UUID` beside `database` in YAML. Names are never special and API order is not promised to match UI tab order.
+`views` lists API-ordered choices with exact selection commands. `view` without arguments reports name, ID, source, selection origin and count. Omitting the source ID uses the selected Library; an explicit source ID targets another enabled Source. Selecting a View changes only the active session; `default` resets to configured selection or first-View fallback. These commands do not call the LLM. The next ordinary user submission receives the new names/descriptions; full Skill bodies remain on demand. A source may set `default_view_id: VIEW_UUID` beside `library` in YAML. Names are never special and API order is not promised to match UI tab order.
 
 The active-branch custom entry `ntn-skills-view-selection` records version, source ID and canonical View ID. A null View ID resets the session override. It contains no instructions and is not a model message. Resume and branch navigation replay their own entries; parallel sessions never share mutable choice state. Validate a requested View before persisting it. Stale asynchronous callbacks are fenced at session boundaries. View selection does not modify source configuration files, withdraw previously loaded bodies or re-execute the extension.
 

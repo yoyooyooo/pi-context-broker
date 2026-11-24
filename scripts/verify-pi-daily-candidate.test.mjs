@@ -95,22 +95,22 @@ test('candidate package override changes only the reviewed local package slot', 
 });
 
 test('candidate source preserves local discovery and refuses ambiguous daily source changes', () => {
-  const original = { skillRoots: ['/real/skills'], ruleRoots: ['/real/rules'], discoveryCatalogs: ['/real/catalog.yaml'], sources: [{ id: 'local', type: 'filesystem', roots: ['/real/other'] }, { id: 'notion', type: 'notion', database: 'old', prefetch: false }] };
-  const input = { sourceId: 'notion', database: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', cacheDir: '/owned/cache' };
+  const original = { skillRoots: ['/real/skills'], ruleRoots: ['/real/rules'], discoveryCatalogs: ['/real/catalog.yaml'], sources: [{ id: 'local', type: 'filesystem', roots: ['/real/other'] }, { id: 'notion', type: 'notion', library: 'old', prefetch: false }] };
+  const input = { sourceId: 'notion', library: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', cacheDir: '/owned/cache' };
   const candidate = candidateSourceConfig(original, input);
   assert.deepEqual(candidate.skillRoots, original.skillRoots); assert.deepEqual(candidate.sources[0], original.sources[0]);
-  assert.equal(original.sources[1].database, 'old'); assert.equal(candidate.sources[1].database, input.database);
+  assert.equal(original.sources[1].library, 'old'); assert.equal(candidate.sources[1].library, input.library);
   assert.equal(candidateSourceConfig(original, { ...input, noNotion: true }).sources[1].enabled, false);
   assert.throws(() => candidateSourceConfig({ ...original, ruleRoots: ['./relative'] }, input));
   assert.throws(() => candidateSourceConfig({ ...original, sources: [...original.sources, { id: 'extra', type: 'notion' }] }, input));
   assert.throws(() => candidateSourceConfig({ ...original, sources: [{ ...original.sources[1], command: ['fake'] }] }, input));
 });
 
-const publicCli = { mode: 'original-create-recovery', operationId: 'original-operation', entry: { path: '/frozen/ntn-skills.js' }, database: 'owned-library', target: 'original-page',
+const publicCli = { mode: 'original-create-recovery', operationId: 'original-operation', entry: { path: '/frozen/ntn-skills.js' }, library: 'owned-library', target: 'original-page',
   originalPlan: { path: '/evidence/original-plan.json' }, ownerRef: 'skill://original-owner?library=owned-library', outputRoot: '/evidence/agent-output',
   inputFiles: ['/evidence/original-plan.json', '/evidence/original-error.json'] };
 const cliCommand = 'node /frozen/ntn-skills.js';
-const reviewCommand = cliCommand + ' ctl library create recovery review /evidence/original-plan.json --entry owned-library --target original-page --output /evidence/agent-output/review.json';
+const reviewCommand = cliCommand + ' ctl library create recovery review /evidence/original-plan.json --library owned-library --target original-page --output /evidence/agent-output/review.json';
 
 test('public CLI task permits help and only the bound original recovery and strict reads', () => {
   assert.equal(reviewCandidateCliCommand(cliCommand + ' --help', publicCli).kind, 'help');
@@ -119,19 +119,19 @@ test('public CLI task permits help and only the bound original recovery and stri
   assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl operation show original-operation', publicCli).kind, 'operation-show');
   assert.equal(reviewCandidateCliCommand(reviewCommand, publicCli).kind, 'review');
   assert.equal(reviewCandidateCliCommand(reviewCommand.replace(' /evidence/original-plan.json', '') + ' /evidence/original-plan.json', publicCli).kind, 'review');
-  const apply = cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --entry owned-library --review /evidence/agent-output/review.json --review-id create-restore-' + 'a'.repeat(64);
+  const apply = cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --library owned-library --review /evidence/agent-output/review.json --review-id create-restore-' + 'a'.repeat(64);
   assert.equal(reviewCandidateCliCommand(apply + ' --dry-run', publicCli).dryRun, true);
   assert.equal(reviewCandidateCliCommand(apply, publicCli).dryRun, false);
-  assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl library create recovery reconcile --entry owned-library --target original-page /evidence/original-plan.json', publicCli).kind, 'reconcile');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl library create recovery reconcile --library owned-library --target original-page /evidence/original-plan.json', publicCli).kind, 'reconcile');
   assert.equal(reviewCandidateCliCommand(reviewCommand + ' --max-requests 100 --duration-ms 60000', publicCli).kind, 'review');
   const fixed = skillFileRef(publicCli.ownerRef, 'references/policy.md', 's_' + 'a'.repeat(64));
   const main = skillFileRef(publicCli.ownerRef, 'SKILL.md', 's_' + 'a'.repeat(64));
-  const read = cliCommand + " read '" + fixed + "' --database owned-library --read-only --json --metrics";
+  const read = cliCommand + " read '" + fixed + "' --library owned-library --read-only --json --metrics";
   assert.equal(reviewCandidateCliCommand(read, publicCli).kind, 'read');
   assert.equal(reviewCandidateCliCommand(read, publicCli).argv[3], fixed);
-  assert.equal(reviewCandidateCliCommand(cliCommand + ' read --json --metrics --read-only --database owned-library --path references/policy.md original-page', publicCli).kind, 'read');
-  assert.equal(reviewCandidateCliCommand(cliCommand + " read references/policy.md --from '" + main + "' --database owned-library --read-only --json --metrics", publicCli).kind, 'read');
-  assert.equal(reviewCandidateCliCommand(cliCommand + " files '" + main + "' --database owned-library --metrics", publicCli).kind, 'files');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' read --json --metrics --read-only --library owned-library --path references/policy.md original-page', publicCli).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + " read references/policy.md --from '" + main + "' --library owned-library --read-only --json --metrics", publicCli).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + " files '" + main + "' --library owned-library --metrics", publicCli).kind, 'files');
 });
 
 test('public CLI scope rejects shell composition, replacement plans, owners and unbounded output', () => {
@@ -140,32 +140,32 @@ test('public CLI scope rejects shell composition, replacement plans, owners and 
     'python private-store.py', reviewCommand.replace('/frozen/ntn-skills.js', '/other/cli.js'),
     reviewCommand.replace('create recovery review /evidence/original-plan.json', 'create /replacement'),
     reviewCommand.replace('/evidence/original-plan.json', '/evidence/replacement-plan.json'),
-    reviewCommand.replace('--entry owned-library', '--entry another-library'),
+    reviewCommand.replace('--library owned-library', '--library another-library'),
     reviewCommand.replace('--target original-page', '--target replacement-page'),
     reviewCommand.replace('/evidence/agent-output/review.json', '/evidence/original-plan.json'),
     reviewCommand.replace('/evidence/agent-output/review.json', '/evidence/agent-output/../outside.json'),
     cliCommand + ' --help > /tmp/overwrite', cliCommand + ' --help$(id)',
     cliCommand + ' ctl operation show another-operation', cliCommand + ' ctl operation resume original-operation',
     reviewCommand + ' --json --metrics', reviewCommand + ' --dry-run', reviewCommand + ' --max-requests 2001',
-    cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --entry owned-library',
-    cliCommand + ' ctl library create recovery reconcile /evidence/original-plan.json --entry owned-library --target original-page --output /evidence/agent-output/unsupported.json',
-    cliCommand + ' read original-page --database owned-library --json --metrics',
-    cliCommand + ' read another-page --database owned-library --read-only --json --metrics',
-    cliCommand + " read references/policy.md --from skill://another-owner/SKILL.md --database owned-library --read-only --json --metrics",
-    cliCommand + ' read original-page --path ../outside --database owned-library --read-only --json --metrics',
-    cliCommand + ' files original-page --database owned-library --metrics',
-    cliCommand + " files 'skill://another-owner/SKILL.md?snapshot=s_" + 'a'.repeat(64) + "' --database owned-library --metrics",
+    cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --library owned-library',
+    cliCommand + ' ctl library create recovery reconcile /evidence/original-plan.json --library owned-library --target original-page --output /evidence/agent-output/unsupported.json',
+    cliCommand + ' read original-page --library owned-library --json --metrics',
+    cliCommand + ' read another-page --library owned-library --read-only --json --metrics',
+    cliCommand + " read references/policy.md --from skill://another-owner/SKILL.md --library owned-library --read-only --json --metrics",
+    cliCommand + ' read original-page --path ../outside --library owned-library --read-only --json --metrics',
+    cliCommand + ' files original-page --library owned-library --metrics',
+    cliCommand + " files 'skill://another-owner/SKILL.md?snapshot=s_" + 'a'.repeat(64) + "' --library owned-library --metrics",
   ]) assert.throws(() => reviewCandidateCliCommand(command, publicCli), command);
 });
 
 test('public author update permits one exact Description and rejects every extra mutation', () => {
   const policy = { ...publicCli, mode: 'owned-description-update', description: 'Verified shared author workflow.' };
-  const command = cliCommand + ' update original-page --database owned-library --description "Verified shared author workflow."';
+  const command = cliCommand + ' update original-page --library owned-library --description "Verified shared author workflow."';
   assert.equal(reviewCandidateCliCommand(command + ' --dry-run', policy).dryRun, true);
   assert.equal(reviewCandidateCliCommand(command, policy).kind, 'update');
   assert.equal(reviewCandidateCliCommand(command.replace(' original-page', '') + ' original-page', policy).kind, 'update');
   assert.equal(reviewCandidateCliCommand(cliCommand + ' schema update', policy).kind, 'schema');
-  assert.equal(reviewCandidateCliCommand(cliCommand + ' read original-page --database owned-library --json --metrics --read-only', policy).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' read original-page --library owned-library --json --metrics --read-only', policy).kind, 'read');
   for (const value of [command.replace('original-page', 'another-page'), command.replace('Verified shared', 'Unreviewed'),
     command.replace('owned-library', 'another-library'), command + ' --enabled true', command + ' --default-context', command + ' --clear-requires',
     command + ' --name replacement', command + ' --json --metrics', command + '; node private.js', reviewCommand,
@@ -222,11 +222,11 @@ const maintenanceBranch = () => {
 test('read-only maintenance uses the scoped public audit, original operation and authoring read', () => {
   for (const command of [
     cliCommand + ' --help', cliCommand + ' schema ctl audit run',
-    cliCommand + ' ctl audit run --entry owned-library --target original-page --depth history --max-requests 80 --duration-ms 60000 --max-bytes 8388608',
-    cliCommand + ' ctl operation show original-operation --target original-page --entry owned-library',
-    cliCommand + ' ctl operation reconcile original-operation --entry owned-library --target original-page',
-    cliCommand + ' read original-page --database owned-library --authoring --read-only --json --metrics',
-    cliCommand + " read '" + skillFileRef(publicCli.ownerRef, 'references/one.md', 's_' + 'a'.repeat(64)) + "' --database owned-library --read-only --json --metrics",
+    cliCommand + ' ctl audit run --library owned-library --target original-page --depth history --max-requests 80 --duration-ms 60000 --max-bytes 8388608',
+    cliCommand + ' ctl operation show original-operation --target original-page --library owned-library',
+    cliCommand + ' ctl operation reconcile original-operation --library owned-library --target original-page',
+    cliCommand + ' read original-page --library owned-library --authoring --read-only --json --metrics',
+    cliCommand + " read '" + skillFileRef(publicCli.ownerRef, 'references/one.md', 's_' + 'a'.repeat(64)) + "' --library owned-library --read-only --json --metrics",
   ]) assert.ok(reviewCandidateCliCommand(command, maintenanceCli).kind, command);
   assert.equal(reviewCandidateCliCommand('/frozen/node /frozen/ntn-skills.js --help', maintenanceCli).kind, 'help');
   assert.throws(() => reviewCandidateCliCommand('/other/node /frozen/ntn-skills.js --help', maintenanceCli));
@@ -235,18 +235,18 @@ test('read-only maintenance uses the scoped public audit, original operation and
 
 test('read-only maintenance rejects another owner, library, operation, mutations and unscoped audits', () => {
   for (const command of [
-    cliCommand + ' ctl audit run --entry another-library --target original-page',
-    cliCommand + ' ctl audit run --entry owned-library --target another-page',
-    cliCommand + ' ctl audit run --entry owned-library --all',
-    cliCommand + ' ctl audit run --entry owned-library --target original-page --max-requests 501',
-    cliCommand + ' ctl operation show another-operation --target original-page --entry owned-library',
-    cliCommand + ' ctl operation reconcile original-operation --target another-page --entry owned-library',
-    cliCommand + ' ctl operation resume original-operation --target original-page --entry owned-library',
-    cliCommand + ' read original-page --database owned-library --authoring --json --metrics',
-    cliCommand + ' read another-page --database owned-library --read-only --json --metrics',
-    cliCommand + ' update original-page --database owned-library --enabled true',
-    cliCommand + ' adopt original-page --database owned-library',
-    cliCommand + ' apply original-page --database owned-library --input /tmp/tree',
+    cliCommand + ' ctl audit run --library another-library --target original-page',
+    cliCommand + ' ctl audit run --library owned-library --target another-page',
+    cliCommand + ' ctl audit run --library owned-library --all',
+    cliCommand + ' ctl audit run --library owned-library --target original-page --max-requests 501',
+    cliCommand + ' ctl operation show another-operation --target original-page --library owned-library',
+    cliCommand + ' ctl operation reconcile original-operation --target another-page --library owned-library',
+    cliCommand + ' ctl operation resume original-operation --target original-page --library owned-library',
+    cliCommand + ' read original-page --library owned-library --authoring --json --metrics',
+    cliCommand + ' read another-page --library owned-library --read-only --json --metrics',
+    cliCommand + ' update original-page --library owned-library --enabled true',
+    cliCommand + ' adopt original-page --library owned-library',
+    cliCommand + ' apply original-page --library owned-library --input /tmp/tree',
     cliCommand + ' --help; node /private/store.js',
   ]) assert.throws(() => reviewCandidateCliCommand(command, maintenanceCli), command);
 });
@@ -274,29 +274,29 @@ test('maintenance public builtin discovery admits the installed local interface 
 test('an onboarding inspection reads the setup reference and validates only its existing library', () => {
   for (const suffix of [
     'ctl builtin read notion/ntn-skills-maintain --path references/setup.md',
-    'ctl library init --entry owned-library',
+    'ctl library init --library owned-library',
     'ctl library inspect owned-library',
-    'ctl library sources list --entry owned-library',
-    'list --database owned-library --refresh --json',
-    'list --database owned-library --query original --limit 10 --json',
+    'ctl library sources list --library owned-library',
+    'list --library owned-library --refresh --json',
+    'list --library owned-library --query original --limit 10 --json',
   ]) assert.ok(reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli).kind, suffix);
   for (const suffix of [
-    'ctl library init --parent owned-page', 'ctl library init --entry another-library',
-    'ctl library init --entry owned-library --parent owned-page',
-    'ctl library sources init --entry owned-library',
-    'ctl library sources list --entry another-library',
+    'ctl library init --parent owned-page', 'ctl library init --library another-library',
+    'ctl library init --library owned-library --parent owned-page',
+    'ctl library sources init --library owned-library',
+    'ctl library sources list --library another-library',
     'ctl library inspect another-library', 'list --json',
-    'list --database another-library --json', 'list --database owned-library --limit 1000 --json',
-    'ctl database register skills --database owned-library',
+    'list --library another-library --json', 'list --library owned-library --limit 1000 --json',
+    'ctl library register skills --library owned-library',
   ]) assert.throws(() => reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli), suffix);
 });
 
 test('read-only onboarding uses public JSON without turning optional metrics into an authorization rule', () => {
-  const command = cliCommand + ' read original-page --database owned-library --read-only --json';
+  const command = cliCommand + ' read original-page --library owned-library --read-only --json';
   for (const policy of [maintenanceCli, publicCli]) {
     assert.equal(reviewCandidateCliCommand(command, policy).kind, 'read');
     assert.equal(reviewCandidateCliCommand(command + ' --metrics', policy).kind, 'read');
-    const files = cliCommand + " files '" + pinSkillRef(policy.ownerRef, 's_' + 'a'.repeat(64)) + "' --database owned-library";
+    const files = cliCommand + " files '" + pinSkillRef(policy.ownerRef, 's_' + 'a'.repeat(64)) + "' --library owned-library";
     assert.equal(reviewCandidateCliCommand(files, policy).kind, 'files');
     assert.equal(reviewCandidateCliCommand(files + ' --metrics', policy).kind, 'files');
   }
@@ -306,7 +306,7 @@ test('read-only onboarding uses public JSON without turning optional metrics int
 });
 
 const auditRunId = 'audit-33a07e13-071b-4071-a6b4-d76c92834a5a';
-const auditCommand = cliCommand + ' ctl audit run --entry owned-library --target original-page --depth history';
+const auditCommand = cliCommand + ' ctl audit run --library owned-library --target original-page --depth history';
 const auditReportFixture = () => ({ ok: true, report_version: 1, rules_version: 'resource-audit-v3', run_id: auditRunId,
   entry_id: 'owned-library', selector: { kind: 'skill', page_id: 'original-page' }, inspection_scope: 'reachable_target',
   execution: 'completed', coverage: 'partial', severity: { error: 0, warning: 1, info: 0 }, remote_writes: 0,
@@ -363,7 +363,7 @@ test('reports cannot be preseeded or escape the actual session audit and no repo
     content: [{ type: 'text', text: JSON.stringify(auditReportFixture()) + '\n\nCommand exited with code 4' }] });
   assert.equal(value.call(command, 'bound-report'), undefined);
   assert.deepEqual(value.reads, []);
-  for (const suffix of [' --entry owned-library', ' --output /owned/report.json', ' --json', ' extra'])
+  for (const suffix of [' --library owned-library', ' --output /owned/report.json', ' --json', ' extra'])
     assert.equal(value.call(command + suffix, 'flag-' + suffix).block, true);
   assert.equal(value.call(cliCommand + ' ctl audit report audit-00000000-0000-0000-0000-000000000000', 'foreign-run').block, true);
   assert.equal(value.call(cliCommand + ' ctl audit resume ' + auditRunId, 'resume').block, true);
@@ -376,7 +376,7 @@ test('incomplete, unregistered, foreign or mutating audit evidence never grants 
   { registeredPath: spill, readFile() { throw new Error('Must not read an unrelated spill'); }, sha }), undefined);
   for (const mutate of [
     report => { report.ok = false; }, report => { report.execution = 'paused'; }, report => { report.remote_writes = 1; },
-    report => { report.entry_id = 'another-library'; }, report => { report.selector.page_id = 'another-page'; },
+    report => { report.library_id = 'another-library'; }, report => { report.selector.page_id = 'another-page'; },
     report => { report.selector.kind = 'all'; }, report => { report.next.read_only = false; },
     report => { report.next.argv.push('--output', '/owned/file'); }, report => { delete report.run_id; },
   ]) {
@@ -540,7 +540,7 @@ function maintenancePayloadFixture() {
     guard.push({ toolCallId: id, toolName: name, allowed: true });
   };
   const body = expectedBodies[0], ref = 'sr:S' + 'A'.repeat(22);
-  const record = { id: owner, kind: 'skill', locator: { type: 'shared_skill', page_id: config.publicCli.target, database_id: config.publicCli.database } };
+  const record = { id: owner, kind: 'skill', locator: { type: 'shared_skill', page_id: config.publicCli.target, database_id: config.publicCli.library } };
   const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: body.sha256, ref: body.binding.ref };
   const content = JSON.stringify({ ok: true, status: 'ready', purpose: 'use', roots: [ref], records: [{ name: 'Owned', kind: 'skill', ref, content: body.text }] });
   const encoded = JSON.stringify(body.text).slice(1, -1), start = content.indexOf('"content":' + JSON.stringify(body.text)) + '"content":"'.length;
@@ -557,7 +557,7 @@ function maintenancePayloadFixture() {
         ref: b.ref, path: b.path, file_id: b.file_id, sha256: body.sha256, bytes: body.bytes, loaded: false, delivered_complete_text: true,
         delivery: { start: 0, end: body.text.length, encoding: 'raw' } } });
   }
-  add('cli-read', 'bash', { command: cliCommand + ' read original-page --database owned-library --read-only --json --metrics' },
+  add('cli-read', 'bash', { command: cliCommand + ' read original-page --library owned-library --read-only --json --metrics' },
     JSON.stringify({ main: expectedBodies[0].text, reference: expectedBodies[1].text }));
   return { config, payload: { model: 'group/worker', messages }, nativeAudit: { calls }, nativeMessages, tasks, guard,
     approvedCliCalls: ['cli-read'], add,
@@ -641,16 +641,16 @@ test('exact body counts exclude tool definitions, details, and call arguments, r
 });
 
 test('candidate View is explicit, remains in the same source, and cannot leak from a different library', () => {
-  const database = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const library = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const viewId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-  const original = { sources: [{ id: 'notion', type: 'notion', database, default_view_id: viewId, prefetch: false }] };
-  const input = { sourceId: 'notion', database, cacheDir: '/owned/cache' };
+  const original = { sources: [{ id: 'notion', type: 'notion', library, default_view_id: viewId, prefetch: false }] };
+  const input = { sourceId: 'notion', library, cacheDir: '/owned/cache' };
   assert.equal(candidateSourceConfig(original, input).sources[0].default_view_id, viewId);
   const selected = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
   assert.equal(candidateSourceConfig(original, { ...input, viewId: selected }).sources[0].default_view_id, selected);
   assert.equal(original.sources[0].default_view_id, viewId);
-  assert.throws(() => candidateSourceConfig(original, { ...input, database: selected }));
-  assert.equal(candidateSourceConfig(original, { ...input, database: selected, viewId }).sources[0].default_view_id, viewId);
+  assert.throws(() => candidateSourceConfig(original, { ...input, library: selected }));
+  assert.equal(candidateSourceConfig(original, { ...input, library: selected, viewId }).sources[0].default_view_id, viewId);
   for (const invalid of ['', 'first', null, true]) assert.throws(() => candidateSourceConfig(original, { ...input, viewId: invalid }));
 });
 
@@ -739,7 +739,7 @@ function currentArtifactReceiptFixture() {
   const notices = identity('/owned/cli/THIRD_PARTY_NOTICES.md', 'Selected third-party notices');
   const embeddedCli = identity('/owned/installed/dist/ntn-skills.mjs', 'embedded CLI');
   const embeddedSdk = identity('/owned/installed/dist/ntn-skills-sdk.mjs', 'embedded SDK');
-  const runtime = { version: 1, package: 'ntn-skills', package_version: '0.1.0', sdk_version: 2,
+  const runtime = { version: 1, package: 'ntn-skills', package_version: '0.1.0', sdk_version: 3,
     consumer_contract_version: 1, resource_read_contract_version: 1, read_output_proof_version: 1,
     catalog_directory_contract_version: 1, command_output_proof_version: 1, consumption_effects_version: 1,
     content_search_contract_version: 1, skill_ref_version: 2,
@@ -751,7 +751,7 @@ function currentArtifactReceiptFixture() {
   };
   const notRun = ['Pi session', 'provider/model', 'live Notion', 'OMP', 'Tern'];
   const artifact = { version: 2, status: 'passed', startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z',
-    boundary: 'Independently installed Broker and SDK v2 with controlled current Notion HTTP.', ...structuredClone(actual), notRun,
+    boundary: 'Independently installed Broker and SDK v3 with controlled current Notion HTTP.', ...structuredClone(actual), notRun,
     currentSdk: { status: 'passed', node: process.version, cases: [{ name: 'controlled-current-case', status: 'passed' }],
       sdk_calls: 3, child_starts: 0, runtime, package_unchanged: true, http_requests: 5, semantic_writes: 0,
       fixture: '/owned/fixture.json', not_run: [...notRun] } };
@@ -1292,14 +1292,14 @@ test('normal-management state reuses only the existing process roots and never t
   for (const [index, content] of ['before\n', 'edited\n'].entries()) {
     const snapshot_id = 's_' + sha('snapshot-' + index), file_id = 'file-' + sha('reference');
     const owner = 'skill://owner?library=owned-library', ref = skillFileRef(owner, 'references/render.md', snapshot_id);
-    const value = { ok: true, record: { id: owner, locator: { database_id: 'owned-database' } }, scope: sha('scope'), snapshot_id,
+    const value = { ok: true, record: { id: owner, locator: { database_id: 'owned-library' } }, scope: sha('scope'), snapshot_id,
       version_id: sha('version-' + index), path: 'references/render.md', ref, source: 'local_snapshot', freshness: { policy: 'pinned' },
       content, range: { start: 1, end: 2, total_lines: 2 }, has_more: false,
       file_bindings: [{ path: 'references/render.md', file_id }], effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' } };
     const path = join(scratch, 'public-read-' + index + '.json'), bytes = JSON.stringify(value);
     await writeFile(path, bytes, { flag: 'wx' }); selected.push({ path, sha256: sha(bytes), body: { bytes: Buffer.byteLength(content), sha256: sha(content) } });
   }
-  const config = { database: 'owned-database', toolCallCount: 2, expectedBodies: selected.map(value => value.body),
+  const config = { library: 'owned-library', toolCallCount: 2, expectedBodies: selected.map(value => value.body),
     existingState: { mode: 'normal-management', roots, managementReads: selected.map(({ path, sha256 }) => ({ path, sha256 })) } };
   const options = { stateRoot, environment, home: '/normal/home' };
   const before = await Promise.all(selected.map(value => readFile(value.path)));
@@ -1377,7 +1377,7 @@ test('paused target audit can resume its original run and report, without replac
   const paused = { ...auditReportFixture(), execution: 'paused', request_totals: { attempts: 3, request_bytes: 20, response_bytes: 30, elapsed_ms: 12, invocations: 1 },
     next: { state: 'audit_paused', read_only: true, argv: ['ntn-skills', 'ctl', 'audit', 'resume', auditRunId] } };
   submit('audit-1', auditCommand, paused, 75);
-  const resume = cliCommand + ' ctl audit resume ' + auditRunId + ' --entry owned-library --max-requests 20 --duration-ms 1000';
+  const resume = cliCommand + ' ctl audit resume ' + auditRunId + ' --library owned-library --max-requests 20 --duration-ms 1000';
   submit('resume-1', resume, { ...auditReportFixture(), request_totals: { attempts: 5, request_bytes: 40, response_bytes: 60, elapsed_ms: 20, invocations: 2 } }, 4);
   assert.equal(value.call(cliCommand + ' ctl audit report ' + auditRunId, 'report'), undefined);
   assert.equal(value.call(cliCommand + ' ctl audit resume ' + auditRunId, 'no-longer-paused').block, true);
@@ -1393,7 +1393,7 @@ test('paused audit authorizes only its observed read-only next, not another run,
     content: [{ type: 'text', text: JSON.stringify(report) + '\n\nCommand exited with code 75' }] });
   const resume = cliCommand + ' ctl audit resume ' + auditRunId;
   for (const command of [resume.replace(auditRunId, 'audit-00000000-0000-0000-0000-000000000000'),
-    resume + ' --entry other-library', resume + ' --target another-page', resume + ' --all',
+    resume + ' --library other-library', resume + ' --target another-page', resume + ' --all',
     resume + ' --max-requests 501', resume + ' --max-bytes 67108865', resume + ' --duration-ms 120001',
     cliCommand + ' ctl operation resume ' + auditRunId])
     assert.equal(value.call(command, 'deny-' + command).block, true, command);

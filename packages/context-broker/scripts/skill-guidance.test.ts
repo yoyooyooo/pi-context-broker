@@ -1,4 +1,3 @@
-import { createLibrarySelection } from "../src/library-selection";
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -20,8 +19,9 @@ await writeFile(syncEntry, privateSyncBody);
 const { buildCliGuidance, buildInjectedPayload, installSkillGuidance } = await import(pathToFileURL(join(runtime.root, "src/index.ts")).href);
 const { installHostSkills } = await import(pathToFileURL(join(runtime.root, "src/host-skills.ts")).href);
 const { hostCliScope } = await import(pathToFileURL(join(runtime.root, "src/host-command.ts")).href);
+const { createLibrarySelection, createLibraryCommand } = await import(pathToFileURL(join(runtime.root, "src/library-selection.ts")).href);
 import { createPiHostAdapter } from "../src/pi-host-adapter";
-import type { AgentMessage, ConfigFile, ContextResult, ExtensionAPI, ExtensionContext, NativeSkillGraphDefinition, SkillRecord } from "../src/types";
+import type { AgentMessage, ConfigFile, ContextResult, ExtensionAPI, ExtensionContext, NativeSkillGraphDefinition, SessionEntry, SkillRecord } from "../src/types";
 
 const full = ["read", "skill_search", "skill_prepare", "skill_graph", "bash"];
 const config: ConfigFile = { sources: [
@@ -467,12 +467,17 @@ test("redacted and visible record wrappers retain source bytes and the same non-
 
 async function graphHarness(settings: ConfigFile = config, known = true) {
   let active = [...full], graphReads = 0, loads = 0, appends = 0;
+  let branch: SessionEntry[] = [], deniedLibrary: string | undefined;
+  const handlers = new Map<string, unknown[]>();
   let graphTool: NativeSkillGraphDefinition | undefined;
-  const api: ExtensionAPI = { on() {}, ...(known ? { getActiveTools: () => [...active] } : {}),
-    appendEntry() { appends++; }, registerTool(tool) { if (tool.name === "notion_ctl") graphTool = tool; } };
+  const api: ExtensionAPI = { on(name, handler) { handlers.set(name, [...handlers.get(name) ?? [], handler]); }, ...(known ? { getActiveTools: () => [...active] } : {}),
+    appendEntry(customType, data) { appends++; branch.push({ id: String(appends), type: "custom", customType, data }); }, registerTool(tool) { if (tool.name === "notion_ctl") graphTool = tool; } };
   const table = { database_id: "00000000-0000-4000-8000-000000000201", data_source_id: "00000000-0000-4000-8000-000000000202", property_ids: {} };
-  const libraries = createLibrarySelection(settings, async options => ({ version: 2, library_id: options.library ?? "00000000-0000-4000-8000-000000000101", operation_id: "fixture",
-    skills: table, files: table, records: table, sources: table }));
+  const libraries = createLibrarySelection(settings, async (options: { library?: string }) => {
+    if (options.library !== undefined && options.library === deniedLibrary) throw Object.assign(new Error("denied"), { code: "ACCESS_DENIED" });
+    return { version: 2, library_id: options.library ?? "00000000-0000-4000-8000-000000000101", operation_id: "fixture",
+      skills: table, files: table, records: table, sources: table };
+  }, async (options: { library?: string }) => options.library ?? "00000000-0000-4000-8000-000000000101");
   const host = await installHostSkills(api, { config: settings, librarySelection: libraries,
     getRecords: async () => ({ records: [], failures: [] }),
     loadRecord: async () => { loads++; throw new Error("No body loads permitted"); },
@@ -480,9 +485,15 @@ async function graphHarness(settings: ConfigFile = config, known = true) {
   }, createPiHostAdapter(api));
   await host.refresh();
   if (!graphTool) throw new Error("notion_ctl must be registered");
-  const ctx: ExtensionContext = { cwd: "/unused-guidance-test", hasUI: false };
+  const ctx: ExtensionContext = { cwd: "/unused-guidance-test", hasUI: false,
+    sessionManager: { getBranch: () => branch, getSessionId: () => "library-guidance" } };
   const invoke = (input: Record<string, unknown>, signal?: AbortSignal) => graphTool!.execute("controlled", input, signal, undefined, ctx);
-  return { invoke, tools: (names: string[]) => { active = names; }, counts: () => ({ graphReads, loads, appends }) };
+  const command = createLibraryCommand(api, libraries, (selected: ExtensionContext) => host.refresh(selected, { preserveTurn: true }));
+  const emit = async (name: string, event: unknown = { type: name }) => {
+    for (const handler of handlers.get(name) ?? []) { if (typeof handler !== "function") throw new Error("Invalid event handler"); await handler(event, ctx); }
+  };
+  return { invoke, emit, command: (args: string) => command(args, ctx), deny: (root: string) => { deniedLibrary = root; },
+    tools: (names: string[]) => { active = names; }, counts: () => ({ graphReads, loads, appends }) };
 }
 const resultJson = (result: Awaited<ReturnType<Awaited<ReturnType<typeof graphHarness>>["invoke"]>>) => JSON.parse(result.content.filter(part => part.type === "text").map(part => part.text).join(""));
 
@@ -530,7 +541,7 @@ test("cli_source rejects ambiguous/disabled/foreign scopes, inactive tools and m
   const h = await graphHarness();
   for (const cli_source of ["unknown", "disabled", "local", " beta"])
     await expect(h.invoke({ cli_source })).rejects.toThrow("HOST_SOURCE_UNAVAILABLE");
-  for (const request of [{ cli_source: "" }, { cli_source: null }, { cli_source: "beta", refs: [] }, { cli_source: "beta", command: "override" }])
+  for (const request of [{ cli_source: "" }, { cli_source: "beta", refs: [] }, { cli_source: "beta", command: "override" }])
     await expect(h.invoke(request)).rejects.toThrow("INVALID_ARGUMENT");
   for (const names of [["notion_ctl"], []]) {
     h.tools(names); await expect(h.invoke({ cli_source: "beta" })).rejects.toThrow("HOST_CLI_TOOL_UNAVAILABLE");
@@ -542,4 +553,34 @@ test("cli_source rejects ambiguous/disabled/foreign scopes, inactive tools and m
   const cancelled = new AbortController(); cancelled.abort();
   await expect(h.invoke({ cli_source: "beta" }, cancelled.signal)).rejects.toThrow();
   expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
+});
+
+test("ordinary accepted turns freeze CLI Library scope across a later successful or failed switch", async () => {
+  const a = "00000000-0000-4000-8000-000000000101", b = "00000000-0000-4000-8000-000000000102";
+  const h = await graphHarness();
+  await h.emit("input", { source: "interactive", text: "Explain the current task." });
+  await h.emit("before_agent_start", { prompt: "Explain the current task." });
+  await h.emit("agent_start");
+  expect(resultJson(await h.invoke({ cli_source: null })).library).toBe(a);
+  await h.command("library " + b);
+  expect(resultJson(await h.invoke({ cli_source: null })).library).toBe(a);
+  expect(resultJson(await h.invoke({ cli_source: "beta" })).library).toBe(b);
+  await h.emit("agent_end");
+  await h.emit("input", { source: "interactive", text: "A subsequent task." });
+  expect(resultJson(await h.invoke({ cli_source: null })).library).toBe(b);
+  await h.emit("agent_end");
+  h.deny(a);
+  await h.command("library " + a);
+  await h.emit("input", { source: "interactive", text: "Do not reuse the old write target." });
+  await expect(h.invoke({ cli_source: null })).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  expect(h.counts().loads).toBe(0);
+});
+
+test("unresolved Library guidance never supplies an unscoped remote CLI fallback", () => {
+  for (const tools of [undefined, ["bash"], ["notion_list", "notion_use", "bash"]]) {
+    const value = String(buildCliGuidance({ sources: [{ type: "notion", id: "default" }] }, tools).content);
+    expect(value).not.toContain("<list-args>");
+    expect(value).not.toContain("<read-args>");
+    expect(value).not.toContain('"read REF --json"');
+  }
 });

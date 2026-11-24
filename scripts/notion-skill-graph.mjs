@@ -31,7 +31,7 @@ function frozenGraph(scope, { broken = false, renamed = false, invalidRequiredKi
   assert.ok(invalidRequiredKind === undefined || ['router', 'prompt'].includes(invalidRequiredKind));
   assert.equal(typeof rootBodySuffix, 'string');
   assert.equal(typeof rootResource, 'boolean');
-  const libraryId = renamed ? 'cobalt-library-73' : 'controlled-graph';
+  const libraryId = uuid(renamed ? 50099 : 99);
   const pageId = number => uuid(number + (renamed ? 50000 : 0));
   const database = pageId(100), dataSource = pageId(101);
   const view = { ...graphView, id: pageId(102), database_id: database, data_source_id: dataSource, url: `https://notion.so/${database}?v=${pageId(102)}` };
@@ -180,7 +180,7 @@ async function sourceCommand(statePath, args) {
   if (command === 'list') {
     const selectedView = args.includes('--default-view') || args.includes('--view');
     const records = frozen.nodes.filter(node => node !== frozen.bom && node.record.id !== frozen.bom.record.id).map(node => node.record).filter(record => !selectedView || record.default_context);
-    out({ ok: true, scope: state.scope, source: 'notion', fetched_at: Date.now(), databases: [{ database_id: database, title: 'Controlled graph', alias: frozen.root.record.locator.library_id, data_source_ids: [dataSource] }], records, count: records.length, coverage: { method: selectedView ? 'explicit_view' : 'explicit_database', exhaustive: true, queried_data_sources: [dataSource], failed_sources: [], search_index_limited: false }, freshness: { policy: 'default', validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: 60000, stale: false }, ...(selectedView ? { view, view_selection: args.includes('--view') ? 'explicit' : 'first', view_query: null } : {}) });
+    out({ ok: true, scope: state.scope, library_id: frozen.root.record.locator.library_id, source: 'notion', fetched_at: Date.now(), databases: [{ database_id: database, title: 'Controlled graph', alias: frozen.root.record.locator.library_id, data_source_ids: [dataSource] }], records, count: records.length, coverage: { method: selectedView ? 'explicit_view' : 'explicit_library', exhaustive: true, queried_data_sources: [dataSource], failed_sources: [], search_index_limited: false }, freshness: { policy: 'default', validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: 60000, stale: false }, ...(selectedView ? { view, view_selection: args.includes('--view') ? 'explicit' : 'first', view_query: null } : {}) });
     return;
   }
   assert.ok(['prepare', 'read', 'export', 'schema'].includes(command), `Unsupported graph fixture command: ${command}`);
@@ -424,7 +424,7 @@ export async function runSkillGraph({ host, root, scratch, evidence, extension, 
       await Promise.all([writeFile(providerFile, ''), writeFile(decisionsFile, ''), writeFile(lifecycleFile, '')]);
       const provider = await graphProvider(base), planPath = join(base, 'graph-plan.json');
       await save(planPath, { mode: name === 'metadata' ? 'metadata' : name === 'native-chain' ? 'native-chain' : name === 'tool-inspect' ? 'prepare-inspect' : ['tool-use', 'cold-pin'].includes(name) ? 'prepare-use' : 'none', ...(name === 'cold-pin' ? { rootPin: fileRef(fixture.graph.root.record.id, fixture.graph.root.entrypoint, fixture.graph.root.snapshot_id) } : {}) });
-      await save(join(agentDir, 'context-broker', 'config.yml'), { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: ledger.command, database: fixture.graph.database, cacheDir: join(base, 'broker-cache'), prefetch: false, activation: { offline: true }, requestTimeoutMs: 45000, ...(name === 'budget' ? { preparation: { maxNodes: 2 } } : {}) }] });
+      await save(join(agentDir, 'context-broker', 'config.yml'), { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: ledger.command, library: fixture.graph.root.record.locator.library_id, cacheDir: join(base, 'broker-cache'), prefetch: false, activation: { offline: true }, requestTimeoutMs: 45000, ...(name === 'budget' ? { preparation: { maxNodes: 2 } } : {}) }] });
       const compactMode = join(base, 'compaction-mode.txt');
       await writeFile(compactMode, 'remove');
       const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_HOST: host, CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile, CONTEXT_BROKER_LOG_FILE: decisionsFile, BROKER_GRAPH_PLAN: planPath, CONTEXT_BROKER_E2E_LIFECYCLE_FILE: lifecycleFile, CONTEXT_BROKER_E2E_COMPACTION_MODE_FILE: compactMode });

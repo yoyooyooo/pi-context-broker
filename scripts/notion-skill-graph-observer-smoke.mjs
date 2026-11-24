@@ -304,7 +304,7 @@ export async function probeGraphObserver({ extension, cliCommand, cliSource, evi
   const modelHelper = fileURLToPath(new URL('./notion-skill-graph-model.mjs', import.meta.url));
   const configuredSource = { type: 'notion', id: 'notion', namespace: 'notion',
     ...(experiment ? { discovery: { offline: true } } : { command: [process.execPath, modelHelper, '--source', source] }),
-    database: fixture.graph.root.record.locator.database_id, cacheDir: cache, prefetch: false, activation: { offline: true } };
+    library: fixture.graph.root.record.locator.library_id, cacheDir: cache, prefetch: false, activation: { offline: true } };
   await save(config, { skillRoots: [], sources: [configuredSource] });
   if (experiment) { assert.equal(Object.hasOwn(configuredSource, 'command'), false); await save(join(evidence, 'source-config.json'), configuredSource); }
   const prompt = frozenPrompt('B', '$graph-root@notion');

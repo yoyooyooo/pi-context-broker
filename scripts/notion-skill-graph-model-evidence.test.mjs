@@ -323,7 +323,7 @@ test('Pi observer verifies source modes and effect-bearing native main and scala
 
 function pairedCatalogReceipt() {
   const full = { scope: 'scope', count: 1, records: [{ id: 'a' }], databases: [],
-    coverage: { method: 'explicit_database', exhaustive: true, failed_sources: [], search_index_limited: false } };
+    coverage: { method: 'explicit_library', exhaustive: true, failed_sources: [], search_index_limited: false } };
   const directory = { ...structuredClone(full), view: { id: 'default' }, capability_directory: true, view_selection: 'first',
     coverage: { ...full.coverage, method: 'explicit_view' } };
   return { transport: 'sdk', requestId: 'paired', operation: 'list', status: 'completed', resultObserved: true,

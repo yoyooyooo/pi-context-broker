@@ -201,7 +201,7 @@ export function unchangedSelection(before, after) {
   return hash(canonical(selected(after)));
 }
 
-export function fixedMainFailureTarget(selection, messages, ref, database) {
+export function fixedMainFailureTarget(selection, messages, ref, library) {
   assert.equal(selection.status, 'passed', 'A fixed-main exception needs the actual successful first selection');
   const delivered = selection.delivery.filter(item => item.ref === ref);
   assert.equal(delivered.length, 1);
@@ -212,7 +212,7 @@ export function fixedMainFailureTarget(selection, messages, ref, database) {
   const binding = nodes[0].binding, record = binding.record;
   assert.equal(binding.scope, delivered[0].scope); assert.equal(record.id, delivered[0].id);
   assert.equal(binding.snapshot_id, delivered[0].snapshot_id); assert.equal(binding.body_sha256, delivered[0].body_sha256);
-  assert.equal(record.locator.database_id, database);
+  assert.equal(record.locator.library_id, library);
   const locks = scopes[0].graph_locks.filter(lock => lock.roots.includes(record.id));
   assert.equal(locks.length, 1); const { sha256, ...vector } = locks[0];
   assert.equal(hash(canonical(vector)), sha256); assert.equal(vector.scope, binding.scope);
@@ -232,7 +232,7 @@ export function fixedMainFailureTarget(selection, messages, ref, database) {
   assert.equal(current.snapshot, undefined); assert.equal(fixed.snapshot, binding.snapshot_id);
   const target = withNativeSnapshot(record.ref, binding.snapshot_id);
   assert.equal(ref, target, 'The graph target retains the exact selected main reference');
-  return { ref, target, owner: record.id, scope: binding.scope, snapshot: binding.snapshot_id, database, entrypoint: record.entrypoint };
+  return { ref, target, owner: record.id, scope: binding.scope, snapshot: binding.snapshot_id, library, entrypoint: record.entrypoint };
 
 }
 
@@ -253,7 +253,7 @@ export function failedSourceEvidence(receipts, expected) {
   const fixedMain = expected.code === 'SNAPSHOT_MISSING' && failed.command === 'prepare' ? expected.fixedMain : undefined;
   if (fixedMain) {
     assert.equal(fixedMain.ref, expected.ref);
-    assert.deepEqual(sourceArgs(failed), ['ctl', 'prepare', fixedMain.target, '--purpose', 'inspect', '--database', fixedMain.database, '--max-age', '0', '--metrics'], 'Only the one pinned-main inspect preparation is permitted');
+    assert.deepEqual(sourceArgs(failed), ['ctl', 'prepare', fixedMain.target, '--purpose', 'inspect', '--library', fixedMain.library, '--max-age', '0', '--metrics'], 'Only the one pinned-main inspect preparation is permitted');
   } else assert.ok(expected.commands.includes(failed.command) && sourceArgs(failed)[failed.command === 'prepare' ? 2 : 1] === expected.ref, 'The failed source must receive the exact requested reference');
   assert.equal(failed.response?.ok, false);
   assert.equal(failed.response.error?.code, expected.code);
@@ -276,8 +276,8 @@ export function failedSourceEvidence(receipts, expected) {
     assert.equal(expected.code, 'SHARED_GRAPH_METADATA_UNAVAILABLE');
     assert.equal(failed.command, 'prepare');
     assert.ok(failed.args.includes('--refresh'), 'Failed refresh must actually request a fresh observation');
-    assert.equal(failed.args.filter(value => value === '--database').length, 1);
-    assert.equal(failed.args[failed.args.indexOf('--database') + 1], expected.dataSource.database);
+    assert.equal(failed.args.filter(value => value === '--library').length, 1);
+    assert.equal(failed.args[failed.args.indexOf('--library') + 1], expected.dataSource.library);
     const details = failed.response.error.details, preparation = details?.preparation;
     assert.equal(typeof details?.path, 'string');
     assert.equal(details.path.split('?')[0], 'v1/data_sources/' + expected.dataSource.id + '/query');
@@ -345,7 +345,7 @@ export function sourceLedgerEvidence(receipts, requests, processes) {
       // Keep that gap visible; full server accounting below does not make this
       // subprocess successful or manufacture a per-invocation zero ledger.
       assert.equal(receipt.command, 'ctl'); assert.equal(receipt.args.length, 5);
-      assert.deepEqual(receipt.args.slice(0, 4), ['ctl', 'cache', 'identity', '--database']);
+      assert.deepEqual(receipt.args.slice(0, 4), ['ctl', 'cache', 'identity', '--library']);
       assert.ok(typeof receipt.args[4] === 'string' && receipt.args[4].length > 0);
       assert.equal(receipt.code, null); assert.equal(receipt.signal, 'SIGTERM');
       assert.equal(receipt.stdout, ''); assert.equal(receipt.stderr, ''); assert.equal(receipt.response, undefined);
@@ -374,10 +374,10 @@ export function sourceLedgerEvidence(receipts, requests, processes) {
 }
 
 async function oracle(state, info, revision) {
-  const listed = await publicCommand(state, ['list', '--database', info.database, '--view', info.view]);
+  const listed = await publicCommand(state, ['list', '--library', info.library_id, '--view', info.view]);
   assert.equal(listed.code, 0, listed.stdout + listed.stderr); assert.equal(listed.response.count, 1);
   assert.equal(listed.response.records[0].id, info.logical_ids.root);
-  const all = await publicCommand(state, ['list', '--database', info.database]);
+  const all = await publicCommand(state, ['list', '--library', info.library_id]);
   assert.equal(all.code, 0, all.stdout + all.stderr); assert.equal(all.response.records.length, 3);
   const roots = ['root', 'optional'].map(role => all.response.records.find(record => record.id === info.logical_ids[role])?.ref);
   assert.ok(roots.every(Boolean));
@@ -462,7 +462,7 @@ export async function runGraphSession(options) {
     const sessions = join(base, 'sessions'); await mkdir(sessions);
     const provider = await sessionProvider(base), plan = join(base, 'plan.json'), config = join(base, 'broker.json');
     await save(plan, { stage: 'initial', steps: [] });
-    const sourceConfig = (state, cacheDir) => ({ sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: [process.execPath, helper, '--source', join(state.cwd, 'source-state.json')], database: info.database, default_view_id: info.view, cacheDir, prefetch: false, activation: { maxAge: '0' }, discovery: { maxAge: '0' }, requestTimeoutMs: 30000 }] });
+    const sourceConfig = (state, cacheDir) => ({ sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: [process.execPath, helper, '--source', join(state.cwd, 'source-state.json')], library: info.library_id, default_view_id: info.view, cacheDir, prefetch: false, activation: { maxAge: '0' }, discovery: { maxAge: '0' }, requestTimeoutMs: 30000 }] });
     await save(config, sourceConfig(consumer, cache));
     const guard = join(base, 'tools.mjs');
     await writeFile(guard, 'import { readFileSync } from "node:fs"; export default api=>{const tools=' + JSON.stringify(tools) + ',management=' + JSON.stringify(managementTools) + ',plan=' + JSON.stringify(plan) + ';let active=tools;const set=value=>{active=value;api.setActiveTools?.(value);};api.on("session_start",()=>set(tools));api.on("before_agent_start",()=>{const value=JSON.parse(readFileSync(plan,"utf8"));set(value.steps[0]?.name==="notion_ctl"?management:tools);});api.on("tool_result",event=>{const value=JSON.parse(readFileSync(plan,"utf8")),expected=value.expectedFailure;if((!event.isError||expected?.index===value.steps.length-2&&expected.name===event.toolName)&&event.toolCallId===value.stage+":"+(value.steps.length-2))set(management);});api.on("tool_call",e=>active.includes(e.toolName)?undefined:{block:true,reason:"Controlled session enables graph management only for its explicit audit step"});};\n');
@@ -564,7 +564,7 @@ export async function runGraphSession(options) {
       await stage('failed-refresh-keeps-a', [prepare([currentRef('root')], true)], aRequired, [], {
         expectedFailure: { index: 0, name: 'notion_use', code: 'SHARED_GRAPH_METADATA_UNAVAILABLE' },
         selectionBefore: resumedA.selectedGraph,
-        source: { commands: ['prepare'], ref: currentRef('root'), code: 'SHARED_GRAPH_METADATA_UNAVAILABLE', dataSource: { id: info.data_source_id, database: info.database } },
+        source: { commands: ['prepare'], ref: currentRef('root'), code: 'SHARED_GRAPH_METADATA_UNAVAILABLE', dataSource: { id: info.data_source_id, library: info.library_id } },
       });
       const afterFailedRefresh = await readFile(originalSession);
       assert.deepEqual(afterFailedRefresh.subarray(0, beforeFailedRefresh.length), beforeFailedRefresh, 'Failed refresh rewrote original native history');
@@ -589,7 +589,7 @@ export async function runGraphSession(options) {
     await stopHost();
     const fixedA = firstSelection.delivery.find(receipt => receipt.id === info.logical_ids.root);
     assert.ok(fixedA && parseNativeReference(fixedA.ref).snapshot === fixedA.snapshot_id);
-    const fixedMain = fixedMainFailureTarget(firstSelection, await json(join(evidence, 'cold-root-required-a-messages.json')), fixedA.ref, info.database);
+    const fixedMain = fixedMainFailureTarget(firstSelection, await json(join(evidence, 'cold-root-required-a-messages.json')), fixedA.ref, info.library_id);
     const fixedCheckState = await stateFor('unavailable-fixed-cli');
     const fixedCheck = await publicCommand(fixedCheckState, ['read', fixedA.ref]);
     manifest.fixedCliCheck = failedSourceEvidence([fixedCheck], { commands: ['read'], ref: fixedA.ref, code: 'SNAPSHOT_MISSING' });
