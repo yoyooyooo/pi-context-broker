@@ -275,7 +275,7 @@ test('an onboarding inspection reads the setup reference and validates only its 
   for (const suffix of [
     'ctl builtin read notion/ntn-skills-maintain --path references/setup.md',
     'ctl library init --library 76ecd927-8be5-5526-b4d7-18906713e206',
-    'ctl library inspect 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library inspect --library 76ecd927-8be5-5526-b4d7-18906713e206',
     'ctl library sources list --library 76ecd927-8be5-5526-b4d7-18906713e206',
     'list --library 76ecd927-8be5-5526-b4d7-18906713e206 --refresh --json',
     'list --library 76ecd927-8be5-5526-b4d7-18906713e206 --query original --limit 10 --json',
@@ -285,7 +285,11 @@ test('an onboarding inspection reads the setup reference and validates only its 
     'ctl library init --library 76ecd927-8be5-5526-b4d7-18906713e206 --parent owned-page',
     'ctl library sources init --library 76ecd927-8be5-5526-b4d7-18906713e206',
     'ctl library sources list --library 8b308dab-2daf-5330-922f-812244ff16f9',
-    'ctl library inspect 8b308dab-2daf-5330-922f-812244ff16f9', 'list --json',
+    'ctl library inspect --library 8b308dab-2daf-5330-922f-812244ff16f9',
+    'ctl library inspect 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library inspect --entry 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library inspect --database 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library inspect --library 76ecd927-8be5-5526-b4d7-18906713e206 --offline', 'list --json',
     'list --library 8b308dab-2daf-5330-922f-812244ff16f9 --json', 'list --library 76ecd927-8be5-5526-b4d7-18906713e206 --limit 1000 --json',
     'ctl library register skills --library 76ecd927-8be5-5526-b4d7-18906713e206',
   ]) assert.throws(() => reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli), suffix);
