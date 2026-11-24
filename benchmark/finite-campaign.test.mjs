@@ -23,6 +23,7 @@ import { prepareApprovedCampaign, prepareApprovedCampaignRevision, prepareApprov
 import { declaredSchedule, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION } from './campaign-selection.mjs';
 import { startupCaptureSchedule, captureBindingsForCase } from './configure.mjs';
 import { scoreExperiment } from './analysis/compare.mjs';
+import { checkCampaignScope } from './campaign-dispatch.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n');
@@ -491,6 +492,90 @@ test('a finite gate retains original history, binds every execution field, close
   });
 });
 
+
+test('campaign scope checks fully reread the registered current once and preserve successor admission', async t => {
+  const f = await fixture(), current = await prepare(f, { id: 'registration-read-gate' }), plan = current.plan;
+  const registrationPath = join(f.pilot, 'scope-registration-003.json');
+  const physicalBefore = (await readdir(f.pilot)).filter(name => /^\d{3}\.json$/.test(name));
+
+  await t.test('an unactivated successor remains read-only until explicit activation and validates its plan', async () => {
+    await checkCampaignScope(plan);
+    assert.ok(!(await readdir(f.pilot)).includes('scope-registration-003.json'));
+    const changed = structuredClone(plan); changed.execution.models_sha256 = 'f'.repeat(64); resealPlan(changed);
+    await assert.rejects(checkCampaignScope(changed, { activate: true }));
+    assert.ok(!(await readdir(f.pilot)).includes('scope-registration-003.json'));
+    const legacy = structuredClone(plan), previous = await read(f.predecessor.registration.path);
+    legacy.execution.campaign_scope.id = previous.id;
+    legacy.execution.campaign_scope.amendment = previous.amendment; resealPlan(legacy);
+    await assert.rejects(checkCampaignScope(legacy), /FINITE_REGISTERED_AMENDMENT_REQUIRED/);
+    await checkCampaignScope(plan, { activate: true });
+    const registration = await read(registrationPath);
+    assert.equal(registration.id, current.amendment.id);
+    assert.deepEqual(registration.amendment, plan.execution.campaign_scope.amendment);
+    assert.deepEqual(registration.predecessor, f.predecessor.registration);
+    assert.deepEqual((await readdir(f.pilot)).filter(name => /^\d{3}\.json$/.test(name)), physicalBefore);
+  });
+
+  await t.test('each current check executes the full reader once and rereads historical evidence and the current row', async () => {
+    const originalRead = fs.promises.readFile, amendmentPath = plan.execution.campaign_scope.amendment.path;
+    const episodePath = join(current.amendment.history.episodes[0].directory, 'episode.json');
+    let amendmentReads = 0, episodeReads = 0, registrationReads = 0;
+    fs.promises.readFile = async (...args) => {
+      const path = String(args[0]);
+      if (path === amendmentPath) amendmentReads++;
+      if (path === episodePath) episodeReads++;
+      if (path === registrationPath) registrationReads++;
+      return originalRead(...args);
+    };
+    syncBuiltinESMExports();
+    try {
+      for (let call = 1; call <= 2; call++) {
+        const before = episodeReads; await checkCampaignScope(plan);
+        // readCampaignAmendment's type preview and the full reader's own read.
+        assert.equal(amendmentReads, call * 2);
+        assert.equal(registrationReads, call);
+        assert.ok(episodeReads > before, 'The next check must verify raw evidence again');
+      }
+    } finally { fs.promises.readFile = originalRead; syncBuiltinESMExports(); }
+  });
+
+  await t.test('a current plan mismatch and changed registration still reject after full registration validation', async () => {
+    const changed = structuredClone(plan); changed.execution.models_sha256 = 'f'.repeat(64); resealPlan(changed);
+    await assert.rejects(checkCampaignScope(changed));
+    const bytes = await readFile(registrationPath), registration = JSON.parse(bytes);
+    try {
+      await save(registrationPath, { ...registration, kind: 'benchmark-prospective-cohort-succession' });
+      await assert.rejects(checkCampaignScope(plan));
+    } finally { await writeFile(registrationPath, bytes); }
+  });
+
+  await t.test('full expected history rejects altered aggregates even with a rebuilt current reference', async () => {
+    const amendmentPath = plan.execution.campaign_scope.amendment.path;
+    const amendmentBytes = await readFile(amendmentPath), registrationBytes = await readFile(registrationPath);
+    const changed = JSON.parse(amendmentBytes), registration = JSON.parse(registrationBytes), changedPlan = structuredClone(plan);
+    changed.history.known_subtotal.input_tokens++;
+    changed.amendment_sha256 = fingerprint({ ...changed, amendment_sha256: null });
+    try {
+      await save(amendmentPath, changed);
+      registration.amendment = await reference(amendmentPath); await save(registrationPath, registration);
+      changedPlan.execution.campaign_scope.amendment = registration.amendment; resealPlan(changedPlan);
+      await assert.rejects(checkCampaignScope(changedPlan), /COHORT_HISTORY_CHANGED/);
+    } finally { await writeFile(amendmentPath, amendmentBytes); await writeFile(registrationPath, registrationBytes); }
+  });
+
+  await t.test('a later check detects changed historical bytes and an active historical lease', async () => {
+    const episodePath = join(current.amendment.history.episodes[0].directory, 'episode.json'), bytes = await readFile(episodePath);
+    try {
+      await writeFile(episodePath, Buffer.concat([bytes, Buffer.from('\n')]));
+      await assert.rejects(checkCampaignScope(plan));
+    } finally { await writeFile(episodePath, bytes); }
+    const historical = await read(f.historyPlans[0]), leasePath = join(historical.execution.control_root, 'lease.json');
+    await save(leasePath, { fixture: 'later-historical-lease' });
+    try { await assert.rejects(checkCampaignScope(plan)); }
+    finally { await rename(leasePath, join(f.owner, 'retained-registration-check-lease.json')); }
+    await checkCampaignScope(plan);
+  });
+});
 
 test('actual batch dispatch charges the shared ledger under its campaign lease for gate and genuine confirmation', async () => {
   const f = await fixture(), gate = await prepare(f, { id: 'integration-gate' });

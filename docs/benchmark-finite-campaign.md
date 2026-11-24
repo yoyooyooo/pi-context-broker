@@ -127,6 +127,14 @@ The first run activates an append-only registration successor after acquiring
 lease. Every later reservation rechecks the current registration and immutable
 history. A different scope cannot dispatch through an old registration.
 
+Each registration check reads and fully verifies every registered amendment,
+including each amendment's own historical evidence and authorization rules.
+When the requested scope is already the latest exact registration, the check
+binds its plan to that just-verified amendment instead of verifying the same
+current amendment a second time. An unactivated successor still receives its
+own full validation before activation. This reuse lasts only within that check;
+the next check reads the registration chain and evidence again.
+
 ## An explicitly approved prospective transition
 
 An original stop remains a stop. Continuing a separately approved program uses
