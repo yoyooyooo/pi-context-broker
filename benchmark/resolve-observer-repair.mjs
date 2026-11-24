@@ -140,7 +140,14 @@ export function assertResolveRepairExpectation(current, original, pair) {
   }
   after.build = structuredClone(before.build);
   const oldProjection = before.visibility.projection, newProjection = after.visibility.projection;
-  assert.equal(oldProjection.sha256, sha(JSON.stringify(oldProjection.files))); assert.equal(newProjection.sha256, sha(JSON.stringify(newProjection.files)));
+  // Runtime inventory hashes these fields before normalizeCandidate sorts object
+  // keys for persistence. Reconstruct that wire format without reordering files.
+  const projectionHash = files => sha(JSON.stringify(files.map(item => {
+    keys(item, ['path', 'sha256', 'bytes']);
+    return { path: item.path, sha256: item.sha256, bytes: item.bytes };
+  })));
+  assert.equal(oldProjection.sha256, projectionHash(oldProjection.files), 'RESOLVE_REPAIR_CAPTURE_INVENTORY_CHANGED');
+  assert.equal(newProjection.sha256, projectionHash(newProjection.files), 'RESOLVE_REPAIR_CAPTURE_INVENTORY_CHANGED');
   assert.deepEqual(newProjection.files, oldProjection.files.map(item => {
     const change = pair.changes.find(change => change.path === item.path);
     if (!change) return item;
