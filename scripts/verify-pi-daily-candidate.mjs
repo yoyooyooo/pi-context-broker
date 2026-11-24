@@ -16,6 +16,7 @@ import { sourceObserverPreloadSource, readSourceObservation } from './skill-cons
 import { observeGraphSdk } from './notion-skill-graph-model-evidence.mjs';
 import { observeOwnedObjectReads } from './notion-sdk-observers.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
+import { reviewedPiToolRuntimeProfile } from './notion-agent-tool-lineage.mjs';
 import { createOwnedGraphProject, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
 import { verifyPreparationEvidence, verifyConsumptionEffects } from './skill-preparation-evidence.mjs';
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
@@ -729,7 +730,7 @@ export function candidatePayloadBodies(value, expectedBodies) {
   });
 }
 
-export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, branchDirectory, toolResultDirectory, hostOutput, projectRoot, inspectProject, parseNativeReference }) {
+export function observeCandidateTask(api, { fs, crypto, path, createRequire, runtimeFiles, output, bodyFiles, inspectPayload, payloadDirectory, branchDirectory, toolResultDirectory, hostOutput, projectRoot, inspectProject, parseNativeReference }) {
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const oracleStarted = process.hrtime.bigint();
   const nonTextBodies = [];
@@ -761,6 +762,49 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     const sha256 = sha(bytes), path = toolResultDirectory + '/' + kind + '-' + sha256;
     if (!fs.existsSync(path)) fs.writeFileSync(path, bytes, { flag: 'wx', mode: 0o600 });
     return { path, bytes: Buffer.byteLength(bytes), sha256 };
+  };
+  let capturedToolRuntime;
+  const toolRuntime = () => {
+    if (!toolResultDirectory || !path || !createRequire) return undefined;
+    if (capturedToolRuntime !== undefined) return capturedToolRuntime;
+    try {
+      const entry = fs.realpathSync(process.argv[1]), packageRoot = path.resolve(path.dirname(entry), '../..');
+      const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+      if (manifest.name !== '@earendil-works/pi-coding-agent'
+        || entry !== path.join(packageRoot, 'dist/bundle/cli.js')
+        || typeof manifest.bin?.pi !== 'string'
+        || fs.realpathSync(path.resolve(packageRoot, manifest.bin.pi)) !== entry)
+        throw new Error('TOOL_RUNTIME_OWNER_UNPROVEN');
+      const wasm = createRequire(path.join(packageRoot, 'dist/bundle/chunks/chunk-36QC74V4.js')).resolve('quickjs-wasi/quickjs.wasm');
+      const wasmRelative = path.relative(packageRoot, fs.realpathSync(wasm));
+      if (wasmRelative !== 'node_modules/quickjs-wasi/quickjs.wasm') throw new Error('TOOL_RUNTIME_DEPENDENCY_OUTSIDE_OWNER');
+      if (!Array.isArray(runtimeFiles) || !runtimeFiles.includes('package.json')
+        || !runtimeFiles.includes('dist/bundle/cli.js') || !runtimeFiles.includes(wasmRelative))
+        throw new Error('TOOL_RUNTIME_PROFILE_MISSING');
+      const files = runtimeFiles.map(relativePath => {
+        if (typeof relativePath !== 'string' || path.isAbsolute(relativePath)
+          || relativePath.split('/').some(part => !part || part === '.' || part === '..'))
+          throw new Error('TOOL_RUNTIME_PROFILE_PATH_INVALID');
+        const file = path.join(packageRoot, relativePath);
+        if (fs.realpathSync(file) !== file || !fs.lstatSync(file).isFile()) throw new Error('TOOL_RUNTIME_FILE_UNPROVEN');
+        return { relativePath, path: file, artifact: retain('tool-runtime', fs.readFileSync(file)) };
+      });
+      capturedToolRuntime = { version: 1, packageRoot, entry, files };
+    } catch (error) {
+      capturedToolRuntime = { version: 1, error: { name: error.name, message: error.message } };
+    }
+    return capturedToolRuntime;
+  };
+  const verifyToolRuntimeUnchanged = () => {
+    if (!capturedToolRuntime?.files) return null;
+    for (const file of capturedToolRuntime.files) {
+      if (fs.realpathSync(file.path) !== file.path || !fs.lstatSync(file.path).isFile())
+        throw new Error('TOOL_RUNTIME_CHANGED');
+      const bytes = fs.readFileSync(file.path);
+      if (bytes.length !== file.artifact.bytes || sha(bytes) !== file.artifact.sha256)
+        throw new Error('TOOL_RUNTIME_CHANGED');
+    }
+    return true;
   };
   const preparedRead = (message, proofs, receiptSequence) => {
     const pending = pendingPreparedReads.get(message.toolCallId);
@@ -893,7 +937,11 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     const inspection = event.toolName === 'bash' && projectRoot && inspectProject?.(input, ctx?.cwd, projectRoot)
       ? { root: projectRoot, cwd: ctx.cwd, input } : undefined;
     const selectors = Object.fromEntries(['path', 'paths', 'ref', 'refs', 'query', 'id', 'ids', 'refresh'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
-    const toolSource = typeof api.getAllTools === 'function' ? api.getAllTools().find(tool => tool.name === event.toolName)?.sourceInfo : undefined;
+    const tool = typeof api.getAllTools === 'function' ? api.getAllTools().find(tool => tool.name === event.toolName) : undefined;
+    const toolSource = tool?.sourceInfo;
+    const toolParametersArtifact = toolResultDirectory && tool?.parameters !== undefined
+      ? retain('tool-parameters', JSON.stringify(tool.parameters)) : undefined;
+    const runtime = toolRuntime();
     let toolImplementation;
     if (event.toolName === 'read' && toolResultDirectory
       && toolSource?.origin === 'package' && toolSource.scope === 'user' && toolSource.source === 'npm:pi-compact-ui'
@@ -956,6 +1004,8 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
       ...(event.parentToolCallId === undefined ? {} : { parentToolCallId: event.parentToolCallId }),
       ...(toolSource === undefined ? {} : { toolSource }),
       ...(toolImplementation === undefined ? {} : { toolImplementation }),
+      ...(toolParametersArtifact === undefined ? {} : { toolParametersArtifact }),
+      ...(runtime === undefined ? {} : { toolRuntime: runtime }),
       inputSha256: sha(JSON.stringify(input)), selectors,
       executionTool: ['bash', 'powershell', 'codemode', 'execute', 'eval'].includes(event.toolName),
       reviewedReadTool: Boolean(inspection) || ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use'].includes(event.toolName),
@@ -991,7 +1041,11 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
   });
   on('session_shutdown', event => {
     if (event?.reason === 'fork') { pendingPreparedReads.clear(); record('task_observer_fork'); awaitingRebind = true; return; }
-    record('task_observer_end', { errors, complete: errors === 0 && !awaitingRebind, observerWorkMs: Number(observerWorkNs) / 1e6 }); closed = true; fs.closeSync(fd);
+    let toolRuntimeUnchanged = null;
+    try { toolRuntimeUnchanged = verifyToolRuntimeUnchanged(); }
+    catch { errors++; toolRuntimeUnchanged = false; record('observer_error', { event: 'tool_runtime_changed' }); }
+    record('task_observer_end', { errors, complete: errors === 0 && !awaitingRebind, toolRuntimeUnchanged,
+      observerWorkMs: Number(observerWorkNs) / 1e6 }); closed = true; fs.closeSync(fd);
   });
   return { bind(next) {
     if (closed) throw new Error('TASK_OBSERVER_ALREADY_CLOSED');
@@ -1007,13 +1061,13 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
  * ledger and payload counter, and rebind only after that real lifecycle event. */
 export function candidateTaskExtensionSource(settings) {
   assert.ok(isAbsolute(settings.referenceParser ?? ''), 'The task observer requires its selected installed reference parser');
-  return "import {parseNativeReference} from " + JSON.stringify(pathToFileURL(settings.referenceParser).href) + ";import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
+  return "import {parseNativeReference} from " + JSON.stringify(pathToFileURL(settings.referenceParser).href) + ";import fs from 'node:fs';import crypto from 'node:crypto';import path from 'node:path';import {createRequire} from 'node:module';const inspectPayload=" + candidatePayloadBodies.toString()
     + ';const inspectProject=' + candidateProjectInspection.toString()
     + ';const settings=' + JSON.stringify(settings)
     + ';const key=Symbol.for("context-broker/verification-task-observers/v1");'
     + 'export default api=>{const registry=globalThis[key]??=new Map();const prior=registry.get(settings.output);'
     + 'if(prior){if(prior.settings!==JSON.stringify(settings))throw new Error("TASK_OBSERVER_SETTINGS_CHANGED");prior.observer.bind(api);return;}const observer=(' + observeCandidateTask.toString()
-    + ' )(api,{fs,crypto,inspectPayload,inspectProject,parseNativeReference,...settings});registry.set(settings.output,{observer,settings:JSON.stringify(settings)});};\n';
+    + ' )(api,{fs,crypto,path,createRequire,inspectPayload,inspectProject,parseNativeReference,...settings,runtimeFiles:' + JSON.stringify(Object.keys(reviewedPiToolRuntimeProfile.files)) + '});registry.set(settings.output,{observer,settings:JSON.stringify(settings)});};\n';
 }
 
 export function containsProof(value, expected) {

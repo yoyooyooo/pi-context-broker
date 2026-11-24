@@ -10,6 +10,116 @@ const sha = value => createHash('sha256').update(value).digest('hex');
 const statusOf = diagnostics => diagnostics.some(item => item.status === 'failed') ? 'failed'
   : diagnostics.length ? 'blocked' : 'passed';
 
+// Reviewed Pi 1.6.0 bundled Node entry, argument validator, codemode executor,
+// and its separate QuickJS worker. Keep these actual loaded bytes separate
+// from the package's unbundled source and from a tool's familiar name.
+export const reviewedPiToolRuntimeProfile = Object.freeze({
+  id: 'pi:1.6.0:bundled-node:tool-validation-and-quickjs',
+  files: Object.freeze({
+    'package.json': { bytes: 3969, sha256: 'ea92c5541390fa391ed7157f153a44e931b4aef52f811ebf25cfb0bbafcdb9bb' },
+    'dist/bundle/cli.js': { bytes: 160, sha256: 'e79626f2dd6f94aa45d30f3fa63cd84319a6eefcd150b353cfaf274366926774' },
+    'dist/bundle/cli-runtime.js': { bytes: 1120, sha256: 'f21d61c909b0398f3b153f68044d7e6125bc9eea73bb26128e16f7b77245667b' },
+    'dist/bundle/chunks/chunk-KSDI5FD4.js': { bytes: 2623685, sha256: '5558c943edf1c00ca788788bc6b041d6a70a50ae7e646be2192ad399f1df7e34' },
+    'dist/bundle/chunks/chunk-P5VHIEWH.js': { bytes: 1373536, sha256: '26d7d1663219cb5055cb04f70aad06bd876046ecc95a9bf7566d3c9b8e022c50' },
+    'dist/bundle/chunks/chunk-36QC74V4.js': { bytes: 30071, sha256: '9d0bfdc1eaca5abb8f1796fdb9b256e981f7d429e99ce3aa3b9492fca7d1b5d0' },
+    'dist/bundle/chunks/chunk-XGGZYFNG.js': { bytes: 40908, sha256: 'e79117ae45c426c03f79c5a7495e9b6b09341d50cf8743835d021442491939a8' },
+    'dist/bundle/chunks/chunk-NRY4NBZW.js': { bytes: 44464, sha256: '490b194b9ccbe02fe8fedbc542abe24d90f8da124c97a72ef21dd621719d7a32' },
+    'dist/bundle/chunks/execute-XDNPBEMU.js': { bytes: 51162, sha256: 'afb817ee9afffab0244b25fdda42e33d920591d589a1d146300bd8c0e300ae3e' },
+    'dist/bundle/chunks/codemode-worker.js': { bytes: 78709, sha256: 'e68f1da328891a985d6fbf6db72094688b4d8d0a1ea732e39a84a03e326b357a' },
+    'node_modules/quickjs-wasi/quickjs.wasm': { bytes: 637405, sha256: 'd4c9375f2b1ca4dc95f72c8aa2982a7a9951ac8011490d79c6582df732b4bbd9' },
+  }),
+});
+
+export function inspectedPiToolRuntime(runtime) {
+  if (runtime?.version !== 1 || !isAbsolute(runtime.packageRoot ?? '')
+    || runtime.entry !== resolve(runtime.packageRoot, 'dist/bundle/cli.js')
+    || !Array.isArray(runtime.files)
+    || runtime.files.length !== Object.keys(reviewedPiToolRuntimeProfile.files).length) return undefined;
+  const seen = new Set();
+  for (const file of runtime.files) {
+    if (!object(file)) return undefined;
+    const expected = reviewedPiToolRuntimeProfile.files[file.relativePath];
+    if (!expected || seen.has(file.relativePath) || file.path !== resolve(runtime.packageRoot, file.relativePath)
+      || file.artifact?.bytes !== expected.bytes || file.artifact.sha256 !== expected.sha256) return undefined;
+    seen.add(file.relativePath);
+  }
+  return { profile: reviewedPiToolRuntimeProfile.id, packageRoot: runtime.packageRoot, entry: runtime.entry, files: runtime.files };
+}
+
+/** Verify sealed implementation and execution-schema bytes before the pure
+ * correlator may use them. Missing/unreviewed implementations confer nothing.
+ * Artifacts are cached within this read, not trusted because their names match. */
+export async function verifyObservedPiToolRuntime(tasks, readArtifact) {
+  const evidence = new Map(), checked = new Map();
+  const read = async artifact => {
+    if (!object(artifact) || !isAbsolute(artifact.path ?? '') || !digest(artifact.sha256)
+      || !Number.isSafeInteger(artifact.bytes) || artifact.bytes < 0 || typeof readArtifact !== 'function')
+      throw Object.assign(new Error('Retain the actual Pi runtime and tool-schema artifacts'), { code: 'PI_TOOL_RUNTIME_ARTIFACT_MISSING' });
+    const key = JSON.stringify([artifact.path, artifact.sha256, artifact.bytes]);
+    if (!checked.has(key)) checked.set(key, (async () => {
+      const bytes = await readArtifact(artifact.path);
+      if (!(bytes instanceof Uint8Array) || bytes.length !== artifact.bytes || sha(bytes) !== artifact.sha256)
+        throw Object.assign(new Error('A sealed Pi runtime or tool-schema artifact changed'), { code: 'PI_TOOL_RUNTIME_ARTIFACT_CHANGED' });
+      return bytes;
+    })());
+    return checked.get(key);
+  };
+  for (const event of tasks ?? []) {
+    if (event.phase !== 'tool_call') continue;
+    const implementation = inspectedPiToolRuntime(event.toolRuntime);
+    if (!implementation || !Number.isSafeInteger(event.pid) || event.pid <= 0) continue;
+    for (const file of implementation.files) await read(file.artifact);
+    const item = { implementation, toolCallId: event.toolCallId, toolName: event.toolName,
+      pid: event.pid, inputSha256: event.inputSha256 };
+    if (event.toolParametersArtifact) {
+      const bytes = await read(event.toolParametersArtifact);
+      item.parameters = JSON.parse(Buffer.from(bytes).toString('utf8'));
+      item.parametersArtifact = event.toolParametersArtifact;
+    }
+    if (event.toolName === 'codemode') {
+      const result = tasks.find(row => row.phase === 'tool_result' && row.toolCallId === event.toolCallId);
+      if (result?.contentArtifact) item.resultContentSha256 = sha(await read(result.contentArtifact));
+    }
+    evidence.set(event.toolCallId, item);
+  }
+  return evidence;
+}
+
+function runtimeForCall(event, evidence) {
+  const implementation = inspectedPiToolRuntime(event.toolRuntime);
+  if (!implementation || !evidence || !isDeepStrictEqual(evidence.implementation, implementation)
+    || evidence.toolCallId !== event.toolCallId || evidence.toolName !== event.toolName
+    || evidence.pid !== event.pid || evidence.inputSha256 !== event.inputSha256) return undefined;
+  return evidence;
+}
+
+// This is deliberately only the observed optional-null rule, not a second
+// implementation of Pi's full coercer. Nullable/required/ref properties,
+// undeclared keys, nested conversions and every non-null change stay exact.
+function optionalNullInput(input, parameters) {
+  if (!object(input) || !object(parameters) || parameters.type !== 'object' || !object(parameters.properties)
+    || parameters.$ref !== undefined || parameters.patternProperties !== undefined
+    || ['allOf', 'anyOf', 'oneOf'].some(key => parameters[key] !== undefined)
+    || parameters.required !== undefined && (!Array.isArray(parameters.required)
+      || parameters.required.some(key => typeof key !== 'string'))
+    || Object.keys(input).some(key => !Object.hasOwn(parameters.properties, key))) return undefined;
+  const required = new Set(parameters.required ?? []), omitted = [], next = { ...input };
+  const rejectsNull = schema => {
+    if (schema === false) return true;
+    if (!object(schema) || schema.$ref !== undefined) return false;
+    const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+    return types.length > 0 && types.every(type => ['string', 'number', 'integer', 'boolean', 'array', 'object'].includes(type))
+      || Object.hasOwn(schema, 'const') && schema.const !== null
+      || Array.isArray(schema.enum) && !schema.enum.includes(null);
+  };
+  for (const [key, value] of Object.entries(input)) {
+    if (value === null && !required.has(key) && rejectsNull(parameters.properties[key])) {
+      delete next[key]; omitted.push(key);
+    }
+  }
+  return omitted.length ? { input: next, omitted } : undefined;
+}
+
 // Reviewed 0.1.3 read execution: the registered delegate forwards the unchanged
 // arguments to the running Pi API's createReadTool(cwd). This says nothing about
 // this package's other tools, UI hooks or background traffic.
@@ -222,11 +332,14 @@ function preparedReadTransition(call, tasks, session, evidence) {
  *
  * The caller must validate the native session tree and callback stream first.
  * preparedReads contains only artifact bytes verified by the analyzer, plus
- * its independently verified current Broker owner. Raw receipt claims alone
+ * its independently verified current Broker owner. runtimeEvidence comes from
+ * verifyObservedPiToolRuntime, with the actual registered execution schemas.
+ * Raw receipt claims alone
  * cannot populate it or bypass the original argument and identity checks.
  * This function does not infer execution from proposals or from script text.
  */
-export function correlateNotionAgentToolAttempts({ tasks, session, currentUserId = session?.currentUserId, preparedReads = new Map() }) {
+export function correlateNotionAgentToolAttempts({ tasks, session, currentUserId = session?.currentUserId,
+  preparedReads = new Map(), runtimeEvidence = new Map() }) {
   const diagnostics = [], attempts = [], containers = [], retractedProposals = [];
   const note = (code, message, details, status = 'blocked') => diagnostics.push({ status, code, message, ...(details ? { details } : {}) });
   if (!Array.isArray(tasks) || session?.supported !== true || !Array.isArray(session.attempts)
@@ -360,8 +473,18 @@ export function correlateNotionAgentToolAttempts({ tasks, session, currentUserId
     if (call.native.name !== call.name)
       note('NATIVE_TOOL_NAME_MISMATCH', 'The actual and native tool names differ', { toolCallId: id }, 'failed');
     if (!object(call.arguments) || !digest(event.inputSha256)) note('TOOL_INPUT_HASH_MISSING', 'Complete native arguments and actual input hash are required', { toolCallId: id });
-    else if (sha(JSON.stringify(call.arguments)) !== event.inputSha256)
-      note('TOOL_INPUT_HASH_MISMATCH', 'The observed input differs from the native arguments', { toolCallId: id }, 'failed');
+    else if (sha(JSON.stringify(call.arguments)) !== event.inputSha256) {
+      const runtime = runtimeForCall(event, runtimeEvidence.get(id));
+      const normalized = runtime && isDeepStrictEqual(runtime.parametersArtifact, event.toolParametersArtifact)
+        ? optionalNullInput(call.arguments, runtime.parameters) : undefined;
+      if (normalized && sha(JSON.stringify(normalized.input)) === event.inputSha256) {
+        call.nativeArguments = call.arguments;
+        call.arguments = normalized.input;
+        call.inputNormalization = { profile: runtime.implementation.profile, rule: 'declared-optional-nonnullable-null',
+          nativeInputSha256: sha(JSON.stringify(call.nativeArguments)), observedInputSha256: event.inputSha256,
+          omittedProperties: normalized.omitted, parametersArtifact: runtime.parametersArtifact };
+      } else note('TOOL_INPUT_HASH_MISMATCH', 'The observed input differs from the native arguments', { toolCallId: id }, 'failed');
+    }
     for (const [key, value] of Object.entries(call.selectors)) if (!isDeepStrictEqual(value, call.arguments?.[key]))
       note('TOOL_SELECTOR_MISMATCH', 'The observed selector differs from the hash-bound arguments', { toolCallId: id, key }, 'failed');
     if (!result) note('TOOL_RESULT_UNOBSERVED', 'An actual tool start has no terminal callback', { toolCallId: id });
@@ -403,10 +526,27 @@ export function correlateNotionAgentToolAttempts({ tasks, session, currentUserId
   for (const [id, root] of roots) {
     if (root.native.name !== 'codemode') continue;
     const call = byId.get(id), problems = [...root.containerDiagnostics];
-    const source = call?.event.toolSource;
-    if (!object(source) || source.path !== 'builtin:codemode' || source.source !== 'builtin')
+    const source = call?.event.toolSource, runtime = call && runtimeForCall(call.event, runtimeEvidence.get(id));
+    if (!object(source) || source.path !== 'builtin:codemode' || source.source !== 'builtin'
+      || source.scope !== 'temporary' || source.origin !== 'top-level' || !runtime)
       problems.push({ status: 'blocked', code: source === undefined ? 'CODEMODE_IMPLEMENTATION_UNOBSERVED' : 'CODEMODE_IMPLEMENTATION_UNREVIEWED',
-        message: 'Only the observed builtin codemode implementation is a reviewed transparent container' });
+        message: 'The actual builtin needs its sealed reviewed Pi entry, executor and QuickJS worker' });
+    const first = session.branchEntries.findIndex(entry => entry.id === root.native.assistantEntryId);
+    const last = session.branchEntries.findIndex(entry => entry.id === root.native.resultEntryId);
+    if (first < 0 || last <= first)
+      problems.push({ status: 'blocked', code: 'CODEMODE_NATIVE_LIFETIME_UNPROVEN', message: 'Retain the native call-to-result branch interval' });
+    else if (session.branchEntries.slice(first + 1, last).some(entry => entry.type === 'custom' && entry.customType === 'codemode-store'))
+      problems.push({ status: 'blocked', code: 'CODEMODE_PERSISTENT_STORE_WRITE', message: 'The sandbox persisted a store mutation during this call' });
+    if (root.native.isError !== false || root.message.isError === true || call?.result?.isError !== false)
+      problems.push({ status: 'blocked', code: 'CODEMODE_EXECUTION_UNFINISHED', message: 'Only a successfully settled sandbox has complete effect coverage' });
+    const contentJson = JSON.stringify(root.message.content), contentSha256 = typeof contentJson === 'string' ? sha(contentJson) : undefined;
+    if (!Array.isArray(root.message.content) || root.message.content.some(part => part?.type !== 'text')
+      || !object(root.message.details) || Object.keys(root.message.details).some(key => key !== 'calls'))
+      problems.push({ status: 'blocked', code: 'CODEMODE_OUTPUT_EFFECT_UNREVIEWED', message: 'Image output, spilled files and unknown result fields need independent effect evidence' });
+    if (!runtime || !digest(contentSha256) || runtime.resultContentSha256 !== contentSha256
+      || call?.result?.content?.sha256 !== contentSha256 || call.result.content.bytes !== Buffer.byteLength(contentJson)
+      || call.result.contentArtifact?.sha256 !== contentSha256 || call.result.contentArtifact.bytes !== Buffer.byteLength(contentJson))
+      problems.push({ status: 'blocked', code: 'CODEMODE_RESULT_CONTENT_UNPROVEN', message: 'The complete native output must match the sealed actual result bytes' });
     const declaredComplete = root.message.nestedCalls?.complete === true
       || root.message.nestedCalls === undefined && Array.isArray(root.message.details?.calls) && root.message.details.calls.length === 0;
     const container = { id, name: 'codemode', complete: complete && declaredComplete && problems.length === 0,
@@ -414,8 +554,10 @@ export function correlateNotionAgentToolAttempts({ tasks, session, currentUserId
       coverage: 'native-complete-census-and-actual-terminal-callbacks',
       provenance: { resultEntryId: root.entry.id, resultLine: root.native.resultLine,
         ...(root.message.nestedCalls ? { summarySha256: sha(JSON.stringify(root.message.nestedCalls)) } : { noNestedCalls: true }),
-        directCensusSha256: root.directCensusSha256, ...(source ? { toolSource: source } : {}) },
-      semantics: 'container-only; evaluate every descendant tool independently; no script-text inference' };
+        directCensusSha256: root.directCensusSha256, ...(source ? { toolSource: source } : {}),
+        ...(runtime ? { implementation: runtime.implementation, resultContentSha256: contentSha256 } : {}) },
+      semantics: 'QuickJS has no ambient filesystem/network; evaluate every tool descendant independently; model execution needs its direct census; store/output mutations remain blocked',
+      notClaimed: 'zero host/plugin traffic or credential reads; model catalog/auth availability is metadata, not Notion mutation evidence' };
     containers.push(container); if (call) call.container = container;
   }
   return { version: 1, status, complete, attempts, containers, retractedProposals, diagnostics,

@@ -1519,3 +1519,48 @@ test('a resumed result cannot substitute a run or reset its cumulative accountin
     assert.equal(value.records.filter(row => row.phase === 'public-cli-audit-report').length, 1);
   }
 });
+
+
+test('task observer seals each actual tool schema and the selected bundled runtime, then detects runtime drift', async () => {
+  const paths = await import('node:path');
+  const { reviewedPiToolRuntimeProfile } = await import('./notion-agent-tool-lineage.mjs');
+  for (const drift of [false, true]) {
+    const packageRoot = '/installed/actual-pi', entry = packageRoot + '/dist/bundle/cli.js';
+    const runtimeFiles = Object.keys(reviewedPiToolRuntimeProfile.files), originals = new Map(), saved = new Map(), rows = [], handlers = new Map();
+    for (const relativePath of runtimeFiles) originals.set(packageRoot + '/' + relativePath, Buffer.from('reviewed fixture bytes: ' + relativePath));
+    originals.set(packageRoot + '/package.json', Buffer.from(JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.6.0', bin: { pi: 'dist/bundle/cli.js' } })));
+    const fs = { openSync: () => 1, closeSync() {}, writeSync: (_fd, line) => rows.push(JSON.parse(line)),
+      readFileSync: (file, encoding) => { assert.ok(originals.has(file), 'Only the actual declared runtime files are read'); const bytes = originals.get(file); return encoding ? bytes.toString(encoding) : bytes; },
+      existsSync: file => saved.has(file), realpathSync: file => file === process.argv[1] ? entry : file,
+      lstatSync: () => ({ isFile: () => true }),
+      writeFileSync: (file, bytes, options) => { assert.equal(options.flag, 'wx'); assert.ok(!saved.has(file)); saved.set(file, Buffer.from(bytes)); } };
+    const parameters = { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'number' } }, required: ['path'] };
+    const api = { on: (name, fn) => handlers.set(name, fn), getAllTools: () => [{ name: 'read', parameters, sourceInfo: { source: 'builtin', path: 'builtin:read' } }] };
+    observeCandidateTask(api, { fs, crypto: { createHash }, path: paths,
+      createRequire: anchor => { assert.equal(anchor, packageRoot + '/dist/bundle/chunks/chunk-36QC74V4.js'); return { resolve: name => { assert.equal(name, 'quickjs-wasi/quickjs.wasm'); return packageRoot + '/node_modules/quickjs-wasi/quickjs.wasm'; } }; },
+      runtimeFiles, ...nativeReferenceSettings, output: '/owned/task.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies, toolResultDirectory: '/owned/results' });
+    handlers.get('input')({});
+    const input = { path: '/local/file', offset: null }, before = structuredClone(input);
+    handlers.get('tool_call')({ toolName: 'read', toolCallId: 'first', input }, { mode: 'rpc' });
+    assert.deepEqual(input, before);
+    const first = rows.find(row => row.phase === 'tool_call');
+    assert.equal(first.toolRuntime.entry, entry); assert.equal(first.toolRuntime.packageRoot, packageRoot);
+    assert.equal(first.toolRuntime.files.length, runtimeFiles.length);
+    assert.deepEqual(JSON.parse(saved.get(first.toolParametersArtifact.path).toString()), parameters);
+    for (const file of first.toolRuntime.files) {
+      assert.equal(file.artifact.sha256, sha(originals.get(file.path)));
+      assert.deepEqual(saved.get(file.artifact.path), originals.get(file.path));
+    }
+    parameters.properties.offset.default = 4;
+    handlers.get('tool_call')({ toolName: 'read', toolCallId: 'second', input }, { mode: 'rpc' });
+    const second = rows.filter(row => row.phase === 'tool_call').at(-1);
+    assert.notEqual(second.toolParametersArtifact.sha256, first.toolParametersArtifact.sha256);
+    assert.equal(JSON.parse(saved.get(first.toolParametersArtifact.path).toString()).properties.offset.default, undefined);
+    assert.deepEqual(second.toolRuntime, first.toolRuntime);
+    if (drift) originals.set(packageRoot + '/dist/bundle/chunks/codemode-worker.js', Buffer.from('changed actual loaded implementation'));
+    handlers.get('session_shutdown')({});
+    const end = rows.at(-1);
+    assert.equal(end.complete, !drift); assert.equal(end.toolRuntimeUnchanged, !drift);
+    assert.equal(end.errors, drift ? 1 : 0);
+  }
+});

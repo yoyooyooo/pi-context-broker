@@ -614,3 +614,23 @@ test('shrinking only the first request cannot conceal more tool rounds or higher
   const failed = copy(baseline); failed.samples[0].status = 'failed';
   assert.ok(compareConsumptionRuns({ baseline, candidate: failed }).regressions.some(item => item.code === 'COST_TASK_SUCCESS_REGRESSION'));
 });
+
+test('Responses cost records actual API, nested effort and terminal identity without changing provider input', async () => {
+  const observed = await observe({ context: { model: { provider: 'magpie', id: 'group/worker', api: 'openai-responses' } },
+    payload: { model: 'group/worker', reasoning: { effort: 'high' }, input: [{ role: 'user', content: 'private request' }] },
+    assistantFields: { provider: 'magpie', model: 'group/worker', api: 'openai-responses',
+      responseId: 'resp_cost_fixture', rawStopReason: 'completed' } });
+  const request = observed.events.find(row => row.phase === 'provider_request');
+  const message = observed.events.find(row => row.phase === 'message_end').message;
+  assert.equal(request.api, 'openai-responses'); assert.equal(request.reasoningEffort, 'high');
+  assert.equal(message.api, 'openai-responses'); assert.equal(message.responseId, 'resp_cost_fixture');
+  assert.equal(message.rawStopReason, 'completed');
+  assert.equal(fs.readFileSync(observed.file, 'utf8').includes('private request'), false);
+});
+
+test('Responses cost does not invent API, identity or completion from invalid native metadata', async () => {
+  const observed = await observe({ assistantFields: { api: { secret: 'private' }, responseId: 'bad response id with spaces',
+    rawStopReason: { status: 'completed' } } });
+  const message = observed.events.find(row => row.phase === 'message_end').message;
+  for (const key of ['api', 'responseId', 'rawStopReason']) assert.equal(message[key], null, key);
+});

@@ -23,9 +23,14 @@ export function observeProviderTransport(api, settings) {
     fs.writeSync(fd, JSON.stringify(row) + '\n');
   };
   const field = (headers, name) => {
-    for (let i = 0; i + 1 < (headers?.length ?? 0); i += 2)
-      if (String(headers[i]).toLowerCase() === name) return String(headers[i + 1]).toLowerCase();
-    return undefined;
+    const decode = value => ArrayBuffer.isView(value)
+      ? Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('utf8') : String(value);
+    const pairs = Array.isArray(headers)
+      ? Array.from({ length: Math.floor(headers.length / 2) }, (_, index) => [headers[index * 2], headers[index * 2 + 1]])
+      : Object.entries(headers ?? {});
+    const values = pairs.filter(([key]) => decode(key).toLowerCase() === name)
+      .flatMap(([, value]) => (Array.isArray(value) ? value : [value]).map(item => decode(item).toLowerCase()));
+    return values.length === 0 ? undefined : new Set(values).size === 1 ? values[0] : 'conflicting-header-values';
   };
   // Retain only a short line prefix and capped counters, never response text.
   // A complete blank-line-delimited event must contain exactly one DONE data
@@ -55,6 +60,105 @@ export function observeProviderTransport(api, settings) {
       proof: () => ({ method: 'bounded-sse-data-done-v1', doneEvents }),
     };
   };
+  // Responses has a JSON terminal, not Chat Completions' [DONE] marker.
+  // Buffer at most one bounded SSE event in memory, project only identifiers and
+  // usage, then discard its text. Malformed/oversized events fail closed.
+  const responsesScanner = () => {
+    const limit = 1048576, decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+    let lineChunks = [], lineBytes = 0, eventBytes = 0, data = [], eventName = null, skipLf = false, firstLine = true;
+    let invalid = false, terminalEvents = 0, doneEvents = 0, response = null, observedId = null, observedModel = null;
+    const identifier = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/:@+-]{0,255}$/u.test(value);
+    const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+    const dispatch = () => {
+      if (!data.length) { eventName = null; eventBytes = 0; return; }
+      const encoded = data.join('\n'); data = [];
+      if (encoded === '[DONE]') {
+        doneEvents++;
+        if (terminalEvents !== 1 || doneEvents !== 1) invalid = true;
+      } else {
+        let event;
+        try { event = JSON.parse(encoded); } catch { invalid = true; return; }
+        if (!event || typeof event !== 'object' || Array.isArray(event) || typeof event.type !== 'string'
+          || eventName !== null && eventName !== event.type) { invalid = true; return; }
+        const terminal = ['response.completed', 'response.incomplete', 'response.failed'].includes(event.type);
+        if (terminal) terminalEvents++;
+        if (response !== null || doneEvents || event.type === 'error') { invalid = true; return; }
+        if (event.type === 'response.created' || event.type === 'response.in_progress' || terminal) {
+          const value = event.response;
+          if (!value || typeof value !== 'object' || !identifier(value.id)
+            || observedId !== null && value.id !== observedId
+            || value.model !== undefined && (!identifier(value.model) || observedModel !== null && value.model !== observedModel)) {
+            invalid = true; return;
+          }
+          observedId = value.id;
+          if (value.model !== undefined) observedModel = value.model;
+          if (terminal) {
+            if (event.type !== 'response.completed' || value.status !== 'completed' || !identifier(value.model)) {
+              invalid = true; return;
+            }
+            const usage = value.usage;
+            response = { id: value.id, model: value.model, status: value.status, usage: {
+              input_tokens: count(usage?.input_tokens), output_tokens: count(usage?.output_tokens),
+              total_tokens: count(usage?.total_tokens),
+              input_tokens_details: { cached_tokens: usage?.input_tokens_details?.cached_tokens === undefined ? null : count(usage.input_tokens_details.cached_tokens),
+                cache_write_tokens: usage?.input_tokens_details?.cache_write_tokens === undefined ? null : count(usage.input_tokens_details.cache_write_tokens) },
+              output_tokens_details: { reasoning_tokens: usage?.output_tokens_details?.reasoning_tokens === undefined ? null : count(usage.output_tokens_details.reasoning_tokens) },
+              optional_fields_valid: ['input_tokens_details', 'output_tokens_details'].every(key => usage?.[key] == null
+                || typeof usage[key] === 'object' && !Array.isArray(usage[key]))
+                && [['input_tokens_details', 'cached_tokens'], ['input_tokens_details', 'cache_write_tokens'],
+                ['output_tokens_details', 'reasoning_tokens']].every(([group, key]) => usage?.[group]?.[key] === undefined || count(usage[group][key]) !== null),
+            } };
+          }
+        }
+      }
+      eventName = null; eventBytes = 0;
+    };
+    const lineEnd = () => {
+      let line;
+      try { line = decoder.decode(Buffer.concat(lineChunks, lineBytes)); } catch { invalid = true; }
+      lineChunks = []; lineBytes = 0;
+      if (invalid) return;
+      if (firstLine) { firstLine = false; if (line.startsWith('\uFEFF')) line = line.slice(1); }
+      if (line === '') { dispatch(); return; }
+      if (line.startsWith(':')) return;
+      const colon = line.indexOf(':'), name = colon < 0 ? line : line.slice(0, colon);
+      let value = colon < 0 ? '' : line.slice(colon + 1);
+      if (value.startsWith(' ')) value = value.slice(1);
+      if (name === 'data') data.push(value);
+      else if (name === 'event') {
+        if (eventName !== null) invalid = true;
+        eventName = value;
+      }
+    };
+    const append = bytes => {
+      eventBytes += bytes.length;
+      if (eventBytes > limit) { invalid = true; lineChunks = []; data = []; return; }
+      if (bytes.length) { lineChunks.push(Buffer.from(bytes)); lineBytes += bytes.length; }
+    };
+    return {
+      push(value) {
+        if (invalid) return;
+        const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+        let start = 0;
+        for (let i = 0; i < chunk.length; i++) {
+          const byte = chunk[i];
+          if (skipLf) { skipLf = false; if (byte === 10) { start = i + 1; continue; } }
+          if (byte !== 10 && byte !== 13) continue;
+          append(chunk.subarray(start, i)); eventBytes++;
+          if (eventBytes > limit) invalid = true;
+          if (invalid) return;
+          lineEnd(); start = i + 1; skipLf = byte === 13;
+          if (invalid) return;
+        }
+        append(chunk.subarray(start));
+      },
+      proof() {
+        const complete = !invalid && terminalEvents === 1 && response !== null && lineBytes === 0 && data.length === 0 && eventName === null;
+        lineChunks = []; data = [];
+        return { method: 'bounded-openai-responses-sse-v1', complete, terminalEvents, doneEvents, response };
+      },
+    };
+  };
   const register = (name, handle) => {
     const callback = event => {
       if (closed) return;
@@ -71,10 +175,10 @@ export function observeProviderTransport(api, settings) {
     const id = ++nextRequest, origin = String(request.origin), now = process.hrtime.bigint();
     const row = { id, started: now, requestBytes: 0, responseBytes: 0, requestHash: crypto.createHash('sha256'),
       responseHash: crypto.createHash('sha256'), sent: false, headers: false, encoding: null, status: null,
-      // OpenAI chat completions has one exact API route. An MCP service on
-      // the same origin is still independent traffic. Unsupported APIs retain
-      // conservative origin-wide accounting rather than guessing a route.
-      category: modelOrigin && origin === modelOrigin && (!modelPath || new URL(String(request.path), origin).pathname === modelPath) ? 'model' : 'other',
+      // Each supported OpenAI API has one exact POST route. Same-origin MCP
+      // traffic remains independent. Unsupported APIs retain conservative
+      // origin-wide accounting rather than guessing a route.
+      category: modelOrigin && origin === modelOrigin && (!modelPath || request.method === 'POST' && new URL(String(request.path), origin).pathname === modelPath) ? 'model' : 'other',
       originSha256: hash(origin),
       modelApi, contentType: null, completion: null };
     rows.set(request, row); active.add(request);
@@ -100,6 +204,8 @@ export function observeProviderTransport(api, settings) {
     row.contentType = contentType === undefined ? null : contentType.split(';', 1)[0].trim() === 'text/event-stream' ? 'text/event-stream' : 'other';
     if (row.category === 'model' && row.modelApi === 'openai-completions' && row.status >= 200 && row.status < 300
       && row.encoding === 'identity' && row.contentType === 'text/event-stream') row.completion = completionScanner();
+    if (row.category === 'model' && row.modelApi === 'openai-responses' && row.status >= 200 && row.status < 300
+      && row.encoding === 'identity' && row.contentType === 'text/event-stream') row.completion = responsesScanner();
     record('response_headers', { id: row.id, status: row.status, contentEncoding: row.encoding, contentType: row.contentType });
   });
   register('bodyChunkReceived', ({ request, chunk }) => {
@@ -137,11 +243,11 @@ export function observeProviderTransport(api, settings) {
     selectedModel = model ? hash(String(model.provider) + '/' + String(model.id)) : null;
     const endpoint = model?.baseUrl ? new URL(model.baseUrl) : undefined;
     modelOrigin = endpoint?.origin;
-    modelApi = model?.api === 'openai-completions' ? 'openai-completions' : model?.api ? 'other' : null;
-    // Pi's OpenAI client appends /chat/completions to baseURL, preserving its
+    modelApi = ['openai-completions', 'openai-responses'].includes(model?.api) ? model.api : model?.api ? 'other' : null;
+    // Pi's OpenAI client appends the selected API route to baseURL, preserving its
     // path prefix. Query values remain opaque and are only hashed on requests.
-    modelPath = endpoint && modelApi === 'openai-completions'
-      ? endpoint.pathname.replace(/\/$/u, '') + '/chat/completions' : undefined;
+    modelPath = endpoint && ['openai-completions', 'openai-responses'].includes(modelApi)
+      ? endpoint.pathname.replace(/\/$/u, '') + (modelApi === 'openai-responses' ? '/responses' : '/chat/completions') : undefined;
   };
   const handlers = [], unsubscribers = [], seenApis = new WeakSet();
   let boundApi, binding = 0, pendingForkRebind = false;
@@ -169,7 +275,7 @@ export function observeProviderTransport(api, settings) {
       selectModel(ctx);
       record('model_selected', { modelSha256: selectedModel, originSha256: modelOrigin ? hash(modelOrigin) : null,
         endpointPathSha256: modelPath ? hash(modelPath) : null,
-        endpointMethod: modelPath ? 'openai-chat-completions-route' : 'conservative-origin' });
+        endpointMethod: modelPath ? modelApi === 'openai-responses' ? 'openai-responses-route' : 'openai-chat-completions-route' : 'conservative-origin' });
     } catch { errors++; record('observer_error', { channel: 'session_start' }); }
   });
   on('before_provider_request', (_event, ctx) => {
@@ -192,10 +298,40 @@ export function observeProviderTransport(api, settings) {
  * protocol terminal can establish a separate application completion. */
 export function providerApplicationCompletion(end, message) {
   if (end?.category !== 'model' || !Number.isInteger(end.status) || end.status < 200 || end.status >= 300) return null;
+  if (message?.api === 'openai-responses' && end.modelApi !== 'openai-responses') return null;
   // The cost observer distinguishes absent raw metadata from invalid values it redacts.
   // Unknown stays null; an old null without that observation cannot prove validity.
   if (!(message?.responseModelStatus === 'unreported' && message.responseModel === null
     || message?.responseModelStatus === 'reported' && typeof message.responseModel === 'string' && message.responseModel.trim())) return null;
+  if (end.modelApi === 'openai-responses') {
+    const proof = end.sseCompletion, response = proof?.response, usage = response?.usage;
+    const natural = value => Number.isSafeInteger(value) && value >= 0;
+    const optional = value => value === null || natural(value);
+    if (end.contentEncoding !== 'identity' || end.contentType !== 'text/event-stream'
+      || proof?.method !== 'bounded-openai-responses-sse-v1' || proof.complete !== true || proof.terminalEvents !== 1
+      || ![0, 1].includes(proof.doneEvents) || response?.status !== 'completed'
+      || !['id', 'model'].every(key => typeof response[key] === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/:@+-]{0,255}$/u.test(response[key]))
+      || !['input_tokens', 'output_tokens', 'total_tokens'].every(key => natural(usage?.[key]))
+      || usage.total_tokens <= 0 || usage.total_tokens !== usage.input_tokens + usage.output_tokens
+      || usage.optional_fields_valid !== true
+      || ![usage.input_tokens_details?.cached_tokens, usage.input_tokens_details?.cache_write_tokens,
+        usage.output_tokens_details?.reasoning_tokens].every(optional)) return null;
+    // Pi 1.6 subtracts cache reads/writes from input; absent optional detail
+    // fields have defined zero defaults, retained as null in the raw projection.
+    const cacheRead = usage.input_tokens_details.cached_tokens ?? 0, cacheWrite = usage.input_tokens_details.cache_write_tokens ?? 0;
+    const reasoning = usage.output_tokens_details.reasoning_tokens ?? 0;
+    if (cacheRead + cacheWrite > usage.input_tokens || reasoning > usage.output_tokens) return null;
+    const expected = { input: usage.input_tokens - cacheRead - cacheWrite, output: usage.output_tokens,
+      cacheRead, cacheWrite, reasoning, totalTokens: usage.total_tokens };
+    if (message?.role !== 'assistant' || message.api !== 'openai-responses' || message.responseId !== response.id
+      || message.rawStopReason !== 'completed' || !['stop', 'toolUse'].includes(message.stopReason)
+      || !['provider', 'model'].every(key => typeof message[key] === 'string' && message[key].trim())
+      || message.responseModelStatus === 'reported' && message.responseModel !== response.model
+      || !Object.entries(expected).every(([key, value]) => message.usage?.[key] === value)) return null;
+    if (end.outcome === 'completed') return 'responses-completed';
+    return end.outcome === 'failure' && end.errorName === 'AbortError' && end.errorCode === 20
+      ? 'responses-completed-before-http-cancel' : null;
+  }
   if (end.outcome === 'completed') return 'http-complete';
   if (end.outcome !== 'failure' || end.errorName !== 'AbortError' || end.errorCode !== 20
     || end.modelApi !== 'openai-completions' || end.contentEncoding !== 'identity' || end.contentType !== 'text/event-stream'

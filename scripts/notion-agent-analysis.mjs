@@ -6,8 +6,9 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
 import { providerApplicationCompletion } from './skill-consumption-provider.mjs';
+import { verifyNotionAgentDirectoryInventory } from './notion-agent-inventory-evidence.mjs';
 import { validateAgentAssertion, validateAgentBindings } from './notion-agent-scenarios.mjs';
-import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation, inspectedLocalReadEvidence } from './notion-agent-tool-lineage.mjs';
+import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation, inspectedLocalReadEvidence, verifyObservedPiToolRuntime } from './notion-agent-tool-lineage.mjs';
 import { verifyPreparationEvidence, visibleDiscoveryCards } from './skill-preparation-evidence.mjs';
 import { parseSourceObservation } from './skill-consumption-source-observer.mjs';
 import { verifyNotionAgentCliProcesses, verifyNotionAgentSingleProjectionRestore, verifyNotionAgentOriginalSourceResume } from './notion-agent-cli-process.mjs';
@@ -21,6 +22,58 @@ const textOf = content => typeof content === 'string' ? content : (Array.isArray
 const sessionTypes = new Set(['message', 'thinking_level_change', 'model_change', 'usage', 'compaction',
   'branch_summary', 'custom', 'label', 'session_info', 'custom_message', 'context_edit']);
 const roles = new Set(['system', 'user', 'assistant', 'toolResult', 'custom', 'bashExecution', 'branchSummary', 'compactionSummary']);
+
+// This view is for semantic inspection only. The original serialized payload
+// remains the source of every wire hash, byte count and body-oracle measurement.
+function providerPayloadView(payload, api, session, responseEntryId) {
+  if (api !== 'openai-responses') {
+    need(api === undefined || api === 'openai-completions', 'TRANSPORT_UNSUPPORTED', 'Unknown provider input protocol');
+    return payload;
+  }
+  need(Array.isArray(payload.input) && payload.messages === undefined, 'RESPONSES_INPUT_UNPROVEN',
+    'Responses delivery needs its original input item array');
+  const reply = session?.assistantMessages?.filter(row => row.active && row.entryId === responseEntryId) ?? [];
+  need(reply.length === 1 && reply[0].api === 'openai-responses', 'RESPONSES_NATIVE_BOUNDARY_MISSING',
+    'Responses input must be bound to its one actual native response');
+  const messages = [], calls = new Map(), outputs = new Set();
+  const content = value => {
+    need(typeof value === 'string' || Array.isArray(value), 'RESPONSES_CONTENT_UNPROVEN', 'Retain the complete Responses content');
+    return typeof value === 'string' ? value : value.map(part =>
+      ['input_text', 'output_text'].includes(part?.type) ? { ...part, type: 'text' } : part);
+  };
+  for (const item of payload.input) {
+    need(object(item), 'RESPONSES_INPUT_UNPROVEN', 'Each Responses input item must be an object');
+    if (item.type === 'function_call') {
+      let argumentsValue;
+      try { argumentsValue = JSON.parse(item.arguments); } catch { /* Reject below without retaining private arguments. */ }
+      const nativeId = nonempty(item.call_id) && nonempty(item.id) ? item.call_id + '|' + item.id : undefined;
+      const native = session?.attempts?.filter(call => call.active && call.id === nativeId) ?? [];
+      const assistant = native.length === 1 ? session.branchEntries.find(row => row.id === native[0].assistantEntryId)?.message : undefined;
+      need(nonempty(nativeId) && !item.call_id.includes('|') && /^fc_[A-Za-z0-9_-]+$/u.test(item.id)
+        && !calls.has(item.call_id) && native.length === 1 && native[0].name === item.name
+        && object(argumentsValue) && isDeepStrictEqual(native[0].arguments, argumentsValue)
+        && assistant?.api === 'openai-responses' && native[0].callLine < reply[0].line
+        && session.contributions.some(row => row.entryId === native[0].assistantEntryId && row.role === 'assistant'),
+      'RESPONSES_TOOL_IDENTITY_UNPROVEN', 'A Responses call must match the complete retained native ID, name and original arguments');
+      calls.set(item.call_id, native[0]);
+    } else if (item.type === 'function_call_output') {
+      const call = calls.get(item.call_id);
+      const terminal = call && session.branchEntries.find(row => row.id === call.resultEntryId)?.message;
+      need(call && call.resultLine < reply[0].line && !outputs.has(item.call_id) && terminal?.role === 'toolResult' && terminal.toolCallId === call.id
+        && session.contributions.some(row => row.entryId === call.resultEntryId && row.role === 'toolResult'),
+      'RESPONSES_TOOL_IDENTITY_UNPROVEN', 'A Responses output needs its preceding exact call and retained native result');
+      outputs.add(item.call_id);
+      messages.push({ role: 'tool', tool_call_id: call.id, wireToolCallId: item.call_id, content: content(item.output) });
+    } else if ((item.type === undefined || item.type === 'message') && ['system', 'developer', 'user', 'assistant'].includes(item.role)) {
+      messages.push({ role: item.role, content: content(item.content) });
+    } else {
+      need(['reasoning', 'additional_tools', 'configuration_update'].includes(item.type),
+        'RESPONSES_INPUT_UNSUPPORTED', 'An unsupported Responses input item cannot silently supply delivery');
+    }
+  }
+  const { input: _input, ...rest } = payload;
+  return { ...rest, messages };
+}
 
 function projectNativeBranch(branch) {
   const latestCompaction = branch.filter(entry => entry.value.type === 'compaction').at(-1);
@@ -130,7 +183,9 @@ export function inspectNotionAgentSession(text, options = {}) {
     if (message.role === 'assistant') {
       if (active) { assert.equal(message.provider, provider); assert.equal(message.model, model); }
       assistantMessages.push({ entryId: row.id, line, active, userEntryId: userFor(row), provider: message.provider, model: message.model,
-        stopReason: message.stopReason, content: { sha256: hash(JSON.stringify(message.content)), bytes: Buffer.byteLength(JSON.stringify(message.content)) } });
+        stopReason: message.stopReason, api: message.api, responseId: message.responseId, rawStopReason: message.rawStopReason,
+        usage: Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'reasoning', 'totalTokens'].map(key => [key, message.usage?.[key] ?? null])),
+        content: { sha256: hash(JSON.stringify(message.content)), bytes: Buffer.byteLength(JSON.stringify(message.content)) } });
       for (const part of Array.isArray(message.content) ? message.content : []) if (part.type === 'toolCall') {
         assert.ok(nonempty(part.id) && !calls.has(part.id) && nonempty(part.name) && object(part.arguments), 'Invalid or duplicate native tool attempt');
         calls.set(part.id, { id: part.id, name: part.name, arguments: part.arguments, callLine: line,
@@ -657,7 +712,7 @@ function mainBodyKey(target, bodies) {
 function catalogDescriptionCards(messages) {
   const attributes = text => Object.fromEntries([...text.matchAll(/([a-z_]+)="([^"]*)"/gu)]
     .map(match => [match[1], xmlText(match[2])]));
-  return messages.filter(message => ['user', 'system'].includes(message.role)).flatMap(message =>
+  return messages.filter(message => ['user', 'system', 'developer'].includes(message.role)).flatMap(message =>
     [...textOf(message.content).matchAll(/<ntn-skills-view-catalog>([\s\S]*?)<\/ntn-skills-view-catalog>/gu)].flatMap(section =>
       [...section[1].matchAll(/<catalog-cards>([\s\S]*?)<\/catalog-cards>/gu)].flatMap(block =>
         [...block[1].matchAll(/<group\b([^>]*)>([\s\S]*?)<\/group>/gu)].flatMap(group => {
@@ -731,7 +786,7 @@ export async function verifyNotionAgentMetadataLookup(expected, observed, bindin
   const deliveries = [], descriptionProjections = [];
   for (const payload of delivery.requests) {
     const task = observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === payload.sha256);
-    const raw = JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8'));
+    const raw = providerPayloadView(JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8')), payload.api, observed.session, payload.nativeResponseEntryId);
     for (const message of (raw.messages ?? []).filter(message => message.role === 'tool' && message.tool_call_id === call.deliveryToolCallId)) {
       if (textOf(message.content) === text) { deliveries.push(payload); break; }
       const descriptions = metadataDescriptionProjection(native.message, message, raw, payload.selection);
@@ -887,7 +942,7 @@ export async function verifyNotionAgentContentSearch(expected, observed, binding
   const deliveries = [];
   for (const payload of delivery.requests) {
     const task = observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === payload.sha256);
-    const rawPayload = JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8'));
+    const rawPayload = providerPayloadView(JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8')), payload.api, observed.session, payload.nativeResponseEntryId);
     if ((rawPayload.messages ?? []).some(message => message.role === 'tool' && message.tool_call_id === call.deliveryToolCallId && textOf(message.content) === text))
       deliveries.push(payload);
   }
@@ -956,7 +1011,7 @@ export async function verifyNotionAgentUnavailableReference(expected, observed, 
       const payloads = [];
       for (const payload of delivery.requests) {
         const task = observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === payload.sha256);
-        const raw = JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8'));
+        const raw = providerPayloadView(JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8')), payload.api, observed.session, payload.nativeResponseEntryId);
         if ((raw.messages ?? []).some(message => message.role === 'tool' && message.tool_call_id === call.deliveryToolCallId
           && textOf(message.content) === textOf(content))) payloads.push(payload.sha256);
       }
@@ -990,7 +1045,9 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
   shared.attempts = new Map(); shared.proposals = [];
   shared.toolObservation = await check('tool-attempt-observation', async () => {
     const preparedReads = await observedPreparedReads(observed, readArtifact);
-    const correlation = correlateNotionAgentToolAttempts({ tasks, session: observed.session, preparedReads });
+    const runtimeEvidence = await verifyObservedPiToolRuntime(tasks, readArtifact);
+    shared.runtimeEvidence = runtimeEvidence;
+    const correlation = correlateNotionAgentToolAttempts({ tasks, session: observed.session, preparedReads, runtimeEvidence });
     shared.correlation = correlation;
     shared.attempts = new Map(correlation.attempts.map(call => [call.id, call]));
     shared.proposals = [...correlation.attempts, ...correlation.retractedProposals];
@@ -1035,8 +1092,9 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       if (!historicalRoots.has(root.id)) {
         history ??= await retainedToolHistory(observed.toolHistory, readArtifact);
         const ids = new Set([root.id, ...members.map(call => call.id)]);
+        const runtimeEvidence = await verifyObservedPiToolRuntime(history.rows, readArtifact);
         const correlation = correlateNotionAgentToolAttempts({ tasks: history.rows.filter(row => ids.has(row.toolCallId)),
-          session: { ...session, attempts: [root] }, currentUserId: root.userEntryId });
+          session: { ...session, attempts: [root] }, currentUserId: root.userEntryId, runtimeEvidence });
         if (!correlation.complete) {
           const problem = correlation.diagnostics.find(item => item.status === 'failed') ?? correlation.diagnostics[0];
           throw new EvidenceError(problem?.status ?? 'blocked', problem?.code ?? 'HISTORICAL_TOOL_CORRELATION_INCOMPLETE',
@@ -1057,7 +1115,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
   };
 
   shared.delivery = await check('actual-provider-delivery', async () => {
-    const requests = costs.filter(row => row.phase === 'provider_request'), used = new Set(), payloads = [], nativeUsed = new Set();
+    const requests = costs.filter(row => row.phase === 'provider_request'), used = new Set(), payloads = [], nativeUsed = new Set(), responseIds = new Set();
     const nativeMessages = observed.session?.assistantMessages?.filter(row => row.active && row.userEntryId === observed.session.currentUserId);
     need(Array.isArray(nativeMessages), 'NATIVE_RESPONSE_MISSING', 'Actual native assistant responses must be retained');
     need(requests.length > 0, 'PROVIDER_REQUEST_MISSING', 'No actual model request was observed');
@@ -1098,7 +1156,17 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       need(nativeMatches.length === 1, 'NATIVE_RESPONSE_CORRELATION_MISSING', 'Provider response content must match one native assistant entry');
       nativeUsed.add(nativeMatches[0].entryId);
       demand(message.provider === 'magpie' && message.model === 'group/worker', 'WRONG_RESPONSE_MODEL', 'Actual response belongs to another requested model');
-      need(end.modelApi === 'openai-completions', 'TRANSPORT_UNSUPPORTED', 'This observer currently proves only openai-completions over Node Undici');
+      need(['openai-completions', 'openai-responses'].includes(end.modelApi), 'TRANSPORT_UNSUPPORTED', 'The selected API needs independent Node Undici protocol evidence');
+      if (end.modelApi === 'openai-responses') {
+        const native = nativeMatches[0];
+        need(nonempty(message.responseId) && !responseIds.has(message.responseId),
+          'RESPONSE_ID_REUSED', 'Each Responses request needs its own independently observed response ID');
+        responseIds.add(message.responseId);
+        need(request.api === end.modelApi && message.api === end.modelApi && native.api === end.modelApi
+          && native.responseId === message.responseId && native.rawStopReason === message.rawStopReason
+          && ['input', 'output', 'cacheRead', 'cacheWrite', 'reasoning', 'totalTokens'].every(key => native.usage?.[key] === message.usage?.[key]),
+        'NATIVE_RESPONSE_PROTOCOL_MISMATCH', 'The native Responses identity, completion and usage must match the observed assistant');
+      }
       need(providerApplicationCompletion(end, message) && digest(end.responseEntitySha256) && end.responseEntityBytes > 0,
         'APPLICATION_COMPLETION_MISSING', 'A hook or HTTP status is not a completed application response');
       demand(['stop', 'toolUse'].includes(message.stopReason), 'MODEL_RESPONSE_INCOMPLETE', 'The response stopped before completing its task');
@@ -1107,9 +1175,12 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       const taskRows = tasks.filter(row => row.phase === 'provider_payload' && row.sha256 === request.payload.sha256 && row.bytes === request.payload.bytes);
       need(taskRows.length === 1 && nonempty(taskRows[0].payloadFile), 'RAW_PAYLOAD_MISSING', 'Retain the exact private payload file');
       const task = taskRows[0], bytes = await verifiedArtifact({ path: task.payloadFile, sha256: task.sha256, bytes: task.bytes }, readArtifact);
-      const payload = JSON.parse(bytes.toString('utf8'));
-      demand(payload.model === 'group/worker' && payload.reasoning_effort === 'high', 'WRONG_WIRE_MODEL', 'Actual wire payload must request worker/high');
-      const bodies = inspectPayload(payload, bodyFiles);
+      const rawPayload = JSON.parse(bytes.toString('utf8'));
+      demand(rawPayload.model === 'group/worker' && (end.modelApi === 'openai-responses'
+        ? rawPayload.reasoning?.effort === 'high' && rawPayload.stream === true : rawPayload.reasoning_effort === 'high'),
+      'WRONG_WIRE_MODEL', 'Actual wire payload must request worker/high with the selected API');
+      const payload = providerPayloadView(rawPayload, end.modelApi, observed.session, nativeMatches[0].entryId);
+      const bodies = inspectPayload(rawPayload, bodyFiles);
       need(Array.isArray(bodies), 'BODY_ORACLE_INVALID', 'The body oracle returned no observations');
       const bodyObservation = [];
       for (const body of bodies) {
@@ -1144,7 +1215,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         }
         const ids = new Set(calls.map(call => call.deliveryToolCallId));
         const messages = (payload.messages ?? []).filter(message => message.role === 'tool' && ids.has(message.tool_call_id));
-        const count = inspectPayload({ ...payload, messages }, [frozen])[0];
+        const count = inspectPayload({ messages }, [frozen])[0];
         need(count && count.sha256 === frozen.sha256 && Number.isSafeInteger(count.occurrences) && count.occurrences >= 0,
           'NATIVE_BODY_METRIC_MISSING', 'The actual native tool response requires an independent full-body count');
         nativeReadBodies.push({ body: key, path, sha256: frozen.sha256, occurrences: count.occurrences, toolCallIds: calls.map(call => call.id), deliveryToolCallIds: [...ids],
@@ -1154,9 +1225,11 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       const native = uniqueBodies.size ? await nativeSourceReceipts(task.branch, observed.session, nativeMatches[0].entryId, readArtifact)
         : { receipts: [], rejected: [] };
       const notion = boundNotionDeliveries(payload, [...tasks, ...native.receipts], uniqueBodies);
-      payloads.push({ request: request.request, wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies, bodyObservation, nativeReadBodies,
+      payloads.push({ request: request.request, api: end.modelApi, nativeResponseEntryId: nativeMatches[0].entryId,
+        ...(end.modelApi === 'openai-responses' ? { responseId: end.sseCompletion.response.id, responseModel: end.sseCompletion.response.model } : {}),
+        wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies, bodyObservation, nativeReadBodies,
         notionDeliveries: notion.deliveries, rejectedNotionReceipts: [...notion.rejected, ...native.rejected],
-        monotonicNs: task.monotonicNs, metadataText: (payload.messages ?? []).filter(message => ['user', 'system'].includes(message.role)).map(message => textOf(message.content)).join('\n'),
+        monotonicNs: task.monotonicNs, metadataText: (payload.messages ?? []).filter(message => ['user', 'system', 'developer'].includes(message.role)).map(message => textOf(message.content)).join('\n'),
         verifiedBodies: request.payload.verifiedBodyOccurrences, usage: message.usage, completion: providerApplicationCompletion(end, message),
         selection: observed.selectionSnapshots?.find(row => row.payloadSha256 === task.sha256)?.selection });
     }
@@ -1249,6 +1322,10 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       if (call.preparedRead) {
         toolOwners.set(call.id, { toolCallId: call.id, owner: 'reviewed-native-read-delegate', path: source.path,
           preparation: call.preparedRead });
+      } else if (call.name === 'bash' && source?.source === 'builtin' && source.path === 'builtin:bash') {
+        const inventory = verifyNotionAgentDirectoryInventory(call, { source: observed.source, session: observed.session,
+          runtimeEvidence: shared.runtimeEvidence });
+        if (inventory.status === 'passed') toolOwners.set(call.id, inventory);
       } else if (['read', 'grep', 'find', 'ls', 'tool_search'].includes(call.name) &&
         source?.source === 'builtin' && source.path === builtinPath) {
         toolOwners.set(call.id, { toolCallId: call.id, owner: 'builtin', path: source.path });
