@@ -1,0 +1,2097 @@
+{
+  "version": 1,
+  "kind": "public-own20-descriptive-lineage-projection",
+  "source_lineage_file_sha256": "e4be9d454c3339f1dca3bf33eb72ccb514e2a41fe3f47bd4af8b3d78b76a972f",
+  "source_lineage_semantic_sha256": "cf90e38186432f220769359c8f571cb5084c0e2f4fd4a459ebf4b4647adff68d",
+  "helper_sha256": "93c8d06ff1b24b84ccdee675f1f627a83f8aa25b204f8ba48dbe5ef4f4d209d1",
+  "new_owner_closed_prefix": 6,
+  "source_collector": {
+    "version": "1.1.0",
+    "source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15"
+  },
+  "summary": {
+    "original_scientific_slots": 20,
+    "physical_executions": 9,
+    "admission_valid": 7,
+    "admission_invalid": 2,
+    "invalid_only_unresolved_slots": 2,
+    "unstarted_slots": 11,
+    "unresolved_scientific_slots": 13,
+    "full_contract_among_valid": {
+      "pass": 0,
+      "fail": 2,
+      "unknown": 5
+    },
+    "business_among_valid": {
+      "pass": 7,
+      "fail": 0,
+      "unknown": 0
+    }
+  },
+  "rows": [
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 0,
+      "original_slot_id": "m0-e1--continuation-01-a-n16-r2--r0",
+      "source_slot": {
+        "slot_id": "m0-e1--continuation-01-a-n16-r2--r0",
+        "pair_id": "m0-continuation-01-a-n16-r2-r0",
+        "case_id": "continuation-01-a-n16-r2",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 0
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-2",
+      "owner_local_order": 0,
+      "owning_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "owning_analysis_sha256": "a64d52839cdda20162c1d150f4155b4493b2341f3b72563d9325738ccab8d047",
+      "state": "observed_valid",
+      "owning_ledger_sequences": {
+        "start": 2,
+        "completion": 3
+      },
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-23T08:16:05.930Z",
+        "end": "2026-11-24T08:16:05.930Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": "1.1.0",
+      "collector_source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15",
+      "source_episode_sha256": "b30433165d888f7e9d741b28baed78128a4bb2afd5289e1053cd526dd7d01fc0",
+      "public_episode_reference": {
+        "public_episode_sha256": "aa0a956468b7d2d0b5b2a102a71db018ed80db67ed5cb731d6ea668961264af2",
+        "public_file": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/analysis-input.json",
+        "public_file_sha256": "3b94c5b758532f141431a4ff086f6a6c753e51489a5a8b4398dad3597cc4425e",
+        "pointer": "/episodes/0"
+      },
+      "primary_public_reference": {
+        "kind": "linked-pr60-primary",
+        "commit": "b76b4f61802a359751b417ee09a30842e93abf48",
+        "public_manifest_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/public-manifest.json",
+        "public_manifest_file_sha256": "a9c0067a0185387a71d95a98294d3f200e4837c6ef5bfa7bf03a38c4dab47b8d",
+        "analysis_input_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/analysis-input.json",
+        "analysis_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/analysis.json",
+        "source_analysis_semantic_sha256": "a64d52839cdda20162c1d150f4155b4493b2341f3b72563d9325738ccab8d047",
+        "public_analysis_semantic_sha256": "f3f7f387194a14224199959c7740944cd712978809a795aa4473f1f29463d180",
+        "public_protocol_sha256": "bc02e9d1b471731fcaef596dbccc61474779b92aa968f48f3be65c927a74cb6c",
+        "source_protocol_sha256": "7e0e476773d6faf1e038ad0842fc05e2c3f29a006ae13c80bdac1ea4619d3589",
+        "public_files": {
+          "analysis-input.json": {
+            "sha256": "3b94c5b758532f141431a4ff086f6a6c753e51489a5a8b4398dad3597cc4425e",
+            "bytes": 1112002
+          },
+          "analysis.json": {
+            "sha256": "eacca0f2ea8f16da97cca6aa74c50dd3f17b116fe17aca8b7be2bc95786fc457",
+            "bytes": 271068
+          }
+        },
+        "episode_mapping": [
+          {
+            "source_episode_sha256": "b30433165d888f7e9d741b28baed78128a4bb2afd5289e1053cd526dd7d01fc0",
+            "public_episode_sha256": "aa0a956468b7d2d0b5b2a102a71db018ed80db67ed5cb731d6ea668961264af2",
+            "analysis_input_pointer": "[path:1c43b02080e98eebebe8]"
+          },
+          {
+            "source_episode_sha256": "e3975378ca6f6d79e35c1ed7e929a96eaca85208fef847f75b2d55247b6c7332",
+            "public_episode_sha256": "9f35bf5c0b1e98de35fc8819588e5c2f7b406e9e5fd4af41ce58e708af8947de",
+            "analysis_input_pointer": "[path:2c6c04d4fa83d71fc38c]"
+          },
+          {
+            "source_episode_sha256": "090c3a496d321833f3d782e5be723f7a636a8a125d7015bf3b3b151d39b0848f",
+            "public_episode_sha256": "aa07c29871936316c11cb96ade4db653c9182e838d7fea2bd57efeaf75dd170d",
+            "analysis_input_pointer": "[path:52fb5c17efe7219c6e8e]"
+          }
+        ],
+        "scope": "Fixed public manifest metadata only; original80/Own003 not replayed, rescored or copied."
+      },
+      "run_id": "benchmark-own-product-confirmation-2-001",
+      "episode_id": "benchmark-own-product-confirmation-2-001",
+      "admission": {
+        "status": "valid"
+      },
+      "result": {
+        "outcome": "unknown",
+        "verified_success": false,
+        "unassisted_success": false
+      },
+      "business_status": "pass",
+      "duration_ms": {
+        "status": "known",
+        "value": 38999.661125
+      },
+      "recorded_usage": {
+        "actual_attempts": {
+          "status": "known",
+          "value": 7
+        },
+        "known_actual_attempts": 7,
+        "input_total": {
+          "known_subtotal": 33040,
+          "value": {
+            "status": "known",
+            "value": 33040
+          }
+        },
+        "output_total": {
+          "known_subtotal": 408,
+          "value": {
+            "status": "known",
+            "value": 408
+          }
+        },
+        "cost": {
+          "status": "unknown"
+        }
+      }
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 1,
+      "original_slot_id": "m0-e0--continuation-01-a-n16-r2--r0",
+      "source_slot": {
+        "slot_id": "m0-e0--continuation-01-a-n16-r2--r0",
+        "pair_id": "m0-continuation-01-a-n16-r2-r0",
+        "case_id": "continuation-01-a-n16-r2",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 1
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-2",
+      "owner_local_order": 1,
+      "owning_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "owning_analysis_sha256": "a64d52839cdda20162c1d150f4155b4493b2341f3b72563d9325738ccab8d047",
+      "state": "observed_valid",
+      "owning_ledger_sequences": {
+        "start": 4,
+        "completion": 5
+      },
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-23T08:16:05.930Z",
+        "end": "2026-11-24T08:16:05.930Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": "1.1.0",
+      "collector_source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15",
+      "source_episode_sha256": "e3975378ca6f6d79e35c1ed7e929a96eaca85208fef847f75b2d55247b6c7332",
+      "public_episode_reference": {
+        "public_episode_sha256": "9f35bf5c0b1e98de35fc8819588e5c2f7b406e9e5fd4af41ce58e708af8947de",
+        "public_file": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/analysis-input.json",
+        "public_file_sha256": "3b94c5b758532f141431a4ff086f6a6c753e51489a5a8b4398dad3597cc4425e",
+        "pointer": "/episodes/1"
+      },
+      "primary_public_reference": {
+        "kind": "linked-pr60-primary",
+        "commit": "b76b4f61802a359751b417ee09a30842e93abf48",
+        "public_manifest_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/public-manifest.json",
+        "public_manifest_file_sha256": "a9c0067a0185387a71d95a98294d3f200e4837c6ef5bfa7bf03a38c4dab47b8d",
+        "analysis_input_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/analysis-input.json",
+        "analysis_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/analysis.json",
+        "source_analysis_semantic_sha256": "a64d52839cdda20162c1d150f4155b4493b2341f3b72563d9325738ccab8d047",
+        "public_analysis_semantic_sha256": "f3f7f387194a14224199959c7740944cd712978809a795aa4473f1f29463d180",
+        "public_protocol_sha256": "bc02e9d1b471731fcaef596dbccc61474779b92aa968f48f3be65c927a74cb6c",
+        "source_protocol_sha256": "7e0e476773d6faf1e038ad0842fc05e2c3f29a006ae13c80bdac1ea4619d3589",
+        "public_files": {
+          "analysis-input.json": {
+            "sha256": "3b94c5b758532f141431a4ff086f6a6c753e51489a5a8b4398dad3597cc4425e",
+            "bytes": 1112002
+          },
+          "analysis.json": {
+            "sha256": "eacca0f2ea8f16da97cca6aa74c50dd3f17b116fe17aca8b7be2bc95786fc457",
+            "bytes": 271068
+          }
+        },
+        "episode_mapping": [
+          {
+            "source_episode_sha256": "b30433165d888f7e9d741b28baed78128a4bb2afd5289e1053cd526dd7d01fc0",
+            "public_episode_sha256": "aa0a956468b7d2d0b5b2a102a71db018ed80db67ed5cb731d6ea668961264af2",
+            "analysis_input_pointer": "[path:1c43b02080e98eebebe8]"
+          },
+          {
+            "source_episode_sha256": "e3975378ca6f6d79e35c1ed7e929a96eaca85208fef847f75b2d55247b6c7332",
+            "public_episode_sha256": "9f35bf5c0b1e98de35fc8819588e5c2f7b406e9e5fd4af41ce58e708af8947de",
+            "analysis_input_pointer": "[path:2c6c04d4fa83d71fc38c]"
+          },
+          {
+            "source_episode_sha256": "090c3a496d321833f3d782e5be723f7a636a8a125d7015bf3b3b151d39b0848f",
+            "public_episode_sha256": "aa07c29871936316c11cb96ade4db653c9182e838d7fea2bd57efeaf75dd170d",
+            "analysis_input_pointer": "[path:52fb5c17efe7219c6e8e]"
+          }
+        ],
+        "scope": "Fixed public manifest metadata only; original80/Own003 not replayed, rescored or copied."
+      },
+      "run_id": "benchmark-own-product-confirmation-2-002",
+      "episode_id": "benchmark-own-product-confirmation-2-002",
+      "admission": {
+        "status": "valid"
+      },
+      "result": {
+        "outcome": "unknown",
+        "verified_success": false,
+        "unassisted_success": false
+      },
+      "business_status": "pass",
+      "duration_ms": {
+        "status": "known",
+        "value": 53606.793708000005
+      },
+      "recorded_usage": {
+        "actual_attempts": {
+          "status": "known",
+          "value": 7
+        },
+        "known_actual_attempts": 7,
+        "input_total": {
+          "known_subtotal": 31748,
+          "value": {
+            "status": "known",
+            "value": 31748
+          }
+        },
+        "output_total": {
+          "known_subtotal": 406,
+          "value": {
+            "status": "known",
+            "value": 406
+          }
+        },
+        "cost": {
+          "status": "unknown"
+        }
+      }
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 2,
+      "original_slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+        "pair_id": "m0-explicit-01-a-n16-r1-r0",
+        "case_id": "explicit-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 2
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-2",
+      "owner_local_order": 2,
+      "owning_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "owning_analysis_sha256": "a64d52839cdda20162c1d150f4155b4493b2341f3b72563d9325738ccab8d047",
+      "state": "invalid_only_unresolved",
+      "owning_ledger_sequences": {
+        "start": 8,
+        "completion": 9
+      },
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-23T08:16:05.930Z",
+        "end": "2026-11-24T08:16:05.930Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": "1.1.0",
+      "collector_source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15",
+      "source_episode_sha256": "090c3a496d321833f3d782e5be723f7a636a8a125d7015bf3b3b151d39b0848f",
+      "public_episode_reference": {
+        "public_episode_sha256": "aa07c29871936316c11cb96ade4db653c9182e838d7fea2bd57efeaf75dd170d",
+        "public_file": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/analysis-input.json",
+        "public_file_sha256": "3b94c5b758532f141431a4ff086f6a6c753e51489a5a8b4398dad3597cc4425e",
+        "pointer": "/episodes/2"
+      },
+      "primary_public_reference": {
+        "kind": "linked-pr60-primary",
+        "commit": "b76b4f61802a359751b417ee09a30842e93abf48",
+        "public_manifest_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/public-manifest.json",
+        "public_manifest_file_sha256": "a9c0067a0185387a71d95a98294d3f200e4837c6ef5bfa7bf03a38c4dab47b8d",
+        "analysis_input_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/analysis-input.json",
+        "analysis_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/analysis.json",
+        "source_analysis_semantic_sha256": "a64d52839cdda20162c1d150f4155b4493b2341f3b72563d9325738ccab8d047",
+        "public_analysis_semantic_sha256": "f3f7f387194a14224199959c7740944cd712978809a795aa4473f1f29463d180",
+        "public_protocol_sha256": "bc02e9d1b471731fcaef596dbccc61474779b92aa968f48f3be65c927a74cb6c",
+        "source_protocol_sha256": "7e0e476773d6faf1e038ad0842fc05e2c3f29a006ae13c80bdac1ea4619d3589",
+        "public_files": {
+          "analysis-input.json": {
+            "sha256": "3b94c5b758532f141431a4ff086f6a6c753e51489a5a8b4398dad3597cc4425e",
+            "bytes": 1112002
+          },
+          "analysis.json": {
+            "sha256": "eacca0f2ea8f16da97cca6aa74c50dd3f17b116fe17aca8b7be2bc95786fc457",
+            "bytes": 271068
+          }
+        },
+        "episode_mapping": [
+          {
+            "source_episode_sha256": "b30433165d888f7e9d741b28baed78128a4bb2afd5289e1053cd526dd7d01fc0",
+            "public_episode_sha256": "aa0a956468b7d2d0b5b2a102a71db018ed80db67ed5cb731d6ea668961264af2",
+            "analysis_input_pointer": "[path:1c43b02080e98eebebe8]"
+          },
+          {
+            "source_episode_sha256": "e3975378ca6f6d79e35c1ed7e929a96eaca85208fef847f75b2d55247b6c7332",
+            "public_episode_sha256": "9f35bf5c0b1e98de35fc8819588e5c2f7b406e9e5fd4af41ce58e708af8947de",
+            "analysis_input_pointer": "[path:2c6c04d4fa83d71fc38c]"
+          },
+          {
+            "source_episode_sha256": "090c3a496d321833f3d782e5be723f7a636a8a125d7015bf3b3b151d39b0848f",
+            "public_episode_sha256": "aa07c29871936316c11cb96ade4db653c9182e838d7fea2bd57efeaf75dd170d",
+            "analysis_input_pointer": "[path:52fb5c17efe7219c6e8e]"
+          }
+        ],
+        "scope": "Fixed public manifest metadata only; original80/Own003 not replayed, rescored or copied."
+      },
+      "run_id": "benchmark-own-product-confirmation-2-003",
+      "episode_id": "benchmark-own-product-confirmation-2-003",
+      "admission": {
+        "status": "invalid"
+      },
+      "result": {
+        "outcome": "not_applicable",
+        "verified_success": false,
+        "unassisted_success": false
+      },
+      "business_status": "fail",
+      "duration_ms": {
+        "status": "known",
+        "value": 8796.311708
+      },
+      "recorded_usage": {
+        "actual_attempts": {
+          "status": "known",
+          "value": 0
+        },
+        "known_actual_attempts": 0,
+        "input_total": {
+          "known_subtotal": 0,
+          "value": {
+            "status": "known",
+            "value": 0
+          }
+        },
+        "output_total": {
+          "known_subtotal": 0,
+          "value": {
+            "status": "known",
+            "value": 0
+          }
+        },
+        "cost": {
+          "status": "unknown"
+        }
+      }
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 3,
+      "original_slot_id": "m0-e1--explicit-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e1--explicit-01-a-n16-r1--r0",
+        "pair_id": "m0-explicit-01-a-n16-r1-r0",
+        "case_id": "explicit-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 3
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 0,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "observed_valid",
+      "owning_ledger_sequences": {
+        "start": 2,
+        "completion": 3
+      },
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": "1.1.0",
+      "collector_source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15",
+      "source_episode_sha256": "6a1742ac71a1e1aae2d7667f7c83be2555261c3c024c506b7f4468b226082d21",
+      "public_episode_reference": {
+        "public_episode_sha256": "00838e9e90c5d050bdba82e6e91a1bfa7859d92b174b95a45acc33b0af36bdb8",
+        "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+        "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+        "pointer": "/episodes/0"
+      },
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-001",
+      "episode_id": "benchmark-own-product-confirmation-unstarted-17-1-001",
+      "admission": {
+        "status": "valid"
+      },
+      "result": {
+        "outcome": "unknown",
+        "verified_success": false,
+        "unassisted_success": false
+      },
+      "business_status": "pass",
+      "duration_ms": {
+        "status": "known",
+        "value": 58563.496042
+      },
+      "recorded_usage": {
+        "actual_attempts": {
+          "status": "known",
+          "value": 4
+        },
+        "known_actual_attempts": 4,
+        "input_total": {
+          "known_subtotal": 17976,
+          "value": {
+            "status": "known",
+            "value": 17976
+          }
+        },
+        "output_total": {
+          "known_subtotal": 274,
+          "value": {
+            "status": "known",
+            "value": 274
+          }
+        },
+        "cost": {
+          "status": "unknown"
+        }
+      }
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 4,
+      "original_slot_id": "m0-e1--equivalent-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e1--equivalent-01-a-n16-r1--r0",
+        "pair_id": "m0-equivalent-01-a-n16-r1-r0",
+        "case_id": "equivalent-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 4
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 1,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "observed_valid",
+      "owning_ledger_sequences": {
+        "start": 6,
+        "completion": 7
+      },
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": "1.1.0",
+      "collector_source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15",
+      "source_episode_sha256": "5e7af7f5709db61029da160527aecc283e54f94f3e3efa4e472b9b6fd11233b9",
+      "public_episode_reference": {
+        "public_episode_sha256": "f001c804bd55ff163823ba7893b55ea9e0eab185f3edf742b6282f4098418779",
+        "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+        "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+        "pointer": "/episodes/1"
+      },
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-002",
+      "episode_id": "benchmark-own-product-confirmation-unstarted-17-1-002",
+      "admission": {
+        "status": "valid"
+      },
+      "result": {
+        "outcome": "unknown",
+        "verified_success": false,
+        "unassisted_success": false
+      },
+      "business_status": "pass",
+      "duration_ms": {
+        "status": "known",
+        "value": 55229.906665999995
+      },
+      "recorded_usage": {
+        "actual_attempts": {
+          "status": "known",
+          "value": 4
+        },
+        "known_actual_attempts": 4,
+        "input_total": {
+          "known_subtotal": 17835,
+          "value": {
+            "status": "known",
+            "value": 17835
+          }
+        },
+        "output_total": {
+          "known_subtotal": 303,
+          "value": {
+            "status": "known",
+            "value": 303
+          }
+        },
+        "cost": {
+          "status": "unknown"
+        }
+      }
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 5,
+      "original_slot_id": "m0-e0--equivalent-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e0--equivalent-01-a-n16-r1--r0",
+        "pair_id": "m0-equivalent-01-a-n16-r1-r0",
+        "case_id": "equivalent-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 5
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 2,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "observed_valid",
+      "owning_ledger_sequences": {
+        "start": 8,
+        "completion": 9
+      },
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": "1.1.0",
+      "collector_source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15",
+      "source_episode_sha256": "99e07cc516aca0cf795ddfd4059ac9580193f932d504a935e70c4a5fb90681c7",
+      "public_episode_reference": {
+        "public_episode_sha256": "f629670c6c50d6c8e1ae60e952ec869306d5cb02299aebe9d064f5f21a60ab62",
+        "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+        "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+        "pointer": "/episodes/2"
+      },
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-003",
+      "episode_id": "benchmark-own-product-confirmation-unstarted-17-1-003",
+      "admission": {
+        "status": "valid"
+      },
+      "result": {
+        "outcome": "unknown",
+        "verified_success": false,
+        "unassisted_success": false
+      },
+      "business_status": "pass",
+      "duration_ms": {
+        "status": "known",
+        "value": 45142.784666
+      },
+      "recorded_usage": {
+        "actual_attempts": {
+          "status": "known",
+          "value": 4
+        },
+        "known_actual_attempts": 4,
+        "input_total": {
+          "known_subtotal": 17133,
+          "value": {
+            "status": "known",
+            "value": 17133
+          }
+        },
+        "output_total": {
+          "known_subtotal": 309,
+          "value": {
+            "status": "known",
+            "value": 309
+          }
+        },
+        "cost": {
+          "status": "unknown"
+        }
+      }
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 6,
+      "original_slot_id": "m0-e0--task-switch-01-a-n16-r2--r0",
+      "source_slot": {
+        "slot_id": "m0-e0--task-switch-01-a-n16-r2--r0",
+        "pair_id": "m0-task-switch-01-a-n16-r2-r0",
+        "case_id": "task-switch-01-a-n16-r2",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 6
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 3,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "observed_valid",
+      "owning_ledger_sequences": {
+        "start": 12,
+        "completion": 13
+      },
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": "1.1.0",
+      "collector_source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15",
+      "source_episode_sha256": "d802263e272c12327dedd0efe08b07b3174f1009d970f92e3433b6704f56eb74",
+      "public_episode_reference": {
+        "public_episode_sha256": "2a0c8a91de9a47357415f89d6c42d8700950d90f46f56330627e044468e1c196",
+        "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+        "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+        "pointer": "/episodes/3"
+      },
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-004",
+      "episode_id": "benchmark-own-product-confirmation-unstarted-17-1-004",
+      "admission": {
+        "status": "valid"
+      },
+      "result": {
+        "outcome": "fail",
+        "verified_success": false,
+        "unassisted_success": false
+      },
+      "business_status": "pass",
+      "duration_ms": {
+        "status": "known",
+        "value": 49416.726375
+      },
+      "recorded_usage": {
+        "actual_attempts": {
+          "status": "known",
+          "value": 8
+        },
+        "known_actual_attempts": 8,
+        "input_total": {
+          "known_subtotal": 37276,
+          "value": {
+            "status": "known",
+            "value": 37276
+          }
+        },
+        "output_total": {
+          "known_subtotal": 458,
+          "value": {
+            "status": "known",
+            "value": 458
+          }
+        },
+        "cost": {
+          "status": "unknown"
+        }
+      }
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 7,
+      "original_slot_id": "m0-e1--task-switch-01-a-n16-r2--r0",
+      "source_slot": {
+        "slot_id": "m0-e1--task-switch-01-a-n16-r2--r0",
+        "pair_id": "m0-task-switch-01-a-n16-r2-r0",
+        "case_id": "task-switch-01-a-n16-r2",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 7
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 4,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "observed_valid",
+      "owning_ledger_sequences": {
+        "start": 14,
+        "completion": 15
+      },
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": "1.1.0",
+      "collector_source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15",
+      "source_episode_sha256": "756e44a0f122ccb2eb8726355447ff79e9a7e1062ac8e08d5f6abf26edc5c54d",
+      "public_episode_reference": {
+        "public_episode_sha256": "92e2668b40f2d6c6e77e4a8b3bc7b08c7f6fc58d78bca6bde3ed68363f443bb9",
+        "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+        "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+        "pointer": "/episodes/4"
+      },
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-005",
+      "episode_id": "benchmark-own-product-confirmation-unstarted-17-1-005",
+      "admission": {
+        "status": "valid"
+      },
+      "result": {
+        "outcome": "fail",
+        "verified_success": false,
+        "unassisted_success": false
+      },
+      "business_status": "pass",
+      "duration_ms": {
+        "status": "known",
+        "value": 154083.011084
+      },
+      "recorded_usage": {
+        "actual_attempts": {
+          "status": "known",
+          "value": 8
+        },
+        "known_actual_attempts": 8,
+        "input_total": {
+          "known_subtotal": 38572,
+          "value": {
+            "status": "known",
+            "value": 38572
+          }
+        },
+        "output_total": {
+          "known_subtotal": 464,
+          "value": {
+            "status": "known",
+            "value": 464
+          }
+        },
+        "cost": {
+          "status": "unknown"
+        }
+      }
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 8,
+      "original_slot_id": "m0-e1--complementary-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e1--complementary-01-a-n16-r1--r0",
+        "pair_id": "m0-complementary-01-a-n16-r1-r0",
+        "case_id": "complementary-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 8
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 5,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "invalid_only_unresolved",
+      "owning_ledger_sequences": {
+        "start": 18,
+        "completion": 19
+      },
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": "1.1.0",
+      "collector_source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15",
+      "source_episode_sha256": "505d1b31cd161f35fce13e381936073bc450ae7a74fd545930f94e8969d898a1",
+      "public_episode_reference": {
+        "public_episode_sha256": "c2ea01b0e5efce78b608aff698899445e46f72766355ed454ca147300e3a09f4",
+        "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+        "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+        "pointer": "/episodes/5"
+      },
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-006",
+      "episode_id": "benchmark-own-product-confirmation-unstarted-17-1-006",
+      "admission": {
+        "status": "invalid"
+      },
+      "result": {
+        "outcome": "not_applicable",
+        "verified_success": false,
+        "unassisted_success": false
+      },
+      "business_status": "fail",
+      "duration_ms": {
+        "status": "known",
+        "value": 11367.273625
+      },
+      "recorded_usage": {
+        "actual_attempts": {
+          "status": "known",
+          "value": 1
+        },
+        "known_actual_attempts": 1,
+        "input_total": {
+          "known_subtotal": 0,
+          "value": {
+            "status": "unknown"
+          }
+        },
+        "output_total": {
+          "known_subtotal": 0,
+          "value": {
+            "status": "unknown"
+          }
+        },
+        "cost": {
+          "status": "unknown"
+        }
+      }
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 9,
+      "original_slot_id": "m0-e0--complementary-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e0--complementary-01-a-n16-r1--r0",
+        "pair_id": "m0-complementary-01-a-n16-r1-r0",
+        "case_id": "complementary-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 9
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 6,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "unstarted",
+      "owning_ledger_sequences": null,
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": null,
+      "collector_source_sha256": null,
+      "source_episode_sha256": null,
+      "public_episode_reference": null,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": null,
+      "episode_id": null,
+      "admission": null,
+      "result": null,
+      "business_status": null,
+      "duration_ms": null,
+      "recorded_usage": null
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 10,
+      "original_slot_id": "m0-e0--references-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e0--references-01-a-n16-r1--r0",
+        "pair_id": "m0-references-01-a-n16-r1-r0",
+        "case_id": "references-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 10
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 7,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "unstarted",
+      "owning_ledger_sequences": null,
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": null,
+      "collector_source_sha256": null,
+      "source_episode_sha256": null,
+      "public_episode_reference": null,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": null,
+      "episode_id": null,
+      "admission": null,
+      "result": null,
+      "business_status": null,
+      "duration_ms": null,
+      "recorded_usage": null
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 11,
+      "original_slot_id": "m0-e1--references-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e1--references-01-a-n16-r1--r0",
+        "pair_id": "m0-references-01-a-n16-r1-r0",
+        "case_id": "references-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 11
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 8,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "unstarted",
+      "owning_ledger_sequences": null,
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": null,
+      "collector_source_sha256": null,
+      "source_episode_sha256": null,
+      "public_episode_reference": null,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": null,
+      "episode_id": null,
+      "admission": null,
+      "result": null,
+      "business_status": null,
+      "duration_ms": null,
+      "recorded_usage": null
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 12,
+      "original_slot_id": "m0-e1--scripts-assets-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e1--scripts-assets-01-a-n16-r1--r0",
+        "pair_id": "m0-scripts-assets-01-a-n16-r1-r0",
+        "case_id": "scripts-assets-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 12
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 9,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "unstarted",
+      "owning_ledger_sequences": null,
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": null,
+      "collector_source_sha256": null,
+      "source_episode_sha256": null,
+      "public_episode_reference": null,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": null,
+      "episode_id": null,
+      "admission": null,
+      "result": null,
+      "business_status": null,
+      "duration_ms": null,
+      "recorded_usage": null
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 13,
+      "original_slot_id": "m0-e0--scripts-assets-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e0--scripts-assets-01-a-n16-r1--r0",
+        "pair_id": "m0-scripts-assets-01-a-n16-r1-r0",
+        "case_id": "scripts-assets-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 13
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 10,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "unstarted",
+      "owning_ledger_sequences": null,
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": null,
+      "collector_source_sha256": null,
+      "source_episode_sha256": null,
+      "public_episode_reference": null,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": null,
+      "episode_id": null,
+      "admission": null,
+      "result": null,
+      "business_status": null,
+      "duration_ms": null,
+      "recorded_usage": null
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 14,
+      "original_slot_id": "m0-e0--implicit-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e0--implicit-01-a-n16-r1--r0",
+        "pair_id": "m0-implicit-01-a-n16-r1-r0",
+        "case_id": "implicit-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 14
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 11,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "unstarted",
+      "owning_ledger_sequences": null,
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": null,
+      "collector_source_sha256": null,
+      "source_episode_sha256": null,
+      "public_episode_reference": null,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": null,
+      "episode_id": null,
+      "admission": null,
+      "result": null,
+      "business_status": null,
+      "duration_ms": null,
+      "recorded_usage": null
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 15,
+      "original_slot_id": "m0-e1--implicit-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e1--implicit-01-a-n16-r1--r0",
+        "pair_id": "m0-implicit-01-a-n16-r1-r0",
+        "case_id": "implicit-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 15
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 12,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "unstarted",
+      "owning_ledger_sequences": null,
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": null,
+      "collector_source_sha256": null,
+      "source_episode_sha256": null,
+      "public_episode_reference": null,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": null,
+      "episode_id": null,
+      "admission": null,
+      "result": null,
+      "business_status": null,
+      "duration_ms": null,
+      "recorded_usage": null
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 16,
+      "original_slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+        "pair_id": "m0-no-skill-01-a-n16-r1-r0",
+        "case_id": "no-skill-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 16
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 13,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "unstarted",
+      "owning_ledger_sequences": null,
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": null,
+      "collector_source_sha256": null,
+      "source_episode_sha256": null,
+      "public_episode_reference": null,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": null,
+      "episode_id": null,
+      "admission": null,
+      "result": null,
+      "business_status": null,
+      "duration_ms": null,
+      "recorded_usage": null
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 17,
+      "original_slot_id": "m0-e0--no-skill-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e0--no-skill-01-a-n16-r1--r0",
+        "pair_id": "m0-no-skill-01-a-n16-r1-r0",
+        "case_id": "no-skill-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 17
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 14,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "unstarted",
+      "owning_ledger_sequences": null,
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": null,
+      "collector_source_sha256": null,
+      "source_episode_sha256": null,
+      "public_episode_reference": null,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": null,
+      "episode_id": null,
+      "admission": null,
+      "result": null,
+      "business_status": null,
+      "duration_ms": null,
+      "recorded_usage": null
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 18,
+      "original_slot_id": "m0-e0--ambiguity-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e0--ambiguity-01-a-n16-r1--r0",
+        "pair_id": "m0-ambiguity-01-a-n16-r1-r0",
+        "case_id": "ambiguity-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 18
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 15,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "unstarted",
+      "owning_ledger_sequences": null,
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": null,
+      "collector_source_sha256": null,
+      "source_episode_sha256": null,
+      "public_episode_reference": null,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": null,
+      "episode_id": null,
+      "admission": null,
+      "result": null,
+      "business_status": null,
+      "duration_ms": null,
+      "recorded_usage": null
+    },
+    {
+      "original_source_plan_semantic_sha256": "80cf7dd4ebc58002c7b265e136a0fd5e4d3fd8c07285256f60c6c7cdf19d02fc",
+      "original_order": 19,
+      "original_slot_id": "m0-e1--ambiguity-01-a-n16-r1--r0",
+      "source_slot": {
+        "slot_id": "m0-e1--ambiguity-01-a-n16-r1--r0",
+        "pair_id": "m0-ambiguity-01-a-n16-r1-r0",
+        "case_id": "ambiguity-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "repeat": 0,
+        "seed": 20261123,
+        "order": 19
+      },
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "owner_local_order": 16,
+      "owning_plan_semantic_sha256": "45ca4ca9f4efb3e26cdad66c9b9746656ae3796cedb6b235d8618e7d0eff89b3",
+      "owning_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "state": "unstarted",
+      "owning_ledger_sequences": null,
+      "actual_model_window_from_owning_protocol": {
+        "start": "2026-11-24T02:08:50.700Z",
+        "end": "2026-11-25T02:08:50.700Z"
+      },
+      "model_id": "magpie/auto/gpt-6.2-sol",
+      "collector_version": null,
+      "collector_source_sha256": null,
+      "source_episode_sha256": null,
+      "public_episode_reference": null,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      },
+      "run_id": null,
+      "episode_id": null,
+      "admission": null,
+      "result": null,
+      "business_status": null,
+      "duration_ms": null,
+      "recorded_usage": null
+    }
+  ],
+  "owner_primary_views": [
+    {
+      "experiment_id": "benchmark-own-product-confirmation-2",
+      "analysis_sha256": "a64d52839cdda20162c1d150f4155b4493b2341f3b72563d9325738ccab8d047",
+      "completeness": {
+        "planned_slots": 20,
+        "unresolved_slots": [
+          {
+            "case_id": "no-skill-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-no-skill-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "no-skill-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-no-skill-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "explicit-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-explicit-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "explicit-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-explicit-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [
+              "benchmark-own-product-confirmation-2-003"
+            ],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-implicit-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-implicit-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "ambiguity-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-ambiguity-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "ambiguity-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-ambiguity-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "equivalent-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-equivalent-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "equivalent-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-equivalent-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-references-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-references-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "scripts-assets-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-scripts-assets-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "scripts-assets-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-scripts-assets-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-complementary-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-complementary-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "task-switch-01-a-n16-r2",
+            "condition_id": "m0-e1",
+            "id": "m0-task-switch-01-a-n16-r2-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "task-switch-01-a-n16-r2",
+            "condition_id": "m0-e0",
+            "id": "m0-task-switch-01-a-n16-r2-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          }
+        ],
+        "valid_slots": 2
+      },
+      "actual_runs": 3,
+      "primary_public_reference": {
+        "kind": "linked-pr60-primary",
+        "commit": "b76b4f61802a359751b417ee09a30842e93abf48",
+        "public_manifest_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/public-manifest.json",
+        "public_manifest_file_sha256": "a9c0067a0185387a71d95a98294d3f200e4837c6ef5bfa7bf03a38c4dab47b8d",
+        "analysis_input_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/analysis-input.json",
+        "analysis_url": "https://github.com/yoyooyooo/pi-context-broker/blob/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop/own-confirmation-stopped/analysis.json",
+        "source_analysis_semantic_sha256": "a64d52839cdda20162c1d150f4155b4493b2341f3b72563d9325738ccab8d047",
+        "public_analysis_semantic_sha256": "f3f7f387194a14224199959c7740944cd712978809a795aa4473f1f29463d180",
+        "public_protocol_sha256": "bc02e9d1b471731fcaef596dbccc61474779b92aa968f48f3be65c927a74cb6c",
+        "source_protocol_sha256": "7e0e476773d6faf1e038ad0842fc05e2c3f29a006ae13c80bdac1ea4619d3589",
+        "public_files": {
+          "analysis-input.json": {
+            "sha256": "3b94c5b758532f141431a4ff086f6a6c753e51489a5a8b4398dad3597cc4425e",
+            "bytes": 1112002
+          },
+          "analysis.json": {
+            "sha256": "eacca0f2ea8f16da97cca6aa74c50dd3f17b116fe17aca8b7be2bc95786fc457",
+            "bytes": 271068
+          }
+        },
+        "episode_mapping": [
+          {
+            "source_episode_sha256": "b30433165d888f7e9d741b28baed78128a4bb2afd5289e1053cd526dd7d01fc0",
+            "public_episode_sha256": "aa0a956468b7d2d0b5b2a102a71db018ed80db67ed5cb731d6ea668961264af2",
+            "analysis_input_pointer": "[path:1c43b02080e98eebebe8]"
+          },
+          {
+            "source_episode_sha256": "e3975378ca6f6d79e35c1ed7e929a96eaca85208fef847f75b2d55247b6c7332",
+            "public_episode_sha256": "9f35bf5c0b1e98de35fc8819588e5c2f7b406e9e5fd4af41ce58e708af8947de",
+            "analysis_input_pointer": "[path:2c6c04d4fa83d71fc38c]"
+          },
+          {
+            "source_episode_sha256": "090c3a496d321833f3d782e5be723f7a636a8a125d7015bf3b3b151d39b0848f",
+            "public_episode_sha256": "aa07c29871936316c11cb96ade4db653c9182e838d7fea2bd57efeaf75dd170d",
+            "analysis_input_pointer": "[path:52fb5c17efe7219c6e8e]"
+          }
+        ],
+        "scope": "Fixed public manifest metadata only; original80/Own003 not replayed, rescored or copied."
+      }
+    },
+    {
+      "experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "completeness": {
+        "planned_slots": 20,
+        "unresolved_slots": [
+          {
+            "case_id": "no-skill-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-no-skill-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "no-skill-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-no-skill-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "explicit-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-explicit-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-implicit-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-implicit-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "ambiguity-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-ambiguity-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "ambiguity-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-ambiguity-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-references-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-references-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "scripts-assets-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-scripts-assets-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "scripts-assets-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-scripts-assets-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "condition_id": "m0-e1",
+            "id": "m0-complementary-01-a-n16-r1-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [
+              "benchmark-own-product-confirmation-unstarted-17-1-006"
+            ],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "condition_id": "m0-e0",
+            "id": "m0-complementary-01-a-n16-r1-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "continuation-01-a-n16-r2",
+            "condition_id": "m0-e1",
+            "id": "m0-continuation-01-a-n16-r2-r0/m0-e1",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          },
+          {
+            "case_id": "continuation-01-a-n16-r2",
+            "condition_id": "m0-e0",
+            "id": "m0-continuation-01-a-n16-r2-r0/m0-e0",
+            "reason": "No valid execution",
+            "repeat": 0,
+            "run_ids": [],
+            "status": "unresolved"
+          }
+        ],
+        "valid_slots": 5
+      },
+      "actual_runs": 6,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      }
+    }
+  ],
+  "interpretation_limits": [
+    "Do not sum the two full20 protocol declarations into40.",
+    "Do not sum the two owning reports unresolved counts; resolve lineage by unique original slots.",
+    "Own003 remains invalid-only unresolved with its original run, zero-model receipts, duration and stop; it is not an observed unknown outcome or replacement sample.",
+    "Valid overall unknown outcomes remain observed valid unknowns and are distinct from invalid-only or unstarted slots.",
+    "Retain original and continuation model windows explicitly; this remains the same exposed design, not a fresh independent blind confirmation.",
+    "The lineage table supplies descriptive coverage and per-row facts, not a new pooled primary score, confidence interval or acceptance inference.",
+    "Do not union the two experiment identities into an existing single-protocol scorer or change normalized episode identities."
+  ],
+  "verification_limits": [
+    "Checks metadata hashes and identities, not all raw artifact bytes or oracle correctness.",
+    "Does not rerun either primary analysis or certify live leases, campaign reservations, or authority activation.",
+    "No pooled score, confidence interval, acceptance decision, cost total, or new model execution is produced."
+  ],
+  "projection_boundary": "Allowlisted scalar facts from descriptive lineage, with new observed facts taken from existing-publisher public episodes. Source/private hashes are paired with actual public files and episode locators. Detailed evidence references remain in those public primaries; no orphaned private artifact locators, joint scoring or new executions."
+}

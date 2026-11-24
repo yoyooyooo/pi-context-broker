@@ -1,0 +1,624 @@
+{
+  "version": 1,
+  "kind": "own-continuation-stop-public-validation",
+  "status": "passed",
+  "result_directory": "benchmark/results/2026-11-24-own-continuation-stop",
+  "release": {
+    "directory": "benchmark/results/2026-11-24-own-continuation-stop",
+    "manifest_file_sha256": "8789b9bb3f946eb96eadb308352db984f9ed3d0d71fe0c1b1664ef82a2c37295",
+    "manifest_semantic_sha256": "0d922b112a1dfdc9b2972aa2893827b3ac5819ae10db05fdc2537f91aaa4a746",
+    "manifest_bytes": 89614,
+    "files_including_manifest": 350,
+    "bytes_including_manifest": 18096168,
+    "inventory_including_manifest_sha256": "fa6f27c80278462598ef3c278b985ab6b991ec9fbe90a6b9dc26b21736430baf",
+    "inventory_digest_format": "SHA-256 of Node JSON.stringify of the array sorted by path.localeCompare, each entry ordered as path, sha256, bytes.",
+    "publication_version": "1.0.6",
+    "root_release_receipt_sha256": "6c4b21f4b9b230b402dc64dfe57d42682a23e7385045ff987391775b64c9f4ca",
+    "package_manifest_file_sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a",
+    "public_input_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+    "public_analysis_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+    "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+    "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+    "public_files_copied_without_modification": true
+  },
+  "historical_release": {
+    "pr": 60,
+    "url": "https://github.com/yoyooyooo/pi-context-broker/pull/60",
+    "commit": "b76b4f61802a359751b417ee09a30842e93abf48",
+    "relative_path": "benchmark/results/2026-11-23-accepted-continuation-stop",
+    "manifest_file_sha256": "7a3754dced03c8302cd2cd2d28fbfc0a5333b2a890f292e74ac0da5eeb0608ca",
+    "physical_reservations": 80,
+    "treatment": "linked_not_recollected_rescored_or_replayed"
+  },
+  "execution": {
+    "new_reservations": 6,
+    "new_completed": 6,
+    "new_unresolved": 0,
+    "physical_reservations": 86,
+    "completed": 86,
+    "physical_counts": {
+      "valid": 76,
+      "invalid": 10,
+      "admission_unknown": 0,
+      "pass": 17,
+      "fail": 14,
+      "unknown": 45,
+      "not_applicable": 0,
+      "verified_success": 17,
+      "unassisted_success": 17
+    },
+    "new_counts": {
+      "valid": 5,
+      "invalid": 1,
+      "admission_unknown": 0,
+      "pass": 0,
+      "fail": 2,
+      "unknown": 3,
+      "not_applicable": 0,
+      "verified_success": 0,
+      "unassisted_success": 0
+    },
+    "budget": {
+      "approved_total_ceiling": 139,
+      "original_hard_limit": 144,
+      "approved_remaining": 53,
+      "unallocated_headroom": 5
+    },
+    "remaining_unstarted": {
+      "own": 11,
+      "code_mode": 24,
+      "scale_and_multiturn": 10,
+      "controlled_faults": 8,
+      "total": 53
+    },
+    "stops": [
+      {
+        "ordinal": 86,
+        "run_id": "benchmark-own-product-confirmation-unstarted-17-1-006",
+        "scope_id": "own-product-confirmation-unstarted-17-1",
+        "stop_batch": true,
+        "stop_reason": "subject_requested_stop",
+        "usage_unknown": true
+      }
+    ],
+    "source_census_file_sha256": "caf4f8dca62f6954581694ba851dfe4093bd09c049e525ad2e966c9f24d7f407",
+    "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+    "collector": {
+      "version": "1.1.0",
+      "source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15"
+    },
+    "one_new_24h_window_created_and_used": true,
+    "another_new_24h_window_authorized": false,
+    "retries_or_invalid_replacements": false,
+    "shared_new_24h_window": {
+      "starts_at": "2026-11-24T02:08:50.700Z",
+      "ends_at": "2026-11-25T02:08:50.700Z",
+      "timezone": "UTC",
+      "created_windows": 1,
+      "additional_window_or_automatic_renewal_authorized": false,
+      "applies_to": "all remaining accepted scopes, not each run or batch",
+      "execution_binding_sha256": "72a9449b83588786c9c656cca0d2b9600e5017e25228cfbeb974b078a2cd6a34",
+      "authority_sha256": "568a3bb5ecd6fd7a62651effec251314d310991b2c70c140085aa466d2ea004e",
+      "window_decision_sha256": "470743bcf934894c89cb8e69b3a10434e6e7108aa8dd18f892dd5d631ecacf8e"
+    }
+  },
+  "cost": {
+    "new": {
+      "known_subtotal": {
+        "model_requests": 29,
+        "input_tokens": 128792,
+        "output_tokens": 1808,
+        "duration_ms": 373803.19845799997
+      },
+      "unknown_by_field": {
+        "model_requests": [],
+        "input_tokens": [
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "output_tokens": [
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "duration_ms": []
+      },
+      "unknown_run_ids": [
+        "benchmark-own-product-confirmation-unstarted-17-1-006"
+      ],
+      "unknown_runs": 1,
+      "coverage_by_field": {
+        "model_requests": {
+          "known": 6,
+          "total": 6
+        },
+        "input_tokens": {
+          "known": 5,
+          "total": 6
+        },
+        "output_tokens": {
+          "known": 5,
+          "total": 6
+        },
+        "duration_ms": {
+          "known": 6,
+          "total": 6
+        }
+      },
+      "total": {
+        "model_requests": 29,
+        "input_tokens": null,
+        "output_tokens": null,
+        "duration_ms": 373803.19845799997
+      },
+      "monetary_status": "unpriced_no_price_inference",
+      "complete_currency_cost": null
+    },
+    "whole_campaign": {
+      "known_subtotal": {
+        "model_requests": 396,
+        "input_tokens": 2061290,
+        "output_tokens": 56598,
+        "duration_ms": 3180554.9369950006
+      },
+      "unknown_by_field": {
+        "model_requests": [
+          "benchmark-two-model-admission-3-008"
+        ],
+        "input_tokens": [
+          "benchmark-terra-6-1-approved-gate-1-008",
+          "benchmark-two-model-cohort-3-expansion-021",
+          "benchmark-route-gate-3-003",
+          "benchmark-two-model-admission-2-001",
+          "benchmark-two-model-admission-3-008",
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "output_tokens": [
+          "benchmark-terra-6-1-approved-gate-1-008",
+          "benchmark-two-model-cohort-3-expansion-021",
+          "benchmark-route-gate-3-003",
+          "benchmark-two-model-admission-2-001",
+          "benchmark-two-model-admission-3-008",
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "duration_ms": []
+      },
+      "unknown_run_ids": [
+        "benchmark-two-model-admission-3-008",
+        "benchmark-terra-6-1-approved-gate-1-008",
+        "benchmark-two-model-cohort-3-expansion-021",
+        "benchmark-route-gate-3-003",
+        "benchmark-two-model-admission-2-001",
+        "benchmark-own-product-confirmation-unstarted-17-1-006"
+      ],
+      "unknown_runs": 6,
+      "coverage_by_field": {
+        "model_requests": {
+          "known": 85,
+          "total": 86
+        },
+        "input_tokens": {
+          "known": 80,
+          "total": 86
+        },
+        "output_tokens": {
+          "known": 80,
+          "total": 86
+        },
+        "duration_ms": {
+          "known": 86,
+          "total": 86
+        }
+      },
+      "total": {
+        "model_requests": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "duration_ms": 3180554.9369950006
+      },
+      "monetary_status": "unpriced_no_price_inference",
+      "complete_currency_cost": null
+    },
+    "original_completion_view": {
+      "known_subtotal": {
+        "model_requests": 396,
+        "input_tokens": 2037669,
+        "output_tokens": 55829,
+        "duration_ms": 3180554.9369950006
+      },
+      "unknown_by_field": {
+        "model_requests": [
+          "benchmark-two-model-admission-3-008"
+        ],
+        "input_tokens": [
+          "benchmark-terra-6-1-approved-gate-1-008",
+          "benchmark-two-model-cohort-3-expansion-021",
+          "benchmark-route-gate-3-002",
+          "benchmark-route-gate-3-003",
+          "benchmark-two-model-admission-2-001",
+          "benchmark-two-model-admission-3-008",
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "output_tokens": [
+          "benchmark-terra-6-1-approved-gate-1-008",
+          "benchmark-two-model-cohort-3-expansion-021",
+          "benchmark-route-gate-3-002",
+          "benchmark-route-gate-3-003",
+          "benchmark-two-model-admission-2-001",
+          "benchmark-two-model-admission-3-008",
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "duration_ms": []
+      },
+      "unknown_run_ids": [
+        "benchmark-two-model-admission-3-008",
+        "benchmark-terra-6-1-approved-gate-1-008",
+        "benchmark-two-model-cohort-3-expansion-021",
+        "benchmark-route-gate-3-002",
+        "benchmark-route-gate-3-003",
+        "benchmark-two-model-admission-2-001",
+        "benchmark-own-product-confirmation-unstarted-17-1-006"
+      ],
+      "unknown_runs": 7,
+      "coverage_by_field": {
+        "model_requests": {
+          "known": 85,
+          "total": 86
+        },
+        "input_tokens": {
+          "known": 79,
+          "total": 86
+        },
+        "output_tokens": {
+          "known": 79,
+          "total": 86
+        },
+        "duration_ms": {
+          "known": 86,
+          "total": 86
+        }
+      },
+      "total": {
+        "model_requests": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "duration_ms": 3180554.9369950006
+      },
+      "monetary_status": "unpriced_no_price_inference",
+      "complete_currency_cost": null
+    },
+    "observed_lower_bound": {
+      "baseline": {
+        "model_requests": 367,
+        "input_tokens": 1936374,
+        "output_tokens": 54826
+      },
+      "new_completed": {
+        "model_requests": 29,
+        "input_tokens": 128792,
+        "output_tokens": 1808
+      },
+      "combined": {
+        "model_requests": 396,
+        "input_tokens": 2065166,
+        "output_tokens": 56634
+      },
+      "coverage": {
+        "old_completed": 80,
+        "new_primary_completed": 6,
+        "new_unresolved_not_measured": 0
+      },
+      "is_complete_total": false,
+      "definition": "Existing public observed lower bound plus actual new primary normalized partial subtotals; unresolved reservations contribute no assumed measurement."
+    },
+    "auxiliary_operator_token_usage": null,
+    "auxiliary_operator_currency_cost": null
+  },
+  "lineage": {
+    "summary": {
+      "original_scientific_slots": 20,
+      "physical_executions": 9,
+      "admission_valid": 7,
+      "admission_invalid": 2,
+      "invalid_only_unresolved_slots": 2,
+      "unstarted_slots": 11,
+      "unresolved_scientific_slots": 13,
+      "full_contract_among_valid": {
+        "pass": 0,
+        "fail": 2,
+        "unknown": 5
+      },
+      "business_among_valid": {
+        "pass": 7,
+        "fail": 0,
+        "unknown": 0
+      }
+    },
+    "source_lineage_semantic_sha256": "cf90e38186432f220769359c8f571cb5084c0e2f4fd4a459ebf4b4647adff68d",
+    "source_lineage_file_sha256": "e4be9d454c3339f1dca3bf33eb72ccb514e2a41fe3f47bd4af8b3d78b76a972f",
+    "old_owner_executions_already_in_baseline": 3,
+    "new_owner_executions": 6,
+    "primary_denominators_are_not_added": true,
+    "joint_quality_recomputed": false,
+    "new_blind_evaluation_claim": false,
+    "public_lineage_file_sha256": "759558b838835bb49b2a4baaca55fe440c7c445f7c68acebb289a2a4065c8918",
+    "public_lineage_relative_path": "benchmark/results/2026-11-24-own-continuation-stop/own20-lineage.json"
+  },
+  "operator_windows": [
+    {
+      "window": 1,
+      "operator": "original-cold-operator-same-continuing-context",
+      "actual_new_episodes": [
+        "001"
+      ],
+      "completed": 1,
+      "operator_report_sha256": "64b18aa90e7d00582684fdbe4a8fddb13b1ec28a2852c092e69733f64457d857",
+      "outcome_clarification_sha256": "6f39d1f6164e61adae9b60a38d476a3e6d85f427b06ca8f7c86a470c85bcf008",
+      "business": "pass",
+      "full_contract": "unknown"
+    },
+    {
+      "window": 2,
+      "operator": "root",
+      "actual_new_episodes": [
+        "002",
+        "003"
+      ],
+      "completed": 2
+    },
+    {
+      "window": 3,
+      "operator": "original-cold-operator-same-continuing-context",
+      "actual_new_episodes": [
+        "004",
+        "005"
+      ],
+      "completed": 2,
+      "operator_report_sha256": "dfaa806fd05906fe9ea3f2686bdafe0e7011c0a291e2fe2a7bdbeba8f2d0d1d2"
+    },
+    {
+      "window": 4,
+      "operator": "root",
+      "actual_new_episodes": [
+        "006"
+      ],
+      "limit": 2,
+      "completed": 1,
+      "stopped_on_first": true
+    }
+  ],
+  "operator_interpretation": {
+    "windows5_to8_released": false,
+    "original_cold_context_new_executions": 3,
+    "additional_independent_cold_starts": 0,
+    "cold_slice_is_subset_of_own20": true
+  },
+  "first_candidate_retained_before_publication": {
+    "status": "blocked_by_targeted_identifier_scan_after_export_and_replay",
+    "export_exit_code": 0,
+    "export_result_sha256": "c5f9a272f41544c9e3e50aae69d10d5ff41d1dcbfd696e7d65a3893b764c6db1",
+    "export_receipt_sha256": "636f452f29a760f04c807a5d04cc23b358df030b8a76c98de31eaf875bbade6a",
+    "public_manifest_file_sha256": "64e276fb183aba0c5723851324c60b97b4ffcfa8d85c1c695c417e9a3506bb11",
+    "files_including_manifest": 350,
+    "bytes_including_manifest": 18095442,
+    "replay_exit_code": 0,
+    "replay_result_sha256": "5b74da64fe4c64cbd417e64da447f982e6339aa23390762dbda7503b2fbc9269",
+    "replay_receipt_sha256": "a7360a5aef7ecb2a2e932314a12979754d19b193e07d1a8a2771e694812bdbab",
+    "packages_replayed": 1,
+    "model_requests": 0,
+    "isolation_canaries": {
+      "public_readable": true,
+      "private_sources_denied": true,
+      "private_writes_denied": true,
+      "public_writes_denied": true,
+      "network_denied": true,
+      "inherited_credentials": false
+    },
+    "original_and_isolated_inventories_unchanged": true,
+    "identical_analysis_tables_and_quality_chart": 9,
+    "chart_title_differences": [
+      {
+        "file": "input.svg",
+        "public": "Cumulative input",
+        "replay": "Cumulative input across actual attempts"
+      },
+      {
+        "file": "time.svg",
+        "public": "Capped time",
+        "replay": "Capped time across the full fixed denominator"
+      }
+    ],
+    "targeted_scan": {
+      "observed_identifier_count": 2,
+      "files_with_matches": 10,
+      "occurrences": 44,
+      "scan_sha256": "10e8382debc0243fa932046c8b9fa2d75420c7cf9255c4a37b0d7d2e586a5684",
+      "matched_values_or_text_included": false
+    },
+    "candidate_publicly_released": false,
+    "candidate_patched": false
+  },
+  "provider_diagnosis": {
+    "root_review_sha256": "d089d9868dac4e7719d10289b159fe848bd5aa19eaaeae4c1c7f24a600c75bb1",
+    "benchmark_model_requests": 1,
+    "http_status": 401,
+    "transport_reconciliation_complete": true,
+    "transport_recording_errors": 0,
+    "input_tokens": null,
+    "output_tokens": null,
+    "guard_after_provider_error": "reported_model_missing",
+    "gateway_candidates": [
+      {
+        "label": "A",
+        "status": 502,
+        "duration_ms": 253,
+        "deeper_cause": "unknown"
+      },
+      {
+        "label": "B",
+        "status": 401,
+        "duration_ms": 2560,
+        "reported_error": "API key expired",
+        "authoritative_upstream_key_state_checked": false
+      }
+    ],
+    "association": "strong temporal, status and exact-error correlation; no shared end-to-end request ID",
+    "independent_model_alias_mapping_verified": false,
+    "internal_candidate_attempts_are_separate_from_benchmark_sends": true,
+    "zero_error_usage_proves_zero_cost": false,
+    "evidence_usage_was_created_then_lost": false,
+    "probe_retry_configuration_or_service_changes": false,
+    "frozen_error_code": "BENCHMARK_REPORTED_MODEL_UNAVAILABLE_AFTER_PROVIDER_ERROR",
+    "batch_stop_reason": "subject_requested_stop",
+    "batch_reason_means_explicit_user_stop": false
+  },
+  "contract_source_explanation": {
+    "source_trace_report_sha256": "9550726f573f3290ef3b7274abbc365622e5ab412554fc56e758702ab17f3224",
+    "source_trace_receipt_sha256": "7ee0ef2f891f83bbdf3c6be418904ed336bc816dc6477f7031a62d9f9d04d3f9",
+    "completed_contract_report_sha256": "8460c2d8d9cad4409f3dbe04cbc0dec84a9e879e6d8156ed8272a30b16999207",
+    "collector11_public_commit": "892c0f4d7a9fbe3e3c4ee7bec12c0908e181a59b",
+    "collector11_public_path": "benchmark/collect.mjs",
+    "collector11_source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15",
+    "collector11_selection_line": 490,
+    "public_collector12_commit": "58c9eb98a059621b69ded273d1bf57774b6c3ee4",
+    "collector12_same_classification_line": 632,
+    "grader_public_path": "benchmark/corpus/grader.mjs",
+    "grader_selection_lines": [
+      114,
+      123
+    ],
+    "existing_valid_full_contract_outcomes_retained": {
+      "pass": 0,
+      "fail": 2,
+      "unknown": 3
+    },
+    "recollection_regrading_or_fix_validation_performed": false
+  },
+  "issues": [
+    {
+      "issue": "AH-1217",
+      "title": "[Benchmark] 建立消费环境版本比较、原生校准与持续证据体系",
+      "url": "https://linear.app/yoyooyooo/issue/AH-1217/benchmark-建立消费环境版本比较原生校准与持续证据体系",
+      "state": "In Progress"
+    },
+    {
+      "issue": "AH-1225",
+      "title": "[Benchmark 08] 执行 Phase 0 与有界三模型先导实验",
+      "url": "https://linear.app/yoyooyooo/issue/AH-1225/benchmark-08-执行-phase-0-与有界三模型先导实验",
+      "state": "In Progress"
+    },
+    {
+      "issue": "AH-1226",
+      "title": "[Benchmark 09] 完成真实环境自比较与首次原生校准",
+      "url": "https://linear.app/yoyooyooo/issue/AH-1226/benchmark-09-完成真实环境自比较与首次原生校准",
+      "state": "In Progress"
+    },
+    {
+      "issue": "AH-1221",
+      "title": "[Benchmark 04] 采集实际环境、模型请求与嵌套调用证据",
+      "url": "https://linear.app/yoyooyooo/issue/AH-1221/benchmark-04-采集实际环境模型请求与嵌套调用证据",
+      "state": "In Progress"
+    },
+    {
+      "issue": "AH-1227",
+      "title": "[Benchmark 10] 发布可复算的环境与模型成绩单",
+      "url": "https://linear.app/yoyooyooo/issue/AH-1227/benchmark-10-发布可复算的环境与模型成绩单",
+      "state": "In Progress"
+    },
+    {
+      "issue": "AH-1228",
+      "title": "[Benchmark 11] 接入验证 Skill、环境回归与新模型筛查",
+      "url": "https://linear.app/yoyooyooo/issue/AH-1228/benchmark-11-接入验证-skill环境回归与新模型筛查",
+      "state": "In Progress"
+    }
+  ],
+  "issue_read_at": "2026-11-24T04:40:23.312083+00:00",
+  "issue_read_receipt_sha256": "2cb685d2f3fe017a01219bd4d96d0697027a0f75967e8380456ff741d524af86",
+  "publication_model_requests": 0,
+  "limitations": [
+    "The first candidate remains retained and unpublished; this projection binds only the approved revised public candidate.",
+    "Physical accounting does not pool quality denominators across experiments.",
+    "Original Own003 and new006 remain invalid-only observations, without replacement.",
+    "Portable replay reaggregates normalized observations; it does not rerun private graders or reconstruct original private hash chains.",
+    "The operating-system isolation results are observations from the recorded run, not a capability supplied by this JSON.",
+    "A successful publication or diagnosis does not authorize another paid dispatch or another 24-hour window."
+  ],
+  "export": {
+    "exit_code": 0,
+    "completed_at": "2026-11-24T04:57:11.026195+00:00",
+    "status": "exported-and-verified",
+    "recorded_result_sha256": "321768896677fae602e5390b82e707435b1ecc73b654f639a9320712c9a2375d",
+    "recorded_stdout_sha256": "fa2782e935da9a42e3ec58098867a931cb882c7fdc20dd2d014690e849cc6f54",
+    "receipt_sha256": "bcd6f7f567076e5de34fea81823b212bd38449078d5fea48489b95b416c18380",
+    "packages": 1,
+    "model_requests": 0
+  },
+  "isolated_replay": {
+    "exit_code": 0,
+    "completed_at": "2026-11-24T04:57:11.743664+00:00",
+    "status": "passed",
+    "recorded_result_sha256": "a23e774428c76fbb3e2760a5637988fa5d8e4436fdb9b1e975764adc91be0d99",
+    "recorded_stdout_sha256": "4b4ae3c3a3420f4da25b081346fd337eb583a2c7734f6ea9f094ccdebbeda21b",
+    "receipt_sha256": "34486934cf22d35a1756820c8b62e566de5647e827294a952904a79c5542692f",
+    "packages_replayed": 1,
+    "old80": "linked_not_replayed",
+    "isolation_canaries": {
+      "public_readable": true,
+      "private_sources_denied": true,
+      "private_writes_denied": true,
+      "public_writes_denied": true,
+      "network_denied": true,
+      "inherited_credentials": false
+    },
+    "public_inventory_unchanged": true,
+    "original_export_unchanged": true,
+    "model_requests": 0,
+    "package": {
+      "scope_id": "own-product-confirmation-unstarted-17-1",
+      "completed": 6,
+      "files": 346,
+      "bytes": 17880428,
+      "source_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "public_analysis_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "faf335e768cde0c791d2ed8a942655e99e8ca9648eed77033b50347a04388966",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ],
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "original_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "model_requests": 0
+      }
+    }
+  },
+  "targeted_identifier_scan": {
+    "status": "passed",
+    "previously_observed_provider_identifiers": 2,
+    "previously_observed_internal_request_ids": 1,
+    "private_provider_hosts_checked": false,
+    "matches": 0,
+    "scanned_inventory_equals_release_inventory": true,
+    "scan_sha256": "437680f9835254039944beda6e4f9d11320c4cf13a12d4d36ce7623e98241f55",
+    "scan_receipt_sha256": "50247a01b1ed795f582b7c8f71e42e0a5a7dbfab8de9dec37fbf4c4bb055bf4e",
+    "root_release_sha256": "6c4b21f4b9b230b402dc64dfe57d42682a23e7385045ff987391775b64c9f4ca",
+    "matched_values_or_text_included": false,
+    "scope": "Exact already observed identifiers; not an exhaustive proof against every possible private string."
+  },
+  "public_locators": {
+    "path": "docs/benchmark-own-continuation-stop-2026-11-24.locators.json",
+    "sha256": "8a7361a4b3fb3f47867e4022b7158d549b3a501b9d66b133ed302501b1f8c809",
+    "episode_rows": 6,
+    "raw_locator_checks": 149
+  },
+  "evidence_observed_until": "2026-11-24T04:35:32.494349+00:00"
+}
