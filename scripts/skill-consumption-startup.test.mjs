@@ -5,7 +5,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statS
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createNotionFixture, database } from './notion-integration-fixture.mjs';
+import { createNotionFixture, libraryId } from './notion-integration-fixture.mjs';
 import { parseStartupArgs, reconcileStartupBatch, summarizeStartupSample } from './skill-consumption-startup.mjs';
 
 const script = join(dirname(fileURLToPath(import.meta.url)), 'skill-consumption-startup.mjs');
@@ -156,7 +156,7 @@ test('source proxy forwards command and response while recording child close and
   const fixture = await createNotionFixture(join(scratch, 'fixture'));
   const config = join(scratch, 'proxy.json'), ledger = join(scratch, 'calls.jsonl');
   writeFileSync(config, JSON.stringify({ command: fixture.command, ledger }), { mode: 0o600 });
-  const args = ['list', '--database', database], env = { ...process.env, SKILL_STARTUP_SAMPLE_ID: 'proxy-test' };
+  const args = ['list', '--library', libraryId], env = { ...process.env, SKILL_STARTUP_SAMPLE_ID: 'proxy-test' };
   await fixture.setScenario('normal', { listDelayMs: 30, cacheIdentity: true });
   const output = execFileSync(process.execPath, [script, 'source-proxy', config, ...args], { env, timeout: 5000 });
   const value = JSON.parse(output.toString('utf8'));

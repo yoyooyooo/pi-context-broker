@@ -335,8 +335,8 @@ test('resource batch cost observes actual nonempty text spans and never binary o
     offsets.push({ start, end, encoding: 'json' }); cursor = end + 1;
   }
   const proof = { version: 2, toolCallId: 'resource-batch', loaded: false,
-    selection: { scope: 'scope', owner: 'skill://resource?library=lib', snapshot_id: 's_' + 'a'.repeat(64), version_id: 'b'.repeat(64) },
-    files: files.map((file, index) => ({ index, model_ref: file.ref, ref: skillFileRef('skill://resource?library=lib', file.path, 's_' + 'a'.repeat(64)), path: file.path, loaded: false,
+    selection: { scope: 'scope', owner: 'skill://resource?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', snapshot_id: 's_' + 'a'.repeat(64), version_id: 'b'.repeat(64) },
+    files: files.map((file, index) => ({ index, model_ref: file.ref, ref: skillFileRef('skill://resource?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', file.path, 's_' + 'a'.repeat(64)), path: file.path, loaded: false,
       ...(file.kind === 'text' ? { state: 'source', encoding: 'utf8', delivered_complete_text: true, sha256: sha(bodies[index]), bytes: Buffer.byteLength(bodies[index]), delivery: offsets[index] }
         : { state: 'binary', encoding: 'base64', delivered_complete_text: false, sha256: file.sha256, bytes: file.bytes }) })),
     projection: { version: 1, compiler: 'context-broker/resource-read/v1', rendered: { sha256: sha(text), bytes: Buffer.byteLength(text) } } };
@@ -356,8 +356,8 @@ test('scalar resource v2 counts the exact native prefix and keeps effects outsid
   const body = '\uFEFF# Reference\r\n完整正文 🧭 & "quoted"\r\n';
   const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
   const footer = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
-  const proof = { version: 2, toolCallId: 'fixed-resource', id: 'skill://original-owner?library=lib', scope: 'original-scope',
-    ref: skillFileRef('skill://original-owner?library=lib', 'reference.md', 's_' + 'a'.repeat(64)), path: 'reference.md', snapshot_id: 's_' + 'a'.repeat(64),
+  const proof = { version: 2, toolCallId: 'fixed-resource', id: 'skill://original-owner?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', scope: 'original-scope',
+    ref: skillFileRef('skill://original-owner?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'reference.md', 's_' + 'a'.repeat(64)), path: 'reference.md', snapshot_id: 's_' + 'a'.repeat(64),
     loaded: false, delivered_complete_text: true, bytes: Buffer.byteLength(body), sha256: sha(body),
     delivery: { start: 0, end: body.length, encoding: 'raw' } };
   const message = { role: 'toolResult', toolName: 'read', toolCallId: proof.toolCallId, isError: false,

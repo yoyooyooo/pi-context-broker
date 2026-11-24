@@ -62,16 +62,18 @@ async function privateRun(kind, input) {
   assert.equal(run.target, 'command'); assert.equal(run.pi_launch.mode, 'native'); assert.equal(run.candidate.mode, 'packed');
   assert.equal(run.pi_launch.native_skill_roots.length, 1);
   assert.deepEqual(await readdir(run.pi_launch.native_skill_roots[0]), [], 'The native Skills directory must start empty');
-  assert.deepEqual(await json(join(root, 'config/cli/config.json')), { sources: [] });
+  assert.deepEqual(await json(join(root, 'config/cli/config.json')), kind === 'library' ? { default_library: input.libraryId } : {});
   for (const path of ['state/cli', 'cache/cli', 'data/cli', 'state/scheduler', 'sessions']) assert.deepEqual(await readdir(join(root, path)), [], 'A fresh run cannot inherit ' + path);
-  assert.equal(run.remote[kind], input[kind]); assert.equal(run.remote[kind === 'parent' ? 'entry' : 'parent'], null);
+  assert.equal(run.remote[kind], kind === 'library' ? input.libraryId : input.parent);
+  assert.equal(run.remote[kind === 'parent' ? 'library' : 'parent'], null);
   assert.equal(process.env.PAIRED_CLI_ENTRY, run.candidate.entries.cli);
   return run;
 }
 
 async function notionGet(path) {
   assert.ok(process.env.NOTION_API_TOKEN, 'The authorized Notion identity must be passed by name');
-  const response = await fetch('https://api.notion.com/' + path, { headers: { Authorization: 'Bearer ' + process.env.NOTION_API_TOKEN, 'Notion-Version': '2025-09-03' }, signal: AbortSignal.timeout(30000) });
+  const origin = process.env.NOTION_API_BASE_URL ?? 'https://api.notion.com';
+  const response = await fetch(origin.replace(/\/$/u, '') + '/' + path, { headers: { Authorization: 'Bearer ' + process.env.NOTION_API_TOKEN, 'Notion-Version': '2025-09-03' }, signal: AbortSignal.timeout(30000) });
   const value = await response.json(); assert.ok(response.ok, 'Read-only parent check failed: ' + response.status);
   return value;
 }
@@ -175,18 +177,39 @@ async function publicCli(run, args, number) {
 
 export function validateOnboardingLibrary(initialized, inspected, input) {
   assert.equal(initialized.contract, 'current'); assert.equal(initialized.reused, true, 'Fresh grading must attach an existing library without creating or repairing it');
-  assert.equal(inspected.contract, 'current'); assert.equal(initialized.library.version, 1);
+  assert.equal(inspected.contract, 'current'); assert.equal(initialized.library.version, 2);
   assert.deepEqual(initialized.library, inspected.library, 'Schema validation and descriptor inspection disagree');
   assert.deepEqual(initialized.library, input.library, 'The fresh library identity differs from the actual episode output');
   const library = initialized.library;
-  assert.equal(canonical(library.parent_page_id), canonical(input.parent), 'The produced library belongs to another parent');
-  assert.equal(canonical(library.skills.database_id), canonical(input.entry));
+  assert.equal(canonical(library.library_id), canonical(input.libraryId), 'The Library identity must be its exact root page');
+  assert.equal(Object.hasOwn(library, 'parent_page_id'), false, 'Ready descriptors do not retain a second parent identity');
   for (const role of ['skills', 'files', 'records', 'sources']) {
     assert.ok(typeof library[role]?.database_id === 'string' && typeof library[role]?.data_source_id === 'string');
     assert.ok(library[role].property_ids && Object.keys(library[role].property_ids).length > 0);
   }
   assert.equal(new Set(['skills', 'files', 'records', 'sources'].map(role => canonical(library[role].database_id))).size, 4);
+  assert.equal(new Set(['skills', 'files', 'records', 'sources'].map(role => canonical(library[role].data_source_id))).size, 4);
   return library;
+}
+
+/** Separate real Notion observations from the descriptor being graded. */
+export function validateOnboardingPlacement(library, input, observed) {
+  const root = observed.root;
+  assert.equal(root.object, 'page'); assert.equal(canonical(root.id), canonical(input.libraryId));
+  assert.ok(!root.archived && !root.in_trash, 'The Library root must be live');
+  assert.equal(root.parent?.type, 'page_id');
+  assert.equal(canonical(root.parent.page_id), canonical(input.parent), 'The real root belongs to another authorized container');
+  for (const role of ['skills', 'files', 'records', 'sources']) {
+    const binding = library[role], database = observed.databases[role], source = observed.dataSources[role];
+    assert.equal(database.object, 'database'); assert.equal(canonical(database.id), canonical(binding.database_id));
+    assert.ok(!database.archived && !database.in_trash);
+    assert.equal(database.parent?.type, 'page_id'); assert.equal(canonical(database.parent.page_id), canonical(input.libraryId), 'A registered DB is not directly under the root');
+    assert.equal(database.data_sources?.length, 1); assert.equal(canonical(database.data_sources[0].id), canonical(binding.data_source_id));
+    assert.equal(source.object, 'data_source'); assert.equal(canonical(source.id), canonical(binding.data_source_id));
+    assert.ok(!source.archived && !source.in_trash);
+    assert.equal(source.parent?.type, 'database_id'); assert.equal(canonical(source.parent.database_id), canonical(binding.database_id), 'A data source belongs to another DB');
+  }
+  return { root: input.libraryId, outerParent: input.parent, verifiedRoles: ['skills', 'files', 'records', 'sources'] };
 }
 
 export function validateOnboardingSnapshot(main, listed, record, library) {
@@ -236,19 +259,27 @@ export function validateOnboardingFileOutput(read, main, descriptor, bytes, outp
 }
 
 export async function runOnboardingGrader(inputPath) {
-  const input = await json(inputPath), run = await privateRun('entry', input);
-  const result = { version: 1, status: 'running', complete: false, runId: run.run_id, parent: input.parent, entry: input.entry, skills: [], commands: 0 };
+  const input = await json(inputPath), run = await privateRun('library', input);
+  const result = { version: 1, status: 'running', complete: false, runId: run.run_id, parent: input.parent, libraryId: input.libraryId, skills: [], commands: 0 };
   await mkdir(join(run.root, 'readback-commands')); await mkdir(join(run.root, 'readback-files'));
   const cli = args => publicCli(run, args, ++result.commands);
   try {
-    const initialized = await cli(['ctl', 'library', 'init', '--entry', input.entry]);
-    const inspected = await cli(['ctl', 'library', 'inspect', input.entry]);
+    const initialized = await cli(['ctl', 'library', 'init', '--library', input.libraryId]);
+    const inspected = await cli(['ctl', 'library', 'inspect', '--library', input.libraryId]);
     result.library = validateOnboardingLibrary(initialized, inspected, input);
-    result.libraryValidation = { status: 'passed', command: 'ctl library init --entry', reused: initialized.reused };
-    const catalog = await cli(['list', '--database', input.entry, '--refresh', '--json']);
+    const placement = { root: await notionGet('v1/pages/' + input.libraryId), databases: {}, dataSources: {} };
+    for (const role of ['skills', 'files', 'records', 'sources']) {
+      placement.databases[role] = await notionGet('v1/databases/' + result.library[role].database_id);
+      placement.dataSources[role] = await notionGet('v1/data_sources/' + result.library[role].data_source_id);
+    }
+    await save(join(run.root, 'library-placement.json'), placement);
+    result.libraryValidation = { status: 'passed', command: 'ctl library init --library', reused: initialized.reused,
+      placement: validateOnboardingPlacement(result.library, input, placement), artifact: await file(join(run.root, 'library-placement.json')) };
+    const catalog = await cli(['list', '--library', input.libraryId, '--refresh', '--json']);
+    assert.equal(canonical(catalog.library_id), canonical(input.libraryId));
     assert.equal(catalog.has_more, false); assert.equal(catalog.next_cursor, null); assert.ok(Array.isArray(catalog.records));
     assert.equal(catalog.count, catalog.records.length); assert.equal(catalog.total_count, catalog.records.length);
-    assert.equal(catalog.coverage.method, 'explicit_database'); assert.equal(catalog.coverage.exhaustive, true);
+    assert.equal(catalog.coverage.method, 'explicit_library'); assert.equal(catalog.coverage.exhaustive, true);
     assert.deepEqual(catalog.coverage.failed_sources, []); assert.equal(catalog.coverage.search_index_limited, false);
     assert.deepEqual(catalog.coverage.queried_data_sources, [result.library.skills.data_source_id]);
     assert.equal(catalog.databases.length, 1); assert.deepEqual(catalog.databases[0].shared_library, result.library);
@@ -257,7 +288,7 @@ export async function runOnboardingGrader(inputPath) {
     if (catalog.effects !== undefined) assert.equal(catalog.effects.remote_writes, 'none');
     for (const record of catalog.records) {
       const pageId = record.locator?.page_id; assert.ok(typeof pageId === 'string');
-      const main = await cli(['read', pageId, '--database', input.entry, '--refresh', '--json']);
+      const main = await cli(['read', pageId, '--library', input.libraryId, '--refresh', '--json']);
       assert.equal(main.has_more, false); assert.equal(typeof main.content, 'string'); assert.equal(main.effects?.remote_writes, 'none');
       assert.equal(canonical(main.record.locator.page_id), canonical(pageId)); assert.equal(main.record.id, record.id);
       const listed = await cli(['files', main.snapshot_id]);

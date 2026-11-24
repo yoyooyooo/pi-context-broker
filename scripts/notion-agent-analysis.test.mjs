@@ -1104,19 +1104,19 @@ function pendingSourceFixture() {
   f.binding.private.objects.remote.name = 'Remote rates';
   const task = addMetadata(f, '<ntn-skills-discovery status="pending">pending</ntn-skills-discovery><ntn-skills-guidance>notion_list</ntn-skills-guidance>');
   task.monotonicNs = '200';
-  const sourceId = 'notion-target', database = '01234567-89ab-cdef-0123-456789abcdef';
-  const bytes = Buffer.from(JSON.stringify({ sources: [{ type: 'notion', id: sourceId, database }] })), path = '/owned/private/source-config.json';
+  const sourceId = 'notion-target', library = '01234567-89ab-cdef-0123-456789abcdef';
+  const bytes = Buffer.from(JSON.stringify({ sources: [{ type: 'notion', id: sourceId, library }] })), path = '/owned/private/source-config.json';
   f.files.set(path, bytes);
-  f.binding.private.fixture = { entry: database };
-  f.observed.visibility = { source: { sourceId, database, configArtifact: { path, sha256: hash(bytes), bytes: bytes.length } } };
-  f.observed.source = [{ phase: 'started', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '100', source_id: sourceId, database },
-    { phase: 'completed', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '300', source_id: sourceId, database }];
+  f.binding.private.fixture = { libraryId: library };
+  f.observed.visibility = { source: { sourceId, library, configArtifact: { path, sha256: hash(bytes), bytes: bytes.length } } };
+  f.observed.source = [{ phase: 'started', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '100', source_id: sourceId, library },
+    { phase: 'completed', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '300', source_id: sourceId, library }];
   return f;
 }
 
 test('a pending view needs actual target-source timing, not just an old pending label', async () => {
   const f = pendingSourceFixture();
-  f.observed.visibility.source.database = f.observed.visibility.source.database.replaceAll('-', '').toUpperCase();
+  f.observed.visibility.source.library = f.observed.visibility.source.library.replaceAll('-', '').toUpperCase();
   const result = await f.run([{ kind: 'visibility', object: 'remote', stage: 'source-pending' }]);
   assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
   f.observed.source[1].monotonicNs = '150';
@@ -1126,11 +1126,11 @@ test('a pending view needs actual target-source timing, not just an old pending 
 test('pending visibility cannot borrow another Source list or fabricate attribution for old diagnostics', async () => {
   for (const mutate of [
     f => { f.observed.source[0].source_id = f.observed.source[1].source_id = 'other-source'; },
-    f => { f.observed.source[0].database = f.observed.source[1].database = 'another-library'; },
-    f => { for (const row of f.observed.source) { delete row.source_id; delete row.database; } },
+    f => { f.observed.source[0].library = f.observed.source[1].library = 'another-library'; },
+    f => { for (const row of f.observed.source) { delete row.source_id; delete row.library; } },
     f => { f.observed.source[0].monotonicNs = '250'; },
     f => { f.observed.source[1].source_id = 'other-source'; },
-    f => { f.binding.private.fixture.entry = 'other-library'; },
+    f => { f.binding.private.fixture.libraryId = 'other-library'; },
   ]) {
     const f = pendingSourceFixture(); mutate(f);
     assert.notEqual((await f.run([{ kind: 'visibility', object: 'remote', stage: 'source-pending' }])).status, 'passed');
@@ -1647,7 +1647,7 @@ test('a real-shaped paired CLI identity is checked against the frozen candidate 
 
 test('the restore assertion consumes sealed process arguments rather than a claimed command count', async () => {
   const f = fixture();
-  attachCandidateCli(f, { argv: ['ctl', 'library', 'projection', 'target', '--restore', '--entry', 'library'] });
+  attachCandidateCli(f, { argv: ['ctl', 'library', 'projection', 'target', '--restore', '--library', 'library'] });
   const result = await f.run([{ kind: 'single-projection-restore' }]);
   assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
   assert.equal(result.assertions.find(row => row.kind === 'single-projection-restore').details.restoreInvocations, 1);

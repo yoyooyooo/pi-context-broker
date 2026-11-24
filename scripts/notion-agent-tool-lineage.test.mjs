@@ -31,12 +31,12 @@ const inspect = value => correlateNotionAgentToolAttempts(value);
 const codes = value => inspect(value).diagnostics.map(problem => problem.code);
 
 function preparedFixture() {
-  const id = 'actual-read', scope = 'a'.repeat(64), owner = 'skill://skill-test?library=library-test';
+  const id = 'actual-read', scope = 'a'.repeat(64), owner = 'skill://skill-test?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const snapshot = 's_' + 'b'.repeat(64), version = 'c'.repeat(64), fileId = 'file-' + 'd'.repeat(64);
   const original = { path: 'sr:Cl_Zoi4sBM-mbsLglJeO1BA' }, body = Buffer.from('完整正文\n');
   const path = '/cache/notion/scopes/' + scope + '/records/' + sha(owner) + '/entries/' + snapshot + '/tree/SKILL.md';
   const input = { path }, ref = owner, fixed = skillFileRef(owner, 'SKILL.md', snapshot);
-  const locator = { type: 'shared_skill', database_id: 'database', data_source_id: 'source', page_id: 'page', library_id: 'library-test', skill_id: 'skill-test' };
+  const locator = { type: 'shared_skill', database_id: 'database', data_source_id: 'source', page_id: 'page', library_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', skill_id: 'skill-test' };
   const record = { id: owner, kind: 'skill', locator, entrypoint: 'SKILL.md', ref: skillFileRef(owner, 'SKILL.md') };
   const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: sha(body), ref: fixed };
   const rendered = body.toString() + '\n<notion-effects>readonly</notion-effects>';

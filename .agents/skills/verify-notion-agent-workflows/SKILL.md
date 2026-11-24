@@ -11,7 +11,7 @@ description: "用真实 Pi 和 magpie/group/worker 验证自然用户怎样发�
 
 从当前 next 开始。正式模型固定为真实 magpie/group/worker、thinking high。日用旅程以普通 Pi 的 daily 为主环境：保留真实 HOME、全局与项目 Skills、正常扩展和 MCP。no-native-skills 只增加 -ns；它不清除 Broker local 或显式可读文件。日用结果不得用 -ne、显式预加载 maintain、工具指定提示或受控 provider 代填。
 
-首次建库另选 native-onboarding，不继承日用配置或已有 database。沿同一 candidate-plan / candidate-run 入口，使用 paired build 的 packed 安装和授权空 parent；详见[空父页首次使用](references/running.md#空父页首次使用)。Pi 只作原生宿主，维护说明由 Agent 自己沿公开 README、help、bootstrap 发现。单个私有 run 内保持一个连续 episode，独立 grader 在 fresh run 中按实际产出的 entry 完整读回。它不填作 daily 或双机安装通过。
+首次建库另选 native-onboarding，不继承日用配置或已有 Library。沿同一 candidate-plan / candidate-run 入口，使用 paired build 的 packed 安装和授权空 parent；详见[空父页首次使用](references/running.md#空父页首次使用)。Pi 只作原生宿主，维护说明由 Agent 自己沿公开 README、help、bootstrap 发现。单个私有 run 内保持一个连续 episode，独立 grader 在 fresh run 中按实际产出的 root UUID 完整读回。它不填作 daily 或双机安装通过。
 
 ## 选择最小充分旅程
 
@@ -49,7 +49,7 @@ holdout- 前缀是保留到修复后使用的输入；它们改变业务材料�
     node scripts/verify-pi-daily-installation.mjs candidate-plan --config /absolute/owned/workflow-config.json
     node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/owned/workflow-config.json --live
 
-配置使用 scope:"notion-agent-workflow"。一次执行一个场景/profile，沿同一公开入口选择完整语料；不建立另一个总 runner。计划只表示输入可准备，不是模型成绩。native-onboarding 的 packed 入口、运行时声明与装载观察由 integration 交接；result 分开保存 process、validity、episodeStatus、business 和 hardContracts。drift/unknown 不能通过；无法取得唯一 entry 或完整读回时先对账父页，不把失败解释为零副作用，也不重跑初始化碰运气。
+配置使用 scope:"notion-agent-workflow"。一次执行一个场景/profile，沿同一公开入口选择完整语料；不建立另一个总 runner。计划只表示输入可准备，不是模型成绩。native-onboarding 的 packed 入口、运行时声明与装载观察由 integration 交接；result 分开保存 process、validity、episodeStatus、business 和 hardContracts。drift/unknown 不能通过；无法取得唯一 Library root 或完整读回时先对账父页，不把失败解释为零副作用，也不重跑初始化碰运气。
 
 让运行器等待每轮模型与工具真正结束，再执行声明的 before 事件并独立读回，之后提交下一条原始自然输入。普通继续不重启 Pi；restart、fork 和 compact 必须各有真实 RPC 与 session 证据。fork.turn 指从那条用户输入**之前**分叉，不能误算成保留该轮之后的状态。
 

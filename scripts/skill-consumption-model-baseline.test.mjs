@@ -20,7 +20,7 @@ const dailyProfile = { ...dailyRoute, controllerRetries: 0, fallback: 'forbidden
   ownedProjectRetry: { retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } } } };
 
 test('daily route is explicit and freezes one sample per cache condition without changing legacy defaults', () => {
-  const legacy = { version: 1, extension: '/fixture/index.mjs', transport: 'sdk', database: '12345678-1234-1234-1234-123456789012',
+  const legacy = { version: 1, extension: '/fixture/index.mjs', transport: 'sdk', library: '12345678-1234-1234-1234-123456789012',
     prompt: 'Inspect the selected Skill.', expectedAnswers: ['reference'], counts: { cold: 5, warm: 20 } };
   assert.equal(validateModelBaselineConfig(legacy), legacy);
   for (const warm of [0, 1]) {
@@ -208,7 +208,7 @@ test('late source starts and missing or duplicated closes invalidate final recon
 });
 
 test('SDK mode requires an absent command and emits the unchanged default source; legacy CLI remains explicit', () => {
-  const config = { version: 1, extension: '/fixture/index.mjs', database: '12345678-1234-1234-1234-123456789012',
+  const config = { version: 1, extension: '/fixture/index.mjs', library: '12345678-1234-1234-1234-123456789012',
     prompt: '12 加 7 是多少？', expectedAnswers: ['19'], counts: { cold: 5, warm: 20 } };
   const sdk = { ...config, transport: 'sdk' }, before = JSON.stringify(sdk);
   assert.equal(validateModelBaselineConfig(sdk), sdk);
@@ -226,7 +226,7 @@ test('SDK mode requires an absent command and emits the unchanged default source
 });
 
 test('native Skill profiling preserves every original tool and rejects undeclared or narrowed profiles', () => {
-  const config={version:1,extension:'/fixture/index.mjs',transport:'sdk',database:'12345678-1234-1234-1234-123456789012',
+  const config={version:1,extension:'/fixture/index.mjs',transport:'sdk',library:'12345678-1234-1234-1234-123456789012',
     prompt:'Use the public preparation entry and explain the selected Skill.',expectedAnswers:['doctor'],counts:{cold:1,warm:1}};
   const standard=['read','bash','edit','write','grep','find','ls'];
   assert.deepEqual(modelBaselineTools(config),standard);
@@ -295,7 +295,7 @@ test('a pure Pi native local comparison accepts no Broker runtime, source comman
   assert.equal(validateModelBaselineConfig(native), native);
   assert.deepEqual(modelBaselineTools(native), ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls']);
   for (const [key, value] of Object.entries({ extension: '/broker/index.ts', transport: 'sdk', command: ['/node', '/cli'],
-    database: '12345678-1234-1234-1234-123456789012', packagePath: '/broker.tgz', toolProfile: 'native-skills' }))
+    library: '12345678-1234-1234-1234-123456789012', packagePath: '/broker.tgz', toolProfile: 'native-skills' }))
     assert.throws(() => validateModelBaselineConfig({ ...native, [key]: value }));
   assert.throws(() => validateModelBaselineConfig({ ...native, comparison: undefined }));
   assert.throws(() => validateModelBaselineConfig({ ...native, role: 'local-via-broker' }));
@@ -308,7 +308,7 @@ const nativeFiles = [
 ].map(file=>({...file,sha256:digest(file.body),bytes:Buffer.byteLength(file.body)}));
 const nativeMetadata = [{name:'reader',description:'Inspect fixed files.',filePath:nativeFiles[0].absolutePath}];
 const nativeSystem = '<available_skills><skill><name>reader</name><description>Inspect fixed files.</description><location>/frozen/reader/SKILL.md</location></skill></available_skills>';
-const notionSystem = '<ntn-skills-view-catalog><view source="notion" id="view" database="db">Ready</view><available_skills><skill><name>reader</name><description>Inspect fixed files.</description><location>sr:C'+'a'.repeat(22)+'</location></skill></available_skills></ntn-skills-view-catalog>';
+const notionSystem = '<ntn-skills-view-catalog><view source="notion" id="view" library="db">Ready</view><available_skills><skill><name>reader</name><description>Inspect fixed files.</description><location>sr:C'+'a'.repeat(22)+'</location></skill></available_skills></ntn-skills-view-catalog>';
 function nativeProbe(overrides={}) {
   const lines=[],rawWrites=[],hooks=new Map(),channels=new Map();
   let failWrites=false,failRawWrites=false;
@@ -416,7 +416,7 @@ test('native launch uses Pi discovery and ordinary tools without loading Broker'
   assert.deepEqual(args.filter((_value,index)=>args[index-1]==='-e'),[options.transport,options.observer,options.inspection]);
   assert.throws(()=>modelBaselineSource(config),/no Broker source/);
   assert.throws(()=>modelBaselineHostArgs(config,{...options,comparison:null}),/verified frozen/);
-  const source=modelBaselineSource({transport:'sdk',database:'db'},{cacheDir:'/cache',viewId:'actual-view'});
+  const source=modelBaselineSource({transport:'sdk',library:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'},{cacheDir:'/cache',viewId:'actual-view'});
   assert.equal(source.default_view_id,'actual-view'); assert.equal(Object.hasOwn(source,'command'),false);
 });
 
@@ -440,7 +440,7 @@ test('the public Doctor resolves the actual installed Pi bundled CLI and native 
   const sourceFiles=[{path:'SKILL.md',body:'---\nname: reader\ndescription: Inspect fixed files.\n---\nRead references/check.md.\n'},
     {path:'references/check.md',body:'Complete fixed reference.\n'}];
   for(const file of sourceFiles)await writeFile(path.join(directory,file.path),file.body);
-  const record={id:'skill://reader?library=fixture',kind:'skill',name:'reader',description:'Inspect fixed files.',ref:'skill://reader/SKILL.md?library=fixture'};
+  const record={id:'skill://reader?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',kind:'skill',name:'reader',description:'Inspect fixed files.',ref:'skill://reader/SKILL.md?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'};
   const write=async(name,value)=>{const target=path.join(base,name),bytes=JSON.stringify(value);await writeFile(target,bytes);return{path:target,sha256:digest(bytes)};};
   const source=await write('source.json',{transport:'sdk',operation:'list',status:'completed',resultObserved:true,
     value:{scope:'a'.repeat(64),records:[record],count:1,coverage:{exhaustive:true,search_index_limited:false,failed_sources:[]}}});
@@ -734,7 +734,7 @@ test('later samples require source, cost, transport and raw originals to close; 
   ])assert.match(modelProcessTerminalFailure({...result,...changed},{...options,...observed}),reason);
 });
 
-const fixedSource={scope:'a'.repeat(64),recordId:'skill://reader?library=library-fixed',snapshotId:'s_'+'b'.repeat(64),versionId:'c'.repeat(64),entrypoint:'SKILL.md'};
+const fixedSource={scope:'a'.repeat(64),recordId:'skill://reader?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',snapshotId:'s_'+'b'.repeat(64),versionId:'c'.repeat(64),entrypoint:'SKILL.md'};
 const boundFiles=nativeFiles.map((file,index)=>({...file,fileId:'file-'+index}));
 const fixedRef=file=>skillFileRef(fixedSource.recordId,file.path,fixedSource.snapshotId);
 const scalarResourceProof=(file,id)=>({version:1,toolCallId:id,id:fixedSource.recordId,scope:fixedSource.scope,
@@ -798,7 +798,7 @@ const visibleRecords=['reader','other-one','other-two'].map((name,index)=>({
   id:skillIdentity('fixture',name),ref:skillFileRef(skillIdentity('fixture',name),'SKILL.md'),
   kind:'skill',name,description:index===0?'Inspect fixed files.':'Inspect '+name+'.',
 }));
-const catalogFor=(records=visibleRecords)=>'<ntn-skills-view-catalog><view source="notion" id="view" database="db">Ready</view><available_skills>'
+const catalogFor=(records=visibleRecords)=>'<ntn-skills-view-catalog><view source="notion" id="view" library="db">Ready</view><available_skills>'
   +records.map((record,index)=>'<skill><name>'+record.name+'</name><description>'+record.description+'</description><location>sr:C'
     +String.fromCharCode(97+index).repeat(22)+'</location></skill>').join('')+'</available_skills></ntn-skills-view-catalog>';
 
@@ -894,7 +894,7 @@ test('metadata selection proves an ordinary ready turn, actual HTTP payload and 
 
 test('unselected native bodies fail even when the selected files were already delivered or bytes are identical',()=>{
   for(const sameBytes of [false,true]) {
-    const other={...nativeFiles[0],absolutePath:'/frozen/other/SKILL.md',recordId:'skill://other?library=fixture',
+    const other={...nativeFiles[0],absolutePath:'/frozen/other/SKILL.md',recordId:'skill://other?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       ...(sameBytes?{}:{body:'Unselected instructions.',bytes:Buffer.byteLength('Unselected instructions.'),sha256:digest('Unselected instructions.')})};
     const probe=nativeProbe({unselectedFiles:[other]});
     nativeFiles.forEach(file=>probe.read(file));probe.read(other,'unselected');
@@ -911,7 +911,7 @@ test('unselected native bodies fail even when the selected files were already de
 });
 
 test('Notion unselected scalar and batch reads cannot be hidden by a correct selected owner receipt or a short ref',()=>{
-  const other={recordId:'skill://other-one?library=fixture',name:'other-one',snapshotId:'s_'+'d'.repeat(64),scope:fixedSource.scope,versionId:'e'.repeat(64)};
+  const other={recordId:'skill://other-one?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',name:'other-one',snapshotId:'s_'+'d'.repeat(64),scope:fixedSource.scope,versionId:'e'.repeat(64)};
   for(const scenario of ['proof-owner','canonical-owner','catalog-short-ref','batch']) {
     const probe=nativeProbe({source:fixedSource,files:boundFiles,unselectedSources:[other],catalog:visibleRecords});
     if(scenario==='catalog-short-ref')probe.provider([],{messages:[{role:'system',content:catalogFor()}]});
@@ -954,8 +954,8 @@ test('combined catalog: SC20 retains an unrelated full failure but cannot substi
     value => { value.directory.value.scope = 'foreign'; },
     value => { value.directory.value.records.pop(); value.directory.value.count--; },
     value => { value.directory.value.view.id = 'other'; },
-    value => { value.catalog.value.databases = [{ database_id: 'db', shared_library: { library_id: 'old' } }];
-      value.directory.value.databases = [{ database_id: 'db', shared_library: { library_id: 'new' } }]; },
+    value => { value.catalog.value.databases = [{ database_id: 'db', shared_library: { library_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } }];
+      value.directory.value.databases = [{ database_id: 'db', shared_library: { library_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' } }]; },
   ]) { const changed = combinedCatalogSelectionProbe(); mutate(changed.sources[0].value); assert.throws(() => verifyComparisonSelection(changed)); }
 });
 

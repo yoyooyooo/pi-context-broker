@@ -81,13 +81,15 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/o
 
 从选定 build 的 `source/broker` 执行上述入口，可直接使用该 generation 的私有依赖。candidate-plan 只检查输入。candidate-run 自动创建本轮空 native Skills 目录，并以 `--pi-mode native --native-skills` 启动单个 private command run。脚本在首次请求前以只读 API 核父页为空；随后用原生 RPC helper 保持同一 Pi session，所有模型轮次与 CLI 使用相同 run 的声明。保存 `run.json`、`pi-launch.json`、`loaded.jsonl`、原始 session、RPC frames、provider payload/transport 和 CLI 进程记录。
 
-独立 grader 只接受原始 tool-result 中真实返回、且绑定该 parent 的唯一 library entry。它通过另一个 fresh paired run 的 `--entry` 启动，先执行公开 `ctl library init --entry ENTRY` 验证四表及 schema，再用 inspect 与 episode 返回的完整 library descriptor 交叉核对；`reused` 必须为 true。随后 list 必须报告显式库的穷尽覆盖、无失败 source 和完整分页，逐个 Skill 完整读取主文和支持文件，包括二进制、空文件和长文本。消费目录内额外 Skill 也完整保留读回。
+独立 grader 只接受原始 tool-result 中真实返回的唯一 v2 Library root。它通过另一个 fresh paired run 的 `--library ROOT_UUID` 启动，先执行公开 `ctl library init --library ROOT_UUID` 和 `ctl library inspect --library ROOT_UUID` 验证四表/schema 并交叉核对 episode 的完整 descriptor；`reused` 必须为 true。随后独立 GET 实际根页面、四个 DB 和四个 data source：root.parent 必须是授权外层父页，DB 必须直属该 root，DS 必须直属注册 DB。这些事实保存在 `library-placement.json`，不能从 descriptor 反推。Ready descriptor 没有 `parent_page_id`。
+
+list 必须报告 `explicit_library`、精确 `library_id`、穷尽覆盖、无失败 source 和完整分页，逐个 Skill 完整读取主文和支持文件，包括二进制、空文件和长文本。消费目录内额外 Skill 也完整保留读回。新的 `init --parent` 会创建另一张独立根页面；原初始化有未知结果时保留原 operation 对账，不能以再跑 init 代替恢复。
 
 主正文要求从第一行到 total_lines 的完整范围，并与 snapshot manifest 的字节数和 SHA-256 一致。files 只接受当前 `files` 字段及完整 manifest，目录必须与 file_bindings 一致；出现未读完的分页即失败。支持文件的 `read --output` 采用当前完整字节合同，核对 owner、path、固定 snapshot/version/file ref、output 路径、字节数与 SHA-256，再对实际落盘内容复核。缺失字段不能降级成完整成功。oracle 不传给主体或 grader，控制端在完整读回之后比较内容。
 
-内部 fresh grader 输入固定为 `{version: 1, entry, parent, library}`，其中 library 是该 episode 原始 tool-result 的 descriptor，不是预期答案。现役 adapter 将此输入交给 paired `--target command --pi-mode native --native-skills EMPTY --entry ENTRY`，在当次 `PAIRED_BROKER_SOURCE` 调用 `runOnboardingGrader(inputPath)`；它使用同一 build 的实际 `PAIRED_CLI_ENTRY`，不继承 episode 的 config/state/cache/data/scheduler/session。原始 CLI 输出保存在新 run 的 readback-commands，完整文件保存在 readback-files，四表身份和完整性结论保存在 readback.json。
+内部 fresh grader 输入固定为 `{version: 1, libraryId, parent, library}`，其中 library 是该 episode 原始 tool-result 的 descriptor，不是预期答案。现役 adapter 将此输入交给 paired `--target command --pi-mode native --native-skills EMPTY --library ROOT_UUID`，在当次 `PAIRED_BROKER_SOURCE` 调用 `runOnboardingGrader(inputPath)`；它使用同一 build 的实际 `PAIRED_CLI_ENTRY`，不继承 episode 的 config/state/cache/data/scheduler/session。原始 CLI 输出保存在新 run 的 readback-commands，完整文件保存在 readback-files，四表身份和完整性结论保存在 readback.json。
 
-`result.json` 分开报告 `process`、`validity`、`episodeStatus`、`business` 和 `hardContracts`。模型任务退出零但 runtime drift/unknown，仍是 invalid；若已取得 entry，仍执行只读对账并保留独立业务结果。无法取得唯一 entry 或 grader 不完整时标 `unknown_reconcile_before_retry`，保留父页、Store、session 和原始输出供人工对账，不重复初始化或执行外部修补。此模式不声称 API 权限沙箱、请求前 Benchmark 握手或每日安装通过。
+`result.json` 分开报告 `process`、`validity`、`episodeStatus`、`business` 和 `hardContracts`。模型任务退出零但 runtime drift/unknown，仍是 invalid；若已取得 Library root，仍执行只读对账并保留独立业务结果。无法取得唯一 Library root 或 grader 不完整时标 `unknown_reconcile_before_retry`，保留父页、Store、session 和原始输出供人工对账，不重复初始化或执行外部修补。此模式不声称 API 权限沙箱、请求前 Benchmark 握手或每日安装通过。
 
 有限接线检查使用 `node --test scripts/notion-agent-onboarding.test.mjs scripts/notion-agent-scenarios.test.mjs scripts/paired-environment.test.mjs`。fixture、受控 provider、plan 和帮助输出不计作真模型 onboarding 通过。真实使用与独立 Skill 评价未执行时各标 not_run。
 
@@ -105,13 +107,13 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/o
       recipe,                 // corpus.fixtures[scenario.fixture]
       runId,                  // 唯一本轮名称，仅字母、数字、下划线、短横线
       root,                   // 本轮全新、尚不存在的绝对目录
-      entry,                  // 当前 Skills database ID
+      libraryId,              // 当前 Library 根页面的 canonical UUID
       cli,                    // 当前配对的 dist/ntn-skills.js 绝对路径
       node,                   // 实际 Node，可省略而沿用 process.execPath
       globalSkillsRoot        // 可省略而用真实 ~/.agents/skills
     })
 
-返回 bindings，并同时保存 root/bindings.json。entry 不是 CLI 路径；cli 不是 shim。准备只通过公共管理命令写自有测试对象。builtin 只读取当前库里的精确既有对象，其 ownership 为 external，不能清理。
+返回 bindings，并同时保存 root/bindings.json。libraryId 是 Library 根页面；cli 是实际可执行文件。准备只通过公共管理命令写自有测试对象。builtin 只读取当前库里的精确既有对象，其 ownership 为 external，不能清理。
 
 fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料、私有事实、读回声明和环境前提。global 使用真实全局目录，project 使用本轮项目；notion 创建原生对象，source 从固定 Git 声明取得完整树，builtin 只读绑定现有维护说明。Source/builtin 的空 files 代表等待真实读取产生完整原件，不能当成已验证的空树。
 
@@ -130,7 +132,7 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
       "brokerRoot": "/absolute/broker/packages/context-broker",
       "cliRoot": "/absolute/cli/packages/cli",
       "sourceId": "notion",
-      "database": "REPLACE_WITH_CURRENT_SKILLS_DATABASE_ID",
+      "library": "REPLACE_WITH_CANONICAL_LIBRARY_ROOT_UUID",
       "packageIndex": 0
     }
 
@@ -151,7 +153,7 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
     if (!scenario.profiles.includes(input.profile)) throw new Error('Scenario/profile precondition does not hold');
     await prepareAgentFixtures({
       recipe: corpus.fixtures[scenario.fixture], runId: input.runId,
-      root: input.fixtureRoot, entry: input.database,
+      root: input.fixtureRoot, libraryId: input.library,
       cli: join(input.cliRoot, 'dist/ntn-skills.js'),
     });
     const config = {
@@ -159,7 +161,7 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
       scenarioFile: input.scenarioFile, scenarioId: input.scenarioId, profile: input.profile,
       bindingsFile: join(input.fixtureRoot, 'bindings.json'),
       brokerRoot: input.brokerRoot, cliRoot: input.cliRoot,
-      sourceId: input.sourceId, database: input.database, packageIndex: input.packageIndex,
+      sourceId: input.sourceId, library: input.library, packageIndex: input.packageIndex,
       evidenceRoot: input.evidenceRoot,
       model: 'magpie/group/worker', thinkingLevel: 'high',
     };
@@ -179,7 +181,7 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
 | scenarioFile / scenarioId / profile | 校验后的长期语料、选中 case、daily 或 no-native-skills |
 | bindingsFile | 本轮真实 fixture 绑定 JSON |
 | brokerRoot / cliRoot | 当前 next checkout 的 packages/context-broker 与 packages/cli；CLI checkout 提供同一份 verification 索引，不用任意同版本 npm 副本代替 |
-| sourceId / database / packageIndex | 正常配置中所选 Notion source、库与真实 Broker 注册位置 |
+| sourceId / library / packageIndex | 正常配置中所选 Notion source、canonical Library root UUID 与真实 Broker 注册位置 |
 | evidenceRoot | 本轮自有原始结果根 |
 | model / thinkingLevel | magpie/group/worker / high |
 | timeoutMs / catalogTimeoutMs | 可选有界等待预算；每轮默认 30 分钟，目录默认 90 秒，实际值写入计划。公开管理命令自身可等待 10 分钟，每轮须额外容纳检查、读回和模型响应；不能无限重试 |
@@ -187,6 +189,8 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
 | retestOf | 可选，关联保留的首次失败原件 |
 
 cwd 来自 bindings.private.fixture.projectRoot；ownership 来自 fixtureRoot/ownership.json，不由调用者随意声明。不要把 token、正确答案、期望工具调用或私有字段塞入 prompt、system prompt、context 文件或模型环境提示。
+
+运行器在本轮私有 CLI config 写入 `default_library: config.library`，供普通输入接纳时固定 Library；不能把唯一 Source 当成隐式默认，也不改用户的全局 config。SDK `library` 解析是只读选库观察，按真实请求计数，不算正文读取。
 
 准备函数同时创建 ownership.temporaryRoot，固定为 fixtureRoot/temporary。运行器只接受这一本轮目录作为 TMPDIR，拒绝外部路径或符号链接。它在全新自有项目写入简短 AGENTS.md，说明临时文件位置、shell 显式模板与精确输入保留约定；已有原生项目说明则拒绝覆盖。initial-state.json 与 result.configuration 记录路径、说明文件哈希和这项计划内环境差异。
 

@@ -181,9 +181,9 @@ test('negative notion_use means zero actual attempts, including a failed or guar
 
 test('catalog barriers require the actual owned SDK failure and never turn cancellation or an unrelated failure into readiness', async () => {
   const root = await mkdtemp(join(tmpdir(), 'workflow-catalog-')), file = join(root, 'source.jsonl');
-  const options = { sourceId: 'selected', database: '01234567-89ab-cdef-0123-456789abcdef' };
+  const options = { sourceId: 'selected', library: '01234567-89ab-cdef-0123-456789abcdef' };
   const start = { phase: 'started', kind: 'sdk', operation: 'list', requestId: 'request', monotonicNs: '1',
-    source_id: options.sourceId, database: options.database };
+    source_id: options.sourceId, library: options.library };
   const end = { phase: 'completed', requestId: start.requestId, monotonicNs: '2', status: 'failed', sdkStarted: true, errorCode: 'STATE_UNAVAILABLE' };
   const put = async (first = start, last = end) => writeFile(file, [first, last].map(JSON.stringify).join('\n') + '\n');
   await put();
@@ -193,7 +193,7 @@ test('catalog barriers require the actual owned SDK failure and never turn cance
   for (const change of [{ status: 'completed' }, { status: 'cancelled' }, { errorCode: 'SOURCE_SDK_UNAVAILABLE' }, { sdkStarted: false }]) {
     await put(start, { ...end, ...change }); await assert.rejects(awaitWorkflowCatalog(file, 20, faulted));
   }
-  for (const change of [{ source_id: 'other' }, { database: 'different' }, { operation: 'read' }]) {
+  for (const change of [{ source_id: 'other' }, { library: 'different' }, { operation: 'read' }]) {
     await put({ ...start, ...change }); await assert.rejects(awaitWorkflowCatalog(file, 20, faulted), /required terminal state/u);
   }
 });

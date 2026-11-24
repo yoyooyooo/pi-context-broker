@@ -218,16 +218,16 @@ export function verifyNotionAgentSingleProjectionRestore(proof) {
   const words = ['ctl', 'library', 'projection', 'operation', 'read', 'files', 'list', 'use', 'export', 'schema'];
   const literals = new Map(words.map(word => [hash(word), word]));
   const content = {
-    list: { count: 0, bool: ['refresh', 'offline', 'metrics', 'json', 'default-view'], value: ['database', 'view', 'profile', 'query', 'limit', 'cursor', 'max-age'] },
-    read: { count: 1, bool: ['refresh', 'offline', 'metrics', 'json', 'raw'], value: ['database', 'path', 'from', 'lines', 'output', 'max-age'] },
-    files: { count: 1, bool: ['refresh', 'offline', 'metrics'], value: ['database', 'path', 'max-age'] },
-    use: { count: 1, bool: ['refresh', 'offline', 'json', 'metrics'], value: ['database', 'max-age'] },
-    export: { count: 1, bool: ['refresh', 'offline'], value: ['output', 'format', 'database', 'max-age'], required: ['output'] },
+    list: { count: 0, bool: ['refresh', 'offline', 'metrics', 'json', 'default-view'], value: ['library', 'view', 'profile', 'query', 'limit', 'cursor', 'max-age'] },
+    read: { count: 1, bool: ['refresh', 'offline', 'metrics', 'json', 'raw'], value: ['library', 'path', 'from', 'lines', 'output', 'max-age'] },
+    files: { count: 1, bool: ['refresh', 'offline', 'metrics'], value: ['library', 'path', 'max-age'] },
+    use: { count: 1, bool: ['refresh', 'offline', 'json', 'metrics'], value: ['library', 'max-age'] },
+    export: { count: 1, bool: ['refresh', 'offline'], value: ['output', 'format', 'library', 'max-age'], required: ['output'] },
   };
   const projection = { bool: ['restore', 'dry-run', 'resume', 'cancel', 'daily'],
-    value: ['entry', 'include', 'exclude', 'operation', 'max-requests', 'max-bytes', 'timeout'], required: ['entry'], repeat: ['include', 'exclude'] };
-  const operation = { bool: [], value: ['kind', 'entry', 'max-requests', 'max-bytes', 'timeout'], required: ['kind', 'entry'] };
-  const libraryFiles = { bool: [], value: ['entry'], required: ['entry'] };
+    value: ['library', 'include', 'exclude', 'operation', 'max-requests', 'max-bytes', 'timeout'], required: ['library'], repeat: ['include', 'exclude'] };
+  const operation = { bool: [], value: ['kind', 'library', 'max-requests', 'max-bytes', 'timeout'], required: ['kind', 'library'] };
+  const libraryFiles = { bool: [], value: ['library'], required: ['library'] };
   const definitions = [...Object.values(content), projection, operation, libraryFiles];
   const valueFlags = new Map([...new Set(definitions.flatMap(command => command.value))].map(name => [hash('--' + name), name]));
   const boolFlags = new Map([...new Set(['help', 'version', ...definitions.flatMap(command => command.bool)])].map(name => [hash('--' + name), name]));

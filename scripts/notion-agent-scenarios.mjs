@@ -169,7 +169,7 @@ export function validateAgentAssertion(assertion) {
   if (['tool-attempts', 'source-network-attempts', 'source-operation-attempts'].includes(assertion.kind)) {
     if (assertion.kind === 'tool-attempts') string(assertion.tool, 'expect.tool');
     if (assertion.kind === 'source-operation-attempts')
-      assert.ok(['list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search'].includes(assertion.operation), 'Unknown source SDK operation');
+      assert.ok(['library', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search'].includes(assertion.operation), 'Unknown source SDK operation');
     assert.ok(assertion.min !== undefined || assertion.max !== undefined, 'tool-attempts requires a boundary');
     for (const key of ['min', 'max']) if (assertion[key] !== undefined)
       assert.ok(Number.isSafeInteger(assertion[key]) && assertion[key] >= 0, 'tool-attempts.' + key + ' must be a nonnegative integer');

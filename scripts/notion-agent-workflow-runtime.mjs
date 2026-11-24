@@ -89,13 +89,13 @@ export async function workflowCatalogFault(bindings, ownedStateRoot) {
   return { mode: 'store-unavailable', expectedErrorCode: 'STATE_UNAVAILABLE', proof };
 }
 
-export async function awaitWorkflowCatalog(file, timeoutMs, { pendingOnly = false, sourceId, database, expectedFailure } = {}) {
+export async function awaitWorkflowCatalog(file, timeoutMs, { pendingOnly = false, sourceId, library, expectedFailure } = {}) {
   assert.ok(!pendingOnly || !expectedFailure, 'A catalog cannot be both pending and a verified failure');
   const startedAt = performance.now();
   while (performance.now() - startedAt < timeoutMs) {
     const events = await rows(file);
     const starts = events.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.operation === 'list' &&
-      row.source_id === sourceId && typeof row.database === 'string' && row.database.replaceAll('-', '') === database.replaceAll('-', ''));
+      row.source_id === sourceId && typeof row.library === 'string' && row.library.replaceAll('-', '') === library.replaceAll('-', ''));
     if (pendingOnly) {
       const started = starts[0];
       if (started) {
@@ -281,7 +281,7 @@ export async function bindPairedWorkflowEvidence(bindings, brokerRoot, scenario)
 
 async function input(config) {
   assert.equal(config.version, 1); assert.equal(config.scope, 'notion-agent-workflow');
-  const fields = ['version', 'scope', 'scenarioFile', 'scenarioId', 'profile', 'bindingsFile', 'brokerRoot', 'cliRoot', 'sourceId', 'database', 'packageIndex', 'evidenceRoot', 'model', 'thinkingLevel', 'timeoutMs', 'catalogTimeoutMs', 'viewId', 'retestOf'];
+  const fields = ['version', 'scope', 'scenarioFile', 'scenarioId', 'profile', 'bindingsFile', 'brokerRoot', 'cliRoot', 'sourceId', 'library', 'packageIndex', 'evidenceRoot', 'model', 'thinkingLevel', 'timeoutMs', 'catalogTimeoutMs', 'viewId', 'retestOf'];
   assert.ok(Object.keys(config).every(key => fields.includes(key)), 'Unsupported natural workflow configuration field');
   for (const key of ['timeoutMs', 'catalogTimeoutMs']) if (config[key] !== undefined)
     assert.ok(Number.isSafeInteger(config[key]) && config[key] > 0 && config[key] <= 2_147_483_647,
@@ -307,7 +307,7 @@ async function input(config) {
   await bindPairedWorkflowEvidence(bindings, config.brokerRoot, declared);
   const scenario = bindAgentScenario(corpus, config.scenarioId, bindings, { profile: config.profile });
   assert.ok(bindings.private.fixture?.root && bindings.private.fixture?.runId, 'Use a real owned fixture binding');
-  assert.equal(bindings.private.fixture.entry.replaceAll('-', ''), config.database.replaceAll('-', ''), 'The fixture and candidate must use the same library');
+  assert.equal(bindings.private.fixture.libraryId.replaceAll('-', ''), config.library.replaceAll('-', ''), 'The fixture and candidate must use the same library');
   return { corpus, bindings, scenario };
 }
 
@@ -421,15 +421,17 @@ export async function runAgentWorkflow(config) {
   const sourceCache = join(stateRoot, 'broker-cache'), sourceConfigPath = join(evidence, 'source-config.json');
   const viewId = fixture.viewId ?? config.viewId;
   if (fixture.viewId && config.viewId) assert.equal(config.viewId, fixture.viewId, 'Use the owned fixture View');
-  const candidateSource = candidateSourceConfig(source, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache, viewId });
+  const candidateSource = candidateSourceConfig(source, { sourceId: config.sourceId, library: config.library, cacheDir: sourceCache, viewId });
   if (scenario.fixture.environment?.offline === true) {
     const selected = candidateSource.sources.find(item => item.id === config.sourceId);
     selected.discovery = { ...selected.discovery, offline: true };
     selected.activation = { ...selected.activation, offline: true };
   }
   await save(sourceConfigPath, candidateSource);
-  const sourceObservation = { sourceId: config.sourceId, database: config.database, configArtifact: await identity(sourceConfigPath) };
+  const sourceObservation = { sourceId: config.sourceId, library: config.library, configArtifact: await identity(sourceConfigPath) };
   const env = agentWorkflowEnvironment(inheritedEnv, { stateRoot, sourceConfigPath, evidence });
+  await mkdir(env.NTN_SKILLS_CONFIG_HOME, { recursive: true, mode: 0o700 });
+  await save(join(env.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: config.library });
   if (scenario.fixture.environment?.catalog === 'unauthorized') env.NOTION_API_TOKEN = 'secret_owned_agent_workflow_invalid_identity';
   if (scenario.fixture.environment?.catalog === 'filtered-view') assert.ok(fixture.viewId, 'A filtered-view scenario requires a real owned Notion View binding');
   const selectedHost = await resolveHost('pi'), host = { ...selectedHost, parent_pid: process.pid, launcher: await identity(selectedHost.path) };
@@ -483,10 +485,10 @@ export async function runAgentWorkflow(config) {
     const catalogMode = scenario.fixture.environment?.catalog ?? 'normal';
     if (['normal', 'filtered-view'].includes(catalogMode) && !scenario.fixture.environment?.offline)
       segment.catalogBarrier = await awaitWorkflowCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000,
-        { sourceId: config.sourceId, database: config.database, expectedFailure: await workflowCatalogFault(bindings, ownedStateRoot) });
+        { sourceId: config.sourceId, library: config.library, expectedFailure: await workflowCatalogFault(bindings, ownedStateRoot) });
     else if (catalogMode === 'pending')
       segment.catalogBarrier = await awaitWorkflowCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000,
-        { pendingOnly: true, sourceId: config.sourceId, database: config.database });
+        { pendingOnly: true, sourceId: config.sourceId, library: config.library });
     else segment.catalogBarrier = { mode: catalogMode, waited: false };
   };
   const close = async () => {
@@ -684,7 +686,7 @@ async function writeWorkflowReceipts(result, config) {
       started_at: result.startedAt, finished_at: result.finishedAt, source_tuple: result.sourceTuple,
       loaded_artifacts: [...result.baseline.map((file, i) => ({ role: ['broker-package', 'broker-entry', 'embedded-cli', 'embedded-sdk', 'runtime-manifest'][i], path: file.realpath, sha256: file.sha256 })),
         { role: 'pi', path: result.hostArtifact.realpath, sha256: result.hostArtifact.sha256 }],
-      environment: { machine: hostname(), runtime: process.version, scope_fingerprint: sha(JSON.stringify({ profile: config.profile, source: result.before.source, settings: result.before.settings, library: config.database })) },
+      environment: { machine: hostname(), runtime: process.version, scope_fingerprint: sha(JSON.stringify({ profile: config.profile, source: result.before.source, settings: result.before.settings, library: config.library })) },
       initial_state: { cache: 'cold', session: 'fresh-session; declared lifecycle events retained in raw evidence', oracle: 'independent', proof: { uri: initial.path, sha256: initial.sha256 } },
       evidence: { layer: 'natural', notion: 'live', host: 'pi', provider: 'live', prompt_kind: 'natural' },
       raw_evidence: [{ uri: evidence.path, sha256: evidence.sha256 }, { uri: initial.path, sha256: initial.sha256 }],
