@@ -21,8 +21,8 @@ const rawPathRef = (id: string, path: string) => nativeFileRef(id, "invalid-mark
     const path = join(root, "metadata", sourceId, id, entrypoint);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, "metadata only");
-    const logicalId = nativeSkillId("member", String(id));
-    return { id: logicalId, kind, enabled: true, locator: { type: "shared_skill", library_id: "member", skill_id: id, page_id: id, database_id: "66666666-6666-4666-8666-666666666666", data_source_id: "77777777-7777-4777-8777-777777777777" }, name, description: "member fixture", aliases: [], normalizedName: name, normalizedDescription: "member fixture", normalizedAliases: [], autoloadEnabled: true, defaultDiscovery: kind === "router", source: "notion", sourceId, sourceScope: sourceId === "selected" ? "a".repeat(64) : "b".repeat(64), token: `${sourceId}/${name}`, path, metadataIndexPath: path, entrypoint, ref: nativeFileRef(logicalId, String(entrypoint)) };
+    const logicalId = nativeSkillId("eef21c18-0acd-5dbe-b769-8c014bacd38b", String(id));
+    return { id: logicalId, kind, enabled: true, locator: { type: "shared_skill", library_id: "eef21c18-0acd-5dbe-b769-8c014bacd38b", skill_id: id, page_id: id, database_id: "66666666-6666-4666-8666-666666666666", data_source_id: "77777777-7777-4777-8777-777777777777" }, name, description: "member fixture", aliases: [], normalizedName: name, normalizedDescription: "member fixture", normalizedAliases: [], autoloadEnabled: true, defaultDiscovery: kind === "router", source: "notion", sourceId, sourceScope: sourceId === "selected" ? "a".repeat(64) : "b".repeat(64), token: `${sourceId}/${name}`, path, metadataIndexPath: path, entrypoint, ref: nativeFileRef(logicalId, String(entrypoint)) };
   };
   const first = await record(firstId, "selected", "first");
   const second = await record(secondId, "selected", "shared-name", "nested/SKILL.md");

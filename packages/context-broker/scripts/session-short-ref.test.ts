@@ -25,7 +25,7 @@ function event(plan: ShortRefBindingPlan): SessionShortRefEvent {
 }
 function fixture(options: { version?: string; library?: string; skill?: string; resource?: string; fileId?: boolean; scope?: string } = {}) {
   const version = options.version ?? "one", resource = options.resource ?? "references/guide.md";
-  const library = options.library ?? "lib:team", skill = options.skill ?? "skill-owner";
+  const library = options.library ?? "6a85f222-0bdc-5f03-9dcf-c6995844de14", skill = options.skill ?? "skill-owner";
   const id = sharedSkillId(library, skill)!;
   const base = id, selectedScope = options.scope ?? scope;
   const record: ContentRecord = { id, kind: "skill", name: "Same display name", alias: "owner", description: "Catalog metadata",
@@ -57,7 +57,7 @@ function selectedResource(f = fixture(), state: SessionShortRefState = empty()) 
 test("candidate batches reuse duplicate identities, preserve order and separate scope and library", () => {
   const initial = empty(), f = fixture();
   const inputs = [{ record: f.record, scope }, { record: f.record, scope: otherScope },
-    { record: fixture({ library: "another-library" }).record, scope },
+    { record: fixture({ library: "8b308dab-2daf-5330-922f-812244ff16f9" }).record, scope },
     { record: { ...f.record, name: "Renamed display", description: "Changed display" }, scope }];
   const planned = bindCandidates(initial, inputs);
   expect(initial.bindings.size).toBe(0);
@@ -121,7 +121,7 @@ test("directory, Members and search reuse one candidate despite display metadata
 test("same names in another account, library or physical source never merge", () => {
   const f = fixture(), first = bindCandidate(empty(), { record: f.record, scope });
   const account = bindCandidate(first.state, { record: f.record, scope: otherScope });
-  const library = bindCandidate(account.state, { record: fixture({ library: "other-library" }).record, scope });
+  const library = bindCandidate(account.state, { record: fixture({ library: "01e28d4d-e490-5392-8c72-2262cd15c16d" }).record, scope });
   const source = bindCandidate(library.state, { record: { ...f.record, locator: { ...f.record.locator, database_id: page("99") } }, scope });
   expect(new Set([first.ref, account.ref, library.ref, source.ref]).size).toBe(4);
   code(() => resolveSessionShortRef(source.state, first.ref, otherScope), "SHORT_REF_SCOPE_MISMATCH");
@@ -301,7 +301,7 @@ test("portable export includes exact source/version/File ID and excludes local h
 
 test("input mutation cannot silently change a saved identity or selected snapshot", () => {
   const f = fixture(), plan = bindSelected(empty(), f.binding), saved = JSON.stringify(event(plan));
-  if (f.record.locator.type === "shared_skill") f.record.locator.library_id = "changed-after-binding";
+  if (f.record.locator.type === "shared_skill") f.record.locator.library_id = "2747fac6-495b-56c0-a4bb-8800e416c42b";
   f.binding.version_id = "changed-after-binding";
   expect(JSON.stringify(event(plan))).toBe(saved);
   const originalEvent = JSON.parse(saved), restored = reduceSessionShortRefs([entry(originalEvent)]);

@@ -19,9 +19,9 @@ function canonical(value: unknown): string {
     .map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 }
 function record(name: string, body: string): SkillRecord & { preparationBinding: PreparationBinding; body: string } {
-  const id = nativeSkillId("projection", String(name)), ref = nativeFileRef(id, "SKILL.md");
+  const id = nativeSkillId("3d04c994-4054-5f3f-8394-ea7635b3ce12", String(name)), ref = nativeFileRef(id, "SKILL.md");
   const metadata: ContentRecord = { id, kind: "skill", name, alias: name, description: name, default_context: false, enabled: true,
-    entrypoint: "SKILL.md", ref, locator: { type: "shared_skill", library_id: "projection", skill_id: name,
+    entrypoint: "SKILL.md", ref, locator: { type: "shared_skill", library_id: "3d04c994-4054-5f3f-8394-ea7635b3ce12", skill_id: name,
       database_id: "db", data_source_id: "data", page_id: name } };
   const snapshotId = "s_" + hash(name + body);
   return { ...metadata, source: "notion", sourceId: "controlled", sourceScope: scope, body, snapshotId, versionId: hash(body),

@@ -8,7 +8,7 @@ they do not publish, create release tags, or update daily installations.
 
 Integrate and verify the intended CLI and Broker sources before preparing a
 release from clean, current `origin/main`. CI and Publish must pin the **same
-40-character CLI commit**. That checkout supplies the bundled CLI, SDK v2,
+40-character CLI commit**. That checkout supplies the bundled CLI, SDK v3,
 decoder and builtin Skills. Do not select a moving branch or substitute an
 installed global CLI.
 

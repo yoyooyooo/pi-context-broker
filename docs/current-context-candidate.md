@@ -10,7 +10,7 @@ activate a new instruction graph.
 
 The installed package, actual Pi, controlled service, natural model and ordinary
 daily entry each require their own evidence. The current Pi driver uses an
-installed SDK v2, current Notion service facts and the installed Pi
+installed SDK v3, current Notion service facts and the installed Pi
 OpenAI-completions serializer over loopback HTTP. It records exact versions and
 hashes rather than inferring them from a checkout or a prior successful run.
 

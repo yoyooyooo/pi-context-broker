@@ -9,7 +9,7 @@ import { releaseWorkingSetRoots } from "../src/session-working-set";
 import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "../src/types";
 
 const scope = "e".repeat(64);
-const id = (name: string) => nativeSkillId("refresh", String(name));
+const id = (name: string) => nativeSkillId("f3b885de-318f-588a-b9ec-a6fdedc5d965", String(name));
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const canonical = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
   : Array.isArray(value) ? "[" + value.map(canonical).join(",") + "]"
@@ -21,7 +21,7 @@ function graph(roots: string[], edges: Array<[string, string]> = [], revisions: 
   const records = names.map((name): SkillRecord => {
     const metadata: ContentRecord = { id: id(name), kind: "skill", name, alias: name, description: name, enabled: true, default_context: false,
       entrypoint: "SKILL.md", ref: nativeFileRef(id(name), "SKILL.md"),
-      locator: { type: "shared_skill", library_id: "refresh", skill_id: name,
+      locator: { type: "shared_skill", library_id: "f3b885de-318f-588a-b9ec-a6fdedc5d965", skill_id: name,
         page_id: pages[name] ?? "00000000-0000-4000-8000-000000000001",
         database_id: "00000000-0000-4000-8000-000000000002", data_source_id: "00000000-0000-4000-8000-000000000003" } };
     const body = `Complete ${name} instructions ${revisions[name] ?? "1"}.\n`, snapshotId = "s_" + hash(name + (revisions[name] ?? "1"));

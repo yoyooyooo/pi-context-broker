@@ -34,7 +34,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
   // A canonical owner reaches exact metadata lookup directly. A physical page
   // UUID instead requires the authorized page-to-owner resolver, which this
   // focused discovery fixture deliberately does not provide.
-  const owner = "skill://entry?library=startup";
+  const owner = "skill://entry?library=6a001315-53e9-5ef7-b414-6aa7f715ad7a";
   const record: SkillRecord = {
     kind: "skill", id: owner, sourceId: "fixture", source: "notion", sourceScope: "startup-scope",
     ref: nativeFileRef(owner, "SKILL.md"), entrypoint: "SKILL.md",
@@ -257,7 +257,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const context = accepted.project();
       await turn();
       assert.deepEqual(f.loads, []);
-      const replacement = "skill://replacement?library=startup";
+      const replacement = "skill://replacement?library=6a001315-53e9-5ef7-b414-6aa7f715ad7a";
       f.resolve(1, [{ ...record, id: replacement, ref: nativeFileRef(replacement, "SKILL.md") }]);
       await refreshing;
       await context;

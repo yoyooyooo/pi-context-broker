@@ -279,7 +279,7 @@ test("restored deferred source keeps its user-role obligation privately through 
   const record = { kind: "skill" as const, source: "notion" as const, sourceId: "owned", sourceScope: "scope", id: "record",
     name: "restored", body: "RESTORED_SOURCE_BODY", snapshotId: snapshot, path: "/immutable/SKILL.md", description: "fixture",
     aliases: [], normalizedName: "restored", normalizedDescription: "fixture", normalizedAliases: [], autoloadEnabled: false,
-    locator: { type: "shared_skill" as const, library_id: "lib", skill_id: "skill", page_id: "p", database_id: "db", data_source_id: "ds" } };
+    locator: { type: "shared_skill" as const, library_id: "93a845c1-6c12-5b02-b395-ecf819622e7f", skill_id: "skill", page_id: "p", database_id: "db", data_source_id: "ds" } };
   const original = { role: "user", content: "Use the selected Skill." };
   const draft = deferredSourceEntries([{ sourceEntry: { id: "user-1", type: "message", message: original }, messages: [original] }], "user-1",
     [{ role: "custom", customType: "context-broker", content: record.body, details: { records: [sourceDeliveryReceipt(record, record.body)] } }])!;

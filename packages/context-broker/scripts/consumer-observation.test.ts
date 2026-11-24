@@ -4,7 +4,7 @@ import { createConsumerObservations, currentEvidence } from "../src/consumer-obs
 import { preparationFailureDetails } from "../src/prepare-protocol";
 import type { SkillRecord } from "../src/types";
 
-const record: SkillRecord = { id: "skill://root?library=library", source: "notion", sourceId: "notion", sourceScope: "scope-a",
+const record: SkillRecord = { id: "skill://root?library=d81f4f38-325d-5797-995e-a48a903c6ae3", source: "notion", sourceId: "notion", sourceScope: "scope-a",
   name: "root", description: "A root", enabled: true, path: "/immutable/root/SKILL.md", aliases: [],
   normalizedName: "root", normalizedDescription: "a root", normalizedAliases: [], autoloadEnabled: true };
 const observed = (validatedAt: number, origin: "remote" | "cache" = "remote", enabled = true): SkillRecord => ({
@@ -90,7 +90,7 @@ test("scope and denied-state identity stay separate from fixed content and unkno
 });
 
 test("preparation failure attribution identifies the dependency rather than its caller", () => {
-  const scope = "a".repeat(64), root = "skill://root?library=library", child = "skill://required?library=library";
+  const scope = "a".repeat(64), root = "skill://root?library=d81f4f38-325d-5797-995e-a48a903c6ae3", child = "skill://required?library=d81f4f38-325d-5797-995e-a48a903c6ae3";
   const ref = (id: string) => nativeFileRef(id, "SKILL.md");
   const error = { code: "CONTENT_DISABLED", details: { id: child } };
   const result = preparationFailureDetails({ preparation: { scope, nodes: [

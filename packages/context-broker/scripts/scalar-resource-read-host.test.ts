@@ -23,11 +23,11 @@ const canonical = (value: unknown): string => value === null || typeof value !==
     : "{" + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 async function fixture(protectMain = true, withSessionBinding = false, currentInspection = false, outsideCatalog = false) {
   const root = await mkdtemp(join(tmpdir(), "broker-scalar-resource-host-"));
-  const id = "skill://owner?library=scalar", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
+  const id = "skill://owner?library=be768207-1fed-584c-9c95-8e3a943012a5", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
   const base = id;
   const ref = (path: string) => nativeFileRef(base, String(path), String(snapshot));
   const content: ContentRecord = { id, kind: "skill", name: "Owner", alias: "owner", description: "Scalar resource owner", default_context: false, enabled: true,
-    entrypoint: "SKILL.md", ref: nativeFileRef(base, "SKILL.md"), locator: { type: "shared_skill", library_id: "scalar", skill_id: "owner",
+    entrypoint: "SKILL.md", ref: nativeFileRef(base, "SKILL.md"), locator: { type: "shared_skill", library_id: "be768207-1fed-584c-9c95-8e3a943012a5", skill_id: "owner",
       page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
   const metadata: SkillRecord = { ...content, source: "notion", sourceId: "notion", sourceScope: scope, path: join(root, "metadata/SKILL.md"),
     aliases: [], normalizedAliases: [], normalizedName: "owner", normalizedDescription: content.description, autoloadEnabled: false, defaultDiscovery: false };

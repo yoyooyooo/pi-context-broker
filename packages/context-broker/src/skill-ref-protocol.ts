@@ -16,6 +16,7 @@ export type ParsedSkillRef = Readonly<{
 export type BoundSkillRef = Readonly<{ owner: SkillKey; path: string; selection: ReferenceSelection }>;
 type Protocol = {
   SKILL_REF_VERSION: 2;
+  validateSkillId(input: string): string;
   createSkillKey(input: SkillKey): SkillKey;
   parseSkillRef(input: string): ParsedSkillRef;
   bindSkillRef(reference: ParsedSkillRef, contextLibraryId?: string): BoundSkillRef;
@@ -29,7 +30,7 @@ type Protocol = {
 };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object";
 function compatible(value: unknown): value is Protocol {
-  return object(value) && value.SKILL_REF_VERSION === 2 && ["createSkillKey", "parseSkillRef", "bindSkillRef",
+  return object(value) && value.SKILL_REF_VERSION === 2 && ["validateSkillId", "createSkillKey", "parseSkillRef", "bindSkillRef",
     "formatSkillRef", "formatSkillIdentity", "parseSkillIdentity", "sameSkillKey", "normalizeSkillPath",
     "skillRefPath", "skillRefSnapshot"].every(name => typeof value[name] === "function");
 }

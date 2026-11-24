@@ -79,7 +79,8 @@ test("Pi exposes one Notion consumption contract and keeps use outside nested co
   expect(ctl).toMatchObject({ exposure: "deferred", defaultActive: false, loadMode: "discoverable", defaultInactive: true });
   const guidance = String(buildCliGuidance(config, api.getActiveTools!()).content);
   expect(guidance).toContain("tool_search for notion_ctl, then its cli_source");
-  expect(guidance).toContain('Choose explicitly from ["notion"]');
+  expect(guidance).toContain("null: accepted Library; ID: Source");
+  expect(guidance).toContain('["notion"]');
   expect(guidance).toContain("use returned command/scope, never a global CLI");
   expect(api.getActiveTools!()).toEqual(active);
   expect(guidance).not.toContain("notion_ctl working_set");

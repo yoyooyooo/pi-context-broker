@@ -10,7 +10,7 @@ import type { AgentMessage } from "../src/types";
 import { noConsumptionWrites, type ConsumptionEffects } from "../src/consumption-effects";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
-const selection: ResourceReadSelection = { scope: "resource-scope", owner: "skill://resources?library=lib", snapshot_id: "s_" + "a".repeat(64), version_id: "b".repeat(64) };
+const selection: ResourceReadSelection = { scope: "resource-scope", owner: "skill://resources?library=93a845c1-6c12-5b02-b395-ecf819622e7f", snapshot_id: "s_" + "a".repeat(64), version_id: "b".repeat(64) };
 function file(path: string, content: string | Buffer, fileId = path): ResourceReadSourceFile {
   const ref = nativeFileRef(selection.owner, String(path), String(selection.snapshot_id));
   return { requested_ref: ref, ref, file_id: fileId, path, bytes: Buffer.byteLength(content), sha256: hash(content),
@@ -95,7 +95,7 @@ test("batch receipt rejects detached, changed, reordered and unknown-field evide
   const variants = [
     { ...proof, loaded: true }, { ...proof, toolCallId: "" }, { ...proof, unknown: true },
     { ...proof, files: [...proof.files].reverse() }, { ...proof, files: proof.files.slice(1) },
-    { ...proof, selection: { ...selection, owner: "skill://other?library=lib" } },
+    { ...proof, selection: { ...selection, owner: "skill://other?library=93a845c1-6c12-5b02-b395-ecf819622e7f" } },
     { ...proof, files: proof.files.map((value, index) => index ? value : { ...value, sha256: "0".repeat(64) }) },
     { ...proof, files: proof.files.map((value, index) => index ? value : { ...value, bytes: value.bytes + 1 }) },
     { ...proof, files: proof.files.map((value, index) => index ? value : { ...value, delivery: { ...value.delivery, start: 0 } }) },
@@ -190,7 +190,7 @@ test("known permission revocation derives a complete non-source batch projection
 
 test("a changed selected owner snapshot retires every verified old batch resource without changing stored files", () => {
   const original=message("old-fixed-batch"),before=JSON.stringify(original),next="s_"+"b".repeat(64);
-  const metadata={id:selection.owner,kind:"skill" as const,name:"Resources",alias:"resources",description:"Resources",enabled:true,default_context:false,entrypoint:"SKILL.md",ref:nativeFileRef(selection.owner, "SKILL.md"),locator:{type:"shared_skill" as const,library_id:"lib",skill_id:"resources",page_id:"main",database_id:"db",data_source_id:"data"}};
+  const metadata={id:selection.owner,kind:"skill" as const,name:"Resources",alias:"resources",description:"Resources",enabled:true,default_context:false,entrypoint:"SKILL.md",ref:nativeFileRef(selection.owner, "SKILL.md"),locator:{type:"shared_skill" as const,library_id:"93a845c1-6c12-5b02-b395-ecf819622e7f",skill_id:"resources",page_id:"main",database_id:"db",data_source_id:"data"}};
   const binding={record:metadata,scope:selection.scope,snapshot_id:next,version_id:"version-2",body_sha256:hash("main-v2"),ref:withNativeSnapshot(metadata.ref, next)};
   const selected={scopes:new Map([[selection.scope,{scope:selection.scope,bindings:new Map([[selection.owner,binding]]),retired:new Map(),graphs:[],selectionId:"next"}]])};
   const projected=projectSelectedSourceMessages([original],selected),text=sourceMessageText(projected[0]?.content);

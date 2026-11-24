@@ -32,8 +32,8 @@ const sources: SourceConfig[] = [
   { id: "unbound", type: "notion" },
 ];
 function record(sourceId: string, locator: ContentRecord["locator"] = { type: "shared_skill", ...library, skill_id: skill, page_id: page }): SkillRecord {
-  return { id: "skill://skill-one?library=lib%3Acurrent", kind: "skill", name: "visible name", alias: "visible-name", description: "Current item",
-    default_context: false, enabled: true, entrypoint: "SKILL.md", ref: "skill://skill-one/SKILL.md?library=lib%3Acurrent",
+  return { id: "skill://skill-one?library=" + db, kind: "skill", name: "visible name", alias: "visible-name", description: "Current item",
+    default_context: false, enabled: true, entrypoint: "SKILL.md", ref: "skill://skill-one/SKILL.md?library=" + db,
     locator, source: "notion", sourceId, sourceScope: "b".repeat(64), aliases: [], autoloadEnabled: true,
     path: "/metadata/SKILL.md", normalizedName: "visible-name", normalizedAliases: [], normalizedDescription: "Current item" };
 }
@@ -154,7 +154,7 @@ for (const value of [
   { ...current, input_sha256: "bad" }, { ...current, files: 0 }, { ...current, files: 1.5 },
   { ...current, page_id: skill },
   { ...current, library: undefined }, { ...current, library: { ...library, library_id: "../bad" } },
-  { ...current, library: { ...library, library_id: "another-library" } },
+  { ...current, library: { ...library, library_id: "8b308dab-2daf-5330-922f-812244ff16f9" } },
   { ...current, library: { ...library, database_id: otherDb } },
   { ...current, library: { ...library, data_source_id: "33333333-3333-4333-8333-333333333334" } },
   { ok: true, verified: true, operation: "replace", action: "update", reused: false, record: records[0], scope: "b".repeat(64) },
@@ -533,7 +533,7 @@ for (const { action, argv, receipt } of nativeCases) {
     { ...receipt, operation_id: undefined }, { ...receipt, operation_id: "../bad" }, { ...receipt, input_sha256: "bad" },
     { ...receipt, page_id: "invalid" }, { ...receipt, skill_id: "../bad" },
     { ...receipt, library: undefined }, { ...receipt, library: { ...library, database_id: otherDb } },
-    { ...receipt, library: { ...library, library_id: "another-library" } },
+    { ...receipt, library: { ...library, library_id: "8b308dab-2daf-5330-922f-812244ff16f9" } },
     { ...receipt, library: { ...library, data_source_id: sourceTable } },
     current, sourceCurrent,
   ]) await result(command(...argv), invalid);
@@ -652,12 +652,12 @@ assert.deepEqual(changed.splice(0), [], "Native parsing respects each action's a
 
 records = [record("alias", { type: "notion_page", page_id: page, database_id: db, data_source_id: ds })];
 await result(currentCommand, current);
-assert.deepEqual(changed.splice(0), [["personal"]], "Old page locators cannot bind a configured alias to the current library");
+assert.deepEqual(changed.splice(0), [["personal", "alias"]], "Configured root IDs and root URLs bind the same library without requiring a legacy page locator");
 await result(command("ctl", "library", "import", "/staged", "--library", rootUrl, "--skill-id", skill), pending, true);
-assert.deepEqual(changed.splice(0), [["alias"]], "An exact configured alias can still be invalidated without inventing an unknown physical binding");
+assert.deepEqual(changed.splice(0), [["personal", "alias"]], "An unknown write targets the same configured root independently of its URL spelling");
 records = [record("alias", { type: "shared_skill", ...library, skill_id: skill, page_id: page }), record("alias", { type: "shared_skill", ...library, skill_id: skill, page_id: "11111111-1111-4111-8111-111111111112" })];
 await result(command("ctl", "library", "import", "/staged", "--library", rootUrl, "--skill-id", skill), current);
 await result(command("ctl", "library", "import", "/staged", "--library", rootUrl, "--skill-id", skill), pending, true);
-assert.deepEqual(changed.splice(0), [], "Conflicting current page ownership cannot authorize an alias or another source");
+assert.deepEqual(changed.splice(0), [["personal"], ["personal"]], "Conflicting page ownership excludes that Source while an independently configured root still permits metadata invalidation");
 assert.equal(runtime.calls.length, 0, "The observer executes no CLI or SDK calls and never injects content");
 console.log("Current CLI import, Source and native Skill invalidation checks passed");

@@ -11,7 +11,7 @@ import { assertSourceAvailable, formatSourceFailures, hasEnabledNotionSource } f
 import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage, sourceFailureDiagnostic } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
 import { checkPreparationSignal, createPreparationGate, preparationCancelled, type ActivePreparation } from "./skill-preparation";
-import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceFailure, NotionListObservation, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
+import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceConfig, SourceFailure, NotionListObservation, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
 import type { HostCapabilities } from "./host-adapter";
 import { invocationText } from "./invocation-text";
 import { viewSystemPrompt, withoutViewMetadata } from "./view-prompt";
@@ -291,13 +291,17 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     let selection = sessionSelection(ctx);
     for (const transition of gate.active ? pendingGraphs.get(gate.active) ?? [] : [])
       selection = applySelectionGraphs(selection, { graphs: transition.graphs.map(graph => graph.lock), mode: transition.mode, selectionId: "pending-preparation" });
-    const enabledSources = options.config.sources?.filter(source => source.type === "notion" && source.enabled !== false) ?? [];
-    const currentScopes = new Set([...catalogScopes].filter(([sourceId]) => enabledSources.some(source => source.id === sourceId)).map(([, scope]) => scope));
+    const identity = libraryContext(ctx)?.local();
+    const enabledSources = identity?.sources ?? options.config.sources?.filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false) ?? [];
     const bindings = [...selection.scopes.values()].flatMap(scope => [...scope.bindings.values()]);
     const requiredOnly = new Map<string, { scope: string; id: string; ref: string; required_by: readonly string[] }>();
     for (const { reference, short, record } of references) {
+      const owners = hasExactNativeOwner(reference)
+        ? enabledSources.filter(source => source.library === nativeReferenceLibrary(reference))
+        : identity ? [identity.source] : enabledSources;
+      const currentScopes = new Set(owners.map(source => catalogScopes.get(JSON.stringify([source.id, source.library]))).filter(Boolean));
       const candidates = bindings.filter(binding => {
-        if (!short && !record && (enabledSources.length !== 1 || currentScopes.size !== 1 || !currentScopes.has(binding.scope))) return false;
+        if (!short && !record && (owners.length !== 1 || currentScopes.size !== 1 || !currentScopes.has(binding.scope))) return false;
         const main = parseNativeReference(binding.ref);
         if (main.selector !== reference.selector || reference.path && reference.path !== binding.record.entrypoint
           || reference.snapshot && reference.snapshot !== binding.snapshot_id) return false;
@@ -438,9 +442,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const nativeCommands = new Map<string, (args: string, ctx: ExtensionContext, images?: ImageContent[], entry?: ActivePreparation) => Promise<void>>();
   host.on("agent_end", () => {
     acceptedContext = undefined;
+    runningContext = undefined;
     if (piRun?.entry) gate.release(piRun.entry);
+    if (deferredPiDiscovery && handoff?.entry === piRun?.entry) handoff = undefined;
     piRun = undefined;
-    if (deferredPiDiscovery) handoff = undefined;
     turnPrompts = undefined;
     pendingNativeReads.clear();
     pendingResourceReads.clear();
@@ -449,7 +454,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
 
   let acceptedContext: ExtensionContext | undefined;
-  const turnContext = (ctx: ExtensionContext) => inheritLibraryContext(ctx, piRun?.entry?.ctx ?? gate.active?.ctx ?? acceptedContext);
+  let runningContext: ExtensionContext | undefined;
+  const turnContext = (ctx: ExtensionContext) => inheritLibraryContext(ctx, runningContext ?? gate.active?.ctx ?? acceptedContext);
   const visibleInLibrary = (record: SkillRecord, ctx: ExtensionContext) => !options.librarySelection || record.source !== "notion"
     || record.sourceId === libraryContext(ctx)?.local()?.source.id && record.locator?.type === "shared_skill"
       && record.locator.library_id === libraryContext(ctx)?.local()?.root;
@@ -594,7 +600,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const query = String(input.query ?? "").trim().toLocaleLowerCase();
       const sourceIds = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => source.id);
       if (piConsumption && input.source !== undefined && !sourceIds.includes(String(input.source))) throw hostError("SOURCE_UNAVAILABLE");
-      const selectedLibrary = await options.librarySelection?.selected(ctx);
+      const selectedLibrary = options.librarySelection ? await options.librarySelection.selected(ctx) : undefined;
       const selectedSources = input.source === undefined ? selectedLibrary ? [selectedLibrary.source.id] : sourceIds : [String(input.source)];
       const isolated = options.librarySelection && !options.librarySelection.isCurrent(ctx)
         ? await options.getRecords(ctx, readSignal, input.refresh === true ? selectedSources : undefined) : undefined;
@@ -1287,6 +1293,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
   for (const event of ["session_start", "session_switch", "session_tree", "session_branch"] as const) host.on(event, async (_event, ctx) => {
     acceptedContext = undefined;
+    runningContext = undefined;
     // A successful host session boundary acknowledges disposal of its pending turn.
     generation++;
     lifecycleController.abort();
@@ -1310,6 +1317,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
   host.on("session_shutdown", () => {
     acceptedContext = undefined;
+    runningContext = undefined;
     generation++;
     metadataGeneration++;
     metadataController.abort();
@@ -1325,11 +1333,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
   host.on("agent_start", (_event, ctx) => {
     const entry = gate.active;
+    const receipt = entry && handoff?.entry === entry && handoff.consumed ? handoff : undefined;
+    runningContext = receipt?.entry.ctx;
     if (deferredPiDiscovery) {
       // This is the first public boundary with Pi's actual operation signal.
       // Preserve the accepted submission's controller: accepted choices use it as
       // their identity, and cancellation must revoke those choices as well.
-      const receipt = entry && handoff?.entry === entry && handoff.consumed ? handoff : undefined;
+      const preparedEntry = receipt && needsPreparation(receipt.entry.event.text ?? "") ? receipt.entry : undefined;
       const signal = ctx.signal ?? lifecycleController.signal;
       if (receipt) {
         const abort = () => receipt.entry.controller.abort();
@@ -1337,9 +1347,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         if (signal.aborted) abort();
       }
       piRun = { generation, sessionId: ctx.sessionManager?.getSessionId?.(), signal,
-        entry: receipt?.entry, selectedNative: receipt?.selectedNative,
+        entry: preparedEntry, selectedNative: receipt?.selectedNative,
         prepared: false, requestPending: false, confirmed: false, persisted: 0,
         candidates: new Map(), graphs: [] };
+      // Plain input owns admission only until this run exists. Its Library stays
+      // frozen in runningContext; it must not stage later tool graph transitions
+      // behind the explicit-Skill preparation acknowledgement boundary.
+      if (receipt && !preparedEntry) { gate.release(receipt.entry); handoff = undefined; }
       return;
     }
     if (entry?.phase === "dispatching" && handoff?.entry === entry && handoff.consumed) {
@@ -1887,7 +1901,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       ? "Load task roots directly to apply their instructions; no preliminary read is needed. Requires load automatically: do not add them as independent roots unless independently requested. To introduce, summarize or inspect a Skill, use read instead. Copy a supplied ref, or pass task roots together. Use refresh:true only for a requested update; the supplied current or fixed main ref locates the same owner's latest version. Refresh roots with conflicting shared Requires together. Members remain candidates. Loading does not authorize executing a workflow. Notion consumption does not write to Notion."
       : "Prepare exact Skill roots. Use purpose use to load complete root and Required instructions before executing a workflow; inspect reads only roots and does not activate their dependencies. Members and ordinary references remain directories.",
     parameters: piConsumption ? { type: "object", properties: {
-      ref: { anyOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } }], description: "Supplied sr:C/sr:S or skill://<stable-skill-id>[/<main>][?library=<logical-library-id>] refs, or exact Notion Skill page URLs for task roots. Requires are included automatically. Copy returned canonical refs; names and aliases are discovery labels." },
+      ref: { anyOf: [{ type: "string" }, { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } }], description: "Supplied sr:C/sr:S or skill://<stable-skill-id>[/<main>][?library=<root-page-uuid>] refs, or exact Notion Skill page URLs for task roots. Requires are included automatically. Copy returned canonical refs; names and aliases are discovery labels." },
       refresh: { type: "boolean", description: "Explicitly adopt current versions for only these roots after a complete successful load. Existing Requires-only nodes cannot become independent roots through refresh; explicitly use them without refresh first. Accepts the supplied sr:C/sr:S or main ref unchanged, for example {ref:[REF_A,REF_B],refresh:true} for shared roots. Failure keeps the previous selection." },
     }, required: ["ref"], additionalProperties: false } : { type: "object", properties: {
       roots: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" }, description: "Copy exact session sr:C/sr:S references or canonical skill:// main-entry references from metadata or a previous result." },

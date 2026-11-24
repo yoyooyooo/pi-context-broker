@@ -10,10 +10,10 @@ const uuid = (id: number) => "00000000-0000-4000-8000-" + String(id).padStart(12
 const scope = hash("source A"), foreignScope = hash("source B");
 function code(action: () => unknown, expected: string) { expect(action).toThrow(expect.objectContaining({ code: expected })); }
 function fixture(version = "one") {
-  const id = "skill://owner?library=bridge", base = id, body = "instructions " + version;
+  const id = "skill://owner?library=ac3fc001-5e29-5d1a-98c0-e1f71021a2b0", base = id, body = "instructions " + version;
   const snapshot = "s_" + hash("snapshot " + version), resource = "resources/guide.md";
   const record: ContentRecord = { id, kind: "skill", name: "Owner", alias: "owner", description: "metadata", default_context: false, enabled: true,
-    entrypoint: "SKILL.md", ref: nativeFileRef(base, "SKILL.md"), locator: { type: "shared_skill", library_id: "bridge", skill_id: "owner", page_id: uuid(1), database_id: uuid(10), data_source_id: uuid(11) } };
+    entrypoint: "SKILL.md", ref: nativeFileRef(base, "SKILL.md"), locator: { type: "shared_skill", library_id: "ac3fc001-5e29-5d1a-98c0-e1f71021a2b0", skill_id: "owner", page_id: uuid(1), database_id: uuid(10), data_source_id: uuid(11) } };
   const files = [{ path: "SKILL.md", bytes: Buffer.byteLength(body), sha256: hash(body), ref: nativeFileRef(base, "SKILL.md", String(snapshot)) },
     { path: resource, bytes: 8, sha256: hash("resource"), ref: nativeFileRef(base, String(resource), String(snapshot)) }];
   const metadata: SkillRecord = { ...record, source: "notion", sourceId: "configured-source", sourceScope: scope, path: "/private/metadata/SKILL.md",
@@ -39,9 +39,9 @@ function session() {
 function directoryRecords(count: number): SkillRecord[] {
   const f = fixture();
   return Array.from({ length: count }, (_, index): SkillRecord => {
-    const skill = "member-" + index, id = nativeSkillId("bridge", String(skill));
+    const skill = "member-" + index, id = nativeSkillId("ac3fc001-5e29-5d1a-98c0-e1f71021a2b0", String(skill));
     return { ...f.metadata, id, ref: nativeFileRef(id, "SKILL.md"),
-      locator: { type: "shared_skill", library_id: "bridge", skill_id: skill, page_id: uuid(index + 100), database_id: uuid(10), data_source_id: uuid(11) } };
+      locator: { type: "shared_skill", library_id: "ac3fc001-5e29-5d1a-98c0-e1f71021a2b0", skill_id: skill, page_id: uuid(index + 100), database_id: uuid(10), data_source_id: uuid(11) } };
   });
 }
 

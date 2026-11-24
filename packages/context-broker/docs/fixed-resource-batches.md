@@ -188,7 +188,7 @@ text, binary bytes, budgets, cancellation and rejected mixed batches. The existi
 independent package gate checks the installed SDK over controlled current Notion
 HTTP, including scalar/batch resources and zero semantic writes.
 
-Actual Pi checks follow the current SDK v2 driver and its
+Actual Pi checks follow the current SDK v3 driver and its
 [consumption map](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/features/skill-consumption.md).
 Use its currently declared scenarios rather than a retired scenario name. Compare
 actual tool schema/results, complete provider-visible content, original binary

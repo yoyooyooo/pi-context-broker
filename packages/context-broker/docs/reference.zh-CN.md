@@ -14,12 +14,15 @@ Source 使用 `library` 配置根页面 UUID 或 Notion URL，即 CLI 初始化�
 旧的 `source.database`、`--database`、`--entry` 选择参数不再支持。
 
 Broker 通过同一 SDK 解析 CLI 全局 `default_library`，没有第二套全局默认库。
+每次输入调用只读 `selectLibrary` 读取本地配置，配置中的默认库变化从下一次输入生效；
+切到新根身份时调用 `resolveLibrary` 校验远端绑定，同根后续输入复用已验证的上下文。
 `/context-broker library ROOT` 切换当前会话分支，`default` 选择 CLI 默认库。
 Source 省略 `library` 时只绑定这一个默认库；所选根页面必须恰好匹配一个启用的 Source。
 切库失败保留 blocked 请求，后续默认操作不会回落到之前的库；修复后明确重选。
+命令只接受根 UUID、Notion URL 或 `default`。无效参数在接收选库请求之前报错，不改当前选择。
 
 每次 interactive/RPC 输入被接收时冻结 Library。A 切 B 只改变后续提交的默认发现、
-短引用和 `notion_ctl` 的 `cli_source: null`。已接收任务、活跃根与快照 pin
+新候选范围和 `notion_ctl` 的 `cli_source: null`。已经发出的短引用、已接收任务、活跃根与快照 pin
 保留原身份。带完整 `library=ROOT_UUID` 的引用可路由到其他已启用 Source，
 不改变默认库。CLI 管理和消费统一传返回的根身份：`--library ROOT`。
 
@@ -49,11 +52,11 @@ Review the design for ownership, boundaries, failure modes, and migration cost.
 
 普通产品维护与 Source 同步默认使用实际配对包中的 `ntn-skills-maintain`、`ntn-skills-sync`。指引提供普通原生 `read` 所需的精确路径，只有 shell 时提供配对 CLI 的 `ctl builtin read` argv，不预加载正文。已连接的库无需保存官方 Notion 副本。工作流来源与数据目标分别选择：写入 source 和数据库必须明确，不隐式取第一个来源。普通业务 Skill 的发现规则保持不变。
 
-明确选择的 Notion 团队流程保留精确来源、记录和已选版本。需要发现时查询该来源，再读取精确 ref；查看不代表采用。真正采用时调用 `notion_use` 加载 Requires，已经准备完整闭包时可复用。没有原生 use 工具但有 shell 时，沿所选来源的 CLI 执行 `use EXACT_REF --library ENTRY --json`；CLI ref 必须是规范引用，不能使用会话 `sr:` 句柄。两条路线都不可用则报告无法采用。通用宿主使用实际可用的 `skill_prepare` purpose `use`。pending、partial 或访问失败都不能静默换成 Builtin。被编辑 Skill 本身只 inspect。本地和随包流程保留原生选择路线；已选指引保留到明确刷新。
+明确选择的 Notion 团队流程保留精确来源、记录和已选版本。需要发现时查询该来源，再读取精确 ref；查看不代表采用。真正采用时调用 `notion_use` 加载 Requires，已经准备完整闭包时可复用。没有原生 use 工具但有 shell 时，沿所选来源的 CLI 执行 `use EXACT_REF --library ROOT_UUID --json`；CLI ref 必须是规范引用，不能使用会话 `sr:` 句柄。两条路线都不可用则报告无法采用。通用宿主使用实际可用的 `skill_prepare` purpose `use`。pending、partial 或访问失败都不能静默换成 Builtin。被编辑 Skill 本身只 inspect。本地和随包流程保留原生选择路线；已选指引保留到明确刷新。
 
 `$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin` 是 Broker 与独立 Tern query 随包提供的普通本地 Skill。只有配置了至少一个未禁用的 `type: notion` source，才会在 `$` 发现与补全中出现；零已启用 Notion source 时文件仍随包保留，但不会显示候选。即使尚未完成 Notion 连接/认证、没有全局 `ntn-skills` executable，已启用时也能离线读取随包入口与相对参考文件。选择、草稿与加载均使用普通 `$` 链路。
 
-在 Pi 中，零已启用 Notion source 的普通本地会话不暴露 Notion 候选、工具或系统指引。明确初始化时，仍可通过 CLI 的 `ctl builtin read notion/ntn-skills-maintain --path references/setup.md` 读取离线入口。日常 CLI 是 `ntn-skills list [--query TEXT]`、`read REF`、`use REF`；`files` 和 `export` 按需使用，管理命令收在 `ctl`。Pi 中需要执行已授权维护或同步任务时，按需发现 `notion_ctl`，用 `{cli_source:"SOURCE_ID"}` 取得所选来源的 executable 与 database scope；这条路线要求 `bash` 已启用。取得目标范围不改变指引来源。OMP/Tern 演进延期。
+在 Pi 中，零已启用 Notion source 的普通本地会话不暴露 Notion 候选、工具或系统指引。明确初始化时，仍可通过 CLI 的 `ctl builtin read notion/ntn-skills-maintain --path references/setup.md` 读取离线入口。日常 CLI 是 `ntn-skills list [--query TEXT]`、`read REF`、`use REF`；`files` 和 `export` 按需使用，管理命令收在 `ctl`。Pi 中需要执行已授权维护或同步任务时，按需发现 `notion_ctl`，用 `{cli_source:"SOURCE_ID"}` 取得所选来源的 executable 与 Library 根页面范围；这条路线要求 `bash` 已启用。取得目标范围不改变指引来源。OMP/Tern 演进延期。
 
 私有随包内容使用 `builtin:<name>` 身份，启用后使用固定 `@builtin` 选择器。同名 filesystem 或 Notion 条目保持独立身份与选择器；namespace 为 `builtin` 的配置来源也不能冒用这三个官方 token。指向同一随包文件的物理别名先去重，再处理本地名字优先级。
 
