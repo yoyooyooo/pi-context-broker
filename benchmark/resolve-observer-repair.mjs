@@ -159,6 +159,57 @@ export function assertResolveRepairExpectation(current, original, pair) {
   assert.deepEqual(copy, original, 'RESOLVE_REPAIR_CAPTURE_CONTRACT_CHANGED');
 }
 
+/** After the individual captures are verified, rederive the manifest producer's
+ * complete model/case expectation mapping; only its proven digest may move. */
+export function assertResolveRepairCatalog(protocol, execution, source, environmentId) {
+  const mapping = (design, launch) => {
+    const conditions = design.conditions.filter(item => item.environment_id === environmentId);
+    assert.deepEqual(conditions.map(item => item.model_id), design.models.map(item => item.id), 'RESOLVE_REPAIR_CATALOG_MODEL_ORDER_CHANGED');
+    const cases = design.corpus.cases.map(item => item.id);
+    assert.equal(new Set(cases).size, cases.length, 'RESOLVE_REPAIR_CATALOG_DUPLICATE_CASE');
+    return conditions.flatMap(condition => {
+      assert.deepEqual(condition.case_ids, cases, 'RESOLVE_REPAIR_CATALOG_CASE_ORDER_CHANGED');
+      const expectations = launch.conditions[condition.id].expectations;
+      assert.deepEqual(Object.keys(expectations).sort(), [...cases].sort(), 'RESOLVE_REPAIR_CATALOG_MAPPING_CHANGED');
+      return cases.map(case_id => ({ model_id: condition.model_id, case_id, sha256: expectations[case_id].sha256 }));
+    });
+  };
+  const original = mapping(source.protocol, source.execution), current = mapping(protocol, execution);
+  const identities = values => values.map(({ sha256, ...identity }) => identity);
+  assert.deepEqual(identities(current), identities(original), 'RESOLVE_REPAIR_CATALOG_DESIGN_CHANGED');
+  for (const [design, expected] of [[source.protocol, original], [protocol, current]]) {
+    const environments = design.environments.filter(item => item.id === environmentId); assert.equal(environments.length, 1);
+    assert.equal(environments[0].pi.catalog_sha256, fingerprint(expected), 'RESOLVE_REPAIR_CATALOG_CHANGED');
+  }
+}
+
+/** The credential descriptor may move to the verified parent's frozen registry,
+ * never to arbitrary same-looking configuration or a resolved secret. */
+export async function verifyResolveRepairCredential(execution, original, sourcePlanReference) {
+  for (const value of [execution.credential, original.credential]) keys(value, ['source_file', 'provider', 'api_key_env']);
+  assert.deepEqual({ ...execution.credential, source_file: original.credential.source_file }, original.credential,
+    'RESOLVE_REPAIR_CREDENTIAL_CHANGED');
+  assert.match(original.credential.api_key_env, /^[A-Z_][A-Z0-9_]*$/, 'RESOLVE_REPAIR_CREDENTIAL_ENV_REQUIRED');
+  const parent = JSON.parse((await checked(sourcePlanReference)).bytes), inherited = parent.execution;
+  assert.equal(sourcePlanReference.path, join(inherited.control_root, 'plan.json'));
+  assert.equal(execution.credential.source_file, inherited.models_file, 'RESOLVE_REPAIR_CREDENTIAL_PARENT_REGISTRY_REQUIRED');
+  assert.deepEqual(inherited.credential, original.credential, 'RESOLVE_REPAIR_CREDENTIAL_PARENT_CHANGED');
+  const registries = [];
+  for (const owner of [original, inherited, execution]) {
+    assert.equal(owner.environment_root, execution.environment_root);
+    assert.ok(owner.control_root.startsWith(execution.environment_root + '/control/'), 'RESOLVE_REPAIR_CREDENTIAL_OUTSIDE_OWNER');
+    assert.ok(owner.models_file.startsWith(owner.control_root + '/'), 'RESOLVE_REPAIR_CREDENTIAL_OUTSIDE_OWNER');
+    assert.equal(owner.models_sha256, original.models_sha256, 'RESOLVE_REPAIR_CREDENTIAL_REGISTRY_CHANGED');
+    registries.push((await checked({ path: owner.models_file, sha256: original.models_sha256 })).bytes);
+  }
+  for (const bytes of registries) assert.deepEqual(bytes, registries[0], 'RESOLVE_REPAIR_CREDENTIAL_REGISTRY_CHANGED');
+  const registry = JSON.parse(registries[0]); keys(registry, ['providers']); keys(registry.providers, [original.credential.provider]);
+  const provider = registry.providers[original.credential.provider]; keys(provider, ['api', 'baseUrl', 'apiKey', 'models']);
+  assert.equal(provider.apiKey, original.credential.api_key_env, 'RESOLVE_REPAIR_CREDENTIAL_ENV_REQUIRED');
+  assert.ok(Array.isArray(provider.models) && provider.models.length === 1, 'RESOLVE_REPAIR_CREDENTIAL_SINGLE_MODEL_REQUIRED');
+  return structuredClone(original.credential);
+}
+
 export function assertResolveRepairInstrumentation(current, original, repair) {
   const changes = repair.builds[0].changes;
   const permittedDependencies = ['benchmark/campaign-selection.mjs', 'benchmark/protocol.mjs', 'benchmark/schemas/protocol.schema.json'];

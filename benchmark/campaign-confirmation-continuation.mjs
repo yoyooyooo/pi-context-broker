@@ -12,7 +12,7 @@ import { assertRetainedAliasEpisode } from './campaign-alias-revision.mjs';
 import { readEvidenceBundle } from './evidence/store.mjs';
 import { assertZeroSendInvalid } from './resumption.mjs';
 import { readProviderTransport } from '../scripts/skill-consumption-provider.mjs';
-import { resolveRepairBuild, assertResolveRepairExpectation, verifyResolveRepairInstrumentation } from './resolve-observer-repair.mjs';
+import { resolveRepairBuild, assertResolveRepairExpectation, assertResolveRepairCatalog, verifyResolveRepairCredential, verifyResolveRepairInstrumentation } from './resolve-observer-repair.mjs';
 
 export const CONFIRMATION_REVISION = 'accepted-partial-confirmation-continuation';
 const usageKeys = ['model_requests', 'input_tokens', 'output_tokens', 'duration_ms'];
@@ -186,6 +186,8 @@ async function continuationCaptures(protocol, execution, source, observerRepair)
     if (repair) {
       assert.deepEqual(original.build, repair.source.identity); assert.deepEqual(copy.build, repair.target.identity);
       copy.build = structuredClone(original.build);
+      assertResolveRepairCatalog(protocol, execution, source, environment.id);
+      copy.pi.catalog_sha256 = original.pi.catalog_sha256;
     }
     assert.equal(copy.pi.extensions.length, original.pi.extensions.length);
     for (const [i, extension] of copy.pi.extensions.entries()) {
@@ -242,7 +244,10 @@ export async function assertSameConfirmationDesign(protocol, execution, slots, a
   assert.equal(execution.episode_fixtures, undefined); assert.equal(source.execution.episode_fixtures, undefined);
   const changing = ['control_root', 'implementation', 'instrumentation', 'case_bindings_file', 'case_bindings_sha256', 'models_file', 'campaign_scope', 'conditions'];
   const stable = value => Object.fromEntries(Object.entries(value).filter(([key]) => !changing.includes(key)));
-  assert.deepEqual(stable(execution), stable(source.execution), 'CONFIRMATION_CONTINUATION_EXECUTION_CHANGED');
+  const currentExecution = stable(execution);
+  if (observerRepair && execution.credential.source_file !== source.execution.credential.source_file)
+    currentExecution.credential = await verifyResolveRepairCredential(execution, source.execution, transition.source_plan);
+  assert.deepEqual(currentExecution, stable(source.execution), 'CONFIRMATION_CONTINUATION_EXECUTION_CHANGED');
   for (const key of ['case_bindings_file', 'models_file']) assert.ok(inside(execution.control_root, execution[key]), 'CONFIRMATION_CONTINUATION_NEW_OWNER_REQUIRED');
   const dependencyChanges = ['benchmark/campaign-selection.mjs', 'benchmark/protocol.mjs', 'benchmark/schemas/protocol.schema.json'];
   assert.deepEqual(execution.instrumentation.collector_files.map(item => item.path), source.execution.instrumentation.collector_files.map(item => item.path),

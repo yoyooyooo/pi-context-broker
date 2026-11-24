@@ -205,7 +205,7 @@ async function materialIdentities(protocol, execution) {
 // Detect known exposure from owned historical protocol/binding identities. This
 // is not a claim about unknown training data, unseen content elsewhere, or OS
 // isolation; seal/open and subject-visible material audits remain separate.
-async function assertConfirmationUnexposed(protocol, execution, history, continuedSource) {
+export async function assertConfirmationUnexposed(protocol, execution, history, continuedSource) {
   if (protocol.phase !== 'confirmation') return;
   const current = new Set(await materialIdentities(protocol, execution));
   const continuedSources = Array.isArray(continuedSource) ? continuedSource : continuedSource ? [continuedSource] : [];
