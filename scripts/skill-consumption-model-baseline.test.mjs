@@ -476,7 +476,7 @@ test('the public Doctor resolves the actual installed Pi bundled CLI and native 
     const files=[{path:'SKILL.md',body:'---\nname: '+name+'\ndescription: '+description+'\n---\nRead references/check.md.\n'},
       {path:'references/check.md',body:'Reference for '+name+'.\n'}];
     for(const file of files)await writeFile(path.join(directory,file.path),file.body);
-    const id=skillIdentity('fixture',name),record={id,kind:'skill',name,description,ref:skillFileRef(id,'SKILL.md')};
+    const id=skillIdentity('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',name),record={id,kind:'skill',name,description,ref:skillFileRef(id,'SKILL.md')};
     const manifest=await write(name+'-manifest.json',{complete:true,record,entrypoint:'SKILL.md',scope:'a'.repeat(64),snapshot_id:'s_'+digest(name),version_id:digest('version-'+name),
       files:files.map(({path,body})=>({path,bytes:Buffer.byteLength(body),sha256:digest(body)}))});
     candidates.push({recordId:record.id,manifest,directory});records.push(record);
@@ -795,7 +795,7 @@ test('native evidence write failure cannot change a tool result or fabricate a c
 });
 
 const visibleRecords=['reader','other-one','other-two'].map((name,index)=>({
-  id:skillIdentity('fixture',name),ref:skillFileRef(skillIdentity('fixture',name),'SKILL.md'),
+  id:skillIdentity('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',name),ref:skillFileRef(skillIdentity('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',name),'SKILL.md'),
   kind:'skill',name,description:index===0?'Inspect fixed files.':'Inspect '+name+'.',
 }));
 const catalogFor=(records=visibleRecords)=>'<ntn-skills-view-catalog><view source="notion" id="view" library="db">Ready</view><available_skills>'
@@ -880,7 +880,7 @@ test('metadata selection proves an ordinary ready turn, actual HTTP payload and 
     else if(scenario==='wire-mismatch')value.wires.at(-1).sha256='0'.repeat(64);
     else if(scenario==='source-id')value.sources[0].id='forged';
     else if(scenario==='missing-result')value.sources=[];
-    else if(scenario==='source-owner')value.sources[0].value.records[1].id=skillIdentity('fixture','another-owner');
+    else if(scenario==='source-owner')value.sources[0].value.records[1].id=skillIdentity('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','another-owner');
     else if(scenario==='source-description')value.sources[0].value.records[1].description='Replacement text';
     else if(scenario==='failed-source')value.sources[0].value.coverage.failed_sources=['unavailable'];
     else if(scenario==='wrong-view')value.sources[0].value.view.id='another-view';

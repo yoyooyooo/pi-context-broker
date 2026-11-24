@@ -30,7 +30,7 @@ C01–C11/T01–T23、单一 owner 与实际入口由 CLI `verification/skill-do
 
 ## 当前执行边界
 
-当前配对只接受 SDK v2，普通消费恒零语义写入，SDK 不接收 `readOnly`。独立 Broker 包使用同一 CLI 提交构建的 current HTTP fixture，验证完整分页目录、正文与资源、身份和取消；不预植历史快照，不走退役 CLI 正文消费路径。
+当前配对只接受 SDK v3，普通消费恒零语义写入，SDK 不接收 `readOnly`。独立 Broker 包使用同一 CLI 提交构建的 current HTTP fixture，验证完整分页目录、正文与资源、身份和取消；不预植历史快照，不走退役 CLI 正文消费路径。
 
 仅改文档路由，运行 `node --test scripts/verification-skill-routing.test.mjs` 和已有合同检查。改状态守卫，沿 consumer-state 入口核模型对应和真实反例；改消费 transport 或随包运行时，沿 integration 入口检查实际安装。跨域时执行相交的必要检查，不把一次通过扩成整个系统通过。
 
@@ -40,7 +40,7 @@ C01–C11/T01–T23、单一 owner 与实际入口由 CLI `verification/skill-do
 
 新 current 消费资格遵循当前 Source 与 Skill 的 Enabled；disabled 的当前来源不能因目录缓存或本地旧 pin 被重新启用。Default Context 随实际选定 View 决定默认候选，不 release 既有选择，也不自动注入全文。已有完整固定任务、缺字节 current acquisition 与授权拒绝分别判定；业务 Enabled 关闭不能静默拆掉原完整任务的 Required。重新启用须可信 fresh use 或新 metadata；缺行不能猜 deny。Source ready、目录完整、本地固定字节、完整正文交付、provider 接受、turn 完成和宿主公开投影必须分开判断。本地旧 pin 不承诺远端历史恢复；明确重新选择后才获取当前内容。
 
-管理结果 partial/unknown 保持原意图和实际状态；当前读取相同不能制造原ACK。消费端失效必须绑定当前 library/entry 与 operation，不按同名 Skill 猜测。模型、回执摘要和 HTTP 2xx 都不能代替实际 serializer 中的完整正文。
+管理结果 partial/unknown 保持原意图和实际状态；当前读取相同不能制造原ACK。消费端失效必须绑定当前 Library root 与 operation，不按同名 Skill 猜测。模型、回执摘要和 HTTP 2xx 都不能代替实际 serializer 中的完整正文。
 
 当前源码直接运行 `bun run check:broker`；安装直接复用 `scripts/verify-artifacts.mjs` 与 `scripts/verify-notion-sdk-installed.mjs`。实际 Pi 沿 `scripts/notion-sdk-pi.mjs` 和 `scripts/verify-pi-daily-installation.mjs` 的公开动作；`scripts/verify-pi-daily-candidate.mjs` 仅是后者导入的实现模块。旧双宿主controller及CLI fixture/UI/PTY入口已退役，没有新的包装runner。原生终端专项本轮未验收。
 

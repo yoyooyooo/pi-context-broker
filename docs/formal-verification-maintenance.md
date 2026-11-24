@@ -10,7 +10,7 @@
 | CLI 请求引擎 | CLI verify-notion-consumption | CLI 原 request-engine runner；预算、取消与请求调度由其 owner 维护 |
 | 当前管理、来源与消费 | 各仓既有领域测试和 integration Skill | current operation、SDK、import 失效与实际包检查；不由已退役模型代证 |
 
-完整路由见 [验证交接表](verification-routing.md)。跨域变更执行相交的必要检查，不新增全链路总验证 Skill。SDK 消费恒零语义写入；旧隐式 retention、readOnly 开关和独立管理回执接受流程已退出形式化入口。
+完整路由见 [验证交接表](verification-routing.md)。跨域变更执行相交的必要检查，不新增全链路总验证 Skill。SDK v3 消费恒零语义写入；旧隐式 retention、readOnly 开关和独立管理回执接受流程已退出形式化入口。
 
 ## 结果合同
 

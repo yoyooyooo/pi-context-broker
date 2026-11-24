@@ -5,7 +5,6 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statS
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createNotionFixture, libraryId } from './notion-integration-fixture.mjs';
 import { parseStartupArgs, reconcileStartupBatch, summarizeStartupSample } from './skill-consumption-startup.mjs';
 
 const script = join(dirname(fileURLToPath(import.meta.url)), 'skill-consumption-startup.mjs');
@@ -153,16 +152,26 @@ test('child close and absent PID cannot supply a missing, legacy or invalid prox
 });
 
 test('source proxy forwards command and response while recording child close and its own real process exit independently', async () => {
-  const fixture = await createNotionFixture(join(scratch, 'fixture'));
+  const child = join(scratch, 'proxy-child.mjs'), state = join(scratch, 'proxy-child.json'), callsPath = join(scratch, 'proxy-child-calls.jsonl');
+  writeFileSync(child, [
+    "import { readFile, appendFile } from 'node:fs/promises';",
+    "const [statePath, ...args] = process.argv.slice(2);",
+    "const state = JSON.parse(await readFile(statePath, 'utf8'));",
+    "await appendFile(state.callsPath, JSON.stringify({ args }) + '\\n');",
+    "await new Promise(resolve => setTimeout(resolve, state.delayMs));",
+    "console.log(JSON.stringify(state.fail ? { ok: false, error: { code: 'CONTROLLED_FAILURE' } } : { ok: true, count: 2 }));",
+    "process.exitCode = state.fail ? 1 : 0;",
+  ].join('\n'));
+  const select = fail => writeFileSync(state, JSON.stringify({ callsPath, delayMs: 30, fail }));
   const config = join(scratch, 'proxy.json'), ledger = join(scratch, 'calls.jsonl');
-  writeFileSync(config, JSON.stringify({ command: fixture.command, ledger }), { mode: 0o600 });
-  const args = ['list', '--library', libraryId], env = { ...process.env, SKILL_STARTUP_SAMPLE_ID: 'proxy-test' };
-  await fixture.setScenario('normal', { listDelayMs: 30, cacheIdentity: true });
+  writeFileSync(config, JSON.stringify({ command: [process.execPath, child, state], ledger }), { mode: 0o600 });
+  const args = ['ctl', 'views', '--library', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'], env = { ...process.env, SKILL_STARTUP_SAMPLE_ID: 'proxy-test' };
+  select(false);
   const output = execFileSync(process.execPath, [script, 'source-proxy', config, ...args], { env, timeout: 5000 });
   const value = JSON.parse(output.toString('utf8'));
-  assert.equal(value.ok, true); assert.equal(value.count, 1);
-  const calls = readFileSync(fixture.callsPath, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(calls.find(call => call.command === 'list').args, args.slice(1));
+  assert.equal(value.ok, true); assert.equal(value.count, 2);
+  const calls = readFileSync(callsPath, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(calls.map(call => call.args), [args]);
   let events = readFileSync(ledger, 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(events.map(event => event.phase), ['source-start', 'source-child-spawn-return', 'source-close', 'source-proxy-exit']);
   assert.equal(events.at(-2).stdoutBytes, output.length); assert.equal(events.at(-2).code, 0);
@@ -171,7 +180,7 @@ test('source proxy forwards command and response while recording child close and
   assert.ok(BigInt(events.at(-1).monotonicNs) >= BigInt(events.at(-2).monotonicNs));
   assert.ok(BigInt(events.at(-1).monotonicNs) - BigInt(events[0].monotonicNs) >= 30000000n);
   assert.equal(statSync(ledger).mode & 0o777, 0o600);
-  await fixture.setScenario('normal', { failList: true });
+  select(true);
   assert.throws(() => execFileSync(process.execPath, [script, 'source-proxy', config, ...args], { env, timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] }), error => {
     assert.equal(error.status, 1); assert.equal(JSON.parse(error.stdout.toString()).ok, false); return true;
   });
