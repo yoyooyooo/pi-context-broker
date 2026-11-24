@@ -1493,11 +1493,18 @@ test('historical composition still requires its independently retained child bod
   assert.ok(result.assertions.some(row => row.code === 'HISTORICAL_READ_RESULT_MISSING'));
 });
 
-test('complete code-mode reads prove their own bytes and the parent wire delivery', async () => {
+test('complete code-mode body delivery cannot certify readonly effects without sealed runtime evidence', async () => {
   const f = composedLocalFixture();
   const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }, { kind: 'no-semantic-writes' },
     { kind: 'source-network-attempts', max: 0 }, { kind: 'tool-attempts', tool: 'read', min: 1, max: 1 }]);
-  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  assert.equal(result.status, 'blocked', JSON.stringify(result.assertions));
+  for (const kind of ['body', 'tool-attempts'])
+    assert.equal(result.assertions.find(row => row.kind === kind)?.status, 'passed', kind);
+  for (const kind of ['no-semantic-writes', 'source-network-attempts']) {
+    const claim = result.assertions.find(row => row.kind === kind);
+    assert.equal(claim?.status, 'blocked', kind);
+    assert.equal(claim.code, 'TOOL_EFFECTS_UNKNOWN', kind);
+  }
   const proof = result.assertions.find(row => row.kind === 'actual-provider-delivery').details.last.nativeReadBodies[0];
   assert.deepEqual(proof.toolCallIds, ['opaque-child-without-parent-prefix']);
   assert.deepEqual(proof.deliveryToolCallIds, ['t0']);
@@ -1709,4 +1716,129 @@ test('CLI process or parent artifact tampering cannot retain an earlier candidat
     assert.equal(result.status, 'failed');
     assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_CHANGED'));
   }
+});
+
+function asResponses(f) {
+  const originalSession = f.observed.session;
+  const activeReplies = originalSession.assistantMessages.filter(row => row.active && row.userEntryId === originalSession.currentUserId);
+  const ids = new Map();
+  for (const row of f.entries) for (const part of row.message?.content ?? []) {
+    if (part?.type === 'toolCall') { ids.set(part.id, part.id + '|fc_' + part.id); part.id = ids.get(part.id); }
+  }
+  for (const row of f.entries) {
+    if (row.message?.role === 'toolResult') row.message.toolCallId = ids.get(row.message.toolCallId) ?? row.message.toolCallId;
+    if (row.message?.role === 'assistant') Object.assign(row.message, {
+      api: 'openai-responses', responseId: 'resp_' + row.id, rawStopReason: 'completed',
+      usage: { input: 10, output: 5, cacheRead: 1, cacheWrite: 0, totalTokens: 16, reasoning: 2 },
+    });
+  }
+  for (const row of [...f.observed.tasks, ...(f.historyRows ?? [])]) {
+    if (ids.has(row.toolCallId)) row.toolCallId = ids.get(row.toolCallId);
+    for (const proof of Object.values(row.proofs ?? {}))
+      if (proof && typeof proof === 'object' && ids.has(proof.toolCallId)) proof.toolCallId = ids.get(proof.toolCallId);
+  }
+  if (f.historyRows) f.sealHistory();
+  f.observed.session = inspect(f.entries);
+  Object.assign(f.observed.selection, { leafId: f.observed.session.leafId, branchSha256: f.observed.session.branchSha256 });
+  const calls = new Map(f.observed.session.attempts.map(call => [call.id, call]));
+  rewritePayloads(f, payload => {
+    const input = [];
+    for (const message of payload.messages) {
+      if (message.role === 'tool') {
+        const nativeId = ids.get(message.tool_call_id) ?? message.tool_call_id, call = calls.get(nativeId);
+        assert.ok(call, 'Controlled Responses fixture needs its actual native call');
+        const [callId, id] = nativeId.split('|');
+        input.push({ type: 'function_call', id, call_id: callId, name: call.name, arguments: JSON.stringify(call.arguments) },
+          { type: 'function_call_output', call_id: callId, output: message.content });
+      } else {
+        input.push({ type: 'message', role: message.role === 'system' ? 'developer' : message.role,
+          content: typeof message.content === 'string'
+            ? [{ type: message.role === 'assistant' ? 'output_text' : 'input_text', text: message.content }] : message.content });
+      }
+    }
+    delete payload.messages; delete payload.reasoning_effort;
+    Object.assign(payload, { input, stream: true, reasoning: { effort: 'high' } });
+  });
+  const requests = f.observed.costs.filter(row => row.phase === 'provider_request');
+  for (const [index, request] of requests.entries()) {
+    request.api = 'openai-responses';
+    const native = f.entries.find(row => row.id === activeReplies[index].entryId).message;
+    const cost = f.observed.costs.find(row => row.phase === 'message_end' && row.request === request.request).message;
+    Object.assign(cost, { api: native.api, responseId: native.responseId, rawStopReason: native.rawStopReason, usage: { ...native.usage },
+      content: { sha256: hash(JSON.stringify(native.content)), bytes: Buffer.byteLength(JSON.stringify(native.content)) } });
+    const end = f.observed.transport.find(row => row.phase === 'request_end' && row.id === index + 1);
+    Object.assign(end, { modelApi: 'openai-responses', contentType: 'text/event-stream', contentEncoding: 'identity',
+      sseCompletion: { method: 'bounded-openai-responses-sse-v1', complete: true, terminalEvents: 1, doneEvents: 0,
+        response: { id: native.responseId, model: 'actual-worker', status: 'completed',
+          usage: { input_tokens: 11, output_tokens: 5, total_tokens: 16,
+            input_tokens_details: { cached_tokens: 1, cache_write_tokens: null },
+            output_tokens_details: { reasoning_tokens: 2 }, optional_fields_valid: true } } } });
+  }
+  return f;
+}
+
+test('Responses analysis binds native response ID and usage to the exact wire completion and nested effort', async () => {
+  const f = asResponses(fixture());
+  const result = await f.run([{ kind: 'completed' }, { kind: 'output', all: ['total'] }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  assert.equal(result.delivery.requests.at(-1).api, 'openai-responses');
+  assert.equal(result.delivery.requests.at(-1).completion, 'responses-completed');
+});
+
+test('Responses analysis preserves remote source spans and input_text body identity', async () => {
+  const f = fixture({ bodies: { 'remote@A/SKILL.md': '完整规则\r\n必须保留全部正文。' } });
+  f.bindRemote('remote', 'A', 'remote@A/SKILL.md');
+  asResponses(f);
+  const result = await f.run([{ kind: 'body', body: 'remote@A/SKILL.md', occurrences: 1 },
+    { kind: 'selection', object: 'remote', version: 'A' }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  assert.equal(result.delivery.requests.at(-1).notionDeliveries[0].owner, 'skill-remote');
+});
+
+test('Responses analysis maps complete function-call identity to a local body and retained history', async () => {
+  for (const historical of [false, true]) {
+    const f = asResponses(historical ? reusedLocalFixture() : nativeLocalFixture());
+    const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 },
+      { kind: 'tool-attempts', tool: 'read', max: historical ? 0 : 1 }]);
+    assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+    assert.deepEqual(result.delivery.requests.at(-1).nativeReadBodies[0].deliveryToolCallIds, ['t0|fc_t0']);
+    assert.equal(result.efficiency.actualToolAttempts, historical ? 0 : 1);
+  }
+});
+
+test('Responses analysis rejects unmatched native identity, usage, effort and body call ownership', async () => {
+  for (const [name, change] of [
+    ['terminal absent', f => { delete f.observed.transport.find(row => row.phase === 'request_end').sseCompletion; }],
+    ['native ID', f => { f.observed.session.assistantMessages[0].responseId = 'resp_elsewhere'; }],
+    ['native usage', f => { f.observed.session.assistantMessages[0].usage.output++; }],
+    ['wrong effort', f => rewritePayloads(f, payload => { payload.reasoning.effort = 'low'; })],
+  ]) {
+    const f = asResponses(fixture()); change(f);
+    const result = await f.run([{ kind: 'completed' }]);
+    assert.notEqual(result.status, 'passed', name);
+  }
+  for (const [name, change] of [
+    ['different full item identity', item => { item.id = 'fc_other'; }],
+    ['same prefix with different name', item => { item.name = 'write'; }],
+    ['changed original arguments', item => { item.arguments = '{"path":"/different/SKILL.md"}'; }],
+  ]) {
+    const f = asResponses(nativeLocalFixture());
+    rewritePayloads(f, payload => { for (const item of payload.input.filter(row => row.type === 'function_call')) change(item); });
+    const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }]);
+    assert.notEqual(result.status, 'passed', name);
+    assert.ok(result.assertions.some(row => row.code === 'RESPONSES_TOOL_IDENTITY_UNPROVEN'), JSON.stringify(result.assertions));
+  }
+});
+
+test('Responses analysis cannot borrow a native call that happened after this request', async () => {
+  const f = asResponses(nativeLocalFixture());
+  let replay;
+  for (const row of f.observed.tasks.filter(row => row.phase === 'provider_payload')) {
+    const payload = JSON.parse(f.files.get(row.payloadFile));
+    if (payload.input.some(item => item.type === 'function_call')) replay = payload.input.filter(item => item.type.startsWith('function_call'));
+  }
+  rewritePayloads(f, (payload, index) => { if (index === 0) payload.input.push(...replay); });
+  const result = await f.run([{ kind: 'completed' }]);
+  assert.notEqual(result.status, 'passed');
+  assert.ok(result.assertions.some(row => row.code === 'RESPONSES_TOOL_IDENTITY_UNPROVEN'), JSON.stringify(result.assertions));
 });

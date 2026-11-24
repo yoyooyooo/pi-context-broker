@@ -2,11 +2,32 @@ import test from 'node:test';
 import { skillFileRef } from './skill-ref-fixture.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation, inspectedLocalReadEvidence } from './notion-agent-tool-lineage.mjs';
+import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation,
+  inspectedLocalReadEvidence, inspectedPiToolRuntime, reviewedPiToolRuntimeProfile, verifyObservedPiToolRuntime } from './notion-agent-tool-lineage.mjs';
 import { analyzeNotionAgentTurn } from './notion-agent-analysis.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
 const argsHash = value => sha(JSON.stringify(value));
+function runtimeDescriptor() {
+  const packageRoot = '/maintained/pi';
+  return { version: 1, packageRoot, entry: packageRoot + '/dist/bundle/cli.js',
+    files: Object.entries(reviewedPiToolRuntimeProfile.files).map(([relativePath, file]) => ({ relativePath,
+      path: packageRoot + '/' + relativePath, artifact: { path: '/sealed/' + file.sha256, ...file } })) };
+}
+// The pure correlator accepts the byte values already checked by
+// verifyObservedPiToolRuntime. These fixtures do not claim to be live receipts.
+function runtimeEvidenceFor(event, parameters, resultContent) {
+  event.pid ??= 100; event.toolRuntime ??= runtimeDescriptor();
+  const value = { implementation: inspectedPiToolRuntime(event.toolRuntime), pid: event.pid,
+    toolCallId: event.toolCallId, toolName: event.toolName, inputSha256: event.inputSha256 };
+  if (parameters) {
+    const bytes = Buffer.from(JSON.stringify(parameters));
+    event.toolParametersArtifact = { path: '/sealed/parameters-' + sha(bytes), bytes: bytes.length, sha256: sha(bytes) };
+    Object.assign(value, { parameters, parametersArtifact: event.toolParametersArtifact });
+  }
+  if (resultContent) value.resultContentSha256 = argsHash(resultContent);
+  return value;
+}
 function fixture() {
   const rootId = 'opaque-model-root', childId = 'independent-child-identity';
   const args = { code: 'const result = await tools.read({path:"/owned/SKILL.md"}); text(result);' };
@@ -18,17 +39,119 @@ function fixture() {
     details: { calls: [{ id: childId, name: 'read', args: 'preview only', status: 'ok' }] } };
   const tasks = [
     { phase: 'tool_call', toolCallId: rootId, toolName: 'codemode', inputSha256: argsHash(args), selectors: {},
-      toolSource: { path: 'builtin:codemode', source: 'builtin' } },
+      toolSource: { path: 'builtin:codemode', source: 'builtin', scope: 'temporary', origin: 'top-level' } },
     { phase: 'tool_call', toolCallId: childId, toolName: 'read', inputSha256: argsHash(child.arguments), selectors: child.arguments },
     { phase: 'tool_result', toolCallId: childId, toolName: 'read', isError: false },
-    { phase: 'tool_result', toolCallId: rootId, toolName: 'codemode', isError: false },
+    { phase: 'tool_result', toolCallId: rootId, toolName: 'codemode', isError: false,
+      content: { bytes: Buffer.byteLength(JSON.stringify(message.content)), sha256: argsHash(message.content) },
+      contentArtifact: { path: '/sealed/codemode-output', bytes: Buffer.byteLength(JSON.stringify(message.content)), sha256: argsHash(message.content) } },
   ];
   const session = { supported: true, currentUserId: 'user', attempts: [native],
-    branchEntries: [{ type: 'message', id: 'result', message }] };
-  return { tasks, session, rootId, childId, native, message, child };
+    branchEntries: [{ type: 'message', id: 'assistant' }, { type: 'message', id: 'result', message }] };
+  const runtimeEvidence = new Map([[rootId, runtimeEvidenceFor(tasks[0], { type: 'object',
+    properties: { code: { type: 'string' } }, required: ['code'] }, message.content)]]);
+  return { tasks, session, rootId, childId, native, message, child, runtimeEvidence };
 }
 const inspect = value => correlateNotionAgentToolAttempts(value);
 const codes = value => inspect(value).diagnostics.map(problem => problem.code);
+
+function optionalNullFixture(refresh = null) {
+  const original = { budget: null, from: null, limit: null, offset: null, path: '/owned/reference.md', paths: null, refresh };
+  const actual = { path: original.path, ...(refresh === null ? {} : { refresh }) };
+  const parameters = { type: 'object', required: ['path'], properties: {
+    budget: { type: 'number' }, from: { type: 'string' }, limit: { type: 'number' }, offset: { type: 'number' },
+    path: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } }, refresh: { type: 'boolean' },
+  } };
+  const native = { id: 'strict-schema-read', name: 'read', arguments: original, active: true, userEntryId: 'user',
+    callLine: 3, resultLine: 4, assistantEntryId: 'assistant', resultEntryId: 'result', isError: false };
+  const tasks = [{ phase: 'tool_call', toolName: 'read', toolCallId: native.id, inputSha256: argsHash(actual), selectors: actual },
+    { phase: 'tool_result', toolName: 'read', toolCallId: native.id, inputSha256: argsHash(actual), isError: false }];
+  const session = { supported: true, currentUserId: 'user', attempts: [native], branchEntries: [
+    { type: 'message', id: 'assistant' },
+    { type: 'message', id: 'result', message: { role: 'toolResult', toolCallId: native.id, toolName: 'read', isError: false } },
+  ] };
+  const runtimeEvidence = new Map([[native.id, runtimeEvidenceFor(tasks[0], parameters)]]);
+  return { tasks, session, native, actual, parameters, runtimeEvidence };
+}
+
+test('optional-null execution uses the reviewed runtime and actual schema while retaining native bytes', () => {
+  for (const refresh of [null, true]) {
+    const value = optionalNullFixture(refresh), original = structuredClone(value.native.arguments);
+    const result = inspect(value), call = result.attempts[0];
+    assert.equal(result.status, 'passed', JSON.stringify(result.diagnostics));
+    assert.deepEqual(call.arguments, value.actual);
+    assert.deepEqual(call.nativeArguments, original);
+    assert.deepEqual(value.native.arguments, original);
+    assert.equal(call.inputNormalization.nativeInputSha256, argsHash(original));
+    assert.equal(call.inputNormalization.observedInputSha256, value.tasks[0].inputSha256);
+    assert.equal(call.inputNormalization.profile, reviewedPiToolRuntimeProfile.id);
+    assert.deepEqual(call.inputNormalization.omittedProperties,
+      ['budget', 'from', 'limit', 'offset', 'paths', ...(refresh === null ? ['refresh'] : [])]);
+  }
+});
+
+test('optional-null proof rejects required, nullable, unknown, nested and non-null changes', () => {
+  for (const mutate of [
+    value => { value.parameters.required.push('refresh'); },
+    value => { value.parameters.properties.refresh = { type: ['boolean', 'null'] }; },
+    value => { value.parameters.properties.refresh = { anyOf: [{ type: 'boolean' }, { type: 'null' }] }; },
+    value => { value.parameters.properties.refresh = { $ref: '#/definitions/boolean' }; },
+    value => { value.parameters.$ref = '#/definitions/input'; },
+    value => { value.native.arguments.extra = null; },
+    value => { value.native.arguments.path = '/foreign/reference.md'; },
+    value => { value.native.arguments.refresh = false; },
+    value => { value.parameters.required.push('budget'); },
+    value => {
+      value.parameters.properties.options = { type: 'object', properties: { limit: { type: 'number' } } };
+      value.native.arguments.options = { limit: null };
+      value.tasks[0].inputSha256 = argsHash({ path: value.actual.path, options: {} });
+      value.runtimeEvidence.get(value.native.id).inputSha256 = value.tasks[0].inputSha256;
+    },
+  ]) {
+    const value = optionalNullFixture(); mutate(value);
+    assert.equal(inspect(value).status, 'failed', mutate.toString());
+    assert.ok(codes(value).includes('TOOL_INPUT_HASH_MISMATCH'), mutate.toString());
+  }
+});
+
+test('optional-null conversion needs its own sealed schema, exact process and reviewed implementation', () => {
+  for (const mutate of [
+    value => { value.runtimeEvidence.clear(); },
+    value => { delete value.tasks[0].toolRuntime; },
+    value => { value.tasks[0].toolRuntime.files.pop(); },
+    value => { value.tasks[0].toolRuntime.files[1].artifact.sha256 = 'f'.repeat(64); },
+    value => { value.tasks[0].pid++; },
+    value => { value.runtimeEvidence.get(value.native.id).toolName = 'other'; },
+    value => { value.runtimeEvidence.get(value.native.id).toolCallId = 'another-call'; },
+    value => { value.tasks[0].toolParametersArtifact = { ...value.tasks[0].toolParametersArtifact, sha256: 'e'.repeat(64) }; },
+    value => { delete value.runtimeEvidence.get(value.native.id).parameters; },
+  ]) {
+    const value = optionalNullFixture(); mutate(value);
+    assert.equal(inspect(value).status, 'failed', mutate.toString());
+    assert.ok(codes(value).includes('TOOL_INPUT_HASH_MISMATCH'), mutate.toString());
+  }
+});
+
+test('Pi runtime profile rejects incomplete or changed execution closures and verifies artifact bytes', async () => {
+  assert.equal(inspectedPiToolRuntime(runtimeDescriptor()).profile, reviewedPiToolRuntimeProfile.id);
+  for (const mutate of [
+    runtime => { runtime.entry = '/other/pi.js'; },
+    runtime => { runtime.files[0].path = '/other/package.json'; },
+    runtime => { runtime.files[0].artifact.bytes++; },
+    runtime => { runtime.files[0].artifact.sha256 = 'f'.repeat(64); },
+    runtime => { runtime.files[0] = runtime.files[1]; },
+    runtime => { runtime.files.pop(); },
+    runtime => { runtime.files.push(runtime.files[0]); },
+  ]) {
+    const runtime = runtimeDescriptor(); mutate(runtime); assert.equal(inspectedPiToolRuntime(runtime), undefined);
+  }
+  const value = optionalNullFixture(); let reads = 0;
+  await assert.rejects(verifyObservedPiToolRuntime(value.tasks, async () => { reads++; return Buffer.from('changed'); }),
+    { code: 'PI_TOOL_RUNTIME_ARTIFACT_CHANGED' });
+  assert.equal(reads, 1);
+  delete value.tasks[0].toolRuntime;
+  assert.equal((await verifyObservedPiToolRuntime(value.tasks, () => { throw new Error('not a reviewed runtime'); })).size, 0);
+});
 
 function preparedFixture() {
   const id = 'actual-read', scope = 'a'.repeat(64), owner = 'skill://skill-test?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -108,6 +231,23 @@ function localReadFixture({ nested = false, input = { path: '/owned/SKILL.md' } 
   assert.equal(correlation.status, 'passed', JSON.stringify(correlation.diagnostics));
   return { tasks, session, content, event, result, call: correlation.attempts.find(row => row.id === id) };
 }
+
+test('schema normalization precedes the existing exact-owner prepared-read proof without replacing it', () => {
+  const value = preparedFixture(), event = value.tasks[0];
+  value.native.arguments = { ...value.native.arguments, offset: null, limit: null, refresh: null };
+  const original = structuredClone(value.native.arguments);
+  value.runtimeEvidence = new Map([[value.native.id, runtimeEvidenceFor(event, { type: 'object', required: ['path'],
+    properties: { path: { type: 'string' }, offset: { type: 'number' }, limit: { type: 'number' }, refresh: { type: 'boolean' } } })]]);
+  const result = inspect(value), call = result.attempts[0];
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostics));
+  assert.ok(call.preparedRead); assert.ok(call.inputNormalization);
+  assert.deepEqual(call.native.arguments, original);
+  assert.equal(call.preparedRead.bodySha256, sha(value.evidence.body));
+  value.proof.binding.record = { ...value.proof.binding.record, locator: { ...value.proof.binding.record.locator,
+    library_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' } };
+  assert.equal(inspect(value).status, 'failed');
+  assert.ok(codes(value).includes('TOOL_RESULT_INPUT_MISMATCH'));
+});
 
 test('a reviewed local reader retains native and nested calls, including bounded ranges', () => {
   for (const nested of [false, true]) for (const input of [
@@ -484,4 +624,57 @@ test('missing implementation provenance cannot certify zero writes even when lin
     assert.equal(inspectNotionAgentReadOnlyContainer(result.attempts[0], result, call => call.name === 'read').readOnly, false);
     assert.ok(result.containers[0].diagnostics.some(value => value.code.startsWith('CODEMODE_IMPLEMENTATION_')));
   }
+});
+
+test('codemode needs the actual reviewed sandbox and complete sealed native result', () => {
+  for (const mutate of [
+    value => { value.runtimeEvidence.clear(); },
+    value => { delete value.tasks[0].toolRuntime; },
+    value => { value.tasks[0].toolRuntime.files[8].artifact.sha256 = 'f'.repeat(64); },
+    value => { value.tasks[0].toolSource.scope = 'user'; },
+    value => { value.tasks[0].toolSource.origin = 'package'; },
+    value => { value.runtimeEvidence.get(value.rootId).pid++; },
+    value => { value.runtimeEvidence.get(value.rootId).resultContentSha256 = 'f'.repeat(64); },
+    value => { delete value.tasks[3].contentArtifact; },
+    value => { value.tasks[3].content.bytes++; },
+    value => { value.session.branchEntries.shift(); },
+  ]) {
+    const value = fixture(); mutate(value); const result = inspect(value);
+    assert.equal(result.status, 'passed', 'Identity correlation remains separate from sandbox effect coverage');
+    assert.equal(result.containers[0].complete, false, mutate.toString());
+    assert.equal(inspectNotionAgentReadOnlyContainer(result.attempts[0], result, () => true).readOnly, false);
+  }
+});
+
+test('codemode cannot hide persistent store, image, spill, unknown output or failed sandbox effects', () => {
+  for (const mutate of [
+    value => { value.session.branchEntries.splice(1, 0, { type: 'custom', customType: 'codemode-store',
+      id: 'store-write', data: { set: { owner: 'changed' }, delete: [] } }); },
+    value => { value.message.content.push({ type: 'image', mimeType: 'image/png', data: 'image-bytes' }); },
+    value => { value.message.details.fullOutputPath = '/temporary/spilled.txt'; },
+    value => { value.message.details.unobservedEffect = true; },
+    value => { value.message.isError = value.native.isError = value.tasks[3].isError = true; },
+  ]) {
+    const value = fixture(); mutate(value);
+    // Retain matching actual output bytes so the refusal is about the effect,
+    // rather than merely failing an unrelated content-hash check.
+    const content = JSON.stringify(value.message.content), bytes = Buffer.byteLength(content), sha256 = sha(content);
+    value.tasks[3].content = { bytes, sha256 };
+    value.tasks[3].contentArtifact = { path: '/sealed/codemode-output', bytes, sha256 };
+    value.runtimeEvidence.get(value.rootId).resultContentSha256 = sha256;
+    const result = inspect(value);
+    assert.equal(result.status, 'passed', JSON.stringify(result.diagnostics));
+    assert.equal(inspectNotionAgentReadOnlyContainer(result.attempts[0], result, () => true).readOnly, false, mutate.toString());
+  }
+});
+
+test('codemode sandbox provenance never makes an arbitrary nested bash command readonly', () => {
+  const value = fixture();
+  value.child.name = value.tasks[1].toolName = value.tasks[2].toolName = value.message.details.calls[0].name = 'bash';
+  value.child.arguments = { command: 'touch /owned/changed' };
+  value.tasks[1].inputSha256 = argsHash(value.child.arguments); value.tasks[1].selectors = {};
+  const result = inspect(value);
+  assert.equal(result.status, 'passed'); assert.equal(result.containers[0].complete, true);
+  const proof = inspectNotionAgentReadOnlyContainer(result.attempts[0], result, child => child.name === 'read');
+  assert.equal(proof.readOnly, false); assert.deepEqual(proof.unreviewed, [value.childId]);
 });

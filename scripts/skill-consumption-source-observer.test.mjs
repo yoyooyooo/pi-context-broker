@@ -452,3 +452,24 @@ test('legacy unmatched starts remain readable without inventing lifecycle receip
   assert.equal(actual.complete,true);assert.deepEqual(actual.errors,[]);assert.equal(actual.unmatchedChildLifecycle,null);
   assert.equal(actual.events.at(-1).unmatchedChildren,1);
 });
+
+
+test('directory inventory proof is attached to the actual passive child ledger without changing output or privacy', async t => {
+  const { captureDirectoryInventorySpawn } = await import('./notion-agent-inventory-evidence.mjs');
+  const item = fixture(), cwd = fs.realpathSync(item.base), env = { PATH: '/bin:/usr/bin', SOURCE_TEST_SECRET: secret };
+  const expected = await localChild('/bin/bash', ['-c', 'pwd'], { cwd, env }).closed;
+  const original = cp.spawn, observer = observe(item, { captureDirectoryInventorySpawn }); t.after(observer.finish);
+  const actual = await localChild('/bin/bash', ['-c', 'pwd'], { cwd, env }).closed;
+  await localChild('/bin/bash', ['-c', 'pwd'], { cwd, env: { ...env, BASH_ENV: '/unreviewed/startup' } }).closed;
+  observer.finish();
+  assert.deepEqual(actual, expected); assert.equal(cp.spawn, original);
+  const trace = await readSourceObservation(item.output), starts = trace.events.filter(row => row.phase === 'unmatched_child_start');
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []); assert.equal(starts.length, 2);
+  assert.equal(starts[0].directoryInventory.kind, 'bounded-directory-inventory');
+  assert.equal(starts[0].directoryInventory.cwd, cwd);
+  assert.equal(starts[1].directoryInventory, undefined);
+  const close = trace.events.find(row => row.phase === 'unmatched_child_close' && row.childId === starts[0].childId);
+  assert.equal(close.directoryInventoryUnchanged, true);
+  assert.equal(starts[0].transport, 'unknown');
+  assert.equal(fs.readFileSync(item.output, 'utf8').includes(secret), false);
+});

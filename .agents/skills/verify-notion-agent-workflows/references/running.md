@@ -283,6 +283,16 @@ fixture 的 `visible` 是自有过滤 View 的唯一成员，`target` 初始 Dis
 正确答案均不足以通过。两轮只作元数据发现，不采用或暴露目标正文；刷新前后的任务选择
 保持一致。本场景没有预先采用其他 Skill，已有完整 root/Requires 的保护另由对应状态回归验证。
 
+## 当前模型与工具证据
+
+daily 和 no-native-skills 使用正常模型的实际 API 配置，包含模型级覆盖。当前自然观察器支持 Node Undici 上的 `openai-completions` 和 `openai-responses`，分别关联精确的 POST 路径。相同 origin 上的 MCP 请求独立计数。原始 payload 的字节、hash 与正文 oracle 保持原样；Responses 的 `input`、`reasoning.effort` 和 `function_call_output` 只在语义校验时投影。工具结果必须通过同一 payload 中更早的 function call 关联完整 native call ID、名称和原参数，不能截断 ID 猜归属。
+
+Responses 完成证据来自被动观察的完整 SSE `response.completed` 事件，并与实际 assistant/native response 的 ID、模型和 usage 核对。HTTP 200、Pi 退出成功或单独的 payload hash 都不能补足这个终态。观察器保留事件大小上限，只落盘终态标识与用量；压缩、截断、重复终态、缺失用量或未知协议保持未证明。它不替换 fetch、dispatcher、请求、响应或流，也不更改正常模型接口。
+
+工具参数关联保留原生参数。只有实际加载的 Pi runtime 与当次工具 schema 都有封存原件，且删除明确声明为可选、不可为 null 的顶层 null 字段后与执行输入完全相等，才记录这一转换；required、未知字段和非 null 差异仍失败。codemode 依赖受审的实际 bundled runtime、完整 native/direct 调用集合及终态，每个嵌套工具仍独立判断。持久化 store、图片和 spill 结果不计作透明只读容器。有限目录枚举还须绑定真实 shell 子进程、参数、cwd、启动环境、实际解析的程序与完整退出证据；工具名和命令文本不能单独证明无语义写。该证明不扩展为宿主或插件全部流量为零。
+
+复验通过 `retestOf` 关联首败。保留旧 session、Store、输入、业务读回及失败判定；缺失的协议原件不能事后补造。已执行的项目上下文或已被修改的独立管理 fixture 使用新的自有复验对象和目录；尚未完成的原 Source operation 继续沿原 Store、声明和身份恢复，不能重新创建操作替代它。
+
 ## 读回与清理
 
 readAgentFixture(bindings, alias, {version, key, state, properties, projection}) 独立读取实际状态并保存回执。state 为 present 或 absent；properties 只比较声明的 description/enabled/defaultContext；projection 可比较 same-as-baseline 或 absent。声明 expected 与观察 observed 必须分开。
