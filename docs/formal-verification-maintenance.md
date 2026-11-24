@@ -18,6 +18,11 @@
 
 既有 runner 先核 protected source bytes、固定 TLC 和完整 statechart 工具字节，再执行当前输入。缺工具、语法错误、工具异常、超时、cut、未检查规则和不完整结果均失败。读取报告和原 TLC 结果，不能只看退出码。
 
+正式 model runner 接受真实 Git checkout，或官方 paired command 的封存源码。
+无 `.git` 时，复用 CLI 的 `formal_source_identity.py` 校验 run/build manifest、原始
+commit、源清单及受保护源码、模型、配置和 runner 的实际字节。开发 overlay 不属于
+选中 build，仍被拒绝；不能补造 HEAD 或把开发回放当作最终候选证明。
+
 输出使用仓库外新建或预建的空绝对目录；mutation 输出自身须不存在。失败诊断保留在本轮输出，下次用新目录。真实 mutation 在隔离副本内要求 baseline 通过、行为断言失败、精确恢复后通过，并核 active checkout 未变；装配或解析错误不能代替行为检出。
 
 ## 变更复验
@@ -46,10 +51,14 @@ LibrarySession 复用 consumer-state runner，增加一个正例和十个故意�
 独立 oracle 保存原 A turn、A producer payload、parent branch 的 A 和旧 A pin，
 不从可变默认值反推预期结果。
 
-新模型的 `library_session_design` 先记录
-`design_contract_pending_implementation_binding`；真实 SDK3/session 守卫审阅、
-回归和 mutation 对应完成后才能更新 source hash 与该状态。具体 UUID/URL 入口、
-enabled Sources、多库同名实际字节和 Pi 序列化仍由消费/集成层核验。
+`library-selection.ts` 的 active branch、每次 input 本地选择、失败 blocked、
+publication ticket 与 command session 守卫，以及 `host-skills.ts` 的 running turn
+优先上下文，共对应六项 `library-*` 真实 mutation。coverage 只记录审阅过的字节与
+对应关系；模型和 mutation 是否通过，以同一候选实际保留的运行结果为准。
+
+有限模型只包含默认主 Library 与一个显式跨库调用。同轮多个 `$name@source`
+选择各自已配置的 Source，不改变默认；无 `@source` 名称只查当前默认 Library。
+这些组合、UUID/URL 入口、同名实际字节和 Pi 序列化由消费/集成层核验。
 CLI 根身份、四表物理 parent、root CREATE 与原 pending 寻址沿其 LibraryLifecycle，
 不在 Broker 复制一个初始化协议。
 

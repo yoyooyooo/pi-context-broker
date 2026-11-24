@@ -7,6 +7,75 @@ import { createHash } from "node:crypto";
 
 const cases = [
   {
+    "name": "library-each-input-default",
+    "file": "src/library-selection.ts",
+    "old": "accept: (ctx: ExtensionContext) => capture(ctx, true),",
+    "replacement": "accept: (ctx: ExtensionContext) => capture(ctx, false),",
+    "test": "library-selection.test.ts",
+    "pattern": "every input rereads local default",
+    "properties": [
+      "NextTurnUsesSelectedLibrary"
+    ]
+  },
+  {
+    "name": "library-blocked-request",
+    "file": "src/library-selection.ts",
+    "old": "if (selection.status === \"blocked\") throw failure(selection.code);",
+    "replacement": "void selection.status;",
+    "test": "library-selection.test.ts",
+    "pattern": "requested B is visible before verification and failure blocks defaults",
+    "properties": [
+      "FailedSwitchStopsRequestedFlow"
+    ]
+  },
+  {
+    "name": "library-directory-ticket",
+    "file": "src/library-selection.ts",
+    "old": "return captured === undefined || captured.key === libraryContext(capture({ ...ctx, [contextKey]: undefined }))!.key;",
+    "replacement": "return true;",
+    "test": "library-selection.test.ts",
+    "pattern": "accepted A context and publication identity survive",
+    "properties": [
+      "DirectoryPublicationUsesTicket"
+    ]
+  },
+  {
+    "name": "library-command-session",
+    "file": "src/library-selection.ts",
+    "old": "const current = () => requested === generation && session === ctx.sessionManager?.getSessionId?.();",
+    "replacement": "const current = () => true;",
+    "test": "library-selection.test.ts",
+    "pattern": "late B verification cannot append or publish into a different session",
+    "properties": [
+      "BranchSelectionIsRestored",
+      "DirectoryPublicationUsesTicket"
+    ]
+  },
+  {
+    "name": "library-latest-branch-entry",
+    "file": "src/library-selection.ts",
+    "old": "filter(entry => entry.customType === LIBRARY_SELECTION_ENTRY).at(-1);",
+    "replacement": "filter(entry => entry.customType === LIBRARY_SELECTION_ENTRY).at(0);",
+    "test": "library-selection.test.ts",
+    "pattern": "fork, rewind, resume and reset follow only active branch Library entries",
+    "properties": [
+      "BranchSelectionIsRestored",
+      "NextTurnUsesSelectedLibrary"
+    ]
+  },
+  {
+    "name": "library-running-turn-context",
+    "file": "src/host-skills.ts",
+    "old": "inheritLibraryContext(ctx, runningContext ?? gate.active?.ctx ?? acceptedContext);",
+    "replacement": "inheritLibraryContext(ctx, gate.active?.ctx ?? acceptedContext);",
+    "test": "skill-guidance.test.ts",
+    "pattern": "ordinary accepted turns freeze CLI Library scope across a later successful or failed switch",
+    "properties": [
+      "AdmittedTurnKeepsLibrary",
+      "SelectionDoesNotCancelTurn"
+    ]
+  },
+  {
     "name": "fixed-resource-path-binding",
     "file": "src/session-short-ref.ts",
     "old": "return JSON.stringify([\"resource\", value.owner, value.path]);",

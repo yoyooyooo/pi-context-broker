@@ -42,8 +42,18 @@ separate transitions. `SessionFlowEventuallyExplained` assumes started actions
 and external observations terminate under weak fairness. A rejection is an
 explained outcome; this is not eventual service availability or provider success.
 
-`coverage.json` currently marks this new slice as
-`design_contract_pending_implementation_binding`. Its production hashes and
-mutation anchors remain unchanged until the SDK3/session guards are reviewed.
-Concrete URL/UUID normalization, enabled Source routing, actual Pi branch
+The concrete owner is `library-selection.ts`: active-branch reduction, fresh
+input admission, local default capture, remote root verification, failed-switch
+blocking and publication identity. `host-skills.ts` retains the admitted context
+for the running turn independently of content preparation and queued input.
+Six `library-*` mutations in `check-consumer-state-mutations.mjs` remove these
+actual guards. Each requires an unmodified passing baseline, an assertion-level
+behavior failure, and a passing replay after exact restoration. Coverage hashes
+record reviewed correspondence; the retained run reports establish execution.
+
+The model covers the primary branch default and one explicit cross-Library call.
+It does not enumerate multiple explicit `$name@source` invocations in one turn.
+Those names select configured Sources and keep each actual root/full reference;
+unqualified names use only the selected default. Concrete UUID/URL parsing,
+enabled Source routing, mixed Prompt/Skill injection, actual Pi branch
 serialization and installed CLI arguments remain separate implementation checks.
