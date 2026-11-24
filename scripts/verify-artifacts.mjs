@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from "no
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { verifyPackageClosure, verifyBundledNotices, verifyBundledRuntime } from "./verify-package-closure.mjs";
+import { verifyPackageClosure, verifyBundledNotices, verifyBundledRuntime, packageInstallationEnvironment } from "./verify-package-closure.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
@@ -22,6 +22,7 @@ assert.equal(fixture.version, 2);
 assert.equal(fixture.kind, "current-notion-service");
 assert.ok(!("snapshots" in fixture), "Historical seeded fixtures are retired");
 const selectedEntry = process.env.NTN_SKILLS_BUILD_ENTRY;
+const downloads = { cache: process.env.npm_config_cache, proxy: process.env.HTTPS_PROXY || process.env.HTTP_PROXY };
 assert.ok(selectedEntry && isAbsolute(selectedEntry), "NTN_SKILLS_BUILD_ENTRY must select the current paired CLI");
 const base = await realpath(await mkdtemp(join(tmpdir(), "broker-artifacts-")));
 console.log("Artifact workspace retained: " + base);
@@ -110,7 +111,7 @@ try {
     archive = join(output, archives[0]);
   }
   assert.deepEqual(await selectedBuildInput(selectedEntry), selected, "Build input changed while packaging");
-  const closure = await verifyPackageClosure({ brokerArchive: archive, base: join(base, "strict-closure") });
+  const closure = await verifyPackageClosure({ brokerArchive: archive, base: join(base, "strict-closure"), downloads });
   const installed = closure.installed;
   const metadata = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
   report.package = { name: metadata.name, version: metadata.version, installed, archive: await identity(archive) };
@@ -142,8 +143,7 @@ try {
   await writeFile(join(loader, "package.json"), JSON.stringify({ name: "current-broker-loader", private: true }));
   const loaderHome = join(loader, "home");
   await mkdir(loaderHome);
-  const loaderEnv = { PATH: dirname(process.execPath) + ":/usr/bin:/bin:/usr/sbin:/sbin",
-    HOME: loaderHome, TMPDIR: base, LANG: "en_US.UTF-8" };
+  const loaderEnv = packageInstallationEnvironment({ home: loaderHome, base, ...downloads });
   run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact",
     "@earendil-works/pi-coding-agent@1.5.2"], { cwd: loader, env: loaderEnv });
   const piPackage = join(loader, "node_modules/@earendil-works/pi-coding-agent/package.json");

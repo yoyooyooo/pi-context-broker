@@ -5,7 +5,25 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { verifyBundledNotices, verifyBundledRuntime } from './verify-package-closure.mjs';
+import { verifyBundledNotices, verifyBundledRuntime, packageInstallationEnvironment } from './verify-package-closure.mjs';
+
+test('installation transport reaches an actual child without importing host credentials or loaders', () => {
+  const options = { home: '/owned/empty-home', base: '/owned/tmp', cache: '/owned/public-npm-cache', proxy: 'http://127.0.0.1:17893',
+    NOTION_API_TOKEN: 'fixture-secret', NODE_OPTIONS: '--import=/untrusted/loader.mjs', NODE_PATH: '/untrusted/modules' };
+  const result = spawnSync(process.execPath, ['-e', 'process.stdout.write(JSON.stringify(process.env))'], {
+    encoding: 'utf8', env: packageInstallationEnvironment(options),
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const observed = JSON.parse(result.stdout);
+  assert.equal(observed.HOME, options.home);
+  assert.equal(observed.npm_config_cache, options.cache);
+  assert.equal(observed.npm_config_https_proxy, options.proxy);
+  assert.equal(observed.npm_config_prefer_offline, 'true');
+  for (const key of ['NOTION_API_TOKEN', 'NODE_OPTIONS', 'NODE_PATH']) assert.equal(observed[key], undefined);
+  for (const proxy of ['http://user:secret@localhost:7890', 'socks5://localhost:7890', 'https://proxy.example/path', 'https://proxy.example/?token=secret'])
+    assert.throws(() => packageInstallationEnvironment({ ...options, proxy }));
+  assert.throws(() => packageInstallationEnvironment({ ...options, cache: 'relative/cache' }));
+});
 
 test('packaged notices retain the complete selected CLI original and its frozen hash', () => {
   const original = Buffer.from('# Third-party notices\nCopyright © Example\nAll conditions retained.\n');

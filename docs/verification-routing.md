@@ -44,6 +44,8 @@ C01–C11/T01–T23、单一 owner 与实际入口由 CLI `verification/skill-do
 
 当前源码直接运行 `bun run check:broker`；安装直接复用 `scripts/verify-artifacts.mjs` 与 `scripts/verify-notion-sdk-installed.mjs`。实际 Pi 沿 `scripts/notion-sdk-pi.mjs` 和 `scripts/verify-pi-daily-installation.mjs` 的公开动作；`scripts/verify-pi-daily-candidate.mjs` 仅是后者导入的实现模块。旧双宿主controller及CLI fixture/UI/PTY入口已退役，没有新的包装runner。原生终端专项本轮未验收。
 
+独立安装检查允许 npm 子进程使用本次运行显式提供的 `npm_config_cache` 公共下载缓存，以及 `HTTPS_PROXY` / `HTTP_PROXY` 中无凭据的 HTTP(S) 代理。缓存只存下载数据，安装仍从归档重新建立依赖。运行时消费检查使用空 HOME，不继承这些安装设置、用户凭据、`NODE_OPTIONS` 或 `NODE_PATH`。安装后的公开 import schema 必须使用根页面 `--library`，不得保留旧 `--entry`。
+
 报告绑定合同/场景/run、实际命令、源码/dirty tree、loaded CLI/SDK/Broker 路径与 hash、机器/runtime、初态及原始日志 hash。复用现有 summary/result；同一原件不因多票引用重复计数。按配对 CLI 的 `verification/run-receipt.mjs` 检查薄回执；receipt-valid 只代表字段正确，不认证底层行为。failed/blocked/not_run 保留，首败和 retest_of 分开。源码测试、受控 HTTP、独立安装、真实 Notion、Pi 会话、provider/model 分别判断。安装入口不启动 Pi；真实日用沿 AH-1197/AH-637/AH-1198 验当前配对，AH-1063 只保留历史范围。OMP/Tern 延期，不作为当前 Pi 主线的默认前置。
 
 Skill 作者执行与独立冷启动评估分开；未完成后者时标明 `instruction_evaluation:not_run`，不把结构测试称为 agent 使用成功。清理只处理本轮进程和自有绝对路径，经系统 Trash；不动用户会话、全局配置或未结清的当前 operation Store。

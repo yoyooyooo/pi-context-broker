@@ -57,16 +57,35 @@ export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, refBytes, e
   assert.equal(manifest.ref_sha256, hashes.ref, "Bundled reference bytes do not match the frozen runtime manifest");
   return hashes;
 }
-export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest, base }) {
+export function packageInstallationEnvironment({ home, base, cache, proxy }) {
+  const env = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: home, TMPDIR: base, LANG: "en_US.UTF-8" };
+  if (cache !== undefined) {
+    assert.ok(isAbsolute(cache), "An installation download cache must be an absolute path");
+    env.npm_config_cache = cache;
+    env.npm_config_prefer_offline = "true";
+  }
+  if (proxy) {
+    const url = new URL(proxy);
+    assert.ok(["http:", "https:"].includes(url.protocol) && !url.username && !url.password
+      && url.pathname === "/" && !url.search && !url.hash, "The installation proxy must be a credential-free HTTP(S) origin");
+    env.npm_config_proxy = url.origin;
+    env.npm_config_https_proxy = url.origin;
+  }
+  return env;
+}
+export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest, base, downloads = {} }) {
   base ??= await mkdtemp(join(tmpdir(), "broker-strict-closure-"));
   await mkdir(base, { recursive: true });
   const home = join(base, "home");
   await mkdir(home, { recursive: true });
   // No user npm config, NODE_PATH, NODE_OPTIONS, alternate CLI or host helper.
   const env = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: home, TMPDIR: base, LANG: "en_US.UTF-8" };
+  // Only npm gets the selected public download cache/transport. Runtime checks
+  // retain the empty HOME and do not inherit either these settings or the host.
+  const installEnv = packageInstallationEnvironment({ home, base, ...downloads });
   const receipts = [];
   async function run(argv, cwd, expectedExit = 0) {
-    const result = spawnSync(argv[0], argv.slice(1), { cwd, env, encoding: "utf8", timeout: 360_000, maxBuffer: 32 * 1024 * 1024 });
+    const result = spawnSync(argv[0], argv.slice(1), { cwd, env: argv[0] === "npm" ? installEnv : env, encoding: "utf8", timeout: 360_000, maxBuffer: 32 * 1024 * 1024 });
     const receipt = { argv, cwd, status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "", error: result.error?.message };
     receipts.push(receipt);
     await writeFile(join(base, "commands.json"), JSON.stringify(receipts, null, 2) + "\n");
@@ -172,7 +191,7 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
     assert.deepEqual(currentImport.command, ["ctl", "library", "import"]);
     for (const [name, kind, type, required] of [
       ["input", "argument", "string", true],
-      ["entry", "flag", "string", true],
+      ["library", "flag", "string", true],
       ["skill-id", "flag", "string", true],
       ["operation", "flag", "string", false],
       ["resume", "flag", "boolean", false],
@@ -185,6 +204,7 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
       assert.deepEqual(parameter && { kind: parameter.kind, type: parameter.type, required: parameter.required },
         { kind, type, required }, `${label}: current Skill import parameter ${name} has an invalid schema`);
     }
+    assert.ok(!currentImport.schema.parameters.some(parameter => parameter.name === "entry"), `${label}: retired table-entry selection must not remain available`);
     // These public fallbacks must resolve package resources with an empty HOME,
     // outside the checkout and without a global CLI or installed central Skills.
     const catalog = await cli(["ctl", "builtin", "list"]);
@@ -217,5 +237,6 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [brokerArchive, ternArchive, brokerManifest] = process.argv.slice(2);
   assert.ok(brokerArchive, "Usage: node scripts/verify-package-closure.mjs BROKER.tgz [TERN.tar.gz] [dependency-only-package.json]");
-  await verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest });
+  await verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest,
+    downloads: { cache: process.env.npm_config_cache, proxy: process.env.HTTPS_PROXY || process.env.HTTP_PROXY } });
 }
