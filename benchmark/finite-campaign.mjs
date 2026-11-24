@@ -7,10 +7,11 @@ import { readCampaignHistory } from './campaign-history.mjs';
 import { isProspectiveCohort, assertCohortModelEvidence, scopeModelIdentity, scopeEnvironmentIdentity } from './prospective-cohort.mjs';
 import { assertScopePlan, readPilotScopeAmendment, readScopeCompletedResults } from './pilot-scope.mjs';
 import { readEvidenceBundle } from './evidence/store.mjs';
-import { scheduleProtocol as expectedSchedule, declaredSchedule, UNSTARTED_FOLLOWUP, assertFollowupSelection } from './campaign-selection.mjs';
+import { scheduleProtocol as expectedSchedule, declaredSchedule, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION, selectsUnstartedSlots, assertFollowupSelection } from './campaign-selection.mjs';
 import { readApprovedCampaign, approvedCampaignBinding, assertApprovedCampaignBinding } from './approved-campaign.mjs';
 import { readAliasRevisionStop, assertRetainedAliasEpisode } from './campaign-alias-revision.mjs';
 import { readHistoryExtension } from './campaign-history-extension.mjs';
+import { readPartialConfirmationHistory, assertConfirmationContinuation, assertContinuationModels } from './campaign-confirmation-continuation.mjs';
 
 export const FINITE_CAMPAIGN = 'benchmark-finite-campaign';
 export const isFiniteCampaign = value => value?.kind === FINITE_CAMPAIGN;
@@ -54,15 +55,15 @@ async function noLeases(execution) {
 export function finiteCampaignPolicy(input, { scheduledEpisodes } = {}) {
   if (!input) return undefined;
   assert.equal(input.kind, FINITE_CAMPAIGN); assert.ok(safe(input.id));
-  assert.ok(['route_gate_only', 'acceptance', UNSTARTED_FOLLOWUP].includes(input.role), 'FINITE_ROLE');
+  assert.ok(['route_gate_only', 'acceptance', UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION].includes(input.role), 'FINITE_ROLE');
   assert.ok(Number.isSafeInteger(scheduledEpisodes) && scheduledEpisodes > 0 && scheduledEpisodes <= 144, 'FINITE_SCHEDULE_COUNT');
   if (input.role === 'route_gate_only') assert.equal(scheduledEpisodes, 8, 'FINITE_GATE_REQUIRES_EIGHT');
-  if (input.role === UNSTARTED_FOLLOWUP) {
+  if (selectsUnstartedSlots(input.role)) {
     assertFollowupSelection(input.selection); assert.equal(input.selection.slot_ids.length, scheduledEpisodes, 'FOLLOWUP_SELECTION_COUNT');
   } else assert.equal(input.selection, undefined, 'FOLLOWUP_SELECTION_ROLE_REQUIRED');
   return { version: 1, kind: FINITE_CAMPAIGN, id: input.id, role: input.role, reservation_limit: scheduledEpisodes,
     max_scheduled_episodes: 144, history_quality: 'excluded_retained_in_campaign_costs', new_unknown_usage: 'stop_scope',
-    ...(input.role === UNSTARTED_FOLLOWUP ? { selection: structuredClone(input.selection) } : {}) };
+    ...(selectsUnstartedSlots(input.role) ? { selection: structuredClone(input.selection) } : {}) };
 }
 
 function assertProtocolExecution({ protocol, execution, slots }) {
@@ -85,6 +86,7 @@ function assertProtocolExecution({ protocol, execution, slots }) {
   assert.equal(budget.episode.max_retries, 0, 'FINITE_RETRY_FORBIDDEN'); assert.equal(budget.batch.max_concurrency, 1);
   assert.ok(protocol.models.every(model => model.routing), 'FINITE_ROUTING_REQUIRED');
   if (policy.role === UNSTARTED_FOLLOWUP) assert.equal(protocol.phase, 'pilot', 'FOLLOWUP_PILOT_ONLY');
+  if (policy.role === CONFIRMATION_CONTINUATION) assert.equal(protocol.phase, 'confirmation', 'CONFIRMATION_CONTINUATION_PHASE');
   if (policy.role === 'route_gate_only') {
     assert.equal(protocol.phase, 'pilot'); assert.equal(protocol.purpose, 'native_calibration');
     assert.equal(protocol.models.length, 1); assert.equal(protocol.environments.length, 2); assert.equal(protocol.conditions.length, 2);
@@ -129,9 +131,9 @@ function assertShape(value) {
   exactKeys(value, ['version', 'kind', 'id', 'role', 'authorization', 'registered_at', 'predecessor', 'environment_root', 'pilot_ledger_root',
     'max_scheduled_episodes', 'reservation_limit', 'history', 'history_exemption', 'model_conditions', 'environment_conditions', 'models_sha256',
     'instrumentation', 'observer_version', 'plan', 'amendment_sha256',
-    ...(value.version === 2 ? ['prospective_authorization'] : []), ...(value.role === UNSTARTED_FOLLOWUP ? ['selection'] : [])], 'FINITE_AMENDMENT_SHAPE');
+    ...(value.version === 2 ? ['prospective_authorization'] : []), ...(selectsUnstartedSlots(value.role) ? ['selection'] : [])], 'FINITE_AMENDMENT_SHAPE');
   assert.ok([1, 2].includes(value.version)); assert.equal(value.kind, FINITE_CAMPAIGN); assert.ok(safe(value.id));
-  if (value.role === UNSTARTED_FOLLOWUP) assert.equal(value.version, 2, 'FOLLOWUP_APPROVAL_REQUIRED');
+  if (selectsUnstartedSlots(value.role)) assert.equal(value.version, 2, 'FOLLOWUP_APPROVAL_REQUIRED');
   assert.equal(value.amendment_sha256, fingerprint({ ...value, amendment_sha256: null }), 'FINITE_AMENDMENT_CHANGED');
   assert.ok(typeof value.authorization === 'string' && value.authorization.trim()); assert.ok(Number.isFinite(Date.parse(value.registered_at)));
   assert.ok(canonicalPath(value.environment_root) && canonicalPath(value.pilot_ledger_root)); assert.equal(value.max_scheduled_episodes, 144);
@@ -201,12 +203,16 @@ async function materialIdentities(protocol, execution) {
 // Detect known exposure from owned historical protocol/binding identities. This
 // is not a claim about unknown training data, unseen content elsewhere, or OS
 // isolation; seal/open and subject-visible material audits remain separate.
-async function assertConfirmationUnexposed(protocol, execution, history) {
+async function assertConfirmationUnexposed(protocol, execution, history, continuedSource) {
   if (protocol.phase !== 'confirmation') return;
   const current = new Set(await materialIdentities(protocol, execution));
   for (const entry of history.plans) {
     const plan = await verified(entry.plan);
     const identities = await materialIdentities(plan.protocol, plan.execution);
+    if (continuedSource && fingerprint(entry.plan) === fingerprint(continuedSource)) {
+      assert.deepEqual(sorted([...current]), sorted([...new Set(identities)]), 'CONFIRMATION_CONTINUATION_MATERIAL_CHANGED');
+      continue;
+    }
     assert.ok(!identities.some(value => current.has(value)), 'FINITE_CONFIRMATION_KNOWN_MATERIAL_EXPOSURE');
   }
 }
@@ -219,9 +225,10 @@ async function assertHistoricalPlan(plan) {
   if (plan.protocol.policies.campaign || plan.execution.campaign_scope) {
     assert.ok(isFiniteCampaign(plan.protocol.policies.campaign) && isFiniteCampaign(plan.execution.campaign_scope), 'FINITE_HISTORY_TYPED_SCOPE_REQUIRED');
     const amendment = await shallowFinite(plan.execution.campaign_scope.amendment);
-    assertFiniteCampaignPlan(plan, amendment); await assertConfirmationUnexposed(plan.protocol, plan.execution, amendment.history);
-    if (amendment.version === 2) await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment,
-      await readApprovedCampaign(amendment.prospective_authorization.reference));
+    assertFiniteCampaignPlan(plan, amendment);
+    const continuedSource = amendment.version === 2 ? await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment,
+      await readApprovedCampaign(amendment.prospective_authorization.reference)) : undefined;
+    await assertConfirmationUnexposed(plan.protocol, plan.execution, amendment.history, continuedSource);
   } else assert.equal(plan.protocol.phase, 'pilot', 'FINITE_HISTORY_UNREGISTERED_NONPILOT');
 }
 
@@ -316,6 +323,14 @@ export async function readAcceptedHistoryExtension({ parentAuthorization, userAp
   return extension.history;
 }
 
+/** Bootstrap only the newly accepted closed confirmation prefix. Ordinary
+ * history and per-reservation checks retain all later stop/unknown guards. */
+export async function readAcceptedConfirmationContinuation({ parentAuthorization, userApproval, predecessor, planFiles, pilotLedgerRoot }) {
+  const parent = await readApprovedCampaign(parentAuthorization);
+  return (await readPartialConfirmationHistory({ parent, parentReference: parentAuthorization, userApproval,
+    predecessor, planFiles, pilotLedgerRoot, currentBoundary: true })).history;
+}
+
 function assertPrefix(current, expected) {
   assert.ok(current.scheduled_episodes >= expected.scheduled_episodes);
   for (const key of ['reservations', 'episodes']) assert.deepEqual(current[key].slice(0, expected.scheduled_episodes), expected[key], 'FINITE_HISTORY_PREFIX_CHANGED');
@@ -378,7 +393,7 @@ async function authorizedScope(value, context) {
   if (!context.authorized) context.authorized = await readApprovedCampaign(binding.reference);
   if (context.reference && fingerprint(binding.reference) !== fingerprint(context.reference)) {
     const next = await readApprovedCampaign(binding.reference);
-    assert.ok([2, 3].includes(next.value.version), 'APPROVAL_LINEAGE_CHANGED');
+    assert.ok([2, 3, 4].includes(next.value.version), 'APPROVAL_LINEAGE_CHANGED');
     assert.deepEqual(next.value.revision.parent_authorization, context.reference, 'APPROVAL_LINEAGE_CHANGED');
     assert.deepEqual(value.predecessor, next.value.predecessor, 'APPROVAL_REVISION_PREDECESSOR_CHANGED');
     if (next.value.version === 2)
@@ -392,6 +407,18 @@ async function authorizedScope(value, context) {
   const allocation = authorized.value.allocations.find(item => item.id === binding.allocation_id);
   assert.equal(value.id, allocation.id, 'APPROVAL_SCOPE_ID_CHANGED'); assert.equal(value.role, allocation.role, 'APPROVAL_SCOPE_ROLE_CHANGED');
   assert.ok(value.reservation_limit <= allocation.reservation_limit, 'APPROVAL_ALLOCATION_LIMIT');
+  if (value.role === CONFIRMATION_CONTINUATION) assert.equal(authorized.value.version, 4, 'CONFIRMATION_CONTINUATION_AUTHORITY_REQUIRED');
+  if (authorized.value.version === 4) {
+    assert.equal(value.reservation_limit, allocation.reservation_limit, 'CONFIRMATION_CONTINUATION_EXACT_ALLOCATION_REQUIRED');
+    const index = authorized.value.allocations.findIndex(item => item.id === allocation.id);
+    if (index === 0) assert.deepEqual(value.predecessor, authorized.value.predecessor, 'CONFIRMATION_CONTINUATION_INITIAL_PREDECESSOR_CHANGED');
+    else {
+      const predecessor = await shallowFinite(value.predecessor.amendment), registration = await verified(value.predecessor.registration);
+      assert.equal(predecessor.id, authorized.value.allocations[index - 1].id, 'CONFIRMATION_CONTINUATION_ALLOCATION_ORDER');
+      assert.equal(registration.id, predecessor.id); assert.deepEqual(registration.amendment, value.predecessor.amendment);
+      assert.deepEqual(predecessor.prospective_authorization.reference, binding.reference, 'CONFIRMATION_CONTINUATION_PREDECESSOR_AUTHORITY_CHANGED');
+    }
+  }
   assert.equal(value.environment_root, authorized.value.environment_root); assert.equal(value.pilot_ledger_root, authorized.value.pilot_ledger_root);
   assertPrefix(value.history, authorized.value.history);
   assert.ok(!context.allocations.has(allocation.id), 'APPROVAL_ALLOCATION_REUSED'); context.allocations.add(allocation.id);
@@ -399,7 +426,9 @@ async function authorizedScope(value, context) {
 }
 
 async function assertAuthorizedProtocol(protocol, execution, slots, value, authorized) {
-  if (!authorized) return;
+  if (!authorized) { assert.notEqual(value.role, CONFIRMATION_CONTINUATION, 'CONFIRMATION_CONTINUATION_AUTHORITY_REQUIRED'); return; }
+  if (authorized.value.version === 4) assertContinuationModels(protocol, authorized);
+  if (value.role === CONFIRMATION_CONTINUATION) return assertConfirmationContinuation(protocol, execution, slots, value, authorized);
   const allocation = authorized.value.allocations.find(item => item.id === value.prospective_authorization.allocation_id);
   const work = authorized.proposal.work[allocation.work_index];
   if (work.route) {
@@ -466,8 +495,8 @@ export async function verifyAuthorizedHistoryPlan(plan, amendment, authorized, r
   assertFiniteCampaignPlan(plan, amendment);
   assert.deepEqual(amendment.prospective_authorization,
     approvedCampaignBinding(reference, authorized.value, amendment.id), 'HISTORY_EXTENSION_SCOPE_AUTHORITY_CHANGED');
-  await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment, authorized);
-  await assertConfirmationUnexposed(plan.protocol, plan.execution, amendment.history);
+  const continuedSource = await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment, authorized);
+  await assertConfirmationUnexposed(plan.protocol, plan.execution, amendment.history, continuedSource);
 }
 
 // Walk immutable amendment links once. The outer history read verifies all raw
@@ -521,12 +550,12 @@ export async function prepareFiniteCampaign({ setup, protocol, execution, slots,
     instrumentation: structuredClone(execution.instrumentation), observer_version: protocol.policies.evidence.observer_version,
     plan: planBinding(protocol, execution, slots), amendment_sha256: null,
     ...(prospective ? { prospective_authorization: prospective } : {}),
-    ...(input.role === UNSTARTED_FOLLOWUP ? { selection: structuredClone(input.selection) } : {}) };
+    ...(selectsUnstartedSlots(input.role) ? { selection: structuredClone(input.selection) } : {}) };
   value.amendment_sha256 = fingerprint(value); assertShape(value);
   const authorized = await authorizedScope(value, context);
   await predecessorRegistration(value, previous); await assertPredecessorComplete(value, previous, authorized);
-  await assertAuthorizedProtocol(protocol, execution, slots, value, authorized);
-  await assertConfirmationUnexposed(protocol, execution, history); await noLeases(execution);
+  const continuedSource = await assertAuthorizedProtocol(protocol, execution, slots, value, authorized);
+  await assertConfirmationUnexposed(protocol, execution, history, continuedSource); await noLeases(execution);
   return value;
 }
 
@@ -556,9 +585,9 @@ export async function verifyFiniteCampaignScope(plan, options = {}) {
   const registration = plan.execution.campaign_scope;
   if (!registration) { assert.equal(plan.protocol.policies.campaign, undefined); return null; }
   const amendment = await readFiniteCampaignAmendment(registration.amendment); assertFiniteCampaignPlan(plan, amendment);
-  if (amendment.version === 2) await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment,
-    await readApprovedCampaign(amendment.prospective_authorization.reference));
-  await assertConfirmationUnexposed(plan.protocol, plan.execution, amendment.history);
+  const continuedSource = amendment.version === 2 ? await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment,
+    await readApprovedCampaign(amendment.prospective_authorization.reference)) : undefined;
+  await assertConfirmationUnexposed(plan.protocol, plan.execution, amendment.history, continuedSource);
   const all = await reservations(amendment.pilot_ledger_root);
   assert.deepEqual(all.slice(0, amendment.history.scheduled_episodes).map(({ ordinal, reference }) => ({ ordinal, reference })), amendment.history.reservations, 'FINITE_HISTORY_RESERVATION_CHANGED');
   const current = all.slice(amendment.history.scheduled_episodes);
