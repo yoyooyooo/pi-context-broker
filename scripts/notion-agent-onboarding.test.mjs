@@ -205,7 +205,7 @@ console.log(JSON.stringify({ok:true,...result}));\n`);
 
 const pairedCliSource = process.env.PAIRED_CLI_SOURCE ?? (process.env.CONTEXT_BROKER_GRAPH_CORE ? resolve(process.env.CONTEXT_BROKER_GRAPH_CORE, '../../..') : null);
 test('the installed CLI grader reads complete current HTTP pagination, long text, binary and empty files', {
-  skip: !(process.env.NTN_SKILLS_BUILD_ENTRY && pairedCliSource) && 'Requires the paired installed CLI and its source fixture', timeout: 240000,
+  skip: !(process.env.NTN_SKILLS_BUILD_ENTRY && pairedCliSource) && 'Requires the paired installed CLI and its source fixture', timeout: 420000,
 }, async t => {
   const base = await realpath(await mkdtemp(join(tmpdir(), 'onboarding-installed-grader-'))); t.diagnostic('Retained installed grader evidence: ' + base);
   const fixtureRoot = join(base, 'fixture');
@@ -224,9 +224,8 @@ test('the installed CLI grader reads complete current HTTP pagination, long text
   const env = { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: join(root, 'tmp'), PAIRED_RUN_ROOT: root, PAIRED_CLI_ENTRY: cli,
     NTN_SKILLS_HOME: join(root, 'state/cli'), NTN_SKILLS_CACHE_HOME: join(root, 'cache/cli'), NTN_SKILLS_CONFIG_HOME: join(root, 'config/cli'),
     NTN_SKILLS_DATA_HOME: join(root, 'data/cli'), NTN_SKILLS_SCHEDULER_ROOT: join(root, 'state/scheduler'),
-    // The loopback fixture validates complete bytes and topology, not production rate limits.
-    NTN_SKILLS_NOTION_INTERVAL_MS: "1", NOTION_API_TOKEN: fixtureEnv.NOTION_API_TOKEN, NOTION_API_BASE_URL: service.origin };
-  await execute(process.execPath, ['--input-type=module', '--eval', `const m=await import(${JSON.stringify(new URL('./notion-agent-onboarding-runtime.mjs', import.meta.url).href)});await m.runOnboardingGrader(process.argv[1]);`, input], { env, timeout: 210000 });
+    NTN_SKILLS_NOTION_INTERVAL_MS: fixtureEnv.NTN_SKILLS_NOTION_INTERVAL_MS, NOTION_API_TOKEN: fixtureEnv.NOTION_API_TOKEN, NOTION_API_BASE_URL: service.origin };
+  await execute(process.execPath, ['--input-type=module', '--eval', `const m=await import(${JSON.stringify(new URL('./notion-agent-onboarding-runtime.mjs', import.meta.url).href)});await m.runOnboardingGrader(process.argv[1]);`, input], { env, timeout: 390000 });
   const result = JSON.parse(await readFile(join(root, 'readback.json'), 'utf8'));
   assert.equal(result.status, 'read_back'); assert.equal(result.complete, true); assert.equal(result.skills.length, 1);
   assert.equal(result.skills[0].files.length, fixture.expected.file_count);
