@@ -34,7 +34,7 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
     const adapters = fixtures.map((fixture, index) => {
       const kind = kinds[index]!, consume = fixture.state.consume.bind(fixture.state);
       return {
-        database: fixture.source.database,
+        library: fixture.source.library,
         list(options: { directory?: unknown; defaultView?: boolean; view?: string }) {
           if (faults[kind] === "discovery-denied") throw { code: "ACCESS_DENIED" };
           const catalog = faults[kind] === "removed" ? { ...fixture.state.catalog, records: [], count: 0 } : fixture.state.catalog;
@@ -70,13 +70,13 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
         },
       };
     });
-    const adapter = (database?: string) => {
-      const found = adapters.find(value => value.database === database);
+    const adapter = (library?: string) => {
+      const found = adapters.find(value => value.library === database);
       assert.ok(found, "SDK must preserve the selected source database");
       return found;
     };
-    primary.state.list = options => adapter(options.database).list(options);
-    primary.state.consume = (input, options) => adapter(options.database).consume(input, options);
+    primary.state.list = options => adapter(options.library).list(options);
+    primary.state.consume = (input, options) => adapter(options.library).consume(input, options);
     const config = { sources };
     const { records: discovered } = await buildDollarRegistry(config, root);
     const records = discovered.filter(record => record.source === "notion");
@@ -84,7 +84,7 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
     const skill = records.find(record => record.kind === "skill")!;
     const setFault = async (value: Record<string, string>) => { faults = value; };
     const calls = async (): Promise<Call[]> => primary.calls.map(call => ({
-      source: kinds[fixtures.findIndex(fixture => fixture.source.database === call.options.database)]!, operation: call.operation,
+      source: kinds[fixtures.findIndex(fixture => fixture.source.library === call.options.library)]!, operation: call.operation,
     }));
     const malformedCode = process.env.CONTEXT_BROKER_GRAPH_CORE ? "CONSUME_INVALID_PROOF" : "SOURCE_PREPARATION_INVALID";
 

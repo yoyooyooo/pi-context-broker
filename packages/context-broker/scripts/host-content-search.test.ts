@@ -21,7 +21,7 @@ function result(records: ContentSearchRecord[] = [candidate]): ContentSearchResu
   return { kind: "results", records, connection: { id: "selected-connection", grantEpoch: "grant-1" },
     resultId: "result-1", coverage: "remote_non_exhaustive", exhaustive: false, partial: false, notices: [] };
 }
-async function fixture(sources: SourceConfig[] = [{ id: "notion", type: "notion", database: "entry" }]) {
+async function fixture(sources: SourceConfig[] = [{ id: "notion", type: "notion", library: "entry" }]) {
   const listeners = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   const tools = new Map<string, Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0]>();
   const branch: SessionEntry[] = [{ id: "user-1", type: "message", message: { role: "user", content: "Search my content." } }];
@@ -98,7 +98,7 @@ test("default and explicit metadata queries and refresh never dispatch MCP or au
 });
 
 test("content input admission requires one enabled source and rejects metadata cursors before MCP", async () => {
-  const f = await fixture([{ id: "notion", type: "notion", database: "entry" }, { id: "other", type: "notion", database: "other-entry" }]);
+  const f = await fixture([{ id: "notion", type: "notion", library: "entry" }, { id: "other", type: "notion", library: "other-entry" }]);
   try {
     await expect(f.list(query)).rejects.toMatchObject({ code: "CONTENT_SOURCE_REQUIRED" });
     for (const input of [{ ...query, source: "notion", cursor: "0.abc" }, { ...query, source: "notion", limit: 51 },
@@ -259,7 +259,7 @@ test("source and branch changes retire remote failures before any error publicat
       f.setRun(async () => { started.resolve(); return response.promise; });
       const operation = f.list(query), rejected = operation.then(() => undefined, error => error);
       await started.promise;
-      if (change === "source") f.sources[0]!.database = "another-library";
+      if (change === "source") f.sources[0]!.library = "another-library";
       else f.branch[0] = { id: "another-branch", type: "message" };
       response.reject(Object.assign(new Error("PRIVATE_STALE_AUTH_DIAGNOSTIC"), { code: "MCP_AUTH_REQUIRED" }));
       const failure = await rejected;
@@ -281,7 +281,7 @@ test("production index content search preserves existing active roots, Requires 
     for (const outcome of ["hit", "empty", "error"] as const) {
       f.f.state.contentSearch = async (input, options) => {
         expect(input).toEqual({ query: query.query, limit: 5 });
-        expect(options.database).toBe(f.f.source.database);
+        expect(options.library).toBe(f.f.source.library);
         expect(options.onAuthorize).toBeUndefined();
         expect(options.deadline).toBeGreaterThan(Date.now());
         if (outcome === "error") throw Object.assign(new Error("PRIVATE_MCP_ERROR"), { code: "MCP_AUTH_REQUIRED" });

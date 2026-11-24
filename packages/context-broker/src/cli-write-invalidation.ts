@@ -1,3 +1,4 @@
+import { notionPageId } from "./native-reference";
 import { hostCliScope } from "./host-command";
 import { validSharedIdentity } from "./shared-skill-identity";
 import type { ExtensionAPI, ExtensionContext, MessageContent, SkillRecord, SourceConfig } from "./types";
@@ -8,7 +9,7 @@ type InvocationTarget = { route: "import"; skillId: string }
   | { route: "source-refresh" | "source-enable" | "source-disable" | "source-remove"; sourceId: string }
   | { route: "source-takeover"; sourceId: string; skillId: string; fileId: string; sourcePath: string; to: "native" | "resource" }
   | { route: "source-restore-follow"; sourceId: string; skillId: string; fileId: string; sourcePath: string };
-type InvocationScope = { entry: string; sources: NotionSource[] };
+type InvocationScope = { library: string; sources: NotionSource[] };
 type OperationInvocation = InvocationScope & InvocationTarget
   & ({ kind: "apply"; operationId?: string } | { kind: "resume"; operationId: string }
     | { kind: "supersede"; operationId: string; predecessor: string });
@@ -41,16 +42,8 @@ const booleanLiteral = (value: string | undefined): boolean | undefined => value
 // Effect's Int CLI primitive first accepts a finite decimal/exponent string.
 const positiveInteger = (value: string) => /^[+-]?\d*\.?\d+(?:[Ee][+-]?\d+)?$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
 
-/** Match current Notion URL host/path boundaries; aliases remain exact strings. */
-function entryId(value: unknown): string | undefined {
-  const id = uuid(value);
-  if (id || typeof value !== "string") return id;
-  try {
-    const url = new URL(value);
-    if (!["https:", "http:"].includes(url.protocol) || !/(^|\.)notion\.(com|site|so)$/.test(url.hostname)) return undefined;
-    return uuid(/([a-f\d]{32})\/?$/i.exec(url.pathname)?.[1]);
-  } catch { return undefined; }
-}
+/** Root selectors use the same strict Notion URL/ID boundary as Source config. */
+const libraryId = (value: unknown): string | undefined => typeof value === "string" ? notionPageId(value)?.replaceAll("-", "") : undefined;
 
 /** Decode one literal shell argv. Expansions and compound commands have no single owner. */
 function literalArgv(command: string): string[] | undefined {
@@ -86,7 +79,7 @@ function literalArgv(command: string): string[] | undefined {
 }
 
 function nativeSkillTarget(value: string): NativeSkillTarget | undefined {
-  const pageId = entryId(value);
+  const pageId = libraryId(value);
   return pageId ? { kind: "page", pageId } : validSharedIdentity(value) ? { kind: "skill", skillId: value } : undefined;
 }
 
@@ -98,7 +91,7 @@ const skillPath = (value: unknown): value is string => typeof value === "string"
 function nativeSkillInvocation(args: string[], sources: NotionSource[]): NativeSkillInvocation | undefined {
   const action = args[3];
   if (action !== "create" && action !== "update" && action !== "register" && action !== "remove") return undefined;
-  const singleton = new Set(["entry", "max-requests", "max-bytes", "timeout",
+  const singleton = new Set(["library", "max-requests", "max-bytes", "timeout",
     ...(action === "remove" ? [] : ["name", "description", "enabled", "default-context"]),
     ...(action === "create" || action === "register" ? ["skill-id"] : []),
     ...(action === "update" ? ["input", "path"] : [])]);
@@ -131,8 +124,8 @@ function nativeSkillInvocation(args: string[], sources: NotionSource[]): NativeS
     if (repeatable.has(name)) repeated.set(name, [...(repeated.get(name) ?? []), value]);
     else values.set(name, value);
   }
-  const entry = values.get("entry"), input = operands[0];
-  if (operands.length !== 1 || !input || !entry?.trim() || /^notion_page:/i.test(entry) || values.get("dry-run") === "true") return undefined;
+  const library = values.get("library"), input = operands[0];
+  if (operands.length !== 1 || !input || !library?.trim() || /^notion_page:/i.test(library) || values.get("dry-run") === "true") return undefined;
   for (const name of ["members", "requires"]) {
     const targets = repeated.get(name) ?? [];
     if (targets.length === 1 && targets[0] === "") continue;
@@ -154,16 +147,16 @@ function nativeSkillInvocation(args: string[], sources: NotionSource[]): NativeS
       && repeated.size === 0) return undefined;
   if (action === "create") {
     const skillId = values.get("skill-id");
-    return validSharedIdentity(skillId) ? { route: "skill", kind: "native", action, target: { kind: "skill", skillId }, entry, sources } : undefined;
+    return validSharedIdentity(skillId) ? { route: "skill", kind: "native", action, target: { kind: "skill", skillId }, library, sources } : undefined;
   }
   const target = nativeSkillTarget(input);
   if (!target) return undefined;
   if (action === "register") {
     const skillId = values.get("skill-id");
     return target.kind === "page" && (skillId === undefined || validSharedIdentity(skillId))
-      ? { route: "skill", kind: "native", action, target, skillId, entry, sources } : undefined;
+      ? { route: "skill", kind: "native", action, target, skillId, library, sources } : undefined;
   }
-  return { route: "skill", kind: "native", action, target, entry, sources };
+  return { route: "skill", kind: "native", action, target, library, sources };
 }
 
 function invocation(command: string, sources: NotionSource[]): Invocation | undefined {
@@ -191,7 +184,7 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
   } else return undefined;
   const fileAction = route === "source-takeover" || route === "source-restore-follow";
   const values = new Map<string, string>();
-  const singleton = new Set(["entry", "operation", "supersede", "max-requests", "max-bytes", "timeout",
+  const singleton = new Set(["library", "operation", "supersede", "max-requests", "max-bytes", "timeout",
     ...(route === "import" ? ["skill-id", "name", "description"] : fileAction ? ["skill-id", "file-id"] : []),
     ...(route === "source-takeover" ? ["as"] : [])]);
   const native = new Set<string>(), operands: string[] = [];
@@ -235,9 +228,9 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
       operands.push(arg);
     }
   }
-  const entry = values.get("entry"), operationId = values.get("operation"), predecessor = values.get("supersede");
+  const library = values.get("library"), operationId = values.get("operation"), predecessor = values.get("supersede");
   const input = operands[0];
-  if (operands.length !== (fileAction ? 2 : 1) || input === undefined || !entry?.trim() || entry.startsWith("notion_page:") || operationId !== undefined && !validSharedIdentity(operationId)) return undefined;
+  if (operands.length !== (fileAction ? 2 : 1) || input === undefined || !library?.trim() || library.startsWith("notion_page:") || operationId !== undefined && !validSharedIdentity(operationId)) return undefined;
   let target: InvocationTarget;
   if (route === "import") {
     const skillId = values.get("skill-id");
@@ -261,15 +254,15 @@ function invocation(command: string, sources: NotionSource[]): Invocation | unde
   if (values.get("dry-run") === "true") return undefined;
   if (predecessor !== undefined) return !validSharedIdentity(predecessor) || operationId === undefined ||
     operationId === predecessor || values.get("resume") === "true" ? undefined
-    : { ...target, kind: "supersede", entry, operationId, predecessor, sources };
-  if (values.get("resume") === "true") return operationId === undefined ? undefined : { ...target, kind: "resume", entry, operationId, sources };
-  return { ...target, kind: "apply", entry, operationId, sources };
+    : { ...target, kind: "supersede", library, operationId, predecessor, sources };
+  if (values.get("resume") === "true") return operationId === undefined ? undefined : { ...target, kind: "resume", library, operationId, sources };
+  return { ...target, kind: "apply", library, operationId, sources };
 }
 
 function library(value: unknown): Library | undefined {
-  if (!isObject(value) || !validSharedIdentity(value.library_id)) return undefined;
+  if (!isObject(value) || !uuid(value.library_id)) return undefined;
   const databaseId = uuid(value.database_id), dataSourceId = uuid(value.data_source_id);
-  return databaseId && dataSourceId ? { libraryId: value.library_id, databaseId, dataSourceId } : undefined;
+  return databaseId && dataSourceId ? { libraryId: uuid(value.library_id)!, databaseId, dataSourceId } : undefined;
 }
 
 function sourceBinding(source: NotionSource, records: SkillRecord[]): SourceBinding {
@@ -282,8 +275,8 @@ function sourceBinding(source: NotionSource, records: SkillRecord[]): SourceBind
     known = current;
     pages.set(skill, page);
   }
-  const configured = entryId(source.database);
-  if (known && configured && known.databaseId !== configured) return { kind: "invalid", source };
+  const configured = libraryId(source.library);
+  if (known && configured && known.libraryId !== configured) return { kind: "invalid", source };
   return known ? { kind: "known", source, library: known, pages } : { kind: "unknown", source };
 }
 
@@ -436,39 +429,26 @@ function currentWrite(call: Invocation, result: Record<string, unknown>): Curren
 }
 
 function successfulSources(call: Invocation, result: CurrentWrite, bindings: SourceBinding[]): string[] {
-  const database = entryId(call.entry);
-  if (database && database !== result.library.databaseId) return [];
-  const matching = bindings.filter(binding => {
-    if (binding.kind === "invalid") return false;
-    const configured = entryId(binding.source.database);
-    if (configured && configured !== result.library.databaseId) return false;
-    // Rebuilding a deleted Skill keeps its stable identity but changes the page.
-    // This result only schedules a scoped reread; it never adopts returned content.
-    if (binding.kind === "known") return sameLibrary(binding.library, result.library);
-    return configured === result.library.databaseId || binding.source.database === call.entry;
-  });
-  // Aliases are exact configured entries, never display names or an inferred CLI alias.
-  if (!database && !matching.some(binding => binding.source.database === call.entry)) return [];
-  return matching.map(binding => binding.source.id);
+  const selected = libraryId(call.library);
+  if (!selected || selected !== result.library.libraryId) return [];
+  return bindings.filter(binding => binding.kind !== "invalid"
+    && (binding.kind === "known" ? sameLibrary(binding.library, result.library) : libraryId(binding.source.library) === selected))
+    .map(binding => binding.source.id);
 }
 
-/** An unknown write can require a reread without proving completion or another mutation. */
-function entrySources(call: Invocation, bindings: SourceBinding[]): string[] {
-  const selected = entryId(call.entry);
-  if (selected) return bindings.filter(binding => binding.kind !== "invalid" &&
-    (entryId(binding.source.database) === selected || binding.kind === "known" && binding.library.databaseId === selected)).map(binding => binding.source.id);
-  const exact = bindings.filter(binding => binding.kind !== "invalid" && binding.source.database === call.entry);
-  const known = exact.flatMap(binding => binding.kind === "known" ? [binding.library] : []);
-  if (known.some(value => !sameLibrary(value, known[0]!))) return [];
-  const owner = known[0];
-  return bindings.filter(binding => exact.includes(binding) || owner && binding.kind !== "invalid" &&
-    (binding.kind === "known" ? sameLibrary(binding.library, owner) : entryId(binding.source.database) === owner.databaseId)).map(binding => binding.source.id);
+/** An unknown write requires only a scoped reread; it never proves completion. */
+function librarySources(call: Invocation, bindings: SourceBinding[]): string[] {
+  const selected = libraryId(call.library);
+  if (!selected) return [];
+  return bindings.filter(binding => binding.kind !== "invalid" &&
+    (libraryId(binding.source.library) === selected || binding.kind === "known" && binding.library.libraryId === selected))
+    .map(binding => binding.source.id);
 }
 
 function affectedSources(call: Invocation, output: CliOutput, records: SkillRecord[]): string[] {
   if (output.status === "invalid") return [];
   const bindings = call.sources.map(source => sourceBinding(source, records));
-  if (output.status === "truncated") return entrySources(call, bindings);
+  if (output.status === "truncated") return librarySources(call, bindings);
   const result = output.result;
   if (result.ok === false) {
     const error = result.error;
@@ -478,7 +458,7 @@ function affectedSources(call: Invocation, output: CliOutput, records: SkillReco
       if (!isObject(details.owner) || details.owner.kind !== "skill" || details.owner.id !== details.skill_id
           || !validSharedIdentity(details.operation_id) || !hash(details.input_sha256) || details.next !== "reconcile_current"
           || !nativeTargetMatches(call, details, "skill_page_id")) return [];
-      return entrySources(call, bindings);
+      return librarySources(call, bindings);
     }
     if (!operationMatches(call, error.details, true)) return [];
     if (call.route !== "import") {
@@ -486,7 +466,7 @@ function affectedSources(call: Invocation, output: CliOutput, records: SkillReco
       if (!isObject(details.owner) || details.owner.kind !== "source" || details.owner.id !== details.source_id ||
           !hash(details.input_sha256) || details.next !== "reconcile_current") return [];
     }
-    return entrySources(call, bindings);
+    return librarySources(call, bindings);
   }
   const written = currentWrite(call, result);
   return written && (written.status !== "unchanged" || call.kind !== "apply") ? successfulSources(call, written, bindings) : [];
@@ -532,11 +512,11 @@ export function decodeCliWriteOutput(body: string): CliOutput {
 
 /** Observe existing bash calls; never run the CLI, follow artifacts or change an active submission. */
 export function installCliWriteInvalidation(api: ExtensionAPI, options: {
-  sources: SourceConfig[];
+  sources: SourceConfig[] | (() => SourceConfig[]);
   records(): SkillRecord[];
   changed(sourceIds: string[], ctx: ExtensionContext): void;
 }): void {
-  const sources = options.sources.filter((source): source is NotionSource => source.type === "notion" && source.enabled !== false);
+  const sources = () => (typeof options.sources === "function" ? options.sources() : options.sources).filter((source): source is NotionSource => source.type === "notion" && source.enabled !== false);
   const calls = new Map<string, CallState>();
   const key = (id: string | undefined, ctx: ExtensionContext): string | undefined => {
     const session = ctx.sessionManager?.getSessionId?.();
@@ -556,7 +536,7 @@ export function installCliWriteInvalidation(api: ExtensionAPI, options: {
       if (previous.kind === "pending" && previous.command !== event.input.command) retain(id, { kind: "settled" });
       return;
     }
-    const call = invocation(event.input.command, sources);
+    const call = invocation(event.input.command, sources());
     if (call) retain(id, { kind: "pending", command: event.input.command, invocation: call });
   });
   api.on("tool_result", (event, ctx) => {

@@ -16,16 +16,16 @@ try {
   const catalog = join(root, "catalog.json");
   const page = "11111111-1111-4111-8111-111111111111", routerPage = "11111111-1111-4111-8111-111111111112";
   const db = "22222222-2222-4222-8222-222222222222", ds = "33333333-3333-4333-8333-333333333333";
-  const identity = (owner: string) => nativeSkillId("catalog", String(owner));
+  const identity = (owner: string) => nativeSkillId("00000000-0000-4000-8000-000000000099", String(owner));
   const current = (owner: string, kind: ContentKind, name: string, alias: string) => ({
     id: identity(owner), kind, name, alias, description: "registered " + alias, default_context: false, enabled: true,
     entrypoint: kind === "skill" ? "SKILL.md" : "ROUTER.md",
-    locator: { type: "shared_skill" as const, library_id: "catalog", skill_id: owner, page_id: owner, database_id: db, data_source_id: ds },
+    locator: { type: "shared_skill" as const, library_id: "00000000-0000-4000-8000-000000000099", skill_id: owner, page_id: owner, database_id: db, data_source_id: ds },
     ref: nativeFileRef(identity(owner), String((kind === "skill" ? "SKILL.md" : "ROUTER.md"))) });
   const initialRecords = [current(page, "skill", "Precise", "precise"), current(routerPage, "router", "Remote Router", "remote-router")];
   runtime.state.catalog = { ...runtime.state.catalog, scope: "a".repeat(64), records: initialRecords, count: 2,
     databases: [{ database_id: db, title: "Fixture", alias: "fixture", role: "content", data_source_ids: [ds] }],
-    coverage: { method: "explicit_database", exhaustive: true, search_index_limited: false, queried_data_sources: [ds], failed_sources: [] } };
+    coverage: { method: "explicit_library", exhaustive: true, search_index_limited: false, queried_data_sources: [ds], failed_sources: [] } };
   const list = runtime.state.list;
   runtime.state.list = options => { if (options.offline) throw Object.assign(Error("offline fixture"), { code: "CACHE_MISSING" }); return list(options); };
   const local = join(root, "local", "SKILL.md");
@@ -216,7 +216,7 @@ try {
   runtime.state.catalog = { ...currentCatalog, scope: "invalid-scope" };
   assert.equal((await discoverSourceCatalog(selectedConfig, root)).failures[0]!.code, "SOURCE_RESPONSE_INVALID");
   runtime.state.catalog = currentCatalog;
-  assert.equal((await discoverSourceCatalog({ sources: [{ ...selectedSource, database: ds }] }, root)).failures[0]!.code, "SOURCE_RESPONSE_INVALID");
+  assert.equal((await discoverSourceCatalog({ sources: [{ ...selectedSource, library: ds }] }, root)).failures[0]!.code, "SOURCE_RESPONSE_INVALID");
   console.log("remote catalog consumer checks passed: scoped source metadata/localFS/mixed unavailable/ambiguity/ref scope/no body/precise invocation");
 } finally {
   console.log(`Remote catalog evidence retained: ${root}`);

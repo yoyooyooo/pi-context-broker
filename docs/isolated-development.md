@@ -427,29 +427,29 @@ not accept a secret value. Selecting an entry or parent alone does not pass a
 Notion credential.
 
 To read an authorized test library, provide its canonical Skills database UUID
-as the launcher's `--entry`. This records the intended scope, sets
-`PAIRED_NOTION_ENTRY`, and adds the matching Broker source. Also select that
-database in the public CLI command. Consumption commands use `--database`:
+as the launcher's `--library`. This records the intended scope, sets
+`PAIRED_NOTION_LIBRARY`, and adds the matching Broker source. Also select that
+database in the public CLI command. Consumption commands use `--library`:
 
 ```sh
 node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
-  --build BUILD_ID --target cli --entry TEST_ENTRY_UUID \
-  --pass-env NOTION_API_TOKEN -- list --database TEST_ENTRY_UUID --json
+  --build BUILD_ID --target cli --library TEST_LIBRARY_ROOT_UUID \
+  --pass-env NOTION_API_TOKEN -- list --library TEST_LIBRARY_ROOT_UUID --json
 ```
 
 For management, follow the selected command's help. For example, validate an
-existing library with `ctl library init --entry`:
+existing library with `ctl library init --library`:
 
 ```sh
 node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
-  --build BUILD_ID --target cli --entry TEST_ENTRY_UUID \
-  --pass-env NOTION_API_TOKEN -- ctl library init --entry TEST_ENTRY_UUID
+  --build BUILD_ID --target cli --library TEST_LIBRARY_ROOT_UUID \
+  --pass-env NOTION_API_TOKEN -- ctl library init --library TEST_LIBRARY_ROOT_UUID
 ```
 
 The same rule applies inside a command run. For example, a harness can invoke
-`ntn-skills list --database "$PAIRED_NOTION_ENTRY" --json`. The wrapper only
+`ntn-skills list --library "$PAIRED_NOTION_LIBRARY" --json`. The wrapper only
 selects the private executable; it does not choose command flags. A bare `list`
-does not become database-scoped because the launcher received `--entry`.
+does not become database-scoped because the launcher received `--library`.
 
 For a new-library scenario, select an authorized test parent explicitly.
 `--parent` records the scope and sets `PAIRED_NOTION_PARENT`; it leaves Broker
@@ -467,7 +467,7 @@ by itself. Supply credentials through the approved process environment; do not
 put them in command arguments, examples or committed files. Do not copy the
 user's saved configuration, SQLite Store or cache into a new run.
 
-`--entry` and `--parent` express the intended object scope. They do not narrow a
+`--library` and `--parent` express the intended object scope. They do not narrow a
 Notion integration's API permissions. A caller with broader credentials could
 still issue other requests. Use task-owned remote objects, preserve unknown
 write outcomes, and avoid concurrent writers to one Skill or Source. Runs using

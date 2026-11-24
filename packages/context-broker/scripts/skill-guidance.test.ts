@@ -1,3 +1,4 @@
+import { createLibrarySelection } from "../src/library-selection";
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -24,8 +25,8 @@ import type { AgentMessage, ConfigFile, ContextResult, ExtensionAPI, ExtensionCo
 
 const full = ["read", "skill_search", "skill_prepare", "skill_graph", "bash"];
 const config: ConfigFile = { sources: [
-  { id: "alpha", type: "notion", database: "database-a" },
-  { id: "beta", type: "notion", database: "database-b" },
+  { id: "alpha", type: "notion", library: "00000000-0000-4000-8000-000000000101" },
+  { id: "beta", type: "notion", library: "00000000-0000-4000-8000-000000000102" },
   { id: "disabled", type: "notion", enabled: false },
   { id: "local", type: "filesystem", roots: [] },
 ] };
@@ -69,7 +70,7 @@ test("native capability fallback alone adds exact CLI scope without teaching una
   const baseline = text(["read", "notion_list", "notion_use", "bash"]);
   const partial = text(["notion_list", "notion_use", "bash"]);
   expect(partial).toContain("ntn-skills.mjs");
-  expect(partial).toContain("database-b");
+  expect(partial).toContain("00000000-0000-4000-8000-000000000102");
   expect(partial).not.toContain("/must-not-appear");
   expect(partial).toContain("read REF");
   expect(baseline).not.toContain("/configured");
@@ -209,7 +210,7 @@ test("deferred native management exposes only exact enabled source IDs when a CL
     expect(routed).toContain("Choose explicitly");
     expect(routed).toContain("use returned command/scope, never a global CLI");
     expect(routed).toContain("No execution or authorization");
-    for (const forbidden of ["/configured", "database-a", "database-b", "disabled", "must-not-appear", '"local"'])
+    for (const forbidden of ["/configured", "00000000-0000-4000-8000-000000000101", "00000000-0000-4000-8000-000000000102", "disabled", "must-not-appear", '"local"'])
       expect(routed).not.toContain(forbidden);
   }
   expect(routingBytes(hidden)).toBeLessThanOrEqual(1500);
@@ -221,7 +222,7 @@ test("deferred native management exposes only exact enabled source IDs when a CL
   h.tools(native);
   const result = resultJson(await h.invoke({ cli_source: "beta" }));
   expect(result).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: hostCliScope([config.sources![1]!]).command,
-    database: "database-b", executed: false,
+    library: "00000000-0000-4000-8000-000000000102", executed: false,
     execution: { default_cli_timeout_ms: 600_000, guidance: expect.any(String) } });
   expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
 });
@@ -269,7 +270,7 @@ test("fallback follows missing operations and never advertises disabled tools or
   const shell = text(["bash"]);
   expect(shell).toContain("ntn-skills.mjs");
   expect(shell).toContain("<list-args>"); expect(shell).toContain("<read-args>");
-  expect(shell).toContain("database-b"); expect(shell).not.toContain("cli_source");
+  expect(shell).toContain("00000000-0000-4000-8000-000000000102"); expect(shell).not.toContain("cli_source");
   expect(shell).not.toContain("Use read with"); expect(shell).not.toContain("Use skill_prepare");
   const noSearch = text(["read", "skill_prepare", "bash"]);
   expect(noSearch).toContain("<list-args>"); expect(noSearch).not.toContain("<read-args>");
@@ -302,7 +303,7 @@ function guidanceHarness(host: "pi" | "omp" = "pi", known = true, settings: Conf
 
 test("cold and offline Pi guidance exposes both paired package entries without preloading them", async () => {
   for (const offline of [false, true]) {
-    const settings: ConfigFile = { sources: [{ id: "selected", type: "notion", database: "selected-database",
+    const settings: ConfigFile = { sources: [{ id: "selected", type: "notion", library: "00000000-0000-4000-8000-000000000103",
       discovery: { offline }, activation: { offline } }] };
     const h = guidanceHarness("pi", true, settings);
     h.tools(["read", "notion_list", "notion_use", "bash"]);
@@ -318,7 +319,7 @@ test("cold and offline Pi guidance exposes both paired package entries without p
     expect(message).not.toContain(privatePackageBody.trim());
     expect(message).not.toContain(privateSyncBody.trim());
     expect(message).not.toContain("ctl builtin read");
-    expect(message).not.toContain("selected-database");
+    expect(message).not.toContain("00000000-0000-4000-8000-000000000103");
     const history = [{ role: "user", content: "Explain packaged maintenance instructions offline." }];
     const projected = await h.project("context_with_system", history);
     expect(guidanceText(projected)).toBe(message);
@@ -469,12 +470,15 @@ async function graphHarness(settings: ConfigFile = config, known = true) {
   let graphTool: NativeSkillGraphDefinition | undefined;
   const api: ExtensionAPI = { on() {}, ...(known ? { getActiveTools: () => [...active] } : {}),
     appendEntry() { appends++; }, registerTool(tool) { if (tool.name === "notion_ctl") graphTool = tool; } };
-  const host = await installHostSkills(api, { config: settings,
+  const table = { database_id: "00000000-0000-4000-8000-000000000201", data_source_id: "00000000-0000-4000-8000-000000000202", property_ids: {} };
+  const libraries = createLibrarySelection(settings, async options => ({ version: 2, library_id: options.library ?? "00000000-0000-4000-8000-000000000101", operation_id: "fixture",
+    skills: table, files: table, records: table, sources: table }));
+  const host = await installHostSkills(api, { config: settings, librarySelection: libraries,
     getRecords: async () => ({ records: [], failures: [] }),
     loadRecord: async () => { loads++; throw new Error("No body loads permitted"); },
     sessionGraph: () => { graphReads++; return { portable: true }; },
   }, createPiHostAdapter(api));
-  await host.refresh(undefined, false);
+  await host.refresh();
   if (!graphTool) throw new Error("notion_ctl must be registered");
   const ctx: ExtensionContext = { cwd: "/unused-guidance-test", hasUI: false };
   const invoke = (input: Record<string, unknown>, signal?: AbortSignal) => graphTool!.execute("controlled", input, signal, undefined, ctx);
@@ -486,7 +490,7 @@ test("cli_source returns only the requested host-local scope without loading, ex
   const h = await graphHarness();
   const result = await h.invoke({ cli_source: "beta" });
   expect(resultJson(result)).toEqual({ kind: "host_cli_scope", sourceId: "beta", command: hostCliScope([config.sources![1]!]).command,
-    database: "database-b", executed: false,
+    library: "00000000-0000-4000-8000-000000000102", executed: false,
     execution: { default_cli_timeout_ms: 600_000, guidance: expect.any(String) } });
   expect(result.details).toEqual(resultJson(result));
   expect(h.counts()).toEqual({ graphReads: 0, loads: 0, appends: 0 });
@@ -498,7 +502,7 @@ test("explicit CLI discovery carries execution budget and durable waiting guidan
   const h = await graphHarness();
   const result = resultJson(await h.invoke({ cli_source: "alpha" }));
   expect(result.command).toEqual(hostCliScope([config.sources![0]!]).command);
-  expect(result.sourceId).toBe("alpha"); expect(result.database).toBe("database-a");
+  expect(result.sourceId).toBe("alpha"); expect(result.library).toBe("00000000-0000-4000-8000-000000000101");
   expect(result.execution.default_cli_timeout_ms).toBe(600_000);
   for (const requirement of ["600 seconds", "--timeout is in milliseconds", "startup and completion margin",
     "persistent background job", "original Store and credential scope", "same process's terminal result",
@@ -515,11 +519,11 @@ test("explicit CLI discovery carries execution budget and durable waiting guidan
 });
 
 test("default source command resolves the actual bundle rather than a global ntn-skills binary", async () => {
-  const h = await graphHarness({ sources: [{ id: "default", type: "notion", database: "chosen-database" }] });
+  const h = await graphHarness({ sources: [{ id: "default", type: "notion", library: "00000000-0000-4000-8000-000000000104" }] });
   const result = resultJson(await h.invoke({ cli_source: "default" }));
   expect(result.command).toHaveLength(2); expect(result.command[0]).not.toBe("ntn-skills");
   expect(result.command[1]).toMatch(/ntn-skills\.mjs$/); expect(existsSync(result.command[1])).toBe(true);
-  expect(result.database).toBe("chosen-database"); expect(result.executed).toBe(false);
+  expect(result.library).toBe("00000000-0000-4000-8000-000000000104"); expect(result.executed).toBe(false);
 });
 
 test("cli_source rejects ambiguous/disabled/foreign scopes, inactive tools and mixed proof requests", async () => {

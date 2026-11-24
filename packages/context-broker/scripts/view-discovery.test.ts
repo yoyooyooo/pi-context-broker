@@ -16,9 +16,9 @@ const record = (name: string, path: string): SkillRecord => ({ name, path, alias
 function pairedView() {
   const page = "11111111-1111-4111-8111-111111111111", dataSource = "22222222-2222-4222-8222-222222222222";
   const source: Extract<SourceConfig, { type: "notion" }> = { id: "paired", type: "notion" };
-  const selected: SkillRecord = { ...record("Paired member", "/owned/paired/SKILL.md"), id: "skill://member?library=paired", enabled: true,
-    source: "notion", sourceId: source.id, sourceScope: "a".repeat(64), kind: "skill", ref: "skill://member/SKILL.md?library=paired",
-    locator: { type: "shared_skill", library_id: "paired", skill_id: "member", page_id: page, database_id: database, data_source_id: dataSource } };
+  const selected: SkillRecord = { ...record("Paired member", "/owned/paired/SKILL.md"), id: "skill://member?library=00000000-0000-4000-8000-000000000099", enabled: true,
+    source: "notion", sourceId: source.id, sourceScope: "a".repeat(64), kind: "skill", ref: "skill://member/SKILL.md?library=00000000-0000-4000-8000-000000000099",
+    locator: { type: "shared_skill", library_id: "00000000-0000-4000-8000-000000000099", skill_id: "member", page_id: page, database_id: database, data_source_id: dataSource } };
   const directory: NotionDirectory = Object.assign([selected], { list: { sourceId: source.id, policy: "default" as const, exhaustive: true }, failures: [],
     view: { id: firstViewId, name: "Paired view", type: "table", database_id: database, data_source_id: dataSource, url: `https://notion.so/${database}?v=${firstViewId}` } });
   const paired = new Map<string, NotionDirectoryObservation>([[source.id, { selection: {}, outcome: { ok: true, value: directory } }]]);
@@ -81,7 +81,7 @@ test("source View listing calls the public ctl route with its exact scope and po
   expect(views.map(view => view.id)).toEqual([firstViewId, secondViewId]);
   const calls = (await readFile(fixture.callsPath, "utf8")).trim().split("\n").map(JSON.parse);
   expect(calls).toHaveLength(1);
-  expect(calls[0]).toMatchObject({ command: "ctl", args: ["views", "--database", database, "--offline"], operation: "views" });
+  expect(calls[0]).toMatchObject({ command: "ctl", args: ["views", "--library", database, "--offline"], operation: "views" });
 });
 
 test("session choices inherit only the active branch, reset independently and do not leak to another session", () => {

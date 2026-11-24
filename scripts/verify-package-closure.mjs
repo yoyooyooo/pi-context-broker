@@ -46,7 +46,7 @@ export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, refBytes, e
   assert.equal(manifest.version, 1, "Unknown bundled runtime manifest");
   assert.equal(manifest.package, "ntn-skills", "Unexpected bundled package identity");
   assert.equal(manifest.package_version, expectedVersion, "Bundled runtime must match its frozen build input version");
-  assert.equal(manifest.sdk_version, 2, "Only the current SDK v2 is supported");
+  assert.equal(manifest.sdk_version, 3, "Only the current SDK v3 is supported");
   assert.equal(manifest.skill_ref_version, 2, "Only the current Skill reference protocol is supported");
   assert.ok(refBytes instanceof Uint8Array && refBytes.length > 0, "The selected pure reference artifact is required");
   for (const capability of ["consumer_contract_version", "consumption_effects_version", "catalog_directory_contract_version", "read_output_proof_version", "resource_read_contract_version", "resource_read_effects_version", "content_search_contract_version"])

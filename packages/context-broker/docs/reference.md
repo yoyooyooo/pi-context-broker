@@ -6,6 +6,28 @@ Full configuration, discovery and injection reference for the Pi/OMP broker. Sta
 
 [Skills](#skills) · [Routers](#routers) · [Configuration](#configuration) · [Sources](#built-in-sources) · [Rules](#rule-files) · [Commands](#commands) · [Completion CLI](#completion-cli)
 
+### Library identity and session selection
+
+A Source uses `library`, the root page UUID or Notion URL returned as
+`library.library_id` by CLI initialization. The four direct child databases are
+physical bindings, not alternate selectors. SDK v3 verifies descriptor v2,
+the root and all four table bindings before use, including an empty Library.
+Old `source.database`, `--database` and `--entry` selectors are rejected.
+
+Broker resolves the CLI global `default_library` through the same SDK; it has no
+second global default. `/context-broker library ROOT` changes only the active
+session branch; `default` selects the CLI default. A Source without `library`
+binds that default. The selected root must match exactly one enabled Source.
+A failed switch records a blocked request; default operations cannot fall back
+to the previous root. Retry an explicit selection after correcting access.
+
+Every accepted interactive/RPC submission retains its Library. A switch changes
+future default discovery, short references and `notion_ctl cli_source: null`.
+Existing tasks, active roots and snapshot pins keep their original identity.
+Fully qualified references can select another enabled Source without switching
+the default. CLI management uses the returned `library` with `--library ROOT`.
+
+
 ## Skills
 
 Context Broker discovers `SKILL.md` files through legacy `skillRoots` and built-in filesystem sources, and Notion Skill metadata through built-in Notion sources.
@@ -37,7 +59,7 @@ Review the design for ownership, boundaries, failure modes, and migration cost.
 
 Ordinary product maintenance and Source sync default to the actual paired package's `ntn-skills-maintain` and `ntn-skills-sync`. Guidance advertises their exact paths for native `read`, or the paired CLI's `ctl builtin read` argv when only shell is available; it does not preload either body. A connected library needs no official Notion copies. Workflow origin and data target are independent: choose the write source and database explicitly, without falling back to the first configured source. Ordinary business Skill discovery remains unchanged.
 
-An explicitly chosen Notion team workflow retains its exact source, record and selected version. Discover it in that source if needed, then inspect its exact ref. Inspection does not adopt it. To apply it, call `notion_use` with that ref to load Requires, unless the closure is already prepared. With shell access and no native use tool, use that source's CLI `use EXACT_REF --database ENTRY --json`; CLI refs must be canonical, never session `sr:` handles. If neither route is available, report unavailable adoption. Generic hosts use their available `skill_prepare` purpose `use` route. Pending, partial or failed access never silently switches the selected workflow to a Builtin. The edited Skill itself stays inspection-only. Local and packaged workflows keep their native selection path; selected instructions persist until explicit refresh.
+An explicitly chosen Notion team workflow retains its exact source, record and selected version. Discover it in that source if needed, then inspect its exact ref. Inspection does not adopt it. To apply it, call `notion_use` with that ref to load Requires, unless the closure is already prepared. With shell access and no native use tool, use that source's CLI `use EXACT_REF --library ENTRY --json`; CLI refs must be canonical, never session `sr:` handles. If neither route is available, report unavailable adoption. Generic hosts use their available `skill_prepare` purpose `use` route. Pending, partial or failed access never silently switches the selected workflow to a Builtin. The edited Skill itself stays inspection-only. Local and packaged workflows keep their native selection path; selected instructions persist until explicit refresh.
 
 `$ntn-skills@builtin`, `$ntn-skills-maintain@builtin` and `$ntn-skills-sync@builtin` are ordinary local Skills shipped with the Broker and standalone Tern query. They appear in `$` discovery only when at least one configured `type: notion` source is enabled (`enabled` is not `false`); without enabled Notion sources they remain packaged but are hidden from discovery. The installed entrypoints and relative references are readable offline even before Notion authentication succeeds and without a global `ntn-skills` executable. Choosing them follows the same discovery, draft and loading path as any other `$` Skill.
 
@@ -168,7 +190,7 @@ sources:
     namespace: notion
     # Consumption uses the paired SDK; management uses the bundled CLI.
     # Replace this example with your Skills database id/selector.
-    database: 00000000-0000-0000-0000-000000000000
+    library: 00000000-0000-0000-0000-000000000000
     cacheDir: ~/.cache/context-broker/notion
     discovery: {maxAge: 5m, offline: false}
     activation: {maxAge: 5m, offline: false}
@@ -205,7 +227,7 @@ Within the effective outgoing request, a complete Skill or resource body appears
 
 Authenticate using the existing `ntn-skills` project token. If explicit configuration is needed, use `ntn-skills ctl config set-token --stdin` with a trusted secret-input pipeline. The CLI prioritizes its saved token, then nonempty `NOTION_API_TOKEN`; missing credentials return `AUTH_REQUIRED`. Broker and Tern configuration have no token field.
 
-The build packages a standalone `ntn-skills` CLI, its three workflow Skills, runtime dependencies and license notices in both products. Pi's SDK is bundled from the same selected `ntn-skills` package as the CLI. [Build input selection](../CONTRIBUTING.md#bundling-cli-and-skills) determines the shipped version. Online Notion sources use the project's direct HTTP engine. `/context-broker doctor` invokes the bundled CLI's `ctl doctor --database ID`, requires `transport: direct_http`, `notion_api_version: 2026-03-11` and authenticated access, and can populate caches. Without a database, the CLI doctor checks authentication only. Offline discovery requires complete existing Notion caches; packaged Skills require neither Notion access nor those caches.
+The build packages a standalone `ntn-skills` CLI, its three workflow Skills, runtime dependencies and license notices in both products. Pi's SDK is bundled from the same selected `ntn-skills` package as the CLI. [Build input selection](../CONTRIBUTING.md#bundling-cli-and-skills) determines the shipped version. Online Notion sources use the project's direct HTTP engine. `/context-broker doctor` invokes the bundled CLI's `ctl doctor --library ID`, requires `transport: direct_http`, `notion_api_version: 2026-03-11` and authenticated access, and can populate caches. Without a Library selector, the CLI resolves its configured default. Offline discovery requires complete existing Notion caches; packaged Skills require neither Notion access nor those caches.
 
 Source failures remain visible with safe source/code/message metadata. Authentication, transport and malformed-response failures revoke that source. A valid partial directory instead retains precise records with a nonblocking `CATALOG_INCOMPLETE` warning and page-qualified tokens; it does not prove absence or unique names. A failed default View yields empty default metadata and a repair hint, while exact explicit choices from the full directory remain available. Selected record authorization and snapshot integrity still gate body delivery. Local Skills and ordinary chat continue. Never replace a failed explicit View with another View or the entire library.
 

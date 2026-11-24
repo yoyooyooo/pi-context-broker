@@ -11,7 +11,7 @@ import type { SkillRecord } from "../src/types";
 
 type Session = Awaited<ReturnType<typeof activeNotionSession>>;
 function addShopping(h: Session) {
-  const id = "skill://shopping?library=current-source";
+  const id = "skill://shopping?library=00000000-0000-4000-8000-000000000099";
   const record = { ...h.f.record, id, name: "shopping", alias: "shopping", description: "Shopping draft",
     ref: nativeFileRef(id, "SKILL.md"), enabled: true, default_context: false,
     locator: { ...h.f.record.locator, skill_id: "shopping", page_id: "00000000-0000-4000-8000-000000000099" } };
@@ -39,7 +39,7 @@ test("production index resolves a relative read through the scoped SDK before re
     const selected = h.selected(), active = h.active(), from = h.fixedRef(root), path = "../independent/SKILL.md";
     h.f.state.resolveRelative = (requested, options) => {
       expect(requested).toBe(path); expect(options.from).toBe(root.preparationBinding!.ref);
-      expect(options.database).toBe(h.f.source.database);
+      expect(options.library).toBe(h.f.source.library);
       return { version: 1, from: options.from, ref: revised.ref, effects: noConsumptionWrites() };
     };
     const started = h.f.calls.length, read = await h.read(path, undefined, from), calls = h.f.calls.slice(started);
@@ -81,7 +81,7 @@ test("metadata refresh discovers a newly created Skill before TTL without replac
       validated_at: h.f.state.catalog.freshness.validated_at, max_age_ms: h.f.state.catalog.freshness.max_age_ms, stale: false })]);
     const calls = h.f.calls.slice(start);
     expect(calls.map(call => call.operation)).toEqual(["list"]);
-    expect(calls[0]?.options).toMatchObject({ database: h.f.source.database, refresh: true, directory: {} });
+    expect(calls[0]?.options).toMatchObject({ library: h.f.source.library, refresh: true, directory: {} });
     expect(h.selected().scopes.get(root.sourceScope!)!.bindings).toEqual(selected);
     expect(h.active().selection.scopes.get(root.sourceScope!)!.bindings).toEqual(active);
     expect(h.branch.filter(entry => entry.customType === "context-broker-selected-graph")).toHaveLength(selections);
@@ -131,7 +131,7 @@ test("a named metadata refresh discovers a just-enabled Skill outside the View b
       records: [{ name: target.name, source: "notion", in_default_view: false, availability: "available" }] });
     expect(current.freshness.sources[0]).toMatchObject({ validated_at: h.f.state.catalog.freshness.validated_at, age_ms: 0, stale: false });
     expect(h.f.calls.slice(before).map(call => call.operation)).toEqual(["list"]);
-    expect(h.f.calls.at(-1)?.options).toMatchObject({ refresh: true, database: h.f.source.database, directory: {} });
+    expect(h.f.calls.at(-1)?.options).toMatchObject({ refresh: true, library: h.f.source.library, directory: {} });
     expect(h.selected()).toEqual(selected); expect(h.active()).toEqual(active);
     expect(h.branch.filter(entry => entry.customType === "context-broker-selected-graph")).toEqual(entries);
     expect(h.fixedRef(root)).toBe(ref);
@@ -161,13 +161,13 @@ test("a verified native create during a pending catalog read makes its first ord
     const { hostCliScope }: typeof import("../src/host-command") = await import(pathToFileURL(join(h.f.root, "src/host-command.ts")).href);
     const quote = (arg: string) => "'" + arg.replaceAll("'", "'\\''") + "'";
     const input = { command: [...hostCliScope([h.f.source]).command, "ctl", "library", "skill", "create", "/staged/SKILL.md",
-      "--entry", h.f.source.database!, "--skill-id", "shopping"].map(quote).join(" ") };
+      "--library", h.f.source.library!, "--skill-id", "shopping"].map(quote).join(" ") };
     const event = { toolName: "bash", toolCallId: "native-create", input };
     await h.emit("tool_call", event);
     await h.emit("tool_result", { ...event, isError: false, content: JSON.stringify({ ok: true, contract: "current", action: "create",
       status: "created", state: "ready", skill_id: "shopping", page_id: locator.page_id, files: 1,
       operation_id: "operation-native-create", input_sha256: "c".repeat(64), library: {
-        library_id: locator.library_id, database_id: locator.database_id, data_source_id: locator.data_source_id } }) });
+        library_id: locator.database_id, database_id: locator.database_id, data_source_id: locator.data_source_id } }) });
     const ordinary = list({ query: "shopping", source: "notion" });
     release.resolve();
     for (const result of await Promise.all([pending, ordinary])) expect(result).toMatchObject({ count: 1, records: [{ name: "shopping" }] });
@@ -623,7 +623,7 @@ test("a Required omitted from fresh metadata is rejected by role before its miss
     expect(h.f.calls.length).toBe(calls);
     expect(h.selected()).toEqual(before); expect(h.active()).toEqual(active);
     const missing = await h.tool("notion_use").execute("ordinary-absent-reference", {
-      ref: "skill://absent/SKILL.md?library=current-source",
+      ref: "skill://absent/SKILL.md?library=00000000-0000-4000-8000-000000000099",
     }, undefined, undefined, h.ctx).catch(error => error);
     expect(missing.code).toBe("SOURCE_REFERENCE_MISSING");
     expect(missing.message).not.toContain("Enabled=false");
@@ -775,7 +775,7 @@ test("current and forged owner snapshot or File references gain no historical re
       required.ref!,
       exact.replace(required.snapshotId!, "s_" + "d".repeat(64)),
       exact + "&file_id=another-file",
-      nativeFileRef(nativeSkillId("current-source", "another-owner"), required.entrypoint!, required.snapshotId),
+      nativeFileRef(nativeSkillId("00000000-0000-4000-8000-000000000099", "another-owner"), required.entrypoint!, required.snapshotId),
       nativeFileRef(nativeSkillId("foreign-library", "required"), required.entrypoint!, required.snapshotId),
     ];
     const before = h.f.calls.filter(call => call.operation === "consume").length;
@@ -873,7 +873,7 @@ for (const denial of ["physical", "physical-details", "stable"] as const) test("
     const old = await h.seed(["root", "independent"]), root = old.records.find(record => record.name === "root")!;
     const independent = old.records.find(record => record.name === "independent")!, ref = h.fixedRef(root);
     if (root.locator?.type !== "shared_skill") throw new Error("Expected physical shared owner");
-    const id = "skill://rebound?library=current-source", current = { ...root.preparationBinding!.record, id, name: "rebound", alias: "rebound",
+    const id = "skill://rebound?library=00000000-0000-4000-8000-000000000099", current = { ...root.preparationBinding!.record, id, name: "rebound", alias: "rebound",
       ref: nativeFileRef(id, "SKILL.md"), locator: { ...root.locator, skill_id: "rebound" } };
     h.f.state.catalog = { ...h.f.state.catalog, records: h.f.state.catalog.records.map(record => record.id === root.id ? current : record) };
     await h.command("context-broker").handler("refresh", h.ctx);

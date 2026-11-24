@@ -67,10 +67,10 @@ build 如需既有网络代理，同样显式按名称传入；代理的既有 C
 `--pass-env NODE_EXTRA_CA_CERTS` 传入绝对路径，不能传 NODE_OPTIONS 或关闭 TLS 校验。
 不默认继承，回执仅记录变量名。
 无远端选择时核对 Notion token 不继承且 sources 为空，不能只看目录名推断隔离。
-launcher 的 entry 记录 scope、设置 PAIRED_NOTION_ENTRY 并配置 Broker source；parent
+launcher 的 entry 记录 scope、设置 PAIRED_NOTION_LIBRARY 并配置 Broker source；parent
 记录 scope、设置 PAIRED_NOTION_PARENT，不自动创建库。CLI target 和私有 wrapper
-原样传递参数；消费命令显式传 --database，管理命令按各自帮助传 flag 或位置参数，
-例如 ctl library init --entry ENTRY，ctl library inspect ENTRY。
+原样传递参数；消费命令显式传 --library，管理命令按各自帮助传 flag 或位置参数，
+例如 ctl library init --library ENTRY，ctl library inspect ENTRY。
 launcher 不替 CLI 选择或校验这些参数，裸 list 不会因 launcher entry 而限定到该库。
 用 NTN_SKILLS_BUILD_ENTRY 指定真实配套 CLI 运行环境测试，核对 direct/wrapper 的消费
 与管理参数；缺少该输入时 real CLI 子测试 skipped，不能把 fixture argv 检查当成通过。

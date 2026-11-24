@@ -14,7 +14,7 @@ async function fixture(options: { sdk?: boolean; sdkVersion?: number; sdkManifes
   const module = join(root, "dist/ntn-skills-sdk.mjs");
   if (options.sdk !== false) await writeFile(module, `
 export const SKILL_REF_VERSION = 2;
-export const SDK_VERSION = ${options.sdkVersion ?? 2};
+export const SDK_VERSION = ${options.sdkVersion ?? 3};
 export const CONSUMER_CONTRACT_VERSION = 1;
 export const PACKAGE_VERSION = ${JSON.stringify(options.packageVersion ?? "fixture-1")};
 ${options.readProofVersion === undefined ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${options.readProofVersion};`}
@@ -25,9 +25,10 @@ ${options.contentSearch ? `export const CONTENT_SEARCH_CONTRACT_VERSION = ${opti
 export async function contentSearch(input, options) {
   calls.push({ operation: 'content-search', input, options });
   options.onRequestMetrics?.({ total_requests: 0, trace: [] });
-  return { kind: 'results', records: [], input, database: options.database };
+  return { kind: 'results', records: [], input, library: options.library };
 }` : ""}
 export const calls = [];
+export async function resolveLibrary(options) { calls.push({operation: 'library', options}); return {}; }
 export function parseDuration(value) { return value === '1s' ? 1000 : 0; }
 export function decodeConsumeResult() { throw new Error('consume already decoded; duplicate decoder invocation'); }
 export async function consume(input, options) {
@@ -84,7 +85,7 @@ export async function readResources(input, options) {
 `}
 `);
   await writeFile(join(root, "dist/ntn-skills-runtime.json"), JSON.stringify({ version: 1, skill_ref_version: 2, package: "ntn-skills",
-    package_version: options.manifestVersion ?? options.packageVersion ?? "fixture-1", sdk_version: options.sdkManifestVersion ?? options.sdkVersion ?? 2, consumer_contract_version: 1,
+    package_version: options.manifestVersion ?? options.packageVersion ?? "fixture-1", sdk_version: options.sdkManifestVersion ?? options.sdkVersion ?? 3, consumer_contract_version: 1,
     ...(options.contentSearch ? { content_search_contract_version: options.contentManifestVersion ?? options.contentVersion ?? 1 } : {}),
     ...(options.resourceVersion === undefined ? {} : { resource_read_contract_version: options.resourceManifestVersion ?? options.resourceVersion }),
     ...(options.readProofVersion === undefined && options.readProofManifestVersion === undefined ? {} : { read_output_proof_version: options.readProofManifestVersion ?? options.readProofVersion }),
@@ -103,14 +104,14 @@ test("missing bundled SDK fails without selecting another CLI or SDK", async () 
 test("relative identity resolution is one scoped SDK operation and missing capability never falls back to read", async () => {
   const older = await fixture(), current = await fixture({ relativeResolver: true });
   const from = "skill://root/playbooks/prototype.md?library=library&snapshot=s_" + "a".repeat(64);
-  const signal = new AbortController().signal, options = { sourceId: "selected", from, database: "db", cwd: "/owned", signal, offline: true, env: { SDK_TEST_ID: "identity" } };
+  const signal = new AbortController().signal, options = { sourceId: "selected", from, library: "db", cwd: "/owned", signal, offline: true, env: { SDK_TEST_ID: "identity" } };
   await expect(older.boundary.resolveNotionReferenceSdk("../../target/SKILL.md", options)).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
   expect((await import(pathToFileURL(older.module).href)).calls).toHaveLength(0);
   expect(await current.boundary.resolveNotionReferenceSdk("../../target/SKILL.md", options)).toMatchObject({ version: 1, from,
     ref: "skill://target/SKILL.md?library=library", effects: { remote_writes: "none", author_content: "unchanged" } });
   const calls = (await import(pathToFileURL(current.module).href)).calls;
   expect(calls).toHaveLength(1);
-  expect(calls[0]).toMatchObject({ operation: "resolve", target: "../../target/SKILL.md", options: { from, database: "db", cwd: "/owned", offline: true } });
+  expect(calls[0]).toMatchObject({ operation: "resolve", target: "../../target/SKILL.md", options: { from, library: "db", cwd: "/owned", offline: true } });
   expect(calls[0].options.signal).toBe(signal); expect(calls[0].options.env).toBe(options.env);
   expect(calls[0].options).not.toHaveProperty("sourceId"); expect(calls[0].options).not.toHaveProperty("output");
 });
@@ -133,7 +134,7 @@ test("paired catalog discovery stays one SDK call", async () => {
   const { boundary, module } = await fixture({ catalog: true, directoryVersion: 1 });
   const sdk = await import(pathToFileURL(module).href);
   expect(sdk.calls).toHaveLength(0);
-  const result = await boundary.listNotionCatalogSdk({ sourceId: "source", database: "db", directory: { view: "selected" }, env: { SDK_TEST_ID: "scope" } });
+  const result = await boundary.listNotionCatalogSdk({ sourceId: "source", library: "db", directory: { view: "selected" }, env: { SDK_TEST_ID: "scope" } });
   expect(result).toMatchObject({ version: 1, catalog: { ok: true, value: { scope: "scope" } }, directory: { ok: true, value: { view: "selected", scope: "scope" } } });
   expect(sdk.calls).toHaveLength(1);
   expect(sdk.calls[0].options.directory).toEqual({ view: "selected" });
@@ -227,8 +228,8 @@ test("passive SDK attribution binds concurrent source identities without changin
   const topic = channel("context-broker.notion-sdk"), events: unknown[] = [];
   const collect = (event: unknown) => events.push(event);
   const options = [
-    { sourceId: "healthy-source", database: "healthy-database", env: { PRIVATE_TOKEN: "PRIVATE_TOKEN_SENTINEL" } },
-    { sourceId: "denied-source", database: "denied-database", env: { PRIVATE_TOKEN: "PRIVATE_TOKEN_SENTINEL" } },
+    { sourceId: "healthy-source", library: "healthy-database", env: { PRIVATE_TOKEN: "PRIVATE_TOKEN_SENTINEL" } },
+    { sourceId: "denied-source", library: "denied-database", env: { PRIVATE_TOKEN: "PRIVATE_TOKEN_SENTINEL" } },
   ];
   topic.subscribe(collect);
   let outcomes: PromiseSettledResult<unknown>[];
@@ -245,16 +246,16 @@ test("passive SDK attribution binds concurrent source identities without changin
     expect(starts).toHaveLength(1);
     const start = starts[0];
     if (!start) throw new Error("Missing actual SDK start");
-    expect(start).toMatchObject({ operation: "list", source_id: value.sourceId, database: value.database });
+    expect(start).toMatchObject({ operation: "list", source_id: value.sourceId, library: value.library });
     const ends = rows.filter(event => event.event === "end" && event.id === start.id);
     expect(ends).toHaveLength(1);
-    expect(ends[0]).toMatchObject({ operation: "list", source_id: value.sourceId, database: value.database,
+    expect(ends[0]).toMatchObject({ operation: "list", source_id: value.sourceId, library: value.library,
       status: index === 0 ? "completed" : "failed", error_code: index === 0 ? null : "CACHE_MISSING",
       sdk_started: true, metrics_observed: true, request_metrics: { total_requests: 0, trace: [] } });
     const module = index === 0 ? healthy.module : denied.module;
     const calls = (await import(pathToFileURL(module).href)).calls;
     expect(calls).toHaveLength(1);
-    expect(calls[0].options.database).toBe(value.database);
+    expect(calls[0].options.library).toBe(value.library);
     expect(calls[0].options.env).toBe(value.env);
     expect(Object.hasOwn(calls[0].options, "sourceId")).toBe(false);
   }
@@ -274,8 +275,8 @@ test("passive SDK failure codes preserve actual typed outcomes and keep unknown 
       else await expect(current.boundary.listNotionCatalogSdk({})).rejects.toBe(module.catalogError);
     } finally { topic.unsubscribe(collect); }
     expect(events).toHaveLength(2);
-    expect(events[0]).toMatchObject({ event: "start", source_id: null, database: null });
-    expect(events[1]).toMatchObject({ event: "end", source_id: null, database: null, status: "failed",
+    expect(events[0]).toMatchObject({ event: "start", source_id: null, library: null });
+    expect(events[1]).toMatchObject({ event: "end", source_id: null, library: null, status: "failed",
       error_code: catalogFailure === "returned" ? "CACHE_MISSING" : null });
     const serialized = JSON.stringify(events);
     for (const secret of ["PRIVATE_ERROR_MESSAGE_SENTINEL", "PRIVATE_ERROR_DETAILS_SENTINEL", "A".repeat(129)])
@@ -288,7 +289,7 @@ test("catalog discovery uses one SDK call and never silently falls back when the
   await expect(old.boundary.listNotionCatalogSdk({})).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
   expect((await import(pathToFileURL(old.module).href)).calls).toHaveLength(0);
   const current = await fixture({ catalog: true });
-  const options = { database: "selected", view: "view-id", maxAge: 1000, cwd: "/selected", env: { SDK_TEST_ID: "authorized-scope" } };
+  const options = { library: "selected", view: "view-id", maxAge: 1000, cwd: "/selected", env: { SDK_TEST_ID: "authorized-scope" } };
   expect(await current.boundary.listNotionCatalogSdk(options)).toEqual({ records: [], count: 0, view: "view-id", scope: "authorized-scope" });
   const calls = (await import(pathToFileURL(current.module).href)).calls;
   expect(calls).toHaveLength(1);
@@ -311,7 +312,7 @@ test("SC25 fixed-name files keep one scoped observed operation and reject missin
   const old = await fixture(), topic = channel("context-broker.notion-sdk"), events: unknown[] = [];
   const collect = (value: unknown) => events.push(value); topic.subscribe(collect);
   const current = await fixture({ files: true }), controller = new AbortController();
-  const target = "skill://Old/SKILL.md?snapshot=fixed", options = { cwd: "/selected", database: "selected-db", offline: true, env: { SDK_TEST_ID: "authorized-scope" }, signal: controller.signal };
+  const target = "skill://Old/SKILL.md?snapshot=fixed", options = { cwd: "/selected", library: "selected-db", offline: true, env: { SDK_TEST_ID: "authorized-scope" }, signal: controller.signal };
   try {
     await expect(old.boundary.listNotionFilesSdk(target, options)).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
     expect(await current.boundary.listNotionFilesSdk(target, options)).toEqual({ target, files: [], scope: "authorized-scope" });
@@ -399,16 +400,16 @@ test("content search requires the paired capability and preserves its scoped req
   const input = { query: " Case-sensitive 中文 query ", limit: 7 };
   for (const setup of [{}, { contentSearch: true, contentVersion: 2 }, { contentSearch: true, contentManifestVersion: 2 }]) {
     const installed = await fixture(setup);
-    await expect(installed.boundary.searchNotionContentSdk(input, { database: "entry" }))
+    await expect(installed.boundary.searchNotionContentSdk(input, { library: "entry" }))
       .rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
     expect((await import(pathToFileURL(installed.module).href)).calls).toHaveLength(0);
   }
   const installed = await fixture({ contentSearch: true }), signal = new AbortController().signal;
   const onAuthorize = async () => {}, deadline = Date.now() + 360_000;
-  await installed.boundary.searchNotionContentSdk(input, { sourceId: "selected", database: "entry", cwd: "/owned", signal, deadline, onAuthorize });
+  await installed.boundary.searchNotionContentSdk(input, { sourceId: "selected", library: "entry", cwd: "/owned", signal, deadline, onAuthorize });
   const calls = (await import(pathToFileURL(installed.module).href)).calls;
   expect(calls).toHaveLength(1);
-  expect(calls[0]).toMatchObject({ operation: "content-search", input, options: { database: "entry", cwd: "/owned", deadline } });
+  expect(calls[0]).toMatchObject({ operation: "content-search", input, options: { library: "entry", cwd: "/owned", deadline } });
   expect(calls[0].options.signal).toBe(signal);
   expect(calls[0].options.onAuthorize).toBe(onAuthorize);
   expect(calls[0].options).not.toHaveProperty("sourceId");
