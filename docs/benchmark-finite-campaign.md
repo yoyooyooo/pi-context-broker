@@ -79,7 +79,7 @@ selection, material, runtime, budget, or slots requires a new authorized plan.
 | `route_gate_only` | Phase `pilot`, purpose `native_calibration`, one model, Broker and native Pi, four common cases, one observation per case and condition: eight episodes. | Actual route, loading, observation, and accounting coverage. No expansion or business-quality acceptance is implied. |
 | `acceptance` | Phase `pilot` or `confirmation`, a complete schedule, and the existing protocol's purpose and comparison rules. | The declared acceptance comparison. Claims depend on its actual baseline, material, observations, and decision policy. |
 | `unstarted_followup` | Phase `pilot`, decision `descriptive`, the complete original scientific design, and only the exact unstarted suffix of the approved stopped source plan. | New observations in their own experiment. Original missing cells remain in the scientific denominator; old successes cannot fill them. |
-| `confirmation_continuation` | Phase `confirmation`, decision `acceptance`, a version 4 authority, the original complete scientific design, and precisely its accepted unstarted suffix. | Continued observations of that original design under a new owning plan. The original exposure and invalids remain; this is not a new blind confirmation. |
+| `confirmation_continuation` | Phase `confirmation`, decision `acceptance`, a version 4 or 5 authority, the original complete scientific design, and precisely its accepted unstarted suffix. | Continued observations of that original design under a new owning plan. The original exposure and invalids remain; this is not a new blind confirmation. |
 
 The generic configuration entry supports two candidates, or four candidates
 with two explicit comparison pairs. For four candidates, `environment_pairs`
@@ -402,6 +402,68 @@ retain the original invalid, and avoid claiming 20 valid observations or a new
 independent cold start. The same original cold operator's remaining positions
 require their separately bound operational handoff; engine tests and captures
 do not establish that the operator completed them.
+
+## Accepting the later provider stop without repeating a slot
+
+A version 5 authority handles the separately accepted provider stop after six
+executions of the 17-slot continuation. It requires a fresh affirmative decision
+bound to the version 4 authority, the published 86-record checkpoint, the actual
+route observation, and the stopped plan and closed ledger. A route observation
+does not itself authorize execution or establish long-run model reliability.
+The decision preserves 53 unstarted allocations, the total of 139, the absolute
+cap of 144, and the five unallocated reservations.
+
+The original 80 records remain byte-bound history. The registered continuation
+must have exactly six closed executions in its original order. The first five
+require complete original core and usage evidence. The sixth must remain an
+invalid `BENCHMARK_REPORTED_MODEL_UNAVAILABLE_AFTER_PROVIDER_ERROR`, with one
+actual model request and unknown input and output tokens. Its missing reported
+model label remains missing. Only that exact plan, run, slot and episode hash
+can use the historical provider-error check; it is never classified as a model
+match or a valid result. A different or additional failure is rejected.
+
+The fresh allocation contains the stopped 17-slot owner's orders 6 through 16,
+which are original scientific positions 9 through 19. Its selection references
+the stopped 17-slot plan, while its design, pairs, scoring, material and
+20-position denominator reference the original confirmation plan. These two
+verified historical owners are the only permitted material exposures. The
+first nine positions, including both retained invalids, cannot be replayed.
+Fresh startup captures and all other continuation constraints still apply.
+
+Preparation uses the existing finite-campaign and approved-campaign modules:
+
+```js
+const history = await readProviderStopCampaignHistory({
+  parentAuthorization, userApproval, predecessor, planFiles, pilotLedgerRoot,
+});
+const authority = await prepareApprovedProviderStopContinuation({
+  id, parentAuthorization, userApproval, predecessor, history,
+});
+```
+
+Both calls are data-only and require the exact current 86-reservation boundary
+without active source or campaign leases. The caller owns the exclusive new
+authority write. `readApprovedCampaign` rechecks a stored version 5 authority
+against its bound history after later scopes advance the campaign.
+
+The decision kind is `user-approved-provider-stop-continuation`. Its immutable
+references are `parent_authorization`, `stopped_checkpoint`, `route_governance`,
+and `retained_stop.source_plan` / `source_ledger`. It also binds the original
+user message and observation time, `retained_stop.run_id`, the 86/53/139/144
+counts, new `continuation.allocation_id` and `experiment_id`, the existing
+`model_window`, and `future_stop_policy` with core and unknown usage set to
+`stop`, retry false and window renewal false. The revision kind is
+`accepted-provider-stop-confirmation-continuation`; its derived partial record
+keeps both the original scientific plan and the immediate stopped source.
+
+Version 5 copies the entire parent model window, including its mode, and exposes
+no renewal parameter. Every subsequent scope retains the same model identity,
+parameters and window. The seven engineering allocations remain unchanged and
+follow the new 11-slot owner. Engineering starts only after physical count 97;
+the full sequence ends at 139. Any new core stop or unknown usage after the
+accepted 86 blocks further dispatch. The historical unknown cost remains
+unknown, and the old stopped plan stays stopped. Version 5 cannot parent another
+provider-stop continuation through this contract.
 
 ## Original failures and analysis revisions
 

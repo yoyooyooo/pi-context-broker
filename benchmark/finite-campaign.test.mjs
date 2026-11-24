@@ -14,12 +14,12 @@ import { writeRouteGate, verifyGateReference } from './gate.mjs';
 import { pilotScopePolicy, preparePilotScope, readPilotScopeAmendment, scopeReservationFields } from './pilot-scope.mjs';
 import { PROSPECTIVE_COHORT, readCohortHistory } from './prospective-cohort.mjs';
 import { FINITE_CAMPAIGN, finiteCampaignPolicy, prepareFiniteCampaign, assertFiniteCampaignPlan,
-  readFiniteCampaignAmendment, verifyFiniteCampaign, verifyFiniteCampaignScope, finiteCampaignReservationFields, readFiniteCampaignHistory, readAliasRevisionHistory, verifyFiniteOriginalResults, readAcceptedHistoryExtension, readAcceptedConfirmationContinuation } from './finite-campaign.mjs';
+  readFiniteCampaignAmendment, verifyFiniteCampaign, verifyFiniteCampaignScope, finiteCampaignReservationFields, readFiniteCampaignHistory, readAliasRevisionHistory, verifyFiniteOriginalResults, readAcceptedHistoryExtension, readAcceptedConfirmationContinuation, readProviderStopCampaignHistory } from './finite-campaign.mjs';
 import { exampleEnvelope } from './analysis/fixtures.mjs';
 import { normalizeEpisode } from './evidence/normalize.mjs';
 import { writeEvidenceBundle } from './evidence/store.mjs';
 import { assessReportedModel } from './reported-model.mjs';
-import { prepareApprovedCampaign, prepareApprovedCampaignRevision, prepareApprovedCampaignHistoryExtension, prepareApprovedCampaignConfirmationContinuation, readApprovedCampaign } from './approved-campaign.mjs';
+import { prepareApprovedCampaign, prepareApprovedCampaignRevision, prepareApprovedCampaignHistoryExtension, prepareApprovedCampaignConfirmationContinuation, prepareApprovedProviderStopContinuation, readApprovedCampaign } from './approved-campaign.mjs';
 import { declaredSchedule, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION } from './campaign-selection.mjs';
 import { startupCaptureSchedule, captureBindingsForCase } from './configure.mjs';
 import { scoreExperiment } from './analysis/compare.mjs';
@@ -67,11 +67,11 @@ function fixtureProtocol(id, { scope, modelCount = 2, expansion = false, routing
       'guidance', 'injection', 'return_contract', 'error_contract', 'cache', 'session', 'recovery', 'code_mode'] });
 }
 
-async function resultFor(plan, slot, runId, { attempts = [50], attemptsComplete = true, valid = true, stop = false, outcome = 'pass', omitRouting = false, reportedLabel, aliasStop = false, usageStop = false, admissionStop } = {}) {
+async function resultFor(plan, slot, runId, { attempts = [50], attemptsComplete = true, valid = true, stop = false, outcome = 'pass', omitRouting = false, reportedLabel, aliasStop = false, usageStop = false, providerStop = false, admissionStop } = {}) {
   const root = plan.execution.environment_root, rawRoot = join(root, 'raw'); await mkdir(rawRoot, { recursive: true });
   const rawPath = join(rawRoot, runId + '.json');
   const envelope = exampleEnvelope({ condition: slot.condition_id, caseId: slot.case_id, episodeId: runId,
-    repeat: slot.repeat, attemptInputs: attempts, attemptsComplete, valid, outcome, rawPath });
+    repeat: slot.repeat, attemptInputs: attempts, attemptOutput: providerStop ? null : 10, attemptsComplete, valid, outcome, rawPath });
   const condition = plan.protocol.conditions.find(item => item.id === slot.condition_id);
   const environment = plan.protocol.environments.find(item => item.id === condition.environment_id);
   const model = plan.protocol.models.find(item => item.id === condition.model_id);
@@ -82,14 +82,15 @@ async function resultFor(plan, slot, runId, { attempts = [50], attemptsComplete 
     const label = reportedLabel ?? model.routing.reported_model_ids[0];
     const events = envelope.input.attempts.map(attempt => ({ type: 'provider_stream_event', data: { request_id: attempt.request_id,
       attempt_id: attempt.id, api: model.api, model: model.route, provider: model.provider,
-      event: model.api === 'openai-completions' ? { model: label } : { response: { model: label } } } }));
+      event: providerStop ? { error: { status: 401 } } : model.api === 'openai-completions' ? { model: label } : { response: { model: label } } } }));
     const text = events.map(event => JSON.stringify(event)).join('\n') + (events.length ? '\n' : '');
     const path = join(rawRoot, runId + '-provider.jsonl'); await writeFile(path, text);
     const artifact = { id: 'provider-events', path, sha256: sha(text), bytes: Buffer.byteLength(text), kind: 'jsonl' }; envelope.input.artifacts.push(artifact);
     for (const [index, attempt] of envelope.input.attempts.entries()) {
       const ref = { artifact_id: artifact.id, sha256: artifact.sha256, line: index + 1 };
-      attempt.reported_model = assessReportedModel({ routing: model.routing, sent: attempt.sent, observations: [{ value: label,
-        field: model.api === 'openai-completions' ? '/data/event/model' : '/data/event/response/model', bound: true, ref }], refs: [ref] });
+      attempt.reported_model = assessReportedModel({ routing: model.routing, sent: attempt.sent, providerError: providerStop,
+        observations: providerStop ? [] : [{ value: label,
+          field: model.api === 'openai-completions' ? '/data/event/model' : '/data/event/response/model', bound: true, ref }], refs: [ref] });
     }
   }
   if (aliasStop) {
@@ -100,10 +101,11 @@ async function resultFor(plan, slot, runId, { attempts = [50], attemptsComplete 
     const path = join(rawRoot, runId + '-runtime.json'), bytes = JSON.stringify(runtime) + '\n'; await writeFile(path, bytes);
     envelope.input.artifacts.push({ id: 'collection-runtime-result', path, sha256: sha(bytes), bytes: Buffer.byteLength(bytes), kind: 'json' });
   }
-  if (usageStop) {
-    const runtime = { status: 'invalid', error: { code: 'BENCHMARK_USAGE_UNKNOWN' },
+  if (usageStop || providerStop) {
+    if (providerStop) envelope.input.admission.reasons = ['reported_model_unavailable_after_provider_error', 'runtime_not_a_business_episode:invalid'];
+    const runtime = { status: 'invalid', error: { code: providerStop ? 'BENCHMARK_REPORTED_MODEL_UNAVAILABLE_AFTER_PROVIDER_ERROR' : 'BENCHMARK_USAGE_UNKNOWN' },
       budget: { usage_unknown: true, requests: attempts.length, attempts: attempts.length,
-        input_tokens: attempts.reduce((sum, value) => sum + (value ?? 0), 0), output_tokens: attempts.length * 10 } };
+        input_tokens: attempts.reduce((sum, value) => sum + (value ?? 0), 0), output_tokens: providerStop ? 0 : attempts.length * 10 } };
     const path = join(rawRoot, runId + '-runtime.json'), bytes = JSON.stringify(runtime) + '\n'; await writeFile(path, bytes);
     envelope.input.artifacts.push({ id: 'collection-runtime-result', path, sha256: sha(bytes), bytes: Buffer.byteLength(bytes), kind: 'json' });
   }
@@ -1190,6 +1192,144 @@ test('partial confirmation cannot accept model transport, unknown zero, incomple
       assert.equal((await readdir(f.after.pilot)).filter(name => /^\d{3}\.json$/.test(name)).length, 80);
     });
   }
+});
+
+async function providerStopFixture() {
+  const previous = await partialConfirmationFixture();
+  const parent = await prepareApprovedCampaignConfirmationContinuation({ ...previous.inputs,
+    history: await readAcceptedConfirmationContinuation(previous.historyInputs) });
+  const parentPath = join(previous.after.owner, 'provider-parent4.json'); await save(parentPath, parent);
+  const parentReference = await reference(parentPath), current = { ...previous.after, approval: parentReference };
+  const partial = await prepare(current, { id: previous.id, role: CONFIRMATION_CONTINUATION, phase: 'confirmation',
+    protocol: previous.own.plan.protocol, selection: parent.revision.partial_allocation.selection,
+    prepareExecution: (p, e) => confirmationCaptureInputs(p, e, previous.own.plan) });
+  await writeClosedPlan(partial.plan, { startOrdinal: 81, count: 6,
+    resultOptions: index => index === 5 ? { attempts: [null], valid: false, stop: true, providerStop: true } : {} });
+  const ledgerPath = join(partial.plan.execution.control_root, 'ledger.jsonl');
+  const rows = (await readFile(ledgerPath, 'utf8')).trimEnd().split('\n').map(JSON.parse);
+  rows.at(-1).reason = 'subject_requested_stop'; await writeFile(ledgerPath, rows.map(JSON.stringify).join('\n') + '\n');
+  const terminal = rows.filter(row => row.type === 'episode_completed').at(-1);
+  const after = { ...await successor(current, partial, 8), count: 86 };
+  const checkpointPath = join(after.owner, 'provider-stopped86.json'), { start, end } = parent.revision.model_window;
+  await save(checkpointPath, { kind: 'accepted-continuation-final-durable-checkpoint', execution: {
+    closed_physical_reservations: 86, unresolved_physical_reservations: 0, approved_total_ceiling: 139, hard_limit: 144, unallocated_headroom: 5,
+    remaining_accepted_unstarted: { own: 11, code_mode: 24, scale_multiturn: 10, fault: 8, total: 53 },
+    shared_new_window_already_used: { starts_at: start, ends_at: end, second_window_authorized: false } } });
+  const routePath = join(after.owner, 'provider-route-observation.json'); await save(routePath, { kind: 'synthetic-route-observation', paid_probes: 0 });
+  const decision = { version: 1, kind: 'user-approved-provider-stop-continuation', approved: true, source: 'current-user-message',
+    user_message: 'Continue the remaining53 after the provider repair', recorded_at_utc: new Date((Date.parse(start) + Date.parse(end)) / 2).toISOString(),
+    parent_authorization: parentReference, stopped_checkpoint: await reference(checkpointPath), route_governance: await reference(routePath),
+    retained_stop: { run_id: terminal.run_id, source_plan: await reference(join(partial.plan.execution.control_root, 'plan.json')), source_ledger: await reference(ledgerPath) },
+    accepted_history_reservations: 86, approved_remaining_reservations: 53, total_reservation_ceiling: 139, max_scheduled_episodes: 144,
+    continuation: { allocation_id: 'provider-own11', experiment_id: 'provider-own11' }, model_window: { start, end },
+    future_stop_policy: { core: 'stop', usage_unknown: 'stop', retry: false, renew_window: false } };
+  const decisionPath = join(after.owner, 'provider-approval.json'); await save(decisionPath, decision);
+  const inputs = { id: 'provider-stop-authority', parentAuthorization: parentReference, userApproval: await reference(decisionPath), predecessor: after.predecessor };
+  return { previous, parent, parentReference, partial, after, decision, inputs,
+    historyInputs: { ...inputs, planFiles: after.historyPlans, pilotLedgerRoot: after.pilot } };
+}
+
+test('provider-stop continuation retains invalid86, transfers only11 of scientific20 and preserves the original139 ceiling', async t => {
+  const f = await providerStopFixture(), originalFiles = [f.parentReference.path, f.inputs.userApproval.path,
+    ...f.after.historyPlans, ...f.after.historyPlans.map(path => join(path.slice(0, -'plan.json'.length), 'ledger.jsonl')),
+    ...Array.from({ length: 86 }, (_, index) => join(f.after.pilot, String(index + 1).padStart(3, '0') + '.json'))];
+  const originals = await Promise.all(originalFiles.map(async path => [path, await readFile(path)]));
+  const history = await readProviderStopCampaignHistory(f.historyInputs);
+  const value = await prepareApprovedProviderStopContinuation({ ...f.inputs, history });
+  assert.equal(value.version, 5); assert.equal(value.history.scheduled_episodes, 86); assert.equal(value.new_reservation_ceiling, 53);
+  assert.equal(value.total_reservation_ceiling, 139); assert.equal(value.max_scheduled_episodes, 144);
+  assert.deepEqual(value.history.episodes.slice(0, 80), f.parent.history.episodes);
+  assert.deepEqual(value.history.unknown_usage_run_ids, [...f.parent.history.unknown_usage_run_ids, f.decision.retained_stop.run_id].sort());
+  const stop = value.history.episodes.at(-1);
+  assert.equal(stop.admission, 'invalid'); assert.equal(stop.stop_batch, true);
+  assert.equal(stop.budget_usage.model_requests, 1); assert.equal(stop.budget_usage.input_tokens, null); assert.equal(stop.budget_usage.output_tokens, null);
+  assert.deepEqual(value.allocations.slice(1), f.parent.allocations.slice(1)); assert.deepEqual(value.revision.model_window, f.parent.revision.model_window);
+  assert.equal(value.revision.partial_allocation.spent, 9); assert.equal(value.revision.partial_allocation.source_spent, 6);
+  assert.deepEqual(value.revision.partial_allocation.selection.slot_ids, f.previous.own.plan.slots.slice(9).map(slot => slot.slot_id));
+  const authorityPath = join(f.after.owner, 'provider-authority5.json'); await save(authorityPath, value); const ref = await reference(authorityPath);
+  assert.deepEqual((await readApprovedCampaign(ref)).value, value);
+  let serial = 0;
+  const rejectAuthority = async change => {
+    const bad = structuredClone(value); await change(bad); bad.history_checkpoint_sha256 = fingerprint(bad.history);
+    bad.authorization_sha256 = fingerprint({ ...bad, authorization_sha256: null });
+    const path = join(f.after.owner, 'provider-bad-authority-' + serial++ + '.json'); await save(path, bad);
+    await assert.rejects(readApprovedCampaign(await reference(path)));
+  };
+  await t.test('explicit decision, preserved unknowns, exact suffix, model window and budget fail closed', async () => {
+    for (const change of [v => { v.approved = false; }, v => { v.accepted_history_reservations = 85; },
+      v => { v.approved_remaining_reservations = 54; }, v => { v.total_reservation_ceiling = 144; },
+      v => { v.future_stop_policy.usage_unknown = 'continue'; }, v => { v.future_stop_policy.retry = true; },
+      v => { v.future_stop_policy.renew_window = true; }, v => { v.model_window.end = '2030-11-25T02:08:50.700Z'; },
+      v => { v.retained_stop.source_ledger.sha256 = 'f'.repeat(64); }, v => { v.retained_stop.run_id = 'another-failure'; }]) {
+      const bad = structuredClone(f.decision); change(bad); const path = join(f.after.owner, 'provider-bad-decision-' + serial++ + '.json'); await save(path, bad);
+      await rejectAuthority(async a => { a.revision.user_approval = await reference(path); });
+    }
+    for (const change of [v => { v.history.episodes[0].admission = 'tampered'; }, v => { v.history.episodes.at(-1).budget_usage.input_tokens = 0; },
+      v => { v.history.unknown_usage_run_ids.pop(); }, v => { v.revision.partial_allocation.spent = 8; },
+      v => { v.revision.partial_allocation.selection.slot_ids.unshift(f.previous.own.plan.slots[8].slot_id); },
+      v => { v.revision.partial_allocation.scientific_source_plan = v.revision.partial_allocation.source_plan; },
+      v => { v.revision.model_window.end = '2030-11-25T02:08:50.700Z'; }, v => { v.allocations.reverse(); }]) await rejectAuthority(change);
+  });
+  const current = { ...f.after, approval: ref };
+  const own = await prepare(current, { id: f.decision.continuation.allocation_id, role: CONFIRMATION_CONTINUATION, phase: 'confirmation',
+    protocol: f.previous.own.plan.protocol, selection: value.revision.partial_allocation.selection,
+    prepareExecution: (p, e) => confirmationCaptureInputs(p, e, f.previous.own.plan) });
+  assert.equal(own.plan.slots.length, 11); assert.equal(declaredSchedule(own.plan.protocol).length, 20);
+  await t.test('the original20 and stopped17 are the only material exceptions; no model or scorer change is allowed', async () => {
+    const reject = async change => {
+      const p = structuredClone(own.plan.protocol), e = structuredClone(own.plan.execution), input = structuredClone(own.input);
+      delete e.campaign_scope; await change(p, e, input); sealProtocol(p);
+      await assert.rejects(async () => prepareFiniteCampaign({ setup: { campaign_scope: input }, protocol: p, execution: e, slots: scheduleProtocol(p) }));
+    };
+    for (const change of [p => { p.models[0].parameters.maxTokens = (p.models[0].parameters.maxTokens ?? 4096) + 1; }, p => { p.models[0].backend.window.end = '2030-11-25T00:00:00Z'; },
+      p => { p.models[0].routing.reported_model_ids.push('unapproved-model'); }, p => { p.pairs.pop(); },
+      p => { p.policies.decision.quality_delta_min = -0.5; }, p => { p.corpus.cases[0].content_sha256 = 'f'.repeat(64); },
+      p => { p.policies.campaign.selection.slot_ids[0] = f.previous.own.plan.slots[8].slot_id; },
+      (_p, e) => { e.conditions = structuredClone(f.partial.plan.execution.conditions); }]) await reject(change);
+  });
+  await assert.rejects(runBatch({ plan: f.partial.plan, executeEpisode: () => assert.fail('Retained006 must never be retried') }), /ORIGINAL_CORE_STOP|COHORT_REPORTED_MODEL_NOT_MATCHED/);
+  await writeClosedPlan(own.plan, { startOrdinal: 87, count: 10 });
+  let after = await successor(current, own, 9);
+  await assert.rejects(prepare(after, { id: 'approved-code', role: 'acceptance', protocol: fixtureProtocol('code', { modelCount: 1, routing: true, caseCount: 12 }) }), /PREDECESSOR_INCOMPLETE/);
+  await writeClosedPlan(own.plan, { startOrdinal: 87, prefixCount: 10 }); after.count = 97;
+  await assert.rejects(prepare(after, { id: 'approved-scale-0', role: 'acceptance', protocol: fixtureProtocol('scale', { modelCount: 1, routing: true, caseCount: 1 }) }), /ALLOCATION_ORDER/);
+  for (const [index, allocation] of value.allocations.slice(1).entries()) {
+    const scope = await prepare(after, { id: allocation.id, role: 'acceptance', protocol: fixtureProtocol(allocation.id, { modelCount: 1, routing: true, caseCount: allocation.reservation_limit / 2 }) });
+    await writeClosedPlan(scope.plan, { startOrdinal: after.count + 1 }); after = await successor(after, scope, 10 + index);
+    if (index === 6) {
+      await assert.rejects(verifyFiniteCampaignScope(scope.plan, { forReservation: true }), /scope is complete/);
+      const completed = await runBatch({ plan: scope.plan, executeEpisode: () => assert.fail('The approved139 are already complete') });
+      assert.equal(completed.completed, 8);
+    }
+  }
+  assert.equal(after.count, 139); assert.equal((await readdir(f.after.pilot)).filter(name => /^\d{3}\.json$/.test(name)).length, 139);
+  assert.deepEqual((await readApprovedCampaign(ref)).value, value);
+  await assert.rejects(readProviderStopCampaignHistory(f.historyInputs), /BOUNDARY_ADVANCED/);
+  for (const [path, bytes] of originals) assert.deepEqual(await readFile(path), bytes);
+});
+
+test('provider-stop continuation preserves a fresh stop and fresh unknown after the accepted86', async () => {
+  const f = await providerStopFixture();
+  const value = await prepareApprovedProviderStopContinuation({ ...f.inputs, history: await readProviderStopCampaignHistory(f.historyInputs) });
+  const path = join(f.after.owner, 'provider-authority5.json'); await save(path, value); const ref = await reference(path);
+  const own = await prepare({ ...f.after, approval: ref }, { id: f.decision.continuation.allocation_id, role: CONFIRMATION_CONTINUATION, phase: 'confirmation',
+    protocol: f.previous.own.plan.protocol, selection: value.revision.partial_allocation.selection,
+    prepareExecution: (p, e) => confirmationCaptureInputs(p, e, f.previous.own.plan) });
+  let calls = 0;
+  await runBatch({ plan: own.plan, executeEpisode: ({ plan, slot, runId }) => {
+    calls++; return resultFor(plan, slot, runId, { attempts: [null], valid: false, stop: true, usageStop: true });
+  } });
+  assert.equal(calls, 1);
+  await assert.rejects(runBatch({ plan: own.plan, executeEpisode: () => assert.fail('A fresh stop blocks all further dispatch') }), /ORIGINAL_CORE_STOP/);
+  const ledger = join(own.plan.execution.control_root, 'ledger.jsonl'), bytes = await readFile(ledger);
+  const rows = bytes.toString().trimEnd().split('\n').map(JSON.parse); rows.find(row => row.type === 'episode_completed').result.stop_batch = false;
+  await writeFile(ledger, rows.map(JSON.stringify).join('\n') + '\n');
+  try { await assert.rejects(runBatch({ plan: own.plan, executeEpisode: () => assert.fail('Fresh unknown alone blocks dispatch') }), /ORIGINAL_UNKNOWN_USAGE/); }
+  finally { await writeFile(ledger, bytes); }
+  await assert.rejects(readFiniteCampaignHistory({ planFiles: [...f.after.historyPlans, join(own.plan.execution.control_root, 'plan.json')],
+    pilotLedgerRoot: f.after.pilot, prospectiveAuthorization: ref }), /ORIGINAL_CORE_STOP/);
+  assert.equal((await readdir(f.after.pilot)).filter(name => /^\d{3}\.json$/.test(name)).length, 87);
+  assert.deepEqual((await readApprovedCampaign(ref)).value, value);
 });
 
 test('partial confirmation still blocks a newly observed stop before the next dispatcher callback', async t => {

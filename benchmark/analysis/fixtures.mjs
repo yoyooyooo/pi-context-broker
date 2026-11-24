@@ -25,12 +25,12 @@ export function exampleProtocol({repeats=1,cases=[
   return protocol;
 }
 export function exampleEnvelope({condition='candidate',caseId='c1',repeat=0,outcome='pass',valid=true,
-  capability='supported',attemptInputs=[100],inputSemantics='includes_cache',cacheRead=80,cacheWrite=0,
+  capability='supported',attemptInputs=[100],attemptOutput=10,inputSemantics='includes_cache',cacheRead=80,cacheWrite=0,
   attemptsComplete=true,interventionsComplete=true,rescue=false,tools=[],criticalFail=false,duration=100,
   successTime=100,cost=null,retestOf=null,episodeId=null,rawPath='/unit/raw.json',adapterVerified=true}={}) {
   const episode_id=episodeId??condition+'-'+caseId+'-'+repeat;
   const raw={unit_test_only:true,identity:{episode_id},admission:{valid,attemptsComplete,interventionsComplete},
-    attempts:attemptInputs.map((input,i)=>({id:'a'+i,input,cacheRead,cacheWrite,output:10,reasoning:5})),
+    attempts:attemptInputs.map((input,i)=>({id:'a'+i,input,cacheRead,cacheWrite,output:attemptOutput,reasoning:5})),
     business:{outcome,capability},contracts:[{id:'business-contract',status:criticalFail?'fail':'pass',critical:criticalFail}],
     tools,interventions:rescue?[{id:'rescue-1',kind:'human_rescue'}]:[],timing:{duration,successTime}};
   const text=canonicalJson(raw)+'\n',sha256=createHash('sha256').update(text).digest('hex');

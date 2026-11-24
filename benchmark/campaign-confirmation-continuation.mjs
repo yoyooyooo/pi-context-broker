@@ -123,7 +123,10 @@ function modelWindow(source, input, accepted) {
 
 export function assertContinuationModels(protocol, authorized) {
   assert.equal(authorized.value.version, 4, 'CONFIRMATION_CONTINUATION_AUTHORITY_REQUIRED');
-  const { source } = authorized.confirmationContinuation, { start, end } = authorized.value.revision.model_window;
+  assertSameConfirmationModels(protocol, authorized.confirmationContinuation.source, authorized.value.revision.model_window);
+}
+
+export function assertSameConfirmationModels(protocol, source, { start, end }) {
   const models = structuredClone(source.protocol.models);
   for (const model of models) model.backend.window = { start, end };
   assert.deepEqual(protocol.models, models, 'CONFIRMATION_CONTINUATION_MODEL_CHANGED');
@@ -194,9 +197,15 @@ async function continuationCaptures(protocol, execution, source) {
  * actual startup contracts. It cannot be used for a new blind confirmation. */
 export async function assertConfirmationContinuation(protocol, execution, slots, amendment, authorized) {
   assertContinuationModels(protocol, authorized);
-  const { source, transition } = authorized.confirmationContinuation;
+  return assertSameConfirmationDesign(protocol, execution, slots, amendment, authorized.confirmationContinuation, authorized.value.revision.next_allocation_id);
+}
+
+/** Both approved continuation contracts retain the same original scientific
+ * design. Their separate history readers establish the permitted suffix. */
+export async function assertSameConfirmationDesign(protocol, execution, slots, amendment, continuation, nextAllocationId) {
+  const { source, transition } = continuation;
   assert.equal(amendment.role, CONFIRMATION_CONTINUATION);
-  assert.equal(amendment.id, authorized.value.revision.next_allocation_id, 'CONFIRMATION_CONTINUATION_NEW_OWNER_CHANGED');
+  assert.equal(amendment.id, nextAllocationId, 'CONFIRMATION_CONTINUATION_NEW_OWNER_CHANGED');
   assert.equal(protocol.id, transition.experiment_id, 'CONFIRMATION_CONTINUATION_EXPERIMENT_CHANGED');
   assert.deepEqual(amendment.selection, transition.selection, 'CONFIRMATION_CONTINUATION_SELECTION_CHANGED');
   assert.deepEqual(slots, source.slots.slice(transition.spent).map((slot, order) => ({ ...slot, order })), 'CONFIRMATION_CONTINUATION_SUFFIX_CHANGED');
