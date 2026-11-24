@@ -1,0 +1,806 @@
+{
+  "version": 1,
+  "kind": "public-accepted80-incremental-checkpoint",
+  "linked_history": {
+    "commit": "b76b4f61802a359751b417ee09a30842e93abf48",
+    "physical_reservations": 80,
+    "status": "linked_not_replayed",
+    "url": "https://github.com/yoyooyooo/pi-context-broker/tree/b76b4f61802a359751b417ee09a30842e93abf48/benchmark/results/2026-11-23-accepted-continuation-stop",
+    "release_manifest_file_sha256": "7a3754dced03c8302cd2cd2d28fbfc0a5333b2a890f292e74ac0da5eeb0608ca",
+    "accounting_file_sha256": "146b9d699c06a95f46d050e31522be969df1d26d6eeece6a7dd9a512cfe6c5f8"
+  },
+  "source_census_file_sha256": "caf4f8dca62f6954581694ba851dfe4093bd09c049e525ad2e966c9f24d7f407",
+  "accounting": {
+    "status": "stable_metadata_verified",
+    "started_at": "2026-11-24T04:33:47.680Z",
+    "observed_until": "2026-11-24T04:33:47.967Z",
+    "new_reservations": 6,
+    "new_completed": 6,
+    "new_unresolved": 0,
+    "physical_reservations": 86,
+    "completed": 86,
+    "unresolved_reservations": 0,
+    "counts": {
+      "valid": 76,
+      "invalid": 10,
+      "admission_unknown": 0,
+      "pass": 17,
+      "fail": 14,
+      "unknown": 45,
+      "not_applicable": 0,
+      "verified_success": 17,
+      "unassisted_success": 17
+    },
+    "new_counts": {
+      "valid": 5,
+      "invalid": 1,
+      "admission_unknown": 0,
+      "pass": 0,
+      "fail": 2,
+      "unknown": 3,
+      "not_applicable": 0,
+      "verified_success": 0,
+      "unassisted_success": 0
+    },
+    "cost": {
+      "known_subtotal": {
+        "model_requests": 396,
+        "input_tokens": 2061290,
+        "output_tokens": 56598,
+        "duration_ms": 3180554.9369950006
+      },
+      "unknown_by_field": {
+        "model_requests": [
+          "benchmark-two-model-admission-3-008"
+        ],
+        "input_tokens": [
+          "benchmark-terra-6-1-approved-gate-1-008",
+          "benchmark-two-model-cohort-3-expansion-021",
+          "benchmark-route-gate-3-003",
+          "benchmark-two-model-admission-2-001",
+          "benchmark-two-model-admission-3-008",
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "output_tokens": [
+          "benchmark-terra-6-1-approved-gate-1-008",
+          "benchmark-two-model-cohort-3-expansion-021",
+          "benchmark-route-gate-3-003",
+          "benchmark-two-model-admission-2-001",
+          "benchmark-two-model-admission-3-008",
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "duration_ms": []
+      },
+      "unknown_run_ids": [
+        "benchmark-two-model-admission-3-008",
+        "benchmark-terra-6-1-approved-gate-1-008",
+        "benchmark-two-model-cohort-3-expansion-021",
+        "benchmark-route-gate-3-003",
+        "benchmark-two-model-admission-2-001",
+        "benchmark-own-product-confirmation-unstarted-17-1-006"
+      ],
+      "unknown_runs": 6,
+      "coverage_by_field": {
+        "model_requests": {
+          "known": 85,
+          "total": 86
+        },
+        "input_tokens": {
+          "known": 80,
+          "total": 86
+        },
+        "output_tokens": {
+          "known": 80,
+          "total": 86
+        },
+        "duration_ms": {
+          "known": 86,
+          "total": 86
+        }
+      },
+      "total": {
+        "model_requests": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "duration_ms": 3180554.9369950006
+      },
+      "monetary_status": "unpriced_no_price_inference",
+      "complete_currency_cost": null
+    },
+    "original_completion_cost": {
+      "known_subtotal": {
+        "model_requests": 396,
+        "input_tokens": 2037669,
+        "output_tokens": 55829,
+        "duration_ms": 3180554.9369950006
+      },
+      "unknown_by_field": {
+        "model_requests": [
+          "benchmark-two-model-admission-3-008"
+        ],
+        "input_tokens": [
+          "benchmark-terra-6-1-approved-gate-1-008",
+          "benchmark-two-model-cohort-3-expansion-021",
+          "benchmark-route-gate-3-002",
+          "benchmark-route-gate-3-003",
+          "benchmark-two-model-admission-2-001",
+          "benchmark-two-model-admission-3-008",
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "output_tokens": [
+          "benchmark-terra-6-1-approved-gate-1-008",
+          "benchmark-two-model-cohort-3-expansion-021",
+          "benchmark-route-gate-3-002",
+          "benchmark-route-gate-3-003",
+          "benchmark-two-model-admission-2-001",
+          "benchmark-two-model-admission-3-008",
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "duration_ms": []
+      },
+      "unknown_run_ids": [
+        "benchmark-two-model-admission-3-008",
+        "benchmark-terra-6-1-approved-gate-1-008",
+        "benchmark-two-model-cohort-3-expansion-021",
+        "benchmark-route-gate-3-002",
+        "benchmark-route-gate-3-003",
+        "benchmark-two-model-admission-2-001",
+        "benchmark-own-product-confirmation-unstarted-17-1-006"
+      ],
+      "unknown_runs": 7,
+      "coverage_by_field": {
+        "model_requests": {
+          "known": 85,
+          "total": 86
+        },
+        "input_tokens": {
+          "known": 79,
+          "total": 86
+        },
+        "output_tokens": {
+          "known": 79,
+          "total": 86
+        },
+        "duration_ms": {
+          "known": 86,
+          "total": 86
+        }
+      },
+      "total": {
+        "model_requests": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "duration_ms": 3180554.9369950006
+      },
+      "monetary_status": "unpriced_no_price_inference",
+      "complete_currency_cost": null
+    },
+    "new_cost": {
+      "known_subtotal": {
+        "model_requests": 29,
+        "input_tokens": 128792,
+        "output_tokens": 1808,
+        "duration_ms": 373803.19845799997
+      },
+      "unknown_by_field": {
+        "model_requests": [],
+        "input_tokens": [
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "output_tokens": [
+          "benchmark-own-product-confirmation-unstarted-17-1-006"
+        ],
+        "duration_ms": []
+      },
+      "unknown_run_ids": [
+        "benchmark-own-product-confirmation-unstarted-17-1-006"
+      ],
+      "unknown_runs": 1,
+      "coverage_by_field": {
+        "model_requests": {
+          "known": 6,
+          "total": 6
+        },
+        "input_tokens": {
+          "known": 5,
+          "total": 6
+        },
+        "output_tokens": {
+          "known": 5,
+          "total": 6
+        },
+        "duration_ms": {
+          "known": 6,
+          "total": 6
+        }
+      },
+      "total": {
+        "model_requests": 29,
+        "input_tokens": null,
+        "output_tokens": null,
+        "duration_ms": 373803.19845799997
+      },
+      "monetary_status": "unpriced_no_price_inference",
+      "complete_currency_cost": null
+    },
+    "observed_lower_bound": {
+      "baseline": {
+        "model_requests": 367,
+        "input_tokens": 1936374,
+        "output_tokens": 54826
+      },
+      "new_completed": {
+        "model_requests": 29,
+        "input_tokens": 128792,
+        "output_tokens": 1808
+      },
+      "combined": {
+        "model_requests": 396,
+        "input_tokens": 2065166,
+        "output_tokens": 56634
+      },
+      "coverage": {
+        "old_completed": 80,
+        "new_primary_completed": 6,
+        "new_unresolved_not_measured": 0
+      },
+      "is_complete_total": false,
+      "definition": "Existing public observed lower bound plus actual new primary normalized partial subtotals; unresolved reservations contribute no assumed measurement."
+    },
+    "budget": {
+      "approved_total_ceiling": 139,
+      "original_hard_limit": 144,
+      "approved_remaining": 53,
+      "unallocated_headroom": 5
+    },
+    "allocation_progress": [
+      {
+        "id": "own-product-confirmation-unstarted-17-1",
+        "work_index": 3,
+        "role": "confirmation_continuation",
+        "reservation_limit": 17,
+        "reserved": 6,
+        "completed": 6,
+        "unresolved": 0,
+        "unstarted": 11,
+        "counts": {
+          "valid": 5,
+          "invalid": 1,
+          "admission_unknown": 0,
+          "pass": 0,
+          "fail": 2,
+          "unknown": 3,
+          "not_applicable": 0,
+          "verified_success": 0,
+          "unassisted_success": 0
+        },
+        "registered": true,
+        "execution_planned": 17,
+        "state": "registered_observations"
+      },
+      {
+        "id": "continuation-codemode-24",
+        "work_index": 4,
+        "role": "acceptance",
+        "reservation_limit": 24,
+        "reserved": 0,
+        "completed": 0,
+        "unresolved": 0,
+        "unstarted": 24,
+        "counts": {
+          "valid": 0,
+          "invalid": 0,
+          "admission_unknown": 0,
+          "pass": 0,
+          "fail": 0,
+          "unknown": 0,
+          "not_applicable": 0,
+          "verified_success": 0,
+          "unassisted_success": 0
+        },
+        "registered": false,
+        "execution_planned": 0,
+        "state": "approved_allocation_unregistered"
+      },
+      {
+        "id": "continuation-scale-implicit-n64-r1",
+        "work_index": 5,
+        "role": "acceptance",
+        "reservation_limit": 2,
+        "reserved": 0,
+        "completed": 0,
+        "unresolved": 0,
+        "unstarted": 2,
+        "counts": {
+          "valid": 0,
+          "invalid": 0,
+          "admission_unknown": 0,
+          "pass": 0,
+          "fail": 0,
+          "unknown": 0,
+          "not_applicable": 0,
+          "verified_success": 0,
+          "unassisted_success": 0
+        },
+        "registered": false,
+        "execution_planned": 0,
+        "state": "approved_allocation_unregistered"
+      },
+      {
+        "id": "continuation-scale-implicit-n256-r1",
+        "work_index": 5,
+        "role": "acceptance",
+        "reservation_limit": 2,
+        "reserved": 0,
+        "completed": 0,
+        "unresolved": 0,
+        "unstarted": 2,
+        "counts": {
+          "valid": 0,
+          "invalid": 0,
+          "admission_unknown": 0,
+          "pass": 0,
+          "fail": 0,
+          "unknown": 0,
+          "not_applicable": 0,
+          "verified_success": 0,
+          "unassisted_success": 0
+        },
+        "registered": false,
+        "execution_planned": 0,
+        "state": "approved_allocation_unregistered"
+      },
+      {
+        "id": "continuation-scale-references-n16-r2",
+        "work_index": 5,
+        "role": "acceptance",
+        "reservation_limit": 2,
+        "reserved": 0,
+        "completed": 0,
+        "unresolved": 0,
+        "unstarted": 2,
+        "counts": {
+          "valid": 0,
+          "invalid": 0,
+          "admission_unknown": 0,
+          "pass": 0,
+          "fail": 0,
+          "unknown": 0,
+          "not_applicable": 0,
+          "verified_success": 0,
+          "unassisted_success": 0
+        },
+        "registered": false,
+        "execution_planned": 0,
+        "state": "approved_allocation_unregistered"
+      },
+      {
+        "id": "continuation-scale-references-n16-r4",
+        "work_index": 5,
+        "role": "acceptance",
+        "reservation_limit": 2,
+        "reserved": 0,
+        "completed": 0,
+        "unresolved": 0,
+        "unstarted": 2,
+        "counts": {
+          "valid": 0,
+          "invalid": 0,
+          "admission_unknown": 0,
+          "pass": 0,
+          "fail": 0,
+          "unknown": 0,
+          "not_applicable": 0,
+          "verified_success": 0,
+          "unassisted_success": 0
+        },
+        "registered": false,
+        "execution_planned": 0,
+        "state": "approved_allocation_unregistered"
+      },
+      {
+        "id": "continuation-scale-tariff-n16-r8",
+        "work_index": 5,
+        "role": "acceptance",
+        "reservation_limit": 2,
+        "reserved": 0,
+        "completed": 0,
+        "unresolved": 0,
+        "unstarted": 2,
+        "counts": {
+          "valid": 0,
+          "invalid": 0,
+          "admission_unknown": 0,
+          "pass": 0,
+          "fail": 0,
+          "unknown": 0,
+          "not_applicable": 0,
+          "verified_success": 0,
+          "unassisted_success": 0
+        },
+        "registered": false,
+        "execution_planned": 0,
+        "state": "approved_allocation_unregistered"
+      },
+      {
+        "id": "continuation-store-fault-8",
+        "work_index": 6,
+        "role": "acceptance",
+        "reservation_limit": 8,
+        "reserved": 0,
+        "completed": 0,
+        "unresolved": 0,
+        "unstarted": 8,
+        "counts": {
+          "valid": 0,
+          "invalid": 0,
+          "admission_unknown": 0,
+          "pass": 0,
+          "fail": 0,
+          "unknown": 0,
+          "not_applicable": 0,
+          "verified_success": 0,
+          "unassisted_success": 0
+        },
+        "registered": false,
+        "execution_planned": 0,
+        "state": "approved_allocation_unregistered"
+      }
+    ],
+    "stops": [
+      {
+        "ordinal": 86,
+        "run_id": "benchmark-own-product-confirmation-unstarted-17-1-006",
+        "scope_id": "own-product-confirmation-unstarted-17-1",
+        "stop_batch": true,
+        "stop_reason": "subject_requested_stop",
+        "usage_unknown": true
+      }
+    ],
+    "product_acceptance_claim": false,
+    "scientific_denominator": "Per primary plan; physical accounting is not a pooled quality sample.",
+    "own_lineage": {
+      "original_design": 20,
+      "old_executions_already_in_baseline": 3,
+      "old003_retained_invalid": true,
+      "new_physical_capacity": 17,
+      "joint_quality_recomputed": false
+    },
+    "scopes": [
+      {
+        "scope_id": "own-product-confirmation-unstarted-17-1",
+        "registered": true,
+        "physical_selected": 17,
+        "scientific_planned_slots": 20,
+        "scientific_design_note": "Original Own design20; this execution owner selects original suffix17. Old3 remain only in accepted80.",
+        "reserved": 6,
+        "started": 6,
+        "completed": 6,
+        "unresolved": 0,
+        "counts": {
+          "valid": 5,
+          "invalid": 1,
+          "admission_unknown": 0,
+          "pass": 0,
+          "fail": 2,
+          "unknown": 3,
+          "not_applicable": 0,
+          "verified_success": 0,
+          "unassisted_success": 0
+        },
+        "raw_business": {
+          "valid": [
+            {
+              "run_id": "benchmark-own-product-confirmation-unstarted-17-1-001",
+              "status": "pass"
+            },
+            {
+              "run_id": "benchmark-own-product-confirmation-unstarted-17-1-002",
+              "status": "pass"
+            },
+            {
+              "run_id": "benchmark-own-product-confirmation-unstarted-17-1-003",
+              "status": "pass"
+            },
+            {
+              "run_id": "benchmark-own-product-confirmation-unstarted-17-1-004",
+              "status": "pass"
+            },
+            {
+              "run_id": "benchmark-own-product-confirmation-unstarted-17-1-005",
+              "status": "pass"
+            }
+          ],
+          "invalid": [
+            {
+              "run_id": "benchmark-own-product-confirmation-unstarted-17-1-006",
+              "status": "fail"
+            }
+          ]
+        },
+        "last_batch_close_present": true,
+        "last_batch_close_type": "batch_closed",
+        "primary_public_reference": {
+          "kind": "new-primary-package",
+          "public_path": "packages/own-product-confirmation-unstarted-17-1",
+          "public_manifest": {
+            "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+            "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+          },
+          "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+          "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+          "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+          "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+          "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+          "files": {
+            "analysis-input.json": {
+              "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+              "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+              "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+              "public_bytes": 2330801
+            },
+            "analysis.json": {
+              "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+              "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+              "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+              "public_bytes": 398637
+            }
+          }
+        }
+      }
+    ],
+    "rows": [
+      {
+        "ordinal": 81,
+        "run_id": "benchmark-own-product-confirmation-unstarted-17-1-001",
+        "scope_id": "own-product-confirmation-unstarted-17-1",
+        "slot_id": "m0-e1--explicit-01-a-n16-r1--r0",
+        "started": true,
+        "completed": true,
+        "budget_usage": {
+          "model_requests": 4,
+          "input_tokens": 17976,
+          "output_tokens": 274,
+          "duration_ms": 58563.496042
+        },
+        "observed_lower_bound": {
+          "model_requests": 4,
+          "input_tokens": 17976,
+          "output_tokens": 274
+        },
+        "admission": "valid",
+        "valid_outcome": "unknown",
+        "raw_business_status": "pass",
+        "verified_success": false,
+        "unassisted_success": false,
+        "stop_batch": false,
+        "stop_reason": null,
+        "source_episode_sha256": "6a1742ac71a1e1aae2d7667f7c83be2555261c3c024c506b7f4468b226082d21",
+        "public_episode_reference": {
+          "public_episode_sha256": "00838e9e90c5d050bdba82e6e91a1bfa7859d92b174b95a45acc33b0af36bdb8",
+          "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+          "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+          "pointer": "/episodes/0"
+        }
+      },
+      {
+        "ordinal": 82,
+        "run_id": "benchmark-own-product-confirmation-unstarted-17-1-002",
+        "scope_id": "own-product-confirmation-unstarted-17-1",
+        "slot_id": "m0-e1--equivalent-01-a-n16-r1--r0",
+        "started": true,
+        "completed": true,
+        "budget_usage": {
+          "model_requests": 4,
+          "input_tokens": 17835,
+          "output_tokens": 303,
+          "duration_ms": 55229.906665999995
+        },
+        "observed_lower_bound": {
+          "model_requests": 4,
+          "input_tokens": 17835,
+          "output_tokens": 303
+        },
+        "admission": "valid",
+        "valid_outcome": "unknown",
+        "raw_business_status": "pass",
+        "verified_success": false,
+        "unassisted_success": false,
+        "stop_batch": false,
+        "stop_reason": null,
+        "source_episode_sha256": "5e7af7f5709db61029da160527aecc283e54f94f3e3efa4e472b9b6fd11233b9",
+        "public_episode_reference": {
+          "public_episode_sha256": "f001c804bd55ff163823ba7893b55ea9e0eab185f3edf742b6282f4098418779",
+          "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+          "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+          "pointer": "/episodes/1"
+        }
+      },
+      {
+        "ordinal": 83,
+        "run_id": "benchmark-own-product-confirmation-unstarted-17-1-003",
+        "scope_id": "own-product-confirmation-unstarted-17-1",
+        "slot_id": "m0-e0--equivalent-01-a-n16-r1--r0",
+        "started": true,
+        "completed": true,
+        "budget_usage": {
+          "model_requests": 4,
+          "input_tokens": 17133,
+          "output_tokens": 309,
+          "duration_ms": 45142.784666
+        },
+        "observed_lower_bound": {
+          "model_requests": 4,
+          "input_tokens": 17133,
+          "output_tokens": 309
+        },
+        "admission": "valid",
+        "valid_outcome": "unknown",
+        "raw_business_status": "pass",
+        "verified_success": false,
+        "unassisted_success": false,
+        "stop_batch": false,
+        "stop_reason": null,
+        "source_episode_sha256": "99e07cc516aca0cf795ddfd4059ac9580193f932d504a935e70c4a5fb90681c7",
+        "public_episode_reference": {
+          "public_episode_sha256": "f629670c6c50d6c8e1ae60e952ec869306d5cb02299aebe9d064f5f21a60ab62",
+          "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+          "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+          "pointer": "/episodes/2"
+        }
+      },
+      {
+        "ordinal": 84,
+        "run_id": "benchmark-own-product-confirmation-unstarted-17-1-004",
+        "scope_id": "own-product-confirmation-unstarted-17-1",
+        "slot_id": "m0-e0--task-switch-01-a-n16-r2--r0",
+        "started": true,
+        "completed": true,
+        "budget_usage": {
+          "model_requests": 8,
+          "input_tokens": 37276,
+          "output_tokens": 458,
+          "duration_ms": 49416.726375
+        },
+        "observed_lower_bound": {
+          "model_requests": 8,
+          "input_tokens": 37276,
+          "output_tokens": 458
+        },
+        "admission": "valid",
+        "valid_outcome": "fail",
+        "raw_business_status": "pass",
+        "verified_success": false,
+        "unassisted_success": false,
+        "stop_batch": false,
+        "stop_reason": null,
+        "source_episode_sha256": "d802263e272c12327dedd0efe08b07b3174f1009d970f92e3433b6704f56eb74",
+        "public_episode_reference": {
+          "public_episode_sha256": "2a0c8a91de9a47357415f89d6c42d8700950d90f46f56330627e044468e1c196",
+          "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+          "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+          "pointer": "/episodes/3"
+        }
+      },
+      {
+        "ordinal": 85,
+        "run_id": "benchmark-own-product-confirmation-unstarted-17-1-005",
+        "scope_id": "own-product-confirmation-unstarted-17-1",
+        "slot_id": "m0-e1--task-switch-01-a-n16-r2--r0",
+        "started": true,
+        "completed": true,
+        "budget_usage": {
+          "model_requests": 8,
+          "input_tokens": 38572,
+          "output_tokens": 464,
+          "duration_ms": 154083.011084
+        },
+        "observed_lower_bound": {
+          "model_requests": 8,
+          "input_tokens": 38572,
+          "output_tokens": 464
+        },
+        "admission": "valid",
+        "valid_outcome": "fail",
+        "raw_business_status": "pass",
+        "verified_success": false,
+        "unassisted_success": false,
+        "stop_batch": false,
+        "stop_reason": null,
+        "source_episode_sha256": "756e44a0f122ccb2eb8726355447ff79e9a7e1062ac8e08d5f6abf26edc5c54d",
+        "public_episode_reference": {
+          "public_episode_sha256": "92e2668b40f2d6c6e77e4a8b3bc7b08c7f6fc58d78bca6bde3ed68363f443bb9",
+          "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+          "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+          "pointer": "/episodes/4"
+        }
+      },
+      {
+        "ordinal": 86,
+        "run_id": "benchmark-own-product-confirmation-unstarted-17-1-006",
+        "scope_id": "own-product-confirmation-unstarted-17-1",
+        "slot_id": "m0-e1--complementary-01-a-n16-r1--r0",
+        "started": true,
+        "completed": true,
+        "budget_usage": {
+          "model_requests": 1,
+          "input_tokens": null,
+          "output_tokens": null,
+          "duration_ms": 11367.273625
+        },
+        "observed_lower_bound": {
+          "model_requests": 1,
+          "input_tokens": 0,
+          "output_tokens": 0
+        },
+        "admission": "invalid",
+        "valid_outcome": null,
+        "raw_business_status": "fail",
+        "verified_success": false,
+        "unassisted_success": false,
+        "stop_batch": true,
+        "stop_reason": "subject_requested_stop",
+        "source_episode_sha256": "505d1b31cd161f35fce13e381936073bc450ae7a74fd545930f94e8969d898a1",
+        "public_episode_reference": {
+          "public_episode_sha256": "c2ea01b0e5efce78b608aff698899445e46f72766355ed454ca147300e3a09f4",
+          "public_file": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+          "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+          "pointer": "/episodes/5"
+        }
+      }
+    ]
+  },
+  "packages": [
+    {
+      "scope_id": "own-product-confirmation-unstarted-17-1",
+      "path": "packages/own-product-confirmation-unstarted-17-1",
+      "completed": 6,
+      "scientific_planned_slots": 20,
+      "public_manifest_file_sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a",
+      "public_manifest_sha256": "980c39f1f1989a0ca70a9f334a6ddd02f6691ace20fd300fb677078e79ef0d40",
+      "source_analysis_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+      "public_analysis_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+      "files": 346,
+      "bytes": 17880428,
+      "primary_public_reference": {
+        "kind": "new-primary-package",
+        "public_path": "packages/own-product-confirmation-unstarted-17-1",
+        "public_manifest": {
+          "path": "packages/own-product-confirmation-unstarted-17-1/public-manifest.json",
+          "sha256": "46cebffa21e9111d1fcc264f9134ab99f43ba58d68dd4986441db888fcd1b93a"
+        },
+        "source_analysis_semantic_sha256": "515b0f9598120c0e8c38a1a3d525760e79d45be9d9069c4f7ec11252939ffada",
+        "public_analysis_semantic_sha256": "960719b8b66967f3be51ca68e21bee1a9eab09c71da7461c0a25201c5f953c8c",
+        "source_protocol_sha256": "c1ceefc6ac5cd7044c5d36340a23798c6e4ede62a061755f7be946be7cec7291",
+        "public_protocol_sha256": "2d179860ec83a578c76a51e173e96d602ebd8a13bee02887d6628be1167bc1ea",
+        "source_report_manifest_file_sha256": "ae9aa19644cbde1f79cb37837d94ec033c73e5c0a0a8db99d3f95de4293a4142",
+        "files": {
+          "analysis-input.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis-input.json",
+            "source_file_sha256": "79257ca496fc9c23852e6e39809241f83b462e862824e6ffa099d42e6050ae7b",
+            "public_file_sha256": "17b2a85c2ca55b5bdf228920a1ce34a7dc4fff4ac42ec68452f1e94922c34c23",
+            "public_bytes": 2330801
+          },
+          "analysis.json": {
+            "public_path": "packages/own-product-confirmation-unstarted-17-1/analysis.json",
+            "source_file_sha256": "f7c46d8e4b4c7168b34383c09586b47af3a44fc24159230406f85b9910cf5e1c",
+            "public_file_sha256": "c675e044c36e2189b749306fd96de2a4004f81c91dd50dc421d0b7893017fe0b",
+            "public_bytes": 398637
+          }
+        }
+      }
+    }
+  ],
+  "lineage_status": "provided",
+  "source_lineage_file_sha256": "e4be9d454c3339f1dca3bf33eb72ccb514e2a41fe3f47bd4af8b3d78b76a972f",
+  "quiet_boundary": {
+    "observed_at": "2026-11-24T04:35:32.494349+00:00",
+    "evidence_level": "root-attested quiet/PID boundary; immutable metadata refs verified by this export"
+  },
+  "source_collector": {
+    "version": "1.1.0",
+    "source_sha256": "3e55859024ccfb009853b18f412f515ee712dbc19ea5a5925110c99d58681d15"
+  },
+  "publication_version": "1.0.6",
+  "subject_model_requests_created_by_publication": 0
+}
