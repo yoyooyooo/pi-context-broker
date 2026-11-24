@@ -613,12 +613,18 @@ Create an owned `control/source-closeout.json` manifest with `version: 1`,
 and a `sources` object containing both `cli` and `broker`. Each source has:
 
 - `head`: its exact current commit, with a clean tracked and untracked state.
-- `integration`: `target_ref` (an explicit local `refs/remotes/origin/...` ref),
+- `integration`: `target_ref` (an explicit local `refs/remotes/REMOTE/BRANCH` ref
+  belonging to one already configured remote),
   exact `target_commit`, `merged_commit`, and `method` (`ancestor` or `tree_equal`).
-  The merged commit must belong to the declared target. `tree_equal` supports a
-  squash merge without pretending the task commit became a target ancestor.
-  This checks local refs; fetch and confirm remote freshness through the existing
-  integration workflow before recording closeout.
+  The merged commit must belong to the declared target. `tree_equal` can prove
+  identical complete trees after an integration rebase without pretending the
+  original task commit became a target ancestor. Follow the repository's
+  permitted integration methods. Keep existing remote identities: for example,
+  use `refs/remotes/github/next` when `origin` remains the local seed and `github`
+  is the actual integration remote. Do not rename remotes or manufacture tracking
+  refs to pass closeout. This checks configured names and local refs, not their
+  remote freshness or fetch provenance; fetch and confirm the actual target
+  through the existing integration workflow before recording closeout.
 - `references`: all frozen-build references from the snapshot, plus any explicitly
   declared owned JSON references. A build retains both source paths because the
   current `check` contract reads their Git HEADs. Its recorded source HEAD may
