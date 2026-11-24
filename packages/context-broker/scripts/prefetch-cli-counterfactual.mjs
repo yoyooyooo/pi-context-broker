@@ -8,11 +8,11 @@ import { isAbsolute, join } from 'node:path';
 
 const argv = process.argv.slice(2);
 if (argv.includes('--help')) {
-  console.log('node prefetch-cli-counterfactual.mjs --command-json \'["/absolute/node","/absolute/installed/ntn-skills.js"]\' --graph GRAPH --entry DATABASE --root-id EXACT_ID --evidence-root /absolute/evidence [--samples 1..3]');
+  console.log('node prefetch-cli-counterfactual.mjs --command-json \'["/absolute/node","/absolute/installed/ntn-skills.js"]\' --graph GRAPH --library DATABASE --root-id EXACT_ID --evidence-root /absolute/evidence [--samples 1..3]');
   console.log('Read-only retained graph comparison. Each arm restores only the complete manifest into independent empty CLI roots, then selects the same pinned root and Required closure. Inherits existing authorization without reading or copying credentials.');
   process.exit(0);
 }
-const allowed = new Set(['--command-json', '--graph', '--entry', '--root-id', '--evidence-root', '--samples']);
+const allowed = new Set(['--command-json', '--graph', '--library', '--root-id', '--evidence-root', '--samples']);
 const options = new Map();
 for (let index = 0; index < argv.length; index += 2) {
   const key = argv[index], value = argv[index + 1];
@@ -22,7 +22,7 @@ for (let index = 0; index < argv.length; index += 2) {
 const required = key => { const value = options.get(key); assert(value, key + ' is required'); return value; };
 const command = JSON.parse(required('--command-json'));
 assert(Array.isArray(command) && command.length === 2 && command.every(value => typeof value === 'string' && isAbsolute(value)), 'Use exact installed Node and CLI entry paths');
-const graph = required('--graph'), entry = required('--entry'), rootId = required('--root-id'), evidenceRoot = required('--evidence-root');
+const graph = required('--graph'), entry = required('--library'), rootId = required('--root-id'), evidenceRoot = required('--evidence-root');
 assert(/^graph-[a-f0-9]{64}$/.test(graph) && hasExactNativeOwner(parseNativeReference(rootId)) && isAbsolute(evidenceRoot));
 const samples = Number(options.get('--samples') ?? 1);
 assert(Number.isSafeInteger(samples) && samples >= 1 && samples <= 3);
@@ -78,7 +78,7 @@ try {
     const name = sample + '-' + (enabled ? 'budget-on' : 'budget-off'), state = join(evidence, name);
     const env = { ...process.env, NTN_SKILLS_HOME: join(state, 'state'), NTN_SKILLS_CONFIG_HOME: join(state, 'config'),
       NTN_SKILLS_CACHE_HOME: join(state, 'cache'), NTN_SKILLS_DATA_HOME: join(state, 'data'), NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000' };
-    const restored = await invoke(name + '-manifest', ['ctl', 'library', 'graph', 'restore', graph, '--entry', entry, '--materialize', 'manifest'], env);
+    const restored = await invoke(name + '-manifest', ['ctl', 'library', 'graph', 'restore', graph, '--library', entry, '--materialize', 'manifest'], env);
     assert.equal(restored.value.manifest_complete, true);
     assert.equal(restored.value.loaded, false);
     assert(restored.value.nodes.every(node => node.materialization?.materialized_paths?.length === 0), 'Every consumer starts without file objects');

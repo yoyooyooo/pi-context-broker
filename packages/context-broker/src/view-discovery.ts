@@ -1,3 +1,4 @@
+import type { LibrarySelectionOwner } from "./library-selection";
 import { recordIdentity } from "./discovery-records";
 import { isDeepStrictEqual } from "node:util";
 import { discoverNotionSource, listNotionViews, SourceError } from "./notion-source";
@@ -83,14 +84,15 @@ export function formatViewStatus(views: readonly NotionViewState[]): string {
     : `${state.sourceId}: ${state.status === "empty" ? "no Views; empty default directory" : `default View failed (${state.code})`} · ${state.origin}`).join("\n");
 }
 
-export function createViewCommands(api: ExtensionAPI, config: ConfigFile, refresh: (ctx: ExtensionContext) => Promise<void>, status: () => readonly NotionViewState[]) {
+export function createViewCommands(api: ExtensionAPI, config: ConfigFile, refresh: (ctx: ExtensionContext) => Promise<void>, status: () => readonly NotionViewState[], libraries?: LibrarySelectionOwner) {
   let generation = 0;
   let controller = new AbortController();
   const invalidate = () => { generation++; controller.abort(); controller = new AbortController(); };
   for (const event of ["session_before_switch", "session_before_tree", "session_before_branch", "session_shutdown"] as const) api.on(event, invalidate);
-  const sourceFor = (id?: string) => {
-    const sources = enabledSources(config);
-    const source = id === undefined && sources.length === 1 ? sources[0] : sources.find(source => source.id === id);
+  const sourceFor = async (ctx: ExtensionContext, id?: string) => {
+    const selected = await libraries?.selected(ctx);
+    const sources = selected?.sources ?? enabledSources(config);
+    const source = id === undefined ? selected?.source ?? (sources.length === 1 ? sources[0] : undefined) : sources.find(source => source.id === id);
     if (!source) throw new Error(`Select one Notion source: ${sources.map(source => source.id).join(", ") || "none configured"}`);
     return source;
   };
@@ -101,13 +103,13 @@ export function createViewCommands(api: ExtensionAPI, config: ConfigFile, refres
       if (command === "view" && !parts.length) { ctx.ui?.notify?.(formatViewStatus(status()), "info"); return true; }
       if (command === "views") {
         if (parts.length > 1) throw new Error("Usage: /context-broker views [source-id]");
-        const source = sourceFor(parts[0]);
+        const source = await sourceFor(ctx, parts[0]);
         const views = await listNotionViews(source, ctx.cwd ?? process.cwd(), controller.signal);
         ctx.ui?.notify?.([`Views for ${source.id} (API order):`, ...views.map((view, index) => `${index + 1}. ${view.name}\n  /context-broker view ${source.id} ${view.id}`), views.length ? "" : "No Views; the default directory is empty."].join("\n"), "info");
         return true;
       }
       if (parts.length < 1 || parts.length > 2) throw new Error("Usage: /context-broker view [source-id] <view-id|Notion-URL|default>");
-      const source = sourceFor(parts.length === 2 ? parts[0] : undefined);
+      const source = await sourceFor(ctx, parts.length === 2 ? parts[0] : undefined);
       const selector = parts.at(-1)!;
       if (!api.appendEntry) throw new Error("The host does not support persisted session View selection.");
       invalidate();

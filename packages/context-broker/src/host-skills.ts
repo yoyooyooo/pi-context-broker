@@ -1,3 +1,5 @@
+import { inheritLibraryContext, libraryContext, type LibrarySelectionOwner } from "./library-selection";
+import { resolveNotionLibrarySdk } from "./notion-sdk";
 import { createHash, randomUUID } from "node:crypto";
 import { cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -39,6 +41,7 @@ import { createContentPublication } from "./content-publication";
 
 export type HostSkillOptions = {
   config: ConfigFile;
+  librarySelection?: LibrarySelectionOwner;
   getRecords(ctx?: ExtensionContext, signal?: AbortSignal, refreshSourceIds?: readonly string[]): Promise<DiscoveryResult<SkillRecord>>;
   metadataInvalidated?(ctx: ExtensionContext): boolean;
   contentSearch?(input: ContentSearchRequest, sourceId: string, ctx: ExtensionContext, options: ContentSearchOptions): Promise<ContentSearchResult>;
@@ -72,7 +75,7 @@ export type HostSkillOptions = {
 export type PreparedReference = { status: "ready"; record: SkillRecord } | { status: "miss" };
 export type HostSkills = {
   invalidate(): void;
-  refresh(ctx?: ExtensionContext): Promise<void>;
+  refresh(ctx?: ExtensionContext, options?: { preserveTurn?: boolean }): Promise<void>;
   activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord>;
   prepare(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<PreparedReference>;
   prepareMany(records: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal): Promise<void>;
@@ -431,6 +434,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
   const nativeCommands = new Map<string, (args: string, ctx: ExtensionContext, images?: ImageContent[], entry?: ActivePreparation) => Promise<void>>();
   host.on("agent_end", () => {
+    acceptedContext = undefined;
     if (piRun?.entry) gate.release(piRun.entry);
     piRun = undefined;
     if (deferredPiDiscovery) handoff = undefined;
@@ -441,6 +445,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     printTurns.clear();
   });
 
+  let acceptedContext: ExtensionContext | undefined;
+  const turnContext = (ctx: ExtensionContext) => inheritLibraryContext(ctx, piRun?.entry?.ctx ?? gate.active?.ctx ?? acceptedContext);
+  const visibleInLibrary = (record: SkillRecord, ctx: ExtensionContext) => !options.librarySelection || record.source !== "notion"
+    || record.sourceId === libraryContext(ctx)?.peek()?.source.id;
   async function ready(signal: AbortSignal = lifecycleController.signal): Promise<void> {
     checkPreparationSignal(signal);
     const cancelled = Promise.withResolvers<never>();
@@ -488,13 +496,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (typeof input.query !== "string" || !input.query.trim()
       || input.cursor !== undefined || Number(input.limit ?? 20) > CONTENT_SEARCH_MAX_RESULTS) throw hostError("INVALID_ARGUMENT");
     const enabledSources = () => (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
-    const sources = enabledSources();
-    if (input.source === undefined && sources.length !== 1)
+    const selectedLibrary = await options.librarySelection?.selected(ctx);
+    const sources = selectedLibrary?.sources ?? enabledSources();
+    if (input.source === undefined && !selectedLibrary && sources.length !== 1)
       throw Object.assign(new Error("Choose one configured Notion source for content search."), { code: "CONTENT_SOURCE_REQUIRED" });
-    const sourceId = typeof input.source === "string" ? input.source : sources[0]?.id;
+    const sourceId = typeof input.source === "string" ? input.source : selectedLibrary?.source.id ?? sources[0]?.id;
     const source = sources.find(value => value.id === sourceId);
     if (!source || source.type !== "notion") throw hostError("SOURCE_UNAVAILABLE");
-    if (!source.database?.trim())
+    if (!source.library?.trim())
       throw Object.assign(new Error("Content search requires a configured Notion source with an explicit library entry."), { code: "CONTENT_SOURCE_REQUIRED" });
     if (source.discovery?.offline) throw hostError("CONTENT_SEARCH_OFFLINE");
     const requestedConfiguration = JSON.stringify(source);
@@ -503,7 +512,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     revalidateMetadata(ctx, input.refresh === true ? [source.id] : undefined);
     await ready(signal);
     const sourceConfiguration = () => {
-      const current = enabledSources().find(value => value.id === source.id);
+      const current = (selectedLibrary?.sources ?? enabledSources()).find(value => value.id === source.id);
       return current && !options.metadataInvalidated?.(ctx) ? JSON.stringify(current) : undefined;
     };
     if (sourceConfiguration() !== requestedConfiguration) throw preparationCancelled();
@@ -564,6 +573,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     approval: () => "read", approvalCacheTargets: () => undefined,
     sourcePath: import.meta.url, defaultInactive: false,
     async execute(_id, input, signal, _onUpdate, ctx) {
+      ctx = turnContext(ctx);
       const readSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
       checkPreparationSignal(readSignal);
       if ((input.query !== undefined || !piConsumption) && (typeof input.query !== "string" || input.query.length > 512)
@@ -578,7 +588,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const query = String(input.query ?? "").trim().toLocaleLowerCase();
       const sourceIds = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => source.id);
       if (piConsumption && input.source !== undefined && !sourceIds.includes(String(input.source))) throw hostError("SOURCE_UNAVAILABLE");
-      const selectedSources = input.source === undefined ? sourceIds : [String(input.source)];
+      const selectedLibrary = await options.librarySelection?.selected(ctx);
+      const selectedSources = input.source === undefined ? selectedLibrary ? [selectedLibrary.source.id] : sourceIds : [String(input.source)];
       revalidateMetadata(ctx, input.refresh === true ? selectedSources : undefined);
       await ready(readSignal);
       if (discoveryError) throw discoveryError;
@@ -588,9 +599,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const freshness = selectedSources.map(source => ({ source,
         ...notionListFreshness(metadataLists.find(list => list.sourceId === source), now) }));
       const matches = [...hostRecords.values()].filter(record => record.ref && record.source === "notion"
-        && (input.source === undefined || record.sourceId === input.source)
+        && record.sourceId !== undefined && selectedSources.includes(record.sourceId)
         && (!query || [record.name, record.alias, record.description].some(value => value?.toLocaleLowerCase().includes(query))));
-      const catalogKey = createHash("sha256").update(JSON.stringify([metadataGeneration, query, input.source ?? null,
+      const catalogKey = createHash("sha256").update(JSON.stringify([metadataGeneration, options.librarySelection?.key(ctx), query, selectedSources,
         matches.map(record => [recordIdentity(record), record.ref, record.name, record.description, observations.state(record)]), views, coverage, failures])).digest("hex");
       let offset = 0;
       if (typeof input.cursor === "string") {
@@ -1130,6 +1141,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
 
   async function refreshMetadata(ctx?: ExtensionContext, announce = true, preserveTurn = false, refreshSourceIds?: readonly string[]): Promise<void> {
+    ctx = ctx && options.librarySelection ? options.librarySelection.capture(ctx) : ctx;
     const selectedGeneration = ++metadataGeneration;
     metadataController.abort();
     metadataController = new AbortController();
@@ -1146,7 +1158,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const observation = observations.begin(metadataSignal);
     try {
       const result = await options.getRecords(ctx, metadataSignal, refreshSourceIds);
-      if (metadataGeneration !== selectedGeneration) return;
+      if (metadataGeneration !== selectedGeneration || ctx && options.librarySelection && !options.librarySelection.isCurrent(ctx)) return;
       // Shared Notion metadata indexes stay immutable; published native views belong to this host process.
       const next = result.records.filter(record => record.sourceId !== undefined).map(record => record.source === "notion" ? { ...record, metadataIndexPath: undefined } : record);
       const missing = next.filter(record => (record.kind === undefined || record.kind === "skill") && !record.metadataIndexPath && (record.source !== "notion" || record.defaultDiscovery === true));
@@ -1174,7 +1186,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       catalogPublication = new Promise<void>((done) => { release = done; });
       await previous;
       try {
-        if (metadataGeneration !== selectedGeneration) return;
+        if (metadataGeneration !== selectedGeneration || ctx && options.librarySelection && !options.librarySelection.isCurrent(ctx)) return;
         sourceFailures = result.failures;
         metadataLists = result.lists ?? [];
         for (const list of metadataLists) if (list.scope) catalogScopes.set(list.sourceId, list.scope);
@@ -1197,7 +1209,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         loading.clear();
         discoveryError = undefined;
         await updateDirectories(metadataSignal);
-        if (metadataGeneration !== selectedGeneration) return;
+        if (metadataGeneration !== selectedGeneration || ctx && options.librarySelection && !options.librarySelection.isCurrent(ctx)) return;
         for (const record of records) for (const path of adapter.catalogPaths?.(record) ?? []) readRecords.set(resolve(path), record);
         registerNativeCommands();
         options.onMetadata?.(next);
@@ -1213,14 +1225,15 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     finally { if (metadataGeneration === selectedGeneration) { metadataPending = false; metadataRefreshSources = new Set(); } }
   }
 
-  function refresh(ctx?: ExtensionContext, announce = true): Promise<void> {
-    metadataReadiness = refreshMetadata(ctx, announce);
+  function refresh(ctx?: ExtensionContext, announce = true, preserveTurn = false): Promise<void> {
+    metadataReadiness = refreshMetadata(ctx, announce, preserveTurn);
     return metadataReadiness;
   }
 
   if (adapter.submission.mode === "command" && host.registerCommand) host.registerCommand("context-broker-submit", {
     description: "Activate selected source Skills and resume the submitted prompt",
     async handler(id, ctx) {
+      ctx = turnContext(ctx);
       const entry = gate.active;
       if (!entry || entry.id !== id) return;
       const ownsCommandPreparation = !commandPreparations.has(entry);
@@ -1255,6 +1268,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     nativeInputs.clear();
   });
   for (const event of ["session_start", "session_switch", "session_tree", "session_branch"] as const) host.on(event, async (_event, ctx) => {
+    acceptedContext = undefined;
     // A successful host session boundary acknowledges disposal of its pending turn.
     generation++;
     lifecycleController.abort();
@@ -1277,6 +1291,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     void ready.catch(() => undefined);
   });
   host.on("session_shutdown", () => {
+    acceptedContext = undefined;
     generation++;
     metadataGeneration++;
     metadataController.abort();
@@ -1320,6 +1335,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
   });
   api.on("context", async (event, ctx) => {
+    ctx = turnContext(ctx);
     const run = deferredPiDiscovery ? piRun : undefined;
     try {
       const contextEntries = deferredPiDiscovery ? ctx.sessionManager?.buildSessionProjection?.().entries ?? [] : [];
@@ -1342,7 +1358,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           assertPiRun(run, ctx);
           const task = await options.taskPrompt?.(text, ctx, signal, entry) ?? text;
           assertPiRun(run, ctx);
-          const message = await options.buildPreparedPrompt?.(text, ctx, signal, [...entry.prepared.values()]);
+          const message = needsPreparation(text) ? await options.buildPreparedPrompt?.(text, ctx, signal, [...entry.prepared.values()]) : undefined;
           assertPiRun(run, ctx);
           for (const record of entry.prepared.values()) if (record.kind !== "prompt") run.candidates.set(recordIdentity(record), record);
           run.projection = message ? [{ ...message, role: "custom", timestamp: Date.now() }] : [];
@@ -1499,7 +1515,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     // A directory arriving during preparation must not retarget its name.
     const selectedNative = deferredPiDiscovery ? nativeRecord(text) : undefined;
     // Synchronous ownership closes the second-Enter gap before this hook's first await.
-    const entry = needsPreparation(text) ? beginPreparation(event, ctx) : undefined;
+    ctx = options.librarySelection?.capture(ctx) ?? ctx;
+    acceptedContext = ctx;
+    const entry = needsPreparation(text) || options.librarySelection && hasEnabledNotionSource(options.config) ? beginPreparation(event, ctx) : undefined;
     const submissionSignal = entry?.controller.signal ?? lifecycleController.signal;
     const submissionGeneration = generation;
     try {
@@ -1566,6 +1584,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return adapter.continuedInput;
   });
   host.on("before_agent_start", async (event, ctx) => {
+    ctx = turnContext(ctx);
     // before_agent_start has no input provenance; only a matching current receipt
     // may activate content. Delegated/bootstrap text is passed through unchanged.
     const beforeSignal = lifecycleController.signal, beforeGeneration = generation;
@@ -1608,11 +1627,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return { ...(message ? { message } : {}), systemPrompt: adapter.systemPrompt?.(systemPrompt) ?? systemPrompt };
   });
   function catalogSystemPrompt(input: string | string[] | undefined, ctx: ExtensionContext,
-    candidateRefs = modelCandidateReferences([...records, ...defaultRouters].filter(available), ctx), omitDescription?: (record: SkillRecord) => boolean): string {
-    let systemPrompt = viewSystemPrompt(input, records.filter(available), defaultRouters.filter(available), new Set(readRecords.keys()), views, ctx.cwd,
+    candidateRefs = modelCandidateReferences([...records, ...defaultRouters].filter(record => available(record) && visibleInLibrary(record, ctx)), ctx), omitDescription?: (record: SkillRecord) => boolean): string {
+    let systemPrompt = viewSystemPrompt(input, records.filter(record => available(record) && visibleInLibrary(record, ctx)), defaultRouters.filter(record => available(record) && visibleInLibrary(record, ctx)), new Set(readRecords.keys()), views.filter(view => !options.librarySelection || view.sourceId === libraryContext(ctx)?.peek()?.source.id), ctx.cwd,
       record => candidateRefs.get(record), listToolName, piConsumption, omitDescription);
     if (deferredPiDiscovery) {
-      if (metadataPending || discoveryError || sourceFailures.some(failure => failure.blocking !== false)) {
+      if (metadataPending || discoveryError || options.librarySelection && !libraryContext(ctx)?.peek() || sourceFailures.some(failure => failure.blocking !== false)) {
         const state = metadataPending ? "pending" : "unavailable";
         systemPrompt += `\n\n<ntn-skills-discovery status="${state}">Notion metadata is ${state}; this does not mean the directory is empty. Use ${listToolName} when the task needs discovery. It reports source failures. Visible entries may come from a previous observation. Previously loaded instructions keep their selected versions.</ntn-skills-discovery>`;
       }
@@ -1620,9 +1639,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return systemPrompt;
   }
   if (deferredPiDiscovery) host.on("context_with_system", (event, ctx) => {
+    ctx = turnContext(ctx);
     if (event.messages[0]?.role !== "system" || lifecycleController.signal.aborted || piRun?.signal.aborted) return undefined;
     // Render only metadata already observed by the cancellable context boundary.
-    const candidateRefs = modelCandidateReferences([...records, ...defaultRouters].filter(available), ctx);
+    const candidateRefs = modelCandidateReferences([...records, ...defaultRouters].filter(record => available(record) && visibleInLibrary(record, ctx)), ctx);
     let branch: ReturnType<typeof reduceSessionShortRefs> | undefined;
     try { branch = reduceSessionShortRefs(ctx.sessionManager?.getBranch?.() ?? []); }
     catch { /* Unverifiable branch references cannot justify omitting metadata. */ }
@@ -1654,7 +1674,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const visible = event.messages.filter(message => message.role !== "custom" || message.customType !== section);
     const messages = withSessionSourceReceipts(visible, ctx.sessionManager?.buildSessionProjection?.().entries ?? []);
     const projected = projectCatalogDescriptions({ messages,
-      defaults: [...records, ...defaultRouters].filter(available).flatMap(record => { const card = defaultCard(record); return card ? [card] : []; }),
+      defaults: [...records, ...defaultRouters].filter(record => available(record) && visibleInLibrary(record, ctx)).flatMap(record => { const card = defaultCard(record); return card ? [card] : []; }),
       identify,
       matchesRead(ref, binding, identity) {
         if (!branch) return false;
@@ -1855,6 +1875,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     sourcePath: import.meta.url, defaultInactive: false,
     ...(piConsumption ? { exposure: "model-only" as const, defaultActive: true } : {}),
     async execute(id, input, signal, _onUpdate, ctx) {
+      ctx = turnContext(ctx);
       const observedEffects: ConsumptionEffects[] = [];
       let acquiring = false;
       try {
@@ -1974,7 +1995,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     description: "Inspect this branch's Skill graph or working_set. working_set show lists confirmed roots, Requires, visible instruction bytes and the session budget; budget explicitly sets max_bytes, null disables it; release retires only the supplied fixed roots and preserves shared Requires, Session history and Notion. Alternatively request cli_source for one exact configured Notion source's host-local CLI prefix when an authorized maintenance/source task needs it. These operations do not execute CLI commands or grant authorization. Choose only one operation.",
     parameters: { type: "object", properties: {
       refs: { type: "array", maxItems: 64, items: { type: "string" }, description: "Optional fixed sr:S/sr:R references to export as canonical identity and exact version proofs for independent validation." },
-      cli_source: { type: "string", minLength: 1, description: "Exact enabled Notion source ID from host guidance. Return its host-local command prefix without execution; do not select a source implicitly." },
+      cli_source: { type: ["string", "null"], minLength: 1, description: "Use null for this accepted turn’s Library, or an exact enabled Notion source ID to choose another write target. Returns the verified root scope and host-local command prefix without execution." },
       working_set: { type: "string", enum: ["show", "budget", "release"], description: "Inspect, explicitly budget, or release this session's Notion root/Requires working set. No remote writes or historical deletion." },
       roots: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" }, description: "For release only. Copy fixed root refs from working_set show or selected sr:S refs. Required-only nodes cannot be released directly." },
       // A literal null branch prevents the host's schema converter from
@@ -1985,6 +2006,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     sourcePath: import.meta.url, defaultInactive: piConsumption,
     ...(piConsumption ? { exposure: "deferred" as const, defaultActive: false } : {}),
     async execute(_id, input, signal, _update, ctx) {
+      ctx = turnContext(ctx);
       checkPreparationSignal(signal);
       if (Object.keys(input).some(key => !["refs", "cli_source", "working_set", "roots", "max_bytes"].includes(key)) || input.refs !== undefined && (!Array.isArray(input.refs) || input.refs.length > 64
         || input.refs.some(value => typeof value !== "string"))) throw hostError("INVALID_ARGUMENT");
@@ -2027,12 +2049,18 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       }
       if (input.roots !== undefined || input.max_bytes !== undefined) throw hostError("INVALID_ARGUMENT");
       if (input.cli_source !== undefined) {
-        if (typeof input.cli_source !== "string" || !input.cli_source.length || input.refs !== undefined) throw hostError("INVALID_ARGUMENT");
+        if (input.cli_source !== null && (typeof input.cli_source !== "string" || !input.cli_source.length) || input.refs !== undefined) throw hostError("INVALID_ARGUMENT");
         const active = host.getActiveTools?.();
         if (!active?.includes("bash") || !piConsumption && !active.includes(controlToolName)) throw hostError("HOST_CLI_TOOL_UNAVAILABLE");
-        const sources = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && source.id === input.cli_source);
-        if (!sources.length) throw hostError("HOST_SOURCE_UNAVAILABLE");
-        if (sources.length !== 1) throw hostError("HOST_SOURCE_AMBIGUOUS");
+        const selected = input.cli_source === null ? await options.librarySelection?.selected(ctx) : undefined;
+        const configured = input.cli_source === null ? selected ? [selected.source] : []
+          : (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && source.id === input.cli_source);
+        if (!configured.length) throw hostError("HOST_SOURCE_UNAVAILABLE");
+        if (configured.length !== 1 || configured[0]!.type !== "notion") throw hostError("HOST_SOURCE_AMBIGUOUS");
+        const source = configured[0];
+        const library = selected?.library ?? (options.librarySelection ? await options.librarySelection.verify(source, ctx)
+          : await resolveNotionLibrarySdk({ library: source.library, cwd: ctx.cwd, env: { ...process.env }, signal }));
+        const sources = [{ ...source, library: library.library_id }];
         const result = { kind: "host_cli_scope", ...hostCliScope(sources), executed: false,
           execution: {
             default_cli_timeout_ms: 600_000,
@@ -2565,7 +2593,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
 
   const initialMetadata = refresh();
   if (adapter.metadataDiscovery !== "deferred") await initialMetadata;
-  return { invalidate() { metadataGeneration++; metadataController.abort(); generation++; lifecycleController.abort(); lifecycleController = new AbortController(); gate.cancel(false); turnPrompts = undefined; }, refresh, activate, prepare, prepareMany, withPreparedPrompt: async (prompt, ctx, build) => {
+  return { invalidate() { metadataGeneration++; metadataController.abort(); generation++; lifecycleController.abort(); lifecycleController = new AbortController(); gate.cancel(false); turnPrompts = undefined; }, refresh: (ctx, settings) => refresh(ctx, true, settings?.preserveTurn), activate, prepare, prepareMany, withPreparedPrompt: async (prompt, ctx, build) => {
     const receipt = handoff?.prompts.includes(prompt) ? handoff : undefined;
     const selectedGeneration = generation;
     try {

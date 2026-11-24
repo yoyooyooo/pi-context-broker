@@ -14,9 +14,9 @@ const uuid = (n: number) => "00000000-0000-4000-8000-" + n.toString().padStart(1
 const database = uuid(10), dataSource = uuid(11), page = uuid(1), scope = "a".repeat(64);
 const exists = (path: string) => stat(path).then(() => true, () => false);
 function sharedRecord(): ContentRecord {
-  return { id: "skill://entry?library=current-source", kind: "skill", name: "entry", alias: "entry", description: "Current shared item", default_context: false, enabled: true,
-    entrypoint: "SKILL.md", ref: "skill://entry/SKILL.md?library=current-source",
-    locator: { type: "shared_skill", library_id: "current-source", skill_id: "entry", page_id: page, database_id: database, data_source_id: dataSource } };
+  return { id: "skill://entry?library=00000000-0000-4000-8000-000000000099", kind: "skill", name: "entry", alias: "entry", description: "Current shared item", default_context: false, enabled: true,
+    entrypoint: "SKILL.md", ref: "skill://entry/SKILL.md?library=00000000-0000-4000-8000-000000000099",
+    locator: { type: "shared_skill", library_id: "00000000-0000-4000-8000-000000000099", skill_id: "entry", page_id: page, database_id: database, data_source_id: dataSource } };
 }
 function hostRecord(): SkillRecord {
   return { ...sharedRecord(), source: "notion", sourceId: "shared", sourceScope: scope, aliases: [], autoloadEnabled: true,
@@ -67,7 +67,7 @@ test("a failed full catalog and successful View remain independent without any f
 
 test("Profile and explicit View preserve their chosen authority and never contaminate full discovery", async () => {
   const f = await currentNotionFixture(), source = { ...f.source, profile_id: "work" };
-  const profile = { ...directory(f), capability_directory: true, profile: { library_id: "current-source", library_entry: database,
+  const profile = { ...directory(f), capability_directory: true, profile: { library_id: "00000000-0000-4000-8000-000000000099",
     profile_id: "work", fingerprint: "c".repeat(64), selection: "profile", source: "notion", freshness: f.state.catalog.freshness } };
   f.state.directory = profile;
   expect((await f.boundary.discoverNotionSource(source, f.root, { defaultView: true })).profileId).toBe("work");
@@ -93,7 +93,7 @@ test("disabled records are hidden while duplicate logical or physical identities
   const f = await currentNotionFixture();
   f.state.catalog.records = [{ ...f.record, enabled: false }];
   expect(await f.boundary.discoverNotionSource(f.source, f.root)).toHaveLength(0);
-  for (const second of [f.record, { ...f.record, id: "skill://other?library=current-source", ref: "skill://other/SKILL.md?library=current-source",
+  for (const second of [f.record, { ...f.record, id: "skill://other?library=00000000-0000-4000-8000-000000000099", ref: "skill://other/SKILL.md?library=00000000-0000-4000-8000-000000000099",
     locator: { ...f.record.locator, skill_id: "other" } }]) {
     f.state.catalog = { ...f.state.catalog, records: [f.record, second], count: 2 };
     await expect(f.boundary.discoverNotionSource(f.source, f.root)).rejects.toMatchObject({ code: "SOURCE_RESPONSE_INVALID" });
@@ -133,7 +133,7 @@ test("contextual stable IDs bind to an explicit source and fixed IDs use one fil
   expect(fixed.record.id).toBe(f.record.id); expect(fixed.ref).toBe(f.files[1]!.ref);
   expect(f.calls.map(call => call.operation)).toEqual(["list", "files"]);
   expect(fixed.record.body).toBeUndefined(); expect(await readFile(fixed.record.path, "utf8")).not.toContain(f.body);
-  await expect(f.boundary.resolveNotionReference("skill://entry/SKILL.md?snapshot=" + f.snapshot, [{ ...f.source, database: uuid(90) }], f.root))
+  await expect(f.boundary.resolveNotionReference("skill://entry/SKILL.md?snapshot=" + f.snapshot, [{ ...f.source, library: uuid(90) }], f.root))
     .rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
 });
 
@@ -159,7 +159,7 @@ test("shared identity encoding and exact selectors preserve the logical and phys
 });
 
 const importOperation = "current-import:adapter";
-const currentLibrary = { library_id: "current-source", database_id: database, data_source_id: dataSource };
+const currentLibrary = { library_id: "00000000-0000-4000-8000-000000000099", database_id: database, data_source_id: dataSource };
 async function observeWrite(result: Json, options: {
   resume?: boolean; supersede?: string; isError?: boolean; entry?: string; operation?: string;
   native?: string[];
@@ -184,7 +184,7 @@ async function observeWrite(result: Json, options: {
       "--skill-id", "entry", "--file-id", options.source.fileId]
     : ["source", options.source.kind, options.source.sourceId];
   const input = { command: [...hostCliScope([source]).command, "ctl", "library", ...route,
-    "--entry", options.entry ?? database, "--operation", options.operation ?? importOperation,
+    "--library", options.entry ?? "00000000-0000-4000-8000-000000000099", "--operation", options.operation ?? importOperation,
     ...(options.native ?? []).flatMap(path => ["--native", path]),
     ...(options.resume ? ["--resume"] : []),
     ...(options.supersede ? ["--supersede", options.supersede] : [])].map(quoted).join(" ") };

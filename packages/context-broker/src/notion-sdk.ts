@@ -5,6 +5,18 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { ContentSearchRequest } from "./content-search";
 import type { AuthorizationPresentation } from "./pi-authorization";
+const canonicalUuid = (value: string) => /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
+
+export type SharedLibrary = {
+  version: 2;
+  library_id: string;
+  operation_id: string;
+  skills: TableBinding;
+  files: TableBinding;
+  records: TableBinding;
+  sources: TableBinding;
+};
+type TableBinding = { database_id: string; data_source_id: string; property_ids: Record<string, string> };
 
 /** This boundary loads only the SDK bundled beside the selected ntn-skills CLI. */
 export class NotionSdkError extends Error {
@@ -17,7 +29,7 @@ export class NotionSdkError extends Error {
 type Options = {
   /** Broker observation identity; stripped before invoking the SDK. */
   sourceId?: string;
-  database?: string;
+  library?: string;
   cwd?: string;
   env?: Readonly<Record<string, string | undefined>>;
   signal?: AbortSignal;
@@ -39,9 +51,10 @@ type Options = {
 type RuntimeOptions = Omit<Options, "sourceId"> & { metrics?: boolean; onRequestMetrics?: (snapshot: unknown) => void };
 type Sdk = {
   SKILL_REF_VERSION: 2;
-  SDK_VERSION: 2;
+  SDK_VERSION: 3;
   CONSUMER_CONTRACT_VERSION: 1;
   PACKAGE_VERSION: string;
+  resolveLibrary: (options?: RuntimeOptions) => Promise<SharedLibrary>;
   consume: (input: unknown, options?: RuntimeOptions) => Promise<unknown>;
   decodeConsumeResult: (value: unknown, expected?: unknown) => Promise<unknown>;
   readSkill: (target: string, options?: RuntimeOptions) => Promise<unknown>;
@@ -78,9 +91,9 @@ function observationErrorCode(error: unknown): string | null {
   return object(error) && typeof error.code === "string" && /^[A-Z][A-Z0-9_]{0,127}$/.test(error.code) ? error.code : null;
 }
 function compatible(value: unknown): value is Sdk {
-  return object(value) && value.SKILL_REF_VERSION === 2 && value.SDK_VERSION === 2 && value.CONSUMER_CONTRACT_VERSION === 1
+  return object(value) && value.SKILL_REF_VERSION === 2 && value.SDK_VERSION === 3 && value.CONSUMER_CONTRACT_VERSION === 1
     && typeof value.PACKAGE_VERSION === "string" && value.PACKAGE_VERSION.length > 0
-    && typeof value.consume === "function" && typeof value.decodeConsumeResult === "function" && typeof value.readSkill === "function" && typeof value.parseDuration === "function";
+    && typeof value.resolveLibrary === "function" && typeof value.consume === "function" && typeof value.decodeConsumeResult === "function" && typeof value.readSkill === "function" && typeof value.parseDuration === "function";
 }
 async function loadBundledSdk(): Promise<Sdk> {
   bundledSdk ??= (async () => {
@@ -109,9 +122,9 @@ async function loadBundledSdk(): Promise<Sdk> {
 }
 
 /** Code is shared; every operation still creates and closes its own SDK runtime. */
-async function observed(operation: "consume" | "read" | "read-resources" | "list" | "files" | "resolve" | "content-search", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
+async function observed(operation: "library" | "consume" | "read" | "read-resources" | "list" | "files" | "resolve" | "content-search", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
   const { sourceId, ...runtimeOptions } = options;
-  const attribution = { source_id: sourceId ?? null, database: options.database ?? null };
+  const attribution = { source_id: sourceId ?? null, library: options.library ?? null };
   const enabled = observations.hasSubscribers;
   const id = enabled || resultObservations.hasSubscribers ? randomUUID() : undefined;
   const started = process.hrtime.bigint();
@@ -164,6 +177,22 @@ export function consumeNotionSdk(input: unknown, options: Options): Promise<unkn
   // consume returns the public decoder's verified result. Re-running that same
   // decoder would hash the whole graph twice without adding an identity check.
   return observed("consume", options, (sdk, runtime) => sdk.consume(input, runtime));
+}
+/** Core alone verifies the root, descriptor and four tables, including empty libraries. */
+export async function resolveNotionLibrarySdk(options: Options): Promise<SharedLibrary> {
+  const value = await observed("library", options, (sdk, runtime) => sdk.resolveLibrary(runtime));
+  if (!object(value) || value.version !== 2 || typeof value.library_id !== "string"
+    || !canonicalUuid(value.library_id) || typeof value.operation_id !== "string")
+    throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+  function table(value: unknown): value is TableBinding {
+    return object(value) && typeof value.database_id === "string" && canonicalUuid(value.database_id)
+      && typeof value.data_source_id === "string" && canonicalUuid(value.data_source_id)
+      && object(value.property_ids) && Object.values(value.property_ids).every(id => typeof id === "string");
+  }
+  if (!table(value.skills) || !table(value.files) || !table(value.records) || !table(value.sources))
+    throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+  return { version: 2, library_id: value.library_id, operation_id: value.operation_id,
+    skills: value.skills, files: value.files, records: value.records, sources: value.sources };
 }
 export function readNotionSdk(target: string, options: Options): Promise<unknown> {
   return observed("read", options, (sdk, runtime) => sdk.readSkill(target, runtime));

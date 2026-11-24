@@ -9,13 +9,14 @@ const { decodeCliWriteOutput, installCliWriteInvalidation } = await import(pathT
 const { hostCliScope } = await import(pathToFileURL(join(runtime.root, "src/host-command.ts")).href);
 const db = "22222222-2222-4222-8222-222222222222", otherDb = "22222222-2222-4222-8222-222222222223";
 const page = "11111111-1111-4111-8111-111111111111", ds = "33333333-3333-4333-8333-333333333333";
-const operation = "import:current-1", skill = "skill-one", library = { library_id: "lib:current", database_id: db, data_source_id: ds };
+const operation = "import:current-1", skill = "skill-one", library = { library_id: db, database_id: "44444444-4444-4444-8444-444444444444", data_source_id: ds };
+const rootUrl = "https://www.notion.so/" + db.replaceAll("-", "");
 const prefix = hostCliScope().command;
 const quote = (word: string) => "'" + word.replaceAll("'", "'\\''") + "'";
 const command = (...args: string[]) => [...prefix, ...args].map(quote).join(" ");
-const args = ["ctl", "library", "import", "/staged", "--entry", db, "--skill-id", skill, "--operation", operation];
+const args = ["ctl", "library", "import", "/staged", "--library", db, "--skill-id", skill, "--operation", operation];
 const currentCommand = command(...args);
-const atEntry = (entry: string) => command("ctl", "library", "import", "/staged", "--entry", entry, "--skill-id", skill, "--operation", operation);
+const atEntry = (entry: string) => command("ctl", "library", "import", "/staged", "--library", entry, "--skill-id", skill, "--operation", operation);
 const entryUrls = [
   "https://www.notion.so/Library-" + db.replaceAll("-", "") + "?v=ignored",
   "https://app.notion.com/p/team/library-" + db.replaceAll("-", "") + "?source=copy_link",
@@ -24,10 +25,10 @@ const entryUrls = [
 const current = { ok: true, contract: "current", status: "applied", operation_id: operation, skill_id: skill, page_id: page,
   input_sha256: "a".repeat(64), files: 3, state: "ready", library };
 const sources: SourceConfig[] = [
-  { id: "personal", type: "notion", database: db },
-  { id: "second", type: "notion", database: otherDb },
-  { id: "alias", type: "notion", database: "library" },
-  { id: "disabled", type: "notion", database: db, enabled: false },
+  { id: "personal", type: "notion", library: db },
+  { id: "second", type: "notion", library: otherDb },
+  { id: "alias", type: "notion", library: rootUrl },
+  { id: "disabled", type: "notion", library: db, enabled: false },
   { id: "unbound", type: "notion" },
 ];
 function record(sourceId: string, locator: ContentRecord["locator"] = { type: "shared_skill", ...library, skill_id: skill, page_id: page }): SkillRecord {
@@ -85,27 +86,27 @@ for (const literal of ["false", "no", "off", "0", "n"]) {
 assert.deepEqual(changed.splice(0), [], "False resume forms cannot turn an ordinary no-op into a recovery refresh");
 for (const cmd of [
   command(...args, "--"),
-  command("ctl", "library", "import", "--entry", db, "--skill-id", skill, "--operation", operation, "--", "--literal-directory"),
+  command("ctl", "library", "import", "--library", db, "--skill-id", skill, "--operation", operation, "--", "--literal-directory"),
 ]) {
   await result(cmd, current);
   changedLibrary("The current end-of-options delimiter preserves exactly one literal input");
 }
-await result(command("ctl", "library", "import", "/path with spaces/$(literal)", "--entry=library", "--skill-id=" + skill, "--description=--dry-run"), current);
+await result(command("ctl", "library", "import", "/path with spaces/$(literal)", "--library=" + rootUrl, "--skill-id=" + skill, "--description=--dry-run"), current);
 changedLibrary("Single-quoted literal paths and flag-looking metadata values do not become shell expansion or a dry run");
-await result(command("ctl", "library", "import", "/staged", "--entry", db.replaceAll("-", "").toUpperCase(), "--skill-id", skill), current);
+await result(command("ctl", "library", "import", "/staged", "--library", db.replaceAll("-", "").toUpperCase(), "--skill-id", skill), current);
 changedLibrary("Physical UUID spelling is normalized without inferring a name");
 for (const entry of entryUrls) {
   await result(atEntry(entry), current);
   changedLibrary("A current Notion URL selects the same exact physical entry as the configured UUID");
 }
-await result(command("ctl", "library", "import", "/staged", "--entry", otherDb, "--skill-id", "new-skill"), {
-  ...current, skill_id: "new-skill", page_id: "11111111-1111-4111-8111-111111111112", library: { ...library, library_id: "other-library", database_id: otherDb },
+await result(command("ctl", "library", "import", "/staged", "--library", otherDb, "--skill-id", "new-skill"), {
+  ...current, skill_id: "new-skill", page_id: "11111111-1111-4111-8111-111111111112", library: { ...library, library_id: otherDb, database_id: otherDb },
 });
 assert.deepEqual(changed.splice(0), [["second"]], "A first import can invalidate an exact configured database without a prior record");
 
 for (const cmd of [
-  command("list", "--entry", db), command("read", "skill://entry/SKILL.md"),
-  command("create", "/staged", "--database", db), command("apply", "/staged", "--database", db),
+  command("list", "--library", db), command("read", "skill://entry/SKILL.md"),
+  command("create", "/staged", "--library", db), command("apply", "/staged", "--library", db),
   command("replace", "/staged"), command("write", page), command("update", page),
   command("ctl", "sync", "local", "run", "binding"), command("ctl", "sync", "upstream", "run"),
   command("ctl", "operation", "resume", operation), command("ctl", "ctl", "library", "import", "/staged"),
@@ -117,7 +118,7 @@ for (const cmd of [
   currentCommand.replace("'/staged'", "`selector`"), currentCommand.replace("'/staged'", "'bad\0path'"),
   currentCommand.replace("'/staged'", "'bad\npath'"), command(...args, "--dry-run"),
   command(...args, "--help"), command(...args, "--progress"), command(...args, "--unknown", "value"),
-  command(...args, "--entry=" + db), command(...args, "--skill-id", skill), command(...args, "--operation=" + operation),
+  command(...args, "--library=" + db), command(...args, "--skill-id", skill), command(...args, "--operation=" + operation),
   command(...args, "--name", "one", "--name=two"), command(...args, "--description", "one", "--description=two"),
   command(...args, "--native", ""), command(...args, "--native="), command(...args, "--native"),
   command(...args, "--native", "--resume"), command(...args, "--native=SKILL.md", "--native", "SKILL.md"),
@@ -133,16 +134,16 @@ for (const cmd of [
   command(...args, "--no-dry-run=true"), command(...args, "--no-dry-run", "true"),
   command(...args, "--resume=True"), command(...args, "--dry-run=maybe"),
   ...["true", "yes", "on", "1", "y"].flatMap(value => [command(...args, "--dry-run=" + value), command(...args, "--dry-run", value)]),
-  command("ctl", "library", "import", "/staged", "--entry", db, "--skill-id", skill, "--resume"),
-  command("ctl", "library", "import", "/staged", "--entry", db, "--skill-id", skill, "--resume=yes"),
+  command("ctl", "library", "import", "/staged", "--library", db, "--skill-id", skill, "--resume"),
+  command("ctl", "library", "import", "/staged", "--library", db, "--skill-id", skill, "--resume=yes"),
   command("ctl", "library", "import", "/staged", "--skill-id", skill),
-  command("ctl", "library", "import", "/staged", "--entry", db),
-  command("ctl", "library", "import", "--entry", db, "--skill-id", skill),
-  command("ctl", "library", "import", "/staged", "--entry", db, "--skill-id", "../bad"),
-  command("ctl", "library", "import", "/staged", "--entry", db, "--skill-id", skill, "--operation", "../bad"),
-  command("ctl", "library", "import", "/staged", "--entry", "visible-name", "--skill-id", skill),
-  command("ctl", "library", "import", "/staged", "--entry", "unregistered-alias", "--skill-id", skill),
-  command("ctl", "library", "import", "/staged", "--entry", otherDb, "--skill-id", skill),
+  command("ctl", "library", "import", "/staged", "--library", db),
+  command("ctl", "library", "import", "--library", db, "--skill-id", skill),
+  command("ctl", "library", "import", "/staged", "--library", db, "--skill-id", "../bad"),
+  command("ctl", "library", "import", "/staged", "--library", db, "--skill-id", skill, "--operation", "../bad"),
+  command("ctl", "library", "import", "/staged", "--library", "visible-name", "--skill-id", skill),
+  command("ctl", "library", "import", "/staged", "--library", "unregistered-alias", "--skill-id", skill),
+  command("ctl", "library", "import", "/staged", "--library", otherDb, "--skill-id", skill),
 ]) await result(cmd, current);
 assert.deepEqual(changed.splice(0), [], "Reads, retired routes, shell constructs, unknown/duplicate flags and unowned entries are inert");
 
@@ -177,7 +178,7 @@ for (const isError of [false, true]) {
   await result(currentCommand, pending, isError);
   changedLibrary("Unknown operation context invalidates the exact entry even for host isError");
 }
-await result(command("ctl", "library", "import", "/staged", "--entry", "library", "--skill-id", skill), pending, true);
+await result(command("ctl", "library", "import", "/staged", "--library", rootUrl, "--skill-id", skill), pending, true);
 changedLibrary("An automatically allocated operation can invalidate its exact configured alias");
 for (const value of [
   { ok: false, error: { code: "INVALID_ARGUMENT" } },
@@ -187,7 +188,7 @@ for (const value of [
   { ok: false, error: { details: { operation_id: operation, skill_id: "other-skill" } } },
   { ok: false, details: { operation_id: operation, skill_id: skill } },
 ]) await result(currentCommand, value, true);
-await result(command("ctl", "library", "import", "/staged", "--entry", "unregistered-alias", "--skill-id", skill), pending, true);
+await result(command("ctl", "library", "import", "/staged", "--library", "unregistered-alias", "--skill-id", skill), pending, true);
 assert.deepEqual(changed.splice(0), [], "Local preflight failures and mismatched operation context do not invalidate a directory");
 
 const sqliteWarning = "(node:7778) ExperimentalWarning: SQLite is an experimental feature and might change at any time";
@@ -249,7 +250,7 @@ for (const output of [truncated.replace("Some lines truncated", "Output truncate
   assert.equal(decodeCliWriteOutput(output).status, "invalid");
   await result(currentCommand, output);
 }
-await result(command("ctl", "library", "import", "/staged", "--entry", "unregistered-alias", "--skill-id", skill), truncated);
+await result(command("ctl", "library", "import", "/staged", "--library", "unregistered-alias", "--skill-id", skill), truncated);
 assert.deepEqual(changed.splice(0), [], "Only the observed host footer on one current call and an attributable entry permits a conservative reread");
 await emit("tool_call", { toolName: "bash", toolCallId: "long", input: { command: currentCommand } });
 await emit("tool_result", { toolName: "bash", toolCallId: "long", input: {}, content: truncated, isError: true });
@@ -302,7 +303,7 @@ const sourceDetails = { operation_id: operation, owner: { kind: "source", id: ma
   input_sha256: sourceCurrent.input_sha256, next: "reconcile_current" };
 const sourcePending = { ok: false, error: { code: "WRITE_OUTCOME_UNKNOWN", details: sourceDetails } };
 const sourceArgs = (route: "apply" | "refresh", entry = db) => ["ctl", "library", "source", route,
-  route === "apply" ? "/not-opened/source.json" : managedSource, "--entry", entry, "--operation", operation];
+  route === "apply" ? "/not-opened/source.json" : managedSource, "--library", entry, "--operation", operation];
 for (const route of ["apply", "refresh"] as const) {
   const sourceCommand = command(...sourceArgs(route));
   await result(sourceCommand, sourceCurrent);
@@ -342,13 +343,13 @@ for (const route of ["apply", "refresh"] as const) {
   }
   for (const cmd of [
     command(...sourceArgs(route), "--dry-run"), command(...sourceArgs(route), "--dry-run=yes"),
-    command(...sourceArgs(route), "--entry", db), command(...sourceArgs(route), "--operation", operation),
+    command(...sourceArgs(route), "--library", db), command(...sourceArgs(route), "--operation", operation),
     command(...sourceArgs(route), "--skill-id", skill), command(...sourceArgs(route), "--name", "visible"),
     command(...sourceArgs(route), "--description", "metadata"), command(...sourceArgs(route), "--unknown"),
     command(...sourceArgs(route), "--native", "SKILL.md"), command(...sourceArgs(route), "--native=SKILL.md"),
     command(...sourceArgs(route), "--timeout", "0"), command(...sourceArgs(route), "extra"),
     sourceCommand + " && echo done", sourceCommand + " | cat",
-    command("ctl", "library", "source", route, route === "apply" ? "/source.json" : managedSource, "--entry", db, "--resume"),
+    command("ctl", "library", "source", route, route === "apply" ? "/source.json" : managedSource, "--library", db, "--resume"),
   ]) await result(cmd, sourceCurrent);
   assert.deepEqual(changed.splice(0), [], "Source previews, import-only flags, duplicate inputs and shell compounds cannot own a write");
   for (const output of [current, { ...sourceCurrent, state: "pending" }, { ...sourceCurrent, source_page_id: page },
@@ -374,16 +375,16 @@ for (const route of ["apply", "refresh"] as const) {
   assert.deepEqual(changed.splice(0), [], "Source writes do not infer an unregistered CLI alias from a returned library");
 }
 for (const id of ["../bad", "git:repository", "snapshot-old", "bundle-old", "source-plan-old", "source-" + "a".repeat(64)])
-  await result(command("ctl", "library", "source", "refresh", id, "--entry", db, "--operation", operation), { ...sourceCurrent, source_id: id });
-await result(command("ctl", "library", "source", "refresh", "another-source", "--entry", db, "--operation", operation), sourceCurrent);
-await result(command("ctl", "library", "source", "refresh", "another-source", "--entry", db, "--operation", operation), sourcePending, true);
+  await result(command("ctl", "library", "source", "refresh", id, "--library", db, "--operation", operation), { ...sourceCurrent, source_id: id });
+await result(command("ctl", "library", "source", "refresh", "another-source", "--library", db, "--operation", operation), sourceCurrent);
+await result(command("ctl", "library", "source", "refresh", "another-source", "--library", db, "--operation", operation), sourcePending, true);
 await result(currentCommand, sourceCurrent);
 assert.deepEqual(changed.splice(0), [], "Source identities follow current Source grammar and never become Skill or legacy owners");
-await result(command("ctl", "library", "source", "apply", "--entry", db, "--operation", operation, "--", "--literal-source.json"), sourceCurrent);
+await result(command("ctl", "library", "source", "apply", "--library", db, "--operation", operation, "--", "--literal-source.json"), sourceCurrent);
 changedLibrary("A Source declaration filename after the delimiter remains one literal input and is never opened by the observer");
-await result(command("ctl", "library", "source", "apply", "/source.json", "--entry", "library"), sourcePending, true);
+await result(command("ctl", "library", "source", "apply", "/source.json", "--library", rootUrl), sourcePending, true);
 changedLibrary("An automatically allocated finite Source parent can invalidate the exact configured alias");
-const otherLibrary = { library_id: "new-library", database_id: otherDb, data_source_id: "33333333-3333-4333-8333-333333333334" };
+const otherLibrary = { library_id: otherDb, database_id: otherDb, data_source_id: "33333333-3333-4333-8333-333333333334" };
 await result(command(...sourceArgs("apply", otherDb)), { ...sourceCurrent, library: otherLibrary, affected_skill_ids: ["new-skill"],
   targets: [{ ...sourceTargets[0], skill_id: "new-skill", library: otherLibrary }] });
 assert.deepEqual(changed.splice(0), [["second"]], "A first Source write can invalidate an exact database before any Skill is cached");
@@ -401,7 +402,7 @@ assert.deepEqual(changed.splice(0), [], "Repeated Source results cannot invalida
 const { resolved_commit: _commit, ...sourceBase } = sourceCurrent;
 const metadataTargets = sourceTargets.map(target => ({ skill_id: target.skill_id, skill_page_id: target.page_id }));
 for (const verb of ["enable", "disable"] as const) {
-  const argv = ["ctl", "library", "source", verb, managedSource, "--entry", db, "--operation", operation];
+  const argv = ["ctl", "library", "source", verb, managedSource, "--library", db, "--operation", operation];
   const value = { ...sourceBase, action: "enabled", enabled: verb === "enable", targets: metadataTargets };
   await result(command(...argv), value);
   changedLibrary("Source eligibility changes invalidate current discovery without pretending to rewrite child bodies");
@@ -424,7 +425,7 @@ for (const verb of ["enable", "disable"] as const) {
   await result(command(...argv), sourcePending, true);
   changedLibrary("An unfinished eligibility action retains its Source parent invalidation scope");
 }
-const removeArgs = ["ctl", "library", "source", "remove", managedSource, "--entry", db, "--operation", operation];
+const removeArgs = ["ctl", "library", "source", "remove", managedSource, "--library", db, "--operation", operation];
 const removed = { ...sourceBase, action: "remove", state: "removed", status: "removed", targets: metadataTargets };
 await result(command(...removeArgs), removed);
 changedLibrary("Confirmed Source retirement invalidates its exact library");
@@ -445,7 +446,7 @@ changedLibrary("Unknown Source Trash acknowledgement causes a conservative rerea
 const sourcePath = "skills/alpha/guide [literal].md", selectedFile = "file:guide";
 for (const verb of ["takeover", "restore-follow"] as const) {
   const argv = ["ctl", "library", "source", verb, managedSource, sourcePath,
-    "--entry", db, "--operation", operation, "--skill-id", skill, "--file-id", selectedFile];
+    "--library", db, "--operation", operation, "--skill-id", skill, "--file-id", selectedFile];
   const value = { ...sourceBase, action: verb === "takeover" ? "takeover" : "restore_follow",
     file_id: selectedFile, source_path: sourcePath, affected_skill_ids: [skill], targets: [sourceTargets[0]] };
   await result(command(...argv), value);
@@ -472,7 +473,7 @@ for (const verb of ["takeover", "restore-follow"] as const) {
   if (verb === "restore-follow") await result(command(...argv, "--as", "resource"), value);
   for (const path of ["", "../outside", "/absolute", "a//b", "a/./b", "a/../b", "C:/outside", "a\\b"])
     await result(command("ctl", "library", "source", verb, managedSource, path,
-      "--entry", db, "--operation", operation, "--skill-id", skill, "--file-id", selectedFile), { ...value, source_path: path });
+      "--library", db, "--operation", operation, "--skill-id", skill, "--file-id", selectedFile), { ...value, source_path: path });
   assert.deepEqual(changed.splice(0), [], "File-transfer outputs and flags cannot substitute another action, path, File or Skill");
 }
 
@@ -496,7 +497,7 @@ for (const [argv, value, failure] of [[args, current, pending], [sourceArgs("app
   assert.deepEqual(changed.splice(0), [], "Predecessor success and ambiguous supersede flags cannot claim the new write");
 }
 for (const verb of ["enable", "disable", "remove"])
-  await result(command("ctl", "library", "source", verb, managedSource, "--entry", db, "--supersede", "old"), removed);
+  await result(command("ctl", "library", "source", verb, managedSource, "--library", db, "--supersede", "old"), removed);
 assert.deepEqual(changed.splice(0), [], "Source supersede requires an explicit distinct new operation");
 
 // Native Skill management allocates and resumes its own operation; its public
@@ -512,10 +513,10 @@ const nativeRemoved = { ok: true, version: 1, contract: "current", action: "remo
   resources: [{ resource_id: "resource:guide", page_id: sourcePage, payload_sha256: "c".repeat(64) }],
   relations: [{ skill_id: secondSkill, page_id: sourceTable, field: "Requires", before: [page, secondPage], after: [secondPage] }] };
 const nativeCases = [
-  { action: "create", argv: ["ctl", "library", "skill", "create", "/staged/SKILL.md", "--skill-id", skill, "--entry", db], receipt: nativeCreated },
-  { action: "update", argv: ["ctl", "library", "skill", "update", page, "--description", "New metadata", "--entry", db], receipt: nativeUpdated },
-  { action: "register", argv: ["ctl", "library", "skill", "register", page, "--entry", db], receipt: nativeRegistered },
-  { action: "remove", argv: ["ctl", "library", "skill", "remove", page, "--entry", db], receipt: nativeRemoved },
+  { action: "create", argv: ["ctl", "library", "skill", "create", "/staged/SKILL.md", "--skill-id", skill, "--library", db], receipt: nativeCreated },
+  { action: "update", argv: ["ctl", "library", "skill", "update", page, "--description", "New metadata", "--library", db], receipt: nativeUpdated },
+  { action: "register", argv: ["ctl", "library", "skill", "register", page, "--library", db], receipt: nativeRegistered },
+  { action: "remove", argv: ["ctl", "library", "skill", "remove", page, "--library", db], receipt: nativeRemoved },
 ];
 for (const { action, argv, receipt } of nativeCases) {
   await result(command(...argv), receipt);
@@ -537,7 +538,7 @@ for (const { action, argv, receipt } of nativeCases) {
     current, sourceCurrent,
   ]) await result(command(...argv), invalid);
   for (const flags of [
-    ["--dry-run"], ["--dry-run=yes"], ["--dry-run", "true"], ["--entry", db],
+    ["--dry-run"], ["--dry-run=yes"], ["--dry-run", "true"], ["--library", db],
     ["--operation", operation], ["--resume"], ["--resume=false"], ["--supersede", "old"],
     ["--native", "SKILL.md"], ["--unknown", "value"], ["--max-requests", "0"],
     ["--timeout", "1.5"], ["--timeout", "1", "--timeout=2"], ["extra"],
@@ -562,21 +563,21 @@ for (const { action, argv, receipt } of nativeCases) {
   changedLibrary("Actual host truncation of one scoped native invocation retains conservative reread semantics");
 }
 
-await result(command("ctl", "library", "skill", "create", "/new/SKILL.md", "--entry", otherDb, "--skill-id", "first-native"),
+await result(command("ctl", "library", "skill", "create", "/new/SKILL.md", "--library", otherDb, "--skill-id", "first-native"),
   { ...nativeCreated, skill_id: "first-native", page_id: secondPage, library: otherLibrary });
 assert.deepEqual(changed.splice(0), [["second"]], "First native creation invalidates an exact database before the new Skill is cached");
-await result(command("ctl", "library", "skill", "create", "/not-opened/author's input.md", "--entry", "library", "--skill-id", skill,
+await result(command("ctl", "library", "skill", "create", "/not-opened/author's input.md", "--library", rootUrl, "--skill-id", skill,
   "--name", "Author name", "--description=", "--enabled", "true", "--default-context=false", "--members", secondSkill, "--requires", ""), nativeCreated);
 changedLibrary("Native create preserves explicit metadata and exact repeated relation syntax without opening its input");
-await result(command("ctl", "library", "skill", "create", "--entry", db, "--skill-id", skill, "--", "--literal-input.md"), nativeCreated);
+await result(command("ctl", "library", "skill", "create", "--library", db, "--skill-id", skill, "--", "--literal-input.md"), nativeCreated);
 changedLibrary("Native creation preserves a literal operand after end-of-options");
-await result(command("ctl", "library", "skill", "update", skill, "--entry", db, "--input", "/local/main.md", "--path", "references/guide.md",
+await result(command("ctl", "library", "skill", "update", skill, "--library", db, "--input", "/local/main.md", "--path", "references/guide.md",
   "--file", "assets/one.bin=/local/one.bin", "--file=assets/two.bin=/local/two.bin", "--remove-file", "references/old.md",
   "--remove-file=assets/old.bin", "--members", secondSkill, "--members", sourcePage, "--requires=", "--enabled=false"), nativeUpdated);
 changedLibrary("Native updates accept the current repeated file and relation selections");
 for (const target of [page, page.replaceAll("-", "").toUpperCase(), "https://www.notion.so/Owned-" + page.replaceAll("-", "")]) {
   for (const { action, receipt } of nativeCases.filter(value => value.action !== "create")) {
-    const argv = ["ctl", "library", "skill", action, target, "--entry", db,
+    const argv = ["ctl", "library", "skill", action, target, "--library", db,
       ...(action === "update" ? ["--input", "/local/main.md"] : action === "register" ? ["--skill-id", skill] : [])];
     await result(command(...argv), receipt);
     changedLibrary("An exact native page selector must match the returned physical Skill");
@@ -587,14 +588,14 @@ for (const target of [page, page.replaceAll("-", "").toUpperCase(), "https://www
   }
 }
 for (const { action, receipt } of nativeCases.filter(value => value.action !== "register")) {
-  const argv = ["ctl", "library", "skill", action, action === "create" ? "/input.md" : skill, "--entry", db,
+  const argv = ["ctl", "library", "skill", action, action === "create" ? "/input.md" : skill, "--library", db,
     ...(action === "create" ? ["--skill-id", skill] : action === "update" ? ["--description", "New metadata"] : [])];
   await result(command(...argv), receipt);
   changedLibrary("A native stable selector binds the exact returned Skill identity");
   await result(command(...argv), { ...receipt, skill_id: secondSkill });
   assert.deepEqual(changed.splice(0), [], "A native stable selector never becomes a display-name match");
 }
-await result(command("ctl", "library", "skill", "register", page, "--entry", db, "--skill-id", secondSkill), nativeRegistered);
+await result(command("ctl", "library", "skill", "register", page, "--library", db, "--skill-id", secondSkill), nativeRegistered);
 assert.deepEqual(changed.splice(0), [], "Explicit registration identity must agree with the returned stable identity");
 
 for (const [argv, receipt] of [
@@ -605,7 +606,7 @@ for (const [argv, receipt] of [
     library, skill_id: skill, page_id: page, files: 1, paths: ["SKILL.md"], remote_writes: 0 }],
   [nativeCases[3]!.argv, { ok: true, version: 1, contract: "current", action: "remove", status: "already_trashed", state: "removed",
     library, skill_id: skill, page_id: page, cleanup_verified: false, remote_writes: 0 }],
-  [["ctl", "library", "skill", "remove", skill, "--entry", db], { ok: true, version: 1, contract: "current", action: "remove",
+  [["ctl", "library", "skill", "remove", skill, "--library", db], { ok: true, version: 1, contract: "current", action: "remove",
     library, skill_id: skill, page_id: null, state: "removed", status: "not_found", cleanup_verified: false, remote_writes: 0 }],
 ] satisfies Array<[string[], Record<string, unknown>]>) await result(command(...argv), receipt);
 assert.deepEqual(changed.splice(0), [], "Ordinary native no-ops and externally missing or trashed pages do not claim a new completed write");
@@ -646,17 +647,17 @@ for (const argv of [
   ["update", skill, "--requires", "", "--requires", secondSkill], ["update", skill, "--members", secondSkill, "--members", secondSkill],
   ["register", skill], ["register", page, "--skill-id", "../bad"], ["register", page, "--requires", secondSkill],
   ["remove", page, "--enabled", "false"], ["remove", "https://evil.example/" + page.replaceAll("-", "")],
-]) await result(command("ctl", "library", "skill", ...argv, "--entry", db), nativeCases.find(value => value.action === argv[0])!.receipt);
+]) await result(command("ctl", "library", "skill", ...argv, "--library", db), nativeCases.find(value => value.action === argv[0])!.receipt);
 assert.deepEqual(changed.splice(0), [], "Native parsing respects each action's actual targets, selected inputs and flag grammar");
 
 records = [record("alias", { type: "notion_page", page_id: page, database_id: db, data_source_id: ds })];
 await result(currentCommand, current);
 assert.deepEqual(changed.splice(0), [["personal"]], "Old page locators cannot bind a configured alias to the current library");
-await result(command("ctl", "library", "import", "/staged", "--entry", "library", "--skill-id", skill), pending, true);
+await result(command("ctl", "library", "import", "/staged", "--library", rootUrl, "--skill-id", skill), pending, true);
 assert.deepEqual(changed.splice(0), [["alias"]], "An exact configured alias can still be invalidated without inventing an unknown physical binding");
 records = [record("alias", { type: "shared_skill", ...library, skill_id: skill, page_id: page }), record("alias", { type: "shared_skill", ...library, skill_id: skill, page_id: "11111111-1111-4111-8111-111111111112" })];
-await result(command("ctl", "library", "import", "/staged", "--entry", "library", "--skill-id", skill), current);
-await result(command("ctl", "library", "import", "/staged", "--entry", "library", "--skill-id", skill), pending, true);
+await result(command("ctl", "library", "import", "/staged", "--library", rootUrl, "--skill-id", skill), current);
+await result(command("ctl", "library", "import", "/staged", "--library", rootUrl, "--skill-id", skill), pending, true);
 assert.deepEqual(changed.splice(0), [], "Conflicting current page ownership cannot authorize an alias or another source");
 assert.equal(runtime.calls.length, 0, "The observer executes no CLI or SDK calls and never injects content");
 console.log("Current CLI import, Source and native Skill invalidation checks passed");

@@ -60,7 +60,7 @@ try {
   assert.ok(filesystemOnly.records.some(record => record.sourceId === "user-source" && record.name === "ntn-skills-maintain"),
     "Hiding packaged Notion workflows must not hide a user-owned, same-name filesystem source");
 
-  const awaitingConnection: ConfigFile = { sources: [{ type: "notion", id: "notion-setup", database: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] };
+  const awaitingConnection: ConfigFile = { sources: [{ type: "notion", id: "notion-setup", library: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] };
   assert.equal(configuredBundledBuiltinRecords(awaitingConnection).length, 3, "Configured Notion enables offline setup workflows even without credentials");
   const unconnected = await buildDollarRegistry(awaitingConnection, root);
   assert.equal(unconnected.records.filter(isBundledBuiltin).length, 3);
@@ -98,8 +98,8 @@ try {
   assert.equal(matchDiscoveryRecord("not-a-skill", registry).decision, "skip");
 
   const guidance = buildCliGuidance({ sources: [
-    { type: "notion", id: "first", database: "one" },
-    { type: "notion", id: "second", database: "two" },
+    { type: "notion", id: "first", library: "one" },
+    { type: "notion", id: "second", library: "two" },
   ] });
   const content = String(guidance.content);
   assert.match(content, /source="first"/);

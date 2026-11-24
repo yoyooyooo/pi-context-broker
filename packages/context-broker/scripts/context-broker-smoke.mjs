@@ -1114,14 +1114,14 @@ try {
   const outsideSourcePath = await writeSkill(temp, "outside-source", "name: outside-source\nautoload:\n  enabled: true", "Outside configured roots");
   await assert.rejects(sourcesMod.loadSourceSkill({ ...localMetadata, path: outsideSourcePath, id: outsideSourcePath }, localSourceConfig), { code: "SOURCE_IDENTITY_MISMATCH" });
   assert.equal(await readFile(localSourcePath, "utf8"), (await sourcesMod.loadSourceSkill(localMetadata, localSourceConfig)).body);
-  const bundledDiscovery = await mod.buildDollarRegistry({ skillRoots: [], sources: [{ type: "notion", id: "offline-builtin", database: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] });
+  const bundledDiscovery = await mod.buildDollarRegistry({ skillRoots: [], sources: [{ type: "notion", id: "offline-builtin", library: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] });
   const bundledRecords = bundledDiscovery.records.filter(builtinMod.isBundledBuiltin);
   assert.deepEqual(bundledRecords.map(record => record.alias).sort(), [...builtinMod.BUNDLED_SKILL_NAMES].sort());
   const sharedRoot = join(temp, "builtin-shared");
   await mkdir(sharedRoot);
   const builtin = bundledRecords[0];
   await symlink(join(builtin.path, ".."), join(sharedRoot, builtin.alias), "dir");
-  const configuredDiscovery = await mod.buildRawDollarRegistry({ skillRoots: [sharedRoot], sources: [{ type: "notion", id: "offline-builtin", database: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] });
+  const configuredDiscovery = await mod.buildRawDollarRegistry({ skillRoots: [sharedRoot], sources: [{ type: "notion", id: "offline-builtin", library: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] });
   assert.equal(configuredDiscovery.records.filter(record => record.name === builtin.name).length, 1, "A configured physical alias retains one official bundled identity");
   assert.ok(configuredDiscovery.records.some(record => record.id === builtin.id));
   const nativePrompt = `<skill><name>native-builtin-alias</name><description>Native alias</description><location>${join(sharedRoot, builtin.alias, "SKILL.md")}</location></skill>`;

@@ -132,8 +132,8 @@ test('paired environments isolate writable state and detect artifact changes', a
 
   await t.test('argument boundary retains target flags but rejects ambiguous launcher options', () => {
     const parsed = parseArgs(['run', '--root', retained, '--build', 'b1', '--target', 'cli',
-      '--pass-env', 'ONE', '--pass-env', 'TWO', '--', '--database', 'target-owned', '--help']);
-    assert.deepEqual(parsed.args, ['--database', 'target-owned', '--help']);
+      '--pass-env', 'ONE', '--pass-env', 'TWO', '--', '--library', 'target-owned', '--help']);
+    assert.deepEqual(parsed.args, ['--library', 'target-owned', '--help']);
     assert.deepEqual(parsed['pass-env'], ['ONE', 'TWO']);
     assert.throws(() => parseArgs(['run', '--root', retained, '--root', retained]), /Repeated/);
     assert.throws(() => parseArgs(['build', '--root', retained, '--latest', 'true']), /Unknown/);
@@ -291,7 +291,7 @@ test('paired environments isolate writable state and detect artifact changes', a
     await writeJson(join(root, 'cli/package.json'), { name: 'ntn-skills', version: '0.0.0', type: 'module',
       bin: { 'ntn-skills': './dist/ntn-skills.js' }, exports: { './sdk': { import: './dist/sdk.js' }, './ref': { require: './dist/ref.cjs' } } });
     await writeJson(join(root, 'broker/package.json'), { name: 'pi-context-broker', version: '0.0.0', type: 'module', pi: { extensions: ['./src/index.ts'] } });
-    await writeFile(join(root, 'broker/dist/ntn-skills-sdk.mjs'), 'export const SDK_VERSION=2;\n');
+    await writeFile(join(root, 'broker/dist/ntn-skills-sdk.mjs'), 'export const SDK_VERSION=3;\n');
     await writeFile(join(root, 'cli/THIRD_PARTY_NOTICES.md'), 'Complete selected CLI notice fixture\n');
     await writeFile(join(root, 'broker/dist/NOTICES.txt'), 'Other notices\nComplete selected CLI notice fixture\n');
     await writeFile(join(root, 'source/broker/scripts/next-build-identity.mjs'), identitySource);
@@ -490,29 +490,30 @@ process.exit(0);`;
   await t.test('remote declarations preserve CLI arguments and configure the selected Broker source', async () => {
     const entry = '11111111-2222-3333-4444-555555555555';
     const receipt = await runEnvironment({ root: rootA, build: 'fixture', target: 'cli',
-      id: 'entry', entry, 'pass-env': [], args: ['--help'] });
+      id: 'entry', library: entry, 'pass-env': [], args: ['--help'] });
     assert.equal(receipt.status, 'passed');
     assert.deepEqual((await readJson(receipt.stdout)).args, ['--help']);
     const broker = await readJson(join(receipt.root, 'config/broker.json'));
-    assert.equal(broker.sources[0].database, entry);
+    assert.equal(broker.sources[0].library, entry);
+    assert.equal((await readJson(join(receipt.root, 'config/cli/config.json'))).default_library, entry);
     assert.ok(inside(receipt.root, broker.sources[0].cacheDir));
-    assert.equal((await readJson(join(receipt.root, 'run.json'))).remote.entry, entry);
+    assert.equal((await readJson(join(receipt.root, 'run.json'))).remote.library, entry);
     for (const [name, args] of [
-      ['consume', ['list', '--database', entry, '--json']],
-      ['read', ['read', 'selected-skill', '--database', entry, '--json']],
-      ['manage', ['ctl', 'library', 'init', '--entry', entry]],
+      ['consume', ['list', '--library', entry, '--json']],
+      ['read', ['read', 'selected-skill', '--library', entry, '--json']],
+      ['manage', ['ctl', 'library', 'init', '--library', entry]],
     ]) {
       for (const target of ['cli', 'command']) {
         const result = await runEnvironment({ root: rootA, build: 'fixture', target,
-          id: 'entry-' + name + '-' + target, entry, 'pass-env': [],
+          id: 'entry-' + name + '-' + target, library: entry, 'pass-env': [],
           args: target === 'cli' ? args : ['ntn-skills', ...args] });
         assert.equal(result.status, 'passed');
         assert.deepEqual((await readJson(result.stdout)).args, args);
       }
     }
     const declared = await runEnvironment({ root: rootA, build: 'fixture', target: 'command',
-      id: 'entry-declaration', entry, 'pass-env': [], args: ['node', '-e',
-        'console.log(JSON.stringify({entry:process.env.PAIRED_NOTION_ENTRY}));'] });
+      id: 'entry-declaration', library: entry, 'pass-env': [], args: ['node', '-e',
+        'console.log(JSON.stringify({entry:process.env.PAIRED_NOTION_LIBRARY}));'] });
     assert.equal((await readJson(declared.stdout)).entry, entry);
   });
 
@@ -527,13 +528,13 @@ process.exit(0);`;
     // credentials and private state; the real parser, not argv echo, decides.
     for (const [name, args, help] of [
       ['help', ['--help'], /ntn-skills/],
-      ['consume', ['list', '--database', entry, '--help'], /--database/],
-      ['read', ['read', 'selected-skill', '--database', entry, '--help'], /--database/],
-      ['manage', ['ctl', 'library', 'init', '--entry', entry, '--help'], /--entry/],
+      ['consume', ['list', '--library', entry, '--help'], /--library/],
+      ['read', ['read', 'selected-skill', '--library', entry, '--help'], /--library/],
+      ['manage', ['ctl', 'library', 'init', '--library', entry, '--help'], /--library/],
     ]) {
       for (const target of ['cli', 'command']) {
         const result = await runEnvironment({ root: rootA, build: 'real-cli-parser', target,
-          id: 'real-entry-' + name + '-' + target, entry, 'pass-env': [],
+          id: 'real-entry-' + name + '-' + target, library: entry, 'pass-env': [],
           args: target === 'cli' ? args : ['ntn-skills', ...args] });
         assert.equal(result.status, 'passed', await readFile(result.stderr, 'utf8'));
         assert.match(await readFile(result.stdout, 'utf8'), help);

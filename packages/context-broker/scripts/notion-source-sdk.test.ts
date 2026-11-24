@@ -21,32 +21,29 @@ test("custom Notion CLI configuration is retired with an actionable upgrade erro
   for (const command of ["ntn-skills", ["node", "/old/ntn-skills.js"]])
     expect(() => normalizeSources([{ type: "notion", id: "current", command }])).toThrow(expect.objectContaining({ code: "SOURCE_COMMAND_UNSUPPORTED" }));
   expect(sourceFailureMessage("SOURCE_COMMAND_UNSUPPORTED")).toContain("Remove that override");
-  expect(normalizeSources([{ type: "notion", id: "current", database: uuid(10) }])?.[0]).not.toHaveProperty("command");
+  expect(normalizeSources([{ type: "notion", id: "current", library: uuid(10) }])?.[0]).not.toHaveProperty("command");
 });
 
-test("a fixed source lookup skips only a descriptor-proven Library mismatch", async () => {
-  const f = await fixture(), unrelated = { ...f.source, id: "unrelated", database: uuid(90) };
-  const ownFiles = f.state.listFiles.bind(f.state);
-  f.state.listFiles = (target, options) => {
-    if (options.database === unrelated.database) throw Object.assign(new Error("Verified foreign Library descriptor"), { code: "LIBRARY_SCOPE_MISMATCH" });
-    return ownFiles(target, options);
-  };
-  const selected = await f.boundary.resolveNotionReference(f.files[1]!.ref, [unrelated, f.source], f.root);
-  expect(selected.ref).toBe(f.files[1]!.ref);
-  expect(selected.record.sourceId).toBe(f.source.id);
-  expect(f.calls.map(call => [call.operation, call.options.database])).toEqual([["files", unrelated.database], ["files", f.source.database]]);
+test("an explicit root routes directly without consulting an unrelated failing Library", async () => {
+  for (const code of ["LIBRARY_SCOPE_MISMATCH", "SKILL_NOT_FOUND", "ACCESS_DENIED", "CATALOG_INCOMPLETE"]) {
+    const f = await fixture(), unrelated = { ...f.source, id: "unrelated", library: uuid(90) };
+    const ownFiles = f.state.listFiles.bind(f.state);
+    f.state.listFiles = (target, options) => {
+      if (options.library === unrelated.library) throw Object.assign(new Error("Foreign Library failure"), { code });
+      return ownFiles(target, options);
+    };
+    const selected = await f.boundary.resolveNotionReference(f.files[1]!.ref, [unrelated, f.source], f.root);
+    expect(selected.ref).toBe(f.files[1]!.ref);
+    expect(selected.record.sourceId).toBe(f.source.id);
+    expect(f.calls.map(call => [call.operation, call.options.library])).toEqual([["files", f.source.library]]);
+  }
 });
 
-for (const code of ["SKILL_NOT_FOUND", "ACCESS_DENIED", "CATALOG_INCOMPLETE"])
-test("fixed " + code + " cannot be hidden by another configured source", async () => {
-  const f = await fixture(), unresolved = { ...f.source, id: "unresolved", database: uuid(90) };
-  const ownFiles = f.state.listFiles.bind(f.state);
-  f.state.listFiles = (target, options) => {
-    if (options.database === unresolved.database) throw Object.assign(new Error("Unproven source failure"), { code });
-    return ownFiles(target, options);
-  };
-  await expect(f.boundary.resolveNotionReference(f.files[1]!.ref, [unresolved, f.source], f.root)).rejects.toMatchObject({ code });
-  expect(f.calls.map(call => call.operation)).toEqual(["files"]);
+test("the selected Library's denial is never hidden by a same-name Skill elsewhere", async () => {
+  const f = await fixture(), unrelated = { ...f.source, id: "unrelated", library: uuid(90) };
+  f.state.listFiles = () => { throw Object.assign(new Error("denied"), { code: "ACCESS_DENIED" }); };
+  await expect(f.boundary.resolveNotionReference(f.files[1]!.ref, [unrelated, f.source], f.root)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  expect(f.calls.map(call => call.options.library)).toEqual([f.source.library]);
 });
 
 test("current Skill, Router and Prompt loads use one SDK consume and retain the complete file directory", async () => {

@@ -96,15 +96,15 @@ Pi prepares the selected Skill and includes its complete instructions in the nex
 
 ## Connect a Notion library
 
-Complete the [CLI quick start](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.md#quick-start) first. The CLI creates a library with `ctl library init --parent PARENT`; `ctl library init --entry ENTRY` validates an existing current library. Keep `library.skills.database_id` as the entry: it is the Skills database ID. An existing current library needs neither new tables nor a local Skill directory.
+Complete the [CLI quick start](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.md#quick-start) first. The CLI creates a library with `ctl library init --parent PARENT`; `ctl library init --library ROOT` validates an existing current library. Keep `library.library_id` as the Library root: it is the Library root page ID. An existing current library needs neither new tables nor a local Skill directory.
 
-In Pi, preview the connection using that entry and your chosen configuration file:
+In Pi, preview the connection using that root and your chosen configuration file:
 
 ```text
-/context-broker connect personal ENTRY --config /absolute/project/config.json
+/context-broker connect personal ROOT --config /absolute/project/config.json
 ```
 
-Replace `ENTRY` with the returned library entry and choose a real absolute configuration path. The preview changes no configuration. Review it and execute the exact returned `--apply` command to save the source. Then start Pi with the same file:
+Replace `ROOT` with the returned `library.library_id` and choose a real absolute configuration path. The preview changes no configuration. Review it and execute the exact returned `--apply` command to save the source. Then start Pi with the same file:
 
 ```sh
 CONTEXT_BROKER_CONFIG=/absolute/project/config.json pi
@@ -114,6 +114,33 @@ Run `/context-broker doctor` and `/context-broker sources`. Ask Pi to find a Ski
 
 The CLI quick start also covers authentication, the first Skill, and management. Broker uses the paired bundled CLI/SDK and its configured credentials. Keep credentials out of the Broker config.
 
+### Select a Library for a session
+
+`library_id` is the canonical UUID of the Library root page created by `init`.
+Skills, Files, Records and Sources are its direct child databases. Table IDs are
+physical bindings inside the descriptor; they are not Library selectors.
+
+The CLI global `default_library` supplies Broker's initial default through the
+same SDK resolver. Broker has no separate global default. A Source's `library`
+may be omitted only to bind that SDK default; explicit Sources name root IDs or
+Notion root URLs. Every selected root must match one enabled Source. Connecting
+a Source makes it available but does not change the selected Library.
+
+Use `/context-broker library ROOT_ID_OR_URL` to switch the current session branch,
+`/context-broker library default` to select the CLI default, and
+`/context-broker library` to inspect it. Fork, rewind and resume use the active
+branch's entries. A failed switch keeps that requested Library blocked until a
+successful explicit selection; it never silently writes to the previous Library.
+
+Each interactive or RPC submission freezes its Library when accepted. Switching
+A to B affects later submissions, default discovery and short Skill references.
+An accepted A task and its selected snapshots remain in A. A fully qualified
+`skill://name/SKILL.md?library=ROOT_UUID` can route to another enabled Source
+without changing the session default. Same-name Skills in A and B are distinct.
+To request the accepted turn's CLI target, use `notion_ctl` with
+`cli_source: null`; the returned `library` is the verified root to pass as
+`--library`. An explicit Source ID chooses that Source's root instead.
+
 ### Source configuration
 
 The connection command adds the source to the selected file. Its options can also be reviewed or edited there:
@@ -122,8 +149,8 @@ The connection command adds the source to the selected file. Its options can als
 sources:
   - id: notion
     type: notion
-    # Use the library entry returned by the CLI.
-    database: 00000000-0000-0000-0000-000000000000
+    # Use library.library_id: the Library root page, not a table ID.
+    library: 00000000-0000-0000-0000-000000000000
     discovery: {maxAge: 5m, offline: false}
     activation: {maxAge: 5m, offline: false}
     prefetch: false
@@ -135,7 +162,7 @@ Pi exposes session references through `notion_list`, `notion_use` and native `re
 
 An optional `default_view_id` on each Notion source fixes its default View; omit it to use the first View in API order. An invalid configured ID is reported, not replaced; a verified empty View list means no default Notion entries. Pi submits ordinary messages without waiting for the remote directory, so its first request may report metadata as pending. At each model request, Pi presents the current directory from memory, preserving local Skills and already loaded bodies; explicit `$` preparation finishes before its first request. A checked page outside the View is not advertised; an unchecked page inside it is. Pi native `read` inspects the selected record or resource; `notion_use` and an explicit `$` selection prepare the selected root with Requires. Detached completion stays full-library and metadata-only. Code or configuration changes require a host restart; a session View switch does not.
 
-Use `/context-broker refresh` to refresh metadata and make a later selection eligible for a new snapshot; existing conversation content is retained. Unscoped Notion discovery can be search-index limited; an explicit database can supply exhaustive coverage for that database. See [source configuration and activation](./packages/context-broker/docs/reference.md#built-in-sources) for all fields, scope isolation, ambiguity and cache policies.
+Use `/context-broker refresh` to refresh metadata and make a later selection eligible for a new snapshot; existing conversation content is retained. Ordinary discovery uses the selected Library root. Complete online coverage can establish absence only in that Library; another Library with the same Skill name remains a different scope. See [source configuration and activation](./packages/context-broker/docs/reference.md#built-in-sources) for all fields, scope isolation, ambiguity and cache policies.
 
 Notion caches are shared across projects and Pi/OMP by credential and remote catalog identity. Full-directory metadata and View membership use separate cache selections, so filtering one session never hides another session’s `$` candidates. Session choices live in active-branch entries and survive process resume; new sessions resolve their own defaults. Shared refresh preserves loaded workflow snapshots. [Cache contract](./packages/context-broker/docs/reference.md#built-in-sources).
 
@@ -206,9 +233,9 @@ The converter changes only catalog record fields and recognized Broker session d
 
 For ordinary product maintenance and Source synchronization, use the `ntn-skills-maintain` and `ntn-skills-sync` Builtins shipped with the actual paired CLI. Broker advertises their installed paths for ordinary native `read`; shell-only hosts receive the paired CLI's `ctl builtin read` route. Reuse a complete workflow already loaded for the task. A new library needs no official Skill copies in Notion, and no Notion search is required to locate these product instructions.
 
-Choose the workflow and the write target separately. Packaged instructions do not select a Notion source or database. Use the explicitly chosen source's CLI command, with `--database ENTRY` for consumption and `--entry ENTRY` for management. Never infer a target from the first configured source. Ordinary business Skill discovery and same-name ambiguity rules remain unchanged. A same-name Notion page is a user-owned workflow with its own identity, not an official Builtin.
+Choose the workflow and the write target separately. Packaged instructions do not select a Notion source or database. Use the explicitly chosen source's CLI command and the same `--library ROOT` selector for consumption and management. Never infer a target from the first configured source. Ordinary business Skill discovery and same-name ambiguity rules remain unchanged. A same-name Notion page is a user-owned workflow with its own identity, not an official Builtin.
 
-If the user explicitly chooses a Notion team workflow, inspect its exact ref in the chosen source. Discover within that source if needed, including beyond the default View. To apply it, use `notion_use(ref)` to load its complete Requires, unless already prepared for this task; inspecting the edited target never activates its workflow. Without native use, the same source's CLI `use EXACT_REF --database ENTRY --json` provides the closure. CLI refs must be canonical, not session `sr:` handles. Report unavailable adoption when no route exists. Pending, partial or failed access does not switch the selected workflow to a Builtin. Existing tasks keep their selected versions until an explicit refresh. Local and packaged workflows keep their native consumption route.
+If the user explicitly chooses a Notion team workflow, inspect its exact ref in the chosen source. Discover within that source if needed, including beyond the default View. To apply it, use `notion_use(ref)` to load its complete Requires, unless already prepared for this task; inspecting the edited target never activates its workflow. Without native use, the same source's CLI `use EXACT_REF --library ENTRY --json` provides the closure. CLI refs must be canonical, not session `sr:` handles. Report unavailable adoption when no route exists. Pending, partial or failed access does not switch the selected workflow to a Builtin. Existing tasks keep their selected versions until an explicit refresh. Local and packaged workflows keep their native consumption route.
 
 `$ntn-skills@builtin`, `$ntn-skills-maintain@builtin` and `$ntn-skills-sync@builtin` appear in `$` discovery only when at least one `sources` entry has `type: notion` and is not `enabled: false`. They are readable even before connection or authentication succeeds. In Pi, ordinary local sessions with no enabled Notion source expose no Notion candidates, tools or system guidance. For explicit setup, follow the [CLI quick start](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.md#quick-start) or read `ctl builtin read notion/ntn-skills-maintain --path references/setup.md` through the supplied CLI. This entry works offline.
 

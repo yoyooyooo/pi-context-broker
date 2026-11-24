@@ -17,7 +17,7 @@ const cases = [
   ["--option", "%2D-option"], ["A_B", "a_b"], ["Café", "café"], ["Café", "café"], ["dot.name", "dot.name"],
 ] as const;
 const records = cases.map(([rawName, alias], index) => {
-  const skill = "name-" + index, id = nativeSkillId("current-source", String(skill));
+  const skill = "name-" + index, id = nativeSkillId("00000000-0000-4000-8000-000000000099", String(skill));
   return { ...runtime.record, id, name: rawName.trim(), alias,
     locator: { ...runtime.record.locator, skill_id: skill, page_id: "11111111-1111-4111-8111-" + String(index + 1).padStart(12, "0") },
     ref: nativeFileRef(id, "SKILL.md") };

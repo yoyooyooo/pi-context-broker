@@ -26,7 +26,7 @@ async function fixture(options: { proofVersion?: number | null; bytes?: Uint8Arr
   const sdkPath = join(root, "src/ntn-skills-sdk.mjs");
   await writeFile(sdkPath, `
 import { writeFile, symlink } from 'node:fs/promises';
-export const SKILL_REF_VERSION = 2, SDK_VERSION = 2, CONSUMER_CONTRACT_VERSION = 1, PACKAGE_VERSION = 'fixed-resource-fixture';
+export const SKILL_REF_VERSION = 2, SDK_VERSION = 3, CONSUMER_CONTRACT_VERSION = 1, PACKAGE_VERSION = 'fixed-resource-fixture';
 export const RESOURCE_READ_CONTRACT_VERSION = 1, CONSUMPTION_EFFECTS_VERSION = 1;
 ${resourceEffectsVersion === null ? "" : `export const RESOURCE_READ_EFFECTS_VERSION = ${resourceEffectsVersion};`}
 ${proofVersion === null ? "" : `export const READ_OUTPUT_PROOF_VERSION = ${proofVersion};`}
@@ -58,7 +58,7 @@ export async function resolveReference(target, options) {
 }
 `);
   await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ ...(await copyReferenceProtocol(join(root, "src"))), version: 1, package: "ntn-skills", package_version: "fixed-resource-fixture",
-    sdk_version: 2, consumer_contract_version: 1, resource_read_contract_version: 1, consumption_effects_version: 1,
+    sdk_version: 3, consumer_contract_version: 1, resource_read_contract_version: 1, consumption_effects_version: 1,
     ...(resourceEffectsVersion === null ? {} : { resource_read_effects_version: resourceEffectsVersion }),
     ...(proofVersion === null ? {} : { read_output_proof_version: proofVersion }) }));
   const sdk = await import(pathToFileURL(sdkPath).href);

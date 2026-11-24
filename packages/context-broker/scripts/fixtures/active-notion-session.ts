@@ -28,7 +28,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   assert.equal(f.record.locator.type, "shared_skill");
   const records = new Map<string, SkillRecord>();
   for (const [index, name] of ["root", "required", "second", "independent"].entries()) {
-    const id = index === 0 ? f.record.id : nativeSkillId("current-source", String(name));
+    const id = index === 0 ? f.record.id : nativeSkillId("00000000-0000-4000-8000-000000000099", String(name));
     const metadata: ContentRecord = { ...f.record, id, name, alias: name, description: name,
       ref: nativeFileRef(id, "SKILL.md"), locator: { ...f.record.locator,
         skill_id: index === 0 ? "entry" : name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0") } };
@@ -44,7 +44,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   type Input = Parameters<typeof f.result>[0];
   const ready = (input: Input) => {
     const roots = input.targets.map(target => {
-      const ref = bindNativeReference(parseNativeReference(target), "current-source");
+      const ref = bindNativeReference(parseNativeReference(target), "00000000-0000-4000-8000-000000000099");
       const found = ref.snapshot ? versions.get(ref.snapshot) : [...records.values()].find(item => item.id === ref.selector);
       assert.ok(found); assert.equal(found.id, ref.selector); return found;
     });
@@ -93,7 +93,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
     freshness: { policy: "max_age", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: options.catalogMaxAgeMs ?? 1_000_000, stale: false } };
   f.state.directory = { ...f.state.catalog, records: [], count: 0, view: null, view_selection: "none" };
   f.state.resolve = (target, catalog) => {
-    const ref = bindNativeReference(parseNativeReference(target), "current-source");
+    const ref = bindNativeReference(parseNativeReference(target), "00000000-0000-4000-8000-000000000099");
     const rows = (catalog as typeof f.state.catalog).records;
     const row = rows.find(item => item.id === ref.selector); assert.ok(row);
     return { record: row, scope, ref: nativeFileRef(row.id, ref.path || row.entrypoint) };

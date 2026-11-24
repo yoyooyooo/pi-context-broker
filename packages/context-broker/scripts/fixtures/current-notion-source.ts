@@ -16,7 +16,7 @@ const canonical = (value: unknown): string => value === null || typeof value !==
   : "{" + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 const uuid = (n: number) => "00000000-0000-4000-8000-" + n.toString().padStart(12, "0");
 type Input = { version: 1; targets: string[]; purpose: "use" | "inspect"; freshness: { policy: string }; budget?: Record<string, number> };
-type Runtime = { database?: string; directory?: { view?: string; profile?: string }; defaultView?: boolean; view?: string; profile?: string; maxAge?: number; refresh?: boolean; offline?: boolean; output?: string; from?: string; signal?: AbortSignal; deadline?: number; onAuthorize?: ContentSearchOptions["onAuthorize"]; execution?: Record<string, unknown> };
+type Runtime = { library?: string; directory?: { view?: string; profile?: string }; defaultView?: boolean; view?: string; profile?: string; maxAge?: number; refresh?: boolean; offline?: boolean; output?: string; from?: string; signal?: AbortSignal; deadline?: number; onAuthorize?: ContentSearchOptions["onAuthorize"]; execution?: Record<string, unknown> };
 type Call = { operation: string; input?: Input; contentInput?: ContentSearchRequest; target?: string; options: Runtime };
 
 // Only the external SDK operation is controlled. The source adapter, graph
@@ -28,10 +28,11 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
   await writeFile(join(root, "src/ntn-skills.mjs"), "throw new Error('Unexpected management command in SDK source fixture');\n");
   const module = join(root, "src/ntn-skills-sdk.mjs");
   await writeFile(module, [
-    "export const SKILL_REF_VERSION=2, SDK_VERSION=2, CONSUMER_CONTRACT_VERSION=1, PACKAGE_VERSION='current-source-fixture';",
+    "export const SKILL_REF_VERSION=2, SDK_VERSION=3, CONSUMER_CONTRACT_VERSION=1, PACKAGE_VERSION='current-source-fixture';",
     "export const CONSUMPTION_EFFECTS_VERSION=1, READ_OUTPUT_PROOF_VERSION=1, CATALOG_DIRECTORY_CONTRACT_VERSION=1;",
     "export const CONTENT_SEARCH_CONTRACT_VERSION=1;",
     "export const calls=[]; let state; export function configure(value){state=value;}",
+    "export async function resolveLibrary(options){calls.push({operation:'library',options});return state.resolveLibrary(options);}",
     "export function parseDuration(value){return value==='1s'?1000:0;}",
     "export function decodeConsumeResult(){throw Error('SDK results must not be decoded twice');}",
     "export async function consume(input,options){calls.push({operation:'consume',input,options}); return state.consume(input,options);}",
@@ -43,10 +44,10 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     "export async function contentSearch(input,options){calls.push({operation:'content-search',contentInput:input,options}); return state.contentSearch(input,options);}",
   ].join("\n"));
   await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ ...(await copyReferenceProtocol(join(root, "src"))), version: 1, package: "ntn-skills", package_version: "current-source-fixture",
-    sdk_version: 2, consumer_contract_version: 1, consumption_effects_version: 1, read_output_proof_version: 1, catalog_directory_contract_version: 1, content_search_contract_version: 1 }));
+    sdk_version: 3, consumer_contract_version: 1, consumption_effects_version: 1, read_output_proof_version: 1, catalog_directory_contract_version: 1, content_search_contract_version: 1 }));
   const sdk = await import(pathToFileURL(module).href);
   const boundary: typeof import("../../src/notion-source") = await import(pathToFileURL(join(root, "src/notion-source.ts")).href);
-  const offset = (fixture.identity ?? 0) * 100, library = fixture.identity === undefined ? "current-source" : "current-source-" + fixture.identity;
+  const offset = (fixture.identity ?? 0) * 100, library = uuid(offset + 99);
   const scope = hash("authorized source"), id = nativeSkillId(String(library), "entry"), main = { skill: "SKILL.md", router: "ROUTER.md", prompt: "PROMPT.md" }[kind];
   const body = fixture.body ?? "\ufeff# Current " + kind + "\r\nKeep all author bytes.\r\n";
   const version = hash(body), core = process.env.CONTEXT_BROKER_GRAPH_CORE;
@@ -69,7 +70,7 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
       ref: nativeFileRef(id, String(path), String(snapshot)) };
   });
   const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash(body), ref: files[0]!.ref };
-  const source: Extract<SourceConfig, { type: "notion" }> = { type: "notion", id: "notion", database: uuid(offset + 10), cacheDir: join(root, "cache"), activation: { maxAge: "1s" }, prefetch: false };
+  const source: Extract<SourceConfig, { type: "notion" }> = { type: "notion", id: "notion", library, cacheDir: join(root, "cache"), activation: { maxAge: "1s" }, prefetch: false };
   const selected: SkillRecord = { ...record, source: "notion", sourceId: source.id, sourceScope: scope, path: join(root, "metadata", main),
     aliases: [], normalizedAliases: [], normalizedName: record.alias, normalizedDescription: record.description, autoloadEnabled: kind !== "prompt" };
   function result(input: Input) {
@@ -101,7 +102,13 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     const { decodeConsumeResult } = await import(pathToFileURL(join(core, "consumer.ts")).href);
     decoder = (value, input) => Effect.runPromise(decodeConsumeResult(value, input).pipe(Effect.provide(layer)));
   }
+  const table = (n: number) => ({ database_id: uuid(offset + n), data_source_id: uuid(offset + n + 1), property_ids: {} });
+  const descriptor = { version: 2 as const, library_id: library, operation_id: "fixture-init", skills: table(10), files: table(20), records: table(30), sources: table(40) };
   const state = {
+    resolveLibrary: async (options: Runtime) => {
+      if (options.library !== undefined && options.library !== library) throw Object.assign(new Error("Foreign Library"), { code: "LIBRARY_SCOPE_MISMATCH" });
+      return descriptor;
+    },
     contentSearch: async (_input: ContentSearchRequest, _options: Runtime): Promise<unknown> => { throw new Error("Unexpected content search in source fixture"); },
     directory: undefined as unknown,
     paired: undefined as unknown,
@@ -120,10 +127,10 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     afterConsume: undefined as (() => void) | undefined,
     transform: (value: ReturnType<typeof result>): unknown => value,
     decoded: 0,
-    catalog: { records: [record], count: 1, fetched_at: Date.now(), scope,
+    catalog: { library_id: library, records: [record], count: 1, fetched_at: Date.now(), scope,
       freshness: { policy: "max_age", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: 1000, stale: false },
       databases: [{ database_id: uuid(offset + 10), title: "Current", alias: "current", role: "content", data_source_ids: [uuid(offset + 11)] }],
-      coverage: { method: "explicit_database", exhaustive: true, search_index_limited: false, queried_data_sources: [uuid(offset + 11)], failed_sources: [] } },
+      coverage: { method: "explicit_library", exhaustive: true, search_index_limited: false, queried_data_sources: [uuid(offset + 11)], failed_sources: [] } },
     async consume(input: Input, _options: Runtime) {
       const value = state.transform(result(input));
       const verified = decoder ? await decoder(value, input) : value;
@@ -145,6 +152,6 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
   sdk.configure(state);
   const sources: typeof import("../../src/sources") = await import(pathToFileURL(join(root, "src/sources.ts")).href);
   const views: typeof import("../../src/view-discovery") = await import(pathToFileURL(join(root, "src/view-discovery.ts")).href);
-  return { root, source, selected, record, body, files, bytes, snapshot, state, boundary, sources, views, calls: sdk.calls as Call[], result,
+  return { root, descriptor, source, selected, record, body, files, bytes, snapshot, state, boundary, sources, views, calls: sdk.calls as Call[], result,
     manifestHash: (value: unknown) => hash(canonical(value)) };
 }

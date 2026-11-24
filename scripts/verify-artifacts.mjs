@@ -122,7 +122,7 @@ try {
     sdkBytes: await readFile(join(installed, "dist/ntn-skills-sdk.mjs")),
     refBytes: await readFile(join(installed, "dist/ntn-skills-ref.cjs")) }) };
   const sdk = await import(pathToFileURL(join(installed, "dist/ntn-skills-sdk.mjs")).href);
-  assert.equal(sdk.SDK_VERSION, 2);
+  assert.equal(sdk.SDK_VERSION, 3);
   assert.equal(sdk.SKILL_REF_VERSION, 2);
   const pure = await import(pathToFileURL(join(installed, "dist/ntn-skills-ref.cjs")).href);
   assert.equal(pure.default.SKILL_REF_VERSION, 2);

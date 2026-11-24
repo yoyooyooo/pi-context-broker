@@ -41,7 +41,7 @@ export const HELP = `Usage:
     [--manifest ABSOLUTE_SOURCE_DISPOSITIONS_JSON] [--receipt ABSOLUTE_NEW_JSON]
   node scripts/paired-environment.mjs run --root ROOT --build BUILD_ID
     --target cli|pi|command [--id RUN_ID] [--cwd workspace|cli|broker]
-    [--entry TEST_SKILLS_DATABASE_UUID | --parent TEST_PARENT_UUID]
+    [--library TEST_LIBRARY_ROOT_UUID | --parent TEST_PARENT_UUID]
     [--skills ABSOLUTE_DIRECTORY] [--models ABSOLUTE_MODELS_JSON]
     [--pi-mode broker|native] [--native-skills ABSOLUTE_DIRECTORY]
     [--pi-extension ABSOLUTE_ENTRY ...]
@@ -70,11 +70,11 @@ with repeatable --pi-extension; resource and session overrides after -- are reje
 Credentials are
 absent unless named by --pass-env. --models accepts environment variable references
 for credentials, never literal keys or shell commands. --skills copies a selected
-corpus for Broker discovery; local originals remain untouched. --entry records
-PAIRED_NOTION_ENTRY and adds that Broker source; --parent records
+corpus for Broker discovery; local originals remain untouched. --library records
+PAIRED_NOTION_LIBRARY, sets the private CLI default_library, and adds that Broker source; --parent records
 PAIRED_NOTION_PARENT for explicit initialization. CLI arguments are unchanged:
-pass --database ENTRY after a consumption command; follow each management command's
-help, such as ctl library init --entry ENTRY. Neither launcher option restricts a
+pass --library ROOT after a consumption command; follow each management command's
+help, such as ctl library init --parent PARENT. Neither launcher option restricts a
 token's remote permissions.
 A default run has no remote source.
 
@@ -104,7 +104,7 @@ export function parseArgs(args) {
     create: ['root', 'cli-repository', 'broker-repository', 'cli-ref', 'broker-ref', 'pi-entry'],
     build: ['root', 'id', 'pass-env', 'install-mode', 'bun-cache-from', 'bun-cache-sha256'], check: ['root', 'build'],
     closeout: ['root', 'manifest', 'receipt'],
-    run: ['root', 'build', 'target', 'id', 'cwd', 'entry', 'parent', 'skills', 'models', 'pass-env', 'timeout-ms', 'stdin',
+    run: ['root', 'build', 'target', 'id', 'cwd', 'library', 'parent', 'skills', 'models', 'pass-env', 'timeout-ms', 'stdin',
       'pi-mode', 'native-skills', 'pi-extension'],
   };
   assert.ok(allowed[command], 'Choose create, build, check, run, or closeout; see --help');
@@ -744,8 +744,8 @@ export async function runEnvironment(options) {
   environment.tools = await currentTools(environment);
   const checked = await checkEnvironment(options), buildRoot = checked.root;
   assert.ok(['cli', 'pi', 'command'].includes(options.target), '--target must be cli, pi, or command');
-  assert.ok(!options.entry || !options.parent, 'Select --entry or --parent, not both');
-  if (options.entry) validUuid(options.entry); if (options.parent) validUuid(options.parent);
+  assert.ok(!options.library || !options.parent, 'Select --library or --parent, not both');
+  if (options.library) validUuid(options.library); if (options.parent) validUuid(options.parent);
   const cwdChoice = options.cwd ?? 'workspace';
   assert.ok(['workspace', 'cli', 'broker'].includes(cwdChoice), '--cwd must be workspace, cli, or broker');
   assert.ok(options.target === 'command' || cwdChoice === 'workspace', '--cwd is only for command tests');
@@ -760,7 +760,7 @@ export async function runEnvironment(options) {
   for (const path of ['bin', 'tmp', 'config/cli', 'state/cli', 'cache/cli', 'data/cli', 'state/scheduler', 'cache/broker',
     'xdg/config', 'xdg/state', 'xdg/cache', 'xdg/data', 'pi-agent', 'sessions', 'skills', 'workspace']) await mkdir(join(root, path), { recursive: true });
   await writeFile(env.npm_config_userconfig, '', { mode: 0o600, flag: 'wx' });
-  await save(join(root, 'config/cli/config.json'), { sources: [] });
+  await save(join(root, 'config/cli/config.json'), options.library ? { default_library: options.library } : {});
   const skillRoots = [];
   if (options.skills) {
     assert.ok(isAbsolute(options.skills), '--skills must be absolute');
@@ -769,7 +769,7 @@ export async function runEnvironment(options) {
     await cp(options.skills, destination, { recursive: true, dereference: true, errorOnExist: true, force: false });
     skillRoots.push(destination);
   }
-  const sources = options.entry ? [{ id: 'notion', type: 'notion', namespace: 'notion', database: options.entry,
+  const sources = options.library ? [{ id: 'notion', type: 'notion', namespace: 'notion', library: options.library,
     cacheDir: join(root, 'cache/broker'), prefetch: false }] : [];
   const pi = environment.tools.pi;
   const piLaunch = await piLaunchDefinition(options, root, buildRoot, pi, env.PAIRED_BROKER_ENTRY);
@@ -777,7 +777,7 @@ export async function runEnvironment(options) {
   await save(join(root, 'pi-agent/settings.json'), piLaunch.settings);
   await save(join(root, 'pi-launch.json'), piLaunch);
   if (options.models) await copyModels(options.models, join(root, 'pi-agent/models.json'), options['pass-env']);
-  if (options.entry) env.PAIRED_NOTION_ENTRY = options.entry;
+  if (options.library) env.PAIRED_NOTION_LIBRARY = options.library;
   if (options.parent) env.PAIRED_NOTION_PARENT = options.parent;
   await symlink(environment.tools.bun.path, join(root, 'bin/bun'));
   await symlink(environment.tools.git.path, join(root, 'bin/git'));
@@ -813,7 +813,7 @@ export async function runEnvironment(options) {
     runtime, pi_launch: piLaunch, candidate: { mode: checked.candidate_mode, entries: checked.selected_entries }, launcher: await toolIdentity(fileURLToPath(import.meta.url)),
     runtime_observer: await toolIdentity(fileURLToPath(new URL('./paired-runtime-identity.mjs', import.meta.url))), stdin,
     argument_sha256: hash(JSON.stringify(args)), passed_environment_names: options['pass-env'],
-    remote: { entry: options.entry ?? null, parent: options.parent ?? null },
+    remote: { library: options.library ?? null, parent: options.parent ?? null },
     paths: Object.fromEntries(Object.entries(env).filter(([name, value]) => name !== 'PATH' && typeof value === 'string' && own(root, value))) });
   const result = await child(command, args, { cwd, env, log: join(root, 'command'), timeout, stdin: stdin === 'inherit' });
   const runtimeAfter = await captureRuntimeIdentity(runtimeSelection);
