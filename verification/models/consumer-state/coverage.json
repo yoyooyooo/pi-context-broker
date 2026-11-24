@@ -11,7 +11,7 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "076162b5081a965300aa4293bfd32510a66eb5ace7f052a1bef4f400db74d76d",
+    "packages/context-broker/src/host-skills.ts": "2e8a6c6796a93753329a2fc4720a3e97386a1b7751e1c5a4eb3286d7a6c3f1ef",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
@@ -32,14 +32,14 @@
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
     "packages/context-broker/src/notion-source.ts": "643772203b82a5c3a391348c6925fefd6c2d72064e0f8cf1b3e40b10ee6725a4",
-    "packages/context-broker/src/pi-host-adapter.ts": "bf30ce68dc398cb0725b216261604e0edebf9d75957ee64f97ee7ccd73715e55",
+    "packages/context-broker/src/pi-host-adapter.ts": "3230ccb80a90f1374b08559a432df6d15736c2cb58634bdcf6274108f7c021d2",
     "packages/context-broker/scripts/host-refresh.test.ts": "132b729c029e92f278a59bb03c4881346291a1e872add0067951478c8e6703c2",
     "packages/context-broker/scripts/session-refresh.test.ts": "12e75bc82e0c54a59b9c5c1fc703bd04c5c780f5d5907cac1f3d9ffcac9c5b28",
     "packages/context-broker/scripts/session-recovery.test.ts": "e27252382fa86515966b3dc90d1e33dbdbd6324a1fe8d32288d9aaae7dd27cfc",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "f2fd10601b54103d7b9bc74d51a73f0b5e79cb3dc885f410324f19f26053289d",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "28cdccffdcd2bb891182f72eac06c0a5a6ad9f2450a604bbb2b85a6f3ed2cd6b",
     "packages/context-broker/scripts/notion-source-sdk.test.ts": "f35e63549bcced2bacad3896d09ea19fbda75c5b8901a06f1c7edc9a0f33b082",
-    "packages/context-broker/scripts/pi-read-adapter.test.ts": "55c1798b90fad58b0835e687a51ac9ae230c28e0a77b1ae8c115a9b271a24c78",
+    "packages/context-broker/scripts/pi-read-adapter.test.ts": "68cf409fb0946075bd9c56985a459dd60a33044aa5994fbf2f101edb3595698d",
     "packages/context-broker/scripts/fixtures/active-notion-session.ts": "a518341cf245ab02e0acdd38bc1c3d44e3b8ca12068b91506a52dc5a05658ef4",
     "packages/context-broker/scripts/notion-entry.test.ts": "d05cda9b673fc9b7af2f2bab3c6efb26b5f6d1ab1aa05b5fc9f982361f5d204a",
     "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
@@ -706,6 +706,13 @@
     "store_unavailable_diagnostic": "Reviewed the public error boundary: STATE_UNAVAILABLE is retained as the existing CLI code across catalog, body and resource reads, with a message to restore access to the existing Store. Other errors, effect sanitization, denial and all selection/acquisition/cancellation/publication guards are unchanged. The actual SDK regression covers all three operations and retains unknown-error rejection. No finite model transition, bound, case, expected rule or mutation target changed."
   },
   "current_review": {
+    "pi_tool_rendering": {
+      "reviewed_from": "c063a9a74dffa84fcfb90c6c9eb500821a957923",
+      "reviewed_through": "bee95e8ad2f019b340f87cf073aa676c26e90589",
+      "scope": "Pi-only presentation: installHostSkills awaits the optional UI factory at installation, before registering tools, and adds renderCall/renderResult only to list/use definitions. Renderer import failure returns undefined. List/use schemas, execute functions, result payloads, refresh, source and publication guards are byte-identical to the base after removing the three presentation lines. The read resolver registers before session_start to decorate saved read details, without source lookup or execution on replay; native execute, parameters, active-tool selection and session-start registration ownership checks are unchanged. Non-read and post-bind third-party renderers pass through.",
+      "guard_review": "Reviewed Availability, ReadRace, FreshnessPublication, SelectionGraph, DeliveryBoundary and RecoveryClosure mappings: no change to evidence/order/epoch/cancel/authorization, fixed-root or Requires commit, full body/serializer, active/pending projection or recovery guards. Presentation is not a new state writer. Added early-replay and ownership tests preserve existing execution assertions. 74 focused regressions and real Pi list/use/read plus fresh-process resume passed on bee95e8; CI must re-run all existing formal cases and actual guard mutations.",
+      "proof_limit": "No change to finite domains, model actions, rules, cases or mutation targets. These hashes bind reviewed bytes only, not a refinement proof or live UI acceptance."
+    },
     "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
     "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
     "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted.",

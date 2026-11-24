@@ -11,7 +11,7 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "076162b5081a965300aa4293bfd32510a66eb5ace7f052a1bef4f400db74d76d",
+    "packages/context-broker/src/host-skills.ts": "2e8a6c6796a93753329a2fc4720a3e97386a1b7751e1c5a4eb3286d7a6c3f1ef",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/scripts/consumer-observation.test.ts": "2f07b67ddf22702b2416fc154daf6adc7d9974372e36563f11666c6858509145",
     "packages/context-broker/scripts/host-prepare.test.ts": "314410342e0da1726fd3794b67418ce0b9205c8165d62e789484a3ab885d8c77",
@@ -228,6 +228,13 @@
     }
   ],
   "current_review": {
+    "pi_tool_rendering": {
+      "reviewed_from": "c063a9a74dffa84fcfb90c6c9eb500821a957923",
+      "reviewed_through": "bee95e8ad2f019b340f87cf073aa676c26e90589",
+      "scope": "Pi-only presentation: installHostSkills awaits the optional UI factory at installation, before registering tools, and adds renderCall/renderResult only to list/use definitions. Renderer import failure returns undefined. List/use schemas, execute functions, result payloads, refresh, source and publication guards are byte-identical to the base after removing the three presentation lines. The read resolver registers before session_start to decorate saved read details, without source lookup or execution on replay; native execute, parameters, active-tool selection and session-start registration ownership checks are unchanged. Non-read and post-bind third-party renderers pass through.",
+      "guard_review": "Reviewed Availability, ReadRace, FreshnessPublication, SelectionGraph, DeliveryBoundary and RecoveryClosure mappings: no change to evidence/order/epoch/cancel/authorization, fixed-root or Requires commit, full body/serializer, active/pending projection or recovery guards. Presentation is not a new state writer. Added early-replay and ownership tests preserve existing execution assertions. 74 focused regressions and real Pi list/use/read plus fresh-process resume passed on bee95e8; CI must re-run all existing formal cases and actual guard mutations.",
+      "proof_limit": "No change to finite domains, model actions, rules, cases or mutation targets. These hashes bind reviewed bytes only, not a refinement proof or live UI acceptance."
+    },
     "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
     "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
     "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted.",
