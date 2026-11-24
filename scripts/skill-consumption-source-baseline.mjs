@@ -38,7 +38,7 @@ const help = [
   '  node scripts/skill-consumption-source-baseline.mjs evidence --run /absolute/frozen-run',
   '  node scripts/skill-consumption-source-baseline.mjs cleanup --run /absolute/frozen-run',
   '',
-  'Config: command (absolute executable argv), database, root (unfixed exact main ref),',
+  'Config: command (absolute executable argv), library, root (unfixed exact main ref),',
   'evidenceRoot (absolute, outside checkout); optional resourcePath, timeoutMs (default 120000),',
   'pipeline (prepare-fixed-main by default, resource-only, or inspect-current),',
   'samples ({cold:5,warm:20,"expired-unchanged":20,partial:5}). Authentication is inherited.',
@@ -141,9 +141,9 @@ async function configuration(path) {
   assert.ok(isAbsolute(path ?? ''), '--config must be absolute');
   const value = JSON.parse(await readFile(path, 'utf8'));
   assert.ok(value && typeof value === 'object' && !Array.isArray(value), 'Config must be an object');
-  assert.ok(Object.keys(value).every(key => ['command', 'database', 'root', 'evidenceRoot', 'resourcePath', 'timeoutMs', 'samples', 'pipeline'].includes(key)), 'Unknown config field');
+  assert.ok(Object.keys(value).every(key => ['command', 'library', 'root', 'evidenceRoot', 'resourcePath', 'timeoutMs', 'samples', 'pipeline'].includes(key)), 'Unknown config field');
   assert.ok(Array.isArray(value.command) && value.command.length > 0 && isAbsolute(value.command[0]) && value.command.every(arg => typeof arg === 'string' && arg.length > 0 && !arg.includes('\0')), 'command must be absolute executable argv');
-  assert.match(value.database, /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i);
+  assert.match(value.library, /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i);
   const root = parseNativeReference(value.root);
   assert.ok(hasExactNativeOwner(root) && root.path && root.snapshot === undefined, 'root must be an unfixed exact main ref');
   assert.ok(isAbsolute(value.evidenceRoot), 'evidenceRoot must be absolute');
@@ -193,7 +193,7 @@ export async function doctor(config) {
   const version = probe(['--version']), prepare = probe(config.pipeline === 'inspect-current' ? ['ctl', 'prepare', '--help'] : ['prepare', '--help']), read = probe(['read', '--help']);
   const runtime = spawnSync(config.command[0], ['--version'], { encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
   assert.equal(runtime.status, 0, 'Executable version probe failed');
-  for (const flag of ['--metrics', '--database', '--max-age']) assert.ok(prepare.text.includes(flag) && read.text.includes(flag), 'CLI does not expose ' + flag);
+  for (const flag of ['--metrics', '--library', '--max-age']) assert.ok(prepare.text.includes(flag) && read.text.includes(flag), 'CLI does not expose ' + flag);
   assert.ok(prepare.text.includes('Ns') && read.text.includes('--from'), 'CLI duration or relative read contract unsupported');
   let trashAvailable = true;
   try { await access('/usr/bin/trash', constants.X_OK); } catch { trashAvailable = false; }
@@ -282,7 +282,7 @@ async function observeResource(plan, item, value, state) {
   assert.equal(value?.ok, true); assert.equal(value.has_more, false); assert.equal(typeof value.content, 'string');
   const requested = parseNativeReference(plan.config.root), returned = parseNativeReference(value.ref);
   assert.equal(value.record.id, requested.selector);
-  assert.equal(value.record.locator.database_id, plan.config.database);
+  assert.equal(value.record.locator.library_id, plan.config.library);
   assert.equal(value.entrypoint, requested.path);
   assert.equal(value.path, plan.config.resourcePath);
   assert.equal(returned.selector, value.record.id);
@@ -397,8 +397,8 @@ export async function executePlan(plan) {
       return result.value;
     };
     const args = inspectOnly
-      ? ['ctl', 'prepare', target, '--purpose', 'inspect', '--database', plan.config.database, '--metrics']
-      : ['prepare', target, '--purpose', 'use', '--database', plan.config.database, '--metrics'];
+      ? ['ctl', 'prepare', target, '--purpose', 'inspect', '--library', plan.config.library, '--metrics']
+      : ['prepare', target, '--purpose', 'use', '--library', plan.config.library, '--metrics'];
     if (!inspectOnly && !setup && item.group === 'expired-unchanged') args.push('--max-age', '1s');
     else if (!inspectOnly && target === plan.config.root) args.push('--max-age', '5m');
     const graph = await invoke('prepare', args);
@@ -409,7 +409,7 @@ export async function executePlan(plan) {
       const requestedRoot = parseNativeReference(plan.config.root), selectedRoot = nodes.find(node => node.id === graph.roots[0].id);
       assert.equal(selectedRoot?.record?.id, requestedRoot.selector);
       assert.equal(selectedRoot?.path, requestedRoot.path);
-      assert.equal(selectedRoot?.record?.locator?.database_id, plan.config.database);
+      assert.equal(selectedRoot?.record?.locator?.library_id, plan.config.library);
       if (inspectOnly) {
         assert.equal(graph.purpose, 'inspect'); assert.equal(graph.graph_lock.purpose, 'inspect');
         assert.equal(nodes.length, 1); assert.equal(graph.usage?.prepared_nodes, 1);
@@ -431,14 +431,14 @@ export async function executePlan(plan) {
       if (!setup && item.group === 'expired-unchanged' && rootNodes.some(node => node?.source !== 'notion' || node.freshness?.policy !== 'max_age' || node.freshness?.max_age_ms !== 1000)) errors.push({ stage: 'initial-state', code: 'TTL_REVALIDATION_NOT_OBSERVED' });
       for (const [index, node] of (inspectOnly ? [] : nodes).entries()) {
         if (stop.signal.aborted) { errors.push({ stage: 'read-' + (index + 1), code: 'RUN_CANCELLED_BEFORE_READ' }); break; }
-        const read = await invoke('read-' + String(index + 1).padStart(3, '0'), ['read', node.ref, '--database', plan.config.database, '--metrics']);
+        const read = await invoke('read-' + String(index + 1).padStart(3, '0'), ['read', node.ref, '--library', plan.config.library, '--metrics']);
         try { validateRead(read, node); } catch (error) { errors.push({ stage: 'read-' + (index + 1), code: 'FIXED_READ_MISMATCH', diagnostic: cleanError(error) }); }
       }
       if (plan.config.resourcePath && !stop.signal.aborted) {
         const root = rootNodes[0], file = root?.files?.find(file => file.path === plan.config.resourcePath);
         if (!root || !file) errors.push({ stage: 'resource', code: 'RESOURCE_NOT_IN_ROOT_MANIFEST' });
         else {
-          const read = await invoke('resource', ['read', plan.config.resourcePath, '--from', root.ref, '--database', plan.config.database, '--metrics']);
+          const read = await invoke('resource', ['read', plan.config.resourcePath, '--from', root.ref, '--library', plan.config.library, '--metrics']);
           if (read?.ok !== true || read.path !== file.path || read.snapshot_id !== root.binding.snapshot_id || typeof read.content !== 'string' ||
             sha(read.content) !== file.sha256 || Buffer.byteLength(read.content) !== file.bytes || read.has_more !== false) errors.push({ stage: 'resource', code: 'RESOURCE_READ_MISMATCH' });
         }
@@ -468,7 +468,7 @@ export async function executePlan(plan) {
     await mkdir(base, { recursive: true, mode: 0o700 });
     const env = { ...verificationCliEnvironment(base), NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000' };
     const { receipt, value } = await operation(item.id + '-resource', plan.config.command,
-      ['read', plan.config.resourcePath, '--from', plan.config.root, '--database', plan.config.database, '--metrics'], { env });
+      ['read', plan.config.resourcePath, '--from', plan.config.root, '--library', plan.config.library, '--metrics'], { env });
     if (receipt.failure) errors.push({ stage: 'resource', code: receipt.failure, errorCode: receipt.errorCode });
     let identity = null, materialization = null;
     if (receipt.failure === null) try {

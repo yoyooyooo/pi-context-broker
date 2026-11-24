@@ -152,7 +152,7 @@ test('SDK observations retain explicit zero-attempt metrics and failed or pendin
 
 test('SDK routing attribution is retained exactly and never inferred when absent', async t => {
   const item = fixture(), observer = observe(item); t.after(observer.finish);
-  const cases = [{ source_id: 'notion-eu', database: '01234567-89ab-cdef-0123-456789abcdef' }, { source_id: null, database: null }, {}];
+  const cases = [{ source_id: 'notion-eu', library: '01234567-89ab-cdef-0123-456789abcdef' }, { source_id: null, library: null }, {}];
   const ids = [];
   for (const attribution of cases) {
     const id = crypto.randomUUID(); ids.push(id);
@@ -164,7 +164,7 @@ test('SDK routing attribution is retained exactly and never inferred when absent
   const trace = await readSourceObservation(item.output);
   assert.equal(trace.complete, true);
   for (const [index, id] of ids.entries()) for (const row of trace.events.filter(row => ['started', 'completed'].includes(row.phase) && row.requestId.endsWith(id))) {
-    assert.deepEqual(Object.fromEntries(['source_id', 'database'].filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]])), cases[index]);
+    assert.deepEqual(Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]])), cases[index]);
   }
   assert.equal(fs.readFileSync(item.output, 'utf8').includes(secret), false);
   const changed = reseal(trace.events.map(row => row.phase === 'completed' && row.requestId.endsWith(ids[0]) ? { ...row, source_id: 'different-source' } : row));
@@ -177,9 +177,9 @@ test('SDK routing attribution is retained exactly and never inferred when absent
 
 test('contradictory SDK source attribution remains an observation error', async t => {
   const item = fixture(), observer = observe(item); t.after(observer.finish);
-  const id = crypto.randomUUID(), database = '01234567-89ab-cdef-0123-456789abcdef';
-  publishSdk(id, 'start', { source_id: 'source-a', database });
-  publishSdk(id, 'end', { source_id: 'source-b', database, elapsed_ms: 1, status: 'completed', sdk_started: true,
+  const id = crypto.randomUUID(), library = '01234567-89ab-cdef-0123-456789abcdef';
+  publishSdk(id, 'start', { source_id: 'source-a', library });
+  publishSdk(id, 'end', { source_id: 'source-b', library, elapsed_ms: 1, status: 'completed', sdk_started: true,
     metrics_observed: true, request_metrics: { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [] } });
   observer.finish();
   const trace = await readSourceObservation(item.output);
@@ -188,7 +188,7 @@ test('contradictory SDK source attribution remains an observation error', async 
   assert.equal(trace.events.filter(row => row.phase === 'observer_error').length, 1);
 });
 
-for (const operation of ['list', 'files', 'read-resources', 'resolve']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
+for (const operation of ['library', 'list', 'files', 'read-resources', 'resolve']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
   const item = fixture(), observer = observe(item); t.after(observer.finish);
   const id = crypto.randomUUID();
   publishSdk(id, 'start', { operation });

@@ -52,13 +52,13 @@ export function observeSourceTransport(settings) {
     unmatchedChildLifecycleVersion: 1,
     coverage: 'owned Pi SDK operations and direct bundled CLI; direct unmatched child lifecycle only, descendant transport remains unknown', wireBytes: null });
   subscribe('context-broker.notion-sdk', event => {
-    if (!event || event.version !== 1 || !['start', 'end'].includes(event.event) || !['list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search'].includes(event.operation)
+    if (!event || event.version !== 1 || !['start', 'end'].includes(event.event) || !['library', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search'].includes(event.operation)
       || typeof event.id !== 'string' || !/^[a-f0-9-]{36}$/i.test(event.id) || event.pid !== process.pid
       || typeof event.monotonic_ns !== 'string' || !/^\d+$/.test(event.monotonic_ns)) throw new Error('SDK_EVENT_INVALID');
     const requestId = 'sdk:' + process.pid + ':' + event.id;
     // These are the SDK's public routing fields, not inferred configuration.
     // Absence remains absence for older diagnostics; explicit null stays null.
-    const attribution = Object.fromEntries(['source_id', 'database'].filter(key => Object.hasOwn(event, key)).map(key => {
+    const attribution = Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(event, key)).map(key => {
       const value = event[key];
       if (value !== null && (typeof value !== 'string' || !value.trim() || value.length > 1024 || /[\u0000-\u001f\u007f]/u.test(value)))
         throw new Error('SDK_SOURCE_ATTRIBUTION_INVALID');
@@ -418,7 +418,7 @@ export function parseSourceObservation(text, { final = true } = {}) {
       }
     } else if (event.phase === 'started') {
       if (!['cli', 'sdk'].includes(event.kind) || typeof event.requestId !== 'string' || operations.has(event.requestId)) errors.push('duplicate-or-invalid-start');
-      const attribution = Object.fromEntries(['source_id', 'database'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
+      const attribution = Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
       if (event.kind === 'sdk' && Object.values(attribution).some(value => value !== null &&
         (typeof value !== 'string' || !value.trim() || value.length > 1024 || /[\u0000-\u001f\u007f]/u.test(value))))
         errors.push('invalid-sdk-source-attribution');
@@ -429,7 +429,7 @@ export function parseSourceObservation(text, { final = true } = {}) {
       if (event.phase === 'completed' && operation) {
         operation.completed++;
         if (event.kind !== operation.kind) errors.push('changed-operation-kind');
-        const attribution = Object.fromEntries(['source_id', 'database'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
+        const attribution = Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
         if (operation.kind === 'sdk' && JSON.stringify(attribution) !== JSON.stringify(operation.attribution))
           errors.push('changed-sdk-source-attribution');
       }

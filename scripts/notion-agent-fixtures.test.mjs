@@ -14,6 +14,7 @@ const exists = path => access(path).then(() => true, () => false);
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const writeJson = (path, value) => writeFile(path, JSON.stringify(value) + '\n');
 const execute = promisify(execFile);
+const fixtureLibraryId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 async function fixture(t) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'notion-agent-fixtures-test-'))), token = randomUUID(), runId = 'fixture-test';
@@ -317,7 +318,7 @@ test('View teardown preserves the immediate non-owned inventory across independe
     const databaseId = '11111111-1111-1111-1111-111111111111', ownedId = '22222222-2222-2222-2222-222222222222';
     const userA = '33333333-3333-3333-3333-333333333333', userB = '44444444-4444-4444-4444-444444444444';
     const retiredOther = '55555555-5555-5555-5555-555555555555', newerOther = '66666666-6666-6666-6666-666666666666';
-    context.entry = databaseId; context.library = { skills: { database_id: databaseId } }; context.objects = {};
+    context.libraryId = fixtureLibraryId; context.library = { skills: { database_id: databaseId } }; context.objects = {};
     context.viewId = ownedId; context.view = { name: 'owned-view', originalViewIds: [userA, retiredOther, userB] };
     const before = [userA, newerOther, ownedId, userB], preserved = [userA, newerOther, userB];
     const after = mode === 'unchanged' ? preserved : mode === 'reordered' ? [userB, newerOther, userA] : [userA, newerOther];
@@ -354,7 +355,7 @@ test('fixture mutations retry an explicit rate-limit rejection within one budget
     const { root, bindings, context } = await fixture(t);
     const databaseId = '11111111-1111-1111-1111-111111111111', ownedId = '22222222-2222-2222-2222-222222222222';
     const originalId = '33333333-3333-3333-3333-333333333333';
-    context.entry = databaseId;
+    context.libraryId = fixtureLibraryId;
     context.library = { skills: { database_id: databaseId, data_source_id: '44444444-4444-4444-4444-444444444444', property_ids: { 'Skill ID': 'skill-id' } } };
     context.node = process.execPath; context.cli = join(root, 'filtered-list.mjs');
     await mkdir(join(root, 'commands'));
@@ -399,7 +400,7 @@ test('fixture mutations retry an explicit rate-limit rejection within one budget
 
 test('a rate-limit wait cannot dispatch another fixture write after the total deadline', async t => {
   const { bindings, context } = await fixture(t), databaseId = '11111111-1111-1111-1111-111111111111';
-  context.entry = databaseId;
+  context.libraryId = fixtureLibraryId;
   context.library = { skills: { database_id: databaseId, data_source_id: '22222222-2222-2222-2222-222222222222', property_ids: { 'Skill ID': 'skill-id' } } };
   const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN, originalTimeout = setTimeout;
   process.env.NOTION_API_TOKEN = 'fixture-unit-test-token'; let now = 0, creates = 0;
@@ -425,7 +426,7 @@ test('a rate-limit wait cannot dispatch another fixture write after the total de
 
 test('an unknown View CREATE outcome is recorded and never automatically replayed', async t => {
   const { bindings, context } = await fixture(t), databaseId = '11111111-1111-1111-1111-111111111111';
-  context.entry = databaseId;
+  context.libraryId = fixtureLibraryId;
   context.library = { skills: { database_id: databaseId, data_source_id: '22222222-2222-2222-2222-222222222222', property_ids: { 'Skill ID': 'skill-id' } } };
   const previousFetch = globalThis.fetch, previousToken = process.env.NOTION_API_TOKEN;
   process.env.NOTION_API_TOKEN = 'fixture-unit-test-token'; let creates = 0;
@@ -459,7 +460,7 @@ async function projectionTrashHarness(t, { target = 'block', mode = 'lost-trashe
   const block = id => ({ object: 'block', id, parent: { type: 'page_id', page_id: owner },
     in_trash: trashed.has(id), archived: trashed.has(id), type: 'paragraph', has_children: false,
     paragraph: { rich_text: [{ type: 'text', text: { content: 'Generated reading body' } }] } });
-  context.entry = other; context.apiVersion = '2026-03-11'; context.node = process.execPath;
+  context.libraryId = fixtureLibraryId; context.apiVersion = '2026-03-11'; context.node = process.execPath;
   context.cli = join(root, 'projection-read.mjs');
   context.library = { skills: { property_ids: { 'Skill ID': 'skill-id', 'Current State': 'state', Operation: 'operation' } },
     files: { data_source_id: '55555555-5555-4555-8555-555555555555', property_ids: { Skill: 'skill' } },
@@ -627,9 +628,9 @@ async function preparationHarness(t) {
   // The process/API double uses the actual selected public SDK comparator, not a fake parser.
   await writeJson(join(root, 'package.json'), { name: 'ntn-skills', version: selectedPackage.version, type: 'module', bin: { 'ntn-skills': './public-cli.mjs' }, exports: { './sdk': './sdk.mjs' } });
   await writeFile(join(root, 'sdk.mjs'), 'export {SDK_VERSION,PACKAGE_VERSION,compareNativeMarkdown} from ' + JSON.stringify(pathToFileURL(sdkPath).href) + ';\n');
-  const entry = '11111111-1111-4111-8111-111111111111';
+  const databaseId = '11111111-1111-4111-8111-111111111111', libraryId = fixtureLibraryId;
   const ids = Object.fromEntries(['Name', 'Description', 'Skill ID', 'Current State', 'Operation', 'Enabled', 'Default Context', 'Requires', 'Members'].map(key => [key, key]));
-  const library = { library_id: 'unit-library', skills: { database_id: entry, data_source_id: entry, property_ids: ids },
+  const library = { library_id: libraryId, skills: { database_id: databaseId, data_source_id: databaseId, property_ids: ids },
     files: { data_source_id: '22222222-2222-4222-8222-222222222222', property_ids: { Skill: 'Skill' } },
     records: { data_source_id: '33333333-3333-4333-8333-333333333333', property_ids: { Skill: 'Skill' } } };
   await writeJson(statePath, { library, records: [], calls: [] });
@@ -710,7 +711,7 @@ await writeFile(path,JSON.stringify(state));process.stdout.write(JSON.stringify(
     return Response.json({ results: [], has_more: false });
   };
   t.after(() => { globalThis.fetch = previousFetch; if (previousToken === undefined) delete process.env.NOTION_API_TOKEN; else process.env.NOTION_API_TOKEN = previousToken; });
-  return { root, statePath, networkCalls, options: { runId: 'preparation-test', root: join(root, 'prepared'), entry, cli: cliPath } };
+  return { root, statePath, networkCalls, options: { runId: 'preparation-test', root: join(root, 'prepared'), libraryId, cli: cliPath } };
 }
 
 const managedObject = (id, relations = {}) => ({ id, name: id, description: 'Business instructions for ' + id,
@@ -781,7 +782,7 @@ test('Native readback accepts canonical escapes through the selected public SDK 
 test('missing or mismatched SDK and wrapper inputs fail before fixture creation', async t => {
   for (const kind of ['missing export', 'wrong SDK package', 'shell wrapper']) await t.test(kind, async t => {
     const harness = await preparationHarness(t);
-    if (kind === 'missing export') await writeFile(join(harness.root, 'sdk.mjs'), 'export const SDK_VERSION=2,PACKAGE_VERSION="0.1.0";\n');
+    if (kind === 'missing export') await writeFile(join(harness.root, 'sdk.mjs'), 'export const SDK_VERSION=3,PACKAGE_VERSION="0.1.0";\n');
     if (kind === 'wrong SDK package') {
       const path = join(harness.root, 'package.json'), manifest = await json(path); manifest.version = '999.0.0'; await writeJson(path, manifest);
     }

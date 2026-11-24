@@ -199,9 +199,9 @@ class EvidenceError extends Error {
 const demand = (condition, code, message, details) => { if (!condition) throw new EvidenceError('failed', code, message, details); };
 const need = (condition, code, message, details) => { if (!condition) throw new EvidenceError('blocked', code, message, details); };
 const numeric = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
-const databaseKey = value => typeof value === 'string' && /^[a-f0-9]{32}$/iu.test(value.replaceAll('-', ''))
+const libraryKey = value => typeof value === 'string' && /^[a-f0-9]{32}$/iu.test(value.replaceAll('-', ''))
   ? value.replaceAll('-', '').toLowerCase() : value;
-const sameDatabase = (left, right) => nonempty(left) && nonempty(right) && databaseKey(left) === databaseKey(right);
+const sameLibrary = (left, right) => nonempty(left) && nonempty(right) && libraryKey(left) === libraryKey(right);
 const xmlText = value => value.replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
   .replace(/&#(\d+);/gu, (_match, value) => String.fromCodePoint(Number(value)));
 function catalogCards(text) {
@@ -824,8 +824,8 @@ export async function verifyNotionAgentContentSearch(expected, observed, binding
   const sourceId = configuredSource.sourceId;
   const config = JSON.parse((await verifiedArtifact(configuredSource.configArtifact, readArtifact)).toString('utf8'));
   const configured = (config.sources ?? []).filter(row => row.type === 'notion' && row.enabled !== false);
-  need(configured.length === 1 && configured[0].id === sourceId && sameDatabase(configured[0].database, configuredSource.database) &&
-    sameDatabase(configuredSource.database, bindings.private.fixture?.entry),
+  need(configured.length === 1 && configured[0].id === sourceId && sameLibrary(configured[0].library, configuredSource.library) &&
+    sameLibrary(configuredSource.library, bindings.private.fixture?.libraryId),
   'CONTENT_SOURCE_SCOPE_MISMATCH', 'The user-visible source and independently read fixture library must agree');
   const readbackKey = item.versions?.[body.version]?.readback;
   const receipt = bindings.private.fixture?.observedReadbacks?.[readbackKey];
@@ -837,7 +837,7 @@ export async function verifyNotionAgentContentSearch(expected, observed, binding
   const raw = JSON.parse((await verifiedArtifact(receipt.rawEvidence, readArtifact)).toString('utf8'));
   const record = raw.main?.record, bytes = await verifiedArtifact(body, readArtifact);
   need(record?.id === item.owner && raw.main?.scope === item.scope && record.name === item.name &&
-    sameDatabase(record.locator?.page_id, item.pageId) && typeof record.description === 'string' &&
+    sameLibrary(record.locator?.page_id, item.pageId) && typeof record.description === 'string' &&
     raw.observedFiles?.some(file => file.path === body.resourcePath && file.sha256 === body.sha256 && file.bytes === body.bytes),
   'CONTENT_READBACK_OWNER_MISMATCH', 'The frozen body and metadata must belong to the same independently read Skill');
   demand(normalized(bytes.toString('utf8')).includes(normalized(query)) &&
@@ -882,7 +882,7 @@ export async function verifyNotionAgentContentSearch(expected, observed, binding
   try { reference = parseNativeReference(match.ref); } catch { reference = undefined; }
   demand(reference && hasExactNativeOwner(reference) && reference.selector === record.id && reference.snapshot === undefined
     && reference.path === record.entrypoint && match.ref === record.ref && match.entrypoint === record.entrypoint &&
-    match.match?.kind === 'notion_remote_match' && match.match.representation === representation && sameDatabase(match.match.pageId, matchPageId),
+    match.match?.kind === 'notion_remote_match' && match.match.representation === representation && sameLibrary(match.match.pageId, matchPageId),
   'CONTENT_MATCH_WRONG_REPRESENTATION', 'The discovery reference must remain current and the remote page must map to the read Skill or File');
   const deliveries = [];
   for (const payload of delivery.requests) {
@@ -896,7 +896,7 @@ export async function verifyNotionAgentContentSearch(expected, observed, binding
   need(/^\d+$/u.test(callNs ?? '') && /^\d+$/u.test(resultNs ?? '') && Number.isSafeInteger(call.event.pid),
     'CONTENT_CALL_TIMING_MISSING', 'Retain actual source and tool boundaries');
   const contentStarts = source.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.operation === 'content-search');
-  demand(contentStarts.every(row => row.source_id === sourceId && sameDatabase(row.database, configuredSource.database)),
+  demand(contentStarts.every(row => row.source_id === sourceId && sameLibrary(row.library, configuredSource.library)),
     'CONTENT_QUERY_BROADCAST', 'Content discovery may use only the explicitly selected source');
   const requests = contentStarts.filter(row => row.pid === call.event.pid && /^\d+$/u.test(row.monotonicNs ?? '') &&
     BigInt(row.monotonicNs) >= BigInt(callNs) && BigInt(row.monotonicNs) <= BigInt(resultNs) &&
@@ -1296,16 +1296,16 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           const first = delivery.requests[0], source = observed.visibility?.source;
           need(item.kind === 'notion' && nonempty(item.owner) && digest(item.scope), 'PENDING_OBJECT_IDENTITY_MISSING',
             'A pending target must be an independently bound Notion object');
-          need(nonempty(source?.sourceId) && nonempty(source.database), 'PENDING_SOURCE_BINDING_MISSING',
-            'Retain the actual configured target Source and database');
+          need(nonempty(source?.sourceId) && nonempty(source.library), 'PENDING_SOURCE_BINDING_MISSING',
+            'Retain the actual configured target Source and library');
           const config = JSON.parse((await verifiedArtifact(source.configArtifact, readArtifact)).toString('utf8'));
           const configured = config.sources?.filter(item => item.type === 'notion' && item.enabled !== false && item.id === source.sourceId);
-          need(configured?.length === 1 && sameDatabase(configured[0].database, source.database) &&
-            sameDatabase(privateBindings.fixture?.entry, source.database), 'PENDING_SOURCE_SCOPE_MISMATCH',
+          need(configured?.length === 1 && sameLibrary(configured[0].library, source.library) &&
+            sameLibrary(privateBindings.fixture?.libraryId, source.library), 'PENDING_SOURCE_SCOPE_MISMATCH',
           'The real enabled source configuration and independently read fixture library must agree');
           need(/^\d+$/u.test(first.monotonicNs ?? '') && Array.isArray(observed.source), 'PENDING_TIMING_MISSING', 'Pending discovery needs actual source and request clocks');
           const belongs = row => row.kind === 'sdk' && row.operation === 'list' && row.source_id === source.sourceId &&
-            sameDatabase(row.database, source.database);
+            sameLibrary(row.library, source.library);
           const pending = observed.source.filter(row => row.phase === 'started' && belongs(row) &&
             /^\d+$/u.test(row.monotonicNs ?? '') && BigInt(row.monotonicNs) <= BigInt(first.monotonicNs)).filter(row =>
               !observed.source.some(end => end.phase === 'completed' && end.requestId === row.requestId &&
@@ -1318,7 +1318,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
               BigInt(ends[0].monotonicNs) > BigInt(first.monotonicNs), 'PENDING_SOURCE_TERMINAL_MISSING',
             'The same target-source operation must retain its real later completion');
           }
-          return { object: expected.object, sourceId: source.sourceId, database: source.database,
+          return { object: expected.object, sourceId: source.sourceId, library: source.library,
             configArtifact: source.configArtifact, payloadSha256: first.sha256, pendingOperations: pending.map(row => row.requestId) };
 
         }

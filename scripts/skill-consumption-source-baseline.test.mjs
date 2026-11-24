@@ -63,18 +63,18 @@ function fixtureCli(failure = null) {
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
   const args = process.argv.slice(2);
   if (args[0] === 'ctl') args.shift();
-  if (args.includes('--help')) { console.log('--metrics --database --max-age 0, Ns, Nm, Nh --from'); return; }
+  if (args.includes('--help')) { console.log('--metrics --library --max-age 0, Ns, Nm, Nh --from'); return; }
   if (args.includes('--version')) { console.log('source-driver-fixture v1'); return; }
   const metrics = { trace_enabled: true, trace: [], total_requests: 0, trace_dropped: 0 };
   const send = value => console.log(JSON.stringify({ ...value, request_metrics: metrics }));
   if (failure) { send({ ok: false, error: { code: failure, operation_id: 'original-unknown' } }); process.exitCode = 1; return; }
   const state = process.env.NTN_SKILLS_HOME;
-  const root = 'skill://one/SKILL.md?library=test', id = 'skill://one?library=test', scope = 'a'.repeat(64);
+  const root = 'skill://one/SKILL.md?library=00000000-0000-4000-8000-000000000010', id = 'skill://one?library=00000000-0000-4000-8000-000000000010', scope = 'a'.repeat(64);
   const body = '# Fixture\n', version = digest(body), snapshot = 's_' + digest(JSON.stringify([scope, id, version]));
   const ref = root + '&snapshot=' + snapshot;
   const record = { id, kind: 'skill', name: 'Fixture', alias: 'fixture', description: 'Driver fixture', enabled: true,
     default_context: false, entrypoint: 'SKILL.md', ref: root,
-    locator: { type: 'shared_skill', library_id: 'test', skill_id: 'one', page_id: '00000000-0000-4000-8000-000000000002',
+    locator: { type: 'shared_skill', library_id: '00000000-0000-4000-8000-000000000010', skill_id: 'one', page_id: '00000000-0000-4000-8000-000000000002',
       database_id: '00000000-0000-4000-8000-000000000001', data_source_id: '00000000-0000-4000-8000-000000000003' } };
   const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: digest(body), ref };
   const object = path.join(state, 'objects', digest(body)), cached = fs.existsSync(object), pinned = args[1]?.includes('&snapshot=');
@@ -100,8 +100,8 @@ function fixtureCli(failure = null) {
 test('frozen four-state run retains failed partial samples, 1+N boundaries, setup costs and private artifacts', async () => {
   if (process.platform !== 'darwin') return;
   const cli = join(base, 'fixture.cjs'); await writeFile(cli, '(' + fixtureCli.toString() + ')();\n', { mode: 0o600 });
-  const config = { command: [process.execPath, cli], database: '00000000-0000-4000-8000-000000000001',
-    root: 'skill://one/SKILL.md?library=test', evidenceRoot: join(base, 'runs'), timeoutMs: 2000,
+  const config = { command: [process.execPath, cli], library: '00000000-0000-4000-8000-000000000010',
+    root: 'skill://one/SKILL.md?library=00000000-0000-4000-8000-000000000010', evidenceRoot: join(base, 'runs'), timeoutMs: 2000,
     samples: { cold: 1, warm: 1, 'expired-unchanged': 1, partial: 1 } };
   const checked = await doctor(config);
   assert.equal(checked.cliVersion, 'source-driver-fixture v1');
@@ -144,7 +144,7 @@ function resourceFixtureCli() {
   const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
   const digest = value => crypto.createHash('sha256').update(value).digest('hex');
   const args = process.argv.slice(2);
-  if (args.includes('--help')) { console.log('--metrics --database --max-age 0, Ns, Nm, Nh --from'); return; }
+  if (args.includes('--help')) { console.log('--metrics --library --max-age 0, Ns, Nm, Nh --from'); return; }
   if (args.includes('--version')) { console.log('source-resource-fixture v1'); return; }
   const metrics = { trace_enabled: true, trace: [], total_requests: 0, trace_dropped: 0 };
   const send = value => console.log(JSON.stringify({ ...value, request_metrics: metrics }));
@@ -153,9 +153,9 @@ function resourceFixtureCli() {
   }
   const state = process.env.NTN_SKILLS_HOME, changed = state.includes('cold-002');
   const content = changed ? 'Changed resource\n' : 'Resource\n', main = '# Main\n';
-  const id = 'skill://one?library=test', scope = 'a'.repeat(64), root = 'skill://one/SKILL.md?library=test';
+  const id = 'skill://one?library=00000000-0000-4000-8000-000000000010', scope = 'a'.repeat(64), root = 'skill://one/SKILL.md?library=00000000-0000-4000-8000-000000000010';
   const version_id = digest(content), snapshot_id = 's_' + digest(version_id);
-  const record = { id, ref: root, entrypoint: 'SKILL.md', locator: { database_id: '00000000-0000-4000-8000-000000000001' } };
+  const record = { id, ref: root, entrypoint: 'SKILL.md', locator: { library_id: '00000000-0000-4000-8000-000000000010', database_id: '00000000-0000-4000-8000-000000000001' } };
   const file_bindings = [
     { file_id: 'main', page_id: '00000000-0000-4000-8000-000000000011', path: 'SKILL.md' },
     { file_id: 'resource', page_id: '00000000-0000-4000-8000-000000000012', path: 'references/example.md' },
@@ -167,14 +167,14 @@ function resourceFixtureCli() {
   fs.writeFileSync(path.join(state, 'snapshots', snapshot_id + '.json'), JSON.stringify(manifest));
   for (const file of bodies) fs.writeFileSync(path.join(state, 'objects', digest(file.content)), file.content);
   send({ ok: true, record, scope, snapshot_id, version_id, entrypoint: 'SKILL.md', file_bindings,
-    ref: 'skill://one/references/example.md?library=test&snapshot=' + snapshot_id,
+    ref: 'skill://one/references/example.md?library=00000000-0000-4000-8000-000000000010&snapshot=' + snapshot_id,
     path: 'references/example.md', content, range: { start: 1, end: 2, total_lines: 2 }, has_more: false, source: 'notion' });
 }
 
 test('resource-only cold samples run one read, preserve complete-cache observations and fail changed source without dropping it', async () => {
   const cli = join(base, 'resource-fixture.cjs'); await writeFile(cli, '(' + resourceFixtureCli.toString() + ')();\n', { mode: 0o600 });
-  const config = { command: [process.execPath, cli], database: '00000000-0000-4000-8000-000000000001',
-    root: 'skill://one/SKILL.md?library=test', resourcePath: 'references/example.md', pipeline: 'resource-only',
+  const config = { command: [process.execPath, cli], library: '00000000-0000-4000-8000-000000000010',
+    root: 'skill://one/SKILL.md?library=00000000-0000-4000-8000-000000000010', resourcePath: 'references/example.md', pipeline: 'resource-only',
     evidenceRoot: join(base, 'resource-runs'), timeoutMs: 2000, samples: { cold: 2, warm: 0, 'expired-unchanged': 0, partial: 0 } };
   const plan = await freezePlan(config);
   assert.deepEqual(plan.pipeline, ['read-one-current-resource', 'observe-owned-cache-without-another-cli']);
@@ -197,8 +197,8 @@ test('resource-only cold samples run one read, preserve complete-cache observati
 
 test('inspect-current measures one public prepare per empty cold state and retains root-ready timing', async () => {
   const cli = join(base, 'inspect-fixture.cjs'); await writeFile(cli, '(' + fixtureCli.toString() + ')();\n', { mode: 0o600 });
-  const config = { command: [process.execPath, cli], database: '00000000-0000-4000-8000-000000000001',
-    root: 'skill://one/SKILL.md?library=test', pipeline: 'inspect-current',
+  const config = { command: [process.execPath, cli], library: '00000000-0000-4000-8000-000000000010',
+    root: 'skill://one/SKILL.md?library=00000000-0000-4000-8000-000000000010', pipeline: 'inspect-current',
     evidenceRoot: join(base, 'inspect-runs'), timeoutMs: 2000, samples: { cold: 2, warm: 0, 'expired-unchanged': 0, partial: 0 } };
   const plan = await freezePlan(config);
   assert.deepEqual(plan.pipeline, ['prepare-one-current-inspect']);
@@ -216,7 +216,7 @@ test('inspect-current measures one public prepare per empty cold state and retai
     const receipt = JSON.parse(await readFile(sample.operations[0], 'utf8'));
     assert.equal(JSON.parse(await readFile(receipt.stdout.path, 'utf8')).fixture_scheduler_root, join(sample.initialState.path, 'scheduler'));
     assert.equal(sample.elapsedMs, receipt.elapsedMs);
-    assert.deepEqual(receipt.args, ['ctl', 'prepare', config.root, '--purpose', 'inspect', '--database', config.database, '--metrics']);
+    assert.deepEqual(receipt.args, ['ctl', 'prepare', config.root, '--purpose', 'inspect', '--library', config.library, '--metrics']);
   }
   for (const extra of [{ resourcePath: 'references/example.md' }, { resourcePath: '' },
     ...['warm', 'expired-unchanged', 'partial'].map(group => ({ samples: { ...config.samples, [group]: 1 } }))])
@@ -225,8 +225,8 @@ test('inspect-current measures one public prepare per empty cold state and retai
 
 test('inspect-current stops after the original failed operation and retains its recovery state', async () => {
   const cli = join(base, 'inspect-unknown.cjs'); await writeFile(cli, '(' + fixtureCli.toString() + ')("WRITE_OUTCOME_UNKNOWN");\n', { mode: 0o600 });
-  const config = { command: [process.execPath, cli], database: '00000000-0000-4000-8000-000000000001',
-    root: 'skill://one/SKILL.md?library=test', pipeline: 'inspect-current',
+  const config = { command: [process.execPath, cli], library: '00000000-0000-4000-8000-000000000010',
+    root: 'skill://one/SKILL.md?library=00000000-0000-4000-8000-000000000010', pipeline: 'inspect-current',
     evidenceRoot: join(base, 'inspect-failed-runs'), timeoutMs: 2000, samples: { cold: 3, warm: 0, 'expired-unchanged': 0, partial: 0 } };
   const plan = await freezePlan(config), report = await executePlan(plan);
   assert.equal(report.operationCount, 1);

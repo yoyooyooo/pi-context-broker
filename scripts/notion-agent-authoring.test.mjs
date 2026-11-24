@@ -4,14 +4,14 @@ import { NATIVE_MAIN_EXACT_RESOURCES, agentFixtureCreateArgs, assertAgentFixture
   agentFixtureUsesNativeMarkdown, isAgentFixtureCreationArgs } from './notion-agent-authoring.mjs';
 import { validateAgentFixtureRecipe } from './notion-agent-scenarios.mjs';
 
-const entry = '11111111-1111-4111-8111-111111111111';
+const libraryId = '11111111-1111-4111-8111-111111111111';
 const object = () => ({ id: 'grant', name: 'grant', description: 'Grant rules', placement: 'notion', initial: 'v1',
   versions: { v1: { files: [{ path: 'SKILL.md', content: '# Grant\n' }, { path: 'references/rules.md', content: 'grant_cents\n' }] } } });
-const selected = () => ({ entry, object: { ...object(), authoring: NATIVE_MAIN_EXACT_RESOURCES },
+const selected = () => ({ libraryId, object: { ...object(), authoring: NATIVE_MAIN_EXACT_RESOURCES },
   owned: { name: 'grant-owned', skillId: 'owned-grant' }, objects: {}, input: { directory: '/owned/input with spaces', requires: [], members: [],
     files: [{ path: 'SKILL.md', sha256: 'a'.repeat(64), bytes: 8 }, { path: 'references/rules.md', sha256: 'b'.repeat(64), bytes: 12 }] } });
 const preflight = selected => ({ ok: true, contract: 'current', dry_run: true, remote_writes: 0,
-  library: { database_id: entry }, skill_id: selected.owned.skillId, page_id: null, state: null,
+  library: { library_id: libraryId }, skill_id: selected.owned.skillId, page_id: null, state: null,
   replaces_complete_tree: true, remove: [], metadata: { name: selected.owned.name, description: selected.object.description,
     kind: 'skill', enabled: true, default_context: false },
   files: selected.input.files.map(file => ({ ...file, page_id: null, previous_authority: null, action: 'create', authority: file.path === 'SKILL.md' ? 'native' : 'resource' })) });
@@ -35,12 +35,12 @@ test('the opt-in recipe is frozen as data and rejects unsupported authoring befo
 
 test('legacy creation keeps relation and metadata flags while exact resources use public complete import', () => {
   const options = selected(), imported = agentFixtureCreateArgs(options);
-  assert.deepEqual(imported, ['ctl', 'library', 'import', '/owned/input with spaces', '--entry', entry, '--skill-id', 'owned-grant',
+  assert.deepEqual(imported, ['ctl', 'library', 'import', '/owned/input with spaces', '--library', libraryId, '--skill-id', 'owned-grant',
     '--name', 'grant-owned', '--description', 'Grant rules', '--native', 'SKILL.md']);
   delete options.object.authoring;
   Object.assign(options.input, { requires: ['dependency'], members: ['optional'], enabled: false, defaultContext: true });
   options.objects = { dependency: { pageId: 'dependency-page' }, optional: { pageId: 'optional-page' } };
-  assert.deepEqual(agentFixtureCreateArgs(options), ['ctl', 'library', 'skill', 'create', '/owned/input with spaces', '--entry', entry,
+  assert.deepEqual(agentFixtureCreateArgs(options), ['ctl', 'library', 'skill', 'create', '/owned/input with spaces', '--library', libraryId,
     '--skill-id', 'owned-grant', '--name', 'grant-owned', '--description', 'Grant rules', '--requires', 'dependency-page',
     '--members', 'optional-page', '--enabled', 'false', '--default-context', 'true']);
   for (const field of ['requires', 'members', 'enabled', 'defaultContext']) {
@@ -60,7 +60,7 @@ test('complete import preflight rejects an existing owner, changed authority and
     ['changed bytes', value => { value.files[1].sha256 = 'c'.repeat(64); }],
     ['replacement action', value => { value.files[1].action = 'verify_or_replace'; }],
     ['wrong owner', value => { value.skill_id = 'another-owner'; }],
-    ['wrong library', value => { value.library.database_id = 'another-library'; }],
+    ['wrong library', value => { value.library.library_id = 'another-library'; }],
     ['remote writes', value => { value.remote_writes = 1; }],
   ]) { const value = preflight(options); change(value); assert.throws(() => assertAgentFixtureImportCreation(value, options), undefined, label); }
 });

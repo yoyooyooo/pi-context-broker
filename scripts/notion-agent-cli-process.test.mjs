@@ -178,12 +178,12 @@ test('one real restoration allows help and read-only checks without retaining pr
   const target = 'PRIVATE_RESTORE_TARGET', entry = 'PRIVATE_LIBRARY_ENTRY';
   const command = f.invoke(f.cli), projection = command + ' ctl library projection ' + target;
   const actual = await f.run([command + ' ctl library projection --help',
-    projection + ' --entry=' + entry + ' --dry-run',
-    projection + ' --restore --entry ' + entry + ' --include=**/*.md --exclude ' + quote('**/tests/**'),
+    projection + ' --library=' + entry + ' --dry-run',
+    projection + ' --restore --library ' + entry + ' --include=**/*.md --exclude ' + quote('**/tests/**'),
     command + ' read ' + target + ' --refresh --path scripts/check.py',
     command + ' list --query skill-name --json',
     command + ' export ' + target + ' --output /owned/output',
-    command + ' ctl library files ' + target + ' --entry ' + entry].join('; '));
+    command + ' ctl library files ' + target + ' --library ' + entry].join('; '));
   const proof = verifyNotionAgentSingleProjectionRestore(actual.proof);
   assert.equal(proof.status, 'passed', JSON.stringify(proof));
   assert.equal(proof.restoreInvocations, 1);
@@ -196,8 +196,8 @@ test('one real restoration allows help and read-only checks without retaining pr
 
 test('a failed restore followed by a successful retry is two invocations and never passes', async () => {
   const f = await fixture('process.exitCode=process.argv.includes("first")?1:0;\n'), command = f.invoke(f.cli);
-  const actual = await f.run(command + ' ctl library projection first --restore --entry library; '
-    + command + ' ctl library projection second --restore --entry library');
+  const actual = await f.run(command + ' ctl library projection first --restore --library library; '
+    + command + ' ctl library projection second --restore --library library');
   const proof = verifyNotionAgentSingleProjectionRestore(actual.proof);
   assert.equal(proof.status, 'failed'); assert.equal(proof.restoreInvocations, 2);
   assert.deepEqual(proof.commands.map(row => row.exitCode), [1, 0]);
@@ -206,7 +206,7 @@ test('a failed restore followed by a successful retry is two invocations and nev
 
 test('an additional ordinary projection or explicit resume cannot hide behind one restore', async t => {
   for (const suffix of ['', ' --operation operation-id --resume']) await t.test(suffix || 'new projection', async () => {
-    const f = await fixture('process.exitCode=0;\n'), command = f.invoke(f.cli) + ' ctl library projection target --entry library';
+    const f = await fixture('process.exitCode=0;\n'), command = f.invoke(f.cli) + ' ctl library projection target --library library';
     const actual = await f.run(command + ' --restore; ' + command + suffix);
     const proof = verifyNotionAgentSingleProjectionRestore(actual.proof);
     assert.equal(proof.status, 'failed'); assert.equal(proof.restoreInvocations, 1);
@@ -217,7 +217,7 @@ test('an additional ordinary projection or explicit resume cannot hide behind on
 test('a failed sole restore and a help-only invocation cannot claim completion', async t => {
   for (const [suffix, code] of [['--restore', 'RESTORE_INVOCATION_FAILED'], ['--help', 'RESTORE_INVOCATION_COUNT']])
     await t.test(suffix, async () => {
-      const f = await fixture(), actual = await f.run(f.invoke(f.cli) + ' ctl library projection target --entry library ' + suffix);
+      const f = await fixture(), actual = await f.run(f.invoke(f.cli) + ' ctl library projection target --library library ' + suffix);
       const proof = verifyNotionAgentSingleProjectionRestore(actual.proof);
       assert.equal(proof.status, 'failed'); assert.ok(proof.diagnostics.some(row => row.code === code));
     });
@@ -225,12 +225,12 @@ test('a failed sole restore and a help-only invocation cannot claim completion',
 
 test('a restore-looking value or unknown command shape is not a verified restore command', async t => {
   for (const [args, expected] of [
-    ['ctl library projection target --entry library --include=--restore', 'failed'],
-    ['ctl library projection target --entry library --include --restore', 'blocked'],
-    ['ctl library projection target --entry library --restore --future-flag', 'blocked'],
-    ['ctl library update target --entry library', 'blocked'],
+    ['ctl library projection target --library library --include=--restore', 'failed'],
+    ['ctl library projection target --library library --include --restore', 'blocked'],
+    ['ctl library projection target --library library --restore --future-flag', 'blocked'],
+    ['ctl library update target --library library', 'blocked'],
     ['read target --restore', 'blocked'],
-    ['ctl library operation target --kind skill --entry library --dry-run', 'blocked'],
+    ['ctl library operation target --kind skill --library library --dry-run', 'blocked'],
     ['list unexpected-target --query skill-name', 'blocked'],
     ['export target', 'blocked'],
     ['files target --json', 'blocked'],
@@ -244,7 +244,7 @@ test('a restore-looking value or unknown command shape is not a verified restore
 
 test('old or damaged argument observations remain unproved without changing original process identity', async () => {
   const f = await fixture('process.exitCode=0;\n');
-  const actual = await f.run(f.invoke(f.cli) + ' ctl library projection target --entry library --restore');
+  const actual = await f.run(f.invoke(f.cli) + ' ctl library projection target --library library --restore');
   const childIndex = actual.processFiles.findIndex(file => JSON.parse(file.contents.toString().split('\n')[0]).cli !== null);
   const oldFiles = [...actual.processFiles];
   oldFiles[childIndex] = sealed(oldFiles[childIndex], rows => rows.map(row => { const { invocation, ...old } = row; return old; }));
