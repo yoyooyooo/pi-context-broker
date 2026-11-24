@@ -13,6 +13,7 @@ import { readAliasRevisionStop, assertRetainedAliasEpisode } from './campaign-al
 import { readHistoryExtension } from './campaign-history-extension.mjs';
 import { readPartialConfirmationHistory, assertConfirmationContinuation, assertContinuationModels } from './campaign-confirmation-continuation.mjs';
 import { readProviderStopHistory, assertProviderStopContinuation, assertProviderStopModels, assertRetainedProviderStopEpisode } from './campaign-provider-stop-continuation.mjs';
+import { readObserverRepairHistory, assertObserverRepairContinuation, assertObserverRepairModels, assertObserverRepairEngineeringProtocol } from './campaign-observer-repair-continuation.mjs';
 
 export const FINITE_CAMPAIGN = 'benchmark-finite-campaign';
 export const isFiniteCampaign = value => value?.kind === FINITE_CAMPAIGN;
@@ -342,6 +343,12 @@ export async function readProviderStopCampaignHistory({ parentAuthorization, use
     predecessor, planFiles, pilotLedgerRoot, currentBoundary: true })).history;
 }
 
+export async function readObserverRepairCampaignHistory({ parentAuthorization, userApproval, predecessor, planFiles, pilotLedgerRoot }) {
+  const parent = await readApprovedCampaign(parentAuthorization);
+  return (await readObserverRepairHistory({ parent, parentReference: parentAuthorization, userApproval,
+    predecessor, planFiles, pilotLedgerRoot, currentBoundary: true })).history;
+}
+
 function assertPrefix(current, expected) {
   assert.ok(current.scheduled_episodes >= expected.scheduled_episodes);
   for (const key of ['reservations', 'episodes']) assert.deepEqual(current[key].slice(0, expected.scheduled_episodes), expected[key], 'FINITE_HISTORY_PREFIX_CHANGED');
@@ -404,7 +411,7 @@ async function authorizedScope(value, context) {
   if (!context.authorized) context.authorized = await readApprovedCampaign(binding.reference);
   if (context.reference && fingerprint(binding.reference) !== fingerprint(context.reference)) {
     const next = await readApprovedCampaign(binding.reference);
-    assert.ok([2, 3, 4, 5].includes(next.value.version), 'APPROVAL_LINEAGE_CHANGED');
+    assert.ok([2, 3, 4, 5, 6].includes(next.value.version), 'APPROVAL_LINEAGE_CHANGED');
     assert.deepEqual(next.value.revision.parent_authorization, context.reference, 'APPROVAL_LINEAGE_CHANGED');
     assert.deepEqual(value.predecessor, next.value.predecessor, 'APPROVAL_REVISION_PREDECESSOR_CHANGED');
     if (next.value.version === 2)
@@ -418,8 +425,8 @@ async function authorizedScope(value, context) {
   const allocation = authorized.value.allocations.find(item => item.id === binding.allocation_id);
   assert.equal(value.id, allocation.id, 'APPROVAL_SCOPE_ID_CHANGED'); assert.equal(value.role, allocation.role, 'APPROVAL_SCOPE_ROLE_CHANGED');
   assert.ok(value.reservation_limit <= allocation.reservation_limit, 'APPROVAL_ALLOCATION_LIMIT');
-  if (value.role === CONFIRMATION_CONTINUATION) assert.ok([4, 5].includes(authorized.value.version), 'CONFIRMATION_CONTINUATION_AUTHORITY_REQUIRED');
-  if ([4, 5].includes(authorized.value.version)) {
+  if (value.role === CONFIRMATION_CONTINUATION) assert.ok([4, 5, 6].includes(authorized.value.version), 'CONFIRMATION_CONTINUATION_AUTHORITY_REQUIRED');
+  if ([4, 5, 6].includes(authorized.value.version)) {
     assert.equal(value.reservation_limit, allocation.reservation_limit, 'CONFIRMATION_CONTINUATION_EXACT_ALLOCATION_REQUIRED');
     const index = authorized.value.allocations.findIndex(item => item.id === allocation.id);
     if (index === 0) assert.deepEqual(value.predecessor, authorized.value.predecessor, 'CONFIRMATION_CONTINUATION_INITIAL_PREDECESSOR_CHANGED');
@@ -438,6 +445,11 @@ async function authorizedScope(value, context) {
 
 async function assertAuthorizedProtocol(protocol, execution, slots, value, authorized) {
   if (!authorized) { assert.notEqual(value.role, CONFIRMATION_CONTINUATION, 'CONFIRMATION_CONTINUATION_AUTHORITY_REQUIRED'); return; }
+  if (authorized.value.version === 6) {
+    assertObserverRepairModels(protocol, authorized);
+    if (value.role === CONFIRMATION_CONTINUATION) return assertObserverRepairContinuation(protocol, execution, slots, value, authorized);
+    await assertObserverRepairEngineeringProtocol(protocol, execution, slots, value, authorized);
+  }
   if (authorized.value.version === 4) assertContinuationModels(protocol, authorized);
   if (authorized.value.version === 5) {
     assertProviderStopModels(protocol, authorized);

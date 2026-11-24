@@ -12,6 +12,15 @@ import { inventoryPublicInputs } from './subject.mjs';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 
+/** The scientific case identity, before physical material names are bound. */
+export function protocolCaseForVariant({ variant, publicCase, oracle }) {
+  return { id: variant.id, family: publicCase.family, material_id: publicCase.material_id,
+    cluster_id: publicCase.cluster_id, split: publicCase.split, content_sha256: variant.content_sha256,
+    prompt_sha256: fingerprint(publicCase.turns), contract_sha256: fingerprint(oracle),
+    initial_state_sha256: publicCase.initial_state_sha256, authorization_sha256: publicCase.authorization_sha256,
+    capability_ids: publicCase.required_capabilities };
+}
+
 /** Generate reusable public projections while retaining each oracle outside the repository and subject. */
 export async function prepareCases({ corpus, selections, root }) {
   validateCorpus(corpus); assert.ok(isAbsolute(root));
@@ -39,11 +48,7 @@ export async function prepareCases({ corpus, selections, root }) {
       input_root: inputRoot, input_inventory_sha256: sha(JSON.stringify(await inventoryPublicInputs(inputRoot))),
       skills_root: join(material.target_root, '.agents/skills'), skill_inventory: material.inventory.filter(file => file.skill_id),
       events: selected.events, clarification: selected.clarification,
-      protocol_case: { id: selected.variant.id, family: publicCase.family, material_id: publicCase.material_id,
-        cluster_id: publicCase.cluster_id, split: publicCase.split, content_sha256: selected.variant.content_sha256,
-        prompt_sha256: fingerprint(publicCase.turns), contract_sha256: fingerprint(selected.oracle),
-        initial_state_sha256: publicCase.initial_state_sha256, authorization_sha256: publicCase.authorization_sha256,
-        capability_ids: publicCase.required_capabilities } };
+      protocol_case: protocolCaseForVariant(selected) };
     try { await save(join(variantRoot, 'binding.json'), binding); }
     catch (error) { if (error.code !== 'EEXIST') throw error; assert.deepEqual(JSON.parse(await readFile(join(variantRoot, 'binding.json'), 'utf8')), binding); }
     bindings.push(binding);
