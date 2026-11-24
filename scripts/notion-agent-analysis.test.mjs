@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { inspectNotionAgentSession, captureNotionAgentSelection, analyzeNotionAgentTurn } from './notion-agent-analysis.mjs';
+import { inspectNotionAgentSession, captureNotionAgentSelection, analyzeNotionAgentTurn, verifyNotionAgentUnavailableReference } from './notion-agent-analysis.mjs';
 import { candidatePayloadBodies } from './verify-pi-daily-candidate.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -16,6 +16,37 @@ const user = message('u', 'm', 'user', '请计算这次费用。');
 const answer = (id = 'a', parent = 'u', text = '合计：100 元') => message(id, parent, 'assistant', [{ type: 'text', text }]);
 const jsonl = (entries, suppliedHeader = header) => [suppliedHeader, ...entries].map(row => JSON.stringify(row)).join('\n') + '\n';
 const inspect = (entries, options = {}) => inspectNotionAgentSession(jsonl(entries), options);
+
+test('unavailable original reference requires its own online failed tool read, not repeated prompt text or another library request', async () => {
+  const rootA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', rootB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const owner = 'skill://same-policy?library=' + rootA, content = [{ type: 'text', text: 'SKILL_NOT_FOUND: original current owner is absent' }];
+  const files = new Map();
+  const artifact = (path, value) => { const bytes = Buffer.from(JSON.stringify(value)); files.set(path, bytes); return { path, bytes: bytes.length, sha256: hash(bytes) }; };
+  const failed = artifact('/owned/failed-read.json', content), payload = artifact('/owned/provider.json', { messages: [{ role: 'tool', tool_call_id: 'read-a', content }] });
+  const bindings = { private: { objects: { original: { kind: 'notion', owner } } } };
+  const observed = { visibility: { source: { sourceId: 'notion-a', library: rootA, additionalLibrary: { sourceId: 'notion-b', library: rootB } } },
+    tasks: [{ phase: 'provider_payload', sha256: payload.sha256, payloadFile: payload.path }],
+    session: { branchEntries: [{ id: 'result-a', message: { role: 'toolResult', toolCallId: 'read-a', isError: true, content } }] } };
+  const attempts = [{ id: 'read-a', name: 'read', arguments: { path: owner }, event: { pid: 123, monotonicNs: '100' },
+    native: { resultEntryId: 'result-a' }, result: { isError: true, monotonicNs: '200', contentArtifact: failed }, deliveryToolCallId: 'read-a' }];
+  const source = [{ phase: 'started', kind: 'sdk', requestId: 'r-a', pid: 123, source_id: 'notion-a', library: rootA, operation: 'read', monotonicNs: '110' },
+    { phase: 'attempt', requestId: 'r-a', monotonicNs: '120' },
+    { phase: 'completed', requestId: 'r-a', status: 'failed', errorCode: 'SKILL_NOT_FOUND', monotonicNs: '190' }];
+  const options = { attempts, source, delivery: { requests: [payload] }, readArtifact: async path => files.get(path) };
+  const expected = { kind: 'unavailable-reference', object: 'original', path: 'SKILL.md' };
+  const proof = await verifyNotionAgentUnavailableReference(expected, observed, bindings, options);
+  assert.equal(proof.proofs[0].library, rootA); assert.equal(proof.proofs[0].httpAttempts, 1);
+  await assert.rejects(verifyNotionAgentUnavailableReference(expected, observed, bindings, { ...options, attempts: [] }), /actually try/u);
+  for (const change of [rows => { rows[0].library = rootB; }, rows => { rows[0].source_id = 'notion-b'; },
+    rows => { rows[0].operation = 'list'; }, rows => { rows[0].pid = 456; }, rows => { rows[2].status = 'cancelled'; },
+    rows => { rows[2].errorCode = 'AUTHENTICATION_FAILED'; }, rows => { rows[2].monotonicNs = '201'; }, rows => rows.splice(1, 1)]) {
+    const altered = structuredClone(source); change(altered);
+    await assert.rejects(verifyNotionAgentUnavailableReference(expected, observed, bindings, { ...options, source: altered }), /online failure/u);
+  }
+  const wrong = structuredClone(attempts); wrong[0].arguments.path = 'skill://same-policy?library=' + rootB;
+  await assert.rejects(verifyNotionAgentUnavailableReference(expected, observed, bindings, { ...options, attempts: wrong }), /actually try/u);
+  await assert.rejects(verifyNotionAgentUnavailableReference(expected, observed, bindings, { ...options, delivery: { requests: [] } }), /online failure/u);
+});
 
 test('native session keeps real tool attempts, failures and final identity', () => {
   const call = message('c', 'u', 'assistant', [{ type: 'toolCall', id: 't1', name: 'read', arguments: { path: '/owned/skill/SKILL.md' } }], { stopReason: 'toolUse' });

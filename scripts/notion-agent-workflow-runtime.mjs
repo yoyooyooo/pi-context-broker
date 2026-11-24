@@ -281,7 +281,7 @@ export async function bindPairedWorkflowEvidence(bindings, brokerRoot, scenario)
 
 async function input(config) {
   assert.equal(config.version, 1); assert.equal(config.scope, 'notion-agent-workflow');
-  const fields = ['version', 'scope', 'scenarioFile', 'scenarioId', 'profile', 'bindingsFile', 'brokerRoot', 'cliRoot', 'sourceId', 'library', 'packageIndex', 'evidenceRoot', 'model', 'thinkingLevel', 'timeoutMs', 'catalogTimeoutMs', 'viewId', 'retestOf'];
+  const fields = ['version', 'scope', 'scenarioFile', 'scenarioId', 'profile', 'bindingsFile', 'brokerRoot', 'cliRoot', 'sourceId', 'library', 'additionalLibrary', 'packageIndex', 'evidenceRoot', 'model', 'thinkingLevel', 'timeoutMs', 'catalogTimeoutMs', 'viewId', 'retestOf'];
   assert.ok(Object.keys(config).every(key => fields.includes(key)), 'Unsupported natural workflow configuration field');
   for (const key of ['timeoutMs', 'catalogTimeoutMs']) if (config[key] !== undefined)
     assert.ok(Number.isSafeInteger(config[key]) && config[key] > 0 && config[key] <= 2_147_483_647,
@@ -308,7 +308,63 @@ async function input(config) {
   const scenario = bindAgentScenario(corpus, config.scenarioId, bindings, { profile: config.profile });
   assert.ok(bindings.private.fixture?.root && bindings.private.fixture?.runId, 'Use a real owned fixture binding');
   assert.equal(bindings.private.fixture.libraryId.replaceAll('-', ''), config.library.replaceAll('-', ''), 'The fixture and candidate must use the same library');
+  if (scenario.fixture.kind === 'library-journey') {
+    assert.ok(config.additionalLibrary && bindings.private.fixture.libraries, 'Library journeys require two independently prepared roots');
+    assert.equal(bindings.private.fixture.libraries.A.library_id, config.library);
+    assert.equal(bindings.private.fixture.libraries.B.library_id, config.additionalLibrary.library);
+    assert.equal(config.viewId, undefined, 'Library journeys use complete root catalogs');
+  } else assert.equal(config.additionalLibrary, undefined, 'Additional Sources are reserved for the finite Library journeys');
   return { corpus, bindings, scenario };
+}
+
+/** One additional explicitly reviewed root, never discovery of arbitrary Sources. */
+export function agentWorkflowSourceConfig(original, options, additionalLibrary) {
+  const config = candidateSourceConfig(original, options);
+  if (additionalLibrary === undefined) return config;
+  assert.deepEqual(Object.keys(additionalLibrary).sort(), ['library', 'sourceId']);
+  assert.match(additionalLibrary.sourceId, /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,119}$/u);
+  assert.match(additionalLibrary.library, /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u);
+  assert.notEqual(additionalLibrary.library, options.library, 'The additional root must be distinct');
+  assert.ok(!config.sources.some(source => source.id === additionalLibrary.sourceId), 'Do not replace an existing Source');
+  config.sources.push({ id: additionalLibrary.sourceId, type: 'notion', library: additionalLibrary.library,
+    cacheDir: join(options.cacheDir, additionalLibrary.sourceId), prefetch: false });
+  return config;
+}
+
+/** Execute the user's public branch command and verify the actual persisted entries. */
+export async function selectWorkflowLibrary(rpc, library) {
+  assert.match(library, /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u);
+  const before = await rpc.command('get_state'), prior = await rpc.command('get_entries');
+  const completion = await rpc.prompt('/context-broker library ' + library);
+  assert.equal(completion.agentInvoked, false, 'Library control must not synthesize an Agent turn');
+  const after = await rpc.command('get_state'), entries = await rpc.command('get_entries');
+  assert.equal(after.sessionId, before.sessionId, 'Public Library selection must stay in the same session');
+  const previous = new Set(prior.entries.map(entry => entry.id));
+  const appended = entries.entries.filter(entry => !previous.has(entry.id) && entry.customType === 'ntn-skills-library-selection');
+  assert.deepEqual(appended.map(entry => entry.data), [
+    { version: 1, library, status: 'requested' }, { version: 1, library, status: 'ready' },
+  ], 'Public selection did not persist the requested and verified root');
+  const byId = new Map(entries.entries.map(entry => [entry.id, entry]));
+  let active;
+  for (let entry = byId.get(entries.leafId); entry; entry = byId.get(entry.parentId))
+    if (entry.customType === 'ntn-skills-library-selection') { active = entry; break; }
+  assert.equal(active?.id, appended[1].id, 'The ready Library entry must belong to the active branch');
+  return { actor: 'fixture-controller', command: '/context-broker library ' + library, sessionId: after.sessionId,
+    priorLeafId: prior.leafId, leafId: entries.leafId, entries: appended, completion };
+}
+
+export function workflowSelectedLibrary(config, snapshot) {
+  const entries = new Map(snapshot.entries.map(entry => [entry.id, entry]));
+  let selected;
+  for (let entry = entries.get(snapshot.leafId); entry; entry = entries.get(entry.parentId)) {
+    if (entry.customType === 'ntn-skills-library-selection') { selected = entry.data; break; }
+  }
+  assert.ok(selected === undefined || selected.status === 'ready', 'The active branch Library is not ready');
+  const library = selected?.library ?? config.library;
+  const sources = [{ sourceId: config.sourceId, library: config.library }, ...(config.additionalLibrary ? [config.additionalLibrary] : [])];
+  const matches = sources.filter(source => source.library === library);
+  assert.equal(matches.length, 1, 'The branch must select one explicitly reviewed Source');
+  return matches[0];
 }
 
 export async function planAgentWorkflow(config) {
@@ -421,14 +477,14 @@ export async function runAgentWorkflow(config) {
   const sourceCache = join(stateRoot, 'broker-cache'), sourceConfigPath = join(evidence, 'source-config.json');
   const viewId = fixture.viewId ?? config.viewId;
   if (fixture.viewId && config.viewId) assert.equal(config.viewId, fixture.viewId, 'Use the owned fixture View');
-  const candidateSource = candidateSourceConfig(source, { sourceId: config.sourceId, library: config.library, cacheDir: sourceCache, viewId });
+  const candidateSource = agentWorkflowSourceConfig(source, { sourceId: config.sourceId, library: config.library, cacheDir: sourceCache, viewId }, config.additionalLibrary);
   if (scenario.fixture.environment?.offline === true) {
     const selected = candidateSource.sources.find(item => item.id === config.sourceId);
     selected.discovery = { ...selected.discovery, offline: true };
     selected.activation = { ...selected.activation, offline: true };
   }
   await save(sourceConfigPath, candidateSource);
-  const sourceObservation = { sourceId: config.sourceId, library: config.library, configArtifact: await identity(sourceConfigPath) };
+  const sourceObservation = { sourceId: config.sourceId, library: config.library, ...(config.additionalLibrary ? { additionalLibrary: config.additionalLibrary } : {}), configArtifact: await identity(sourceConfigPath) };
   const env = agentWorkflowEnvironment(inheritedEnv, { stateRoot, sourceConfigPath, evidence });
   await mkdir(env.NTN_SKILLS_CONFIG_HOME, { recursive: true, mode: 0o700 });
   await save(join(env.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: config.library });
@@ -483,12 +539,13 @@ export async function runAgentWorkflow(config) {
     await save(join(control, 'commands.json'), segment.commands);
     segment.commandsArtifact = await identity(join(control, 'commands.json'));
     const catalogMode = scenario.fixture.environment?.catalog ?? 'normal';
+    const catalogSelection = workflowSelectedLibrary(config, await rpc.command('get_entries'));
     if (['normal', 'filtered-view'].includes(catalogMode) && !scenario.fixture.environment?.offline)
       segment.catalogBarrier = await awaitWorkflowCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000,
-        { sourceId: config.sourceId, library: config.library, expectedFailure: await workflowCatalogFault(bindings, ownedStateRoot) });
+        { ...catalogSelection, expectedFailure: await workflowCatalogFault(bindings, ownedStateRoot) });
     else if (catalogMode === 'pending')
       segment.catalogBarrier = await awaitWorkflowCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000,
-        { pendingOnly: true, sourceId: config.sourceId, library: config.library });
+        { pendingOnly: true, ...catalogSelection });
     else segment.catalogBarrier = { mode: catalogMode, waited: false };
   };
   const close = async () => {
@@ -553,7 +610,9 @@ export async function runAgentWorkflow(config) {
       receipt.status = 'running';
       for (const event of declared.before ?? []) {
         const action = { event, startedNs: process.hrtime.bigint().toString(), afterTurn: index ? result.turns[index - 1].id : null };
-        if (event.kind === 'restart') {
+        if (event.kind === 'library-select') {
+          action.result = await selectWorkflowLibrary(rpc, fixture.libraries[event.library].library_id);
+        } else if (event.kind === 'restart') {
           const old = currentSession; await close(); await start(event.mode === 'resume' ? old.sessionFile : undefined);
           assert.equal(currentSession.sessionId === old.sessionId, event.mode === 'resume');
           action.result = { mode: event.mode, priorSessionId: old.sessionId, sessionId: currentSession.sessionId, pid: segment.pid };
@@ -579,7 +638,7 @@ export async function runAgentWorkflow(config) {
         } else if (event.kind === 'compact') {
           action.result = await rpc.command('compact');
           const entries = await rpc.command('get_entries'); assert.ok(entries.entries.some(entry => entry.type === 'compaction'), 'RPC compact did not persist a compaction');
-        } else action.result = await runAgentFixtureEvent(event, { bindings, bindingsPath: config.bindingsFile, ownedStateRoot, runtimeEnv: env });
+        } else action.result = await runAgentFixtureEvent(event, { bindings, bindingsPath: config.bindingsFile, ownedStateRoot, runtimeEnv: env, runtimeCli: baseline[2].path });
         action.finishedNs = process.hrtime.bigint().toString(); result.events.push(action);
         await save(join(evidence, 'event-' + result.events.length + '.json'), action);
       }
@@ -614,6 +673,18 @@ export async function runAgentWorkflow(config) {
         observed.selectionSnapshots.push({ payloadSha256: payload.sha256, selection: selection(await json(actual.path)) });
       }
       let readbackError;
+      for (const assertion of turn.expect.filter(expect => expect.kind === 'original-source-resume')) {
+        try {
+          const verified = await runAgentFixtureEvent({ kind: 'verify-agent-source-resume', object: assertion.object },
+            { bindings, bindingsPath: config.bindingsFile, ownedStateRoot, runtimeEnv: env, runtimeCli: baseline[2].path });
+          (observed.sourceResumes ??= {})[assertion.object] = verified.result;
+        } catch (error) {
+          readbackError = error;
+          observed.readbackFailure = { object: assertion.object, code: error.code ?? error.name, message: error.message,
+            ...(error.fixtureEventArtifact ? { artifact: error.fixtureEventArtifact } : {}) };
+          break;
+        }
+      }
       for (const assertion of turn.expect.filter(expect => expect.kind === 'business-readback')) {
         try {
           const declaration = bindings.private.readbacks[assertion.receipt];

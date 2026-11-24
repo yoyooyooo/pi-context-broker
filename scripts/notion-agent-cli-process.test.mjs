@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { sourceObserverPreloadSource, readSourceObservation, parseSourceObservation } from './skill-consumption-source-observer.mjs';
-import { readNotionAgentCliProcesses, verifyNotionAgentCliProcesses, verifyNotionAgentSingleProjectionRestore } from './notion-agent-cli-process.mjs';
+import { readNotionAgentCliProcesses, verifyNotionAgentCliProcesses, verifyNotionAgentSingleProjectionRestore, verifyNotionAgentOriginalSourceResume } from './notion-agent-cli-process.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
@@ -171,6 +171,25 @@ test('missing terminal, unknown ancestry, changed entry and corrupt raw artifact
   assert.equal(missing.status, 'blocked'); assert.equal(missing.cliCount, null);
   const unknown = verifyNotionAgentCliProcesses({ ...actual.input, processFiles: actual.processFiles, sourceObservation: { events: [], errors: [] } });
   assert.equal(unknown.status, 'blocked'); assert.equal(unknown.cliCount, null);
+});
+
+test('actual Agent resume fingerprints bind the original input, root, operation and installed CLI bytes', async () => {
+  const f = await fixture('process.exitCode=0;\n'), declaration = join(f.directory, 'original-source.json');
+  await writeFile(declaration, '{}\n');
+  const original = { declaration: await identity(declaration), libraryId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    operationId: 'original-operation', cli: await identity(f.cli) };
+  const command = f.invoke(f.cli);
+  const actual = await f.run(command + ' ctl library operation source-id --kind source --library ' + original.libraryId + '; '
+    + command + ' ctl library source apply ' + quote(declaration) + ' --library=' + original.libraryId + ' --operation ' + original.operationId + ' --resume --json --metrics');
+  assert.equal(actual.proof.status, 'passed');
+  const result = verifyNotionAgentOriginalSourceResume(actual.proof, original);
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.deepEqual(result.commands.map(command => command.kind), ['read-only', 'original-source-resume']);
+  for (const changed of [{ ...original, operationId: 'replacement-operation' }, { ...original, libraryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+    { ...original, declaration: { ...original.declaration, path: declaration + '-copy' } }, { ...original, cli: { ...original.cli, sha256: '0'.repeat(64) } }])
+    assert.equal(verifyNotionAgentOriginalSourceResume(actual.proof, changed).status, 'failed');
+  assert.equal(verifyNotionAgentOriginalSourceResume({ ...actual.proof, processes: [...actual.proof.processes, ...actual.proof.processes.filter(row => row.cli)] }, original).status, 'failed');
+  for (const file of actual.processFiles) assert.equal(file.contents.includes(original.operationId), false, 'Keep private arguments fingerprinted');
 });
 
 test('one real restoration allows help and read-only checks without retaining private argument text', async () => {

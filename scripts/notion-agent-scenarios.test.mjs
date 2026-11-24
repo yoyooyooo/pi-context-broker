@@ -35,6 +35,27 @@ const corpus = { version: 1, fixtures: { travel: recipe }, scenarios: [
 ] };
 const clone = value => structuredClone(value);
 
+test('three Library journeys keep roots separate from versions and never delegate resume to the controller', () => {
+  const current = validateAgentCorpus(JSON.parse(readFileSync(new URL('./notion-agent-scenarios.json', import.meta.url), 'utf8')));
+  const journeys = current.scenarios.filter(scenario => scenario.id.startsWith('library-'));
+  assert.equal(journeys.length, 3);
+  for (const scenario of journeys) {
+    const fixture = current.fixtures[scenario.fixture];
+    assert.equal(fixture.kind, 'library-journey');
+    assert.deepEqual([...new Set(fixture.objects.map(object => object.library))].sort(), ['A', 'B']);
+    for (const object of fixture.objects) assert.ok(Object.keys(object.versions).every(version => /^v\d+$/u.test(version)));
+    for (const turn of scenario.turns) assert.doesNotMatch(turn.prompt, /--resume|--operation|skill:\/\/|notion_ctl/u);
+    assert.ok(!scenario.turns.some(turn => turn.before?.some(event => event.kind === 'resume-source-write')));
+  }
+  const resume = journeys.find(scenario => scenario.id === 'library-agent-original-resume');
+  const altered = structuredClone(current);
+  altered.scenarios.find(scenario => scenario.id === resume.id).turns[0].before.push({ kind: 'resume-source-write', object: 'upstream' });
+  assert.throws(() => validateAgentCorpus(altered), /controller cannot resume/u);
+  const graph = structuredClone(current.fixtures['library-management']);
+  graph.objects[1].versions.v1.members = ['protected'];
+  assert.throws(() => validateAgentFixtureRecipe(graph), /cannot cross Libraries/u);
+});
+
 test('natural text expands only user-provided bindings and keeps private expectations outside the prompt', () => {
   const result = bindAgentScenario(corpus, 'explicit-notion', bindings, { profile: 'daily' });
   assert.equal(result.turns[0].prompt, '请用 Notion 的 travel-rules-owned-run 处理这些材料：Taxi 30; lunch 70.');

@@ -182,6 +182,7 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
 | bindingsFile | 本轮真实 fixture 绑定 JSON |
 | brokerRoot / cliRoot | 当前 next checkout 的 packages/context-broker 与 packages/cli；CLI checkout 提供同一份 verification 索引，不用任意同版本 npm 副本代替 |
 | sourceId / library / packageIndex | 正常配置中所选 Notion source、canonical Library root UUID 与真实 Broker 注册位置 |
+| additionalLibrary | 仅 `library-journey` 使用 `{sourceId, library}`，明确声明唯一第二根；其他场景仍拒绝额外 enabled Notion Source |
 | evidenceRoot | 本轮自有原始结果根 |
 | model / thinkingLevel | magpie/group/worker / high |
 | timeoutMs / catalogTimeoutMs | 可选有界等待预算；每轮默认 30 分钟，目录默认 90 秒，实际值写入计划。公开管理命令自身可等待 10 分钟，每轮须额外容纳检查、读回和模型响应；不能无限重试 |
@@ -191,6 +192,24 @@ fixture 包含有限 kind、对象/版本/完整文件树、公开业务材料�
 cwd 来自 bindings.private.fixture.projectRoot；ownership 来自 fixtureRoot/ownership.json，不由调用者随意声明。不要把 token、正确答案、期望工具调用或私有字段塞入 prompt、system prompt、context 文件或模型环境提示。
 
 运行器在本轮私有 CLI config 写入 `default_library: config.library`，供普通输入接纳时固定 Library；不能把唯一 Source 当成隐式默认，也不改用户的全局 config。SDK `library` 解析是只读选库观察，按真实请求计数，不算正文读取。
+
+## 双库自然旅程
+
+用同一已授权 token 准备两套真实根 A/B。正例必须分别实际 inspect、写入及完整读回；403、只读权限或一个库不存在不能证明跨库隔离。继续用 `prepareAgentFixtures`，在既有参数之外传 `libraries:{A:ROOT_A,B:ROOT_B}`，且 `libraryId:ROOT_A`。当前三份配方是 `library-management`、`library-references`、`library-original-operation`，每个对象声明 `library:A/B`；`identityKey` 只让跨库对象共享稳定 Skill ID，同库重复身份会在任何写入前拒绝。
+
+运行配置保持 `library:ROOT_A`，加 `additionalLibrary:{sourceId:"notion-library-b",library:ROOT_B}`。第二 Source 仅存在于本轮私有配置，使用独立缓存目录；正常全局配置与默认库不改变。保留 normal HOME、普通 Pi、扩展和 MCP。三个 journey 分别使用独立对象和 Store，顺序运行以免同 token 的独立调度器互相制造 429。
+
+| 场景 | 实际证明 |
+| --- | --- |
+| `library-b-management-consumption` | 先采用 A；通过公开 Broker 命令选 B 后继续 A pin；Agent 更新 B 的同名同 ID 对象并采用 B，真实 restart/resume 保留结果；A 的正文、完整子项及 metadata 独立前后核对 |
+| `library-cross-references` | B 正文短引用绑定 B；B 的完整 A 链接进入 A 正文后，其短引用仍绑定 A；两个目标的 Skill ID、资源路径相同而字节不同。原 A 当前对象真实移除后的负例单列，不称为 Library 权限拒绝 |
+| `library-agent-original-resume` | 公开 writer 在 Agent 当次原 Store 中受请求预算中断；Agent 从原 stdout 日志和声明自行续接同一次操作；独立读取原 operation、原 Record 退役、Source 就绪与完整文件，并核对实际 CLI 参数指纹 |
+
+`library-select` 通过真实 `/context-broker library ROOT` 执行，单独保存控制事件回执；只有同一 active branch 上 requested→ready 完成才提交下一自然输入。它不计作模型理解或业务完成。启动/恢复屏障读取实际活跃分支，不能固定等待初始 A 的目录。
+
+`interrupt-agent-source-write` 只负责制造原始中断。失败文件保留原 CLI stdout 字节，prompt 不填 operation ID、resume flag 或恢复命令。验证器只读核对原 Library、声明及 input fingerprint、原 Store 文件身份和 CLI 字节，并要求观察到 Agent 成功执行一次精确原 intent 的 public resume。不能用原有 `resume-source-write` 控制事件替代这项证明。失败证据和未决 Store 保留，禁止复制状态到新 Store 后宣称恢复成功。
+
+正文中的 `{{object.ref}}`、`{{object.shortRef}}` 只在 fixture 文件准备时由所选 CLI 的实际 ref 协议生成，不进入公开 prompt bindings。业务输入只给名称、根页面 URL、原声明或失败日志路径。三条自然成绩与控制端接线测试、真实 installed SDK/Pi、live CLI、形式化模型分开报告。
 
 准备函数同时创建 ownership.temporaryRoot，固定为 fixtureRoot/temporary。运行器只接受这一本轮目录作为 TMPDIR，拒绝外部路径或符号链接。它在全新自有项目写入简短 AGENTS.md，说明临时文件位置、shell 显式模板与精确输入保留约定；已有原生项目说明则拒绝覆盖。initial-state.json 与 result.configuration 记录路径、说明文件哈希和这项计划内环境差异。
 

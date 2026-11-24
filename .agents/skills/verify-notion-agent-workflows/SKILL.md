@@ -26,6 +26,7 @@ description: "用真实 Pi 和 magpie/group/worker 验证自然用户怎样发�
 | 版本、支持文件、会话恢复 | lifecycle-inspect-adopt；再选依赖共享、来源切换、fork/compact/resume 或故障后三轮 |
 | 原生管理 | management-native-crud、management-register-existing、management-description-flags-resource |
 | 上游投影与完整资源树 | management-upstream-delete-restore、management-source-applying-resume；再跑 holdout-upstream-scripts-restore |
+| Library 切换、跨库引用、原任务续接 | library-b-management-consumption、library-cross-references、library-agent-original-resume；同 token 下独立准备两个可读写根，按[双库自然旅程](references/running.md#双库自然旅程)绑定 |
 | 全批验收 | selectAgentScenarios(corpus, {selection:'required'}) 的全部适用组合及对应 holdout；未运行项不能汇总通过 |
 
 holdout- 前缀是保留到修复后使用的输入；它们改变业务材料组织、资源路径、内容格式或上游仓库。不要先用留出输入调提示词。离线检查是明确来源诉求的独立分支，不能替代远端可见的本地充分负例，也不证明两机日用安装。
@@ -58,6 +59,8 @@ holdout- 前缀是保留到修复后使用的输入；它们改变业务材料�
 短旅程的 compact 可声明 keepRecentTokens，运行器只在自有项目设置该保留预算，并在计划中记录差异；仍由真实 Pi 和模型完成压缩。一个会话只能声明一种预算。不得添加无关对话凑 token、写入假 compaction 条目或修改日用全局设置。观察器随真实 fork 重绑同一进程，保留连续编号和原始哈希链。
 
 A/B 旅程依次为：采用 A → 外部发布 B 并读回 → 普通继续 A → 只看 B → 再继续 A → 明确采用完整 B。发布是外部事件，不伪装成一轮模型回答。澄清回复必须是语料中预写的业务信息；不得临时补工具名、flag、opaque ref 或修复命令救场。
+
+上述 A/B 表示同一对象的版本。双库配方明确使用 `library:A/B` 和版本 `v1/v2`。公开切库是人的控制面事件，必须核对同一会话的 requested、ready 条目；原任务采用的完整身份继续由产品管理。Agent 原操作续接只给真实失败日志与原声明路径，控制器不能执行 resume、复制 pending 或清除未决状态。
 
 不支持的事件、错误版本、缺绑定、未触发的时序前提和 transport 观测缺口都必须显露。目录 pending 场景须证明真实首次请求早于目录完成；已经 ready 的运行不填作 pending 成绩。
 

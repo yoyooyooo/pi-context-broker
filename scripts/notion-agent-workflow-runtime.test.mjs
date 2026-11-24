@@ -6,10 +6,44 @@ import { promisify } from 'node:util';
 import { access, mkdir, mkdtemp, readFile, realpath, rename, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { agentWorkflowArgs, agentWorkflowEnvironment, agentWorkflowProjectSettings, bindPairedWorkflowEvidence, prepareWorkflowTemporaryEnvironment, prepareWorkflowMcpAuthorization, workflowImplementationEvidence, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
+import { agentWorkflowArgs, agentWorkflowEnvironment, agentWorkflowProjectSettings, agentWorkflowSourceConfig, selectWorkflowLibrary, workflowSelectedLibrary, bindPairedWorkflowEvidence, prepareWorkflowTemporaryEnvironment, prepareWorkflowMcpAuthorization, workflowImplementationEvidence, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
 import { validateCandidateTurn } from './verify-pi-daily-candidate.mjs';
 
 const execute = promisify(execFile);
+const rootA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', rootB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+test('dual-library workflow configuration adds only the reviewed second source without touching the ordinary config', () => {
+  const original = { sources: [{ id: 'notion', type: 'notion', library: rootA, prefetch: false }], skillRoots: ['/normal/skills'] };
+  const frozen = structuredClone(original), options = { sourceId: 'notion', library: rootA, cacheDir: '/owned/cache' };
+  const extra = { sourceId: 'notion-b', library: rootB };
+  const config = agentWorkflowSourceConfig(original, options, extra);
+  assert.deepEqual(original, frozen); assert.equal(config.sources.length, 2);
+  assert.deepEqual(config.sources[1], { id: 'notion-b', type: 'notion', library: rootB, cacheDir: '/owned/cache/notion-b', prefetch: false });
+  assert.throws(() => agentWorkflowSourceConfig(original, options, { ...extra, library: rootA }), /distinct/u);
+  assert.throws(() => agentWorkflowSourceConfig(original, options, { ...extra, sourceId: 'notion' }), /replace/u);
+  assert.throws(() => agentWorkflowSourceConfig({ ...original, sources: [...original.sources, { id: 'unreviewed', type: 'notion', library: rootB }] }, options, extra), /reviewed scope/u);
+});
+
+test('Library selection uses the real public command and requires a ready entry in the same session', async () => {
+  const old = { id: 'old', parentId: null, type: 'message', message: { role: 'user', content: 'Existing A work' } };
+  const requested = { id: 'requested', parentId: 'old', customType: 'ntn-skills-library-selection', data: { version: 1, library: rootB, status: 'requested' } };
+  const ready = { id: 'ready', parentId: 'requested', customType: 'ntn-skills-library-selection', data: { version: 1, library: rootB, status: 'ready' } };
+  const calls = []; let changed = false, complete = true, sideBranch = false;
+  const rpc = { command: async name => { calls.push(name); return name === 'get_state' ? { sessionId: 'same-session' }
+    : { leafId: changed && !sideBranch ? complete ? 'ready' : 'requested' : 'old', entries: changed ? [old, requested, ...(complete ? [ready] : [])] : [old] }; },
+  prompt: async text => { calls.push(text); changed = true; return { agentInvoked: false }; } };
+  const receipt = await selectWorkflowLibrary(rpc, rootB);
+  assert.equal(receipt.actor, 'fixture-controller'); assert.equal(receipt.sessionId, 'same-session');
+  assert.ok(calls.includes('/context-broker library ' + rootB)); assert.deepEqual(receipt.entries, [requested, ready]);
+  complete = false; changed = false;
+  await assert.rejects(selectWorkflowLibrary(rpc, rootB), /requested and verified/u);
+  complete = true; changed = false; sideBranch = true;
+  await assert.rejects(selectWorkflowLibrary(rpc, rootB), /active branch/u);
+  const config = { sourceId: 'notion', library: rootA, additionalLibrary: { sourceId: 'notion-b', library: rootB } };
+  assert.equal(workflowSelectedLibrary(config, { leafId: 'ready', entries: [old, requested, ready] }).library, rootB);
+  assert.equal(workflowSelectedLibrary(config, { leafId: 'old', entries: [old, requested, ready] }).library, rootA, 'Fork ancestry wins over a later B entry');
+  assert.throws(() => workflowSelectedLibrary(config, { leafId: 'requested', entries: [old, requested] }), /not ready/u);
+});
 async function temporaryFixture(t) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'workflow-temporary-')));
   if (await access('/usr/bin/trash').then(() => true, () => false)) t.after(() => execute('/usr/bin/trash', [root]));

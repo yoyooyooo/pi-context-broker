@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseNativeReference, hasExactNativeOwner } from '../packages/context-broker/src/native-reference.ts';
+import { parseNativeReference, hasExactNativeOwner, nativeReferenceLibrary } from '../packages/context-broker/src/native-reference.ts';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -10,7 +10,7 @@ import { validateAgentAssertion, validateAgentBindings } from './notion-agent-sc
 import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation, inspectedLocalReadEvidence } from './notion-agent-tool-lineage.mjs';
 import { verifyPreparationEvidence, visibleDiscoveryCards } from './skill-preparation-evidence.mjs';
 import { parseSourceObservation } from './skill-consumption-source-observer.mjs';
-import { verifyNotionAgentCliProcesses, verifyNotionAgentSingleProjectionRestore } from './notion-agent-cli-process.mjs';
+import { verifyNotionAgentCliProcesses, verifyNotionAgentSingleProjectionRestore, verifyNotionAgentOriginalSourceResume } from './notion-agent-cli-process.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -920,6 +920,54 @@ export async function verifyNotionAgentContentSearch(expected, observed, binding
 
 /** Analyze one real turn. Only the outside controller receives private bindings.
  * readArtifact and inspectPayload are injected I/O/pure helpers, never model tools. */
+/** A user's statement that a page is gone cannot replace an actual failed current read. */
+export async function verifyNotionAgentUnavailableReference(expected, observed, bindings, { attempts, delivery, source, readArtifact = readFile }) {
+  const item = bindings.private.objects[expected.object];
+  need(item?.kind === 'notion' && nonempty(item.owner), 'UNAVAILABLE_OWNER_MISSING', 'Bind the original independently read owner');
+  const owner = parseNativeReference(item.owner), library = nativeReferenceLibrary(owner);
+  const configured = observed.visibility?.source;
+  const sourceId = configured?.library === library ? configured.sourceId
+    : configured?.additionalLibrary?.library === library ? configured.additionalLibrary.sourceId : undefined;
+  need(nonempty(sourceId), 'UNAVAILABLE_SOURCE_MISSING', 'The original root must be an explicitly reviewed enabled Source');
+  const candidates = attempts.filter(call => {
+    if (!['read', 'notion_use'].includes(call.name) || call.result?.isError !== true) return false;
+    try {
+      const ref = parseNativeReference(call.name === 'read' ? call.arguments?.path : call.arguments?.ref);
+      return ref.snapshot === undefined && hasExactNativeOwner(ref) && ref.selector === item.owner && (ref.path || 'SKILL.md') === expected.path;
+    } catch { return false; }
+  });
+  demand(candidates.length > 0, 'UNAVAILABLE_CURRENT_READ_MISSING', 'The Agent must actually try the original current owner, not repeat the prompt');
+  const proofs = [];
+  for (const call of candidates) {
+    const native = observed.session.branchEntries.find(entry => entry.id === call.native?.resultEntryId)?.message;
+    need(native?.role === 'toolResult' && native.toolCallId === call.id && native.isError === true,
+      'UNAVAILABLE_NATIVE_RESULT_MISSING', 'Keep the actual failed native tool result');
+    const content = JSON.parse((await verifiedArtifact(call.result.contentArtifact, readArtifact)).toString('utf8'));
+    demand(isDeepStrictEqual(content, native.content), 'UNAVAILABLE_RESULT_CHANGED', 'Replay original failure bytes');
+    const within = time => /^\d+$/u.test(time ?? '') && /^\d+$/u.test(call.event.monotonicNs ?? '') && /^\d+$/u.test(call.result.monotonicNs ?? '')
+      && BigInt(time) >= BigInt(call.event.monotonicNs) && BigInt(time) <= BigInt(call.result.monotonicNs);
+    const operations = source.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.pid === call.event.pid
+      && row.source_id === sourceId && sameLibrary(row.library, library) && ['read', 'resolve', 'read-resources', 'consume'].includes(row.operation) && within(row.monotonicNs));
+    for (const operation of operations) {
+      const end = source.find(row => row.phase === 'completed' && row.requestId === operation.requestId && within(row.monotonicNs));
+      if (end?.status !== 'failed' || !['SKILL_NOT_FOUND', 'SOURCE_NOT_FOUND', 'NOT_FOUND'].includes(end.errorCode)) continue;
+      const http = source.filter(row => row.phase === 'attempt' && row.requestId === operation.requestId);
+      if (http.length === 0 || !textOf(content).includes(end.errorCode)) continue;
+      const payloads = [];
+      for (const payload of delivery.requests) {
+        const task = observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === payload.sha256);
+        const raw = JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8'));
+        if ((raw.messages ?? []).some(message => message.role === 'tool' && message.tool_call_id === call.deliveryToolCallId
+          && JSON.stringify(message.content).includes(end.errorCode))) payloads.push(payload.sha256);
+      }
+      if (payloads.length) proofs.push({ toolCallId: call.id, requestId: operation.requestId, sourceId, library, owner: item.owner,
+        path: expected.path, errorCode: end.errorCode, httpAttempts: http.length, payloads, result: call.result.contentArtifact });
+    }
+  }
+  demand(proofs.length > 0, 'UNAVAILABLE_ONLINE_READ_UNPROVEN', 'Only an online failure of the exact original root inside that tool attempt proves unavailability');
+  return { object: expected.object, proofs };
+}
+
 export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspectPayload, readArtifact = readFile } = {}) {
   const assertions = [], shared = {};
   const check = async (kind, task) => {
@@ -1242,11 +1290,41 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
     return effects;
   };
 
-  if (observed.cliProcesses !== undefined || turn.expect.some(expected => ['candidate-cli', 'single-projection-restore'].includes(expected.kind)))
+  if (observed.cliProcesses !== undefined || turn.expect.some(expected => ['candidate-cli', 'single-projection-restore', 'original-source-resume'].includes(expected.kind)))
     shared.cliCandidate = await check('actual-cli-process-identity', () => observedCandidateCli(observed, readArtifact));
 
   for (const expected of turn.expect) await check(expected.kind, async () => {
     switch (expected.kind) {
+      case 'unavailable-reference': {
+        const delivery = requireDelivery(), { source } = await sourceRequests();
+        return verifyNotionAgentUnavailableReference(expected, observed, bindings, { attempts: [...shared.attempts.values()], delivery, source, readArtifact });
+      }
+      case 'original-source-resume': {
+        const observation = observed.sourceResumes?.[expected.object];
+        need(observation?.artifact, 'SOURCE_RESUME_READBACK_MISSING', 'Keep the independent original Store and remote readback');
+        const raw = JSON.parse((await verifiedArtifact(observation.artifact, readArtifact)).toString('utf8'));
+        const { artifact: _artifact, ...receipt } = observation;
+        demand(isDeepStrictEqual(raw, receipt), 'SOURCE_RESUME_RECEIPT_CHANGED', 'Replay the sealed original-operation proof');
+        need(raw.actor === 'independent-readback' && raw.controllerResumeCommands === 0 && raw.status === 'passed',
+          'SOURCE_RESUME_ACTOR_INVALID', 'The fixture controller may observe but cannot resume the intent');
+        const original = privateBindings.fixture?.objects?.[expected.object]?.sourceOperation;
+        need(original?.actor === 'agent' && original.id === raw.operationId && original.libraryId === raw.libraryId
+          && isDeepStrictEqual(original.intent, raw.intent), 'SOURCE_RESUME_INTENT_CHANGED', 'Keep the original root, operation and frozen input fingerprint');
+        const before = JSON.parse(JSON.parse((await verifiedArtifact(raw.before, readArtifact)).toString('utf8')).stdout);
+        const after = JSON.parse(JSON.parse((await verifiedArtifact(raw.after, readArtifact)).toString('utf8')).stdout);
+        demand(before.operation?.intent?.operation_id === raw.operationId && before.operation?.in_flight === null
+          && before.library?.library_id === raw.libraryId && after.library?.library_id === raw.libraryId
+          && after.status === 'not_found' && after.operation === null, 'SOURCE_RESUME_LIFECYCLE_INVALID', 'The exact public intent must finish in its original Library and Store');
+        demand(raw.retired?.id === before.operation.record_page_id && (raw.retired.in_trash === true || raw.retired.archived === true),
+          'SOURCE_RESUME_RECORD_LIVE', 'The original intent Record must be retired');
+        await verifiedArtifact(raw.declaration, readArtifact);
+        const proof = verifyNotionAgentOriginalSourceResume(shared.cliCandidate, raw);
+        if (proof.status !== 'passed') {
+          const issue = proof.diagnostics.find(row => row.severity === proof.status) ?? proof.diagnostics[0];
+          throw new EvidenceError(proof.status, issue.code, 'The Agent must continue the original public Source operation', proof);
+        }
+        return { ...proof, operationId: raw.operationId, libraryId: raw.libraryId, readback: raw.readback.artifact };
+      }
       case 'candidate-cli':
         need(shared.cliCandidate, 'CLI_CANDIDATE_EXECUTION_UNPROVEN', 'An actual paired CLI process is required');
         need(shared.cliCandidate.matchedCliCount >= expected.min, 'CLI_CANDIDATE_EXECUTION_MISSING',

@@ -7,7 +7,7 @@ import { access, mkdir, mkdtemp, realpath, readFile, writeFile } from 'node:fs/p
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { blockShape, readAgentFixture, runAgentFixtureEvent, cleanupAgentFixtures, prepareAgentFilteredView, prepareAgentFixtures } from './notion-agent-fixtures.mjs';
+import { agentFixtureObjectContext, blockShape, readAgentFixture, runAgentFixtureEvent, cleanupAgentFixtures, prepareAgentFilteredView, prepareAgentFixtures } from './notion-agent-fixtures.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const exists = path => access(path).then(() => true, () => false);
@@ -628,6 +628,7 @@ async function preparationHarness(t) {
   // The process/API double uses the actual selected public SDK comparator, not a fake parser.
   await writeJson(join(root, 'package.json'), { name: 'ntn-skills', version: selectedPackage.version, type: 'module', bin: { 'ntn-skills': './public-cli.mjs' }, exports: { './sdk': './sdk.mjs' } });
   await writeFile(join(root, 'sdk.mjs'), 'export {SDK_VERSION,PACKAGE_VERSION,compareNativeMarkdown} from ' + JSON.stringify(pathToFileURL(sdkPath).href) + ';\n');
+  await writeFile(join(root, 'ref.cjs'), await readFile(join(dirname(selectedCli), 'ref.cjs')));
   const databaseId = '11111111-1111-4111-8111-111111111111', libraryId = fixtureLibraryId;
   const ids = Object.fromEntries(['Name', 'Description', 'Skill ID', 'Current State', 'Operation', 'Enabled', 'Default Context', 'Requires', 'Members'].map(key => [key, key]));
   const library = { library_id: libraryId, skills: { database_id: databaseId, data_source_id: databaseId, property_ids: ids },
@@ -638,13 +639,14 @@ async function preparationHarness(t) {
 import {createHash} from 'node:crypto';
 import {readFile,writeFile,readdir} from 'node:fs/promises';
 import {join} from 'node:path';
+import {createRequire} from 'node:module';
 const path=${JSON.stringify(statePath)},state=JSON.parse(await readFile(path,'utf8')),args=process.argv.slice(2);
 const one=key=>args[args.indexOf(key)+1],many=key=>args.flatMap((arg,i)=>arg===key?[args[i+1]]:[]);
 state.calls.push(args);
 state.stores??=[];state.stores.push(process.env.NTN_SKILLS_HOME);
 state.environments??=[];state.environments.push(Object.fromEntries(['NTN_SKILLS_HOME','NTN_SKILLS_CONFIG_HOME','NTN_SKILLS_CACHE_HOME','NTN_SKILLS_DATA_HOME','NTN_SKILLS_SCHEDULER_ROOT'].map(key=>[key,process.env[key]])));
 let value;
-if(args[0]==='ctl'&&args[2]==='inspect')value={ok:true,library:state.library};
+if(args[0]==='ctl'&&args[2]==='inspect')value={ok:true,library:state.libraries?.[one('--library')]??state.library};
 else if(args[0]==='ctl'&&args[2]==='import'){
   const files=[];
   async function walk(root,relative=''){
@@ -665,7 +667,7 @@ else if(args[0]==='ctl'&&args[2]==='skill'){
   for(const id of [...requires,...members])assert.ok(state.records.some(row=>row.id===id),'Relation target is not physically ready');
   if(action==='create'){
     const record={id:'00000000-0000-4000-8000-'+String(state.records.length+1).padStart(12,'0'),name:one('--name'),description:one('--description'),skillId:one('--skill-id'),content:await readFile(join(args[4],'SKILL.md'),'utf8'),requires,members,enabled:args.includes('--enabled')?one('--enabled')==='true':true,defaultContext:args.includes('--default-context')?one('--default-context')==='true':false};
-    state.records.push(record);value={ok:true,page_id:record.id};
+    record.libraryId=one('--library');state.records.push(record);value={ok:true,page_id:record.id};
   }else{
     const record=state.records.find(row=>row.id===args[4]);assert.ok(record);
     if(args.includes('--requires'))record.requires=requires;
@@ -682,7 +684,7 @@ else if(args[0]==='ctl'&&args[2]==='skill'){
 }else if(args[0]==='read'){
   const record=state.records.find(row=>row.id===args[1]);assert.ok(record);assert.equal(record.enabled,true,'Disabled content cannot be consumed');
   if(state.failRead){value={ok:false,error:{code:'STATE_UNAVAILABLE'}};process.exitCode=1;}
-  else value={ok:true,has_more:false,path:'SKILL.md',content:state.observedContent??record.content,ref:'unit:'+record.id,snapshot_id:'snapshot:'+record.id,version_id:'version:'+record.id,scope:'unit-scope',record:{id:record.skillId,locator:{page_id:record.id,skill_id:record.skillId}},effects:{remote_writes:'none'}};
+  else {if(state.libraries)assert.equal(one('--library'),record.libraryId);const owner=state.libraries?createRequire(import.meta.url)('./ref.cjs').formatSkillIdentity({libraryId:record.libraryId,skillId:record.skillId}):record.skillId;value={ok:true,has_more:false,path:'SKILL.md',content:state.observedContent??record.content,ref:'unit:'+record.id,snapshot_id:'snapshot:'+record.id,version_id:'version:'+record.id,scope:'unit-scope',record:{id:owner,locator:{page_id:record.id,skill_id:record.skillId,library_id:record.libraryId}},effects:{remote_writes:'none'}};}
 }else if(args[0]==='files'){
   const record=state.records.find(row=>'snapshot:'+row.id===args[1]);assert.ok(record);
   value={ok:true,files:record.files?.map(file=>({path:file.path,mode:file.mode}))??[{path:'SKILL.md',mode:'100644'}]};
@@ -716,6 +718,51 @@ await writeFile(path,JSON.stringify(state));process.stdout.write(JSON.stringify(
 
 const managedObject = (id, relations = {}) => ({ id, name: id, description: 'Business instructions for ' + id,
   placement: 'notion', initial: 'A', versions: { A: { files: [{ path: 'SKILL.md', content: '# ' + id + '\n\nFollow the business rule.\n' }], ...relations } } });
+
+test('same-ID objects and authored references bind to two independent roots while protected readback catches foreign mutation', async t => {
+  const harness = await preparationHarness(t), state = await json(harness.statePath);
+  const other = structuredClone(state.library); other.library_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  for (const [name, digit] of [['skills', '5'], ['files', '6'], ['records', '7']]) {
+    other[name].data_source_id = digit.repeat(8) + '-' + digit.repeat(4) + '-4' + digit.repeat(3) + '-8' + digit.repeat(3) + '-' + digit.repeat(12);
+    if (other[name].database_id) other[name].database_id = other[name].data_source_id;
+  }
+  state.libraries = { [state.library.library_id]: state.library, [other.library_id]: other }; await writeJson(harness.statePath, state);
+  const a = { ...managedObject('alpha'), library: 'A', identityKey: 'same-owner', name: 'same-name' };
+  const b = { ...managedObject('beta'), library: 'B', identityKey: 'same-owner', name: 'same-name' };
+  b.versions.A.files[0].content = '# Beta\n\nOriginal [A]({{alpha.ref}}), contextual [B]({{beta.shortRef}}).\n';
+  const bindings = await prepareAgentFixtures({ ...harness.options, libraries: { A: state.library.library_id, B: other.library_id },
+    recipe: { kind: 'library-journey', objects: [a, b] } });
+  const context = bindings.private.fixture;
+  assert.equal(context.libraryId, state.library.library_id, 'Preparing B must not change the default');
+  assert.equal(context.objects.alpha.skillId, context.objects.beta.skillId);
+  assert.equal(context.objects.alpha.name, context.objects.beta.name);
+  assert.notEqual(bindings.private.objects.alpha.owner, bindings.private.objects.beta.owner);
+  assert.equal(agentFixtureObjectContext(context, 'beta').libraryId, other.library_id);
+  assert.throws(() => agentFixtureObjectContext(context, 'missing'), /reviewed Library/u);
+  const body = await readFile(context.objects.beta.versionInputs.A.files[0].input, 'utf8');
+  assert.ok(body.includes('?library=' + state.library.library_id));
+  assert.ok(body.includes('(skill://' + context.objects.beta.skillId + ')'));
+  assert.equal(Object.keys(bindings.public).some(key => key.endsWith('.ref')), false, 'Authored references must not leak into prompt bindings');
+  await readAgentFixture(bindings, 'alpha', { version: 'A', unchanged: true });
+  const changed = await json(harness.statePath); changed.records.find(row => row.libraryId === other.library_id).description = 'Changed only B';
+  await writeJson(harness.statePath, changed);
+  await readAgentFixture(bindings, 'alpha', { version: 'A', unchanged: true });
+  changed.records.find(row => row.libraryId === state.library.library_id).description = 'Foreign mutation of A';
+  await writeJson(harness.statePath, changed);
+  await assert.rejects(readAgentFixture(bindings, 'alpha', { version: 'A', unchanged: true }), /protected object/u);
+  const actual = await json(harness.statePath);
+  assert.deepEqual(actual.calls.filter(args => args[2] === 'inspect').map(args => args[args.indexOf('--library') + 1]), [state.library.library_id, other.library_id]);
+});
+
+test('agent recovery refuses a substituted Store before invoking any writer', async t => {
+  const { bindings, context, state } = await fixture(t);
+  context.objects.selected.placement = 'source'; context.objects.selected.library = 'B';
+  context.libraries = { B: { library_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' } };
+  await assert.rejects(runAgentFixtureEvent({ kind: 'interrupt-agent-source-write', object: 'selected' }, {
+    bindings, ownedStateRoot: state, runtimeEnv: { NTN_SKILLS_HOME: state + '-copy' }, runtimeCli: process.execPath,
+  }), /actual subject Store/u);
+  assert.equal(context.objects.selected.sourceOperation, undefined);
+});
 
 test('explicit resource authoring imports only native main and preserves every auxiliary Markdown byte', async t => {
   for (const changed of [false, true]) await t.test(changed ? 'normalized auxiliary bytes are rejected' : 'exact auxiliary bytes pass', async t => {
