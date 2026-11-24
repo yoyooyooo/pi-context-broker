@@ -313,7 +313,7 @@ export function validateAgentCorpus(corpus) {
     keys(scenario, ['id', 'contract_ids', 'profiles', 'fixture', 'turns'], ['id', 'contract_ids', 'profiles', 'fixture', 'turns'], 'scenario');
     id(scenario.id, 'scenario.id'); assert.ok(!seen.has(scenario.id), 'Duplicate scenario ' + scenario.id); seen.add(scenario.id);
     strings(scenario.contract_ids, scenario.id + '.contract_ids', { check: value =>
-      assert.ok(/^(?:C0[1-9]|C07[abc]|C1[01]|T(?:0[1-9]|1[0-9]|2[0-3]))$/u.test(value), 'Unknown C/T identity ' + value) });
+      assert.ok(/^(?:C0[1-9]|C07[abc]|C1[01]|T(?:0[1-9]|1[0-9]|2[0-4]))$/u.test(value), 'Unknown C/T identity ' + value) });
     strings(scenario.profiles, scenario.id + '.profiles', { check: value => assert.ok(AGENT_PROFILES.includes(value), 'Unsupported profile ' + value) });
     string(scenario.fixture, scenario.id + '.fixture');
     assert.ok(own(corpus.fixtures, scenario.fixture), scenario.id + ': unknown fixture ' + scenario.fixture);

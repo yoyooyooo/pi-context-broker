@@ -44,8 +44,10 @@ async function main() {
   const [command, ...flags] = args.slice(2);
   const operation = command === 'ctl' ? flags[0] : command;
   await appendFile(state.callsPath, JSON.stringify({ command, args: flags, operation, scenario: state.scenario, at: new Date().toISOString() }) + '\n');
-  if (command !== 'ctl' || operation !== 'views') {
-    console.log(JSON.stringify({ ok: false, error: { code: 'UNSUPPORTED_CONTROLLED_OPERATION', message: 'This fixture implements only the current bundled ctl views boundary; catalogs and content require the SDK fixture.' } }));
+  const exactLibrary = flags[1] === '--library' && flags[2] === libraryId
+    && (flags.length === 3 || flags.length === 4 && flags[3] === '--offline');
+  if (command !== 'ctl' || operation !== 'views' || !exactLibrary) {
+    console.log(JSON.stringify({ ok: false, error: { code: 'UNSUPPORTED_CONTROLLED_OPERATION', message: 'This fixture implements only ctl views with its exact Library root; catalogs and content require the SDK fixture.' } }));
     process.exitCode = 1;
     return;
   }

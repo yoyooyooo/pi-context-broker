@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { selectLiveCatalogRecord, projectedResourceRef, measuredConsumptionArgs } from './notion-integration-hosts.mjs';
 import { nativeEntries, verifyPreparedDiagnostic, verifyPreparedProviderBody, defaultContextVerificationBudget, defaultContextResourceEntry } from './notion-default-context.mjs';
-import { createNotionFixture, database, firstViewId, missingRef, missingPageId } from './notion-integration-fixture.mjs';
+import { createNotionFixture, database, libraryId, firstViewId, missingRef, missingPageId } from './notion-integration-fixture.mjs';
 import { confirmedViewActivation, verifyPartialViewCoverage } from './notion-view-discovery.mjs';
 
 test('the controlled management fixture accepts only current ctl views and retains exact argv', async t => {
@@ -16,13 +16,15 @@ test('the controlled management fixture accepts only current ctl views and retai
   t.after(() => { if (process.platform === 'darwin') assert.equal(spawnSync('/usr/bin/trash', [base]).status, 0); });
   const fixture = await createNotionFixture(base);
   const call = args => spawnSync(fixture.command[0], [...fixture.command.slice(1), ...args], { encoding: 'utf8', timeout: 10000 });
-  const args = ['ctl', 'views', '--database', database, '--offline'];
+  const args = ['ctl', 'views', '--library', libraryId, '--offline'];
   const listed = call(args); assert.equal(listed.status, 0, listed.stderr);
   const response = JSON.parse(listed.stdout);
   assert.equal(response.ok, true); assert.equal(response.count, 2); assert.equal(response.views[0].id, firstViewId);
   await fixture.setScenario('normal', { noViews: true });
   assert.deepEqual(JSON.parse(call(args).stdout), { ok: true, views: [], count: 0 });
-  for (const retired of [['views'], ['doctor'], ['cache', 'identity'], ['list'], ['ctl', 'prepare', fixture.skillRef], ['read', fixture.skillRef], ['export', fixture.snapshotId]]) {
+  for (const retired of [['views'], ['doctor'], ['cache', 'identity'], ['list'], ['ctl', 'prepare', fixture.skillRef], ['read', fixture.skillRef], ['export', fixture.snapshotId],
+    ['ctl', 'views'], ['ctl', 'views', '--database', database], ['ctl', 'views', '--entry', libraryId],
+    ['ctl', 'views', '--library', database], ['ctl', 'views', '--library', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']]) {
     const rejected = call(retired); assert.equal(rejected.status, 1);
     assert.equal(JSON.parse(rejected.stdout).error.code, 'UNSUPPORTED_CONTROLLED_OPERATION');
   }

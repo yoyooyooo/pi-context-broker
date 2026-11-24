@@ -544,6 +544,23 @@ test('daily SDK3 selection is local and remote metadata keeps the exact expected
   assert.equal(classifyDailyHttp([], new Set(), new Set([10]), { sourceObservation: local }).source.length, 0);
 });
 
+test('local selection still requires observed complete zero-request metrics', () => {
+  const local = sdkObservation();
+  local.events = local.events.filter(row => row.phase !== 'attempt').map(row => row.operation
+    ? { ...row, operation: 'library-selection' }
+    : row.phase === 'metrics' ? { ...row, total_requests: 0 } : row);
+  assert.equal(classifyDailyHttp([], new Set(), new Set([10]), { sourceObservation: local }).sdk.length, 0);
+  for (const metrics of [
+    { observed: false, complete: false, total_requests: null },
+    { observed: false, complete: true, total_requests: 0 },
+    { observed: true, complete: false, total_requests: 0 },
+    { observed: true, complete: true, total_requests: 1 },
+  ]) {
+    const invalid = { ...local, events: local.events.map(row => row.phase === 'metrics' ? { ...row, ...metrics } : row) };
+    assert.throws(() => classifyDailyHttp([], new Set(), new Set([10]), { sourceObservation: invalid }));
+  }
+});
+
 test('independent direct-root descriptors authorize the exact structure read and later catalog query', () => {
   const proof = validateDailyLibraryRequests(libraryRequests(), libraryRoot);
   assert.equal(proof.library_id, libraryRoot); assert.equal(proof.root_children_requests, 1);
