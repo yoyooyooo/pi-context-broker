@@ -344,7 +344,8 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
     return { kind: 'library-attach-readonly', argv: words };
   }
   if (maintenance && args.slice(0, 3).join(' ') === 'ctl library inspect') {
-    check(args.length === 4 && args[3] === policy.library, 'Read only the owned library descriptor');
+    check(args.length === 5 && args[3] === '--library' && args[4] === policy.library,
+      'Read only the owned library descriptor through the public root selector');
     return { kind: 'library-inspect', argv: words };
   }
   if (maintenance && args.slice(0, 4).join(' ') === 'ctl library sources list') {
