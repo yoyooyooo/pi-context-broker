@@ -4,7 +4,7 @@
 
 ## 单轨边界
 
-Notion展示最新正文，CLI消费current身份。远端目录只接受 `shared_skill`；原始UUID/URL可以作为输入，但不接受旧locator自动等价。普通消费SDK v2恒零语义写入，旧`readOnly`参数在I/O前拒绝。`source.command`、retention/adoption、历史Publication和旧导出回退均不能恢复。
+Notion展示最新正文，CLI消费current身份。远端目录用 `skill://` 表达稳定身份，`shared_skill` 只区分 Notion adapter；原始UUID/URL可以作为输入，但不接受旧locator自动等价。普通消费SDK v3恒零语义写入，旧`readOnly`参数在I/O前拒绝。`source.command`、retention/adoption、历史Publication和旧导出回退均不能恢复。
 
 管理负责完整Files/Records与当前operation，未结清操作不重放未知写。消费负责完整目录、精确Source/scope/owner/File、当前权限与固定本地字节。状态和实现守卫沿 [consumer-state](../../verify-notion-consumer-state/SKILL.md)，作者操作沿CLI原有领域Skill。
 
