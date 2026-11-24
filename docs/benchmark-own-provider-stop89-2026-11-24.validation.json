@@ -1,0 +1,308 @@
+{
+  "version": 1,
+  "kind": "stopped89-publication-verification-projection",
+  "status": "actual-local-evidence-verified",
+  "public_report": {
+    "path": "docs/benchmark-own-provider-stop89-2026-11-24.md",
+    "sha256": "8168e59ecfe24364c70b5c33f6a4815c0025639d47d092fb21f52e88bfff77f1",
+    "bytes": 17952
+  },
+  "public_result_path": "benchmark/results/2026-11-24-own-provider-stop89",
+  "linked_history": {
+    "reservations": 86,
+    "status": "linked_not_replayed",
+    "commit": "699e1b4c4fe8f560cd41f6126fb1a51ad07dc185",
+    "url": "https://github.com/yoyooyooo/pi-context-broker/tree/699e1b4c4fe8f560cd41f6126fb1a51ad07dc185/benchmark/results/2026-11-24-own-continuation-stop"
+  },
+  "accounting": {
+    "physical_closed": 89,
+    "new_closed": 3,
+    "new_valid": 2,
+    "new_invalid": 1,
+    "new_verified_success": 0,
+    "new_full_contract_among_valid": {
+      "pass": 0,
+      "fail": 0,
+      "unknown": 2
+    },
+    "new_business_artifact_pass": 3,
+    "new_usage": {
+      "model_requests": 14,
+      "input_tokens": 63577,
+      "output_tokens": 1086,
+      "monetary_amount": null,
+      "monetary_status": "unknown_unpriced"
+    },
+    "full89_usage_complete": false,
+    "remaining_unstarted": 50,
+    "remaining_own": 8,
+    "remaining_engineering": 42,
+    "approved_total": 139,
+    "hard_cap": 144,
+    "spare_unallocated": 5,
+    "future_paid_dispatch": "stopped"
+  },
+  "primary_boundary": {
+    "inputs": 3,
+    "original_scientific_slots": 20,
+    "valid_slots": 2,
+    "unresolved_scientific_slots": 18,
+    "previous_nine_included": false
+  },
+  "own20_descriptive_boundary": {
+    "original_slots": 20,
+    "closed_observations": 12,
+    "valid": 9,
+    "invalid": 3,
+    "unstarted": 8,
+    "combined_scoring": false
+  },
+  "export": {
+    "completed_at": "2026-11-24T11:22:58.362Z",
+    "recorded_exit_code": 0,
+    "subject_model_requests": 0,
+    "receipt_file_sha256": "93403d9642a611e176c26817937ee716a708b8d96ac59dddcfefa6f843fd93fc",
+    "publication_version": "1.0.6",
+    "release_manifest": {
+      "path": "benchmark/results/2026-11-24-own-provider-stop89/release-manifest.json",
+      "sha256": "030763d78896f08694115b9495b1041c8c7b1b5d4283392b5bf1775bf42a71ec",
+      "bytes": 62698
+    },
+    "public_files": 248,
+    "public_bytes": 11421401,
+    "public_inventory_sha256": "ebfd93e87b44dce989f09c72493d3259fb1d811e14a5d58ef87af54ed4b01640",
+    "package": {
+      "scope_id": "own-product-provider-stop-unstarted-11-1",
+      "path": "benchmark/results/2026-11-24-own-provider-stop89/packages/own-product-provider-stop-unstarted-11-1",
+      "completed": 3,
+      "files": 243,
+      "bytes": 11328130,
+      "public_manifest_file_sha256": "be3cc249c8900569be24a1df386fad385811d59a71723c75485add61259100f4",
+      "source_analysis_semantic_sha256": "97e92c97ce47be0ddf13055a98b2294a50a2a370b9f53f7fc9f15ada31e30140",
+      "public_analysis_semantic_sha256": "6b7baa298bc9c1d6843bac97400a97ed04fd4c36ed32c88facb4da735514ce41"
+    }
+  },
+  "independent_public_only_replay": {
+    "completed_at": "2026-11-24T11:23:25.627Z",
+    "recorded_exit_code": 0,
+    "status": "passed",
+    "receipt_file_sha256": "1f3b10a8b0d453b831a624fbdbb59ab41219808da89dc34e27e69f9ec408d8a8",
+    "packages_replayed": 1,
+    "subject_model_requests": 0,
+    "isolation_canaries": {
+      "public_readable": true,
+      "private_sources_denied": true,
+      "private_writes_denied": true,
+      "public_writes_denied": true,
+      "network_denied": true,
+      "inherited_credentials": false
+    },
+    "regenerated_report_files": 13,
+    "regenerated_report_manifest_file_sha256": "bf69f868e54abcf5c9741bd83968282106a870f73b2906ff7920002bb76c7821",
+    "byte_identical_files": [
+      {
+        "file": "analysis.json",
+        "sha256": "21bfa02a1b9efe80bae8bef90fd1ad50288e70a796f5c31ee13ef3e9065ccaf8",
+        "bytes": 269907
+      },
+      {
+        "file": "budget_curves.csv",
+        "sha256": "269d81ee7d9d66b457166e74c312cc4532d3d376474d5a973e735ad6571bb7ee",
+        "bytes": 1184
+      },
+      {
+        "file": "comparisons.csv",
+        "sha256": "3fadd2fd066c3bc14ae0dc712b3c35be292bd35c1f0fd5201f63f3a4f28a1b78",
+        "bytes": 389
+      },
+      {
+        "file": "conditions.csv",
+        "sha256": "02d0f4b76ed396655e75233864102671c2b7d9e35cee7de41e2be48e1d962255",
+        "bytes": 1054
+      },
+      {
+        "file": "cost_frontier.csv",
+        "sha256": "ed25fdf25f79cf64a8b1a032450b38e3036ce58fdfb75e20d5f3eee79aba5991",
+        "bytes": 408
+      },
+      {
+        "file": "interactions.csv",
+        "sha256": "bedca5f5c3450db9f398aa7a86904a16e6fa794bdb256baadca050d80d4e7534",
+        "bytes": 9
+      },
+      {
+        "file": "paired_budgets.csv",
+        "sha256": "1b47fa2f6e08c8ff930ce59b4246286c7d60e526ee59fc0bb26f3c31cce80692",
+        "bytes": 529
+      },
+      {
+        "file": "quality.svg",
+        "sha256": "3210ec989969c853fca2921d5036a9f486c5b002314d631300a8ef6d601a2e6f",
+        "bytes": 945
+      },
+      {
+        "file": "transitions.csv",
+        "sha256": "0b28ad1d98072babffda8a06de7a71d38401c67471db2d73e3368e3d371ac8b2",
+        "bytes": 1068
+      }
+    ],
+    "chart_title_differences": [
+      {
+        "file": "input.svg",
+        "public": "Cumulative input",
+        "replay": "Cumulative input across actual attempts"
+      },
+      {
+        "file": "time.svg",
+        "public": "Capped time",
+        "replay": "Capped time across the full fixed denominator"
+      }
+    ],
+    "public_inventory_unchanged": true,
+    "original_export_unchanged": true,
+    "historical_execution_replayed": false
+  },
+  "bounded_privacy_rescan": {
+    "checked_at": "2026-11-24T11:26:59.360Z",
+    "status": "passed",
+    "receipt_file_sha256": "42e8fdff5c78a1b8ad0f31c7e8e9873769e37de49cb43f998425d9118c855851",
+    "files": 248,
+    "bytes": 11421401,
+    "public_inventory_sha256": "ebfd93e87b44dce989f09c72493d3259fb1d811e14a5d58ef87af54ed4b01640",
+    "explicit_identifier_values_checked": 210,
+    "explicit_secret_values_checked": 0,
+    "explicit_path_prefixes_checked": 4,
+    "identifier_words_checked": 52,
+    "terminal_usernames_checked": 1,
+    "literal_hit_counts": {
+      "explicit_secret": 0,
+      "explicit_identifier": 0,
+      "explicit_path_prefix": 0
+    },
+    "fixed_policy_failure_files": 0,
+    "matched_file_count": 0,
+    "matched_public_files": [],
+    "utf8_files_checked": 247,
+    "existing_binary_approval_count": 2,
+    "encountered_binary_files": [
+      {
+        "file": "packages/own-product-provider-stop-unstarted-11-1/raw/588031955e97b0f8647a98716ceec23e4e2452e9f49e89779ea50bc22c12c846",
+        "sha256": "588031955e97b0f8647a98716ceec23e4e2452e9f49e89779ea50bc22c12c846",
+        "bytes": 6
+      }
+    ],
+    "public_subtree_unchanged": true,
+    "policy_modified": false,
+    "scope": "Known fixed identifiers and their encoded forms; original credential, UUID, machine-path and identifier-word rules. No unknown-identity or unknown-host exhaustive claim."
+  },
+  "exact_public_copy": {
+    "at": "2026-11-24T11:30:20.068Z",
+    "status": "copied-and-verified",
+    "receipt_file_sha256": "dbd171f47f75acd675b9baaa8eb05f07f382bf8d3c0a62357e8376a202616053",
+    "destination": "benchmark/results/2026-11-24-own-provider-stop89",
+    "files": 248,
+    "bytes": 11421401,
+    "public_inventory_sha256": "ebfd93e87b44dce989f09c72493d3259fb1d811e14a5d58ef87af54ed4b01640",
+    "original_export_unchanged": true,
+    "source_files_unchanged": true
+  },
+  "observer_source_delivery": {
+    "base": "1d5b866023214070cfa1b3620bca1dfb86db5ba5",
+    "source_only_tree": "2ac3f6e97ab40880c3dcc8cd0dff10ba73ca20d9",
+    "patch_sha256": "b18dfa5b03777c645dc3ff5afc68ec61a3853a63ad23123d64c484c825267dbd",
+    "patch_bytes": 24482,
+    "mainline_resolve_introduction": "b2c441ba8fe8ed695ff2cf6e6a6579b3895cf31a",
+    "observed_mainline_head": "e2d667fc600099bd85f9fa5e72e64dad41a54467",
+    "retained_sdk_contract": "SDKv2",
+    "unrelated_sdk_v3_semantics_imported": false,
+    "candidate_manifest_file_sha256": "592f126e051d356f35239ef371c6098e8dd912fab0c2889168807ed53853177b",
+    "independent_route_review": {
+      "status": "passed",
+      "receipt_file_sha256": "ee7fe3be49a5fafacef676f602bb1062687c387e5581c0f5326f56df73e3178e"
+    },
+    "source_files": [
+      {
+        "path": "benchmark/runtime/episode-notion.mjs",
+        "sha256": "11efc949e4b6e8232a281db2e5fb67f576373bd1433582a5b5a7672e6c101c8b",
+        "same_as_original_source_review": true
+      },
+      {
+        "path": "benchmark/runtime/episode-notion.test.mjs",
+        "sha256": "305dea5b8bcd257972a57cb180b9db75e1c40c08ee9a63e5ebdefcd9168e4e50",
+        "same_as_original_source_review": true
+      },
+      {
+        "path": "docs/benchmark-runtime.md",
+        "sha256": "9ddf0180e80b72672a52ec1d068a5458110b4f99a904bb665623db4c41b80195",
+        "same_as_original_source_review": false
+      },
+      {
+        "path": "docs/verification-routing.md",
+        "sha256": "860dc3b6893b091eae5c7d0577e8e9f25e8f07adb116dc395e51c20cf10d4885",
+        "same_as_original_source_review": false
+      },
+      {
+        "path": "scripts/notion-skill-graph-model-evidence.mjs",
+        "sha256": "0d3a701c22e74845d248f8f5a93bceddf853ff71d2903a803c6126ea400651e2",
+        "same_as_original_source_review": true
+      },
+      {
+        "path": "scripts/notion-skill-graph-model-evidence.test.mjs",
+        "sha256": "825f3bb5e07d6e6228a9e11aa567cc200c050ab37c11f953c94aa03fb515762d",
+        "same_as_original_source_review": true
+      },
+      {
+        "path": "scripts/skill-consumption-source-observer.mjs",
+        "sha256": "8bff2623e240e2acc7c74cb90baf2e57bfe75c71e1b6b88562f2ed7b05345136",
+        "same_as_original_source_review": true
+      },
+      {
+        "path": "scripts/skill-consumption-source-observer.test.mjs",
+        "sha256": "5ce4ed53de422add216254d7635a5d429504a014cef4fa2cd0026a1067582049",
+        "same_as_original_source_review": true
+      },
+      {
+        "path": "scripts/verify-pi-daily-installation.mjs",
+        "sha256": "4fd936a9c589c5832ed2d4786531987f4b98830cd0f7677e11e0a124ce78adab",
+        "same_as_original_source_review": true
+      },
+      {
+        "path": "scripts/verify-pi-daily-installation.test.mjs",
+        "sha256": "c9b815e34ec4f322b702fe9e39879b32416c61adaa7b122aecec05748a9983d9",
+        "same_as_original_source_review": true
+      }
+    ],
+    "focused_tests": {
+      "passed": 71,
+      "scope": "Original controlled Benchmark SDKv2 tests; eight production/test file bytes unchanged in delivered candidate."
+    },
+    "documentation_tests": {
+      "first_run": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 1
+      },
+      "previously_skipped_case": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "total_distinct_passes": 9,
+      "combined_rerun_claimed": false,
+      "paired_validation_file_sha256": "e4ec40b4907050090608c7820cef676142f98ea7938b42cd3ca64042c72af96a"
+    },
+    "additional_mainline_graph_attempt": {
+      "failed_before_observation": 2,
+      "reason": "SDKv3 fixture not selected; failed records retained; not counted as passing."
+    },
+    "applied_to_original_observations": false,
+    "new_paid_execution_authorized": false,
+    "final_git_integration_evidence": "Exact combined head, remote CI and merge are recorded by the associated PR checks and closure receipt; no self-referential final commit is asserted here."
+  },
+  "limits": [
+    "This projection records actual local export, independent public replay, bounded scan, exact copy and source identities.",
+    "The report and this projection are outside the exact 248-file release inventory.",
+    "Public replay does not reconstruct private raw hash chains, run private graders, attest provider backend identity or repeat historical execution.",
+    "Successful evidence verification and source repair do not grant product acceptance or further paid dispatch."
+  ]
+}

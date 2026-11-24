@@ -7,6 +7,7 @@ import diagnostics from 'node:diagnostics_channel';
 import { randomUUID } from 'node:crypto';
 import { createEpisodeRecorder, sha256 } from './episode-evidence.mjs';
 import { observeEpisodeNotion, stableNotionCatalog } from './episode-notion.mjs';
+import { graphSourceAccounting } from '../../scripts/notion-skill-graph-model-evidence.mjs';
 
 const publish = (name, value) => diagnostics.channel(name).publish(value);
 const metricChannel = 'context-broker.notion-sdk', resultChannel = 'context-broker.notion-sdk-result';
@@ -71,18 +72,81 @@ async function fixture() {
   let stage = 'prepare';
   const observer = observeEpisodeNotion({ config: { runRoot, controlDir, correlation: { episode_id: 'notion-observer-apparatus' } }, recorder,
     context: () => ({ stage, turn_id: stage === 'user_task' ? 'turn-1' : null, model_request_id: null, active_tool_call_ids: stage === 'user_task' ? ['parent-1', 'child-1'] : [] }) });
-  const operation = (name, value, { metricsObserved = true, completeResult = true, trace = [] } = {}) => {
-    const id = randomUUID(), common = { version: 1, id, operation: name, source_id: 'notion', database: 'fixture-database', pid: process.pid };
-    publish(metricChannel, { ...common, event: 'start', monotonic_ns: process.hrtime.bigint().toString() });
-    if (completeResult) publish(resultChannel, { version: 1, id, operation: name, value });
-    publish(metricChannel, { ...common, event: 'end', monotonic_ns: process.hrtime.bigint().toString(), status: 'completed',
+  const operation = (name, value, { metricsObserved = true, completeResult = true, trace = [], id = randomUUID(), sequence = rows => rows } = {}) => {
+    const common = { version: 1, id, operation: name, source_id: 'notion', database: 'fixture-database', pid: process.pid };
+    const rows = [[metricChannel, { ...common, event: 'start', monotonic_ns: process.hrtime.bigint().toString() }]];
+    if (completeResult) rows.push([resultChannel, { version: 1, id, operation: name, value }]);
+    rows.push([metricChannel, { ...common, event: 'end', monotonic_ns: process.hrtime.bigint().toString(), status: 'completed',
       elapsed_ms: 1, error_code: null, sdk_started: true, metrics_observed: metricsObserved,
-      request_metrics: metricsObserved ? { trace_enabled: true, trace, total_requests: trace.filter(event => event.event === 'attempt').length, trace_dropped: 0 } : undefined });
+      request_metrics: metricsObserved ? { trace_enabled: true, trace, total_requests: trace.filter(event => event.event === 'attempt').length, trace_dropped: 0 } : undefined }]);
+    for (const [name, event] of sequence(rows)) publish(name, event);
     return id;
   };
   return { runRoot, controlDir, recorder, observer, operation, stage(next) { stage = next; },
-    async close() { const result = await observer.finish(); await recorder.close(); if (previous === undefined) delete process.env.PAIRED_CLI_ENTRY; else process.env.PAIRED_CLI_ENTRY = previous; return result; } };
+    async close() {
+      try { return await observer.finish(); }
+      finally {
+        try { await recorder.close(); }
+        finally { if (previous === undefined) delete process.env.PAIRED_CLI_ENTRY; else process.env.PAIRED_CLI_ENTRY = previous; }
+      }
+    } };
 }
+
+test('a legal resolve sequence retains all five SDK operations and zero-request resolution', async () => {
+  const f = await fixture();
+  f.operation('list', catalog());
+  const candidate = f.observer.candidate([{ type: 'notion', id: 'notion', enabled: true }]);
+  assert.equal(candidate.projection.catalogs.length, 1);
+  f.stage('user_task');
+  f.operation('consume', { version: 1, status: 'ready' });
+  const resolved = { version: 1, from: 'fixture-reference', ref: 'skill://fixture/SKILL.md', effects: [] };
+  const resolveId = f.operation('resolve', resolved);
+  const content = '# Controlled source\nComplete fixture body.\n', output = path.join(f.runRoot, 'source.md');
+  fs.writeFileSync(output, content);
+  f.operation('read', { output, bytes: Buffer.byteLength(content), sha256: sha256(content), record: { id: 'fixture' }, scope: 'scope-actual' });
+  f.operation('read-resources', { version: 1, status: 'ready', files: [] });
+  const result = await f.close();
+  assert.equal(result.coverage.sdk, 'complete'); assert.equal(result.coverage.owned_http, 'complete');
+  assert.deepEqual(result.operations.map(item => item.operation), ['list', 'consume', 'resolve', 'read', 'read-resources']);
+  const resolve = result.operations.find(item => item.operation_id === resolveId);
+  assert.equal(resolve.status, 'completed'); assert.equal(resolve.result_observed, true);
+  assert.equal(resolve.metrics_complete, true); assert.equal(resolve.http_attempts, 0);
+  assert.ok(resolve.start_ref && resolve.result_ref && resolve.end_ref && resolve.receipt_ref);
+  const receipts = fs.readdirSync(result.paths.responses).map(name => JSON.parse(fs.readFileSync(path.join(result.paths.responses, name), 'utf8')));
+  assert.deepEqual(receipts.find(item => item.requestId === resolveId).value, resolved);
+  const ledger = fs.readFileSync(result.paths.sdk, 'utf8').trim().split('\n').map(JSON.parse);
+  const source = fs.readFileSync(result.paths.source, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(source.at(-1).operations, 5); assert.equal(source.at(-1).sdkStarts, 5);
+  assert.equal(source.at(-1).errors, 0); assert.equal(source.at(-1).complete, true);
+  const accounting = graphSourceAccounting(ledger, receipts, { sourceMode: 'sdk', requireConsumption: true });
+  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 0, consume: 1, read: 1, 'read-resources': 1, resolve: 1 });
+  assert.equal(accounting.actual_http_attempts, 0);
+});
+
+test('resolve observation keeps unknown operation, identity, pairing and terminal guards', async t => {
+  const cases = [
+    ['unknown operation', 'unsupported-operation', {}],
+    ['unpaired result and end', 'resolve', { sequence: rows => rows.slice(1) }],
+    ['missing end', 'resolve', { sequence: rows => rows.slice(0, -1) }],
+    ['missing completed result', 'resolve', { completeResult: false }],
+    ['duplicate start', 'resolve', { sequence: rows => [rows[0], ...rows] }],
+    ['duplicate result', 'resolve', { sequence: rows => [rows[0], rows[1], rows[1], rows[2]] }],
+    ['duplicate end', 'resolve', { sequence: rows => [...rows, rows[2]] }],
+    ['changed result operation', 'resolve', { sequence: rows => { rows[1][1].operation = 'read'; return rows; } }],
+  ];
+  for (const [name, operation, options] of cases) await t.test(name, async () => {
+    const f = await fixture(); f.operation(operation, { version: 1, ref: 'skill://fixture/SKILL.md' }, options);
+    const result = await f.close();
+    assert.equal(result.coverage.sdk, 'partial'); assert.equal(result.coverage.owned_http, 'partial');
+    const ledger = fs.readFileSync(result.paths.sdk, 'utf8').trim().split('\n').map(JSON.parse);
+    const receipts = fs.readdirSync(result.paths.responses).map(name => JSON.parse(fs.readFileSync(path.join(result.paths.responses, name), 'utf8')));
+    assert.throws(() => graphSourceAccounting(ledger, receipts, { sourceMode: 'sdk' }));
+  });
+  await t.test('invalid UUID stays rejected', async () => {
+    const f = await fixture(); f.operation('resolve', { version: 1 }, { id: 'not-a-uuid' });
+    await assert.rejects(f.close());
+  });
+});
 
 test('public diagnostic apparatus retains actual output-file bytes, stage, HTTP and uncertain causal tool association', async () => {
   const f = await fixture();

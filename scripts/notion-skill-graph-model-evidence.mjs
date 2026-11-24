@@ -239,7 +239,7 @@ export function graphSourceAccounting(events, receipts, { sourceMode, requireCon
   }
   for (const start of events.filter(event => event.phase === 'child-spawn')) assert.equal(events.filter(event => event.phase === 'child-close' && event.id === start.id).length, 1, 'Every observed child must close');
   const sdk = receipts.filter(receipt => receipt.transport === 'sdk');
-  const sdkOperations = ['list', 'files', 'consume', 'read', 'read-resources'];
+  const sdkOperations = ['list', 'files', 'consume', 'read', 'read-resources', 'resolve'];
   assert.ok(sdk.every(receipt => sdkOperations.includes(receipt.operation)), 'Unknown SDK operation cannot disappear from source accounting');
   const childCalls = events.filter(event => (event.phase === 'child-spawn' || event.phase === 'alternate-child-api') && event.source);
   if (sourceMode === 'sdk') {

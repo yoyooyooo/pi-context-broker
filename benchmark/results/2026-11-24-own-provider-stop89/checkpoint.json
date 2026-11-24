@@ -1,0 +1,225 @@
+{
+  "version": 1,
+  "kind": "stopped89-public-checkpoint",
+  "status": "stopped-no-further-paid-dispatch",
+  "linked_history": {
+    "repository": "https://github.com/yoyooyooo/pi-context-broker",
+    "pr": "https://github.com/yoyooyooo/pi-context-broker/pull/62",
+    "commit": "699e1b4c4fe8f560cd41f6126fb1a51ad07dc185",
+    "path": "benchmark/results/2026-11-24-own-continuation-stop",
+    "physical_reservations": 86,
+    "status": "linked_not_replayed",
+    "files": [
+      {
+        "path": "benchmark/results/2026-11-24-own-continuation-stop/release-manifest.json",
+        "sha256": "8789b9bb3f946eb96eadb308352db984f9ed3d0d71fe0c1b1664ef82a2c37295",
+        "bytes": 89614
+      },
+      {
+        "path": "benchmark/results/2026-11-24-own-continuation-stop/checkpoint.json",
+        "sha256": "ed32e01adb77b4dba55e3f3f15df566c62504132270016ed30b9236a7842e0c4",
+        "bytes": 28010
+      },
+      {
+        "path": "benchmark/results/2026-11-24-own-continuation-stop/own20-lineage.json",
+        "sha256": "759558b838835bb49b2a4baaca55fe440c7c445f7c68acebb289a2a4065c8918",
+        "bytes": 95485
+      }
+    ]
+  },
+  "accounting": {
+    "retained_history": 86,
+    "new_closed_observations": 3,
+    "physical_closed": 89,
+    "admission_valid": 78,
+    "admission_invalid": 11,
+    "approved_total": 139,
+    "hard_cap": 144,
+    "spare_unallocated": 5,
+    "remaining_unstarted": 50,
+    "remaining_own": 8,
+    "remaining_engineering": 42,
+    "new_admission": {
+      "valid": 2,
+      "invalid": 1
+    },
+    "new_full_contract_among_valid": {
+      "pass": 0,
+      "fail": 0,
+      "unknown": 2
+    },
+    "new_business_artifact_pass": 3,
+    "new_valid_business_pass": 2,
+    "new_verified_success": 0,
+    "new_usage": {
+      "model_requests": 14,
+      "input_tokens": 63577,
+      "output_tokens": 1086,
+      "duration_ms": 241475.4925
+    },
+    "new_usage_complete": true,
+    "monetary_amount": null,
+    "monetary_status": "unknown_unpriced",
+    "full89_usage_complete": false,
+    "full89_usage_total": null,
+    "invalid_cost_already_included_in_new_usage": true,
+    "all_transport_http_attempts": "unknown"
+  },
+  "rows": [
+    {
+      "physical_ordinal": 87,
+      "run_id": "benchmark-own-product-provider-stop-unstarted-11-1-001",
+      "case_id": "complementary-01-a-n16-r1",
+      "condition_id": "m0-e0",
+      "admission": {
+        "status": "valid",
+        "reasons": []
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "unknown",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "business_status": "pass",
+      "collector_version": "1.1.0",
+      "recorded_usage": {
+        "model_requests": {
+          "status": "known",
+          "value": 4
+        },
+        "input_tokens": {
+          "status": "known",
+          "value": 18093
+        },
+        "output_tokens": {
+          "status": "known",
+          "value": 317
+        },
+        "monetary_amount": null,
+        "monetary_status": "unknown_unpriced",
+        "all_transport_http_attempts": {
+          "status": "unknown",
+          "value": null
+        }
+      },
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "public_episode_reference": {
+        "public_episode_sha256": "5d52e6c8b097b01cdc26c6d0b4c26cdf0fbd74e167380722a430e1e1dbd1eed8",
+        "public_file": "packages/own-product-provider-stop-unstarted-11-1/analysis-input.json",
+        "public_file_sha256": "fecb2c738433eac30addce50c4713037743b99ce94d5aa5c7d1efc975fe60064",
+        "pointer": "/episodes/0"
+      }
+    },
+    {
+      "physical_ordinal": 88,
+      "run_id": "benchmark-own-product-provider-stop-unstarted-11-1-002",
+      "case_id": "references-01-a-n16-r1",
+      "condition_id": "m0-e0",
+      "admission": {
+        "status": "valid",
+        "reasons": []
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "unknown",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "business_status": "pass",
+      "collector_version": "1.1.0",
+      "recorded_usage": {
+        "model_requests": {
+          "status": "known",
+          "value": 5
+        },
+        "input_tokens": {
+          "status": "known",
+          "value": 22342
+        },
+        "output_tokens": {
+          "status": "known",
+          "value": 393
+        },
+        "monetary_amount": null,
+        "monetary_status": "unknown_unpriced",
+        "all_transport_http_attempts": {
+          "status": "unknown",
+          "value": null
+        }
+      },
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "public_episode_reference": {
+        "public_episode_sha256": "07ae1aa78cc76545ed533ddb083f0db7209e700ca3982402d19aa0712d003cbf",
+        "public_file": "packages/own-product-provider-stop-unstarted-11-1/analysis-input.json",
+        "public_file_sha256": "fecb2c738433eac30addce50c4713037743b99ce94d5aa5c7d1efc975fe60064",
+        "pointer": "/episodes/1"
+      }
+    },
+    {
+      "physical_ordinal": 89,
+      "run_id": "benchmark-own-product-provider-stop-unstarted-11-1-003",
+      "case_id": "references-01-a-n16-r1",
+      "condition_id": "m0-e1",
+      "admission": {
+        "status": "invalid",
+        "reasons": [
+          "core_notion_evidence_incomplete",
+          "runtime_not_a_business_episode:invalid"
+        ]
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "not_applicable",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "business_status": "pass",
+      "collector_version": "1.1.0",
+      "recorded_usage": {
+        "model_requests": {
+          "status": "known",
+          "value": 5
+        },
+        "input_tokens": {
+          "status": "known",
+          "value": 23142
+        },
+        "output_tokens": {
+          "status": "known",
+          "value": 376
+        },
+        "monetary_amount": null,
+        "monetary_status": "unknown_unpriced",
+        "all_transport_http_attempts": {
+          "status": "unknown",
+          "value": null
+        }
+      },
+      "original_stop_batch": true,
+      "original_stop_reason": "subject_requested_stop",
+      "public_episode_reference": {
+        "public_episode_sha256": "642a8a6a1398a8800562d2dd50742cb9d5001fc6ebab7a4cb3b982854b00da5e",
+        "public_file": "packages/own-product-provider-stop-unstarted-11-1/analysis-input.json",
+        "public_file_sha256": "fecb2c738433eac30addce50c4713037743b99ce94d5aa5c7d1efc975fe60064",
+        "pointer": "/episodes/2"
+      }
+    }
+  ],
+  "model_window": {
+    "start": "2026-11-24T02:08:50.700Z",
+    "end": "2026-11-25T02:08:50.700Z",
+    "renewed": false
+  },
+  "source_claims": {
+    "census_file_sha256": "84e5f24580ad964988c92365666f85c1e8df7cbea4ab031936b72dc0e551038c",
+    "root_checkpoint_file_sha256": "d20e15b33e8234ed57daa83d7b42edf5f43bf9da8a5d2477e518d4f210e0c5fd"
+  },
+  "historical_execution_replayed": false,
+  "combined_scoring": false,
+  "product_acceptance_claim": false,
+  "subject_model_requests_during_export": 0,
+  "future_paid_dispatch": "stopped"
+}

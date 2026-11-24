@@ -36,6 +36,10 @@ C01–C11/T01–T23、单一 owner 与实际入口由 CLI `verification/skill-do
 
 保留的有限模型由 observations 与 consumer-state 两套 coverage 维护。SDK capability、当前 import 的目录失效、包 pin/build 和真实 HTTP/serializer 是各自的实现检查，不因被写入 source hash 就获得形式证明。
 
+本 Benchmark 分支保留实验的 SDK v2 合同；source observer、graph accounting 和日用 HTTP 归因接受 `list`、`files`、`consume`、`read`、`read-resources`、`resolve`。主线 `next` 已迁移至 SDK v3，并有额外的 Library 与 content-search 行为。本次仅回补已在 [next 提交 b2c441b](https://github.com/yoyooyooo/pi-context-broker/commit/b2c441ba8fe8ed695ff2cf6e6a6579b3895cf31a) 中实现的 resolve 观测语义，不整树同步 SDK v3 或改变冻结实验的输入与归因 schema。
+
+`resolve` 可以带完整的零请求 metrics；它只证明引用解析已被观测，不证明正文或资源交付。未知操作、未配对事件、缺终态和不完整 metrics 仍不能通过对应的完整性检查。受控事件和生成 preload 的回归不计作真实模型、日用安装或业务验收。
+
 ## 结果交接
 
 新 current 消费资格遵循当前 Source 与 Skill 的 Enabled；disabled 的当前来源不能因目录缓存或本地旧 pin 被重新启用。Default Context 随实际选定 View 决定默认候选，不 release 既有选择，也不自动注入全文。已有完整固定任务、缺字节 current acquisition 与授权拒绝分别判定；业务 Enabled 关闭不能静默拆掉原完整任务的 Required。重新启用须可信 fresh use 或新 metadata；缺行不能猜 deny。Source ready、目录完整、本地固定字节、完整正文交付、provider 接受、turn 完成和宿主公开投影必须分开判断。本地旧 pin 不承诺远端历史恢复；明确重新选择后才获取当前内容。

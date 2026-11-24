@@ -188,7 +188,7 @@ test('contradictory SDK source attribution remains an observation error', async 
   assert.equal(trace.events.filter(row => row.phase === 'observer_error').length, 1);
 });
 
-for (const operation of ['list', 'files', 'read-resources']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
+for (const operation of ['list', 'files', 'read-resources', 'resolve']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
   const item = fixture(), observer = observe(item); t.after(observer.finish);
   const id = crypto.randomUUID();
   publishSdk(id, 'start', { operation });
@@ -242,6 +242,30 @@ test('serialized preload runs only in the intended owner and leaves the inheriti
   const trace = await readSourceObservation(item.output);
   assert.equal(trace.complete, true); assert.equal(trace.events.filter(row => row.phase === 'source_observer_start').length, 1);
   assert.equal(trace.events.at(-1).operations, 1); assert.equal(trace.events.at(-1).cliStarts, 1);
+});
+
+test('serialized preload retains a completed resolve with zero HTTP attempts', async () => {
+  const item = fixture(), owner = path.join(item.base, 'resolve-owner.mjs'), preload = path.join(item.base, 'resolve-preload.mjs');
+  fs.writeFileSync(owner, `import { channel } from 'node:diagnostics_channel';
+import { randomUUID } from 'node:crypto';
+const common = { version: 1, id: randomUUID(), operation: 'resolve', pid: process.pid, source_id: 'notion', database: 'fixture-database' };
+channel('context-broker.notion-sdk').publish({ ...common, event: 'start', monotonic_ns: process.hrtime.bigint().toString() });
+channel('context-broker.notion-sdk-result').publish({ version: 1, id: common.id, operation: 'resolve', value: { version: 1, ref: 'skill://fixture/SKILL.md' } });
+channel('context-broker.notion-sdk').publish({ ...common, event: 'end', monotonic_ns: process.hrtime.bigint().toString(), status: 'completed',
+  elapsed_ms: 0, sdk_started: true, metrics_observed: true, request_metrics: { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [] } });
+process.stdout.write('resolved\\n');
+`);
+  fs.writeFileSync(preload, sourceObserverPreloadSource({ output: item.output, checkoutRoot: process.cwd(), clockId: 'resolve-preload-test',
+    cliPath: item.cli, ownerEntry: owner, ownerParentPid: process.pid }));
+  const actual = await consume(owner, [], { ...process.env, NODE_OPTIONS: '--import=' + pathToFileURL(preload).href });
+  assert.deepEqual(actual, { code: 0, signal: null, stdout: 'resolved\n', stderr: '' });
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
+  assert.deepEqual(trace.events.filter(row => ['started', 'completed'].includes(row.phase)).map(row => row.operation), ['resolve', 'resolve']);
+  assert.equal(trace.events.at(-1).sdkStarts, 1); assert.equal(trace.events.at(-1).operations, 1);
+  assert.equal(trace.events.find(row => row.phase === 'metrics').complete, true);
+  assert.equal(trace.events.find(row => row.phase === 'metrics').total_requests, 0);
+  assert.equal(trace.events.filter(row => row.phase === 'attempt').length, 0);
 });
 
 function reseal(rows) {

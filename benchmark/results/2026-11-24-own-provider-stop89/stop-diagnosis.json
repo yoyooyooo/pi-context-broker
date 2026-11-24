@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "kind": "stopped89-public-stop-diagnosis",
+  "run_id": "benchmark-own-product-provider-stop-unstarted-11-1-003",
+  "original_admission": "invalid",
+  "original_outcome": "not_applicable",
+  "original_stop_batch": true,
+  "missing_supported_operation": "resolve",
+  "observed_sdk_operations": 5,
+  "completed_sdk_operations": 5,
+  "source_observed_operations": 4,
+  "source_validation_errors": 2,
+  "runtime_observer_errors": 3,
+  "cause": "Runtime and source observer operation allowlists omitted the supported resolve operation.",
+  "associated_offline_gap": "graphSourceAccounting contains the same omission; it is not the direct runtime trigger of this observation.",
+  "provider_evidence": {
+    "reported_route_matches": 5,
+    "model_requests": 5,
+    "input_tokens": 23142,
+    "output_tokens": 376,
+    "usage_complete": true,
+    "backend_identity_attested": false,
+    "long_term_stability_claim": false
+  },
+  "source_claims": {
+    "independent_audit_file_sha256": "532103dbb7390feda1a03e0fb2bebf937f86e7e918e1e8ad3ff5a250c0564444",
+    "original_normalized_file_sha256": "3b5380eda5fb388d876422ddabd80fa7fbf622b5d9f3de7fcda59fdd518cc7ac",
+    "runtime_observer_source_sha256": "0071f086fcb6a22428e40799f9b8aaa85a431229e4484c5d73188f8a33484ca0",
+    "source_observer_source_sha256": "f0117434bcd6461f1cdda5d526b9f0623ceae0ac4eaf1c644f187a47553d6f5a",
+    "graph_accounting_source_sha256": "6097f3f0911d51dff7bb24c4d4cf4408bf9ba77a1e482e55628945d37a211768"
+  },
+  "interpretation": "The observed stop is explained by incomplete observer evidence. These five model responses do not evidence a new provider response failure.",
+  "limits": "Descriptive original-evidence diagnosis only. No repair, collector replacement, regrading, retry, new dispatch, or full-contract success is inferred."
+}
