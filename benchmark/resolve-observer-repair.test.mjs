@@ -15,6 +15,7 @@ import { buildCorpus, planCaseVariant } from './corpus/index.mjs';
 import { protocolCaseForVariant } from './planning.mjs';
 import { FINITE_CAMPAIGN, verifyFiniteOriginalResults } from './finite-campaign.mjs';
 import { inventoryPublicInputs } from './subject.mjs';
+import { normalizeCandidate } from './runtime/episode-evidence.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const oldText = "const operations = ['list', 'files', 'consume', 'read', 'read-resources'];\n";
@@ -72,6 +73,29 @@ test('complete startup comparison permits receipt/module changes and rejects bus
     },
   ];
   for (const mutate of mutations) { const changed = structuredClone(current); mutate(changed); assert.throws(() => assertResolveRepairExpectation(changed, original, pair)); }
+});
+
+test('persisted captures retain the runtime inventory digest across canonical key ordering', () => {
+  const persisted = after => JSON.parse(JSON.stringify(normalizeCandidate(expectation(after), {})));
+  const original = persisted(false), current = persisted(true);
+  for (const value of [original, current]) {
+    const projection = value.projection.visibility.projection;
+    assert.deepEqual(Object.keys(projection.files[0]), ['bytes', 'path', 'sha256']);
+    assert.notEqual(projection.sha256, sha(JSON.stringify(projection.files)));
+  }
+  assertResolveRepairExpectation(current, original, pair);
+  for (const change of [
+    value => { value.sha256 = sha(JSON.stringify(value.files)); },
+    value => { value.files.reverse(); },
+    value => { value.files[0].bytes++; },
+    value => { value.files[0].extra = 'undeclared'; },
+  ]) {
+    for (const target of ['original', 'current']) {
+      const values = { original: structuredClone(original), current: structuredClone(current) };
+      change(values[target].projection.visibility.projection);
+      assert.throws(() => assertResolveRepairExpectation(values.current, values.original, pair));
+    }
+  }
 });
 
 function instrumentation(after) {
