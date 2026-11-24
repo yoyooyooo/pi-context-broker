@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tmpdir } from 'node:os';
+import { notionPageId } from '../packages/context-broker/src/native-reference.ts';
 import { skillFileRef, pinSkillRef, nativeReferenceSettings } from './skill-ref-fixture.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -207,6 +209,91 @@ test('public CLI guard admits only the exact host spill from an approved Bash re
 
 const maintenanceCli = { ...publicCli, mode: 'owned-maintenance-readonly', sourceId: 'notion', nodeExecutable: '/frozen/node',
   builtinFiles: ['/frozen/builtin-skills/ntn-skills-maintain/SKILL.md', '/frozen/builtin-skills/ntn-skills-maintain/references/operations.md'] };
+
+for (const policy of [maintenanceCli, publicCli, { ...publicCli, mode: 'owned-description-update', description: 'Authorized description' }]) {
+  test('generated public CLI guard normalizes only the owned Library selector: ' + policy.mode, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'candidate-cli-library-'));
+    const extension = join(directory, 'guard.mjs'), output = join(directory, 'guard.jsonl');
+    await writeFile(extension, candidate.candidateCliGuardSource({
+      referenceParser: fileURLToPath(new URL('../packages/context-broker/src/native-reference.ts', import.meta.url)), output, policy,
+    }), { flag: 'wx' });
+    const handlers = new Map(), loaded = await import(pathToFileURL(extension).href);
+    loaded.default({ on(name, handler) { handlers.set(name, handler); } });
+    let calls = 0;
+    const call = command => {
+      const event = { toolName: 'bash', toolCallId: 'selector-' + ++calls, input: { command } };
+      return { event, result: handlers.get('tool_call')(event) };
+    };
+    const compact = policy.library.replaceAll('-', ''), foreign = '8b308dab-2daf-5330-922f-812244ff16f9';
+    const selectors = [policy.library, compact, policy.library.toUpperCase(),
+      'https://www.notion.so/' + compact,
+      'https://app.notion.com/p/team/Library-' + compact + '?v=' + foreign.replaceAll('-', ''),
+      'https://team.notion.site/Library-' + policy.library.toUpperCase() + '/?source=copy_link#block'];
+    const denied = [foreign, '33333333-3333-4333-8333-333333333333', 'library-' + compact, 'owned-alias',
+      'https://www.notion.so/' + foreign.replaceAll('-', ''), 'https://evil.example/' + compact,
+      'https://notion.so.evil.example/' + compact, 'https://notion.so/?p=' + compact];
+    const commands = selector => {
+      const selected = '--library ' + JSON.stringify(selector);
+      const common = ['read original-page ' + selected + ' --read-only --json',
+        "files '" + pinSkillRef(policy.ownerRef, 's_' + 'a'.repeat(64)) + "' " + selected];
+      if (policy.mode === 'owned-maintenance-readonly') return [...common,
+        'ctl library init ' + selected, 'ctl library inspect ' + selected, 'ctl library sources list ' + selected,
+        'list ' + selected + ' --json', 'ctl audit run ' + selected + ' --target original-page',
+        'ctl operation show original-operation ' + selected + ' --target original-page'];
+      if (policy.mode === 'owned-description-update') return [...common,
+        'update original-page ' + selected + ' --description "Authorized description"'];
+      return [...common,
+        'ctl library create recovery review /evidence/original-plan.json ' + selected + ' --target original-page --output /evidence/agent-output/review.json',
+        'ctl library create recovery apply /evidence/original-plan.json ' + selected + ' --review /evidence/agent-output/review.json --review-id create-restore-' + 'a'.repeat(64) + ' --dry-run',
+        'ctl library create recovery reconcile /evidence/original-plan.json ' + selected + ' --target original-page'];
+    };
+    try {
+      for (const selector of selectors) for (const suffix of commands(selector)) {
+        const command = cliCommand + ' ' + suffix;
+        assert.equal(call(command).result, undefined, command);
+        const inspected = reviewCandidateCliCommand(command, policy);
+        assert.equal(inspected.argv[inspected.argv.indexOf('--library') + 1], selector, 'Preserve the original public argv');
+      }
+      for (const selector of denied) for (const suffix of commands(selector)) {
+        const command = cliCommand + ' ' + suffix;
+        assert.throws(() => reviewCandidateCliCommand(command, policy), command);
+        assert.equal(call(command).result?.block, true, command);
+      }
+      const owned = JSON.stringify(selectors[3]);
+      const blocked = policy.mode === 'owned-maintenance-readonly' ? [
+        'ctl library inspect ' + owned, 'ctl library inspect --database ' + owned, 'ctl library inspect --entry ' + owned,
+        'ctl library inspect --library ' + owned + ' extra', 'ctl library inspect --library ' + owned + ' --offline',
+        'ctl library inspect --library ' + owned + ' --library ' + owned,
+        'ctl library init --library ' + owned + ' --parent another-page',
+        'ctl audit run --library ' + owned + ' --target another-page',
+      ] : policy.mode === 'owned-description-update' ? [
+        'update another-page --library ' + owned + ' --description "Authorized description"',
+        'update original-page --library ' + owned + ' --description "Unauthorized description"',
+      ] : [
+        'ctl library create recovery review /evidence/other-plan.json --library ' + owned + ' --target original-page --output /evidence/agent-output/review.json',
+        'ctl library create recovery review /evidence/original-plan.json --library ' + owned + ' --target another-page --output /evidence/agent-output/review.json',
+      ];
+      for (const suffix of blocked) assert.equal(call(cliCommand + ' ' + suffix).result?.block, true, suffix);
+      if (policy.mode === 'owned-maintenance-readonly') {
+        const started = call(auditCommand); assert.equal(started.result, undefined);
+        const report = { ...auditReportFixture(), execution: 'paused',
+          next: { read_only: true, argv: ['ntn-skills', 'ctl', 'audit', 'resume', auditRunId] } };
+        const complete = event => handlers.get('tool_result')({ toolName: 'bash', toolCallId: event.toolCallId,
+          content: [{ type: 'text', text: JSON.stringify(report) }] });
+        complete(started.event);
+        for (const selector of [...selectors, ...denied]) {
+          const resumed = call(cliCommand + ' ctl audit resume ' + auditRunId + ' --library ' + JSON.stringify(selector));
+          if (selectors.includes(selector)) { assert.equal(resumed.result, undefined); complete(resumed.event); }
+          else assert.equal(resumed.result?.block, true);
+        }
+      }
+    } finally { handlers.get('session_shutdown')({}); }
+    const rows = (await readFile(output, 'utf8')).trimEnd().split('\n').map(JSON.parse);
+    assert.equal(rows.filter(row => row.phase === undefined && row.toolCallId).length, calls);
+    assert.equal(rows.at(-1).complete, true, 'The emitted guard must load every runtime dependency');
+  });
+}
+
 const maintenanceBranch = () => {
   const identity = { source: 'notion', id: publicCli.ownerRef, ref: publicCli.ownerRef,
     locator: { type: 'shared_skill', page_id: 'original-page', library_id: '76ecd927-8be5-5526-b4d7-18906713e206', database_id: '33333333-3333-4333-8333-333333333333' } };
@@ -322,7 +409,7 @@ const auditGuard = () => {
     writeSync: (_fd, value) => records.push(JSON.parse(value)), closeSync() {},
     readFileSync(path) { reads.push(path); if (!files.has(path)) throw new Error('missing original'); return files.get(path); } },
   output: '/evidence/guard.jsonl', policy: maintenanceCli, sha,
-  review: new Function('parseNativeReference', 'return (' + reviewCandidateCliCommand.toString() + ')')(nativeReferenceSettings.parseNativeReference),
+  review: new Function('parseNativeReference', 'notionPageId', 'return (' + reviewCandidateCliCommand.toString() + ')')(nativeReferenceSettings.parseNativeReference, notionPageId),
   auditReportBinding: new Function('return (' + candidate.candidateAuditReportBinding.toString() + ')')() });
   return { handlers, records, files, reads,
     call(command, id) { return handlers.get('tool_call')({ toolName: 'bash', toolCallId: id, input: { command } }); } };

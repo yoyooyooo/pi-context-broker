@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseNativeReference, hasExactNativeOwner } from '../packages/context-broker/src/native-reference.ts';
+import { parseNativeReference, hasExactNativeOwner, notionPageId } from '../packages/context-broker/src/native-reference.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
@@ -301,6 +301,10 @@ export function inspectCandidateExistingReads(sourceState, nativeAudit, text, gu
 export function reviewCandidateCliCommand(command, policy, observedAudits = []) {
   const check = (value, message) => { if (!value) throw new Error(message); };
   check(['original-create-recovery', 'owned-description-update', 'owned-maintenance-readonly'].includes(policy?.mode), 'Unknown public CLI task scope');
+  const ownsLibrary = value => {
+    const root = typeof value === 'string' ? notionPageId(value) : undefined;
+    return root !== undefined && root === policy.library;
+  };
   const maintenance = policy.mode === 'owned-maintenance-readonly';
   check(typeof command === 'string' && !/[\r\n\0\\]/u.test(command), 'Use one plain public CLI command');
   const text = command.trim(), words = [], token = /\s*(?:'([^']*)'|"([^"$`\\]*)"|([^\s'"\\;&|`<>$()*?\[\]{}!~]+))/uy;
@@ -339,17 +343,17 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
     return { kind: 'builtin-read', argv: words };
   }
   if (maintenance && args.slice(0, 3).join(' ') === 'ctl library init') {
-    check(args.length === 5 && args[3] === '--library' && args[4] === policy.library,
+    check(args.length === 5 && args[3] === '--library' && ownsLibrary(args[4]),
       'Validate only the existing owned library; parent initialization and schema changes are outside this task');
     return { kind: 'library-attach-readonly', argv: words };
   }
   if (maintenance && args.slice(0, 3).join(' ') === 'ctl library inspect') {
-    check(args.length === 5 && args[3] === '--library' && args[4] === policy.library,
+    check(args.length === 5 && args[3] === '--library' && ownsLibrary(args[4]),
       'Read only the owned library descriptor through the public root selector');
     return { kind: 'library-inspect', argv: words };
   }
   if (maintenance && args.slice(0, 4).join(' ') === 'ctl library sources list') {
-    check(args.length === 6 && args[4] === '--library' && args[5] === policy.library, 'List only the owned library sources');
+    check(args.length === 6 && args[4] === '--library' && ownsLibrary(args[5]), 'List only the owned library sources');
     return { kind: 'source-list', argv: words };
   }
   if (maintenance && args[0] === 'list') {
@@ -362,7 +366,7 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
         flags.set(flag, args[++index]);
       }
     }
-    check(flags.get('--library') === policy.library && flags.get('--json'), 'Keep the exact owned library and structured catalog');
+    check(ownsLibrary(flags.get('--library')) && flags.get('--json'), 'Keep the exact owned library and structured catalog');
     if (flags.has('--limit')) check(/^[1-9][0-9]*$/u.test(flags.get('--limit')) && Number(flags.get('--limit')) <= 100, 'Keep the metadata query bounded');
     if (flags.has('--query')) check(flags.get('--query').length <= 512, 'Keep the task query bounded');
     return { kind: 'catalog-list', argv: words };
@@ -382,7 +386,7 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
       const flag = args[index], value = args[index + 1];
       check(!seen.has(flag) && typeof value === 'string', 'Use one value for each public resume option');
       seen.add(flag);
-      if (flag === '--library') check(value === policy.library, 'The original library assertion cannot change');
+      if (flag === '--library') check(ownsLibrary(value), 'The original library assertion cannot change');
       else check(Object.hasOwn(caps, flag) && /^[1-9][0-9]*$/u.test(value) && Number(value) <= caps[flag],
         'Keep the public per-invocation audit budget bounded');
     }
@@ -400,7 +404,7 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
       check(valued.has(value) && !flags.has(value) && typeof args[index + 1] === 'string' && !args[index + 1].startsWith('-'), 'Unknown or repeated maintenance option');
       flags.set(value, args[++index]);
     }
-    check(flags.get('--library') === policy.library && flags.get('--target') === policy.target, 'Keep the exact reviewed owner and library');
+    check(ownsLibrary(flags.get('--library')) && flags.get('--target') === policy.target, 'Keep the exact reviewed owner and library');
     check(audit ? positional.length === 0 : positional.length === 1 && positional[0] === policy.operationId, 'Observe only the original operation');
     if (flags.has('--depth')) check(['metadata', 'content', 'history'].includes(flags.get('--depth')), 'Use a public audit depth');
     for (const [flag, maximum] of [['--max-requests', 500], ['--max-bytes', 67108864], ['--duration-ms', 120000]])
@@ -431,7 +435,7 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
     else { check(valued.has(flag) && typeof args[index + 1] === 'string' && !args[index + 1].startsWith('--'), 'Unknown public CLI option'); flags.set(flag, args[++index]); }
   }
   check(positional.length === 1, 'Use the single public target argument');
-  check(flags.get('--library') === policy.library, 'Keep the exact reviewed library');
+  check(ownsLibrary(flags.get('--library')), 'Keep the exact reviewed library');
   if (update) {
     check(positional[0] === policy.target && typeof policy.description === 'string' && flags.get('--description') === policy.description,
       'Update only the original page to the exact authorized Description');
@@ -650,6 +654,14 @@ export function candidateCliGuard(api, { fs, output, policy, review, maintenance
     } catch (error) { failure = error; }
   });
   api.on('session_shutdown', () => { if (fd !== undefined) { fs.writeSync(fd, JSON.stringify({ complete: !failure }) + '\n'); fs.closeSync(fd); } });
+}
+
+export function candidateCliGuardSource({ referenceParser, output, policy }) {
+  return "import {parseNativeReference,notionPageId} from " + JSON.stringify(pathToFileURL(referenceParser).href) + ";import fs from 'node:fs';import crypto from 'node:crypto';const sha=value=>crypto.createHash('sha256').update(value).digest('hex');const review=" + reviewCandidateCliCommand.toString()
+    + ';const maintenanceReview=' + reviewCandidateMaintenanceTool.toString()
+    + ';const auditReportBinding=' + candidateAuditReportBinding.toString()
+    + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,maintenanceReview,auditReportBinding,sha,output:' + JSON.stringify(output)
+    + ',policy:' + JSON.stringify(policy) + '});\n';
 }
 
 // This is a finite inventory vocabulary for the fixed owned application, not a
@@ -1757,11 +1769,9 @@ export async function runCandidatePrint(config) {
     + guardCandidateInputIdentity.toString() + ')(api,{fs,crypto,output:' + JSON.stringify(inputGuardLedger) + ',expected:'
     + JSON.stringify({ entry: baselineFiles[1], cwd: forkBinding.cwd, provider: 'magpie', model: 'group/worker', thinkingLevel: 'high',
       nativeSkillCount: 69, promptSha256: hash(config.prompt) }) + '});\n', { flag: 'wx', mode: 0o600 });
-  if (cliPolicy) await writeFile(cliGuard, "import {parseNativeReference} from " + JSON.stringify(pathToFileURL(join(config.brokerRoot, "src/native-reference.ts")).href) + ";import fs from 'node:fs';import crypto from 'node:crypto';const sha=value=>crypto.createHash('sha256').update(value).digest('hex');const review=" + reviewCandidateCliCommand.toString()
-    + ';const maintenanceReview=' + reviewCandidateMaintenanceTool.toString()
-    + ';const auditReportBinding=' + candidateAuditReportBinding.toString()
-    + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,maintenanceReview,auditReportBinding,sha,output:' + JSON.stringify(cliGuardLedger)
-    + ',policy:' + JSON.stringify(cliPolicy) + '});\n', { flag: 'wx', mode: 0o600 });
+  if (cliPolicy) await writeFile(cliGuard, candidateCliGuardSource({
+    referenceParser: join(config.brokerRoot, 'src/native-reference.ts'), output: cliGuardLedger, policy: cliPolicy,
+  }), { flag: 'wx', mode: 0o600 });
   if (completionBudgetSource) await writeFile(completionBudgetExtension, completionBudgetSource, { flag: 'wx', mode: 0o600 });
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: config.id, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(transportExtension, providerTransportExtensionSource({ output: transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
