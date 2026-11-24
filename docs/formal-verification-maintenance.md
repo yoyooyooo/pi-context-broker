@@ -6,11 +6,11 @@
 
 | 当前领域 | 入口 | 套件与边界 |
 | --- | --- | --- |
-| Broker 资格与交付 | verify-notion-consumer-state | observations 的 Availability/ReadRace；consumer-state 的 FreshnessPublication/SelectionGraph/DeliveryBoundary |
+| Broker 资格、Library 与交付 | verify-notion-consumer-state | observations 的 Availability/ReadRace；consumer-state 的 FreshnessPublication/SelectionGraph/DeliveryBoundary/RecoveryClosure/LibrarySession |
 | CLI 请求引擎 | CLI verify-notion-consumption | CLI 原 request-engine runner；预算、取消与请求调度由其 owner 维护 |
 | 当前管理、来源与消费 | 各仓既有领域测试和 integration Skill | current operation、SDK、import 失效与实际包检查；不由已退役模型代证 |
 
-完整路由见 [验证交接表](verification-routing.md)。跨域变更执行相交的必要检查，不新增全链路总验证 Skill。当前 SDK v2 消费恒零语义写入；旧隐式 retention、readOnly 开关和独立管理回执接受流程已退出形式化入口。
+完整路由见 [验证交接表](verification-routing.md)。跨域变更执行相交的必要检查，不新增全链路总验证 Skill。SDK 消费恒零语义写入；旧隐式 retention、readOnly 开关和独立管理回执接受流程已退出形式化入口。
 
 ## 结果合同
 
@@ -37,6 +37,21 @@ Skill 引用 v2 使用完整 root URI 表达 Library 与稳定 Skill ID；资格
 固定文件按选定 owner、snapshot 和精确 path 查 manifest。原生 File ID 只作为内部 binding，Source 文件可以没有对应 File 行。短引用的同一路径不能换绑另一 File ID，同一原生 File ID 也不能在同一固定 owner 下改路径。`check-consumer-state-mutations.mjs` 的两项 `fixed-resource-*` 检查直接破坏这两个实现守卫；报告以 `concrete_obligations` 标明其边界，`properties` 为空。既有有限 TLA 未建模 File ID 与路径的对应关系，不从模型通过推导这个关系正确。
 
 两套 coverage 的 `current_review.skill_reference_v2` 记录实际 owner、caller 和回放对应。URI 文法、Library 绑定、Source 相对路径及所选包字节分别由 CLI 引用模型、协议和集成测试验证；这里保留原有模型、独立规则清单和负例。
+
+### Library 的 branch 与 turn 绑定
+
+LibrarySession 复用 consumer-state runner，增加一个正例和十个故意缺陷配置。
+先验证选择，再保存当前 branch 的默认 root；已接纳的 turn、完整 ref 的单次目标、
+目录 ticket 与原固定 pin 保持各自所有权。选择 B 不等于取消 A。
+独立 oracle 保存原 A turn、A producer payload、parent branch 的 A 和旧 A pin，
+不从可变默认值反推预期结果。
+
+新模型的 `library_session_design` 先记录
+`design_contract_pending_implementation_binding`；真实 SDK3/session 守卫审阅、
+回归和 mutation 对应完成后才能更新 source hash 与该状态。具体 UUID/URL 入口、
+enabled Sources、多库同名实际字节和 Pi 序列化仍由消费/集成层核验。
+CLI 根身份、四表物理 parent、root CREATE 与原 pending 寻址沿其 LibraryLifecycle，
+不在 Broker 复制一个初始化协议。
 
 ## CI 和 Skill
 

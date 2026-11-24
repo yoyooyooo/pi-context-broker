@@ -137,6 +137,21 @@
         "notion-page-url.test.ts: authorized exact owner from physical page URLs, same fixed pins and explicit current refresh; URL parsing is outside finite-model variables",
         "host-refresh.test.ts and resource-read-host.test.ts: confirmed scalar/batch originals after directory omission; scope, physical/stable denial and lookup AUTH continuation. Exact identity relationships are concrete obligations, not modeled alias states."
       ]
+    },
+    "LibrarySession": {
+      "bounds": "Two canonical root identities A/B, two branches, one admitted A turn, one later turn, one pending A directory producer, one validated or failed switch to B, one exact cross-Library call, one original A pin, and at most one independent lifecycle cancellation. Nine scenarios; selection tickets and lifecycle epochs are distinct.",
+      "owners": [
+        "session branch Library selection and validation",
+        "turn admission Library binding",
+        "SDK/CLI exact call scope",
+        "directory producer publication ticket",
+        "fixed selection physical owner"
+      ],
+      "atomicity": "Validate, commit branch selection, invoke the admitted turn, return directory evidence, restore a branch, and admit the next turn are separate transitions. Committing B does not cancel the admitted A turn. A directory publication stores whether its own scope/selection/epoch ticket was valid at that instant; a later valid switch does not retroactively invalidate a past publication.",
+      "fairness": "Weak fairness covers started local actions and return of the bounded acquisition/validation. SessionFlowEventuallyExplained permits an explicit rejection or blocked switch flow; it does not promise Notion availability, provider completion or a successful user task.",
+      "replays": [
+        "Actual Broker session/selection/call/publication guard regressions must be bound after implementation review; model input facts do not prove SDK3 wiring, canonical UUID parsing, enabled Source routing or real branch serialization."
+      ]
     }
   },
   "cases": [
@@ -687,6 +702,235 @@
         "ConversationCanContinue",
         "NoDeadlock"
       ]
+    },
+    {
+      "model": "LibrarySession",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "AdmittedTurnKeepsLibrary",
+        "FailedSwitchStopsRequestedFlow",
+        "DirectoryPublicationUsesTicket",
+        "BranchSelectionIsRestored",
+        "FixedPinKeepsOwner",
+        "SelectionDoesNotCancelTurn",
+        "ExactReferenceKeepsTarget",
+        "ExplicitCallConstraintRespected",
+        "NextTurnUsesSelectedLibrary",
+        "SessionFlowEventuallyExplained",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "LibrarySession",
+      "config": "turn-retarget",
+      "expected_broken": [
+        "AdmittedTurnKeepsLibrary"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "AdmittedTurnKeepsLibrary",
+        "FailedSwitchStopsRequestedFlow",
+        "DirectoryPublicationUsesTicket",
+        "BranchSelectionIsRestored",
+        "FixedPinKeepsOwner",
+        "SelectionDoesNotCancelTurn",
+        "ExactReferenceKeepsTarget",
+        "ExplicitCallConstraintRespected",
+        "NextTurnUsesSelectedLibrary",
+        "SessionFlowEventuallyExplained",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "LibrarySession",
+      "config": "ambient-call",
+      "expected_broken": [
+        "AdmittedTurnKeepsLibrary"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "AdmittedTurnKeepsLibrary",
+        "FailedSwitchStopsRequestedFlow",
+        "DirectoryPublicationUsesTicket",
+        "BranchSelectionIsRestored",
+        "FixedPinKeepsOwner",
+        "SelectionDoesNotCancelTurn",
+        "ExactReferenceKeepsTarget",
+        "ExplicitCallConstraintRespected",
+        "NextTurnUsesSelectedLibrary",
+        "SessionFlowEventuallyExplained",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "LibrarySession",
+      "config": "failed-fallback",
+      "expected_broken": [
+        "FailedSwitchStopsRequestedFlow"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "AdmittedTurnKeepsLibrary",
+        "FailedSwitchStopsRequestedFlow",
+        "DirectoryPublicationUsesTicket",
+        "BranchSelectionIsRestored",
+        "FixedPinKeepsOwner",
+        "SelectionDoesNotCancelTurn",
+        "ExactReferenceKeepsTarget",
+        "ExplicitCallConstraintRespected",
+        "NextTurnUsesSelectedLibrary",
+        "SessionFlowEventuallyExplained",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "LibrarySession",
+      "config": "late-directory",
+      "expected_broken": [
+        "DirectoryPublicationUsesTicket"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "AdmittedTurnKeepsLibrary",
+        "FailedSwitchStopsRequestedFlow",
+        "DirectoryPublicationUsesTicket",
+        "BranchSelectionIsRestored",
+        "FixedPinKeepsOwner",
+        "SelectionDoesNotCancelTurn",
+        "ExactReferenceKeepsTarget",
+        "ExplicitCallConstraintRespected",
+        "NextTurnUsesSelectedLibrary",
+        "SessionFlowEventuallyExplained",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "LibrarySession",
+      "config": "retired-directory",
+      "expected_broken": [
+        "DirectoryPublicationUsesTicket"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "AdmittedTurnKeepsLibrary",
+        "FailedSwitchStopsRequestedFlow",
+        "DirectoryPublicationUsesTicket",
+        "BranchSelectionIsRestored",
+        "FixedPinKeepsOwner",
+        "SelectionDoesNotCancelTurn",
+        "ExactReferenceKeepsTarget",
+        "ExplicitCallConstraintRespected",
+        "NextTurnUsesSelectedLibrary",
+        "SessionFlowEventuallyExplained",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "LibrarySession",
+      "config": "branch-global",
+      "expected_broken": [
+        "BranchSelectionIsRestored"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "AdmittedTurnKeepsLibrary",
+        "FailedSwitchStopsRequestedFlow",
+        "DirectoryPublicationUsesTicket",
+        "BranchSelectionIsRestored",
+        "FixedPinKeepsOwner",
+        "SelectionDoesNotCancelTurn",
+        "ExactReferenceKeepsTarget",
+        "ExplicitCallConstraintRespected",
+        "NextTurnUsesSelectedLibrary",
+        "SessionFlowEventuallyExplained",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "LibrarySession",
+      "config": "pin-retarget",
+      "expected_broken": [
+        "FixedPinKeepsOwner"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "AdmittedTurnKeepsLibrary",
+        "FailedSwitchStopsRequestedFlow",
+        "DirectoryPublicationUsesTicket",
+        "BranchSelectionIsRestored",
+        "FixedPinKeepsOwner",
+        "SelectionDoesNotCancelTurn",
+        "ExactReferenceKeepsTarget",
+        "ExplicitCallConstraintRespected",
+        "NextTurnUsesSelectedLibrary",
+        "SessionFlowEventuallyExplained",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "LibrarySession",
+      "config": "selection-cancels-turn",
+      "expected_broken": [
+        "SelectionDoesNotCancelTurn"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "AdmittedTurnKeepsLibrary",
+        "FailedSwitchStopsRequestedFlow",
+        "DirectoryPublicationUsesTicket",
+        "BranchSelectionIsRestored",
+        "FixedPinKeepsOwner",
+        "SelectionDoesNotCancelTurn",
+        "ExactReferenceKeepsTarget",
+        "ExplicitCallConstraintRespected",
+        "NextTurnUsesSelectedLibrary",
+        "SessionFlowEventuallyExplained",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "LibrarySession",
+      "config": "call-constraint",
+      "expected_broken": [
+        "ExplicitCallConstraintRespected"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "AdmittedTurnKeepsLibrary",
+        "FailedSwitchStopsRequestedFlow",
+        "DirectoryPublicationUsesTicket",
+        "BranchSelectionIsRestored",
+        "FixedPinKeepsOwner",
+        "SelectionDoesNotCancelTurn",
+        "ExactReferenceKeepsTarget",
+        "ExplicitCallConstraintRespected",
+        "NextTurnUsesSelectedLibrary",
+        "SessionFlowEventuallyExplained",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "LibrarySession",
+      "config": "next-turn-stale",
+      "expected_broken": [
+        "NextTurnUsesSelectedLibrary"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "AdmittedTurnKeepsLibrary",
+        "FailedSwitchStopsRequestedFlow",
+        "DirectoryPublicationUsesTicket",
+        "BranchSelectionIsRestored",
+        "FixedPinKeepsOwner",
+        "SelectionDoesNotCancelTurn",
+        "ExactReferenceKeepsTarget",
+        "ExplicitCallConstraintRespected",
+        "NextTurnUsesSelectedLibrary",
+        "SessionFlowEventuallyExplained",
+        "NoDeadlock"
+      ]
     }
   ],
   "excluded": [
@@ -922,5 +1166,11 @@
       "router_catalog": "Direct remote Router catalog entries use the actual pure parser snapshot selection; the required Library query does not imply a fixed snapshot. Exact source namespace, credential scope, logical owner, physical locator and canonical entry checks still precede selection. remote-catalog.test.ts covers a complete current Router with library query and rejection of its fixed snapshot form. This grammar-to-catalog boundary is a concrete regression obligation, not a new finite model rule.",
       "source_diagnostic": "CURRENT_SOURCE_REQUIRED still covers existing missing or historical Sources table/property bindings as well as cross-Skill relative paths without a Source contribution. The public next-action text preserves current-content migration and points relative links to an exact target reference. Existing acquisition failure regressions continue to require the original code and migration action; no acquisition or model behavior changes."
     }
+  },
+  "library_session_design": {
+    "status": "design_contract_pending_implementation_binding",
+    "contract": "The selected branch default, current turn Library, exact call target, directory ticket and fixed pin owner remain separate. Selection changes do not reuse lifecycle cancellation as a universal epoch.",
+    "note": "Production source hashes and mutation anchors are intentionally unchanged until the SDK3/session implementation is reviewed. These cases are design contracts, not an implementation refinement claim.",
+    "independent_oracle": "The first turn owner A, producer payload owner A, saved parent-branch selection A and original pin owner A are retained independently of current selection B."
   }
 }

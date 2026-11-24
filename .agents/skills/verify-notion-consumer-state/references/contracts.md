@@ -8,7 +8,7 @@
 
 Availability/ReadRace 留在 verification/models/consumer-observations，完整配置及故意保留的缺陷反例不改写。它们约束资格一致性、有效分页 cursor、请求顺序和两代会话；F1–F7 与原两项真实守卫 mutation 继续执行。
 
-verification/models/consumer-state/coverage.json 是当前四个模型的唯一 cases 清单，绑定真实源码和受控回归。不得在 Skill 或 CI 复制另一份配置列表。这些模型覆盖有限时间、来源、精确身份/失败目标，以及 fixed graph 和 provider/boundary 交接。
+verification/models/consumer-state/coverage.json 是当前五个模型的唯一 cases 清单，绑定真实源码和受控回归。不得在 Skill 或 CI 复制另一份配置列表。这些模型覆盖有限时间、来源、精确身份/失败目标、Library 选择，以及 fixed graph 和 provider/boundary 交接。
 
 ## FreshnessPublication
 
@@ -109,6 +109,35 @@ ConversationCanContinue 使用局部动作的弱公平，并假定用户继续�
 `host-refresh.test.ts` 另核公开 use/read 的精确关系诊断：SDK 明确观察到
 Requires disabled 才显示 Enabled=false；缺失、不可访问或库外仍保持未知，
 不得转成授权拒绝。公开诊断不携带原始响应或凭据，也不改变原固定任务。
+
+## LibrarySession
+
+Library 身份抽象 canonical root UUID。branch 的默认选择、已接纳 turn 的 Library、
+完整 ref 的调用目标、目录 producer 的 ticket、固定 pin 的原 owner 是不同状态。
+设置 B 先验证成功，再保存到当前 branch；当前 A turn 仍取 A，后续 turn 才捕获 B。
+失败切换保留原选择，但请求 B 的后续流程必须 blocked，不能拿 A 继续完成。
+
+完整 B ref 可以从 A turn 发出，不修改默认选择；只有独立显式 call scope 与它冲突时拒绝。
+模型不将 ambient default 当作显式约束。相同 Skill ID/路径的具体对象与字节由实际
+SDK/CLI 回归核对，不能只观察名称或工具成功退出。
+
+| 独立事实 | 要检查的退化 |
+| --- | --- |
+| turn 接纳时 Library A | 切 B 后旧 turn 或短引用改发 B |
+| A 目录 payload 与原 selection/epoch ticket | A 迟到结果当 B 发布，或取消后旧结果仍发布 |
+| parent branch 已存 A | fork/rewind/resume 借用后来 child 的 B |
+| A 的固定 pin owner | 切库重绑 pin 或把旧 A Source 视为 disabled |
+| 新 turn 接纳时当前选择 | 明明已切 B，后续 turn 仍使用旧 A |
+
+切库只改变 selection ticket；lifecycle epoch 仍用于独立取消/会话失效。
+已有合法发布记录的是其原发布时刻，后来的切换不倒算历史错误。
+一个不再适用的目录结果可以被丢弃，而原 A turn 的固定目标仍有效。
+
+有限域包括两个 Library、两个 branch、两轮、一个目录 producer、一次切换和一次取消。
+`SessionFlowEventuallyExplained` 依赖局部动作弱公平与外部观察最终返回，终点包括显式
+拒绝/blocked；它不证明 API 可用、provider 完成或模型任务质量。
+具体源码 guard 与 mutation 在 SDK3 实现审阅后接线；模型初稿和旧 hash 未漂移不能代替此步骤。
+根创建、descriptor v2、实际 DB/DS parent、同 root 换表与原 pending key 属于 CLI 的 LibraryLifecycle。
 
 ## 守卫破坏与诊断
 
