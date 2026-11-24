@@ -363,6 +363,14 @@ unrecognized result without valid display metadata uses the native title.
 Names do not change the tool arguments, exact references, authorization,
 selection or delivery receipts.
 
+### Pi list and use results
+
+Pi renders `notion_list` as `[list@notion]` with the query, result count and a compact candidate preview. Pagination distinguishes the current page from the total matching directory. Partial coverage, source failures, stale or offline observations remain visible when collapsed. An empty result is described as no matches only when the saved response proves fresh online, exhaustive metadata coverage without source failures. Remote content search remains non-exhaustive and retains its match snippets and notices when expanded.
+
+`notion_use` shows `[skill@notion]`, the selected root name, additional roots and the number of distinct loaded Requires. `loaded` means this call prepared the instructions; it does not mean the workflow ran or the provider accepted a later request. An explicitly refreshed successful call is labeled `reloaded`, without claiming that its version changed. Expanding shows the decoded Markdown bodies and the resource and relation directories. Directory entries do not claim that supporting files have been read.
+
+Both tools use Pi's theme, native tool shell and configured expand key. Loading, cancellation and error summaries remain visible; expanded errors retain the original diagnostics. Renderers derive their display from the recorded result, perform no lookup and do not modify tool content, references, selection or delivery receipts. Session replay therefore retains the recorded names and contents. Unknown result formats fall back to their original text. The existing native `read` rendering remains unchanged.
+
 ### Host discovery and selected activation
 
 Broker owns Notion usage guidance at runtime. Do not duplicate it in global `AGENTS.md` or `CLAUDE.md`; those files should contain cross-agent preferences and policies. The normal Pi guidance is a short routing and authority contract. Tool schemas own pagination, refresh parameters and detailed arguments; selected content owns its workflow. Missing native capabilities add only the corresponding scoped CLI fallback. No enabled Notion source means no Notion guidance, catalog or tools.

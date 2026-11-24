@@ -205,6 +205,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const host = api;
   const piConsumption = adapter.paths.host === "pi";
   const sourceToolsEnabled = !piConsumption || hasEnabledNotionSource(options.config);
+  const notionRenderers = piConsumption && sourceToolsEnabled ? await adapter.notionToolRenderers?.() : undefined;
   const listToolName = piConsumption ? "notion_list" : "skill_search";
   const useToolName = piConsumption ? "notion_use" : "skill_prepare";
   const controlToolName = piConsumption ? "notion_ctl" : "skill_graph";
@@ -548,6 +549,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
 
   if (sourceToolsEnabled) host.registerTool?.({
+    ...notionRenderers?.list,
     name: listToolName, label: piConsumption ? "List Notion Skills" : "Skill search",
     description: `Search the authorized Skill metadata directory, including items outside the default View. Returns ${piConsumption ? "Skill refs for read or notion_use" : "exact read references only"}; it does not load instructions or activate workflows.${piConsumption ? " For named Notion Skill existence or availability questions, set query to the name and refresh:true, even when already listed or previously absent. Answer existence and stated-purpose questions from metadata; read or use the Skill only when the user asks to inspect or apply its instructions. Also refresh after writes or to request the latest directory; selected Skill versions stay fixed. Report matching availability. Only fresh online results with exhaustive coverage and no failures establish that no available match was found in the searched scope; stale, offline, failed or partial results cannot establish current absence. Use search_in:content only when the user asks to search Skill content. Content mode requires a nonempty query and one configured source, performs an authorized remote Notion search, and may request foreground OAuth. Content results are always non-exhaustive and do not prove exact fixed Skill or supporting-file bytes match. Content mode has no cursor; limit is at most 50. It never adopts or changes task instructions." : ""}`,
     parameters: { type: "object", properties: {
@@ -1838,6 +1840,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       required: directory.required.map(related), candidates: directory.candidates.map(related), references: directory.references.map(related) };
   }
   if (sourceToolsEnabled && options.prepareGraph) host.registerTool?.({
+    ...notionRenderers?.use,
     name: useToolName, label: piConsumption ? "Use Notion Skills" : "Prepare Skills",
     description: piConsumption
       ? "Load task roots directly to apply their instructions; no preliminary read is needed. Requires load automatically: do not add them as independent roots unless independently requested. To introduce, summarize or inspect a Skill, use read instead. Copy a supplied ref, or pass task roots together. Use refresh:true only for a requested update; the supplied current or fixed main ref locates the same owner's latest version. Refresh roots with conflicting shared Requires together. Members remain candidates. Loading does not authorize executing a workflow. Notion consumption does not write to Notion."

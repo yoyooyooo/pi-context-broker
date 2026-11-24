@@ -85,18 +85,21 @@ export type NativeReadDefinition = NativeReadMetadata & {
   defaultInactive: boolean;
   execute(id: string, input: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: NativeReadUpdate | undefined, ctx: ExtensionContext): Promise<NativeReadResult>;
 };
+export type NativeToolRenderers = {
+  renderShell?: "default" | "self";
+  renderCall?: (args: Record<string, unknown>, theme: unknown, context: unknown) => unknown;
+  renderResult?: (result: NativeReadResult, options: unknown, theme: unknown, context: unknown) => unknown;
+};
 /** Pi exposes its built-in definition through createReadToolDefinition. Keep its
  * renderers, output schema and native executor when extending the read surface. */
-export type PiReadDefinition = {
+export type PiReadDefinition = NativeToolRenderers & {
   name: "read"; label: string; description: string; parameters: Record<string, unknown>;
   outputSchema?: unknown; promptSnippet?: string; promptGuidelines?: string[];
   defaultActive?: boolean; constrainedSampling?: unknown;
   execute(id: string, input: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: NativeReadUpdate | undefined, ctx: ExtensionContext): Promise<NativeReadResult>;
-  renderCall?: (args: Record<string, unknown>, theme: unknown, context: unknown) => unknown;
-  renderResult?: (result: NativeReadResult, options: unknown, theme: unknown, context: unknown) => unknown;
 };
-export type NativeSkillSearchDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_search" | "notion_list" };
-export type NativeSkillPrepareDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_prepare" | "notion_use" };
+export type NativeSkillSearchDefinition = Omit<NativeReadDefinition, "name"> & NativeToolRenderers & { name: "skill_search" | "notion_list" };
+export type NativeSkillPrepareDefinition = Omit<NativeReadDefinition, "name"> & NativeToolRenderers & { name: "skill_prepare" | "notion_use" };
 export type NativeSkillGraphDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_graph" | "notion_ctl" };
 type SessionBoundary = "session_before_switch" | "session_before_branch" | "session_before_tree"
   | "session_switch" | "session_tree" | "session_branch" | "session_shutdown" | "agent_start" | "agent_end";
@@ -259,6 +262,7 @@ export type ExtensionAPI = {
   getActiveTools?(): string[];
   getSettings?(): { images?: { autoResize?: boolean } };
   registerTool?(tool: NativeReadDefinition | PiReadDefinition | NativeSkillSearchDefinition | NativeSkillPrepareDefinition | NativeSkillGraphDefinition): void;
+  registerToolRenderer?(resolver: (toolName: string, next: () => NativeToolRenderers | undefined) => NativeToolRenderers | undefined): void;
   registerMessageRenderer?(customType: string, renderer: (message: AgentMessage, options: { expanded: boolean }, theme: unknown) => ExtensionWidgetComponent | undefined): void;
   sendMessage?(message: { customType: string; content: MessageContent; details: unknown; display: boolean }, options: { triggerTurn: boolean }): void;
   appendEntry?(customType: string, data?: unknown): void;

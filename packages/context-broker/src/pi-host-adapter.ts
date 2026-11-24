@@ -6,6 +6,7 @@ import { presentPiAuthorization } from "./pi-authorization";
 import { DEFAULT_RESOURCE_READ_BUDGET, MAX_RESOURCE_READ_BUDGET, normalizeResourceReadBudget } from "./resource-read-types";
 import { consumptionEffectsJsonSchema } from "./consumption-effects";
 import { createPiReadRenderers } from "./pi-read-renderer";
+import { loadPiNotionRenderers } from "./pi-notion-renderer";
 import { relativeReadInput } from "./native-reference";
 
 const escapeText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -40,12 +41,30 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
     paths: { host: "pi" },
     submission: { mode: "transform", receipt: "input-digest" },
     metadataDiscovery: "deferred",
+    notionToolRenderers: loadPiNotionRenderers,
     presentAuthorization: presentPiAuthorization,
     registerReadExecutor(execute, displayForCall) {
       const register = api.registerTool, allTools = api.getAllTools, activeTools = api.getActiveTools;
       if (!register || !allTools || !activeTools) return undefined;
       let installedParameters: Record<string, unknown> | undefined;
+      let sessionBound = false;
+      const registerRenderer = api.registerToolRenderer;
+      // Pi replays a resumed session before session_start. Register display
+      // decoration now; getAllTools is only available after the session binds.
+      registerRenderer?.((toolName, next) => {
+        const native = next();
+        if (toolName !== "read" || !native) return native;
+        if (sessionBound) {
+          const current = allTools().find(tool => tool.name === "read");
+          const owned = current?.sourceInfo.source === "builtin"
+            || installedParameters !== undefined && current?.parameters === installedParameters;
+          if (!owned) return native;
+        }
+        return { ...native, ...createPiReadRenderers({ native,
+          getDisplay: displayForCall ? ({ toolCallId }) => displayForCall(toolCallId) : undefined }) };
+      });
       api.on("session_start", async (_event, ctx) => {
+        sessionBound = true;
         if (installedParameters) return;
         const original = allTools().find(tool => tool.name === "read");
         if (original?.sourceInfo.source !== "builtin") return;
@@ -96,7 +115,8 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
                 return native.execute(id, nativeInput, preparedSignal ?? signal, onUpdate, context);
               }, id);
           },
-          ...createPiReadRenderers({ native, getDisplay: displayForCall ? ({ toolCallId }) => displayForCall(toolCallId) : undefined }),
+          ...(registerRenderer ? {} : createPiReadRenderers({ native,
+            getDisplay: displayForCall ? ({ toolCallId }) => displayForCall(toolCallId) : undefined })),
         };
         register(definition);
         installedParameters = parameters;

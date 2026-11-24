@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
+import { stripVTControlCharacters } from "node:util";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
-import type { ExtensionAPI, ExtensionContext, NativeReadResult, PiReadDefinition } from "../src/types";
+import type { ExtensionAPI, ExtensionContext, NativeReadResult, NativeToolRenderers, PiReadDefinition } from "../src/types";
 
 function fixture(owner = "builtin", enabled = true) {
   const handlers: Array<(event: never, ctx: ExtensionContext) => unknown> = [];
@@ -233,4 +234,74 @@ test("Pi rejects invalid or non-batch time budgets before preparation or native 
     await expect(f.current().execute("invalid-budget-route", input, undefined, undefined, f.ctx)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
   }
   expect(calls).toHaveLength(0); expect(f.calls).toHaveLength(0);
+});
+
+function rendererResolver(f: ReturnType<typeof fixture>) {
+  let registered: Parameters<NonNullable<ExtensionAPI["registerToolRenderer"]>>[0] | undefined;
+  f.api.registerToolRenderer = resolver => { registered = resolver; };
+  return (toolName: string, base: NativeToolRenderers | undefined) => {
+    if (!registered) throw new Error("Renderer resolver must be registered before session_start");
+    return registered(toolName, () => base);
+  };
+}
+
+test("Pi resume decorates the first saved read frame before session_start without metadata or execution", async () => {
+  const f = fixture(), resolve = rendererResolver(f), allTools = f.api.getAllTools!;
+  let bound = false, lookups = 0;
+  f.api.getAllTools = () => {
+    lookups++;
+    if (!bound) throw new Error("Pi has not bound getAllTools yet");
+    return allTools();
+  };
+  f.adapter.registerReadExecutor!(async () => { throw new Error("Replay must not execute"); },
+    () => { throw new Error("Replay must use saved display details"); });
+  const ref = "sr:R" + "r".repeat(22), args = { path: ref };
+  const result: NativeReadResult = JSON.parse(JSON.stringify({ content: [{ type: "text", text: "saved file body" }], details: {
+    contextBrokerReadDisplay: { version: 1, source: "notion", sourceId: "library", scope: "shared", kind: "file",
+      name: "saved skill", files: [{ ref, path: "references/policy.md" }] },
+  } }));
+  const before = JSON.stringify(result);
+  const header = { text: "", setText(text: string) { this.text = text; } }, body = { native: "result component" };
+  const native: NativeToolRenderers = {
+    renderShell: "self",
+    renderCall(input) { header.setText(`native read ${input.path}`); return header; },
+    renderResult(saved) { expect(saved).toBe(result); return body; },
+  };
+  const renderers = resolve("read", native);
+  const context = { args, state: {}, toolCallId: "resumed-read", expanded: false, executionStarted: false,
+    isPartial: false, isError: false, keyText: () => "ctrl+o" };
+  const theme = { fg: (_color: string, text: string) => text };
+  expect(renderers?.renderShell).toBe("self");
+  expect(renderers?.renderCall?.(args, theme, context)).toBe(header);
+  expect(renderers?.renderResult?.(result, { expanded: false, isPartial: false }, theme, context)).toBe(body);
+  expect(stripVTControlCharacters(header.text)).toBe("[file@notion] saved skill / references/policy.md (ctrl+o to expand)");
+  expect(JSON.stringify(result)).toBe(before);
+  expect(lookups).toBe(0); expect(f.factories).toHaveLength(0); expect(f.calls).toHaveLength(0);
+  expect(f.current().parameters).toBe(f.native.parameters);
+
+  bound = true;
+  await f.start();
+  // The resolver is the only decoration layer on Pi versions that support it.
+  expect(f.current().renderCall).toBe(f.native.renderCall);
+  expect(f.current().renderResult).toBe(f.native.renderResult);
+  expect(resolve("read", f.current())?.renderCall).not.toBe(f.native.renderCall);
+  expect(f.calls).toHaveLength(0);
+});
+
+test("Pi read resolver preserves other tools, missing renderers and third-party ownership", async () => {
+  const f = fixture(), resolve = rendererResolver(f);
+  f.adapter.registerReadExecutor!(async () => ({ content: [] }));
+  const other: NativeToolRenderers = { renderShell: "self", renderCall: () => "other call", renderResult: () => "other result" };
+  expect(resolve("notion_use", other)).toBe(other);
+  expect(resolve("read", undefined)).toBeUndefined();
+  await f.start();
+  f.replace();
+  expect(resolve("read", other)).toBe(other);
+
+  const foreign = fixture("local"), resolveForeign = rendererResolver(foreign);
+  foreign.adapter.registerReadExecutor!(async () => ({ content: [] }));
+  await foreign.start();
+  expect(resolveForeign("read", other)).toBe(other);
+  expect(foreign.factories).toHaveLength(0);
+  expect(foreign.current().parameters).toBe(foreign.native.parameters);
 });

@@ -1,4 +1,4 @@
-import { stripVTControlCharacters } from "node:util";
+import { singleLine } from "./pi-display";
 import type { ReadDisplaySnapshot } from "./read-display";
 import type { PiReadDefinition } from "./types";
 
@@ -13,13 +13,6 @@ const object = (value: unknown): value is Record<string, unknown> => value !== n
 const isTheme = (value: unknown): value is ReadTheme => object(value) && typeof value.fg === "function";
 const isContext = (value: unknown): value is ReadContext => object(value) && object(value.state) && typeof value.keyText === "function";
 const isMutableText = (value: unknown): value is MutableText => object(value) && typeof value.setText === "function";
-
-function singleLine(value: string): string {
-  return stripVTControlCharacters(value)
-    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
-    .replace(/[\u202a-\u202e\u2066-\u2069]/g, "")
-    .replace(/\s+/gu, " ").trim();
-}
 
 // Display details are persisted session data. Validate their version and binding
 // to the original arguments before using them; names never resolve a read.
