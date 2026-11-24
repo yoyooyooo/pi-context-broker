@@ -65,7 +65,7 @@ async function latestRegistration(root) {
   const original = await readPilotScopeAmendment(first.amendment);
   assert.equal(original.version, 1); assert.equal(original.kind, 'benchmark-pilot-scope-amendment');
   assert.equal(first.id, original.id);
-  let latest = { value: first, reference: firstRecord.reference, sequence: 1 };
+  let latest = { value: first, reference: firstRecord.reference, sequence: 1, verifiedAmendment: original };
   const names = (await readdir(root)).filter(name => /^scope-registration-\d{3}\.json$/.test(name)).sort();
   for (const [index, name] of names.entries()) {
     const sequence = index + 2, path = join(root, name);
@@ -73,7 +73,7 @@ async function latestRegistration(root) {
     const record = await readRecord(path), row = record.value;
     const amendment = await readCampaignAmendment(row.amendment);
     assertCampaignSuccession({ row, amendment, previous: latest, sequence });
-    latest = { value: { id: row.id, amendment: row.amendment }, reference: record.reference, sequence };
+    latest = { value: { id: row.id, amendment: row.amendment }, reference: record.reference, sequence, verifiedAmendment: amendment };
   }
   return latest;
 }
@@ -117,11 +117,15 @@ export async function checkCampaignScope(plan, { activate = false } = {}) {
   if (!hasFiniteScope(plan)) return checkLegacyCampaignScope(plan, { activate });
   const registration = plan.execution.campaign_scope;
   assert.ok(registration && isFiniteCampaign(plan.protocol.policies.campaign));
-  const amendment = await readFiniteCampaignAmendment(registration.amendment);
-  assertFiniteCampaignPlan(plan, amendment);
   const latest = await latestRegistration(plan.execution.pilot_ledger_root);
   const wanted = { id: registration.id, amendment: registration.amendment };
-  if (fingerprint(latest.value) === fingerprint(wanted)) return;
+  const active = fingerprint(latest.value) === fingerprint(wanted);
+  // The last registration has just passed its full reader, including history.
+  // Reuse only that result in this call; every subsequent check reads it again.
+  const amendment = active ? latest.verifiedAmendment : await readFiniteCampaignAmendment(registration.amendment);
+  assert.ok(isFiniteCampaign(amendment), 'FINITE_REGISTERED_AMENDMENT_REQUIRED');
+  assertFiniteCampaignPlan(plan, amendment);
+  if (active) return;
   assert.deepEqual(amendment.predecessor.registration, latest.reference, 'CAMPAIGN_OTHER_ACTIVE_AMENDMENT');
   const predecessor = await readCampaignAmendment(amendment.predecessor.amendment);
   assert.deepEqual(latest.value, { id: predecessor.id, amendment: amendment.predecessor.amendment });
