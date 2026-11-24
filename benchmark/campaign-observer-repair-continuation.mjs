@@ -16,6 +16,7 @@ import { verifyResolveObserverRepair, resolveRepairBuild } from './resolve-obser
 import { bindMaterializedCases, preregisterComparison, protocolCaseForVariant } from './planning.mjs';
 import { planCaseVariant, validateCorpus } from './corpus/index.mjs';
 import { readCorpusSnapshot } from './corpus/snapshot.mjs';
+import { inventoryPublicInputs } from './subject.mjs';
 
 export const OBSERVER_REPAIR_REVISION = 'accepted-resolve-observer-continuation';
 const usageKeys = ['model_requests', 'input_tokens', 'output_tokens', 'duration_ms'];
@@ -226,6 +227,12 @@ export async function assertObserverRepairEngineeringCases({ setup, sourceSetup,
   let derived = [];
   for (const [index, selection] of sourceSetup.corpus.selections.entries()) {
     const selected = planCaseVariant({ ...frozen, ...selection }), actual = cases[index];
+    const inputs = await inventoryPublicInputs(actual.input_root);
+    const expectedInputs = selected.publicCase.attachments.map(item => ({ path: item.path, sha256: item.sha256,
+      bytes: item.bytes, executable: item.mode === '100755' }));
+    const byPath = (a, b) => a.path.localeCompare(b.path);
+    assert.deepEqual([...inputs].sort(byPath), expectedInputs.sort(byPath), 'OBSERVER_CONTINUATION_ENGINEERING_INPUTS_CHANGED');
+    assert.equal(createHash('sha256').update(JSON.stringify(inputs)).digest('hex'), actual.input_inventory_sha256);
     assert.deepEqual(await verified({ path: actual.oracle_path, sha256: actual.oracle_sha256 }), selected.oracle,
       'OBSERVER_CONTINUATION_ENGINEERING_ORACLE_CHANGED');
     const expected = { ...actual, id: selected.variant.id, base_case_id: selected.publicCase.id, variant: selected.variant,
