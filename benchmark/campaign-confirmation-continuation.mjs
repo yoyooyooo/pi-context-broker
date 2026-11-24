@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fingerprint, validateProtocol } from './protocol.mjs';
 import { declaredSchedule, CONFIRMATION_CONTINUATION, UNSTARTED_FOLLOWUP } from './campaign-selection.mjs';
 import { readCampaignHistory } from './campaign-history.mjs';
@@ -12,6 +12,7 @@ import { assertRetainedAliasEpisode } from './campaign-alias-revision.mjs';
 import { readEvidenceBundle } from './evidence/store.mjs';
 import { assertZeroSendInvalid } from './resumption.mjs';
 import { readProviderTransport } from '../scripts/skill-consumption-provider.mjs';
+import { resolveRepairBuild, assertResolveRepairExpectation, verifyResolveRepairInstrumentation } from './resolve-observer-repair.mjs';
 
 export const CONFIRMATION_REVISION = 'accepted-partial-confirmation-continuation';
 const usageKeys = ['model_requests', 'input_tokens', 'output_tokens', 'duration_ms'];
@@ -132,18 +133,21 @@ export function assertSameConfirmationModels(protocol, source, { start, end }) {
   assert.deepEqual(protocol.models, models, 'CONFIRMATION_CONTINUATION_MODEL_CHANGED');
 }
 
-async function continuationCaptures(protocol, execution, source) {
+async function continuationCaptures(protocol, execution, source, observerRepair) {
   assert.deepEqual(sorted(Object.keys(execution.conditions)), sorted(Object.keys(source.execution.conditions)), 'CONFIRMATION_CONTINUATION_CONDITIONS_CHANGED');
   const captures = new Map(), firstRuns = new Map();
   for (const condition of protocol.conditions) {
     const current = execution.conditions[condition.id], original = source.execution.conditions[condition.id];
     const { expectations, ...candidate } = current, { expectations: oldExpectations, ...oldCandidate } = original;
+    const repair = observerRepair ? resolveRepairBuild(observerRepair, original.build_id, current.build_id) : null;
+    if (repair) candidate.build_id = oldCandidate.build_id;
     assert.deepEqual(candidate, oldCandidate, 'CONFIRMATION_CONTINUATION_SUBJECT_CHANGED');
     assert.deepEqual(sorted(Object.keys(expectations)), sorted(Object.keys(oldExpectations)), 'CONFIRMATION_CONTINUATION_FULL_CAPTURE_MAPPING_REQUIRED');
     for (const [caseId, reference] of Object.entries(expectations)) {
-      assert.equal(reference.sha256, oldExpectations[caseId].sha256, 'CONFIRMATION_CONTINUATION_EXPECTATION_CHANGED');
-      await verified(oldExpectations[caseId], false);
+      if (!repair) assert.equal(reference.sha256, oldExpectations[caseId].sha256, 'CONFIRMATION_CONTINUATION_EXPECTATION_CHANGED');
+      const oldExpectation = await verified(oldExpectations[caseId]);
       const expectation = await verified(reference);
+      if (repair) assertResolveRepairExpectation(expectation, oldExpectation, repair);
       assert.ok(inside(execution.control_root, reference.path), 'CONFIRMATION_CONTINUATION_NEW_CAPTURE_REQUIRED');
       const name = basename(reference.path); assert.ok(name.startsWith(protocol.id + '-capture-') && name.endsWith('.expectation.json'));
       const runId = name.slice(0, -'.expectation.json'.length), runRoot = join(execution.environment_root, 'runs', runId);
@@ -156,7 +160,7 @@ async function continuationCaptures(protocol, execution, source) {
       const runtime = JSON.parse((await file(join(runRoot, 'benchmark/runtime/episode-result.json'))).bytes);
       const shared = JSON.parse((await file(join(runRoot, 'result.json'))).bytes);
       assert.equal(runtime.status, 'captured'); assert.equal(shared.run_id, runId); assert.equal(shared.status, 'passed');
-      assert.equal(shared.build_id, original.build_id); assert.equal(runtime.correlation.run_id, runId); assert.equal(runtime.correlation.episode_id, runId);
+      assert.equal(shared.build_id, current.build_id); assert.equal(runtime.correlation.run_id, runId); assert.equal(runtime.correlation.episode_id, runId);
       assert.equal(runtime.correlation.candidate_id, condition.id); assert.ok(Object.hasOwn(expectations, runtime.correlation.task_id));
       assert.equal(runtime.paths.result, join(runRoot, 'benchmark/runtime/episode-result.json'));
       assert.equal(runtime.paths.expectation, join(runRoot, 'benchmark/runtime/candidate-expectation.json'));
@@ -178,10 +182,22 @@ async function continuationCaptures(protocol, execution, source) {
   for (const [index, environment] of protocol.environments.entries()) {
     const original = source.protocol.environments[index], copy = structuredClone(environment), runs = firstRuns.get(environment.id); assert.ok(runs);
     assert.equal(environment.manifest_sha256, fingerprint({ ...environment, manifest_sha256: null }));
+    const repair = observerRepair ? resolveRepairBuild(observerRepair, original.build.id, environment.build.id) : null;
+    if (repair) {
+      assert.deepEqual(original.build, repair.source.identity); assert.deepEqual(copy.build, repair.target.identity);
+      copy.build = structuredClone(original.build);
+    }
     assert.equal(copy.pi.extensions.length, original.pi.extensions.length);
     for (const [i, extension] of copy.pi.extensions.entries()) {
       const before = original.pi.extensions[i];
-      if (extension.role !== 'observer') { assert.deepEqual(extension, before); continue; }
+      if (extension.role !== 'observer') {
+        if (repair && extension.role === 'broker') {
+          const targetRoot = dirname(repair.target.reference.path), sourceRoot = dirname(repair.source.reference.path);
+          assert.ok(extension.path.startsWith(targetRoot + '/broker/'));
+          extension.path = sourceRoot + extension.path.slice(targetRoot.length);
+        }
+        assert.deepEqual(extension, before); continue;
+      }
       const suffix = 'subject-runtime/benchmark/runtime/episode-runner.mjs';
       assert.equal(extension.path, join(execution.environment_root, 'runs', runs.current, suffix), 'CONFIRMATION_CONTINUATION_OBSERVER_PATH_CHANGED');
       assert.equal(before.path, join(execution.environment_root, 'runs', runs.original, suffix));
@@ -202,7 +218,7 @@ export async function assertConfirmationContinuation(protocol, execution, slots,
 
 /** Both approved continuation contracts retain the same original scientific
  * design. Their separate history readers establish the permitted suffix. */
-export async function assertSameConfirmationDesign(protocol, execution, slots, amendment, continuation, nextAllocationId) {
+export async function assertSameConfirmationDesign(protocol, execution, slots, amendment, continuation, nextAllocationId, { observerRepair } = {}) {
   const { source, transition } = continuation;
   assert.equal(amendment.role, CONFIRMATION_CONTINUATION);
   assert.equal(amendment.id, nextAllocationId, 'CONFIRMATION_CONTINUATION_NEW_OWNER_CHANGED');
@@ -213,7 +229,7 @@ export async function assertSameConfirmationDesign(protocol, execution, slots, a
   assert.equal(protocol.phase, 'confirmation'); assert.equal(protocol.policies.decision.mode, 'acceptance');
   const budget = structuredClone(source.protocol.policies.budgets); budget[0].batch.max_episodes = transition.remaining;
   assert.deepEqual(protocol.policies.budgets, budget, 'CONFIRMATION_CONTINUATION_BUDGET_POLICY_CHANGED');
-  await continuationCaptures(protocol, execution, source);
+  await continuationCaptures(protocol, execution, source, observerRepair);
   const same = structuredClone(protocol);
   Object.assign(same, { id: source.protocol.id, registered_at: source.protocol.registered_at, protocol_sha256: source.protocol.protocol_sha256,
     environments: source.protocol.environments, models: source.protocol.models });
@@ -233,7 +249,10 @@ export async function assertSameConfirmationDesign(protocol, execution, slots, a
     'CONFIRMATION_CONTINUATION_APPARATUS_FILES_CHANGED');
   const instrumentation = value => ({ ...value, collector_sha256: null,
     collector_files: value.collector_files.filter(item => !dependencyChanges.includes(item.path)) });
-  assert.deepEqual(instrumentation(execution.instrumentation), instrumentation(source.execution.instrumentation), 'CONFIRMATION_CONTINUATION_APPARATUS_CHANGED');
+  if (observerRepair) {
+    await verifyResolveRepairInstrumentation(execution, source.execution.instrumentation, observerRepair);
+  }
+  else assert.deepEqual(instrumentation(execution.instrumentation), instrumentation(source.execution.instrumentation), 'CONFIRMATION_CONTINUATION_APPARATUS_CHANGED');
   return transition.source_plan;
 }
 

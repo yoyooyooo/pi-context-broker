@@ -103,6 +103,49 @@ business error remains a valid failure. Missing evidence remains unknown.
 Unsupported capabilities are reported separately. Unknown usage stops batch
 expansion because its actual cost cannot be reserved safely.
 
+### Continue after the retained `resolve` observer stop
+
+The supported `resolve` SDK operation was missing from three observation
+modules. The original stopped episode remains invalid with its known usage.
+An explicit new continuation decision may accept that one retained stop and
+transfer only its never-started suffix. It does not retry or regrade any episode,
+renew the existing model window, increase the 139 accepted reservations, or
+waive a later stop. The five unallocated reservations remain unallocated.
+
+Prepare new apparatus build identities for both products. Keep all installed
+CLI, SDK, Broker and dependency bytes identical. Only the complete operation
+list in `episode-notion.mjs`, `skill-consumption-source-observer.mjs` and
+`notion-skill-graph-model-evidence.mjs` may add `resolve`; every other source and
+dependency byte stays unchanged. A derived build records its actual derivation,
+without claiming a recompilation. Old builds remain immutable.
+
+`createResolveObserverRepair` in `benchmark/resolve-observer-repair.mjs` reads
+these build pairs, verifies the exact source transformation and runs the normal
+paired checker. Save its returned proof to a new owned path. A version 6
+authority binds that proof, the explicit user decision, the version 5 parent,
+the exact stopped plan and ledger, and the original engineering draft index.
+Use `readObserverRepairCampaignHistory` and
+`prepareApprovedObserverRepairContinuation` to construct that authority from
+the actual original evidence. These functions do not dispatch a model.
+
+The ordinary `configure`/`run` entry remains the only execution path. Own-product
+configuration makes fresh zero-model captures for the original full design,
+then verifies the new build receipts and three observer modules as the only
+capture differences. Tool descriptions, public context, first serialized
+request, model settings and maintained runtime are unchanged. Runtime and
+collector identities are recomputed from those captures and current source.
+Dispatch selects only original slots 13 through 20, with a new owner.
+
+Engineering configuration checks all seven retained setup drafts before any
+capture or remote preparation. It accepts only execution bindings and the
+proved build mapping. The frozen plan is independently compared with the same
+draft schedule and reconstructed protocol on subsequent campaign checks. The
+24 Code Mode, 10 scale and 8 fault reservations keep their original order and
+budgets. They start after Own-product reaches physical reservation 97 and stop
+at the accepted total of 139. This continuation remains a descriptive record of
+apparatus changes, not an assertion that all historical observations share one
+measurement identity.
+
 ## Initial route gate and recovery
 
 The initial pilot has a shared maximum of 144 scheduled episodes, including

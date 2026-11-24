@@ -19,6 +19,8 @@ import { prepareCampaignScope, verifyCampaignScope } from './campaign-dispatch.m
 import { finiteCampaignPolicy } from './finite-campaign.mjs';
 import { prepareMaterialOwnership, verifyMaterialOwnership } from './material-ownership.mjs';
 import { CONFIRMATION_CONTINUATION, declaredSchedule } from './campaign-selection.mjs';
+import { readApprovedCampaign } from './approved-campaign.mjs';
+import { assertObserverRepairSetup } from './campaign-observer-repair-continuation.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = async (path, value) => {
@@ -72,6 +74,11 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   if (setup.candidates.length !== 2) assert.ok(setup.campaign_scope, 'Four candidates require an explicit finite campaign');
   assert.ok(!(setup.pilot_scope && setup.campaign_scope), 'A setup cannot mix scope contracts');
   assert.ok(setup.budget && setup.decision && setup.models && setup.corpus);
+  if (setup.campaign_scope?.prospective_authorization) {
+    const reference = setup.campaign_scope.prospective_authorization;
+    const bytes = await readFile(reference.path); assert.equal(sha(bytes), reference.sha256);
+    if (JSON.parse(bytes).version === 6) await assertObserverRepairSetup(setup, await readApprovedCampaign(reference));
+  }
   const snapshot = await readCorpusSnapshot(setup);
   const root = setup.control_root;
   await mkdir(root, { recursive: true });
