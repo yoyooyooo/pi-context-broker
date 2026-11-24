@@ -205,7 +205,7 @@ export async function runOnboardingWorkflow(config) {
   for (const [name, source] of [
     ['cost', consumptionCostExtensionSource({ output: join(observation, 'cost.jsonl'), checkoutRoot, runId: episodeId, sampleId: selected.scenario.id, clockId })],
     ['transport', providerTransportExtensionSource({ output: join(observation, 'transport.jsonl'), checkoutRoot, clockId })],
-    ['tasks', candidateTaskExtensionSource({ output: join(observation, 'tasks.jsonl'), bodyFiles: [], payloadDirectory: join(observation, 'payloads'), branchDirectory: join(observation, 'branches'), toolResultDirectory: join(observation, 'tool-results') })],
+    ['tasks', candidateTaskExtensionSource({ referenceParser: join(selected.build.candidate.packages.broker.root, 'src/native-reference.ts'), output: join(observation, 'tasks.jsonl'), bodyFiles: [], payloadDirectory: join(observation, 'payloads'), branchDirectory: join(observation, 'branches'), toolResultDirectory: join(observation, 'tool-results') })],
     ['loaded', onboardingLoadObserverSource(join(observation, 'loaded.jsonl'))],
   ]) { const path = join(observation, name + '.mjs'); await writeFile(path, source, { flag: 'wx', mode: 0o600 }); extensions.push(path); }
   const common = { ...config.pairedEnvironment, target: 'command', 'pi-mode': 'native', 'native-skills': nativeSkills, 'pass-env': config.passEnv, args: [] };
