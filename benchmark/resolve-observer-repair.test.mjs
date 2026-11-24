@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fingerprint } from './protocol.mjs';
 import { RESOLVE_OBSERVER_FILES, assertResolveObserverSource, assertResolveRepairExpectation,
   assertResolveRepairInstrumentation, verifyResolveRepairInstrumentation, resolveRepairBuild } from './resolve-observer-repair.mjs';
@@ -14,6 +14,7 @@ import { instrumentationIdentity } from './implementation.mjs';
 import { buildCorpus, planCaseVariant } from './corpus/index.mjs';
 import { protocolCaseForVariant } from './planning.mjs';
 import { FINITE_CAMPAIGN, verifyFiniteOriginalResults } from './finite-campaign.mjs';
+import { inventoryPublicInputs } from './subject.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const oldText = "const operations = ['list', 'files', 'consume', 'read', 'read-resources'];\n";
@@ -174,9 +175,15 @@ test('engineering execution re-derives case scale, rounds, task and oracle from 
   for (const selection of sourceSetup.corpus.selections) {
     const selected = planCaseVariant({ ...frozen, ...selection }), oracle_path = join(root, selected.variant.id + '.json');
     await writeFile(oracle_path, JSON.stringify(selected.oracle));
+    const input_root = join(root, selected.variant.id);
+    for (const item of selected.publicCase.attachments) {
+      const path = join(input_root, item.path); await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, Buffer.from(item.content, item.encoding), { mode: item.mode === '100755' ? 0o755 : 0o644 });
+    }
     cases.push({ id: selected.variant.id, base_case_id: selected.publicCase.id, variant: selected.variant,
       public_case: selected.publicCase, events: selected.events, clarification: selected.clarification,
-      protocol_case: protocolCaseForVariant(selected), oracle_path, oracle_sha256: sha(await readFile(oracle_path)) });
+      protocol_case: protocolCaseForVariant(selected), oracle_path, oracle_sha256: sha(await readFile(oracle_path)),
+      input_root, input_inventory_sha256: sha(JSON.stringify(await inventoryPublicInputs(input_root))) });
   }
   const input = { setup: sourceSetup, sourceSetup, corpus: frozen.publicCorpus, cases };
   await assertObserverRepairEngineeringCases(input);
@@ -190,9 +197,15 @@ test('engineering execution re-derives case scale, rounds, task and oracle from 
     value => { value.cases.pop(); },
     value => { value.corpus.cases[0].default_round_count++; },
     value => { value.cases[0].oracle_sha256 = 'b'.repeat(64); },
+    value => { value.cases[0].input_inventory_sha256 = 'c'.repeat(64); },
   ]) {
     const changed = structuredClone(input); mutate(changed); await assert.rejects(assertObserverRepairEngineeringCases(changed));
   }
+  const attachment = join(cases[0].input_root, cases[0].public_case.attachments[0].path);
+  await writeFile(attachment, 'Different actual input bytes');
+  const changed = structuredClone(input);
+  changed.cases[0].input_inventory_sha256 = sha(JSON.stringify(await inventoryPublicInputs(cases[0].input_root)));
+  await assert.rejects(assertObserverRepairEngineeringCases(changed), /OBSERVER_CONTINUATION_ENGINEERING_INPUTS_CHANGED/);
 });
 
 function stoppedObservation() {
