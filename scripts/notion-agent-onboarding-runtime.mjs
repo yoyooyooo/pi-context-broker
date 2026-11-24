@@ -1,4 +1,3 @@
-import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 /** Internal workers of the existing candidate workflow, invoked only inside paired run.
  * No private oracle is accepted by the subject worker or its Pi process.
  */
@@ -6,6 +5,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { sourceObserverPreloadSource, readSourceObservation } from './skill-consumption-source-observer.mjs';
@@ -212,7 +212,7 @@ export function validateOnboardingPlacement(library, input, observed) {
   return { root: input.libraryId, outerParent: input.parent, verifiedRoles: ['skills', 'files', 'records', 'sources'] };
 }
 
-export function validateOnboardingSnapshot(main, listed, record, library) {
+export function validateOnboardingSnapshot(main, listed, record, library, protocol) {
   assert.deepEqual(main.record, record); assert.equal(record.locator.type, 'shared_skill');
   assert.equal(record.locator.library_id, library.library_id); assert.equal(canonical(record.locator.database_id), canonical(library.skills.database_id));
   assert.equal(canonical(record.locator.data_source_id), canonical(library.skills.data_source_id));
@@ -237,9 +237,10 @@ export function validateOnboardingSnapshot(main, listed, record, library) {
   for (const descriptor of listed.files) {
     assert.ok(typeof descriptor.path === 'string' && !isAbsolute(descriptor.path) && !descriptor.path.includes('\\') && !descriptor.path.includes('\0') && descriptor.path.split('/').every(part => part && part !== '.' && part !== '..'));
     assert.ok(Number.isSafeInteger(descriptor.bytes) && descriptor.bytes >= 0); assert.match(descriptor.sha256, /^[a-f0-9]{64}$/u);
-    const binding = main.file_bindings.find(file => file.path === descriptor.path), ref = parseNativeReference(descriptor.ref);
+    const binding = main.file_bindings.find(file => file.path === descriptor.path), ref = protocol.parseSkillRef(descriptor.ref);
     if (binding) assert.ok(typeof binding.file_id === 'string' && binding.file_id && typeof binding.page_id === 'string' && binding.page_id);
-    assert.equal(ref.selector, record.id); assert.equal(ref.path, descriptor.path); assert.equal(ref.snapshot, main.snapshot_id);
+    assert.equal(protocol.formatSkillRef({ ...ref, path: '', selection: { kind: 'current' } }), record.id);
+    assert.equal(ref.path, descriptor.path); assert.equal(protocol.skillRefSnapshot(ref), main.snapshot_id);
   }
   const entrypoint = listed.files.find(file => file.path === main.path); assert.ok(entrypoint);
   assert.equal(main.ref, entrypoint.ref); assert.equal(Buffer.byteLength(main.content), entrypoint.bytes); assert.equal(hash(main.content), entrypoint.sha256);
@@ -264,6 +265,12 @@ export async function runOnboardingGrader(inputPath) {
   await mkdir(join(run.root, 'readback-commands')); await mkdir(join(run.root, 'readback-files'));
   const cli = args => publicCli(run, args, ++result.commands);
   try {
+    // The native grader consumes the exact installed CLI's public pure protocol.
+    // An unbuilt source checkout is only the verifier, never a fallback artifact.
+    const protocolPath = join(dirname(await realpath(run.candidate.entries.cli)), 'ref.cjs');
+    const protocol = createRequire(import.meta.url)(protocolPath);
+    assert.equal(protocol.SKILL_REF_VERSION, 2);
+    result.referenceProtocol = { version: protocol.SKILL_REF_VERSION, ...await file(protocolPath) };
     const initialized = await cli(['ctl', 'library', 'init', '--library', input.libraryId]);
     const inspected = await cli(['ctl', 'library', 'inspect', '--library', input.libraryId]);
     result.library = validateOnboardingLibrary(initialized, inspected, input);
@@ -292,7 +299,7 @@ export async function runOnboardingGrader(inputPath) {
       assert.equal(main.has_more, false); assert.equal(typeof main.content, 'string'); assert.equal(main.effects?.remote_writes, 'none');
       assert.equal(canonical(main.record.locator.page_id), canonical(pageId)); assert.equal(main.record.id, record.id);
       const listed = await cli(['files', main.snapshot_id]);
-      const directory = validateOnboardingSnapshot(main, listed, record, result.library);
+      const directory = validateOnboardingSnapshot(main, listed, record, result.library, protocol);
       const skill = { name: record.name, record, ref: main.ref, snapshotId: main.snapshot_id, versionId: main.version_id, files: [] }; result.skills.push(skill);
       const base = join(run.root, 'readback-files', String(result.skills.length)); await mkdir(base);
       for (const descriptor of directory) {

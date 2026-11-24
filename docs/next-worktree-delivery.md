@@ -24,7 +24,7 @@ NTN_SKILLS_BUILD_ENTRY="$CLI_ROOT/packages/cli/dist/ntn-skills.js" bun run build
 
 使用本次已声明的受支持 Node、Bun 与 Git runtime，保留实际 executable/version。临时命令的工具选择与普通 `pi` 的 runtime 分别记录，不能靠临时 PATH 把普通入口的缺项隐藏掉。
 
-两个 build 在 `dist/next-build.json` 写入源文件清单与产物 SHA。Broker 另外绑定所选 raw CLI、SDK、`ntn-skills/ref` 的纯 CJS 产物与 Skills；内嵌协议版本必须为 2，装载时核对所选模块的实际字节。构建途中输入变化会失败。源文件新增、删除、提交后未重建、产物被替换或 Broker 仍嵌入旧 SDK，都会被下列检查拒绝。
+两个 build 在 `dist/next-build.json` 写入源文件清单与产物 SHA。Broker 另外绑定所选 raw CLI、SDK、`ntn-skills/ref` 的纯 CJS 产物与 Skills；内嵌 SDK 版本必须为 3、引用协议版本为 2，装载时核对所选模块的实际字节。构建途中输入变化会失败。源文件新增、删除、提交后未重建、产物被替换或 Broker 仍嵌入旧 SDK，都会被下列检查拒绝。
 
 ```json
 {
@@ -61,9 +61,9 @@ node scripts/verify-pi-daily-installation.mjs plan --config /absolute/owned/curr
 node scripts/verify-pi-daily-installation.mjs run --config /absolute/owned/current-daily.json
 ```
 
-daily config 需要配对 worktrees 以及本次归档、CLI/SDK、package 来源等实际身份；先读 `--help` 与 plan 的必需字段。两机在开始本次交付时共同生成并使用同一个 `delivery`：`id` 为新的 UUID，`startedAt` 为本次开始时的 UTC ISO 时间。不能把旧执行的时间或 ID 改写为本次。输入配置仍为 `version:1`，实际日用回执统一为 `version:2`，不兼容旧日用回执。
+daily config 需要预期 `library` 根 UUID、配对 worktrees 以及本次归档、CLI/SDK、package 来源等实际身份；先读 `--help` 与 plan 的必需字段。预期根不覆盖普通 CLI 的 `default_library`，验收核对实际 SDK 的选择及独立 HTTP 归属。两机在开始本次交付时共同生成并使用同一个 `delivery`：`id` 为新的 UUID，`startedAt` 为本次开始时的 UTC ISO 时间。不能把旧执行的时间或 ID 改写为本次。输入配置仍为 `version:1`，实际日用回执统一为 `version:2`，不兼容旧日用回执。
 
-plan 为 `prepared_not_executed`。run 在新普通 `pi -ns` 中检查实际注册入口与 metadata 路径，并在结束后重验机器、真实远端、worktrees 和构建。回执记录本次开始/结束时间、实际机器、注册入口与进程退出。它不替代正文、真实模型或时间线任务。
+plan 为 `prepared_not_executed`。run 在新普通 `pi -ns` 中检查实际注册入口与 metadata 路径，并在结束后重验机器、真实远端、worktrees 和构建。SDK 3 的根 children 请求由独立响应中的 ID/parent/分页证明限定到该根，保持真实 body 计数；Skill/File 正文读取仍为零。回执记录本次开始/结束时间、实际机器、注册入口与进程退出。它不替代正文、真实模型或时间线任务。
 
 标准代理的 `CONNECT` 使用 `host:port` 目标，不是普通 URL。日用观察单独保留代理 origin、目标 authority、进程归属及成功、失败或未完成结果；这些隧道属于传输准备，不计作 Notion metadata 请求，也不能满足 SDK 的独立 HTTP 关联。隧道中的实际 SDK/doctor 请求仍逐项核对，不能通过关闭正常代理或丢弃隧道失败取得通过。
 
@@ -71,7 +71,7 @@ plan 为 `prepared_not_executed`。run 在新普通 `pi -ns` 中检查实际注�
 
 Pi 的 `responseModel` 是可选响应信息。现役 cost observer 区分原始未报告、合法报告和非法值；分析器保留未报告为 unknown，不从请求 model 补值。HTTP/SSE 完成仍需真实传输和同请求的响应证据；缺少这项原始状态的旧观察不能按新规则补成通过。
 
-普通真实模型可能由现役 `pi-compact-ui` 注册 `read`。Broker 的公开 hook 将候选或已选主文（`sr:C…`、`sr:S…`）、单个资源（`sr:R…`）以及已登记的完整固定 `skill://` 地址解析为不可变文件，再交给该包的内建读取委托。在这个有限 profile 中，完整地址使用 `skill://<stable-skill-id>/<exact-path>?library=<logical-library-id>&snapshot=<snapshot-id>`，精确匹配实际 native 分支中此前唯一登记的 owner、Library、snapshot 和路径；缺少固定身份、协议之外的 query 或歧义登记均不接受。公开 URI 不包含 `file_id`。所选 manifest 提供唯一的原生 File 绑定，或固定的 Source 路由与字节证明；Source 完整树中的文件可以没有对应的 Notion Files 行。
+普通真实模型可能由现役 `pi-compact-ui` 注册 `read`。Broker 的公开 hook 将候选或已选主文（`sr:C…`、`sr:S…`）、单个资源（`sr:R…`）以及已登记的完整固定 `skill://` 地址解析为不可变文件，再交给该包的内建读取委托。在这个有限 profile 中，完整地址使用 `skill://<stable-skill-id>/<exact-path>?library=<root-page-uuid>&snapshot=<snapshot-id>`，精确匹配实际 native 分支中此前唯一登记的 owner、Library、snapshot 和路径；缺少固定身份、协议之外的 query 或歧义登记均不接受。公开 URI 不包含 `file_id`。所选 manifest 提供唯一的原生 File 绑定，或固定的 Source 路由与字节证明；Source 完整树中的文件可以没有对应的 Notion Files 行。
 
 该 profile 只接受单路径完整文本读取；原始 `refresh` 布尔参数必须原样保留，主文显式刷新可查看同 owner 新版，但不改变已激活工作集。task observer 仅在同调用、同轮的当前 v3 主文或 v2 资源回执到达后，保全实际执行参数和完整文件字节。原始引用必须已存在于实际 native 分支；资源还必须唯一关联此前已选 owner，并匹配其 scope、snapshot、version、精确路径和对应的 manifest 绑定。原生 File 身份继续作为内部证据核验，不由 URI query 提供。entry 投影同时保全并核对完整 `.broker-entry.json`；独立 resource 投影没有这份 host entry manifest，不猜测或读取不存在的主文清单。分析器重新核验原始与 prepared 参数、当前 Broker 注册、不可变身份、实际 callback/回执顺序及交付的完整字节，并只接受已审阅 `pi-compact-ui@0.1.3` 的精确 package/index 字节。该 profile 不覆盖批量、部分读取、其他插件或其他工具。
 
@@ -87,7 +87,7 @@ Pi 的 `responseModel` 是可选响应信息。现役 cost observer 区分原始
 node scripts/verify-pi-daily-installation.mjs aggregate --config /absolute/owned/current-delivery.json
 ```
 
-aggregate config 使用相同的 `version:1`、`delivery`、`worktrees`、`cliRoot` 与 `brokerRoot`，另加两份原始回执的路径：
+aggregate config 使用相同的 `version:1`、`delivery`、`library`、`worktrees`、`cliRoot` 与 `brokerRoot`，另加两份原始回执的路径：
 
 ```json
 {

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { fileInventory, selectedCliInputs } from './next-build-identity.mjs';
 import { verifyCurrentBuild, verifyNextWorktreePair } from './verify-next-worktrees.mjs';
-import { aggregateDailyDeliveries, validateDailyReceipt } from './verify-pi-daily-installation.mjs';
+import { aggregateDailyDeliveries, validateDailyLibraryRequests, validateDailyReceipt } from './verify-pi-daily-installation.mjs';
 
 const save = (path, value) => writeFile(path, JSON.stringify(value) + '\n');
 const selectedRefBytes = await readFile(new URL('../packages/context-broker/dist/ntn-skills-ref.cjs', import.meta.url));
@@ -161,6 +161,7 @@ async function dailyFixture() {
   const started = Date.now() - 5000;
   f.config.version = 1;
   f.config.delivery = { id: randomUUID(), startedAt: new Date(started).toISOString() };
+  f.config.library = '11111111-1111-4111-8111-111111111111';
   const harnessSha = createHash('sha256').update(await readFile(new URL('./verify-pi-daily-installation.mjs', import.meta.url))).digest('hex');
   function receipt(machineSha) {
     const bound = structuredClone(pair); bound.machine.sha256 = machineSha;
@@ -169,9 +170,21 @@ async function dailyFixture() {
     const file = path => ({ path, realpath: path, bytes: 1, sha256: 'f'.repeat(64) });
     const host = { file: '/controlled/node', prefix: ['/controlled/bin/pi'], path: '/controlled/bin/pi', identity: entry, parent_pid: 100,
       launcher: { ...file('/controlled/bin/pi'), realpath: entry } };
+    const library = f.config.library, database = '22222222-2222-4222-8222-222222222222', dataSource = '33333333-3333-4333-8333-333333333333';
+    const active = { in_trash: false, archived: false }, attribute = { kind: 'sdk', operation: 'list', library, requestId: 'controlled-list', request_kind: 'notion_metadata' };
+    const http = [
+      { origin: 'https://api.notion.com', method: 'GET', path: '/v1/blocks/' + library + '/children', cursor_sha256: null,
+        attribution: { ...attribute, request_kind: 'notion_body', target: { block_id: library } },
+        structure: { kind: 'root-children', root: library, has_more: false, next_cursor_sha256: null,
+          children: [{ id: database, type: 'child_database', parent: { type: 'page_id', page_id: library }, ...active }] } },
+      { origin: 'https://api.notion.com', method: 'GET', path: '/v1/databases/' + database, attribution: { ...attribute },
+        structure: { kind: 'database', id: database, parent: { type: 'page_id', page_id: library }, data_source_ids: [dataSource], ...active } },
+      { origin: 'https://api.notion.com', method: 'GET', path: '/v1/data_sources/' + dataSource, attribution: { ...attribute },
+        structure: { kind: 'data_source', id: dataSource, parent: { type: 'database_id', database_id: database }, ...active } },
+    ];
     return {
       version: 2, kind: 'actual-daily-pi-autoload-and-diagnostics', scope: 'ordinary-pi-startup-and-metadata', status: 'passed',
-      evidence: 'controlled-receipt-fixture', delivery: { ...f.config.delivery },
+      evidence: 'controlled-receipt-fixture', delivery: { ...f.config.delivery }, library,
       started_at: new Date(started + 1000).toISOString(), finished_at: new Date(started + 2000).toISOString(),
       machine: { ...bound.machine }, worktrees_before: bound, worktrees_after: structuredClone(bound),
       worktrees_unchanged: true, configuration_unchanged: true, broker_files_unchanged: true, cli_shim_unchanged: true, host_files_unchanged: true,
@@ -186,9 +199,10 @@ async function dailyFixture() {
       initial_session: { sessionId: 'controlled-session', isStreaming: false, isCompacting: false },
       final_session: { sessionId: 'controlled-session', isStreaming: false, isCompacting: false },
       owned_pi: [{ pid: 101, file: host.file, args: [...host.prefix, ...args], observed_close: true, exit_code: 0, signal: null }],
-      actual_default_sdk: { source_observation_complete: true, source_command_overridden: false, owner_pid: 101, operations: [{ operation: 'list', pid: 101 }], http: [{}] },
-      explicit_doctor_cli: { doctor: { ok: true, transport: 'direct_http' } }, metadata_http_requests: 1,
-      provider_invocations: 0, tool_invocations: 0, remote_mutations: 0, current_body_reads: 0, harness: { sha256: harnessSha },
+      actual_default_sdk: { source_observation_complete: true, source_command_overridden: false, owner_pid: 101, operations: [{ operation: 'list', pid: 101, library }], http },
+      library_structure: validateDailyLibraryRequests(http, library), notion_body_requests: 1,
+      explicit_doctor_cli: { doctor: { ok: true, transport: 'direct_http' } }, metadata_http_requests: 3,
+      provider_invocations: 0, tool_invocations: 0, remote_mutations: 0, skill_body_reads: 0, harness: { sha256: harnessSha },
     };
   }
   const pro = receipt(pair.machine.sha256), mini = receipt(pair.machine.sha256 === 'a'.repeat(64) ? 'b'.repeat(64) : 'a'.repeat(64));
@@ -219,6 +233,10 @@ test('old delivery, changed builds, incomplete Pi proof and failed states cannot
   assert.doesNotThrow(() => validateDailyReceipt(f.mini, f.config, f.pair));
   for (const change of [
     d => { d.delivery.id = randomUUID(); },
+    d => { d.library = randomUUID(); },
+    d => { d.notion_body_requests = 0; },
+    d => { d.actual_default_sdk.operations[0].library = randomUUID(); },
+    d => { d.library_structure.operations[0].databases = []; },
     d => { d.started_at = new Date(Date.parse(f.config.delivery.startedAt) - 1).toISOString(); },
     d => { d.worktrees_before.cli.commit = '0'.repeat(40); },
     d => { d.worktrees_after.broker.artifacts_sha256 = '0'.repeat(64); },

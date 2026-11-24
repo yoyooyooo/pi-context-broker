@@ -6,11 +6,12 @@ import { createServer } from 'node:http';
 import { appendFile, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { connect } from 'node:net';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import test from 'node:test';
 import { skillFileRef } from './skill-ref-fixture.mjs';
+import { skillRefProtocol } from '../packages/context-broker/src/skill-ref-protocol.ts';
 import { onboardingWorkerCommand, gradeOnboardingAssertions, gradeOnboardingBusiness, gradeOnboardingReadback, onboardingProducedLibraries, onboardingResult, validateOnboardingConfig, validateOnboardingOracle } from './notion-agent-onboarding.mjs';
 import { validateOnboardingFileOutput, validateOnboardingLibrary, validateOnboardingPlacement, validateOnboardingLoaded, validateOnboardingSnapshot } from './notion-agent-onboarding-runtime.mjs';
 import { validateAgentCorpus } from './notion-agent-scenarios.mjs';
@@ -132,13 +133,13 @@ test('fresh schema and file proof reject partial or mismatched current outputs',
   for (const mutate of [value => value.reused = false, value => delete value.contract, value => delete value.library.sources]) {
     const value = structuredClone(sample.initialized); mutate(value); assert.throws(() => validateOnboardingLibrary(value, sample.inspected, input));
   }
-  assert.equal(validateOnboardingSnapshot(sample.main, sample.listed, sample.record, sample.library).length, 2);
+  assert.equal(validateOnboardingSnapshot(sample.main, sample.listed, sample.record, sample.library, skillRefProtocol()).length, 2);
   for (const mutate of [value => value.main.range.start = 2, value => value.main.has_more = true,
     value => value.listed.has_more = true, value => value.listed.materialization.manifest_complete = false,
     value => value.listed.files.pop(), value => value.listed.files[1].ref = value.listed.files[0].ref,
     value => value.listed.version_id = 'other', value => delete value.listed.files,
     value => value.listed.files[0].bytes--]) {
-    const value = structuredClone(sample); mutate(value); assert.throws(() => validateOnboardingSnapshot(value.main, value.listed, value.record, value.library));
+    const value = structuredClone(sample); mutate(value); assert.throws(() => validateOnboardingSnapshot(value.main, value.listed, value.record, value.library, skillRefProtocol()));
   }
   validateOnboardingFileOutput(sample.output, sample.main, sample.listed.files[1], Buffer.from(sample.support), '/owned/output');
   for (const mutate of [value => delete value.bytes, value => value.path = 'another.md', value => value.snapshot_id = 'other',
@@ -168,6 +169,7 @@ test('placement checks independent root, database and data-source parents', () =
 test('fresh grader wiring reads the explicit Library root and every supporting file through the actual selected CLI', async t => {
   const base = await realpath(await mkdtemp(join(tmpdir(), 'onboarding-grader-test-'))); t.diagnostic('Retained grader wiring evidence: ' + base);
   const cli = join(base, 'fixture-cli.mjs'), main = '# Full main\n' + 'middle\n'.repeat(12000) + 'Every receipt\n', sample = currentReadbackFixture(main);
+  await writeFile(join(base, 'ref.cjs'), await readFile(new URL('../packages/context-broker/dist/ntn-skills-ref.cjs', import.meta.url)));
   const physical = new Map([['/v1/pages/' + libraryId, sample.placement.root],
     ...Object.values(sample.placement.databases).map(value => ['/v1/databases/' + value.id, value]),
     ...Object.values(sample.placement.dataSources).map(value => ['/v1/data_sources/' + value.id, value])]);
@@ -197,6 +199,8 @@ console.log(JSON.stringify({ok:true,...result}));\n`);
       NOTION_API_TOKEN: 'controlled-placement-fixture', NOTION_API_BASE_URL: 'http://127.0.0.1:' + server.address().port }, timeout: 15000 });
   const result = JSON.parse(await readFile(join(root, 'readback.json'), 'utf8'));
   assert.equal(result.status, 'read_back'); assert.equal(result.complete, true); assert.equal(result.skills[0].files[0].content, main);
+  assert.equal(result.referenceProtocol.realpath, join(base, 'ref.cjs'));
+  assert.equal(result.referenceProtocol.sha256, hash(await readFile(join(base, 'ref.cjs'))));
   assert.equal(gradeOnboardingReadback(oracle, result).status, 'passed');
   const calls = (await readFile(join(root, 'calls.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.deepEqual(calls[0].args, ['ctl', 'library', 'init', '--library', libraryId]); assert.deepEqual(calls[1].args, ['ctl', 'library', 'inspect', '--library', libraryId]); assert.ok(calls.every(call => call.state === join(root, 'state/cli') && call.entry === cli));
@@ -229,6 +233,8 @@ test('the installed CLI grader reads complete current HTTP pagination, long text
   await execute(process.execPath, ['--input-type=module', '--eval', `const m=await import(${JSON.stringify(new URL('./notion-agent-onboarding-runtime.mjs', import.meta.url).href)});await m.runOnboardingGrader(process.argv[1]);`, input], { env, timeout: 390000 });
   const result = JSON.parse(await readFile(join(root, 'readback.json'), 'utf8'));
   assert.equal(result.status, 'read_back'); assert.equal(result.complete, true); assert.equal(result.skills.length, 1);
+  assert.equal(result.referenceProtocol.realpath, await realpath(join(dirname(cli), 'ref.cjs')));
+  assert.equal(result.referenceProtocol.sha256, hash(await readFile(join(dirname(cli), 'ref.cjs'))));
   assert.equal(result.skills[0].files.length, fixture.expected.file_count);
   for (const expected of fixture.expected.files) {
     const actual = result.skills[0].files.find(file => file.path === expected.path);

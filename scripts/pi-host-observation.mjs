@@ -128,6 +128,29 @@ function installPassiveObserver(config, identifyPackageEntry) {
   const bodyLimit = 16 * 1024 * 1024;
   const bodyIdOrigins = new Set(config.responseRequestIdBodyOrigins ?? ['https://api.notion.com']);
   const validRequestId = value => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(value);
+  const structuralPath = pathname => config.library && (pathname === '/v1/pages/' + config.library
+    || pathname === '/v1/blocks/' + config.library + '/children'
+    || /^\/v1\/(?:databases|data_sources|views)\/[0-9a-f-]{36}$/u.test(pathname));
+  const structuralProjection = (pathname, value) => {
+    const id = value => validRequestId(value) ? value.toLowerCase() : null;
+    const active = row => ({ in_trash: row.in_trash === true, archived: row.archived === true });
+    const parent = row => row?.parent && ({ type: ['page_id', 'database_id', 'block_id'].includes(row.parent.type) ? row.parent.type : null,
+      ...(row.parent.type === 'page_id' ? { page_id: id(row.parent.page_id) } : {}),
+      ...(row.parent.type === 'database_id' ? { database_id: id(row.parent.database_id) } : {}) });
+    if (pathname === '/v1/blocks/' + config.library + '/children') return {
+      kind: 'root-children', root: config.library, has_more: value.has_more,
+      next_cursor_sha256: typeof value.next_cursor === 'string' ? digest(value.next_cursor) : null,
+      children: Array.isArray(value.results) ? value.results.map(row => ({ id: id(row.id), type: typeof row.type === 'string' && /^[a-z_]{1,40}$/u.test(row.type) ? row.type : null,
+        parent: parent(row), ...active(row) })) : null,
+    };
+    if (/^\/v1\/views\/[0-9a-f-]{36}$/u.test(pathname)) return {
+      kind: 'view', id: id(value.id), parent: parent(value), data_source_id: id(value.data_source_id),
+    };
+    const result = { kind: ['page', 'database', 'data_source'].includes(value.object) ? value.object : null, id: id(value.id), parent: parent(value), ...active(value) };
+    if (value.object === 'database') result.data_source_ids = Array.isArray(value.data_sources)
+      ? value.data_sources.map(row => id(row.id)) : null;
+    return result;
+  };
   subscribe('create', ({ request }) => {
     // CONNECT uses an authority-form target (host:port), not a URL path.
     // Keep the proxy endpoint and tunnel target separate from the HTTP request
@@ -145,6 +168,10 @@ function installPassiveObserver(config, identifyPackageEntry) {
     if (requests.has(request)) throw new Error('DUPLICATE_REQUEST');
     const row = { id: `${process.pid}:${++sequence}`, at: new Date().toISOString(), started_ms: performance.now(),
       method: request.method, origin: url.origin, path: connect ? null : url.pathname,
+      structural: request.method === 'GET' && bodyIdOrigins.has(url.origin) && Boolean(structuralPath(url.pathname)),
+      cursor_sha256: url.searchParams.has('start_cursor') ? digest(url.searchParams.get('start_cursor')) : null,
+      view_database_id: config.library && url.pathname === '/v1/views' && url.searchParams.getAll('database_id').length === 1
+        && validRequestId(url.searchParams.get('database_id')) ? url.searchParams.get('database_id').toLowerCase() : null,
       ...(connect ? { transport: 'proxy-connect', authority } : {}), bytes: 0,
       hash: crypto.createHash('sha256'), sent: false, status: null, responseId: null,
       responseIdSource: null, encoding: 'identity', json: false, responseBytes: 0, responseChunks: [] };
@@ -167,6 +194,8 @@ function installPassiveObserver(config, identifyPackageEntry) {
     row.sent = true;
     write({ event: 'http_start', id: row.id, at: row.at, method: row.method, origin: row.origin, path: row.path,
       ...(row.transport ? { transport: row.transport, authority: row.authority } : {}),
+      ...(row.structural ? { cursor_sha256: row.cursor_sha256 } : {}),
+      ...(row.path === '/v1/views' ? { view_database_id: row.view_database_id } : {}),
       started_ms: row.started_ms, request_bytes: row.bytes, request_sha256: row.hash.digest('hex'), observation: 'undici-request-body-sent' });
   });
   subscribe('headers', ({ request, response }) => {
@@ -187,26 +216,29 @@ function installPassiveObserver(config, identifyPackageEntry) {
     // Only bounded JSON from the exact Notion origin is retained privately.
     // Loopback tests may explicitly inject their own origin. No response body
     // is written to the ledger or substituted for the consumer's stream.
-    if (row.json && row.responseId === null && row.responseBytes <= bodyLimit) row.responseChunks.push(Buffer.from(chunk));
+    if (row.json && (row.responseId === null || row.structural) && row.responseBytes <= bodyLimit) row.responseChunks.push(Buffer.from(chunk));
     else row.responseChunks.length = 0;
   });
   subscribe('trailers', ({ request }) => {
     const row = requestOf(request);
     if (!row.sent || row.status === null) throw new Error('INCOMPLETE_HTTP');
     active.delete(request);
-    if (row.responseId === null && row.json && row.responseBytes <= bodyLimit) {
+    let structure;
+    if ((row.responseId === null || row.structural) && row.json && row.responseBytes <= bodyLimit) {
       try {
         let body = Buffer.concat(row.responseChunks);
         const decode = { gzip: zlib.gunzipSync, deflate: zlib.inflateSync, br: zlib.brotliDecompressSync }[row.encoding];
         if (decode) body = decode(body, { maxOutputLength: bodyLimit });
         else if (row.encoding !== 'identity') throw new Error('UNKNOWN_RESPONSE_ENCODING');
-        const value = JSON.parse(body.toString('utf8'))?.request_id;
-        if (validRequestId(value)) { row.responseId = value; row.responseIdSource = 'response-json'; }
+        const decoded = JSON.parse(body.toString('utf8'));
+        if (row.responseId === null && validRequestId(decoded?.request_id)) { row.responseId = decoded.request_id; row.responseIdSource = 'response-json'; }
+        if (row.structural) structure = structuralProjection(row.path, decoded);
       } catch { /* Missing IDs remain unknown; no heuristic attribution. */ }
     }
     row.responseChunks.length = 0;
     write({ event: 'http_end', id: row.id, status: row.status, response_request_id: row.responseId,
-      response_request_id_source: row.responseIdSource, ended_ms: performance.now(), observation: 'undici-response-trailers' });
+      response_request_id_source: row.responseIdSource, ended_ms: performance.now(), observation: 'undici-response-trailers',
+      ...(row.structural ? { library_structure: structure ?? null } : {}) });
   });
   subscribe('error', ({ request, error }) => {
     const row = requestOf(request); active.delete(request);

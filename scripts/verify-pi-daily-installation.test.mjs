@@ -9,7 +9,7 @@ import test from 'node:test';
 import { fileInventory } from './next-build-identity.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { readSourceObservation, sourceObserverPreloadSource } from './skill-consumption-source-observer.mjs';
-import { aggregateDailyDeliveries, classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, observedDailyHostProcess, validateDailyDoctor, validateDailyFind, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
+import { aggregateDailyDeliveries, classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, observedDailyHostProcess, validateDailyDoctor, validateDailyFind, validateDailyLibraryRequests, validateDailySdkOperations, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
 import { workflowHostLoader } from './notion-agent-workflow-runtime.mjs';
 
 test('daily aggregate requires an explicit new delivery and both machine receipts before any source or Pi operation', async () => {
@@ -268,8 +268,8 @@ test('daily plan and launched host receive -ns without replacing normal HOME or 
   const embeddedRef = 'throw new Error("Fixture pure module must not execute");\n';
   await writeFile(join(f.broker, 'dist/ntn-skills-ref.cjs'), embeddedRef);
   await writeFile(join(f.cliRoot, 'dist/ref.cjs'), embeddedRef);
-  await writeFile(join(f.broker, 'dist/ntn-skills-runtime.json'), JSON.stringify({ version: 1, package: 'ntn-skills', cli_sha256: digest(embeddedCli), sdk_sha256: digest(embeddedSdk), skill_ref_version: 2, ref_sha256: digest(embeddedRef) }));
-  const config = { ...f.config, version: 1, packageCount: 2, packageIndex: 1, brokerRoot: f.broker,
+  await writeFile(join(f.broker, 'dist/ntn-skills-runtime.json'), JSON.stringify({ version: 1, package: 'ntn-skills', cli_sha256: digest(embeddedCli), sdk_sha256: digest(embeddedSdk), sdk_version: 3, skill_ref_version: 2, ref_sha256: digest(embeddedRef) }));
+  const config = { ...f.config, version: 1, library: source.sources[0].library, packageCount: 2, packageIndex: 1, brokerRoot: f.broker,
     delivery: { id: randomUUID(), startedAt: new Date().toISOString() },
     embeddedCliSha256: digest(embeddedCli), embeddedSdkSha256: digest(embeddedSdk), evidenceRoot: join(f.root, 'evidence') };
   // This public run crosses the real current-worktree boundary using owned local origins.
@@ -500,7 +500,7 @@ const sdkHttp = [
   { event: 'http_end', pid: 10, id: '10:1', status: 200, response_request_id: sdkRequestId },
 ];
 
-for (const operation of ['list', 'files', 'resolve']) test(operation + ' host SDK HTTP needs an exact complete operation and independent response request ID', () => {
+for (const operation of ['library', 'list', 'files', 'resolve']) test(operation + ' host SDK HTTP needs an exact complete operation and independent response request ID', () => {
   const observation = sdkObservation();
   observation.events = observation.events.map(event => event.operation ? { ...event, operation } : event);
   const result = classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: observation });
@@ -509,6 +509,139 @@ for (const operation of ['list', 'files', 'resolve']) test(operation + ' host SD
   assert.equal(result.sdk[0].attribution.operation, operation);
   assert.equal(result.sdk[0].attribution.requestId, 'sdk:10:one');
   assert.equal(result.sdk[0].attribution.response_bytes, 100);
+});
+
+const libraryRoot = '11111111-1111-4111-8111-111111111111';
+const libraryDatabase = '22222222-2222-4222-8222-222222222222';
+const libraryDataSource = '33333333-3333-4333-8333-333333333333';
+const foreignRoot = '44444444-4444-4444-8444-444444444444';
+function libraryRequests() {
+  const request = (path, structure, operation = 'library') => ({ origin: 'https://api.notion.com', method: 'GET', path, structure,
+    attribution: { kind: 'sdk', operation, library: libraryRoot, source_id: 'same-source-name', requestId: operation + ':1', request_kind: 'notion_metadata' } });
+  const active = { in_trash: false, archived: false };
+  return [
+    request('/v1/pages/' + libraryRoot, { kind: 'page', id: libraryRoot, ...active }),
+    { ...request('/v1/blocks/' + libraryRoot + '/children', { kind: 'root-children', root: libraryRoot, has_more: false, next_cursor_sha256: null,
+      children: [{ id: libraryDatabase, type: 'child_database', parent: { type: 'page_id', page_id: libraryRoot }, ...active }] }),
+      cursor_sha256: null, attribution: { kind: 'sdk', operation: 'library', library: libraryRoot, requestId: 'library:1', request_kind: 'notion_body', target: { block_id: libraryRoot } } },
+    request('/v1/databases/' + libraryDatabase, { kind: 'database', id: libraryDatabase, parent: { type: 'page_id', page_id: libraryRoot }, data_source_ids: [libraryDataSource], ...active }),
+    request('/v1/data_sources/' + libraryDataSource, { kind: 'data_source', id: libraryDataSource, parent: { type: 'database_id', database_id: libraryDatabase }, ...active }),
+    { ...request('/v1/data_sources/' + libraryDataSource + '/query', undefined, 'list'), method: 'POST' },
+  ];
+}
+
+test('daily SDK3 selection is local and remote metadata keeps the exact expected root', () => {
+  const operations = ['library-selection', 'library', 'list'].map(operation => ({ operation, source_id: 'same-source-name', library: operation === 'library-selection' ? null : libraryRoot }));
+  assert.doesNotThrow(() => validateDailySdkOperations(operations, libraryRoot));
+  for (const operation of ['library', 'list']) assert.throws(() => validateDailySdkOperations(
+    operations.map(row => row.operation === operation ? { ...row, library: foreignRoot } : row), libraryRoot), /another Library/u);
+  for (const operation of ['consume', 'read', 'files', 'read-resources', 'resolve'])
+    assert.throws(() => validateDailySdkOperations([...operations, { operation, library: libraryRoot }], libraryRoot), /cannot consume/u);
+  const local = sdkObservation();
+  local.events = local.events.map(row => row.operation ? { ...row, operation: 'library-selection' } : row);
+  assert.throws(() => classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: local }), /cannot perform HTTP/u);
+  local.events = local.events.filter(row => row.phase !== 'attempt').map(row => row.phase === 'metrics' ? { ...row, total_requests: 0 } : row);
+  assert.equal(classifyDailyHttp([], new Set(), new Set([10]), { sourceObservation: local }).source.length, 0);
+});
+
+test('independent direct-root descriptors authorize the exact structure read and later catalog query', () => {
+  const proof = validateDailyLibraryRequests(libraryRequests(), libraryRoot);
+  assert.equal(proof.library_id, libraryRoot); assert.equal(proof.root_children_requests, 1);
+  assert.deepEqual(proof.operations.map(row => row.operation), ['library', 'list']);
+  assert.deepEqual(proof.operations[0].data_sources, [{ data_source_id: libraryDataSource, database_id: libraryDatabase }]);
+  const paginated = libraryRequests(), next = 'a'.repeat(64), first = paginated[1];
+  first.structure.has_more = true; first.structure.next_cursor_sha256 = next;
+  paginated.splice(2, 0, { ...structuredClone(first), cursor_sha256: next,
+    structure: { kind: 'root-children', root: libraryRoot, children: [], has_more: false, next_cursor_sha256: null } });
+  assert.equal(validateDailyLibraryRequests(paginated, libraryRoot).root_children_requests, 2);
+});
+
+test('root proofs reject foreign or truncated children, orphan data sources, and body reads', () => {
+  for (const mutate of [
+    rows => { rows[1].structure.children[0].parent.page_id = foreignRoot; },
+    rows => { rows[1].structure.has_more = true; rows[1].structure.next_cursor_sha256 = 'a'.repeat(64); },
+    rows => { rows[1].cursor_sha256 = 'a'.repeat(64); },
+    rows => { rows[1].structure.children.push(structuredClone(rows[1].structure.children[0])); },
+    rows => { rows[2].structure.parent.page_id = foreignRoot; },
+    rows => { rows[3].structure.parent.database_id = foreignRoot; },
+    rows => { rows[2].structure.data_source_ids = [foreignRoot]; },
+    rows => { rows[3].path = '/v1/data_sources/' + foreignRoot; rows[3].structure.id = foreignRoot; },
+    rows => { rows[4].path = '/v1/data_sources/' + foreignRoot + '/query'; },
+    rows => { rows[4].attribution.library = foreignRoot; },
+    rows => { rows[1].attribution.target.block_id = foreignRoot; },
+    rows => { rows[1].attribution.request_kind = 'notion_metadata'; },
+    rows => { rows[0].method = 'PATCH'; },
+    rows => { rows.push({ ...structuredClone(rows[4]), method: 'GET', path: '/v1/blocks/' + foreignRoot + '/children' }); },
+    rows => { rows.push({ ...structuredClone(rows[4]), method: 'GET', path: '/v1/pages/' + libraryRoot + '/markdown' }); },
+    rows => { rows.push({ ...structuredClone(rows[0]), path: '/v1/pages/' + foreignRoot }); },
+    rows => { rows.push({ ...structuredClone(rows[4]), method: 'GET', path: '/v1/pages/' + foreignRoot }); },
+    rows => { rows.push({ ...structuredClone(rows[4]), method: 'GET', path: '/v1/pages/' + foreignRoot + '/properties/name' }); },
+    rows => { rows.push({ ...structuredClone(rows[4]), method: 'POST', path: '/v1/search' }); },
+    rows => { rows.push({ ...structuredClone(rows[4]), method: 'GET', path: '/v1/views', view_database_id: foreignRoot }); },
+  ]) {
+    const rows = libraryRequests(); mutate(rows);
+    assert.throws(() => validateDailyLibraryRequests(rows, libraryRoot));
+  }
+});
+
+test('catalog View metadata and query endpoints require independent direct-table ownership', () => {
+  const rows = libraryRequests(), view = '55555555-5555-4555-8555-555555555555', query = '66666666-6666-4666-8666-666666666666';
+  const request = (method, path) => ({ ...structuredClone(rows[4]), method, path });
+  rows.push({ ...request('GET', '/v1/views'), view_database_id: libraryDatabase },
+    { ...request('GET', '/v1/views/' + view), structure: { kind: 'view', id: view,
+      parent: { type: 'database_id', database_id: libraryDatabase }, data_source_id: libraryDataSource } },
+    request('POST', '/v1/views/' + view + '/queries'), request('GET', '/v1/views/' + view + '/queries/' + query));
+  const proof = validateDailyLibraryRequests(rows, libraryRoot);
+  assert.deepEqual(proof.operations.at(-1).views, [{ view_id: view, database_id: libraryDatabase, data_source_id: libraryDataSource }]);
+  for (const mutate of [
+    value => { value[5].view_database_id = foreignRoot; },
+    value => { value[6].structure.parent.database_id = foreignRoot; },
+    value => { value[6].structure.data_source_id = foreignRoot; },
+    value => { value[6].structure.id = foreignRoot; },
+    value => { value[7].path = '/v1/views/' + foreignRoot + '/queries'; },
+    value => { value[8].path = '/v1/views/' + foreignRoot + '/queries/' + query; },
+    value => { value.splice(6, 1); },
+  ]) { const changed = structuredClone(rows); mutate(changed); assert.throws(() => validateDailyLibraryRequests(changed, libraryRoot)); }
+});
+
+test('passive HTTP projects only Library structure identities and preserves original response bytes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'daily-root-structure-'));
+  const preload = dailyObserverPreloadSource({ directory, cliEntry: join(directory, 'unused-cli.js'), library: libraryRoot,
+    responseRequestIdBodyOrigins: ['http://controlled-root.test'] });
+  const values = {
+    ['/v1/pages/' + libraryRoot]: { object: 'page', id: libraryRoot, properties: { secret: 'UNRECORDED_AUTHOR_TEXT' } },
+    ['/v1/blocks/' + libraryRoot + '/children']: { object: 'list', has_more: false, next_cursor: null,
+      results: [{ id: libraryDatabase, type: 'child_database', parent: { type: 'page_id', page_id: libraryRoot }, child_database: { title: 'UNRECORDED_AUTHOR_TEXT' } }] },
+    ['/v1/databases/' + libraryDatabase]: { object: 'database', id: libraryDatabase, parent: { type: 'page_id', page_id: libraryRoot }, data_sources: [{ id: libraryDataSource, name: 'UNRECORDED_AUTHOR_TEXT' }] },
+    ['/v1/data_sources/' + libraryDataSource]: { object: 'data_source', id: libraryDataSource, parent: { type: 'database_id', database_id: libraryDatabase }, properties: { Name: 'UNRECORDED_AUTHOR_TEXT' } },
+    ['/v1/views?database_id=' + libraryDatabase]: { results: [{ object: 'view', id: foreignRoot }], has_more: false, next_cursor: null },
+    ['/v1/views/' + foreignRoot]: { id: foreignRoot, type: 'table', name: 'UNRECORDED_AUTHOR_TEXT', parent: { type: 'database_id', database_id: libraryDatabase }, data_source_id: libraryDataSource },
+    ['/v1/blocks/' + foreignRoot + '/children']: { object: 'list', results: [{ paragraph: 'UNRECORDED_AUTHOR_TEXT' }] },
+  };
+  const child = `
+    const http = require('node:http'), vm = require('node:vm'); const values = ${JSON.stringify(values)};
+    const retainedFetch = globalThis.fetch;
+    const server = http.createServer((req,res) => { res.writeHead(200, {'content-type':'application/json','x-request-id':'${sdkRequestId}'}); res.end(JSON.stringify(values[req.url])); });
+    (async () => { await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+      try { const origin='http://127.0.0.1:'+server.address().port;
+        vm.runInThisContext(${JSON.stringify(preload)}.replaceAll('http://controlled-root.test',origin));
+        if(globalThis.fetch!==retainedFetch) throw new Error('Observer replaced fetch');
+        for(const [path,value] of Object.entries(values)){ const response=await retainedFetch(origin+path); if(await response.text()!==JSON.stringify(value))throw new Error('Response changed'); }
+      } finally { await new Promise(resolve=>server.close(resolve)); }
+    })().catch(error=>{console.error(error);process.exitCode=1;});
+  `;
+  execFileSync(process.execPath, ['-e', child], { timeout: 15000, stdio: 'pipe' });
+  const raw = (await Promise.all((await readdir(directory)).map(file => readFile(join(directory, file), 'utf8')))).join('');
+  assert.equal(raw.includes('UNRECORDED_AUTHOR_TEXT'), false);
+  const rows = raw.trim().split('\n').map(JSON.parse), projections = rows.filter(row => row.event === 'http_end' && row.library_structure);
+  assert.deepEqual(projections.map(row => row.library_structure.kind), ['page', 'root-children', 'database', 'data_source', 'view']);
+  assert.equal(rows.filter(row => row.event === 'http_end').length, 7);
+  assert.equal(projections[1].library_structure.children[0].parent.page_id, libraryRoot);
+  assert.deepEqual(projections[2].library_structure.data_source_ids, [libraryDataSource]);
+  assert.equal(projections[3].library_structure.parent.database_id, libraryDatabase);
+  assert.equal(rows.find(row => row.event === 'http_start' && row.path === '/v1/views').view_database_id, libraryDatabase);
+  assert.equal(projections[4].library_structure.parent.database_id, libraryDatabase);
+  assert.equal(projections[4].library_structure.data_source_id, libraryDataSource);
 });
 
 test('SDK HTTP rejects absent, ambiguous, failed or mismatched receipt evidence', () => {

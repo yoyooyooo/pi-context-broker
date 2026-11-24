@@ -1,4 +1,3 @@
-import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -122,6 +121,7 @@ if (!worker) {
     await jiti.import(join(packageRoot, 'src/notion-source.ts'));
   const { DEFAULT_RESOURCE_READ_BUDGET, normalizeResourceReadBudget } =
     await jiti.import(join(packageRoot, 'src/resource-read-types.ts'));
+  const { parseNativeReference } = await jiti.import(join(packageRoot, 'src/native-reference.ts'));
   const source = { type: 'notion', id: 'current-sdk', namespace: 'current-sdk',
     library: fixture.notion.library.library_id, cacheDir: join(out, 'host-cache'), prefetch: false };
   let directory, selected, loaded;
