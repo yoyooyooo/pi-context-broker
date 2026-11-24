@@ -175,8 +175,13 @@ export function onboardingResult({ episode, episodeRun, graderRun, business, har
     daily: 'not_run' };
 }
 
-const invoke = (method, inputPath) => ['node', '--input-type=module', '--eval',
-  `const {pathToFileURL}=await import('node:url');const m=await import(pathToFileURL(process.env.PAIRED_BROKER_SOURCE+'/scripts/notion-agent-onboarding-runtime.mjs'));await m.${method}(process.argv[1]);`, inputPath];
+export function onboardingWorkerCommand(method, inputPath, inherited = process.env, nodeExecArgv = process.execArgv) {
+  assert.ok(['runOnboardingEpisode', 'runOnboardingGrader'].includes(method));
+  const proxy = inherited.NODE_USE_ENV_PROXY === '1'
+    || (inherited.NODE_USE_ENV_PROXY === undefined && nodeExecArgv.includes('--use-env-proxy'));
+  return ['node', ...(proxy ? ['--use-env-proxy'] : []), '--input-type=module', '--eval',
+    `${proxy ? "process.env.NODE_USE_ENV_PROXY='1';" : ''}const {pathToFileURL}=await import('node:url');const m=await import(pathToFileURL(process.env.PAIRED_BROKER_SOURCE+'/scripts/notion-agent-onboarding-runtime.mjs'));await m.${method}(process.argv[1]);`, inputPath];
+}
 
 export async function runOnboardingWorkflow(config) {
   const selected = await input(config), plan = await planOnboardingWorkflow(config);
@@ -209,7 +214,7 @@ export async function runOnboardingWorkflow(config) {
   await save(join(evidence, 'started.json'), result);
   try {
     result.episodeRun = await runEnvironment({ ...common, id: episodeId, parent: config.parent, models: config.modelsFile,
-      'pi-extension': extensions, 'timeout-ms': String(plan.timeoutMs + 30000), args: invoke('runOnboardingEpisode', publicInput) });
+      'pi-extension': extensions, 'timeout-ms': String(plan.timeoutMs + 30000), args: onboardingWorkerCommand('runOnboardingEpisode', publicInput) });
     result.episode = await json(join(episodeRoot, 'episode.json')).catch(() => ({ status: 'unknown' }));
     const sessionPath = result.episode.sessionFile;
     const session = sessionPath && sessionPath.startsWith(episodeRoot + '/sessions/') ? await readFile(sessionPath, 'utf8').catch(() => '') : '';
@@ -219,7 +224,7 @@ export async function runOnboardingWorkflow(config) {
       await save(graderInput, { version: 1, libraryId: libraries[0].libraryId, parent: config.parent, library: libraries[0].library });
       result.graderRun = await runEnvironment({ ...common, id: graderId, library: libraries[0].libraryId,
         'pass-env': config.passEnv.filter(name => name === 'NOTION_API_TOKEN' || name === 'NODE_EXTRA_CA_CERTS' || /PROXY$/u.test(name)),
-        'timeout-ms': '600000', args: invoke('runOnboardingGrader', graderInput) });
+        'timeout-ms': '600000', args: onboardingWorkerCommand('runOnboardingGrader', graderInput) });
       result.readback = await json(join(result.graderRun.root, 'readback.json')).catch(() => null);
       result.business = gradeOnboardingBusiness(selected.oracle, result.readback, result.episode);
     } else result.business = { status: 'blocked', failures: ['Expected one actual Library root from native tool results; reconcile the authorized parent before retrying'] };

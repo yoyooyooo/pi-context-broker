@@ -5,12 +5,13 @@ import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { appendFile, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { connect } from 'node:net';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import test from 'node:test';
 import { skillFileRef } from './skill-ref-fixture.mjs';
-import { gradeOnboardingAssertions, gradeOnboardingBusiness, gradeOnboardingReadback, onboardingProducedLibraries, onboardingResult, validateOnboardingConfig, validateOnboardingOracle } from './notion-agent-onboarding.mjs';
+import { onboardingWorkerCommand, gradeOnboardingAssertions, gradeOnboardingBusiness, gradeOnboardingReadback, onboardingProducedLibraries, onboardingResult, validateOnboardingConfig, validateOnboardingOracle } from './notion-agent-onboarding.mjs';
 import { validateOnboardingFileOutput, validateOnboardingLibrary, validateOnboardingPlacement, validateOnboardingLoaded, validateOnboardingSnapshot } from './notion-agent-onboarding-runtime.mjs';
 import { validateAgentCorpus } from './notion-agent-scenarios.mjs';
 
@@ -241,4 +242,49 @@ test('the installed CLI grader reads complete current HTTP pagination, long text
   assert.ok(service.requests.every(call => call.method === 'GET' || call.method === 'POST' && /^\/v1\/data_sources\/[^/]+\/query$/u.test(call.path)));
   await writeFile(join(base, 'result.json'), JSON.stringify({ status: 'passed', scope: 'controlled-current-HTTP-installed-CLI-grader', files: fixture.expected.file_count,
     cli, httpRequests: service.requests.length, schemaReads: service.requests.filter(call => physicalPaths.includes(call.path)).length, semanticWrites: 0, notRun: ['real model', 'live Notion', 'daily'] }, null, 2) + '\n');
+});
+
+
+test('native onboarding propagates explicit proxy selection to workers and their CLI children', { timeout: 20000 }, async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'onboarding-proxy-')));
+  await mkdir(join(root, 'scripts'));
+  await writeFile(join(root, 'scripts/notion-agent-onboarding-runtime.mjs'), `
+    import { execFile } from 'node:child_process';
+    import { promisify } from 'node:util';
+    export async function runOnboardingEpisode(url) {
+      const parent = await (await fetch(url)).text();
+      const result = await promisify(execFile)(process.execPath, ['--input-type=module', '--eval',
+        "process.stdout.write(await (await fetch(process.argv[1])).text())", url], { env: process.env, timeout: 10000 });
+      process.stdout.write(JSON.stringify({parent, child: result.stdout, proxy: process.env.NODE_USE_ENV_PROXY}));
+    }
+  `);
+  const observed = [], tunnels = [], sockets = new Set();
+  const respond = (request, response) => {
+    observed.push({host: request.headers.host, path: request.url}); response.end('real proxy response');
+  };
+  const origin = createServer(respond), proxy = createServer(respond);
+  for (const server of [origin, proxy]) {
+    server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  }
+  proxy.on('connect', (request, socket, head) => {
+    tunnels.push(request.url);
+    const upstream = connect(origin.address().port, '127.0.0.1', () => {
+      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      if (head.length) upstream.write(head); socket.pipe(upstream); upstream.pipe(socket);
+    });
+    sockets.add(upstream); upstream.on('close', () => sockets.delete(upstream));
+    upstream.on('error', () => socket.destroy()); socket.on('error', () => upstream.destroy());
+  });
+  t.after(async () => { for (const socket of sockets) socket.destroy(); await Promise.all([origin, proxy].map(server => new Promise(done => server.close(done)))); });
+  const env = { ...process.env, PAIRED_BROKER_SOURCE: root, HTTP_PROXY: 'http://127.0.0.1:' + proxy.address().port, HTTPS_PROXY: 'http://127.0.0.1:' + proxy.address().port, NO_PROXY: '' };
+  for (const name of ['NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'http_proxy', 'https_proxy', 'no_proxy', 'ALL_PROXY', 'all_proxy']) delete env[name];
+  const args = onboardingWorkerCommand('runOnboardingEpisode', 'http://onboarding-proxy.invalid/probe', {}, ['--use-env-proxy']);
+  const result = await execute(process.execPath, args.slice(1), { env, timeout: 15000 });
+  assert.deepEqual(JSON.parse(result.stdout), {parent: 'real proxy response', child: 'real proxy response', proxy: '1'});
+  assert.equal(observed.length, 2); assert.ok(observed.every(row => row.host === 'onboarding-proxy.invalid'));
+  assert.ok(tunnels.every(authority => authority === 'onboarding-proxy.invalid:80'));
+  assert.ok(onboardingWorkerCommand('runOnboardingGrader', '/input', { NODE_USE_ENV_PROXY: '1' }, []).includes('--use-env-proxy'));
+  assert.ok(!onboardingWorkerCommand('runOnboardingEpisode', '/input', {}, []).includes('--use-env-proxy'));
+  assert.ok(!onboardingWorkerCommand('runOnboardingEpisode', '/input', { NODE_USE_ENV_PROXY: '0' }, ['--use-env-proxy']).includes('--use-env-proxy'));
 });
