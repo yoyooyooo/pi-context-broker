@@ -5,7 +5,7 @@ import path from "node:path"
 import os from "node:os"
 import { createHash } from "node:crypto"
 import { spawnSync } from "node:child_process"
-import { pathToFileURL } from "node:url"
+import { pathToFileURL, fileURLToPath } from "node:url"
 import { inspect } from "node:util"
 import { assertFormalCase, assertFormalResult, inspectFormalResult } from "./formal-result-contract.mjs"
 
@@ -38,13 +38,16 @@ const out = options.has("--out") ? path.resolve(options.get("--out")) :
 if (fs.existsSync(out)) assert.equal(fs.readdirSync(out).length, 0, "Use a new empty output directory")
 else fs.mkdirSync(out, { recursive: true, mode: 0o700 })
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex")
-const head = spawnSync("git", ["-C", repository, "rev-parse", "HEAD"], { encoding: "utf8" })
-assert.equal(head.status, 0)
+const head = spawnSync("git", ["-C", repository, "rev-parse", "--show-toplevel", "HEAD"], { encoding: "utf8" })
+const headLines = head.stdout.trim().split("\n")
+const gitCheckout = head.status === 0 && headLines.length === 2 && /^[a-f0-9]{40}$/.test(headLines[1])
+  && fs.realpathSync(headLines[0]) === fs.realpathSync(repository)
 const summary = {
   version: 2,
   suite,
   selected_model: selectedModel ?? null,
-  checkout_commit: head.stdout.trim(),
+  checkout_commit: gitCheckout ? headLines[1] : null,
+  source_provenance: gitCheckout ? { kind: "git-checkout" } : null,
   runner_sha256: hash(fs.readFileSync(import.meta.filename)),
   result_contract_sha256: hash(fs.readFileSync(new URL("./formal-result-contract.mjs", import.meta.url))),
   runs: [],
@@ -91,6 +94,30 @@ try {
   }
   assert.ok(selectedModel === undefined || coverage.cases.some((c) => c.model === selectedModel), "Unknown model in suite")
   const cases = coverage.cases.filter((c) => selectedModel === undefined || c.model === selectedModel)
+  if (!gitCheckout) {
+    // The paired CLI owns the existing sealed-snapshot contract. Verify that
+    // helper against its own selected inventory before applying it to Broker.
+    const cli = process.env.PAIRED_CLI_SOURCE
+    assert.ok(cli && path.isAbsolute(cli), "Gitless formal runs require the official paired CLI source")
+    const identityFile = path.join(cli, "scripts/formal_source_identity.py")
+    const identityHash = hash(fs.readFileSync(identityFile))
+    const identify = (role, source, files) => {
+      const result = spawnSync("python3", ["-B", identityFile, "--repository", source, "--role", role], {
+        encoding: "utf8", input: JSON.stringify(files),
+      })
+      assert.equal(result.status, 0, result.stderr || "Unable to establish formal source identity")
+      return JSON.parse(result.stdout)
+    }
+    const helperIdentity = identify("cli", cli, { "scripts/formal_source_identity.py": identityHash })
+    const identityFiles = { ...coverage.files }
+    for (const file of [coverageFile, import.meta.filename,
+      fileURLToPath(new URL("./formal-result-contract.mjs", import.meta.url)), path.join(repository, lockFile),
+      ...coverage.cases.flatMap(c => [path.join(root, c.model + ".tla"),
+        path.join(root, c.model + ".view.mjs"), path.join(root, c.model + "." + c.config + configExtension)])])
+      identityFiles[path.relative(repository, file)] = hash(fs.readFileSync(file))
+    Object.assign(summary, identify("broker", repository, identityFiles))
+    summary.shared_source_identity = { sha256: identityHash, provenance: helperIdentity.source_provenance }
+  }
   summary.expected_cases = cases
   const scratch = path.join(out, "scratch")
   const retained = path.join(out, "retained-tool-temporaries")
