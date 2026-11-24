@@ -128,13 +128,26 @@ export function validateDailyReceipt(receipt, config, currentPair) {
   validateDailySdkOperations(receipt.actual_default_sdk.operations, library);
   const structure = validateDailyLibraryRequests(receipt.actual_default_sdk.http, library);
   assert.deepEqual(receipt.library_structure, structure);
-  assert.equal(receipt.notion_body_requests, structure.root_children_requests);
+  assert.ok(Array.isArray(receipt.phases), 'The current daily command phases are required');
+  const doctorPhases = receipt.phases.filter(phase => phase.command === '/context-broker doctor');
+  assert.equal(doctorPhases.length, 1, 'One explicit doctor phase is required');
+  const doctorPhase = doctorPhases[0];
+  assert.equal(doctorPhase.disposition, 'handled');
+  const doctorStarted = Date.parse(doctorPhase.startedAt), doctorFinished = Date.parse(doctorPhase.finishedAt);
+  assert.ok(Number.isFinite(doctorStarted) && Number.isFinite(doctorFinished)
+    && doctorStarted >= started && doctorFinished >= doctorStarted && doctorFinished <= finished,
+    'The doctor phase must belong to this daily execution');
+  const doctor = validateDailyDoctorCli(receipt.explicit_doctor_cli?.observations, {
+    library, hostPid: receipt.host_process.pid, entry: join(receipt.worktrees_before.broker.package_root, 'dist/ntn-skills.mjs'),
+    sha256: config.embeddedCliSha256, executable: receipt.host_process.node.path, phase: doctorPhase,
+  });
+  assert.deepEqual(receipt.explicit_doctor_cli, doctor, 'The doctor receipt differs from its independent observations');
+  assert.equal(receipt.notion_body_requests, structure.root_children_requests + doctor.library_structure.root_children_requests);
   assert.equal(receipt.actual_default_sdk.owner_pid, receipt.host_process.pid);
   assert.ok(receipt.actual_default_sdk.operations.every(operation => operation.pid === receipt.host_process.pid),
     'Default SDK observations must belong to the actual owned Pi process');
-  assert.ok(receipt.explicit_doctor_cli?.doctor?.ok === true && receipt.explicit_doctor_cli.doctor.transport === 'direct_http');
   assert.ok(Number.isInteger(receipt.metadata_http_requests) && receipt.metadata_http_requests > 0);
-  assert.ok(receipt.metadata_http_requests >= receipt.actual_default_sdk.http.length - structure.root_children_requests);
+  assert.equal(receipt.metadata_http_requests, receipt.actual_default_sdk.http.length + doctor.http.length - receipt.notion_body_requests);
   for (const name of ['provider_invocations', 'tool_invocations', 'remote_mutations', 'skill_body_reads']) assert.equal(receipt[name], 0);
   assert.match(receipt.harness?.sha256 ?? '', /^[a-f0-9]{64}$/);
   return { machine: receipt.machine, delivery, builds: current, started_at: receipt.started_at, finished_at: receipt.finished_at,
@@ -404,7 +417,8 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
       matchedSdk.add(match.attempt.request_id); sdk.push(attributed); source.push(attributed);
     } else {
       assert.ok(role === 'source' || role === 'other-plugin', 'HTTP without a verified source or other-plugin process ancestry');
-      (role === 'source' ? source : otherPlugins).push(request);
+      if (role === 'source') source.push(completedDailyHttp(request, observed));
+      else otherPlugins.push(request);
     }
   }
   assert.equal(matchedSdk.size, sdkAttempts.size, 'An SDK attempt lacks independent HTTP evidence');
@@ -419,6 +433,81 @@ export function validateDailySdkOperations(operations, library) {
     if (row.operation === 'library-selection') assert.ok(row.library === null || row.library === library, 'Local selection names another Library');
     else assert.equal(row.library, library, 'Metadata belongs to another Library, even if its Source or Skill name matches');
   }
+}
+
+function validateLibraryRequestGroup(group, library, operation, requestId, previous, doctor) {
+  const pages = group.filter(row => row.path === '/v1/blocks/' + library + '/children');
+  let databases = previous ? new Map(previous.databases) : new Map();
+  let dataSources = previous ? new Map(previous.dataSources) : new Map();
+  let views = previous ? new Map(previous.views) : new Map();
+  if (pages.length) {
+    databases = new Map(); dataSources = new Map(); views = new Map();
+    const children = new Set(), direct = new Set(); let cursor = null;
+    for (const [index, page] of pages.entries()) {
+      assert.equal(page.method, 'GET');
+      assert.equal(page.cursor_sha256, cursor, 'Root children pagination is missing or reordered');
+      const projection = page.structure;
+      assert.equal(projection?.kind, 'root-children'); assert.equal(projection.root, library);
+      assert.equal(typeof projection.has_more, 'boolean'); assert.ok(Array.isArray(projection.children));
+      for (const child of projection.children) {
+        assert.ok(rootId(child.id) && !children.has(child.id), 'Root children omit or repeat an identity'); children.add(child.id);
+        if (child.type !== 'child_database' || child.in_trash || child.archived) continue;
+        assert.deepEqual(child.parent, { type: 'page_id', page_id: library }, 'A database is not a direct child of the selected root');
+        direct.add(child.id);
+      }
+      cursor = projection.next_cursor_sha256;
+      if (projection.has_more) assert.match(cursor ?? '', /^[a-f0-9]{64}$/u);
+      else { assert.equal(cursor, null); assert.equal(index, pages.length - 1, 'A complete census cannot have extra pages'); }
+    }
+    assert.equal(pages.at(-1).structure.has_more, false, 'Truncated root children cannot authorize tables');
+    for (const request of group.filter(row => /^\/v1\/databases\/[^/]+$/u.test(row.path))) {
+      const id = request.path.split('/').at(-1), projection = request.structure;
+      assert.ok(direct.has(id), 'A database descriptor was read outside the selected root');
+      assert.equal(projection?.kind, 'database'); assert.equal(projection.id, id);
+      assert.deepEqual(projection.parent, { type: 'page_id', page_id: library });
+      assert.equal(projection.in_trash, false); assert.equal(projection.archived, false);
+      assert.ok(Array.isArray(projection.data_source_ids) && projection.data_source_ids.length
+        && projection.data_source_ids.every(rootId) && new Set(projection.data_source_ids).size === projection.data_source_ids.length);
+      databases.set(id, projection.data_source_ids);
+    }
+    assert.deepEqual([...databases.keys()].sort(), [...direct].sort(), 'Every direct database needs its actual descriptor response');
+  } else assert.ok(operation === 'list' && previous, 'Library validation requires a complete root children census');
+  const dataSourceOwners = new Map();
+  for (const [database, ids] of databases) for (const id of ids) {
+    assert.ok(!dataSourceOwners.has(id) || dataSourceOwners.get(id) === database, 'Data source ownership is ambiguous');
+    dataSourceOwners.set(id, database);
+  }
+  for (const request of group.filter(row => /^\/v1\/data_sources\/[^/]+$/u.test(row.path))) {
+    const id = request.path.split('/').at(-1), projection = request.structure;
+    assert.equal(projection?.kind, 'data_source'); assert.equal(projection.id, id);
+    assert.equal(projection.parent?.type, 'database_id');
+    const database = projection.parent.database_id;
+    assert.ok(databases.get(database)?.includes(id), 'A data source has no direct-root database binding');
+    assert.equal(projection.in_trash, false); assert.equal(projection.archived, false);
+    assert.ok(!dataSources.has(id) || dataSources.get(id) === database, 'Data source ownership is ambiguous');
+    dataSources.set(id, database);
+  }
+  assert.deepEqual([...dataSources.keys()].sort(), [...dataSourceOwners.keys()].sort(),
+    'Every declared data source needs its actual descriptor response');
+  assert.ok(databases.size && dataSources.size, 'The Library structure proof is empty');
+  for (const request of group.filter(row => /^\/v1\/views\/[^/]+$/u.test(row.path))) {
+    const id = request.path.split('/').at(-1), projection = request.structure;
+    assert.equal(request.method, 'GET'); assert.equal(projection?.kind, 'view'); assert.equal(projection.id, id);
+    assert.equal(projection.parent?.type, 'database_id');
+    const database = projection.parent.database_id, dataSource = projection.data_source_id;
+    assert.ok(databases.get(database)?.includes(dataSource) && dataSources.get(dataSource) === database, 'A View has no proven root table owner');
+    views.set(id, { database_id: database, data_source_id: dataSource });
+  }
+  const scope = { library, databases, dataSources, views, ...(doctor ? { doctor } : {}) };
+  for (const request of group) {
+    const kind = classifyDailyNotionRequest(request, scope);
+    if (request.attribution.kind === 'sdk' && request.attribution.request_kind === 'notion_body') assert.equal(kind, 'library-structure', 'A body metric is not an exact root census');
+    if (kind === 'library-structure' && request.attribution.kind === 'sdk') assert.equal(request.attribution.request_kind, 'notion_body');
+  }
+  return { scope, proof: { request_id: requestId, operation, root_children_requests: pages.length,
+    databases: [...databases].map(([database_id, data_source_ids]) => ({ database_id, data_source_ids })),
+    data_sources: [...dataSources].map(([data_source_id, database_id]) => ({ data_source_id, database_id })),
+    views: [...views].map(([view_id, binding]) => ({ view_id, ...binding })) } };
 }
 
 /** Establish physical bounds only from independently observed, completed HTTP
@@ -438,88 +527,111 @@ export function validateDailyLibraryRequests(requests, library) {
   let previous, rootReads = 0;
   const proofs = [];
   for (const [requestId, group] of groups) {
-    const operation = group[0].attribution.operation;
-    const pages = group.filter(row => row.path === '/v1/blocks/' + library + '/children');
-    let databases = previous ? new Map(previous.databases) : new Map();
-    let dataSources = previous ? new Map(previous.dataSources) : new Map();
-    let views = previous ? new Map(previous.views) : new Map();
-    if (pages.length) {
-      databases = new Map(); dataSources = new Map(); views = new Map();
-      const children = new Set(), direct = new Set(); let cursor = null;
-      for (const [index, page] of pages.entries()) {
-        assert.equal(page.method, 'GET');
-        assert.equal(page.cursor_sha256, cursor, 'Root children pagination is missing or reordered');
-        const projection = page.structure;
-        assert.equal(projection?.kind, 'root-children'); assert.equal(projection.root, library);
-        assert.equal(typeof projection.has_more, 'boolean'); assert.ok(Array.isArray(projection.children));
-        for (const child of projection.children) {
-          assert.ok(rootId(child.id) && !children.has(child.id), 'Root children omit or repeat an identity'); children.add(child.id);
-          if (child.type !== 'child_database' || child.in_trash || child.archived) continue;
-          assert.deepEqual(child.parent, { type: 'page_id', page_id: library }, 'A database is not a direct child of the selected root');
-          direct.add(child.id);
-        }
-        cursor = projection.next_cursor_sha256;
-        if (projection.has_more) assert.match(cursor ?? '', /^[a-f0-9]{64}$/u);
-        else { assert.equal(cursor, null); assert.equal(index, pages.length - 1, 'A complete census cannot have extra pages'); }
-      }
-      assert.equal(pages.at(-1).structure.has_more, false, 'Truncated root children cannot authorize tables');
-      for (const request of group.filter(row => /^\/v1\/databases\/[^/]+$/u.test(row.path))) {
-        const id = request.path.split('/').at(-1), projection = request.structure;
-        assert.ok(direct.has(id), 'A database descriptor was read outside the selected root');
-        assert.equal(projection?.kind, 'database'); assert.equal(projection.id, id);
-        assert.deepEqual(projection.parent, { type: 'page_id', page_id: library });
-        assert.equal(projection.in_trash, false); assert.equal(projection.archived, false);
-        assert.ok(Array.isArray(projection.data_source_ids) && projection.data_source_ids.length
-          && projection.data_source_ids.every(rootId) && new Set(projection.data_source_ids).size === projection.data_source_ids.length);
-        databases.set(id, projection.data_source_ids);
-      }
-      assert.deepEqual([...databases.keys()].sort(), [...direct].sort(), 'Every direct database needs its actual descriptor response');
-    } else assert.ok(operation === 'list' && previous, 'Library validation requires a complete root children census');
-    const dataSourceOwners = new Map();
-    for (const [database, ids] of databases) for (const id of ids) {
-      assert.ok(!dataSourceOwners.has(id) || dataSourceOwners.get(id) === database, 'Data source ownership is ambiguous');
-      dataSourceOwners.set(id, database);
-    }
-    for (const request of group.filter(row => /^\/v1\/data_sources\/[^/]+$/u.test(row.path))) {
-      const id = request.path.split('/').at(-1), projection = request.structure;
-      assert.equal(projection?.kind, 'data_source'); assert.equal(projection.id, id);
-      assert.equal(projection.parent?.type, 'database_id');
-      const database = projection.parent.database_id;
-      assert.ok(databases.get(database)?.includes(id), 'A data source has no direct-root database binding');
-      assert.equal(projection.in_trash, false); assert.equal(projection.archived, false);
-      assert.ok(!dataSources.has(id) || dataSources.get(id) === database, 'Data source ownership is ambiguous');
-      dataSources.set(id, database);
-    }
-    assert.ok(databases.size && dataSources.size, 'The Library structure proof is empty');
-    for (const request of group.filter(row => /^\/v1\/views\/[^/]+$/u.test(row.path))) {
-      const id = request.path.split('/').at(-1), projection = request.structure;
-      assert.equal(request.method, 'GET'); assert.equal(projection?.kind, 'view'); assert.equal(projection.id, id);
-      assert.equal(projection.parent?.type, 'database_id');
-      const database = projection.parent.database_id, dataSource = projection.data_source_id;
-      assert.ok(databases.get(database)?.includes(dataSource) && dataSources.get(dataSource) === database, 'A View has no proven root table owner');
-      views.set(id, { database_id: database, data_source_id: dataSource });
-    }
-    const scope = { library, databases, dataSources, views };
-    for (const request of group) {
-      const kind = classifyDailyNotionRequest(request, scope);
-      if (request.attribution.request_kind === 'notion_body') assert.equal(kind, 'library-structure', 'A body metric is not an exact root census');
-      if (kind === 'library-structure') { assert.equal(request.attribution.request_kind, 'notion_body'); rootReads++; }
-    }
-    proofs.push({ request_id: requestId, operation, root_children_requests: pages.length,
-      databases: [...databases].map(([database_id, data_source_ids]) => ({ database_id, data_source_ids })),
-      data_sources: [...dataSources].map(([data_source_id, database_id]) => ({ data_source_id, database_id })),
-      views: [...views].map(([view_id, binding]) => ({ view_id, ...binding })) });
-    previous = scope;
+    const { scope, proof } = validateLibraryRequestGroup(group, library, group[0].attribution.operation, requestId, previous);
+    proofs.push(proof); rootReads += proof.root_children_requests; previous = scope;
   }
   assert.ok(rootReads > 0, 'No actual Library root validation was observed');
   return { library_id: library, root_children_requests: rootReads, operations: proofs };
 }
 
+function completedDailyHttp(request, observed) {
+  const terminal = observed.filter(row => ['http_end', 'http_error'].includes(row.event)
+    && row.pid === request.pid && row.id === request.id);
+  assert.equal(terminal.length, 1, 'A bundled CLI HTTP request needs one independent terminal');
+  const response = terminal[0];
+  assert.ok(response.event === 'http_end' && response.status >= 200 && response.status < 300,
+    'A bundled CLI HTTP request did not complete with HTTP 2xx');
+  return { ...request, response,
+    ...(Object.hasOwn(response, 'library_structure') ? { structure: response.library_structure } : {}) };
+}
+
+/** A CLI receipt has its own process and HTTP evidence; it never supplies SDK metrics. */
+export function validateDailyDoctorCli(observed, { library, hostPid, entry, sha256, executable, phase }) {
+  assert.ok(rootId(library) && Number.isSafeInteger(hostPid) && hostPid > 0);
+  assert.ok(isAbsolute(entry) && isAbsolute(executable)); assert.match(sha256, /^[a-f0-9]{64}$/u);
+  assert.ok(Array.isArray(observed) && !observed.some(row => row.event === 'http_observer_error'),
+    'Independent doctor observation is missing or invalid');
+  assert.equal(phase?.command, '/context-broker doctor'); assert.equal(phase.disposition, 'handled');
+  const time = value => { const result = Date.parse(value); assert.ok(Number.isFinite(result), 'Doctor evidence needs an actual timestamp'); return result; };
+  const phaseStart = time(phase.startedAt), phaseEnd = time(phase.finishedAt);
+  assert.ok(phaseEnd >= phaseStart, 'The explicit doctor phase is incomplete');
+  const one = (rows, message) => { assert.equal(rows.length, 1, message); return rows[0]; };
+  const spawned = one(observed.filter(row => row.event === 'spawn' && row.bundled_cli), 'One explicit bundled doctor CLI is required');
+  const pid = spawned.child_pid, args = ['ctl', 'doctor', '--library', library];
+  assert.ok(Number.isSafeInteger(pid) && pid > 0 && pid !== hostPid);
+  assert.equal(spawned.pid, hostPid, 'The doctor must be a direct child of the owned Pi');
+  assert.equal(spawned.executable, executable); assert.equal(spawned.real_script, entry);
+  assert.equal(spawned.script_sha256, sha256); assert.deepEqual(spawned.cli_args, args, 'The doctor argv must select only the expected Library');
+  const started = one(observed.filter(row => row.event === 'process_start' && row.pid === pid), 'The doctor needs its independent process start');
+  assert.equal(started.ppid, hostPid); assert.equal(started.executable, executable);
+  assert.equal(started.real_entry, entry); assert.equal(started.entry_sha256, sha256);
+  assert.equal(started.args_sha256, hash(JSON.stringify(args)), 'The actual doctor argv differs from its spawn');
+  const closed = one(observed.filter(row => row.event === 'child_close' && row.child_pid === pid), 'The doctor needs one parent-observed close');
+  assert.equal(closed.pid, hostPid); assert.equal(closed.bundled_cli, true);
+  assert.equal(closed.executable, executable); assert.equal(closed.real_script, entry);
+  assert.equal(closed.script_sha256, sha256); assert.deepEqual(closed.cli_args, args);
+  assert.equal(closed.code, 0); assert.equal(closed.signal, null);
+  assert.ok(Number.isSafeInteger(closed.stdout_bytes) && closed.stdout_bytes > 0);
+  assert.match(closed.stdout_sha256 ?? '', /^[a-f0-9]{64}$/u);
+  assert.equal(closed.receipt?.ok, true); assert.equal(closed.receipt.transport, 'direct_http');
+  assert.equal(closed.receipt.notion_api_version, '2026-03-11'); assert.equal(closed.receipt.authentication, 'available');
+  assert.equal(closed.receipt.skill_read?.checked, false, 'The doctor must not request a Skill body');
+  const exited = one(observed.filter(row => row.event === 'process_exit' && row.pid === pid), 'The doctor needs a witnessed exit');
+  assert.equal(exited.code, 0);
+  const complete = one(observed.filter(row => row.event === 'http_observer_end' && row.pid === pid), 'The doctor HTTP observer must finish');
+  assert.equal(complete.complete, true); assert.equal(complete.errors, 0); assert.deepEqual(complete.pending, []);
+  for (const row of [spawned, started, closed, exited, complete])
+    assert.ok(time(row.at) >= phaseStart && time(row.at) <= phaseEnd, 'The doctor must stay within its explicit command phase');
+  assert.ok(time(closed.at) >= time(started.at) && time(exited.at) >= time(started.at));
+  // Preserve descendant observations so a child cannot inherit doctor permission.
+  const pids = new Set([pid]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const row of observed) {
+      const parent = row.event === 'process_start' ? row.ppid : row.event === 'spawn' ? row.pid : null;
+      const child = row.event === 'process_start' ? row.pid : row.event === 'spawn' ? row.child_pid : null;
+      if (pids.has(parent) && Number.isSafeInteger(child) && !pids.has(child)) { pids.add(child); changed = true; }
+    }
+  }
+  const rows = observed.filter(row => pids.has(row.pid) || row === spawned || row === closed);
+  const transport = row => row.method === 'CONNECT' || row.transport === 'proxy-connect';
+  const created = rows.filter(row => row.event === 'http_created' && !transport(row));
+  const requests = rows.filter(row => row.event === 'http_start' && !transport(row));
+  assert.ok(requests.length > 0 && created.length === requests.length, 'Every doctor HTTP creation needs its actual sent request');
+  assert.equal(new Set(requests.map(row => row.pid + ':' + row.id)).size, requests.length, 'Doctor HTTP identities repeat');
+  const http = requests.map(request => {
+    assert.equal(request.pid, pid, 'A descendant cannot inherit the explicit doctor HTTP owner');
+    const creation = one(created.filter(row => row.pid === request.pid && row.id === request.id), 'Doctor HTTP has no unique creation');
+    for (const key of ['method', 'origin', 'path']) assert.equal(creation[key], request[key]);
+    const normalized = completedDailyHttp(request, rows), ended = time(normalized.response.at);
+    assert.ok(time(request.at) >= time(started.at) && ended >= time(request.at) && ended <= time(exited.at),
+      'Doctor HTTP escaped its actual process lifetime');
+    return { ...normalized, attribution: { kind: 'doctor', operation: 'doctor', library, owner_pid: hostPid, cli_pid: pid } };
+  });
+  const applicationIds = new Set(created.map(row => row.pid + ':' + row.id));
+  for (const row of rows.filter(row => ['http_end', 'http_error'].includes(row.event))) {
+    const isTransport = rows.some(request => ['http_created', 'http_start'].includes(request.event)
+      && request.pid === row.pid && request.id === row.id && transport(request));
+    assert.ok(isTransport || applicationIds.has(row.pid + ':' + row.id), 'An unowned doctor HTTP terminal was observed');
+  }
+  assert.ok(http.some(request => request.path === '/v1/pages/' + library), 'The doctor must independently read the selected root page');
+  const { proof } = validateLibraryRequestGroup(http, library, 'doctor', 'doctor:' + pid, undefined, { pid, owner_pid: hostPid });
+  return { entry, sha256, observations: rows, processes: [{ parent_pid: hostPid, pid, executable, script: spawned.script, args }],
+    doctor: closed.receipt, http, library_structure: { library_id: library, root_children_requests: proof.root_children_requests, operations: [proof] },
+    path_cli_used_for_default_source: false };
+}
+
 export function classifyDailyNotionRequest(request, scope) {
   assert.equal(request.origin, 'https://api.notion.com', 'Unexpected provider/external HTTP in the verified Notion consumer');
-  const exactRoot = scope && request.method === 'GET' && request.path === '/v1/blocks/' + scope.library + '/children'
-    && request.attribution?.library === scope.library && ['library', 'list'].includes(request.attribution.operation)
-    && request.attribution.target?.block_id === scope.library && request.structure?.kind === 'root-children';
+  const attribution = request.attribution;
+  const owner = attribution?.kind === 'sdk' && ['library', 'list'].includes(attribution.operation)
+    && attribution.target?.block_id === scope?.library
+    || attribution?.kind === 'doctor' && attribution.operation === 'doctor' && scope?.doctor
+      && attribution.cli_pid === request.pid && attribution.cli_pid === scope.doctor.pid
+      && attribution.owner_pid === scope.doctor.owner_pid;
+  const exactRoot = scope && owner && request.method === 'GET' && request.path === '/v1/blocks/' + scope.library + '/children'
+    && attribution.library === scope.library && request.structure?.kind === 'root-children' && request.structure.root === scope.library;
   if (exactRoot) return 'library-structure';
   const body = /^\/v1\/blocks(?:\/|$)/u.test(request.path) || /\/(?:markdown|children)(?:\/|$)/u.test(request.path);
   assert.equal(body, false, 'Startup/find/doctor must not load Skill bodies');
@@ -642,7 +754,7 @@ async function run(config) {
       const acknowledgment = await rpc.command('prompt', { message });
       assert.equal(acknowledgment?.disposition, 'handled', 'A metadata slash command must never dispatch to the model');
       const reports = notifications(rpc.frames.slice(start)).filter(text => /^(?:context-broker find:|Context Broker Doctor)/u.test(text));
-      result.phases.push({ command: message, startedAt, disposition: acknowledgment.disposition, diagnostics: reports.map(safeDiagnostic) });
+      result.phases.push({ command: message, startedAt, finishedAt: new Date().toISOString(), disposition: acknowledgment.disposition, diagnostics: reports.map(safeDiagnostic) });
       assert.ok(reports.length, 'The actual metadata command did not produce its notification');
       if (message.startsWith('/context-broker find ')) result.required_selection = validateDailyFind(reports, config.expectedFindRecord);
       if (message.endsWith('doctor')) {
@@ -658,21 +770,10 @@ async function run(config) {
     await rpc.closeInput(); rpc = undefined;
     const observed = await observedRows(observerDir);
     result.host_process = observedDailyHostProcess(host, await ownedPiProcesses(processLedger), observed, result.launch.args);
-    const spawned = observed.filter(row => row.event === 'spawn' && row.bundled_cli);
-    assert.ok(spawned.length, 'No explicit bundled doctor CLI child was observed');
-    for (const child of spawned) {
-      assert.equal(child.real_script, embedded.realpath); assert.equal(child.script_sha256, embedded.sha256);
-      const closed = observed.find(row => row.event === 'child_close' && row.pid === child.pid && row.child_pid === child.child_pid);
-      assert.ok(closed && closed.code === 0 && !closed.signal, 'Every observed bundled CLI must finish successfully');
-      assert.ok(child.cli_args[0] === 'ctl' && child.cli_args[1] === 'doctor', 'Default SDK discovery must not start catalog, identity or body CLI children');
-      assert.ok(observed.some(row => row.event === 'process_start' && row.pid === child.child_pid && row.real_entry === embedded.realpath && row.entry_sha256 === embedded.sha256), 'The real CLI child did not independently observe its installed entry');
-    }
-    const doctors = spawned.filter(row => row.cli_args[0] === 'ctl' && row.cli_args[1] === 'doctor');
-    assert.equal(doctors.length, 1, 'One explicit source doctor probe is expected');
-    assert.ok(doctors[0].at >= result.phases.find(phase => phase.command.endsWith('doctor')).startedAt, 'The doctor probe must follow its explicit command');
-    const doctor = observed.find(row => row.event === 'child_close' && row.child_pid === doctors[0].child_pid && row.bundled_cli && row.receipt?.ok === true && row.receipt.transport === 'direct_http' && row.receipt.notion_api_version === '2026-03-11');
-    assert.ok(doctor, 'No actual successful direct-HTTP doctor receipt');
-    assert.equal(doctor.receipt.skill_read?.checked, false);
+    const doctorProof = validateDailyDoctorCli(observed, {
+      library, hostPid: result.host_process.pid, entry: embedded.realpath, sha256: embedded.sha256,
+      executable: result.host_process.node.path, phase: result.phases.find(phase => phase.command === '/context-broker doctor'),
+    });
     const owned = (await readFile(processLedger, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);
     const sourceObservation = await readSourceObservation(sourceLedger);
     const sourceOwners = sourceObservation.events.filter(row => row.phase === 'source_observer_start');
@@ -680,7 +781,7 @@ async function run(config) {
     assert.equal(sourceOwners[0].pid, result.host_process.pid, 'SDK observation belongs to a different Pi process');
     const sdkOperations = sourceObservation.events.filter(row => row.kind === 'sdk' && row.phase === 'started');
     validateDailySdkOperations(sdkOperations, library);
-    const partition = classifyDailyHttp(observed, new Set(spawned.map(row => row.child_pid)), new Set(owned.filter(row => row.event === 'spawn').map(row => row.pid)), { sourceObservation });
+    const partition = classifyDailyHttp(observed, new Set(doctorProof.processes.map(row => row.pid)), new Set(owned.filter(row => row.event === 'spawn').map(row => row.pid)), { sourceObservation });
     const http = partition.source;
     result.library_structure = validateDailyLibraryRequests(partition.sdk, library);
     const sourceDatabaseIds = [...new Set(result.library_structure.operations.flatMap(operation => operation.databases.map(database => database.database_id)))];
@@ -690,15 +791,17 @@ async function run(config) {
     result.proxy_tunnels = partition.proxyTunnels;
     result.http_accounting_scope = 'The verified target includes every host request to api.notion.com, every complete SDK attempt and the verified bundled CLI process tree. SDK attempts are paired by PID, response request ID, method, status and request bytes. Other plugin child-process HTTP is separate. Proxy CONNECT tunnels retain their process ancestry, target and original outcomes separately; they are transport setup, do not count as application requests and cannot satisfy SDK HTTP evidence. Non-Notion host HTTP without SDK attribution remains in unattributed_host_http with its original failures or missing outcomes; it is excluded from target costs and does not establish global Pi/plugin health or zero external traffic. Worker transport is outside this passive process observer.';
     assert.ok(http.length, 'No real HTTP metadata request was observed');
+    const doctorRequests = http.filter(request => request.attribution?.kind !== 'sdk');
+    assert.deepEqual(doctorRequests.map(request => [request.pid, request.id]), doctorProof.http.map(request => [request.pid, request.id]),
+      'Every non-SDK source request must belong to the independently verified doctor');
     for (const request of http) {
-      if (request.attribution?.kind !== 'sdk') classifyDailyNotionRequest(request);
-      assert.ok(observed.some(row => row.event === 'http_end' && row.id === request.id && row.status >= 200 && row.status < 300), 'An observed Notion request did not complete with HTTP 2xx');
+      assert.ok(observed.some(row => row.event === 'http_end' && row.pid === request.pid && row.id === request.id && row.status >= 200 && row.status < 300), 'An observed Notion request did not complete with HTTP 2xx');
     }
     assert.ok(!observed.some(row => row.event === 'spawn' && basename(row.executable ?? '') === 'ntn'), 'Official ntn was invoked');
     result.actual_default_sdk = { entry: embeddedSdk.realpath, sha256: embeddedSdk.sha256, owner_pid: sourceOwners[0].pid, operations: sdkOperations,
       http: partition.sdk, source_observation_complete: sourceObservation.complete, source_command_overridden: false, catalog_cli_children: 0 };
-    result.explicit_doctor_cli = { entry: embedded.realpath, sha256: embedded.sha256, processes: spawned.map(row => ({ parent_pid: row.pid, pid: row.child_pid, executable: row.executable, script: row.script, args: row.cli_args })), doctor: doctor.receipt, path_cli_used_for_default_source: false };
-    result.notion_body_requests = result.library_structure.root_children_requests;
+    result.explicit_doctor_cli = doctorProof;
+    result.notion_body_requests = result.library_structure.root_children_requests + doctorProof.library_structure.root_children_requests;
     result.metadata_http_requests = http.length - result.notion_body_requests;
     result.provider_invocations = 0; result.tool_invocations = 0; result.remote_mutations = 0;
     result.skill_body_reads = 0;

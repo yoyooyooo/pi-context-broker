@@ -202,12 +202,20 @@ function installPassiveObserver(config, identifyPackageEntry) {
     const row = requestOf(request), headers = response.headers;
     if (row.status !== null) throw new Error('DUPLICATE_RESPONSE_HEADERS');
     row.status = response.statusCode;
-    for (let i = 0; i + 1 < headers.length; i += 2) {
+    // Undici reports HTTP/1 headers as raw pairs and HTTP/2 headers as an
+    // object. Both carry the same bounded response evidence.
+    const pairs = Array.isArray(headers)
+      ? Array.from({ length: headers.length / 2 }, (_, index) => [headers[index * 2], headers[index * 2 + 1]])
+      : Object.entries(headers);
+    for (const [rawName, rawValue] of pairs) {
       const decode = value => ArrayBuffer.isView(value) ? Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('utf8') : String(value);
-      const name = decode(headers[i]).toLowerCase(), value = decode(headers[i + 1]);
-      if (['x-request-id', 'request-id'].includes(name) && validRequestId(value)) { row.responseId = value; row.responseIdSource = 'response-header'; }
-      if (name === 'content-type') row.json = bodyIdOrigins.has(row.origin) && /^application\/json(?:\s*;|$)/iu.test(value);
-      if (name === 'content-encoding') row.encoding = value.toLowerCase();
+      const name = decode(rawName).toLowerCase();
+      for (const item of Array.isArray(rawValue) ? rawValue : [rawValue]) {
+        const value = decode(item);
+        if (['x-request-id', 'request-id'].includes(name) && validRequestId(value)) { row.responseId = value; row.responseIdSource = 'response-header'; }
+        if (name === 'content-type') row.json = bodyIdOrigins.has(row.origin) && /^application\/json(?:\s*;|$)/iu.test(value);
+        if (name === 'content-encoding') row.encoding = value.toLowerCase();
+      }
     }
   });
   subscribe('bodyChunkReceived', ({ request, chunk }) => {
