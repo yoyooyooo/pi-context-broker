@@ -12,7 +12,7 @@
 | 当前 Pi adapter、目录、注入与资源实现 | [context broker](../.agents/skills/verify-context-broker/SKILL.md) | 仅验证本次选择的宿主和功能 |
 | 自然用户旅程、本地/Notion 选路及日常管理 | [agent workflows](../.agents/skills/verify-notion-agent-workflows/SKILL.md) | 真实 worker 的有效 session、实际请求与独立业务读回 |
 
-C01–C11/T01–T23、单一 owner 与实际入口由 CLI `verification/skill-domains.json` 唯一维护，使用同一配对提交的 `docs/verification-contracts.md`。当前主线为 AH-1188，旧 Done 不填作当前通过。CLI feature 归属仍在同一索引中。Broker 四项入口分别是 `.agents/skills/verify-notion-consumer-state/SKILL.md`、`.agents/skills/verify-notion-skills-integration/SKILL.md`、`.agents/skills/verify-context-broker/SKILL.md`、`.agents/skills/verify-notion-agent-workflows/SKILL.md`。
+C01–C11/T01–T24、单一 owner 与实际入口由 CLI `verification/skill-domains.json` 唯一维护，使用同一配对提交的 `docs/verification-contracts.md`。当前主线为 AH-1188，旧 Done 不填作当前通过。CLI feature 归属仍在同一索引中。Broker 四项入口分别是 `.agents/skills/verify-notion-consumer-state/SKILL.md`、`.agents/skills/verify-notion-skills-integration/SKILL.md`、`.agents/skills/verify-context-broker/SKILL.md`、`.agents/skills/verify-notion-agent-workflows/SKILL.md`。
 
 ## 并行开发入口
 
