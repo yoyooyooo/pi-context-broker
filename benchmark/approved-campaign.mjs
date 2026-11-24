@@ -6,6 +6,8 @@ import { fingerprint } from './protocol.mjs';
 import { ALIAS_REVISION, readAliasRevisionStop } from './campaign-alias-revision.mjs';
 import { verifyApparatusBridge } from './apparatus-bridge.mjs';
 import { HISTORY_EXTENSION, readHistoryExtension } from './campaign-history-extension.mjs';
+import { CONFIRMATION_REVISION, readPartialConfirmationHistory } from './campaign-confirmation-continuation.mjs';
+import { CONFIRMATION_CONTINUATION } from './campaign-selection.mjs';
 
 export const APPROVED_CAMPAIGN = 'benchmark-approved-prospective-campaign';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -61,8 +63,8 @@ async function decision(reference) {
 function assertShape(value) {
   keys(value, ['version', 'kind', 'id', 'user_approval', 'proposal', 'predecessor', 'environment_root', 'pilot_ledger_root',
     'history', 'history_checkpoint_sha256', 'max_scheduled_episodes', 'new_reservation_ceiling', 'total_reservation_ceiling',
-    'allocations', 'authorization_sha256', ...([2, 3].includes(value.version) ? ['revision'] : [])], 'APPROVED_CAMPAIGN_SHAPE');
-  assert.ok([1, 2, 3].includes(value.version)); assert.equal(value.kind, APPROVED_CAMPAIGN); assert.ok(safe(value.id));
+    'allocations', 'authorization_sha256', ...([2, 3, 4].includes(value.version) ? ['revision'] : [])], 'APPROVED_CAMPAIGN_SHAPE');
+  assert.ok([1, 2, 3, 4].includes(value.version)); assert.equal(value.kind, APPROVED_CAMPAIGN); assert.ok(safe(value.id));
   assert.equal(value.authorization_sha256, fingerprint({ ...value, authorization_sha256: null }), 'APPROVED_CAMPAIGN_CHANGED');
   assert.ok(canonical(value.environment_root) && canonical(value.pilot_ledger_root));
   assert.equal(value.max_scheduled_episodes, 144);
@@ -81,7 +83,7 @@ function assertShape(value) {
   for (const allocation of value.allocations) {
     keys(allocation, ['id', 'work_index', 'role', 'reservation_limit'], 'APPROVAL_ALLOCATION_SHAPE');
     assert.ok(safe(allocation.id)); assert.ok(Number.isSafeInteger(allocation.work_index) && allocation.work_index >= 0);
-    assert.ok(['unstarted_followup', 'route_gate_only', 'acceptance'].includes(allocation.role));
+    assert.ok(['unstarted_followup', 'route_gate_only', 'acceptance', ...(value.version === 4 ? [CONFIRMATION_CONTINUATION] : [])].includes(allocation.role));
     assert.ok(Number.isSafeInteger(allocation.reservation_limit) && allocation.reservation_limit > 0);
   }
   assert.equal(value.allocations.reduce((sum, item) => sum + item.reservation_limit, 0), value.new_reservation_ceiling);
@@ -149,6 +151,7 @@ export async function readApprovedCampaign(reference, ancestors = new Set()) {
   const next = new Set(ancestors); next.add(reference.path);
   const value = await verified(reference);
   assert.ok(inside(value.environment_root, reference.path), 'APPROVAL_DOCUMENT_OUTSIDE_OWNER');
+  if (value.version === 4) return verifyConfirmationContinuation(value, next);
   if (value.version === 3) return verifyHistoryExtension(value, next);
   return value.version === 2 ? verifyRevision(value) : verifyApproval(value);
 }
@@ -290,4 +293,46 @@ export async function prepareApprovedCampaignHistoryExtension({ id, parentAuthor
       user_approval: cleanReference(userApproval), consumed_allocations: extension.consumed, retained_stop: extension.retained,
       next_allocation_id: extension.decision.next_allocation_id }, authorization_sha256: null };
   value.authorization_sha256 = fingerprint(value); await verifyHistoryExtension(value); return value;
+}
+
+async function verifyConfirmationContinuation(value, ancestors = new Set()) {
+  assertShape(value); assert.equal(value.version, 4);
+  const revision = value.revision;
+  keys(revision, ['kind', 'parent_authorization', 'user_approval', 'consumed_allocations', 'partial_allocation', 'retained_stop', 'next_allocation_id', 'model_window'],
+    'CONFIRMATION_CONTINUATION_REVISION_SHAPE');
+  assert.equal(revision.kind, CONFIRMATION_REVISION);
+  const parent = await readApprovedCampaign(revision.parent_authorization, ancestors);
+  for (const field of ['user_approval', 'proposal', 'environment_root', 'pilot_ledger_root', 'max_scheduled_episodes', 'total_reservation_ceiling'])
+    assert.deepEqual(value[field], parent.value[field], 'CONFIRMATION_CONTINUATION_ORIGINAL_AUTHORITY_CHANGED');
+  assert.notEqual(value.id, parent.value.id);
+  keys(revision.model_window, ['mode', 'start', 'end'], 'CONFIRMATION_CONTINUATION_WINDOW_SHAPE');
+  const continuation = await readPartialConfirmationHistory({ parent, parentReference: revision.parent_authorization, userApproval: revision.user_approval,
+    predecessor: value.predecessor, planFiles: value.history.plans.map(item => item.plan.path), pilotLedgerRoot: value.pilot_ledger_root, expected: value.history,
+    modelWindow: { start: revision.model_window.start, end: revision.model_window.end } });
+  assert.deepEqual(revision.consumed_allocations, continuation.consumed);
+  assert.deepEqual(revision.partial_allocation, continuation.transition, 'CONFIRMATION_CONTINUATION_PARTIAL_ALLOCATION_CHANGED');
+  assert.deepEqual(revision.retained_stop, continuation.retained, 'CONFIRMATION_CONTINUATION_STOP_BINDING_CHANGED');
+  assert.deepEqual(revision.model_window, continuation.modelWindow, 'CONFIRMATION_CONTINUATION_WINDOW_CHANGED');
+  assert.equal(revision.next_allocation_id, continuation.allocations[0].id);
+  assert.deepEqual(value.allocations, continuation.allocations, 'CONFIRMATION_CONTINUATION_ALLOCATION_CHANGED');
+  assert.equal(value.new_reservation_ceiling, continuation.decision.approved_remaining_reservations);
+  return { value, approval: parent.approval, proposal: parent.proposal, original: parent.original ?? parent,
+    retainedAliasStop: parent.retainedAliasStop, apparatusBridges: parent.apparatusBridges, confirmationContinuation: continuation };
+}
+
+/** Data only. The explicit decision retains a partial original confirmation;
+ * it does not retry its invalid, reserve a slot, or create a model window. */
+export async function prepareApprovedCampaignConfirmationContinuation({ id, parentAuthorization, userApproval, predecessor, history, modelWindow }) {
+  const parent = await readApprovedCampaign(parentAuthorization);
+  const continuation = await readPartialConfirmationHistory({ parent, parentReference: parentAuthorization, userApproval, predecessor,
+    planFiles: history.plans.map(item => item.plan.path), pilotLedgerRoot: parent.value.pilot_ledger_root, expected: history, currentBoundary: true, modelWindow });
+  const previous = parent.value;
+  const value = { version: 4, kind: APPROVED_CAMPAIGN, id, user_approval: structuredClone(previous.user_approval), proposal: structuredClone(previous.proposal),
+    predecessor: structuredClone(predecessor), environment_root: previous.environment_root, pilot_ledger_root: previous.pilot_ledger_root,
+    history: structuredClone(history), history_checkpoint_sha256: fingerprint(history), max_scheduled_episodes: previous.max_scheduled_episodes,
+    new_reservation_ceiling: continuation.decision.approved_remaining_reservations, total_reservation_ceiling: previous.total_reservation_ceiling,
+    allocations: structuredClone(continuation.allocations), revision: { kind: CONFIRMATION_REVISION, parent_authorization: cleanReference(parentAuthorization),
+      user_approval: cleanReference(userApproval), consumed_allocations: continuation.consumed, partial_allocation: continuation.transition,
+      retained_stop: continuation.retained, next_allocation_id: continuation.allocations[0].id, model_window: continuation.modelWindow }, authorization_sha256: null };
+  value.authorization_sha256 = fingerprint(value); await verifyConfirmationContinuation(value); return value;
 }

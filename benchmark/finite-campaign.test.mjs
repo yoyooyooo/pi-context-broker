@@ -14,13 +14,14 @@ import { writeRouteGate, verifyGateReference } from './gate.mjs';
 import { pilotScopePolicy, preparePilotScope, readPilotScopeAmendment, scopeReservationFields } from './pilot-scope.mjs';
 import { PROSPECTIVE_COHORT, readCohortHistory } from './prospective-cohort.mjs';
 import { FINITE_CAMPAIGN, finiteCampaignPolicy, prepareFiniteCampaign, assertFiniteCampaignPlan,
-  readFiniteCampaignAmendment, verifyFiniteCampaign, verifyFiniteCampaignScope, finiteCampaignReservationFields, readFiniteCampaignHistory, readAliasRevisionHistory, verifyFiniteOriginalResults, readAcceptedHistoryExtension } from './finite-campaign.mjs';
+  readFiniteCampaignAmendment, verifyFiniteCampaign, verifyFiniteCampaignScope, finiteCampaignReservationFields, readFiniteCampaignHistory, readAliasRevisionHistory, verifyFiniteOriginalResults, readAcceptedHistoryExtension, readAcceptedConfirmationContinuation } from './finite-campaign.mjs';
 import { exampleEnvelope } from './analysis/fixtures.mjs';
 import { normalizeEpisode } from './evidence/normalize.mjs';
 import { writeEvidenceBundle } from './evidence/store.mjs';
 import { assessReportedModel } from './reported-model.mjs';
-import { prepareApprovedCampaign, prepareApprovedCampaignRevision, prepareApprovedCampaignHistoryExtension, readApprovedCampaign } from './approved-campaign.mjs';
-import { declaredSchedule, UNSTARTED_FOLLOWUP } from './campaign-selection.mjs';
+import { prepareApprovedCampaign, prepareApprovedCampaignRevision, prepareApprovedCampaignHistoryExtension, prepareApprovedCampaignConfirmationContinuation, readApprovedCampaign } from './approved-campaign.mjs';
+import { declaredSchedule, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION } from './campaign-selection.mjs';
+import { startupCaptureSchedule, captureBindingsForCase } from './configure.mjs';
 import { scoreExperiment } from './analysis/compare.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -31,7 +32,7 @@ const instrumentation = { version: 1, runtime_sha256: ['a'.repeat(64)], collecto
 const expansionIds = Array.from({ length: 8 }, (_, i) => 'expansion-case-' + i);
 
 // Synthetic evidence fixtures exercise contracts/accounting, never paid models.
-function fixtureProtocol(id, { scope, modelCount = 2, expansion = false, routing = false } = {}) {
+function fixtureProtocol(id, { scope, modelCount = 2, expansion = false, routing = false, caseCount = 4 } = {}) {
   const p = createPreregistrationTemplate(), hash = fingerprint({ cohort_fixture: true });
   for (const [index, environment] of p.environments.entries()) {
     environment.status = 'frozen'; environment.build.id = 'fixture-build'; environment.build.receipt_sha256 = hash;
@@ -53,7 +54,7 @@ function fixtureProtocol(id, { scope, modelCount = 2, expansion = false, routing
     if (routing) model.routing = { mode: 'fixed-route', model_variant: 'fixture-' + index, reported_model_ids: ['server/fixture-' + index] };
     return model;
   });
-  const ids = expansion ? expansionIds : Array.from({ length: 4 }, (_, i) => 'gate-case-' + i);
+  const ids = expansion ? expansionIds : Array.from({ length: caseCount }, (_, i) => 'gate-case-' + i);
   const cases = ids.map(id => ({ id, protocol_case: { ...p.corpus.cases[0], id, material_id: id, cluster_id: id, content_sha256: fingerprint({ id }) } }));
   const budget = structuredClone(p.policies.budgets[0]);
   budget.episode = { max_duration_ms: 1000, max_model_requests: 10, max_input_tokens: 1000, max_output_tokens: 1000, max_http_attempts: 10, max_retries: 0 };
@@ -66,7 +67,7 @@ function fixtureProtocol(id, { scope, modelCount = 2, expansion = false, routing
       'guidance', 'injection', 'return_contract', 'error_contract', 'cache', 'session', 'recovery', 'code_mode'] });
 }
 
-async function resultFor(plan, slot, runId, { attempts = [50], attemptsComplete = true, valid = true, stop = false, outcome = 'pass', omitRouting = false, reportedLabel, aliasStop = false, usageStop = false } = {}) {
+async function resultFor(plan, slot, runId, { attempts = [50], attemptsComplete = true, valid = true, stop = false, outcome = 'pass', omitRouting = false, reportedLabel, aliasStop = false, usageStop = false, admissionStop } = {}) {
   const root = plan.execution.environment_root, rawRoot = join(root, 'raw'); await mkdir(rawRoot, { recursive: true });
   const rawPath = join(rawRoot, runId + '.json');
   const envelope = exampleEnvelope({ condition: slot.condition_id, caseId: slot.case_id, episodeId: runId,
@@ -106,10 +107,11 @@ async function resultFor(plan, slot, runId, { attempts = [50], attemptsComplete 
     const path = join(rawRoot, runId + '-runtime.json'), bytes = JSON.stringify(runtime) + '\n'; await writeFile(path, bytes);
     envelope.input.artifacts.push({ id: 'collection-runtime-result', path, sha256: sha(bytes), bytes: Buffer.byteLength(bytes), kind: 'json' });
   }
+  if (admissionStop) await admissionStopArtifacts(envelope, plan, slot, runId, admissionStop);
   await writeFile(rawPath, envelope.rawText);
   const bundle = normalizeEpisode(envelope.input), episode = bundle.episode, directory = join(root, 'evidence', runId);
   await writeEvidenceBundle({ directory, bundle, rawRoot: root });
-  return { status: valid ? 'completed' : 'invalid', normalized_directory: directory, episode_sha256: episode.episode_sha256,
+  return { status: admissionStop ? 'admission_rejected' : valid ? 'completed' : 'invalid', normalized_directory: directory, episode_sha256: episode.episode_sha256,
     budget_usage: { model_requests: episode.measurements.actual_attempts.status === 'known' ? episode.measurements.actual_attempts.value : null,
       input_tokens: episode.measurements.input_total.value.status === 'known' ? episode.measurements.input_total.value.value : null,
       output_tokens: episode.measurements.output_total.value.status === 'known' ? episode.measurements.output_total.value.value : null,
@@ -190,20 +192,20 @@ async function fixture({ modelCount = 1, expansionCount = modelCount * 16, unkno
 }
 
 async function prepare(f, { id = 'finite-gate', role = 'route_gate_only', phase = 'pilot', exposed = false, canonicalExposure = false,
-  route, protocol: suppliedProtocol, selection } = {}) {
+  route, protocol: suppliedProtocol, selection, prepareExecution } = {}) {
   const control = join(f.owner, id); await mkdir(control, { recursive: true });
   const input = { kind: FINITE_CAMPAIGN, id, role, authorization: 'Synthetic finite campaign contract', predecessor: f.predecessor, history_plan_files: f.historyPlans,
     ...(f.approval ? { prospective_authorization: f.approval, allocation_id: id } : {}), ...(selection ? { selection } : {}) };
   const p = suppliedProtocol ? structuredClone(suppliedProtocol) : fixtureProtocol(id, { modelCount: 1, routing: true });
   p.id = id; p.phase = phase; delete p.policies.pilot.scope;
   if (route) p.models[0].route = route;
-  if (phase === 'confirmation') {
+  if (phase === 'confirmation' && role !== CONFIRMATION_CONTINUATION) {
     for (const item of p.corpus.cases) {
       item.split = 'confirmation'; item.material_id = id + '-' + item.material_id;
       if (!exposed) for (const key of ['content_sha256', 'prompt_sha256', 'contract_sha256', 'initial_state_sha256', 'authorization_sha256']) item[key] = fingerprint({ confirmation: id, case: item.id, key });
     }
   }
-  const count = selection?.slot_ids.length ?? 8;
+  const count = selection?.slot_ids.length ?? declaredSchedule(p).length;
   p.policies.budgets[0].batch.max_episodes = count;
   p.policies.campaign = finiteCampaignPolicy(input, { scheduledEpisodes: count }); sealProtocol(p);
   const execution = { environment_root: f.owner, control_root: control, pilot_ledger_root: f.pilot, instrumentation, models_sha256: fingerprint({ models: 1 }) };
@@ -211,6 +213,7 @@ async function prepare(f, { id = 'finite-gate', role = 'route_gate_only', phase 
     const bindings = p.corpus.cases.map((item, index) => ({ ...structuredClone(f.originalBindings[index]), id: item.id, protocol_case: item }));
     const path = join(control, 'bindings.json'); await save(path, bindings); execution.case_bindings_file = path; execution.case_bindings_sha256 = sha(await readFile(path));
   }
+  if (prepareExecution) { await prepareExecution(p, execution); sealProtocol(p); }
   const amendment = await prepareFiniteCampaign({ setup: { campaign_scope: input }, protocol: p, execution, slots: scheduleProtocol(p) });
   const path = join(control, 'finite-campaign-amendment.json'); await save(path, amendment);
   execution.campaign_scope = { version: 1, kind: FINITE_CAMPAIGN, id, role, amendment: await reference(path) };
@@ -926,4 +929,288 @@ test('another explicit history extension can inherit v3 only after its next allo
   const checked = await readApprovedCampaign(await reference(secondPath));
   assert.deepEqual(checked.original.value, f.approvedDocument); assert.equal(checked.retainedAliasStop.retained.ordinal, 51);
   assert.deepEqual(checked.proposal, (await readApprovedCampaign(f.approval)).proposal);
+});
+
+function transportRows(runId, { modelTransport = false, incomplete = false } = {}) {
+  const bodies = [{ phase: 'transport_start' }];
+  if (modelTransport) bodies.push({ phase: 'request_start', id: 1, category: 'model' }, { phase: 'request_end', id: 1, category: 'model', outcome: 'completed' });
+  if (incomplete) bodies.push({ phase: 'observer_error' });
+  bodies.push({ phase: 'transport_end', attempts: modelTransport ? 1 : 0, errors: incomplete ? 1 : 0,
+    complete: !incomplete, pendingForkRebind: false, incompleteRequestIds: [] });
+  let previous = null;
+  return bodies.map((value, index) => {
+    const body = { version: 1, sequence: index + 1, previousSha256: previous, clockId: runId, monotonicNs: String(index + 1), ...value };
+    const row = { ...body, eventSha256: sha(JSON.stringify(body)) }; previous = row.eventSha256; return row;
+  });
+}
+
+async function admissionStopArtifacts(envelope, plan, slot, runId, options) {
+  const root = join(plan.execution.environment_root, 'raw', runId + '-admission'); await mkdir(root, { recursive: true });
+  const add = async (id, value, jsonl = false) => {
+    const path = join(root, id + (jsonl ? '.jsonl' : '.json')), bytes = jsonl ? value.map(row => JSON.stringify(row)).join('\n') + '\n' : JSON.stringify(value, null, 2) + '\n';
+    await writeFile(path, bytes); const artifact = { id, path, sha256: sha(bytes), bytes: Buffer.byteLength(bytes), kind: jsonl ? 'jsonl' : 'json' };
+    envelope.input.artifacts.push(artifact); return artifact;
+  };
+  const expectedRef = plan.execution.conditions[slot.condition_id].expectations[slot.case_id], expected = await read(expectedRef.path);
+  const observed = structuredClone(expected); Object.assign(observed.projection.git, { bytes: 200, realpath: '/synthetic/apple-git', sha256: '2'.repeat(64), version: 'git version 2.39.5' });
+  if (options.extraGitDrift) observed.projection.git.path = '/synthetic/other-path';
+  const paths = ['/git/bytes', '/git/realpath', '/git/sha256', '/git/version'];
+  await add('candidate-observed', observed);
+  await add('admission-comparison', { expected_file: expectedRef,
+    differences: paths.map(path => ({ path, expected: expected.projection.git[path.slice(5)], actual: observed.projection.git[path.slice(5)] })) });
+  await add('collection-launcher-result', { runtime_check: { status: 'unchanged' }, frozen_artifacts: 'passed' });
+  await add('collection-runtime-result', { status: 'admission_rejected',
+    correlation: { run_id: runId, episode_id: runId, candidate_id: slot.condition_id, task_id: slot.case_id },
+    error: { code: 'BENCHMARK_ADMISSION_MISMATCH', details: { differences: paths } }, requests: [], turns: [],
+    budget: { requests: 0, attempts: 0, tools: 0, input_tokens: 0, output_tokens: 0, tokens: 0, usage_unknown: Boolean(options.unknownZero) } });
+  await add('events', [
+    { sequence: 1, run_id: runId, type: 'transport_reconciliation', data: { complete: true, model_http_requests: 0, guarded_fetch_attempts: 0 } },
+    { sequence: 2, run_id: runId, type: 'runtime_end', data: {} },
+  ], true);
+  await add('transport', transportRows(runId, options), true);
+}
+
+async function confirmationCaptureInputs(protocol, execution, source) {
+  execution.conditions = {}; const captured = new Map();
+  const bindings = protocol.corpus.cases.map(item => ({ id: item.id, protocol_case: item, events: [], variant: { content_sha256: item.content_sha256 } }));
+  execution.case_bindings_file = join(execution.control_root, 'case-bindings.json'); await save(execution.case_bindings_file, bindings);
+  execution.case_bindings_sha256 = (await reference(execution.case_bindings_file)).sha256;
+  execution.models_file = join(execution.control_root, 'models.json'); await save(execution.models_file, { controlled_fixture: true });
+  execution.models_sha256 = (await reference(execution.models_file)).sha256;
+  for (const [index, condition] of protocol.conditions.entries()) {
+    const runId = protocol.id + '-capture-m0-e' + index + '-c0', runRoot = join(execution.environment_root, 'runs', runId), runtimeRoot = join(runRoot, 'benchmark/runtime');
+    await mkdir(runtimeRoot, { recursive: true });
+    const expectation = source ? await read(Object.values(source.execution.conditions[condition.id].expectations)[0].path) : {
+      kind: 'benchmark-pi-sdk-expectation', projection: { mode: index === 0 ? 'broker' : 'native',
+        git: { path: '/synthetic/git', bytes: 100, realpath: '/synthetic/git250', sha256: '1'.repeat(64), version: 'git version 2.50.1' } }, request_contract: { fixture: true } };
+    const path = join(execution.control_root, runId + '.expectation.json'); await save(path, expectation);
+    const ref = await reference(path), actualExpectation = join(runtimeRoot, 'candidate-expectation.json'); await save(actualExpectation, expectation);
+    const observedPath = join(runtimeRoot, 'candidate-observed.json'); await save(observedPath, expectation);
+    const transportPath = join(runtimeRoot, 'transport.jsonl'); await writeFile(transportPath, transportRows(runId).map(row => JSON.stringify(row)).join('\n') + '\n');
+    const resultPath = join(runtimeRoot, 'episode-result.json'); await save(resultPath, { status: 'captured',
+      correlation: { run_id: runId, episode_id: runId, candidate_id: condition.id, task_id: protocol.corpus.cases[0].id },
+      budget: { requests: 0, attempts: 0, tools: 0, input_tokens: 0, output_tokens: 0, tokens: 0, usage_unknown: false },
+      paths: { result: resultPath, expectation: actualExpectation }, artifacts: [
+        { id: 'candidate-observed', ...await reference(observedPath) }, { id: 'transport', ...await reference(transportPath) } ] });
+    await save(join(runRoot, 'result.json'), { status: 'passed', run_id: runId, build_id: 'fixture-build', runtime_check: { status: 'unchanged' }, frozen_artifacts: 'passed' });
+    execution.conditions[condition.id] = { build_id: 'fixture-build', mode: index === 0 ? 'broker' : 'native',
+      expectations: Object.fromEntries(protocol.corpus.cases.map(item => [item.id, ref])) };
+    const environment = protocol.environments.find(item => item.id === condition.environment_id);
+    const observer = environment.pi.extensions.find(item => item.role === 'observer'); assert.ok(observer);
+    observer.path = join(runRoot, 'subject-runtime/benchmark/runtime/episode-runner.mjs');
+    environment.manifest_sha256 = fingerprint({ ...environment, manifest_sha256: null }); captured.set(condition.id, ref);
+    condition.environment_sha256 = environment.manifest_sha256;
+  }
+  return captured;
+}
+
+async function partialConfirmationFixture({ stopOptions = {} } = {}) {
+  const base = await acceptedExtensionFixture(), { f, stopped, inputs, historyInputs } = base;
+  const parent = await prepareApprovedCampaignHistoryExtension({ ...inputs, history: await readAcceptedHistoryExtension(historyInputs) });
+  const parentPath = join(f.owner, 'accepted66.json'); await save(parentPath, parent); const parentReference = await reference(parentPath);
+  const oldExpansion = await read(f.historyPlans.at(-1));
+  const followup = await prepare({ ...stopped, approval: parentReference }, { id: 'approved-followup', role: UNSTARTED_FOLLOWUP, protocol: oldExpansion.protocol,
+    selection: { source_plan_sha256: oldExpansion.plan_sha256, slot_ids: oldExpansion.slots.slice(21).map(slot => slot.slot_id) } });
+  await writeClosedPlan(followup.plan, { startOrdinal: 67 }); const afterFollowup = await successor({ ...stopped, approval: parentReference }, followup, 6);
+  const own = await prepare(afterFollowup, { id: 'approved-confirmation', role: 'acceptance', phase: 'confirmation',
+    protocol: fixtureProtocol('original-own', { modelCount: 1, routing: true, caseCount: 10 }),
+    prepareExecution: async (p, execution) => { p.policies.decision.mode = 'acceptance'; p.policies.decision.quality_delta_min = -0.03; await confirmationCaptureInputs(p, execution); } });
+  await writeClosedPlan(own.plan, { startOrdinal: 78, count: 3, resultOptions: index => index === 2
+    ? { attempts: [], valid: false, stop: true, admissionStop: stopOptions } : {} });
+  const ledgerPath = join(own.plan.execution.control_root, 'ledger.jsonl'), rows = (await readFile(ledgerPath, 'utf8')).trimEnd().split('\n').map(JSON.parse);
+  rows.at(-1).reason = 'subject_requested_stop'; await writeFile(ledgerPath, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+  const after = { ...await successor(afterFollowup, own, 7), count: 80 }, terminal = rows.filter(row => row.type === 'episode_completed').at(-1);
+  const id = 'continued-own17', sourceRef = await reference(join(own.plan.execution.control_root, 'plan.json'));
+  const proposal = { version: 1, kind: 'public-own-partial-stop-next-decision-draft', status: 'awaiting_user_decision_and_explicit_contract_implementation',
+    approved: false, user_approval: null, execution_authority: null, execution_ready: false,
+    physical_history: { physical: 80, completed: 80, execution_unresolved: 0, effective_unknown_usage_runs: 5, original_completion_unknown_usage_runs: 5 },
+    budget: { retained_physical: 80, own_remaining: 17, engineering_remaining: 42, requested_future: 59, approved_total_ceiling: 139, hard_limit: 144,
+      unallocated: 5, additional_budget: 0, retry_reservations: 0 },
+    allocation_transition: { parent_accepted_history: 66, additional_closed: 14, fully_consumed_allocation: { id: 'approved-followup', reservations: 11 },
+      partial_original_allocation: { id: 'approved-confirmation', original_limit: 20, spent: 3, never_started_to_transfer: 17 } },
+    stop: { run_id: terminal.run_id, slot_id: terminal.slot_id, physical_ordinal: 80, source_order: 2, runtime_status: 'admission_rejected', validity: 'invalid',
+      stop_batch: true, reason_code: 'BENCHMARK_ADMISSION_MISMATCH', usage_unknown: false, retry_allowed: false, model_http_requests: 0, guarded_fetch_attempts: 0,
+      reconciliation_complete: true, other_http_requests: 0, expected_git_version: '2.50.1', observed_git_version: '2.39.5' },
+    own: { original_scope_id: own.amendment.id, original_experiment_id: own.plan.id, original_phase: 'confirmation', original_scientific_slots: 20,
+      original_selected_slots: 20, already_started: 3, unstarted: 17, proposed_scope_id: id, proposed_experiment_id: id,
+      excluded_started_slots: own.plan.slots.slice(0, 3).map(slot => ({ source_order: slot.order, slot_id: slot.slot_id,
+        run_id: own.plan.id + '-' + String(slot.order + 1).padStart(3, '0'), must_never_retry: true })),
+      remaining_slots: own.plan.slots.slice(3).map(({ order, ...slot }, index) => ({ ...slot, source_order: order, prospective_selected_order: index, operator_id: 'fixture-operator', cold_precommitted: index < 7 })) },
+    cold: { remaining_within_own17: 7 },
+    engineering: { entries: parent.allocations.slice(2).map((item, index) => ({ allocation_id: item.id, work_index: item.work_index, selected_reservations: item.reservation_limit,
+      proposed_predecessor_scope_id: index ? parent.allocations[index + 1].id : id })) },
+    model_condition: { variant: own.plan.protocol.models[0].routing.model_variant, parameters: own.plan.protocol.models[0].parameters },
+    window: { existing: own.plan.protocol.models[0].backend.window, proposed_change: { maximum_new_windows: 1, duration_hours: 24, automatic_renewal: false } },
+    future_stop_policy: { new_core_stop_blocks_dispatch: true, new_unknown_usage_blocks_dispatch: true, automatic_retry: false, automatic_route_switch: false, automatic_budget_extension: false },
+    source_refs: [{ id: 'current-authority3', sha256: parentReference.sha256 }, { id: 'original-own-plan', sha256: sourceRef.sha256 }, { id: 'original-own-closed-ledger', sha256: (await reference(ledgerPath)).sha256 }] };
+  const proposalPath = join(f.owner, 'partial-proposal.json'); await save(proposalPath, proposal);
+  const draft = join(f.owner, 'partial-decision.md'); await writeFile(draft, 'Retain original3 and execute only the original17, then42. No retry, new blind study or additional budget.\n');
+  const proposalRef = await reference(proposalPath), draftRef = await reference(draft), checkpoint = join(f.owner, 'stopped80-checkpoint.json');
+  await save(checkpoint, { publicDecisionBinding: { json_sha256: proposalRef.sha256, markdown_sha256: draftRef.sha256, public_commit: '3'.repeat(40) },
+    physicalReservations: 80, closedReservations: 80, paidActive: false, newCoreStop: { runId: terminal.run_id } });
+  const decision = { version: 1, kind: 'user-approved-partial-confirmation-continuation-decision', approved: true, source: 'current-user-message', user_message: 'Accept',
+    approval_observed_at: '2026-11-24T01:00:00Z', accepted_at: '2026-11-24T01:00:00Z', timestamp_semantics: 'Synthetic fixture timestamp',
+    authorization_scope: 'Original17 then42 only', accepted_proposal: proposalRef, accepted_reviewable_draft: draftRef,
+    accepted_public_commit: '3'.repeat(40), accepted_public_url: 'https://example.invalid/synthetic', parent_authorization: parentReference,
+    stopped80_checkpoint: await reference(checkpoint), accepted_history_reservations: 80, approved_remaining_reservations: 59,
+    total_reservation_ceiling: 139, max_scheduled_episodes: 144, unallocated_headroom: 5, additional_reservations: 0,
+    remaining_sequence: [{ id, source_allocation_id: own.amendment.id, source_order_first: 3, source_order_last: 19, reservation_limit: 17, cold_positions_subset: 7 },
+      ...parent.allocations.slice(2).map(({ id, reservation_limit }) => ({ id, reservation_limit }))],
+    retained_stop_run_id: terminal.run_id, retained_stop_usage: 'known_zero_model_requests_and_tokens', retained_effective_unknown_token_episodes: 5,
+    retained_original_unknown_token_episodes: 5, retained_stop_remains_invalid: true, future_core_stop_policy: 'stop', future_unknown_usage_policy: 'stop',
+    model_parameters_unchanged: { model: proposal.model_condition.variant, ...proposal.model_condition.parameters },
+    new_model_window_permission: { conditional_on_need_after_preparation: true, maximum_new_windows: 1, duration_hours: 24, created: false, actual_start: null, actual_end: null, automatic_renewal: false },
+    cold_operator_policy: 'Continue original fixture operator', provider_diagnosis_authorized: true, execution_ready: false, authority_created: false, required_before_dispatch: ['Verify exact history'] };
+  const decisionPath = join(f.owner, 'partial-user-decision.json'); await save(decisionPath, decision);
+  const nextInputs = { id: 'partial-confirmation-authority', parentAuthorization: parentReference, userApproval: await reference(decisionPath), predecessor: after.predecessor };
+  return { base, parent, parentReference, own, after, proposal, proposalPath, decision, inputs: nextInputs,
+    historyInputs: { ...nextInputs, planFiles: after.historyPlans, pilotLedgerRoot: f.pilot }, id };
+}
+
+test('partial confirmation retains original3 and scientific20, transfers exact17 and closes the original59 in order', async t => {
+  const f = await partialConfirmationFixture();
+  const originalFiles = [f.parentReference.path, f.inputs.userApproval.path, f.proposalPath,
+    ...f.after.historyPlans, ...f.after.historyPlans.map(path => join(path.slice(0, -'plan.json'.length), 'ledger.jsonl')),
+    ...Array.from({ length: 80 }, (_, index) => join(f.after.pilot, String(index + 1).padStart(3, '0') + '.json'))];
+  const originalBytes = await Promise.all(originalFiles.map(async path => [path, await readFile(path)]));
+  await assert.rejects(readFiniteCampaignHistory({ planFiles: f.after.historyPlans, pilotLedgerRoot: f.after.pilot, prospectiveAuthorization: f.parentReference }), /ORIGINAL_CORE_STOP/);
+  await assert.rejects(readAcceptedHistoryExtension(f.historyInputs), /DECISION_SHAPE|kind|PARTIAL/);
+  const history = await readAcceptedConfirmationContinuation(f.historyInputs);
+  const value = await prepareApprovedCampaignConfirmationContinuation({ ...f.inputs, history });
+  assert.equal(value.version, 4); assert.equal(value.history.scheduled_episodes, 80); assert.equal(value.new_reservation_ceiling, 59);
+  assert.deepEqual(value.history.unknown_usage_run_ids, f.parent.history.unknown_usage_run_ids);
+  assert.deepEqual(value.history.episodes.slice(0, 66), f.parent.history.episodes);
+  assert.equal(value.history.episodes.at(-1).admission, 'invalid'); assert.equal(value.history.episodes.at(-1).budget_usage.model_requests, 0);
+  assert.deepEqual(value.allocations.slice(1), f.parent.allocations.slice(2)); assert.deepEqual(value.revision.consumed_allocations, ['approved-followup']);
+  assert.equal(value.revision.partial_allocation.spent, 3); assert.equal(value.revision.partial_allocation.remaining, 17);
+  assert.equal(value.revision.model_window.mode, 'retained_original');
+  const path = join(f.after.owner, 'partial-authority.json'); await save(path, value); const ref = await reference(path);
+  const checked = await readApprovedCampaign(ref); assert.equal(checked.retainedAliasStop.retained.ordinal, 51);
+  let serial = 0;
+  const rejectAuthority = async change => {
+    const invalid = structuredClone(value); await change(invalid); invalid.authorization_sha256 = fingerprint({ ...invalid, authorization_sha256: null });
+    const path = join(f.after.owner, 'partial-bad-' + serial++ + '.json'); await save(path, invalid); await assert.rejects(readApprovedCampaign(await reference(path)));
+  };
+  const rejectDecision = async change => {
+    const invalid = structuredClone(f.decision); change(invalid); const path = join(f.after.owner, 'partial-decision-bad-' + serial++ + '.json'); await save(path, invalid);
+    await rejectAuthority(async authority => { authority.revision.user_approval = await reference(path); });
+  };
+  await t.test('decision, source prefix, allocations, known-zero counts and one-window bounds fail closed', async () => {
+    for (const change of [value => { value.approved = false; }, value => { value.accepted_reviewable_draft.sha256 = '0'.repeat(64); },
+      value => { value.parent_authorization = f.base.parentReference; }, value => { value.approved_remaining_reservations++; },
+      value => { value.remaining_sequence[0].source_order_first = 2; }, value => { value.retained_effective_unknown_token_episodes++; },
+      value => { value.new_model_window_permission.maximum_new_windows = 2; }]) await rejectDecision(change);
+    for (const change of [value => { delete value.revision.user_approval; }, value => { value.history.episodes[0].admission = 'invalid'; },
+      value => { value.allocations[0].reservation_limit++; }, value => { value.allocations.reverse(); },
+      value => { value.revision.next_allocation_id = value.allocations[1].id; }, value => { value.revision.partial_allocation.selection.slot_ids.reverse(); },
+      value => { value.revision.retained_stop.run_id = 'another-stop'; }]) await rejectAuthority(change);
+    const renewed = await prepareApprovedCampaignConfirmationContinuation({ ...f.inputs, history,
+      modelWindow: { start: '2026-11-24T02:00:00Z', end: '2026-11-25T02:00:00Z' } });
+    assert.equal(renewed.revision.model_window.mode, 'single_new_24h');
+    for (const modelWindow of [{ start: '2026-11-24T00:00:00Z', end: '2026-11-25T00:00:00Z' }, { start: '2026-11-24T02:00:00Z', end: '2026-11-26T02:00:00Z' }])
+      await assert.rejects(prepareApprovedCampaignConfirmationContinuation({ ...f.inputs, history, modelWindow }), /WINDOW/);
+    await assert.rejects(readAcceptedConfirmationContinuation({ ...f.historyInputs, parentAuthorization: ref }), /PARENT_VERSION/);
+  });
+  await t.test('partial or open source ledgers and historical leases never become accepted history', async () => {
+    const ownLedger = join(f.own.plan.execution.control_root, 'ledger.jsonl'), bytes = await readFile(ownLedger);
+    const rows = bytes.toString().trimEnd().split('\n').map(JSON.parse);
+    for (const invalidRows of [rows.slice(0, -1), rows.filter(row => !(row.type === 'episode_completed' && row.run_id.endsWith('-003')))]) {
+      try {
+        await writeFile(ownLedger, invalidRows.map((row, index) => JSON.stringify({ ...row, seq: index + 1 })).join('\n') + '\n');
+        await assert.rejects(readAcceptedConfirmationContinuation(f.historyInputs), /OPEN_SCOPE|PARTIAL_SCOPE/);
+      } finally { await writeFile(ownLedger, bytes); }
+    }
+    const legacy = join(f.after.pilot, 'scope-' + f.own.amendment.id + '.lease.json'); await save(legacy, { fixture: true });
+    try { await assert.rejects(readApprovedCampaign(ref), /ACTIVE_LEASE/); }
+    finally { await rename(legacy, join(f.after.owner, 'retired-own-lease.json')); }
+    const lease = join(f.after.pilot, 'campaign.lease.json'); await save(lease, { fixture: 'prospective later scope' });
+    try {
+      assert.deepEqual((await readApprovedCampaign(ref)).value, value);
+      await assert.rejects(readAcceptedConfirmationContinuation(f.historyInputs), /ACTIVE_LEASE/);
+    } finally { await rename(lease, join(f.after.owner, 'retired-later-lease.json')); }
+  });
+  const current = { ...f.after, approval: ref }, selection = value.revision.partial_allocation.selection;
+  const continuation = await prepare(current, { id: f.id, role: CONFIRMATION_CONTINUATION, phase: 'confirmation', protocol: f.own.plan.protocol, selection,
+    prepareExecution: (p, e) => confirmationCaptureInputs(p, e, f.own.plan) });
+  assert.equal(continuation.plan.slots.length, 17); assert.equal(declaredSchedule(continuation.plan.protocol).length, 20);
+  await t.test('startup captures retain full20 while dispatch selects17, and stateful fixture replay is forbidden', () => {
+    const cases = continuation.plan.protocol.corpus.cases.map(item => ({ id: item.id, events: [] }));
+    const full = startupCaptureSchedule(continuation.plan.protocol, cases); assert.equal(full.length, 20);
+    const excluded = f.own.plan.slots[0];
+    assert.equal(captureBindingsForCase({ binding: { id: excluded.case_id, events: [] }, conditionId: excluded.condition_id, slots: full, slotBindings: new Map() }).length, 1);
+    assert.equal(captureBindingsForCase({ binding: { id: excluded.case_id, events: [] }, conditionId: excluded.condition_id, slots: continuation.plan.slots, slotBindings: new Map() }).length, 0);
+    assert.throws(() => startupCaptureSchedule(continuation.plan.protocol, cases, {}), /STATEFUL_FIXTURE/);
+    cases[0].events.push({ id: 'stateful' }); assert.throws(() => startupCaptureSchedule(continuation.plan.protocol, cases), /STATEFUL_FIXTURE/);
+  });
+  await t.test('replay, new blind claim, changed model, scoring, full denominator and foreign captures are rejected', async () => {
+    const reject = async change => {
+      const p = structuredClone(continuation.plan.protocol), e = structuredClone(continuation.plan.execution), setup = { campaign_scope: structuredClone(continuation.input) };
+      delete e.campaign_scope; await change(p, e, setup); sealProtocol(p);
+      await assert.rejects(async () => prepareFiniteCampaign({ setup, protocol: p, execution: e, slots: scheduleProtocol(p) }));
+    };
+    for (const change of [
+      p => { p.policies.campaign.selection.slot_ids[0] = f.own.plan.slots[2].slot_id; },
+      p => { p.policies.campaign.selection.slot_ids.reverse(); },
+      p => { p.phase = 'pilot'; }, p => { p.policies.campaign.role = 'acceptance'; delete p.policies.campaign.selection; },
+      p => { p.models[0].routing.reported_model_ids.push('unapproved'); }, p => { p.models[0].parameters.maxTokens = 4097; },
+      p => { p.models[0].backend.window.end = '2026-11-26T00:00:00Z'; }, p => { p.policies.decision.quality_delta_min = -0.5; },
+      p => { p.corpus.cases[0].content_sha256 = 'f'.repeat(64); }, p => { p.pairs.pop(); },
+      (_p, e) => { e.conditions = structuredClone(f.own.plan.execution.conditions); },
+      (_p, e) => { delete e.conditions[Object.keys(e.conditions)[0]].expectations[f.own.plan.slots[0].case_id]; },
+      (_p, e) => { e.instrumentation.runtime_sha256 = ['b'.repeat(64)]; },
+    ]) await reject(change);
+  });
+  await assert.rejects(runBatch({ plan: f.own.plan, executeEpisode: () => assert.fail('The retained invalid source must never resume') }), /ORIGINAL_CORE_STOP/);
+  await writeClosedPlan(continuation.plan, { startOrdinal: 81, count: 16 });
+  let after = await successor(current, continuation, 8);
+  await assert.rejects(prepare(after, { id: 'approved-code', role: 'acceptance', protocol: fixtureProtocol('code', { modelCount: 1, routing: true, caseCount: 12 }) }), /PREDECESSOR_INCOMPLETE/);
+  await writeClosedPlan(continuation.plan, { startOrdinal: 81, prefixCount: 16 }); after.count = 97;
+  await assert.rejects(prepare(after, { id: 'approved-scale-0', role: 'acceptance', protocol: fixtureProtocol('scale', { modelCount: 1, routing: true, caseCount: 1 }) }), /ALLOCATION_ORDER/);
+  await assert.rejects(prepare({ ...after, predecessor: current.predecessor }, { id: 'approved-code', role: 'acceptance', protocol: fixtureProtocol('code', { modelCount: 1, routing: true, caseCount: 12 }) }), /ALLOCATION_ORDER|NEXT_ALLOCATION/);
+  for (const [index, allocation] of value.allocations.slice(1).entries()) {
+    const scope = await prepare(after, { id: allocation.id, role: 'acceptance', protocol: fixtureProtocol(allocation.id, { modelCount: 1, routing: true, caseCount: allocation.reservation_limit / 2 }) });
+    await writeClosedPlan(scope.plan, { startOrdinal: after.count + 1 }); after = await successor(after, scope, 9 + index);
+    if (index === 6) {
+      assert.equal((await verifyFiniteCampaignScope(scope.plan)).history.scheduled_episodes, 131);
+      await assert.rejects(verifyFiniteCampaignScope(scope.plan, { forReservation: true }), /scope is complete/);
+      const completed = await runBatch({ plan: scope.plan, executeEpisode: () => assert.fail('The exact original139 ceiling is complete') });
+      assert.equal(completed.scheduled, 8); assert.equal(completed.completed, 8);
+    }
+  }
+  assert.equal(after.count, 139); assert.equal((await readdir(f.after.pilot)).filter(name => /^\d{3}\.json$/.test(name)).length, 139);
+  assert.deepEqual((await readApprovedCampaign(ref)).value, value, 'Later closed reservations do not rewrite the bound80');
+  for (const [path, bytes] of originalBytes) assert.deepEqual(await readFile(path), bytes);
+});
+
+test('partial confirmation cannot accept model transport, unknown zero, incomplete transport or other Git drift', async t => {
+  for (const stopOptions of [{ modelTransport: true }, { unknownZero: true }, { incomplete: true }, { extraGitDrift: true }]) {
+    await t.test(Object.keys(stopOptions)[0], async () => {
+      const f = await partialConfirmationFixture({ stopOptions });
+      await assert.rejects(readAcceptedConfirmationContinuation(f.historyInputs));
+      assert.equal((await readdir(f.after.pilot)).filter(name => /^\d{3}\.json$/.test(name)).length, 80);
+    });
+  }
+});
+
+test('partial confirmation still blocks a newly observed stop before the next dispatcher callback', async t => {
+  for (const [name, resultOptions, failure] of [
+    ['stop', { attempts: [50], valid: false, stop: true }, /ORIGINAL_CORE_STOP/],
+    ['unknown without stop flag', { attempts: [null], valid: false, stop: false }, /ORIGINAL_UNKNOWN_USAGE/],
+    ['core invalid without stop flag', { attempts: [50], valid: false, stop: false }, /CORE_INVALID/],
+  ]) await t.test(name, async () => {
+  const f = await partialConfirmationFixture(), history = await readAcceptedConfirmationContinuation(f.historyInputs);
+  const value = await prepareApprovedCampaignConfirmationContinuation({ ...f.inputs, history });
+  const path = join(f.after.owner, 'future-stop-authority.json'); await save(path, value); const ref = await reference(path);
+  const continuation = await prepare({ ...f.after, approval: ref }, { id: f.id, role: CONFIRMATION_CONTINUATION, phase: 'confirmation',
+    protocol: f.own.plan.protocol, selection: value.revision.partial_allocation.selection, prepareExecution: (p, e) => confirmationCaptureInputs(p, e, f.own.plan) });
+  let calls = 0;
+  const first = await runBatch({ plan: continuation.plan, maximumNewEpisodes: 1, executeEpisode: async ({ slot, runId }) => {
+    calls++; return resultFor(continuation.plan, slot, runId, resultOptions);
+  } });
+  assert.equal(calls, 1); assert.equal(first.last.type, 'batch_closed'); assert.equal(first.completed, 1);
+  await assert.rejects(runBatch({ plan: continuation.plan, executeEpisode: () => assert.fail('A future stop cannot inherit the accepted80 exception') }), failure);
+  assert.equal((await readdir(f.after.pilot)).filter(name => /^\d{3}\.json$/.test(name)).length, 81);
+  assert.deepEqual((await readApprovedCampaign(ref)).value, value);
+  await assert.rejects(readAcceptedConfirmationContinuation(f.historyInputs), /BOUNDARY_ADVANCED|REGISTRY_ADVANCED/);
+  });
 });

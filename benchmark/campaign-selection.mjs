@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
 export const UNSTARTED_FOLLOWUP = 'unstarted_followup';
+export const CONFIRMATION_CONTINUATION = 'confirmation_continuation';
+export const selectsUnstartedSlots = role => [UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION].includes(role);
 const sorted = values => [...values].sort();
 
 export function assertFollowupSelection(selection) {
@@ -15,7 +17,8 @@ export function assertFollowupSelection(selection) {
 }
 
 /** The scientific design remains complete even when a separately authorized
- * descriptive follow-up executes only its previously unstarted suffix. */
+ * continuation executes only its previously unstarted suffix. Authorization
+ * and the original confirmation's exposure remain separate finite contracts. */
 export function declaredSchedule(protocol) {
   const ordered = protocol.pairs.map(pair => ({ pair, key: createHash('sha256')
     .update(String(protocol.policies.ordering.seed) + '\0' + pair.id).digest('hex') }))
@@ -34,7 +37,7 @@ export function declaredSchedule(protocol) {
 
 export function scheduleProtocol(protocol) {
   const slots = declaredSchedule(protocol), campaign = protocol.policies.campaign;
-  if (campaign?.role !== UNSTARTED_FOLLOWUP) {
+  if (!selectsUnstartedSlots(campaign?.role)) {
     assert.equal(campaign?.selection, undefined, 'FOLLOWUP_SELECTION_ROLE_REQUIRED');
     return slots;
   }

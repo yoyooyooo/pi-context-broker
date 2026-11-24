@@ -18,6 +18,7 @@ import { pilotScopePolicy } from './pilot-scope.mjs';
 import { prepareCampaignScope, verifyCampaignScope } from './campaign-dispatch.mjs';
 import { finiteCampaignPolicy } from './finite-campaign.mjs';
 import { prepareMaterialOwnership, verifyMaterialOwnership } from './material-ownership.mjs';
+import { CONFIRMATION_CONTINUATION, declaredSchedule } from './campaign-selection.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = async (path, value) => {
@@ -50,6 +51,16 @@ export function captureBindingsForCase({ binding, conditionId, slots, slotBindin
   }
   assert.equal(owned.length, scheduled.length, 'Capture materializations must cover every scheduled repeat');
   return scheduled.map(slot => ({ slot, binding: slotBindings.get(slot.slot_id).binding }));
+}
+
+/** A continuation retains the full original startup-condition mapping even
+ * though dispatch owns only the unstarted suffix. These are zero-model captures,
+ * not retries of the original completed slots. Stateful copies are excluded. */
+export function startupCaptureSchedule(protocol, cases, episodeFixtures) {
+  if (protocol.policies.campaign?.role !== CONFIRMATION_CONTINUATION) return scheduleProtocol(protocol);
+  assert.equal(episodeFixtures, undefined, 'CONFIRMATION_CONTINUATION_STATEFUL_FIXTURE_FORBIDDEN');
+  assert.ok(cases.every(binding => binding.events.length === 0), 'CONFIRMATION_CONTINUATION_STATEFUL_FIXTURE_FORBIDDEN');
+  return declaredSchedule(protocol);
 }
 
 /** Resolve public inputs, prove no-model loading, then freeze the concrete executable comparison. */
@@ -156,10 +167,11 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const credential = { source_file: setup.models.source_file, provider: setup.models.provider, api_key_env: registry.api_key_env };
   const runtime = setup.runtime;
   assert.ok(runtime && isAbsolute(runtime.node) && isAbsolute(runtime.pi) && isAbsolute(runtime.bun));
-  const scheduled = scheduleProtocol({ pairs: comparisonPairs({ models, cases, repetitions: setup.repetitions ?? 1,
+  const schedule = { pairs: comparisonPairs({ models, cases, repetitions: setup.repetitions ?? 1,
     orderingSeed: setup.ordering_seed ?? 0, environmentCount: setup.candidates.length, environmentPairs }),
   assessments: [], policies: { ordering: { seed: setup.ordering_seed ?? 0 },
-    ...(setup.campaign_scope ? { campaign: setup.campaign_scope } : {}) } });
+    ...(setup.campaign_scope ? { campaign: setup.campaign_scope } : {}) } };
+  const scheduled = scheduleProtocol(schedule), captureSlots = startupCaptureSchedule(schedule, cases, setup.episode_fixtures);
   const candidatesByCondition = Object.fromEntries(models.flatMap((_model, mi) => setup.candidates.map((candidate, ei) => ['m' + mi + '-e' + ei, candidate])));
   const prepared = await prepareEpisodeFixtures({ id: setup.id, environmentRoot: setup.environment_root, controlRoot: root,
     corpus, cases, slots: scheduled, candidates: candidatesByCondition, runtime, policy: setup.episode_fixtures });
@@ -167,7 +179,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const previous = Object.fromEntries(Object.keys(secrets).map(key => [key, process.env[key]]));
   Object.assign(process.env, secrets);
   const cells = models.flatMap((model, mi) => setup.candidates.flatMap((candidate, ei) => cases.flatMap((binding, ci) => {
-    return captureBindingsForCase({ binding, conditionId: 'm' + mi + '-e' + ei, slots: scheduled, slotBindings: prepared.slots })
+    return captureBindingsForCase({ binding, conditionId: 'm' + mi + '-e' + ei, slots: captureSlots, slotBindings: prepared.slots })
       .map(actual => ({ model, candidate: { ...candidate,
         ...(actual.slot && candidate.mode === 'broker' ? { notion_entry: actual.binding.notion_entry } : {}) },
       binding: actual.binding, mi, ei, ci, ...(actual.slot ? { slot: actual.slot } : {}) }));
@@ -271,6 +283,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   await save(join(root, 'plan.json'), plan);
   await save(join(root, 'configuration-proof.json'), { version: 1, setup_sha256: fingerprint(setup), plan_sha256: plan.plan_sha256,
     status: 'ready', capture_count: results.length, covered_case_conditions: expanded.length, actual_model_requests: 0,
+    ...(setup.campaign_scope?.role === CONFIRMATION_CONTINUATION ? { capture_design_slots: captureSlots.length, selected_dispatch_slots: scheduled.length } : {}),
     capture_scope: 'shared-identical-startup-inputs; every episode independently verifies public-input bytes and actual startup/final-request contracts',
     material_original_bindings: materialOriginalBindings, material_ownership: materialOwnership,
     frozen_slot_materializations: prepared.slots.size,

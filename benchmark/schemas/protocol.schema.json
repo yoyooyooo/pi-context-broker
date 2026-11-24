@@ -778,7 +778,7 @@
             "version": { "const": 1 },
             "kind": { "const": "benchmark-finite-campaign" },
             "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$" },
-            "role": { "enum": ["route_gate_only", "acceptance", "unstarted_followup"] },
+            "role": { "enum": ["route_gate_only", "acceptance", "unstarted_followup", "confirmation_continuation"] },
             "reservation_limit": { "type": "integer", "minimum": 1, "maximum": 144 },
             "max_scheduled_episodes": { "const": 144 },
             "history_quality": { "const": "excluded_retained_in_campaign_costs" },

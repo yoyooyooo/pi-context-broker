@@ -2,8 +2,9 @@
 
 An explicit `campaign_scope` binds one complete Benchmark plan to the existing
 144-reservation campaign. It supports a route gate for one model, bounded
-acceptance comparisons, and an explicitly approved descriptive follow-up of
-previously unstarted slots. The scope never
+acceptance comparisons, an explicitly approved descriptive follow-up of
+previously unstarted slots, and an accepted continuation of an original
+confirmation design. The scope never
 creates a second budget ledger or removes a retained observation.
 
 The existing [prospective cohort contract](benchmark-prospective-cohorts.md)
@@ -23,14 +24,14 @@ Its `campaign_scope` has the following fields:
 | --- | --- |
 | `kind` | `benchmark-finite-campaign`. |
 | `id` | A new scope identity. |
-| `role` | `route_gate_only`, `acceptance`, or `unstarted_followup`. |
+| `role` | `route_gate_only`, `acceptance`, `unstarted_followup`, or `confirmation_continuation`. |
 | `authorization` | The actual authorization for this finite work. |
 | `predecessor.registration` | Absolute path and SHA-256 of the current registration file. |
 | `predecessor.amendment` | Absolute path and SHA-256 of that registration's amendment file. |
 | `history_plan_files` | Every owning plan for the closed historical reservations. |
 | `prospective_authorization` | Optional absolute path and SHA-256 of an immutable approved campaign document. Required for an explicitly approved transition after retained stopped history. |
 | `allocation_id` | The unique predeclared allocation for an approved campaign; must equal this scope's `id`. |
-| `selection` | For `unstarted_followup` only: the source plan's semantic `source_plan_sha256` and its exact ordered unstarted `slot_ids`. |
+| `selection` | For `unstarted_followup` or `confirmation_continuation`: the source plan's semantic `source_plan_sha256` and its exact ordered unstarted `slot_ids`. |
 
 Reference hashes identify the retained file bytes. They are distinct from the
 semantic `amendment_sha256` inside an amendment. The scope derives its reservation
@@ -78,6 +79,7 @@ selection, material, runtime, budget, or slots requires a new authorized plan.
 | `route_gate_only` | Phase `pilot`, purpose `native_calibration`, one model, Broker and native Pi, four common cases, one observation per case and condition: eight episodes. | Actual route, loading, observation, and accounting coverage. No expansion or business-quality acceptance is implied. |
 | `acceptance` | Phase `pilot` or `confirmation`, a complete schedule, and the existing protocol's purpose and comparison rules. | The declared acceptance comparison. Claims depend on its actual baseline, material, observations, and decision policy. |
 | `unstarted_followup` | Phase `pilot`, decision `descriptive`, the complete original scientific design, and only the exact unstarted suffix of the approved stopped source plan. | New observations in their own experiment. Original missing cells remain in the scientific denominator; old successes cannot fill them. |
+| `confirmation_continuation` | Phase `confirmation`, decision `acceptance`, a version 4 authority, the original complete scientific design, and precisely its accepted unstarted suffix. | Continued observations of that original design under a new owning plan. The original exposure and invalids remain; this is not a new blind confirmation. |
 
 The generic configuration entry supports two candidates, or four candidates
 with two explicit comparison pairs. For four candidates, `environment_pairs`
@@ -294,6 +296,113 @@ apparatus bridge remain inherited. Terra's original gate still fails its
 original-result check. Any new core stop or unknown usage after the accepted
 boundary still blocks the next dispatch until a separate applicable decision.
 
+## An accepted partial confirmation
+
+A version 4 authority implements the explicit
+[stopped-80 continuation proposal](benchmark-own-stop-next-decision-2026-11-23.md).
+It accepts only a version 3 parent, the next fully completed follow-up, and the
+following closed partial confirmation. The new user decision is separate from
+the original decision and from the unchanged, formerly unapproved proposal.
+Its exact proposal, published draft, parent authority and stopped checkpoint
+references are re-read. It grants no additional reservation allowance.
+
+The registration chain, started slots and original completions must agree on a
+strict prefix of the source confirmation. Every started slot needs exactly one
+reservation and one completion; an open scope, an unresolved execution, a
+skipped registration or a source analysis/collection revision is rejected.
+Only the final accepted observation may retain the named startup admission
+failure. The original normalized episode remains invalid and stopped. The
+reader independently checks the runtime result, frozen startup expectation,
+observed candidate, admission differences, launcher result, runtime events and
+complete provider-transport trace. The permitted differences are the four
+recorded Git identity fields. Model attempts and token totals must be known
+zero; no null-to-zero conversion or summary-only proof is accepted. Non-model
+HTTP observations, elapsed time and unpriced monetary status stay intact.
+
+For the accepted boundary, 66 historical reservations plus the completed 11
+and the original Own prefix of 3 make 80. The original 20-slot allocation is
+retired with 3 spent positions; a distinct owner receives only source orders
+3 through 19. The old third observation is never retried or replaced. The
+remaining seven allocations retain their IDs, work indices, roles and limits:
+24 CodeMode, five two-slot scale scopes, then 8 fault observations. All eight
+new scopes must follow this exact order. CodeMode requires completion of the
+new 17-slot predecessor; the old partial Own plan cannot satisfy it. The total
+remains 139 under the hard limit of 144, with five unavailable spare slots.
+The original five effective usage unknowns and six original unknown completions
+remain unchanged by a known-zero admission stop.
+
+The data-only preparation APIs are:
+
+```js
+const history = await readAcceptedConfirmationContinuation({
+  parentAuthorization, userApproval, predecessor, planFiles, pilotLedgerRoot,
+});
+const authority = await prepareApprovedCampaignConfirmationContinuation({
+  id, parentAuthorization, userApproval, predecessor, history,
+  // Optional actual, explicitly selected window: { start, end }.
+  // Omitting it retains the source window. This call does not create a window.
+  modelWindow,
+});
+```
+
+The first function is exported by `benchmark/finite-campaign.mjs`; the second
+by `benchmark/approved-campaign.mjs`. Preparation requires the exact current
+boundary and no active campaign or source lease. Reading a stored authority
+later rechecks its original bound history and permits later reservations and
+the later scope's campaign lease. Neither API writes an authority, registers a
+scope, configures a subject or sends a model request.
+
+The revision kind is `accepted-partial-confirmation-continuation`. It binds
+`parent_authorization`, `user_approval`, `consumed_allocations`,
+`partial_allocation`, `retained_stop`, `next_allocation_id` and `model_window`.
+The derived partial-allocation record retains the source allocation and plan,
+original limit, spent and remaining counts, new experiment identity, excluded
+started slot IDs and exact selection. The top-level original proposal and user
+decision still define the original work and ceilings. Original alias evidence
+and apparatus bridges remain readable through their original lineage.
+
+The optional model window is fixed once in this authority. It either equals the
+source window (`retained_original`) or is one explicitly selected 24-hour window
+starting no earlier than the new acceptance (`single_new_24h`). Every remaining
+scope uses this same window and the original complete model identity, routing,
+adapter and parameters. Version 4 cannot parent another version 4 continuation
+to renew it again. Normal execution still checks whether the bound window is
+currently usable; reading an old immutable authority does not move its times.
+
+For the 17-slot owner, the full 20-position scientific schedule, cases, pairs,
+ordering, scoring, acceptance thresholds and statistical policies remain equal
+to the source. The only budget change is `batch.max_episodes: 17`; episode
+limits and the original batch request, token, duration and concurrency caps
+remain fixed. The source's already exposed material may be reused only after
+this exact design/source check. Overlap with any other historical owner is
+still rejected. The old source stays closed, and every later new core failure,
+stop or usage unknown still blocks dispatch before another reservation.
+
+`configure` performs fresh zero-model startup captures for the complete original
+20-position design, even though dispatch selects 17. Identical startup inputs
+may share an actual capture; the receipt records the observed capture count,
+`capture_design_slots` and `selected_dispatch_slots` separately. State-changing
+episode fixtures cannot use this continuation path. New captures must come from
+the new owner, send no model HTTP request, and reproduce every original startup
+expectation byte. A copied old capture is insufficient. The only allowed
+environment-manifest difference is the actual observer path under the new
+capture run, with the same observer implementation; manifest hashes and their
+condition references change accordingly. Product builds, runtime, tools,
+catalogs, configuration and semantic contracts remain equal. Collector,
+normalizer, grader and observer code remain unchanged. The collector's recorded
+static closure changes only for the selection/protocol/schema dependencies
+needed to recognize this role, and must be recorded as a new closure identity.
+
+The original 3 and new 17 retain their separate owning plans and evidence.
+Each owner report uses the original 20-position scientific denominator and
+shows positions absent from that owner as unresolved. Adding those two
+denominators would incorrectly describe 40 scientific positions. A combined
+publication must identify the common original design and its 20 unique slots,
+retain the original invalid, and avoid claiming 20 valid observations or a new
+independent cold start. The same original cold operator's remaining positions
+require their separately bound operational handoff; engine tests and captures
+do not establish that the operator completed them.
+
 ## Original failures and analysis revisions
 
 New original completed observations must have known, complete usage and no
@@ -352,10 +461,12 @@ scopes add reservations. An acceptance plan cannot use this route-gate format.
 
 ## Independent confirmation evidence
 
-For phase `confirmation`, the scope rejects material identities already present
+For a new phase `confirmation` experiment, the scope rejects material identities already present
 in its retained campaign history. The check includes canonical variants and
 public cases, content, the business-input tuple, and attachment identities.
 Changing a material ID or split name does not make known content independent.
+The narrowly accepted `confirmation_continuation` above explicitly retains the
+original exposure instead of claiming another independent experiment.
 
 This known-history check covers the supplied and verified historical campaign
 plans. It does not establish that material was unseen in every development

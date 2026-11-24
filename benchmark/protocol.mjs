@@ -3,7 +3,7 @@ import environmentSchema from './schemas/environment-manifest.schema.json' with 
 import protocolSchema from './schemas/protocol.schema.json' with { type: 'json' };
 import metricDictionary from './metrics.json' with { type: 'json' };
 import { canonicalAutoGroupLabel, validateRoutingPolicy } from './reported-model.mjs';
-import { scheduleProtocol, UNSTARTED_FOLLOWUP } from './campaign-selection.mjs';
+import { scheduleProtocol, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION, selectsUnstartedSlots } from './campaign-selection.mjs';
 
 const REQUIRED_EVIDENCE = ['runtime_identity', 'loaded_manifest', 'visible_materials',
   'model_requests', 'usage', 'tool_lineage', 'business_readback', 'completion_boundary', 'interventions'];
@@ -444,7 +444,8 @@ function policyChecks(value, maps, pairCells, stage, errors) {
     issue(errors, '/metrics/dictionary_sha256', 'metric_dictionary_mismatch', 'Metric dictionary content must match this versioned implementation');
   let selectedSlots;
   const followup = policies.campaign?.role === UNSTARTED_FOLLOWUP;
-  if (followup) {
+  const confirmationContinuation = policies.campaign?.role === CONFIRMATION_CONTINUATION;
+  if (selectsUnstartedSlots(policies.campaign?.role)) {
     try { selectedSlots = scheduleProtocol(value); }
     catch (error) { issue(errors, '/policies/campaign/selection', 'followup_selection', error.message); }
   } else if (policies.campaign?.selection !== undefined)
@@ -463,6 +464,8 @@ function policyChecks(value, maps, pairCells, stage, errors) {
       issue(errors, '/models', 'campaign_routing', 'Every finite campaign model requires a frozen reported-model routing contract');
     if (followup && (value.phase !== 'pilot' || policies.decision.mode !== 'descriptive'))
       issue(errors, '/policies/campaign', 'followup_descriptive_pilot', 'An unstarted follow-up keeps the full scientific denominator and remains a descriptive pilot');
+    if (confirmationContinuation && (value.phase !== 'confirmation' || policies.decision.mode !== 'acceptance'))
+      issue(errors, '/policies/campaign', 'continuation_original_confirmation', 'A confirmation continuation retains the original confirmation design and acceptance policy');
     if (scope.role === 'route_gate_only') {
       const cases = value.corpus.cases.map(item => item.id), modes = value.environments.map(environment => environment.pi.mode);
       if (value.phase !== 'pilot' || value.purpose !== 'native_calibration' || value.models.length !== 1

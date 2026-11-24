@@ -118,7 +118,7 @@ async function decision({ parent, parentReference, userApproval }) {
 
 // Derive consumed allocations from the immutable registration chain, never from
 // a caller-supplied list. A scope must spend its entire original allocation.
-async function scopesAfter(parent, parentReference, predecessor) {
+export async function readRegisteredAllocationScopes(parent, parentReference, predecessor, { partialTerminal = false } = {}) {
   keys(predecessor, ['registration', 'amendment'], 'HISTORY_EXTENSION_PREDECESSOR_SHAPE');
   const reverse = [], seen = new Set(); let cursor = predecessor;
   while (fingerprint(cursor) !== fingerprint(parent.predecessor)) {
@@ -145,10 +145,12 @@ async function scopesAfter(parent, parentReference, predecessor) {
     const ledger = await closedLedger(plan);
     assert.ok(!ledger.rows.some(row => ['analysis_revision_applied', 'collection_recovery_applied', 'episode_not_dispatched'].includes(row.type)), 'HISTORY_EXTENSION_SOURCE_REINTERPRETED');
     const starts = ledger.rows.filter(row => row.type === 'episode_started'), completed = ledger.rows.filter(row => row.type === 'episode_completed');
+    const selected = partialTerminal && reverse.length === 0 ? plan.slots.slice(0, starts.length) : plan.slots;
+    assert.ok(selected.length > 0 && selected.length <= allocation.reservation_limit, 'HISTORY_EXTENSION_PARTIAL_SCOPE');
     for (const rows of [starts, completed]) {
-      assert.equal(rows.length, allocation.reservation_limit, 'HISTORY_EXTENSION_PARTIAL_SCOPE');
+      assert.equal(rows.length, selected.length, 'HISTORY_EXTENSION_PARTIAL_SCOPE');
       assert.equal(new Set(rows.map(row => row.run_id)).size, rows.length, 'HISTORY_EXTENSION_DUPLICATE_RUN');
-      assert.deepEqual(rows.map(row => row.slot_id), plan.slots.map(slot => slot.slot_id), 'HISTORY_EXTENSION_SLOT_ORDER');
+      assert.deepEqual(rows.map(row => row.slot_id), selected.map(slot => slot.slot_id), 'HISTORY_EXTENSION_SLOT_ORDER');
       for (const [index, row] of rows.entries())
         assert.equal(row.run_id, plan.id + '-' + String(plan.slots[index].order + 1).padStart(3, '0'), 'HISTORY_EXTENSION_RUN_ID_CHANGED');
     }
@@ -183,7 +185,7 @@ export async function readHistoryExtension({ parent: authorized, parentReference
   const parent = authorized.value, accepted = await decision({ parent, parentReference, userApproval });
   assert.equal(pilotLedgerRoot, parent.pilot_ledger_root);
   const names = currentBoundary ? await currentBoundarySnapshot(pilotLedgerRoot, accepted.value.current_reservations) : [];
-  const scopes = await scopesAfter(parent, parentReference, predecessor);
+  const scopes = await readRegisteredAllocationScopes(parent, parentReference, predecessor);
   const last = scopes.at(-1), terminal = last.completed.at(-1), count = parent.history.scheduled_episodes + scopes.reduce((sum, scope) => sum + scope.allocation.reservation_limit, 0);
   assert.equal(count, accepted.value.current_reservations, 'HISTORY_EXTENSION_SCOPE_COUNT_CHANGED');
   if (currentBoundary) {
