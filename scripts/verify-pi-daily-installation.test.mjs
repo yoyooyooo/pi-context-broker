@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:https';
+import { createSecureServer } from 'node:http2';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +11,7 @@ import test from 'node:test';
 import { fileInventory } from './next-build-identity.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { readSourceObservation, sourceObserverPreloadSource } from './skill-consumption-source-observer.mjs';
-import { aggregateDailyDeliveries, classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, observedDailyHostProcess, validateDailyDoctor, validateDailyFind, validateDailyLibraryRequests, validateDailySdkOperations, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
+import { aggregateDailyDeliveries, classifyDailyHttp, classifyDailyNotionRequest, dailyObserverPreloadSource, observedDailyHostProcess, validateDailyDoctor, validateDailyDoctorCli, validateDailyFind, validateDailyLibraryRequests, validateDailySdkOperations, verifyDailyCliShim, verifyDailyPackageSource } from './verify-pi-daily-installation.mjs';
 import { workflowHostLoader } from './notion-agent-workflow-runtime.mjs';
 
 test('daily aggregate requires an explicit new delivery and both machine receipts before any source or Pi operation', async () => {
@@ -467,11 +469,29 @@ test('HTTP follows actual process ancestry, including source descendants', () =>
     { event: 'process_start', pid: 31, ppid: 30 },
     { event: 'http_start', pid: 20, id: 'source' },
     { event: 'http_start', pid: 21, id: 'source-child' },
+    { event: 'http_end', pid: 20, id: 'source', status: 200 },
+    { event: 'http_end', pid: 21, id: 'source-child', status: 200 },
     { event: 'http_start', pid: 31, id: 'other-plugin' },
   ];
   const result = classifyDailyHttp(observed, new Set([20]), new Set([10]));
   assert.deepEqual(result.source.map(row => row.id), ['source', 'source-child']);
   assert.deepEqual(result.otherPlugins.map(row => row.id), ['other-plugin']);
+});
+
+test('bundled CLI HTTP retains its unique independent response structure', () => {
+  const root = '11111111-1111-4111-8111-111111111111';
+  const request = { event: 'http_start', pid: 20, id: '20:1', origin: 'https://api.notion.com',
+    method: 'GET', path: '/v1/blocks/' + root + '/children', cursor_sha256: null };
+  const terminal = { event: 'http_end', pid: 20, id: request.id, status: 200,
+    library_structure: { kind: 'root-children', root, has_more: false, next_cursor_sha256: null, children: [] } };
+  const ancestry = { event: 'spawn', pid: 10, child_pid: 20 };
+  const result = classifyDailyHttp([ancestry, request, terminal], new Set([20]), new Set([10]));
+  assert.deepEqual(result.source[0].structure, terminal.library_structure);
+  assert.deepEqual(result.source[0].response, terminal);
+  for (const terminals of [[], [terminal, { ...terminal }], [{ ...terminal, pid: 21 }],
+    [{ ...terminal, event: 'http_error' }], [{ ...terminal, status: 403 }]]) {
+    assert.throws(() => classifyDailyHttp([ancestry, request, ...terminals], new Set([20]), new Set([10])));
+  }
 });
 
 test('host, unknown, or cyclic ancestry cannot conceal HTTP as other-plugin traffic', () => {
@@ -530,6 +550,119 @@ function libraryRequests() {
   ];
 }
 
+function doctorCliObservation() {
+  const at = ms => new Date(Date.UTC(2026, 0, 2) + ms).toISOString();
+  const expected = { library: libraryRoot, hostPid: 10, entry: '/controlled/broker/dist/ntn-skills.mjs',
+    sha256: 'a'.repeat(64), executable: '/controlled/node',
+    phase: { command: '/context-broker doctor', disposition: 'handled', startedAt: at(0), finishedAt: at(4000) } };
+  const args = ['ctl', 'doctor', '--library', libraryRoot], pid = 20;
+  const meta = { pid: 10, child_pid: pid, executable: expected.executable, script: expected.entry,
+    real_script: expected.entry, bundled_cli: true, script_sha256: expected.sha256 };
+  const rows = [
+    { ...meta, event: 'spawn', at: at(1000), cli_args: [...args] },
+    { event: 'process_start', pid, ppid: 10, at: at(1001), executable: expected.executable,
+      real_entry: expected.entry, entry_sha256: expected.sha256, args_sha256: createHash('sha256').update(JSON.stringify(args)).digest('hex') },
+  ];
+  for (const [index, request] of libraryRequests().entries()) {
+    const { attribution, structure, ...http } = request;
+    const start = { ...http, event: 'http_start', pid, id: pid + ':' + (index + 1), at: at(2000 + index * 10) };
+    rows.push({ ...start, event: 'http_created' }, start,
+      { event: 'http_end', pid, id: start.id, at: at(2001 + index * 10), status: 200,
+        ...(structure ? { library_structure: structure } : {}) });
+  }
+  rows.push({ event: 'process_exit', pid, at: at(3000), code: 0 },
+    { event: 'http_observer_end', pid, at: at(3000), complete: true, errors: 0, pending: [] },
+    { ...meta, event: 'child_close', at: at(3001), cli_args: [...args], code: 0, signal: null,
+      stdout_bytes: 100, stdout_sha256: 'b'.repeat(64),
+      receipt: { ok: true, transport: 'direct_http', notion_api_version: '2026-03-11',
+        authentication: 'available', skill_read: { checked: false } } });
+  return { rows, expected, at };
+}
+
+test('explicit doctor proves its own process and complete root without borrowing SDK metrics', () => {
+  const { rows, expected } = doctorCliObservation();
+  const proof = validateDailyDoctorCli(rows, expected);
+  assert.equal(proof.library_structure.root_children_requests, 1);
+  assert.equal(proof.http.length, 5);
+  assert.deepEqual(proof.library_structure.operations[0].data_sources,
+    [{ data_source_id: libraryDataSource, database_id: libraryDatabase }]);
+  assert.ok(proof.http.every(request => request.attribution.kind === 'doctor' && request.attribution.cli_pid === 20));
+  assert.ok(proof.http.every(request => !Object.hasOwn(request.attribution, 'request_kind')));
+  assert.throws(() => validateDailyLibraryRequests(proof.http, libraryRoot));
+  assert.deepEqual(validateDailyDoctorCli(proof.observations, expected), proof);
+});
+
+test('doctor rejects substituted process identity, argv, owner, phase, exit or observer completion', () => {
+  for (const mutate of [
+    rows => { rows.find(row => row.event === 'spawn').pid = 99; },
+    rows => { rows.find(row => row.event === 'spawn').cli_args.push('--skill', foreignRoot); },
+    rows => { rows.find(row => row.event === 'spawn').cli_args[3] = foreignRoot; },
+    rows => { rows.find(row => row.event === 'spawn').script_sha256 = 'c'.repeat(64); },
+    rows => { rows.find(row => row.event === 'spawn').at = '2026-01-01T00:00:00.000Z'; },
+    rows => { rows.push({ ...rows.find(row => row.event === 'spawn'), child_pid: 21 }); },
+    rows => { rows.find(row => row.event === 'process_start').ppid = 99; },
+    rows => { rows.find(row => row.event === 'process_start').real_entry += '.other'; },
+    rows => { rows.find(row => row.event === 'process_start').args_sha256 = 'c'.repeat(64); },
+    rows => { rows.push({ ...rows.find(row => row.event === 'process_start') }); },
+    rows => { rows.splice(rows.findIndex(row => row.event === 'process_start'), 1); },
+    rows => { rows.find(row => row.event === 'process_exit').code = 1; },
+    rows => { rows.find(row => row.event === 'child_close').signal = 'SIGTERM'; },
+    rows => { rows.find(row => row.event === 'child_close').receipt.skill_read.checked = true; },
+    rows => { rows.find(row => row.event === 'child_close').at = '2026-01-02T00:00:05.000Z'; },
+    rows => { rows.find(row => row.event === 'http_observer_end').pending = ['20:unfinished']; },
+    rows => { rows.find(row => row.event === 'http_observer_end').complete = false; },
+    rows => { rows.splice(rows.findIndex(row => row.event === 'http_observer_end'), 1); },
+  ]) {
+    const { rows, expected } = doctorCliObservation(); mutate(rows);
+    assert.throws(() => validateDailyDoctorCli(rows, expected));
+  }
+});
+
+test('doctor cannot borrow SDK structure or authorize missing, foreign, partial or unowned HTTP', () => {
+  const response = (rows, path) => {
+    const request = rows.find(row => row.event === 'http_start' && row.path === path);
+    return rows.find(row => row.event === 'http_end' && row.id === request.id);
+  };
+  const rootPath = '/v1/blocks/' + libraryRoot + '/children';
+  for (const mutate of [
+    rows => { response(rows, rootPath).library_structure = null; },
+    rows => { response(rows, rootPath).library_structure.root = foreignRoot; },
+    rows => { response(rows, rootPath).library_structure.children[0].parent.page_id = foreignRoot; },
+    rows => { response(rows, rootPath).library_structure.has_more = true; response(rows, rootPath).library_structure.next_cursor_sha256 = 'a'.repeat(64); },
+    rows => { response(rows, rootPath).library_structure.children.push(structuredClone(response(rows, rootPath).library_structure.children[0])); },
+    rows => { rows.find(row => row.event === 'http_start' && row.path === rootPath).cursor_sha256 = 'a'.repeat(64); },
+    rows => { response(rows, '/v1/databases/' + libraryDatabase).library_structure.parent.page_id = foreignRoot; },
+    rows => { response(rows, '/v1/databases/' + libraryDatabase).library_structure.data_source_ids.push(foreignRoot); },
+    rows => { response(rows, '/v1/data_sources/' + libraryDataSource).library_structure.parent.database_id = foreignRoot; },
+    rows => { response(rows, rootPath).status = 403; },
+    rows => { response(rows, rootPath).pid = 99; },
+    rows => { rows.push({ ...response(rows, rootPath) }); },
+    rows => { rows.splice(rows.indexOf(response(rows, rootPath)), 1); },
+    rows => { response(rows, rootPath).at = '2026-01-02T00:00:05.000Z'; },
+    rows => { rows.find(row => row.event === 'http_created' && row.path === rootPath).path = '/v1/blocks/' + foreignRoot + '/children'; },
+    rows => {
+      const query = '/v1/data_sources/' + libraryDataSource + '/query';
+      for (const row of rows.filter(row => row.path === query)) row.path = '/v1/data_sources/' + foreignRoot + '/query';
+    },
+    rows => {
+      for (const row of rows.filter(row => row.path === rootPath)) row.path = '/v1/blocks/' + foreignRoot + '/children';
+    },
+    rows => {
+      for (const row of rows.filter(row => row.path === '/v1/pages/' + libraryRoot)) row.path += '/markdown';
+    },
+    rows => {
+      for (const row of rows.filter(row => row.path === '/v1/data_sources/' + libraryDataSource + '/query')) row.method = 'DELETE';
+    },
+    rows => {
+      rows.push({ event: 'process_start', pid: 21, ppid: 20, at: '2026-01-02T00:00:01.500Z' });
+      for (const row of rows.filter(row => ['http_created', 'http_start', 'http_end'].includes(row.event))) row.pid = 21;
+    },
+  ]) {
+    const { rows, expected } = doctorCliObservation(); mutate(rows);
+    assert.throws(() => validateDailyDoctorCli(rows, expected));
+  }
+});
+
 test('daily SDK3 selection is local and remote metadata keeps the exact expected root', () => {
   const operations = ['library-selection', 'library', 'list'].map(operation => ({ operation, source_id: 'same-source-name', library: operation === 'library-selection' ? null : libraryRoot }));
   assert.doesNotThrow(() => validateDailySdkOperations(operations, libraryRoot));
@@ -582,6 +715,7 @@ test('root proofs reject foreign or truncated children, orphan data sources, and
     rows => { rows[2].structure.parent.page_id = foreignRoot; },
     rows => { rows[3].structure.parent.database_id = foreignRoot; },
     rows => { rows[2].structure.data_source_ids = [foreignRoot]; },
+    rows => { rows[2].structure.data_source_ids.push(foreignRoot); },
     rows => { rows[3].path = '/v1/data_sources/' + foreignRoot; rows[3].structure.id = foreignRoot; },
     rows => { rows[4].path = '/v1/data_sources/' + foreignRoot + '/query'; },
     rows => { rows[4].attribution.library = foreignRoot; },
@@ -820,4 +954,93 @@ test('proxy setup retains source ancestry, failures and pre-send attempts withou
   ]) assert.throws(() => classifyDailyHttp([...sdkHttp, changed], new Set([20]), new Set([10]), { sourceObservation: sdkObservation() }));
   assert.throws(() => classifyDailyHttp([...sdkHttp, tunnel, { ...complete, response_request_id: sdkRequestId }],
     new Set(), new Set([10]), { sourceObservation: sdkObservation() }), /cannot replace an SDK response/u);
+});
+
+// Require actual ALPN h2; a protocol downgrade cannot satisfy this transport regression.
+test('passive observer preserves H1/H2 bytes and complete Library structure with header/body request IDs', { timeout: 30000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'daily-observer-h1-h2-'));
+  const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+  const root = '00000000-0000-4000-8000-000000000101', database = '00000000-0000-4000-8000-000000000102', dataSource = '00000000-0000-4000-8000-000000000103';
+  const headerId = '00000000-0000-4000-8000-000000000301', bodyId = '00000000-0000-4000-8000-000000000302';
+  const marker = 'UNRECORDED_AUTHOR_TEXT_H2_REGRESSION';
+  const values = {
+    ['/v1/pages/' + root]: { object: 'page', id: root, request_id: bodyId, properties: { secret: marker } },
+    ['/v1/blocks/' + root + '/children']: { object: 'list', request_id: bodyId, has_more: false, next_cursor: null, results: [{ id: database, type: 'child_database', parent: { type: 'page_id', page_id: root }, child_database: { title: marker } }] },
+    ['/v1/databases/' + database]: { object: 'database', id: database, request_id: bodyId, parent: { type: 'page_id', page_id: root }, data_sources: [{ id: dataSource, name: marker }] },
+    ['/v1/data_sources/' + dataSource]: { object: 'data_source', id: dataSource, request_id: bodyId, parent: { type: 'database_id', database_id: database }, properties: { Name: marker } },
+  };
+  const cert = join(directory, 'cert.pem'), key = join(directory, 'key.pem'), config = join(directory, 'cert.cnf');
+  await writeFile(config, '[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=localhost\n[ext]\nsubjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=critical,CA:TRUE\n', { flag: 'wx', mode: 0o600 });
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-sha256', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-config', config], { timeout: 10000, stdio: 'pipe' });
+  const sockets = new Set(), sessions = new Set(), served = [];
+  const handle = transport => (request, response) => {
+    const url = new URL(request.url, 'https://127.0.0.1'), body = JSON.stringify(values[url.pathname]);
+    assert.ok(body);
+    served.push({ transport, source: url.searchParams.get('source'), path: url.pathname, httpVersion: request.httpVersion, alpn: request.socket.alpnProtocol, bytes: Buffer.byteLength(body), sha256: hash(body) });
+    response.writeHead(200, { 'content-type': 'application/json', 'content-encoding': 'identity', ...(url.searchParams.get('source') === 'header' ? { 'x-request-id': headerId } : {}) });
+    response.end(body);
+  };
+  const tls = { cert: await readFile(cert), key: await readFile(key) };
+  const servers = [createServer(tls, handle('h1')), createSecureServer({ ...tls, allowHTTP1: false, ALPNProtocols: ['h2'] }, handle('h2'))];
+  for (const server of servers) {
+    server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
+    server.on('session', session => { sessions.add(session); session.once('close', () => sessions.delete(session)); });
+  }
+  let child;
+  try {
+    for (const server of servers) await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const endpoints = servers.map((server, index) => ({ transport: index ? 'h2' : 'h1', origin: 'https://127.0.0.1:' + server.address().port }));
+    const observation = join(directory, 'observation'); await mkdir(observation, { mode: 0o700 });
+    const preload = join(directory, 'observe.cjs'), client = join(directory, 'client.cjs'), clientResult = join(directory, 'consumer.json');
+    await writeFile(preload, dailyObserverPreloadSource({ directory: observation, cliEntry: join(directory, 'unused-cli.js'), library: root, responseRequestIdBodyOrigins: endpoints.map(endpoint => endpoint.origin) }), { flag: 'wx', mode: 0o600 });
+    const code = [
+      "const fs=require('node:fs'),dc=require('node:diagnostics_channel'),crypto=require('node:crypto');",
+      "const endpoints=" + JSON.stringify(endpoints) + ",values=" + JSON.stringify(values) + ";",
+      "const retainedFetch=globalThis.fetch;new Function('require',fs.readFileSync(" + JSON.stringify(preload) + ",'utf8'))(require);if(globalThis.fetch!==retainedFetch)throw Error('Observer replaced fetch');",
+      "const shapes=[],pending=new WeakMap();let sequence=0;",
+      "dc.subscribe('undici:request:create',({request})=>pending.set(request,{sequence:++sequence,origin:String(request.origin),path:request.path,bodyChunks:0,bodyBytes:0}));",
+      "dc.subscribe('undici:request:headers',({request,response})=>{const row=pending.get(request),headers=response.headers;const keys=Array.isArray(headers)?headers.filter((_,i)=>i%2===0).map(x=>Buffer.isBuffer(x)?x.toString():String(x)):Object.keys(headers??{});Object.assign(row,{array:Array.isArray(headers),type:typeof headers,keys:keys.map(x=>x.toLowerCase()).filter(x=>['content-type','content-encoding','x-request-id'].includes(x)).sort()});});",
+      "dc.subscribe('undici:request:bodyChunkReceived',({request,chunk})=>{const row=pending.get(request);row.bodyChunks++;row.bodyBytes+=chunk.byteLength;});",
+      "dc.subscribe('undici:request:trailers',({request})=>shapes.push({...pending.get(request)}));",
+      "(async()=>{const results=[];for(const endpoint of endpoints)for(const source of ['header','body'])for(const [path,value] of Object.entries(values)){const response=await retainedFetch(endpoint.origin+path+'?source='+source),body=await response.text();if(response.status!==200||body!==JSON.stringify(value))throw Error('Response bytes changed');results.push({transport:endpoint.transport,source,path,status:response.status,bytes:Buffer.byteLength(body),sha256:crypto.createHash('sha256').update(body).digest('hex')});}if(globalThis.fetch!==retainedFetch)throw Error('Fetch changed');",
+      "fs.writeFileSync(" + JSON.stringify(clientResult) + ",JSON.stringify({node:process.version,undici:process.versions.undici,fetchUnchanged:true,results,shapes},null,2)+'\\n',{flag:'wx',mode:0o600});process.exit(0);})().catch(error=>{console.error(error.stack);process.exit(1);});",
+    ].join('\n');
+    await writeFile(client, code, { flag: 'wx', mode: 0o600 });
+    // Trust only this generated local certificate in the owned child; no proxy,
+    // credentials, NODE_OPTIONS or global TLS configuration are inherited.
+    child = spawn(process.execPath, [client], { cwd: directory, env: { PATH: dirname(process.execPath) + ':/usr/bin:/bin:/usr/sbin:/sbin', HOME: directory, LANG: 'en_US.UTF-8', NODE_EXTRA_CA_CERTS: cert }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    let stdout = '', stderr = ''; child.stdout.on('data', bytes => { stdout += bytes; }); child.stderr.on('data', bytes => { stderr += bytes; });
+    const closed = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch {} reject(new Error('Owned loopback child timed out')); }, 20000);
+      child.once('error', error => { clearTimeout(timer); reject(error); });
+      child.once('close', (code, signal) => { clearTimeout(timer); resolve({ code, signal }); });
+    });
+    await writeFile(join(directory, 'stdout.log'), stdout, { flag: 'wx' }); await writeFile(join(directory, 'stderr.log'), stderr, { flag: 'wx' });
+    assert.equal(closed.code, 0, stderr); assert.equal(closed.signal, null);
+    const consumer = JSON.parse(await readFile(clientResult, 'utf8'));
+    const raw = (await Promise.all((await readdir(observation)).map(name => readFile(join(observation, name), 'utf8')))).join('');
+    assert.equal(raw.includes(marker), false);
+    const rows = raw.trim().split('\n').map(JSON.parse), starts = rows.filter(row => row.event === 'http_start'), ends = rows.filter(row => row.event === 'http_end');
+    assert.equal(starts.length, 16); assert.equal(ends.length, 16); assert.equal(consumer.results.length, 16); assert.equal(served.length, 16);
+    assert.equal(consumer.fetchUnchanged, true);
+    const expectedKinds = ['page', 'root-children', 'database', 'data_source'];
+    for (const [index, start] of starts.entries()) {
+      const actual = ends.find(row => row.id === start.id), original = served[index], consumed = consumer.results[index], projection = actual.library_structure;
+      assert.equal(actual.status, 200); assert.equal(consumed.sha256, original.sha256); assert.equal(consumed.bytes, original.bytes);
+      assert.equal(original.httpVersion, consumed.transport === 'h2' ? '2.0' : '1.1'); assert.equal(original.alpn, consumed.transport === 'h2' ? 'h2' : 'http/1.1');
+      assert.equal(consumer.shapes[index].array, consumed.transport === 'h1'); assert.ok(consumer.shapes[index].bodyChunks > 0);
+      assert.equal(actual.response_request_id, consumed.source === 'header' ? headerId : bodyId);
+      assert.equal(actual.response_request_id_source, consumed.source === 'header' ? 'response-header' : 'response-json');
+      assert.equal(projection.kind, expectedKinds[index % 4]);
+      if (projection.kind === 'page') assert.equal(projection.id, root);
+      if (projection.kind === 'root-children') { assert.equal(projection.root, root); assert.equal(projection.has_more, false); assert.equal(projection.next_cursor_sha256, null); assert.equal(projection.children[0].id, database); assert.equal(projection.children[0].parent.page_id, root); }
+      if (projection.kind === 'database') { assert.equal(projection.id, database); assert.equal(projection.parent.page_id, root); assert.deepEqual(projection.data_source_ids, [dataSource]); }
+      if (projection.kind === 'data_source') { assert.equal(projection.id, dataSource); assert.equal(projection.parent.database_id, database); }
+    }
+    assert.ok(rows.find(row => row.event === 'http_observer_end' && row.complete && row.errors === 0 && row.pending.length === 0));
+    await writeFile(join(directory, 'result.json'), JSON.stringify({ status: 'passed', node: process.version, undici: process.versions.undici, requests: 16, transports: ['http/1.1', 'h2'], requestIdSources: ['response-header', 'response-json'], completeStructuralProjections: 16, responseBytesUnchanged: true, fetchUnchanged: true, authorTextRecorded: false, served, consumer, child: { pid: child.pid, ...closed }, notionRequests: 0 }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  } finally {
+    for (const session of sessions) session.destroy(); for (const socket of sockets) socket.destroy();
+    await Promise.all(servers.map(server => new Promise(resolve => server.close(resolve))));
+  }
 });

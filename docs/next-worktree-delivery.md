@@ -63,7 +63,7 @@ node scripts/verify-pi-daily-installation.mjs run --config /absolute/owned/curre
 
 daily config 需要预期 `library` 根 UUID、配对 worktrees 以及本次归档、CLI/SDK、package 来源等实际身份；先读 `--help` 与 plan 的必需字段。预期根不覆盖普通 CLI 的 `default_library`，验收核对实际 SDK 的选择及独立 HTTP 归属。两机在开始本次交付时共同生成并使用同一个 `delivery`：`id` 为新的 UUID，`startedAt` 为本次开始时的 UTC ISO 时间。不能把旧执行的时间或 ID 改写为本次。输入配置仍为 `version:1`，实际日用回执统一为 `version:2`，不兼容旧日用回执。
 
-plan 为 `prepared_not_executed`。run 在新普通 `pi -ns` 中检查实际注册入口与 metadata 路径，并在结束后重验机器、真实远端、worktrees 和构建。SDK 3 的根 children 请求由独立响应中的 ID/parent/分页证明限定到该根，保持真实 body 计数；Skill/File 正文读取仍为零。回执记录本次开始/结束时间、实际机器、注册入口与进程退出。它不替代正文、真实模型或时间线任务。
+plan 为 `prepared_not_executed`。run 在新普通 `pi -ns` 中检查实际注册入口与 metadata 路径，并在结束后重验机器、真实远端、worktrees 和构建。SDK 3 的根 children 请求由独立响应中的 ID/parent/分页证明限定到该根，保持真实 body 计数；Skill/File 正文读取仍为零。显式 doctor CLI 另外绑定 owned Pi 的直接子进程、实际 entry 字节、精确 ctl doctor --library ROOT 参数和该命令的执行窗口；它的完整根分页、直属数据库及 data source 归属必须来自同一子进程的独立 HTTP 响应，不能借用 SDK 结构或把 CLI 请求记成 SDK metrics。根结构请求仍计入真实 body 请求总数，Skill/File 正文保持零读取。联合检查重验这份进程与 HTTP 原件，只有成功摘要或缺失响应结构的旧回执不能通过。回执记录本次开始/结束时间、实际机器、注册入口与进程退出。它不替代正文、真实模型或时间线任务。
 
 标准代理的 `CONNECT` 使用 `host:port` 目标，不是普通 URL。日用观察单独保留代理 origin、目标 authority、进程归属及成功、失败或未完成结果；这些隧道属于传输准备，不计作 Notion metadata 请求，也不能满足 SDK 的独立 HTTP 关联。隧道中的实际 SDK/doctor 请求仍逐项核对，不能通过关闭正常代理或丢弃隧道失败取得通过。
 
