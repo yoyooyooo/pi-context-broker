@@ -36,6 +36,7 @@ export const HELP = `Usage:
   node scripts/paired-environment.mjs build --root ROOT [--id BUILD_ID]
     [--install-mode directory|packed] [--pass-env ENV_NAME ...]
     [--bun-cache-from ABSOLUTE_PRIOR_BUILD --bun-cache-sha256 SHA256]
+    [--npm-cache-from ABSOLUTE_PRIOR_BUILD --npm-cache-sha256 SHA256]
   node scripts/paired-environment.mjs check --root ROOT --build BUILD_ID
   node scripts/paired-environment.mjs closeout --root ROOT
     [--manifest ABSOLUTE_SOURCE_DISPOSITIONS_JSON] [--receipt ABSOLUTE_NEW_JSON]
@@ -52,9 +53,10 @@ create freezes both refs in independent clones with a task branch. build copies
 current source into its own source/cli and source/broker snapshots, installs
 private dependencies, and seals complete CLI/Broker packages. No implicit latest
 build, global install, automatic pull, cleanup, or release is performed.
-An explicit Bun cache seed copies a pinned, idle prior build's local cache into
+An explicit Bun or npm cache seed copies a pinned, idle prior build's local cache into
 the new private cache. It does not replace normal locked installation or verify
-archive SRI; missing packages still use the normal installation path.
+archive SRI; missing packages still use the normal installation path. npm uses
+--prefer-offline while retaining its normal dependency resolution and integrity checks.
 The optional packed install mode packs both packages, installs each archive in
 a new private npm consumer, verifies installed bytes against the archive, and
 freezes the archives, installed dependency trees and public runtime entries.
@@ -102,7 +104,7 @@ export function parseArgs(args) {
   const [command, ...rest] = args;
   const allowed = {
     create: ['root', 'cli-repository', 'broker-repository', 'cli-ref', 'broker-ref', 'pi-entry'],
-    build: ['root', 'id', 'pass-env', 'install-mode', 'bun-cache-from', 'bun-cache-sha256'], check: ['root', 'build'],
+    build: ['root', 'id', 'pass-env', 'install-mode', 'bun-cache-from', 'bun-cache-sha256', 'npm-cache-from', 'npm-cache-sha256'], check: ['root', 'build'],
     closeout: ['root', 'manifest', 'receipt'],
     run: ['root', 'build', 'target', 'id', 'cwd', 'library', 'parent', 'skills', 'models', 'pass-env', 'timeout-ms', 'stdin',
       'pi-mode', 'native-skills', 'pi-extension'],
@@ -122,16 +124,16 @@ export function parseArgs(args) {
   assert.ok(options.root && isAbsolute(options.root), '--root must be an absolute path');
   options.root = resolve(options.root);
   if (command !== 'run') assert.equal(options.args.length, 0, 'Only run accepts command arguments');
-  if (command === 'build') validateBunCacheOptions(options);
+  if (command === 'build') for (const kind of ['bun', 'npm']) validateCacheOptions(options, kind);
   return options;
 }
 
-function validateBunCacheOptions(options) {
-  const source = options['bun-cache-from'], expected = options['bun-cache-sha256'];
-  assert.equal(source !== undefined, expected !== undefined, 'Use --bun-cache-from and --bun-cache-sha256 together');
+function validateCacheOptions(options, kind) {
+  const source = options[kind + '-cache-from'], expected = options[kind + '-cache-sha256'];
+  assert.equal(source !== undefined, expected !== undefined, `Use --${kind}-cache-from and --${kind}-cache-sha256 together`);
   if (source !== undefined) {
-    assert.ok(isAbsolute(source) && resolve(source) === source, '--bun-cache-from must be a canonical absolute build path');
-    assert.match(expected, /^[a-f0-9]{64}$/, '--bun-cache-sha256 must be a lowercase SHA-256');
+    assert.ok(isAbsolute(source) && resolve(source) === source, `--${kind}-cache-from must be a canonical absolute build path`);
+    assert.match(expected, /^[a-f0-9]{64}$/, `--${kind}-cache-sha256 must be a lowercase SHA-256`);
   }
 }
 
@@ -323,7 +325,13 @@ async function cacheSourceState(source) {
 
 /** Copy a pinned local cache input; normal frozen-lock installation remains required. */
 export async function seedBunCache(sourceBuildRoot, targetBuildRoot, expectedSha256) {
-  validateBunCacheOptions({ 'bun-cache-from': sourceBuildRoot, 'bun-cache-sha256': expectedSha256 });
+  return seedPackageCache('bun', sourceBuildRoot, targetBuildRoot, expectedSha256);
+}
+export async function seedNpmCache(sourceBuildRoot, targetBuildRoot, expectedSha256) {
+  return seedPackageCache('npm', sourceBuildRoot, targetBuildRoot, expectedSha256);
+}
+async function seedPackageCache(kind, sourceBuildRoot, targetBuildRoot, expectedSha256) {
+  validateCacheOptions({ [kind + '-cache-from']: sourceBuildRoot, [kind + '-cache-sha256']: expectedSha256 }, kind);
   const source = await ownedBuildRoot(sourceBuildRoot), target = await ownedBuildRoot(targetBuildRoot);
   assert.notEqual(source.root, target.root, 'Cache seed source and target must be different builds');
   for (const name of ['build.json', 'failure.json']) {
@@ -331,7 +339,7 @@ export async function seedBunCache(sourceBuildRoot, targetBuildRoot, expectedSha
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   const before = await cacheSourceState(source);
-  const sourceCache = join(source.root, 'build-state/cache/bun'), destination = join(target.root, 'build-state/cache/bun');
+  const sourceCache = join(source.root, 'build-state/cache', kind), destination = join(target.root, 'build-state/cache', kind);
   const selected = await inventory(sourceCache);
   assert.ok(selected.files.length, 'Cache seed is empty');
   assert.equal(selected.sha256, expectedSha256, 'Cache seed differs from the selected SHA-256');
@@ -357,15 +365,16 @@ export async function seedBunCache(sourceBuildRoot, targetBuildRoot, expectedSha
   for (const lock of Object.values(locks)) for (const ref of [lock.source, lock.target]) {
     assert.deepEqual(await fileReference(ref.path), ref, 'Cache seed lock evidence changed while copying');
   }
-  const receiptPath = join(target.root, 'bun-cache-seed.json');
-  await save(receiptPath, { version: VERSION, kind: 'paired-bun-cache-seed', created_at: new Date().toISOString(),
+  const receiptPath = join(target.root, kind + '-cache-seed.json');
+  await save(receiptPath, { version: VERSION, kind: 'paired-' + kind + '-cache-seed', created_at: new Date().toISOString(),
     source: { build_root: source.root, environment_id: source.environment.environment_id, cache_root: sourceCache,
       inventory_sha256: selected.sha256, ...before },
     target: { build_root: target.root, cache_root: destination, inventory_sha256: copied.sha256 },
     normalized_source_sha256: hash(JSON.stringify(normalized)), entry_count: selected.files.length,
     symlink_mappings: mappings, locks,
     validation_scope: 'Pinned local file bytes, executable bits, relocated internal links and recorded process quiescence; not archive SRI authentication',
-    installation: 'Normal frozen-lockfile installation remains required; differing locks and missing cache packages are allowed' });
+    installation: kind === 'bun' ? 'Normal frozen-lockfile installation remains required; differing locks and missing cache packages are allowed'
+      : 'Normal npm install with prefer-offline, dependency resolution and integrity checks remains required; missing cache packages are fetched normally' });
   return fileReference(receiptPath);
 }
 
@@ -515,7 +524,7 @@ export async function installPackedPair(root, tools, env) {
     const archive = join(archives, packed[0].filename), consumer = join(installRoot, role);
     await mkdir(consumer);
     await save(join(consumer, 'package.json'), { private: true, dependencies: { [name]: 'file:' + archive } });
-    await step(tools.node.path, [tools.npm, 'install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
+    await step(tools.node.path, [tools.npm, 'install', '--prefer-offline', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
       { cwd: consumer, env, log: join(root, 'logs/install-packed-' + role) });
     const installed = join(consumer, 'node_modules', name);
     const closure = await verifyArchiveInstallation(installed, archive, hash(await readFile(archive)));
@@ -560,7 +569,7 @@ export async function verifySelectedCliPair(root, brokerReceipt) {
 }
 
 export async function buildEnvironment(options) {
-  validateBunCacheOptions(options);
+  for (const kind of ['bun', 'npm']) validateCacheOptions(options, kind);
   const installMode = options['install-mode'] ?? 'directory';
   assert.ok(['directory', 'packed'].includes(installMode), '--install-mode must be directory or packed');
   const environment = await readEnvironment(options.root);
@@ -579,13 +588,15 @@ export async function buildEnvironment(options) {
     env.PATH = [join(root, 'build-state/bin'), dirname(environment.tools.node.path), dirname(environment.tools.bun.path), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(delimiter);
     const cacheSeed = options['bun-cache-from'] === undefined ? undefined
       : await seedBunCache(options['bun-cache-from'], root, options['bun-cache-sha256']);
+    const npmCacheSeed = options['npm-cache-from'] === undefined ? undefined
+      : await seedNpmCache(options['npm-cache-from'], root, options['npm-cache-sha256']);
     for (const name of ['cli', 'broker']) {
       await step(environment.tools.bun.path, ['install', '--frozen-lockfile', '--ignore-scripts', '--backend', 'copyfile', '--cache-dir', join(root, 'cache', name)],
         { cwd: join(root, 'source', name), env, log: join(root, 'logs/install-source-' + name) });
     }
     await step(environment.tools.bun.path, ['packages/cli/build.ts', '--outdir', join(root, 'cli')],
       { cwd: join(root, 'source/cli'), env, log: join(root, 'logs/build-cli') });
-    const install = async name => step(environment.tools.node.path, [environment.tools.npm, 'install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
+    const install = async name => step(environment.tools.node.path, [environment.tools.npm, 'install', '--prefer-offline', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
       { cwd: join(root, name), env, log: join(root, 'logs/install-runtime-' + name) });
     await install('cli');
     await step(environment.tools.bun.path, ['run', '--cwd', 'packages/context-broker', 'typecheck'],
@@ -605,6 +616,7 @@ export async function buildEnvironment(options) {
       build_id: buildId, root, created_at: new Date().toISOString(), sources, packages,
        source_tree: sourceTree, selected_cli_sha256: brokerReceipt.selected_cli.sha256, tools: environment.tools, candidate,
        ...(cacheSeed ? { bun_cache_seed: cacheSeed } : {}),
+       ...(npmCacheSeed ? { npm_cache_seed: npmCacheSeed } : {}),
       passed_environment_names: options['pass-env'] ?? [],
       launcher: await toolIdentity(fileURLToPath(import.meta.url)) });
     return { status: 'built', root, build_id: buildId, selected_cli_sha256: brokerReceipt.selected_cli.sha256 };
@@ -622,9 +634,11 @@ export async function checkEnvironment(options) {
   assert.equal(build.environment_id, environment.environment_id); assert.equal(build.root, root); assert.equal(build.build_id, buildId);
   for (const name of ['cli', 'broker']) assert.equal((await inventory(join(root, name))).sha256, build.packages[name].sha256, 'Frozen package changed: ' + name);
   assert.equal((await inventory(join(root, 'source'))).sha256, build.source_tree.sha256, 'Frozen source/dependency snapshot changed');
-  if (build.bun_cache_seed !== undefined) {
-    assert.equal(build.bun_cache_seed.path, join(root, 'bun-cache-seed.json'));
-    assert.equal((await fileReference(build.bun_cache_seed.path)).sha256, build.bun_cache_seed.sha256, 'Cache seed receipt changed');
+  for (const kind of ['bun', 'npm']) {
+    const seed = build[kind + '_cache_seed'];
+    if (seed === undefined) continue;
+    assert.equal(seed.path, join(root, kind + '-cache-seed.json'));
+    assert.equal((await fileReference(seed.path)).sha256, seed.sha256, 'Cache seed receipt changed');
   }
   const selected = { cli: join(root, 'cli/dist/ntn-skills.js'), broker: join(root, 'broker/src/index.ts') };
   if (build.candidate?.mode === 'packed') {
