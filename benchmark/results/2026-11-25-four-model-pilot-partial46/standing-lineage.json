@@ -1,0 +1,3299 @@
+{
+  "version": 1,
+  "kind": "standing-benchmark-original-slot-lineage",
+  "collector": {
+    "version": "1.2.0",
+    "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+  },
+  "condition_epoch": {
+    "id": "standing-four-auto-pilot80-epoch-1",
+    "started_at": "2026-11-25T09:54:26.969Z",
+    "authorization_sha256": "a630feb19255729ba6a9de991cf6b5cdbc890ed1454342094437b7a276c42627"
+  },
+  "groups": [
+    {
+      "scope_id": "standing-pilot80-run-1-four-auto-business-pilot80",
+      "work_item_id": "four-auto-business-pilot80",
+      "completed": 46,
+      "rows": [
+        {
+          "order": 0,
+          "state": "closed_observation",
+          "physical_ordinal": 140,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-001",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m1-e0",
+          "source_episode_sha256": "4a79c6b6a01e16a21b76e03efd3850106124167bb9f0d1ffffeef0c9021ce640",
+          "public_episode_sha256": "705e67ae649976f08f65296f601bc51f283ea9506b18250cb8984eb70e848b83",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "844bf7ac51e24a0db758f3cff041eecb272e9a086ec21ec4f06b2138f4b94de8"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "151c12c7062ac1e3ee1b136d7d938f2aeb31125afc6492c69817089ebcb86c11"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "940ad44def9a0678c21c1b4ccb330ac3cbad1dc127515b34c7fdd8703351d1e9"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-001",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 31247,
+            "complete_input_tokens": 31247,
+            "known_output_subtotal": 1078,
+            "complete_output_tokens": 1078,
+            "duration_ms": 53613.729999999996,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 1,
+          "state": "closed_observation",
+          "physical_ordinal": 141,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-002",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m1-e1",
+          "source_episode_sha256": "49368784b2f764a29746c1b2a90fdbc55e46793c8bf623251877ef265a5498e5",
+          "public_episode_sha256": "e6da1636b93cf6aa32f05aef673831f0bb6be75024a5c2cd74380bf28681f894",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "9a2691dba04529c141137a8d6deea91175baa4761d0c354ada2dbdb922c6a912"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "baa80b45d25a881946f3304c0d8005f5de00e1b12f85d1868d8d657e050beb09"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "f61600d1c66db129bf3120b2bb633c20532a7fb0c9fe12223312946061dc70b8"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-002",
+            "known_model_http_requests": 6,
+            "actual_model_http_requests": 6,
+            "known_input_subtotal": 33954,
+            "complete_input_tokens": 33954,
+            "known_output_subtotal": 1174,
+            "complete_output_tokens": 1174,
+            "duration_ms": 29587.748417,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 2,
+          "state": "closed_observation",
+          "physical_ordinal": 142,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-003",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "f4c529a74b13e3df4df4b87f8fc851b495022d897278d72002cd07cd2fa682dc",
+          "public_episode_sha256": "f8f5d46cab8a65e810075b2d0339fda4365d26c1847c04ffd8c69262cb092c8a",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "dea4dbdb289bdc371c4a420577f9fe3f54cf5a68d9f73a6cffe96db15038b46e"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "6109ba1e37f3a7a3b1111ae7b877677358abbee68682b94163204a7dca55bd49"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "bdafb52f3e91dc6a2a390e867714c556ae56ee5651188447e6a306c4cec22975"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-003",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 17772,
+            "complete_input_tokens": 17772,
+            "known_output_subtotal": 618,
+            "complete_output_tokens": 618,
+            "duration_ms": 22261.184917,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 3,
+          "state": "closed_observation",
+          "physical_ordinal": 143,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-004",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "f6c63e2cb90def1332d805774111f79f48d73c7263a0aa26964476df23a51f5c",
+          "public_episode_sha256": "a143667204e443ac08cdd73796ef92c3b824ec6943868c1e80fc8966f8c13abf",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "53e47ad3bf9360ad4757b5dbde6314ddb658490edf283884419ab17b303ee014"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "f294792e070b62a63ec7aef1892adece5c097029644f691df08692f1e7967a9a"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "f91334294bcdbc5e29753f33af3cccd2ee4623dd3877e573e5b7f4b3c8bc0e06"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-004",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 18944,
+            "complete_input_tokens": 18944,
+            "known_output_subtotal": 459,
+            "complete_output_tokens": 459,
+            "duration_ms": 38120.848917,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 4,
+          "state": "closed_observation",
+          "physical_ordinal": 144,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-005",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m3-e0",
+          "source_episode_sha256": "02d5eceadec3b4df4083963e0db0ba0836a8ef5deb39e5c3086409a8dcd1c33c",
+          "public_episode_sha256": "b9d90a5a52f3c3d13dd841173c0dde96bb525c1737b6885068d844af17d6acc9",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "db05c100391e0e83b9c88656eba6a041734e7d5ea52cbe86a819342e7589a3bd"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "93ce80b04c1d1c40243e325aceddb4357dbf488614d8766e1a2177ea23528070"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "9f55678f4fc4e1f3e8f51042db9807d60ef1adb341a21f35b59220c199f0f5b9"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-005",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 17983,
+            "complete_input_tokens": 17983,
+            "known_output_subtotal": 215,
+            "complete_output_tokens": 215,
+            "duration_ms": 26310.656334,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 5,
+          "state": "closed_observation",
+          "physical_ordinal": 145,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-006",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m3-e1",
+          "source_episode_sha256": "a2514b635445805b6214058d9a62f283e14fbcaa834f4f827d91bc307094c209",
+          "public_episode_sha256": "9a4ad5a9358c985228cbb8bc24e3397aaff44522e3457e5d713c39e19e83e3ef",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "cf506457b86a24092d071db9a69151abeb7b5cea80aea110ab352285c3e8f01f"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "241f429b2e35a86c5666c733b593698b90a46ef7ab8b37eb87dd777ab5c398c5"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "b9838313d77fc221bdf2b61f620f4045ac7c8c857a1fadf4b6c12835b8e98b01"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-006",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 16159,
+            "complete_input_tokens": 16159,
+            "known_output_subtotal": 314,
+            "complete_output_tokens": 314,
+            "duration_ms": 16932.204833,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 6,
+          "state": "closed_observation",
+          "physical_ordinal": 146,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-007",
+          "case_id": "no-skill-01-a-n16-r1",
+          "condition_id": "m1-e1",
+          "source_episode_sha256": "4e66a8ecb934ea0fcf897c24b23a9b936523ed808052a95c9a7e7124ee4b0d85",
+          "public_episode_sha256": "a20bd3d25dc0a139e231b0205d4fddc07f426f7a32ca4a8ea0ae7a861bd65cef",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "5b200ea9c9d90698c8d08e49abf90d3bf8ba0037640590107311385da6f9e4cf"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "6d014633ea18506872677d742f9384b30a09ad1ffee4c2fea328e9077eac1b94"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "e07bcf5cd0f6898f7b6dbbdeb9588e2ebb026831e93d7f41117df1047ef2d8fd"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "fail",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-007",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 37619,
+            "complete_input_tokens": 37619,
+            "known_output_subtotal": 2507,
+            "complete_output_tokens": 2507,
+            "duration_ms": 33789.824958000005,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 7,
+          "state": "closed_observation",
+          "physical_ordinal": 147,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-008",
+          "case_id": "no-skill-01-a-n16-r1",
+          "condition_id": "m1-e0",
+          "source_episode_sha256": "cb66f4a3ce1e2db9ddb87b68e81d8702c392669af15bba4040219f4f30d0dee4",
+          "public_episode_sha256": "0db3d5a43c705be4ec58981c71c11c9d58b9602f6e12ced67ce8bc2b81dec728",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "9e2e168a2c979ca16746e5c545285c1b7fbd7131b8c05105bef06679e1409b86"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "651386109b72623dd120d3448002dd8c8df89053139515d06a5d43d41298383d"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "d9b9cc87f805b68dcf755232e6995ac4e472a325be4f3b8eda5fce6c4115196c"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "fail",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-008",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 26068,
+            "complete_input_tokens": 26068,
+            "known_output_subtotal": 1163,
+            "complete_output_tokens": 1163,
+            "duration_ms": 43772.1405,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 8,
+          "state": "closed_observation",
+          "physical_ordinal": 148,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-009",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m3-e0",
+          "source_episode_sha256": "eea62b1e78dcfe4c33daec46f7952d2e5473d299414566ecd2f8c51e03aa28b9",
+          "public_episode_sha256": "89f4098f087dc5d0a80550a105fbd20278aaa17b30a4c0e6a68bd8043651ee37",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "68e7caa940af66f8b468693cf51d994c7e1b56602228410a4d52a49a5f748283"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "0da7bb3088e2fff98f248b07fa2e32ffa8086b3b27c1a495af9ca582adc9efdb"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "c7947332383e0fe298f8ae7602ce7f9ceb99777338e4f2f19706c5765c1fb729"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "c5b05b87121d218ec98171961f8cfcd2009a4b4324cc6d2ee86cc033cc625a0e"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "7d87b02dd56213461d427ae81efd78abd217bbec30c274bc2ba720d220fda273"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "7d87b02dd56213461d427ae81efd78abd217bbec30c274bc2ba720d220fda273"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "db80e8a9e3b5b22df5825026f47dfaeab04ac8ad4f01b5cc609cd314615b29fe"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "f098505dada7f24ffecef0a9a838dabd529449590ed99dae8e1adfb3bb207f8c"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "f098505dada7f24ffecef0a9a838dabd529449590ed99dae8e1adfb3bb207f8c"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-009",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 33326,
+            "complete_input_tokens": 33326,
+            "known_output_subtotal": 366,
+            "complete_output_tokens": 366,
+            "duration_ms": 37274.647958,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 9,
+          "state": "closed_observation",
+          "physical_ordinal": 149,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-010",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m3-e1",
+          "source_episode_sha256": "003a3cb346c7ebdae18088280608ecbb298158ac3b40654429a0975ae510d156",
+          "public_episode_sha256": "c7e1baee20297bff0fad8545804b49ebf2aded04f15f2474974d6da867b4c9d3",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "4d502111b6ac6305807e62864d38085be6307fdd28b51d2b74571b1481c07d40"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "46d9165875cb8ca721256d331ab668c79f4dacb915cf3f49afb6ed25b0d5ea96"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "9e70b84ac34c83598c22726225d247fbc904c22f4a232edbb55f04961458a022"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "da13ab14802f66dc8a631ef0d3510807fe376b19e7cd2ccf0db40b8fd8eafaa1"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "648ec841a22f129e70971fdf5f5b09d2735d05e5dbf1ae7c73895fb89c247e49"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "648ec841a22f129e70971fdf5f5b09d2735d05e5dbf1ae7c73895fb89c247e49"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "8dabc990d3225cc38c2d826766f580ec34c4180d1cd450ce1636cb85685808df"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "e49b69d2adc2a774a5fb3a93ac936ed3d518651ca6613cdfc2225295dd5ae5b0"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "e49b69d2adc2a774a5fb3a93ac936ed3d518651ca6613cdfc2225295dd5ae5b0"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-010",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 29784,
+            "complete_input_tokens": 29784,
+            "known_output_subtotal": 455,
+            "complete_output_tokens": 455,
+            "duration_ms": 23407.951542,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 10,
+          "state": "closed_observation",
+          "physical_ordinal": 150,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-011",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m2-e1",
+          "source_episode_sha256": "09a5f20b93857a7004be0768fb6158a8318436a9ee90d290ff8229ce2609e2fa",
+          "public_episode_sha256": "89498d5aa2f6c1f49c3c5d06f6576ce90d52f4ea377a49024c7321b6027afa5d",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "bf0a1e6029f6d7fd542aa83eb057f7c9bbd2b1d6b67570cc442d4af35571e10b"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "d459a36ae0aba4bbfad2ec92c3ceafbfa499af25180d070dd636412e9b865c53"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "d49965f51c072d1c3623b7cc25521312ba72a197af3b8f7aae12e72897e02c20"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-011",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 32126,
+            "complete_input_tokens": 32126,
+            "known_output_subtotal": 1234,
+            "complete_output_tokens": 1234,
+            "duration_ms": 24713.275542,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 11,
+          "state": "closed_observation",
+          "physical_ordinal": 151,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-012",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m2-e0",
+          "source_episode_sha256": "78269e3d9eea554d1a2cb06d40230452a7c277ff766dd41842ab3768921eab48",
+          "public_episode_sha256": "3f01daab7d8e64be3daca1f0eda8336d3308532fd2a479f0f322515034fff363",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "b14ff9a1784882c08f3fd4584e39a78d36c5b9be8ac542a6b7b06e826f9a9c93"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "6a4e81d81268ad80c47abba129c5ebf81a34295e6ff84a8fa7bc98c0b1338832"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "27b55127b21b3d3422fd9ed0be5f2c4bb2b6c636e4a3f4d73668c3bc6b82e487"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-012",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 35563,
+            "complete_input_tokens": 35563,
+            "known_output_subtotal": 1370,
+            "complete_output_tokens": 1370,
+            "duration_ms": 59107.180584,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 12,
+          "state": "closed_observation",
+          "physical_ordinal": 152,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-013",
+          "case_id": "task-switch-01-a-n16-r2",
+          "condition_id": "m2-e0",
+          "source_episode_sha256": "dc17bcad25be9e6837df1c9240642a0669dd7cc1b09bcc24ee21a1acf1bc2b17",
+          "public_episode_sha256": "5f85843df0c7e3079efad64c74582d1a50374bf20f1bebe9e68148fabd49d064",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "10fd984da7b83d68d462cee05a28b63a64d993c2b3542fcc3411b8d0c1701d35"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "0806dc10e944c38b483e5a86fe72ec9a87f2313883bd876c6174dda84e7a49a8"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "c76806072552d6b484541fcfcd0e10298a68eeaed82429f4e5e9c9f83aead6b0"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "4cc53ebc2046efb5421f78f19daa61fe10e69198d7f5826280f0733af3e32645"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "3be022f522f898a46f072f854af86a5eb233d43c788f06804e4497eb4c5f9cce"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "3be022f522f898a46f072f854af86a5eb233d43c788f06804e4497eb4c5f9cce"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "452736db66b7aa9d77e44c82951cdb899341a787af7ca7b0f9b743283c1855bc"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "18d6958bec2d979bff4f29501a63b9c038350ff08fca30aa47a9a7374a341d5e"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "18d6958bec2d979bff4f29501a63b9c038350ff08fca30aa47a9a7374a341d5e"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [
+              "business-expense-groups"
+            ],
+            "outcome": "fail",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-013",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 50716,
+            "complete_input_tokens": 50716,
+            "known_output_subtotal": 1683,
+            "complete_output_tokens": 1683,
+            "duration_ms": 61211.471458,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 13,
+          "state": "closed_observation",
+          "physical_ordinal": 153,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-014",
+          "case_id": "task-switch-01-a-n16-r2",
+          "condition_id": "m2-e1",
+          "source_episode_sha256": "5ebf4326f3a23501226360065aa0a77c291c9e9513e4eeee7b9507f8925da8a8",
+          "public_episode_sha256": "c4e4a966e1f9f9f57b958fda3a3ba76903c8ed327be770410edeff3fc0d62196",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "4f9fd02f80217a7de9d7552a002735712c9969ff38b9ac5faef02919f1bc7321"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "c3e00e7c6a8dbde09ea820851cfa30f06c33c0cf6eb7fbf660ff70570db8994d"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "8189bd984783281d255be0720c594ab8bb4c90527fb3cf229997960b4a655728"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "5e5d2e0e8c0bb814af0d8357266b82a92998c988829f101d48d3b23f0a6d9e19"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "0604796d8f3d978254c6770e349efa0a8049840a49b64c4f0e850ca5e50c1d44"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "0604796d8f3d978254c6770e349efa0a8049840a49b64c4f0e850ca5e50c1d44"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "8d5f5db3d326069984be5cffdc0d3ff314be3429f4cbd32c4443ccaa97f56734"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "ae9e3a59935a8994dd398461342067f1c157ae8b6da40d726d95b64e5ad9300c"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "ae9e3a59935a8994dd398461342067f1c157ae8b6da40d726d95b64e5ad9300c"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [
+              "business-expense-groups"
+            ],
+            "outcome": "fail",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-014",
+            "known_model_http_requests": 9,
+            "actual_model_http_requests": 9,
+            "known_input_subtotal": 77812,
+            "complete_input_tokens": 77812,
+            "known_output_subtotal": 2716,
+            "complete_output_tokens": 2716,
+            "duration_ms": 56457.584833,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 14,
+          "state": "closed_observation",
+          "physical_ordinal": 154,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-015",
+          "case_id": "scripts-assets-01-a-n16-r1",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "70eab6ba20cfddc7027a30c8c561211d152d793eaa468b280b8107140453fa2b",
+          "public_episode_sha256": "ee0bdf1edafb9370865a889f0c0d88f96cc7465e0b1e41498e24ef971d59778b",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "ac28adbf3f4818e594763d043a1082fec678b1f3988a183e7c7393223c1bbdd6"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "f4b1d4275303ee6b94226344949601e64e824d52b4bd2b87463b69b616553b65"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "2c0dca272a1a379b75c9ecd7beb2f500bec0875a70d7ed02b9ab51cbfde8b863"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-015",
+            "known_model_http_requests": 6,
+            "actual_model_http_requests": 6,
+            "known_input_subtotal": 26515,
+            "complete_input_tokens": 26515,
+            "known_output_subtotal": 472,
+            "complete_output_tokens": 472,
+            "duration_ms": 22238.192083,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 15,
+          "state": "closed_observation",
+          "physical_ordinal": 155,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-016",
+          "case_id": "scripts-assets-01-a-n16-r1",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "c8574e0a9102233c45e22730ef17b719f7c6db4faf3a8e5379db5706b8b2c173",
+          "public_episode_sha256": "abf1367ad92f161da46bee33e0472f0f079cb790d147b41ad4bb061adacf85a5",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "b23f9add16731e51a3c99b24bc15e6b3f88999e6eb17c9b7337500a7be74db60"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "6b8c4277c9baef46a833312da0ef2f52b23016a9fff30660d198e11852205e01"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "05984d2d22ae397f1e96d41f5b31c523a0e47dd2dd878a23e62c2d7eef854ebc"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-016",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 25199,
+            "complete_input_tokens": 25199,
+            "known_output_subtotal": 563,
+            "complete_output_tokens": 563,
+            "duration_ms": 44967.903375,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 16,
+          "state": "closed_observation",
+          "physical_ordinal": 156,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-017",
+          "case_id": "ambiguity-01-a-n16-r1",
+          "condition_id": "m3-e0",
+          "source_episode_sha256": "c000bd9cb4afe3c5de7f782fc3106df003224bc139f497beba5b11eea6b7fd49",
+          "public_episode_sha256": "98850042c0df0ef394baa7bef8a8211cfbd4bc328b71dd2b432e1c3505181abb",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "ce8e16ccd73dd5e17851813d9f314926e39871e85d0951e7139eef591fefd0b6"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "09826b475a7aacf7ad907cdcf5d6acd53566edf9df0376a260dfe6e98350e253"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "5fbc546aa7c27b6c0ab338c1e900954044b7e6671deeefd03298b78f288f442d"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "8107767e74ebdb8be87c8e3d2fc199bb492fbc05af41f03927698f21055a3488"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "dd8b9644dc11d310b22cbaf8640c6543464c94c930d94c12a494991ad0e68ae6"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "dd8b9644dc11d310b22cbaf8640c6543464c94c930d94c12a494991ad0e68ae6"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "f86f325e73a34ff9c9681e6887424742a1fb2d70a351d606605702027316efc7"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "a4c6550e5724b1bd93591293d0be18eab98a0c51b1b800ff086769fa859bfe30"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "a4c6550e5724b1bd93591293d0be18eab98a0c51b1b800ff086769fa859bfe30"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-017",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 22303,
+            "complete_input_tokens": 22303,
+            "known_output_subtotal": 250,
+            "complete_output_tokens": 250,
+            "duration_ms": 32181.948833000002,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 17,
+          "state": "closed_observation",
+          "physical_ordinal": 157,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-018",
+          "case_id": "ambiguity-01-a-n16-r1",
+          "condition_id": "m3-e1",
+          "source_episode_sha256": "afd94adff5c680549a8813534d1677385b998b9e7279e6aa96707ac66b9f39ee",
+          "public_episode_sha256": "5634aada47dc934c0bf974edd39b4d64dfb62e1af5e14c2e77fb472b0369b85d",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "7cf179a4e8ca3ba7f10b3239a71df1d08072b1abfa9d07c797d4f1771e0f3bb5"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "a707d552308f565c0469e3c52cc481b128447503c3ba62e99f9ca3c76a0d1fdf"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "0039e2dec68e58dd5fbe60670cd1395a6a66665f29e75badec518932195043a4"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "c3bc113d74f1d2af43296042120e3f2f4a65c3f6784165ec654264f831b516cc"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "bb8e930eb9b1015ed7ad2873a866fc4911eb9cce1291055c948b592809f51886"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "bb8e930eb9b1015ed7ad2873a866fc4911eb9cce1291055c948b592809f51886"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "8a9e623d1bae00494293f4367488c973e7dbbd62743b55a36c34402744c1b790"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "6a0237e3d77d7c0fcba2ce93efb9d9a9ea842ada71e58b2626fada4c3c1c93df"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "6a0237e3d77d7c0fcba2ce93efb9d9a9ea842ada71e58b2626fada4c3c1c93df"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-018",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 20232,
+            "complete_input_tokens": 20232,
+            "known_output_subtotal": 362,
+            "complete_output_tokens": 362,
+            "duration_ms": 18724.849667,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 18,
+          "state": "closed_observation",
+          "physical_ordinal": 158,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-019",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m2-e1",
+          "source_episode_sha256": "e5da23730349c809f70673162d3757b8af7b5e15fa654b354821f16b65eae694",
+          "public_episode_sha256": "4508f0c3613f096bdd7b2f3601305f7ab57fff687a1d6d0c2f9e375c0c024287",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "28a394ccf345af7e4fee2ff89334885a0319e033a1d57719e33d81f188b8f8ef"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "cf16e9df2a19c0b80ac16ad461154507d175fa16ddbabd48b6e435eac8e4b5d5"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "42f850bb766f0e73501451295179cceea2b75cab7188d89871cc7626642b3466"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-019",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 31342,
+            "complete_input_tokens": 31342,
+            "known_output_subtotal": 1000,
+            "complete_output_tokens": 1000,
+            "duration_ms": 22290.030459,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 19,
+          "state": "closed_observation",
+          "physical_ordinal": 159,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-020",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m2-e0",
+          "source_episode_sha256": "187aeb11a2246a47812646338fba910c49155c8279cbacca58957073a39fc823",
+          "public_episode_sha256": "706c3dfbee3867e4e7ec2f546c8dcd238be507977d1ed0f93a7f7d1e57046cb8",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "24d9e32132e79106a51cf6b595ec220eee08067f9c551432cb14812553b4c524"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "acf222c47ff56fdfc6c1d95c17e7eaa605bc60199d44adad46f65c20c3167e1d"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "e87d553d55be400d962cb56245f56f62712ae4a6290d00104f6999a829fa920e"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-020",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 26990,
+            "complete_input_tokens": 26990,
+            "known_output_subtotal": 741,
+            "complete_output_tokens": 741,
+            "duration_ms": 42476.586334,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 20,
+          "state": "closed_observation",
+          "physical_ordinal": 160,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-021",
+          "case_id": "ambiguity-01-a-n16-r1",
+          "condition_id": "m2-e0",
+          "source_episode_sha256": "236590fa298688e7b1ccd599a8dac1cb3006ac0c55e86549d58e0f8f5ca71f8a",
+          "public_episode_sha256": "85c5f87029ee048783428cab61ff3427ea1fd1a0ee635082834d7b88c9de1659",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "12f024eadd2ad7dd032bd513bb77c879cfa18662b3b2a98a9b22d5b76098d648"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "0df6a83a6bc5d2781ee2bba2ffe90f01f3c0365449f841acf4761bd9591f6597"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "7ca6231c122f8352a5b5af2be6df86c856fbe3c0c04405fc02921aef7697914f"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "fa883b01dabe4dcc91b8a8c5da3ff415f0c47c59f6f578d9555edf9bd7207fee"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "36d4b636a2f292ecb8ba055282e1a80c6d2e34a8ff40d48370d895b442ad1b3b"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "36d4b636a2f292ecb8ba055282e1a80c6d2e34a8ff40d48370d895b442ad1b3b"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "f585ad08937c58614613f993702eb2f2aa49578b9c5294d6d4f599a92353f513"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "ed4ce0d208cc63f940f4ca7e01c079690c62c53d3edda053e7ad2690b8f659c8"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "ed4ce0d208cc63f940f4ca7e01c079690c62c53d3edda053e7ad2690b8f659c8"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-021",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 33322,
+            "complete_input_tokens": 33322,
+            "known_output_subtotal": 844,
+            "complete_output_tokens": 844,
+            "duration_ms": 38108.431875,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 21,
+          "state": "closed_observation",
+          "physical_ordinal": 161,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-022",
+          "case_id": "ambiguity-01-a-n16-r1",
+          "condition_id": "m2-e1",
+          "source_episode_sha256": "a7609cee6fb75537baa3640151ccd99f3237169544a6d4afff98741a00ff505d",
+          "public_episode_sha256": "3dd9a1234713c6c88a328ba9fb508deabc608c92b480f5cc40671fa766240f4c",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "93d5288326924c093d7a36f96ca869fc1135b9c8def06009775ec9cd07f92608"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "261d2c555120ae4d19ccf2d446d977364f18cc13baf5ded747934b7a16adb1ce"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "ec7e6d2afb0f7a91b7df63c16f2c37441a49c6e7012d997c19ae495f2bad1e79"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "a44fa4cebbfb57858cc4a636264c9c2347db97c6cb2173bee6da7591f2f146a8"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "9f671aab639b007759270a22c4be19a84822e4d79ac62c3390bca229a9828761"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 4,
+                "sha256": "9f671aab639b007759270a22c4be19a84822e4d79ac62c3390bca229a9828761"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "a685efdc987d55400f0495447a3f9e0333d982cd2b85d170e2feed6f3b8344f9"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "57a1412362b45b0fb041f9ea5ee07b3ed806b9950b69d3a366aa0141524bea3c"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 4,
+                "sha256": "57a1412362b45b0fb041f9ea5ee07b3ed806b9950b69d3a366aa0141524bea3c"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [
+              "business-quote"
+            ],
+            "outcome": "fail",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-022",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 23711,
+            "complete_input_tokens": 23711,
+            "known_output_subtotal": 639,
+            "complete_output_tokens": 639,
+            "duration_ms": 16169.914792000001,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 22,
+          "state": "closed_observation",
+          "physical_ordinal": 162,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-023",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m1-e1",
+          "source_episode_sha256": "5e8a62e1422f4a8873ea7aa9b36c4872fd4e0fd9191ec5dfff7c7d4eae961c6d",
+          "public_episode_sha256": "f0133bbbbca61871c83a02df8ac8006bcc65162e44cf945c90fd7224a3283e7c",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "dec53dfc4210836c3d6d8f2a7e887178b558fdda103ca626fea84437afa2458d"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "2844a749309f031e912afdd92b0eb6f67b2cf89a966c78329d6a8b666a776938"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "b74eaf9743df4b6a36400dbd3ec6bf59340ad1e759d9b44a15fa7183e164293f"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "fc926d68551eac291530ee02a8fa5debaa6a1bec667cffc764e5937d31f33226"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "5af17f17e494e49f5b42705f1df35d1cc409509751c9f87aa6314ab2051967b0"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "5af17f17e494e49f5b42705f1df35d1cc409509751c9f87aa6314ab2051967b0"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "1b65ef46df2551a404d7b02b75a4fa7c6df141951f5b35b82402d924f99fdd6a"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "458d5b37e426064eed6287dc0633d64a4e5ceb7af20660a5d8d3d23e37f770ee"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "458d5b37e426064eed6287dc0633d64a4e5ceb7af20660a5d8d3d23e37f770ee"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-023",
+            "known_model_http_requests": 8,
+            "actual_model_http_requests": 8,
+            "known_input_subtotal": 44211,
+            "complete_input_tokens": 44211,
+            "known_output_subtotal": 1279,
+            "complete_output_tokens": 1279,
+            "duration_ms": 27272.314416999998,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 23,
+          "state": "closed_observation",
+          "physical_ordinal": 163,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-024",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m1-e0",
+          "source_episode_sha256": "c86493881fa0ac712584bee6e8b8de73811d5ba7881393dc9b8d2a05f187ba04",
+          "public_episode_sha256": "4062f64bd938694cb53038fac2286560efe0dead3831cdf8fc466f13523140e4",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "bdcd988af4e31d412c5fece46ff02276717877d3fcaed549ae246930c6bfe5ce"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "44170f78b451435249c1fab1ceed2a49bfac8c194714d79a9883f7da56fa43a3"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "5a7947879d5a7f9af2417d3772dfabd721d9b3fd6404e2f4aad41938129216e2"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "9af5a5238bf2dd558185963c2a70e78f0f1e1aa0f81e2e9369e5b8cdad6e8413"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "45e013201e4e37d2035bc81293b8dd7e5580580b7a621042b2b6f892afb467d9"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "45e013201e4e37d2035bc81293b8dd7e5580580b7a621042b2b6f892afb467d9"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "b0f741387acef0a2f99398d426264bc8a350eb95e9f5bb95b6945097139066ef"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "e9a5150ae408b974ababb0afa9dcacd6e18fbc4bcb8d6a72d78da217956f1247"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "e9a5150ae408b974ababb0afa9dcacd6e18fbc4bcb8d6a72d78da217956f1247"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-024",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 42846,
+            "complete_input_tokens": 42846,
+            "known_output_subtotal": 1267,
+            "complete_output_tokens": 1267,
+            "duration_ms": 45075.647750000004,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 24,
+          "state": "closed_observation",
+          "physical_ordinal": 164,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-025",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "db3ba19d937291f2febc9fcbacec54450bd2225f79378cbdfb26b37355bb6b28",
+          "public_episode_sha256": "02fb52cc3a7ad7f4448e8211d8e6d8055eeb0562c8d08c7a9c35758ed6b09e89",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "92d3f6acf24fc046d572867e70b1301af7b010dcb881e9a1cfc9958bb01fbdaf"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "061e15b100242766f83eca76f5871450ff533f99fc84700bbf0e3b2ce49cc8e9"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "356d527adf69f79fc3ce5d01930da94ad8fd1355132c867bc9a13895f2a0eb36"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [
+              "grant-chain-read"
+            ],
+            "outcome": "fail",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-025",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 23276,
+            "complete_input_tokens": 23276,
+            "known_output_subtotal": 412,
+            "complete_output_tokens": 412,
+            "duration_ms": 41592.322374999996,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 25,
+          "state": "closed_observation",
+          "physical_ordinal": 165,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-026",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "9aeb5206136aa67e21db9b964721317d454c836e94d1004102b9bc2537e62c85",
+          "public_episode_sha256": "d2203373c2ef43977f520b05090a2972f4db0132efcd4ca02d3a680c7a7eee7d",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "bf70b0aff95788e8ba53ad1a4119548cbadec551e2df6ad2fcd0d324af6b5789"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "af0d9f1c77cdb66b4ccdcfef572b0b847775612713126136a0592e530f43bd4a"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "107e1b1f70aa99f90fb7303bc0b139192131ce61d0bf835d1b2dd8f9b5ba6656"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-026",
+            "known_model_http_requests": 6,
+            "actual_model_http_requests": 6,
+            "known_input_subtotal": 25813,
+            "complete_input_tokens": 25813,
+            "known_output_subtotal": 682,
+            "complete_output_tokens": 682,
+            "duration_ms": 36031.94437500001,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 26,
+          "state": "closed_observation",
+          "physical_ordinal": 166,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-027",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m1-e1",
+          "source_episode_sha256": "1e3964c75b5489d9716c50a734b33053d628884c9466ba8aec99f8042d29e751",
+          "public_episode_sha256": "b2e1449d1edf35b8db3e56e0631ff2bf51a0fb65d2cbbf73e66072e3aac42776",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "baf5f324d07b6127fc25b7c99aafa942465d5cff88a424c7b4d4aeabd1ee7352"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "8fe808ce74dccffe6c5a1c47c5025eab272b680146d718774e4c136f3a9d5fd1"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "c2127d07759391b930ab47569509f85584fc5712b110fda2db062529d12b77dc"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-027",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 26008,
+            "complete_input_tokens": 26008,
+            "known_output_subtotal": 806,
+            "complete_output_tokens": 806,
+            "duration_ms": 26643.874917,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 27,
+          "state": "closed_observation",
+          "physical_ordinal": 167,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-028",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m1-e0",
+          "source_episode_sha256": "7993b90049f3ecd0de3f8973917011d70cd0c3a66e7b063bfa6e0dc6f6127a7b",
+          "public_episode_sha256": "5c9bd2e3b55273b2fe03177d9100c9ff64391eac37d56f71899d94aec3ec3230",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "b07d7e8e58113ff36b8f0d6abe396f4ec77b8a98de98fae6aa0f296852fff584"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "37d6d51cb51e1600a9f96301747d3381083f2070477379519f958b41702dccca"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "aa0f6ca2e44852dd943ef6cee9cfd0420e38c6be04ac9c9d9a56e8ca1831f064"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-028",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 23018,
+            "complete_input_tokens": 23018,
+            "known_output_subtotal": 855,
+            "complete_output_tokens": 855,
+            "duration_ms": 37156.782416,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 28,
+          "state": "closed_observation",
+          "physical_ordinal": 168,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-029",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m3-e0",
+          "source_episode_sha256": "129aedd3afceee4aa00f7b7c80ccf84864196bef17a097573edfe09bd3046db0",
+          "public_episode_sha256": "71d579061fa6ce383c0288f5617816fca8a4a0f98c486edf0e0c4b7b4ba7c20a",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "8eee6d19dfd4b974f366258f811b8df6e332479d4277919dd9f75028bdc4f484"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "87132706fec1655cb139f0fb42bd6e56e1f93118b090080f4a19d22bf80616b3"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "42b36df555613dc3a0629723ed848343b9983c5a0b017df2592ed961ef1cc35e"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-029",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 18907,
+            "complete_input_tokens": 18907,
+            "known_output_subtotal": 307,
+            "complete_output_tokens": 307,
+            "duration_ms": 40812.10524999999,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 29,
+          "state": "closed_observation",
+          "physical_ordinal": 169,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-030",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m3-e1",
+          "source_episode_sha256": "036fc77bb2a371561a0f8a351c7352be09471ac06b9880f1bbe26882d90cfe38",
+          "public_episode_sha256": "c83f6a76227752c4b4b7e60b814f71bb4c077bf4eb7b534a2c1e57ee793c0290",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "e7c278795c7654f8d5395d5d9387dfb7837727ae5aa97745e4b1d5d42bbfb2f5"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "5d8ba2a764f04e5bff857eacd84603c9db9465462957a5083a9cd3034f48fbdc"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "823fa00c4b2fe64f259e2e8eb34cc246e41943a4192f7b1b3284bbeaae45b69c"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-030",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 16816,
+            "complete_input_tokens": 16816,
+            "known_output_subtotal": 414,
+            "complete_output_tokens": 414,
+            "duration_ms": 15452.904541,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 30,
+          "state": "closed_observation",
+          "physical_ordinal": 170,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-031",
+          "case_id": "scripts-assets-01-a-n16-r1",
+          "condition_id": "m2-e1",
+          "source_episode_sha256": "71bd66ed7ee6194152d4413955486b338624ea59bb06319fcaf27f9d06c69cdd",
+          "public_episode_sha256": "64f89ec9032896141876f220dee530ec6ff1f2df2230e906e713d4c0c0c2d5a9",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "d2bf55b8f9f635cfcfd966514a2b43fae67ce93c7ee9ea4ca69d24db5eccb31a"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "1e74b6559dd3df65b8af1d2e9d267327480ba1fc4d99989b9c85c1a280ab12a3"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "a39381c2c182284404bf591da1992b3a920e32771d91110df9d473b9a799695c"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-031",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 33369,
+            "complete_input_tokens": 33369,
+            "known_output_subtotal": 1318,
+            "complete_output_tokens": 1318,
+            "duration_ms": 18513.034708,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 31,
+          "state": "closed_observation",
+          "physical_ordinal": 171,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-032",
+          "case_id": "scripts-assets-01-a-n16-r1",
+          "condition_id": "m2-e0",
+          "source_episode_sha256": "6540867fd50b6ab37c7024ba00167b6c23bb43105f46fac22f2d3fc7586101c3",
+          "public_episode_sha256": "4cfead2c4c9c44137cb20d15dddcc1b9659ede6afc893d897a1cd94df829f90f",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "a0d5b3db9aac8d10dd7f1167c291dfa275f0c341bbd068b26678d2fe110fcbb7"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "6278eb15f7cfb9217bd6da9b658856c2dc75c8a450e84be4b25bddc28caf3155"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "fd9c6a9c35c268c067b7af63ee0beefb6b96a1a7f8c02b8ed62847fc842e018c"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-032",
+            "known_model_http_requests": 11,
+            "actual_model_http_requests": 11,
+            "known_input_subtotal": 107969,
+            "complete_input_tokens": 107969,
+            "known_output_subtotal": 3562,
+            "complete_output_tokens": 3562,
+            "duration_ms": 181403.513083,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 32,
+          "state": "closed_observation",
+          "physical_ordinal": 172,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-033",
+          "case_id": "ambiguity-01-a-n16-r1",
+          "condition_id": "m1-e0",
+          "source_episode_sha256": "9d57c14299a71eb0cec35b9d4b59bcf326962a51ba372c75dcc9423a4858e1d5",
+          "public_episode_sha256": "d902c1854c3c004227c948e58b399bf17fbb494655fe92b47d291e628b06a693",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "af5e033ecc55c9a2a0ac4fc78d5d7e1bb978a5e3bcf72196e759e49915f98f39"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "311f7cf200d141334f726d143adee73914594f3f710524b246a3c23a9b008507"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "c3a2d66e8f592ce2f9cd279951f64e24d796983c524471574fd36df55c40c695"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "a915f4380da3c5cc8d9f19df9da36cf94d268408d2b7fd37434edf1ad60f1f23"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "d36431bd7b21bb4132e473eba2185a40d525a595078880a1bd039d4425b53078"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "d36431bd7b21bb4132e473eba2185a40d525a595078880a1bd039d4425b53078"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "753ec976410b72f0376a3e523155c7d103b24c94cea609e488b9424f2da4f47c"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "0383860d8a621e1424895fd3ae29bf9e19dffb155c58d4fa0fc1fd02f79a49a2"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "0383860d8a621e1424895fd3ae29bf9e19dffb155c58d4fa0fc1fd02f79a49a2"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-033",
+            "known_model_http_requests": 6,
+            "actual_model_http_requests": 6,
+            "known_input_subtotal": 35703,
+            "complete_input_tokens": 35703,
+            "known_output_subtotal": 1094,
+            "complete_output_tokens": 1094,
+            "duration_ms": 60952.635125,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 33,
+          "state": "closed_observation",
+          "physical_ordinal": 173,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-034",
+          "case_id": "ambiguity-01-a-n16-r1",
+          "condition_id": "m1-e1",
+          "source_episode_sha256": "ee707728b5fb78cd3083bc426406adcbb303a3f0562dd3c5327be7076828e855",
+          "public_episode_sha256": "91134ac7afd806d7bbe7003f681b44f4f3d442dd9c6af5cc9df8adbc361815a6",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "527c9c7818b5e402c93dc61045321a83cce0cb4c48072d4b07c587c21342f046"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "9fc62dbd7bda7c2388a00d6832a917fe570d6d069bb149b23a9c59b59a32f529"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "eb98fe304816c67691bf41f60a7707c56afea94b558f5e0ff3db44e1362de67c"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "3e59380570af5ac49a2b48130479073b1ec011b6279b01bb2ef0816e11b0bb2e"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "51d9c97dd8b6b0c285980d2fb83a2a5cf329a007067747ffae00d482357194f2"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "51d9c97dd8b6b0c285980d2fb83a2a5cf329a007067747ffae00d482357194f2"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "382707efbf10527e21387e043e4d2bb4503d8f20ae5f66ddb49c2da7a92e35ae"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "3ed4cf093f1be7e7ca111f022d21143eb8f969245fc553ffd8605b76b0ef8722"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "3ed4cf093f1be7e7ca111f022d21143eb8f969245fc553ffd8605b76b0ef8722"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-034",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 37490,
+            "complete_input_tokens": 37490,
+            "known_output_subtotal": 1122,
+            "complete_output_tokens": 1122,
+            "duration_ms": 29067.650291,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 34,
+          "state": "closed_observation",
+          "physical_ordinal": 174,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-035",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m3-e1",
+          "source_episode_sha256": "88c0feb4831fbf35408e4a156b8e16a86f3c88bb8827674fc9e1e2a2baba934b",
+          "public_episode_sha256": "ced169d9db563039bcec7e79071dabdee05b73deca793ec508ba6646aef0366f",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "210c1d855b4d9caa3a314872abe20fea44a0ba8f279a014b81f88fcfc84c41b1"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "2862be1a117d1ccbc4cb1c22397851438aaef56cd9bde06671e7cae3aae2c4fd"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "deb7be1945b27492e9257d40f9baa2c06cd3280014b355f8bdc3ae6b0b6f9a42"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-035",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 20420,
+            "complete_input_tokens": 20420,
+            "known_output_subtotal": 470,
+            "complete_output_tokens": 470,
+            "duration_ms": 22466.778666,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 35,
+          "state": "closed_observation",
+          "physical_ordinal": 175,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-036",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m3-e0",
+          "source_episode_sha256": "246cdf5d16d8a81cb41e049ca6356078f511407eb50894f9408f2af4cabb94e3",
+          "public_episode_sha256": "00b6856c2ff93d2dfe701b0adad84c5eb0e3c232c07cb9e7ff36979a3b9553cb",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "df90279e7dfa9f5b3faba50c7fe17e2e1062708dc07128c80cb93cc36ce15381"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "a5e093b41184dcf904ee35768bddfbb9a704df1cf06486a3acf6cb29c9473c1a"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "8ce98acd1059e161337b0b4a27e508dbc8465e4f88ca258e3d690f5608104515"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-036",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 23034,
+            "complete_input_tokens": 23034,
+            "known_output_subtotal": 337,
+            "complete_output_tokens": 337,
+            "duration_ms": 31874.984957999997,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 36,
+          "state": "closed_observation",
+          "physical_ordinal": 176,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-037",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m2-e0",
+          "source_episode_sha256": "960a1b497b988568d9ab2c54ea49566389a75b41c987f47818cdde71186d11c0",
+          "public_episode_sha256": "565890f777d8033527b2891e3bd8176d15064d7a2041c0f2275f93c4cf85fb07",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "e1011b3bb1da5c995c125ef3125e7cf57990fbacf7417f0cae089db107d1f731"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "ae3a8ddd8cfa7a3e9b2b59599d138187c9094ad1fefd441b48d24132cd0fa1d9"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "ac71512df501ddad3f4ab94151bbce98dd6221d2201360536ba6e05d6f82a558"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-037",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 27063,
+            "complete_input_tokens": 27063,
+            "known_output_subtotal": 884,
+            "complete_output_tokens": 884,
+            "duration_ms": 41919.349582999996,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 37,
+          "state": "closed_observation",
+          "physical_ordinal": 177,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-038",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m2-e1",
+          "source_episode_sha256": "aaab53879089cca8de4a3d24eb7ca08d05fb3e652fea525810cf5379f2e20d9b",
+          "public_episode_sha256": "fbfadf66225198fc935e5f136f38f523f8dd28bf2742dc0e242acce0004148a7",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "49500b53df2aba7249f05b1bc840c20d3ca8e79706919ac10e8805ddae645645"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "4488ab054011bba45fbcf0795526d48a70dfb94d4494c3f5cfd987e5e9af11eb"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "c06fc812ced53035814b502437b5af4f3d0784f47e3cf89bd0985283319975d2"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-038",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 24075,
+            "complete_input_tokens": 24075,
+            "known_output_subtotal": 909,
+            "complete_output_tokens": 909,
+            "duration_ms": 45877.461042,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 38,
+          "state": "closed_observation",
+          "physical_ordinal": 178,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-039",
+          "case_id": "task-switch-01-a-n16-r2",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "46ef0ae2ac36fad320511dbd5566eeee17c337c67e8c37ed32acd15b81c747d5",
+          "public_episode_sha256": "7e66ed6ef8a144624b450ff835862a6b6bd5da25d4d043b41165e38dd04dccc8",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "d77082a2a550a8fc34f15cf7c8263de3d3f7fe108efb8196a2d3561c0720f323"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "8b5b6db9670ae955cb56588c311dcad5a3859d18388dceee9edba1531edf19a9"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "4a3efa731e5e75c7cb1be4b850cbfc018ffa5a565e81db08928d04638022cef3"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "48cf9f3576c4dce4a1c4af0f0ae50d103b2936d428206ac6c015d464855a2831"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "86e6398e15812939891194aff8d3f6b11d3d82dc6d227492c3154d38bea50d87"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "86e6398e15812939891194aff8d3f6b11d3d82dc6d227492c3154d38bea50d87"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "ab5332d423bf08d4f69201baacef670da5546ff809948d55be0137ac7ac1bf8b"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "68e4874fefc3186042f4410543818451f14d00010d8522e03f81c108eb53c416"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "68e4874fefc3186042f4410543818451f14d00010d8522e03f81c108eb53c416"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-039",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 31086,
+            "complete_input_tokens": 31086,
+            "known_output_subtotal": 498,
+            "complete_output_tokens": 498,
+            "duration_ms": 28172.105209,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 39,
+          "state": "closed_observation",
+          "physical_ordinal": 179,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-040",
+          "case_id": "task-switch-01-a-n16-r2",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "daa170102e9990de001bb4731ec06ec828d399eead789eebdf080abe4fd5c48c",
+          "public_episode_sha256": "cf2df24e835c37cae06d27d93db022ac5fafcb2946a9530bc24837d053af2613",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "1e6d93c7abd5a0e1fa29bf980d9c0e624c2b1607cc1f6b67f5a12263fa042c1f"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "13b48415eaf160f43556cd1e9a409de07dfe2cca9cd587380a62f3f757d9940d"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "7b0203d4554963e6071176f90bf6f82917106a03aca69f907aa8765d40017926"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "a7f482b1f9bf4655da085da0dde04e0cc32debcf824c8d305fca05060685ef41"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "94126891d4f996d058e069d2b46f0e0897e5faff1163305538af34d496f91b4e"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "94126891d4f996d058e069d2b46f0e0897e5faff1163305538af34d496f91b4e"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "2b671cd43765c9fa525b683739ceac44c318b214ad47156f503a24ed5fa3520d"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "da19ae2ceb4d830e21ee151ac949c5aeefaccb2c6a2d4e23f885fc31e9cedad2"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "da19ae2ceb4d830e21ee151ac949c5aeefaccb2c6a2d4e23f885fc31e9cedad2"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-040",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 32889,
+            "complete_input_tokens": 32889,
+            "known_output_subtotal": 445,
+            "complete_output_tokens": 445,
+            "duration_ms": 37639.757084,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 40,
+          "state": "closed_observation",
+          "physical_ordinal": 180,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-041",
+          "case_id": "equivalent-01-a-n16-r1",
+          "condition_id": "m3-e0",
+          "source_episode_sha256": "b22bdc8d20233328a3d839b25e0f2c9d321cdbb0d9830cb7b5ca3187f267ed3e",
+          "public_episode_sha256": "8da9d416ea1024f5c1a03125aad10d99427af6ab3a541f9398f9cd2523a6c02a",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "283087deb916674c47dfa8349aef3b8ee322b337f27c0c4023f3d25b34c16eaa"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "fbf0c357f260660ce1b6078edd3938ebb81bfefc9ff9af252755c413980cc4fb"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "3a7a47d0bfb1ef4230635d734fcfccfac88b3528f76cd46244ba84ec434d7bf2"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-041",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 17888,
+            "complete_input_tokens": 17888,
+            "known_output_subtotal": 314,
+            "complete_output_tokens": 314,
+            "duration_ms": 32813.398375000004,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 41,
+          "state": "closed_observation",
+          "physical_ordinal": 181,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-042",
+          "case_id": "equivalent-01-a-n16-r1",
+          "condition_id": "m3-e1",
+          "source_episode_sha256": "87bfce7759c493ba0d328745be93ea3331d7c6e602e5d41fccacd70cf1a6538a",
+          "public_episode_sha256": "384b38c4024337c1696613a2b6de71c89dab3bb2ccdf5e55ac0d555d1126ef72",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "9f19b52b7234c76be85b2401d407038f1a3da8474e18e5c5aa7007e9c6d5d50c"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "9a05722b53c6f4e4913ab5caecc0f19005512e6fae2931cfdb8496d54348b018"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "0742f69d3d1da8c107914dca53645365b5aca3939a4be56b151fb64669f2dc52"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-042",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 16076,
+            "complete_input_tokens": 16076,
+            "known_output_subtotal": 394,
+            "complete_output_tokens": 394,
+            "duration_ms": 16562.317166,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 42,
+          "state": "closed_observation",
+          "physical_ordinal": 182,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-043",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m2-e1",
+          "source_episode_sha256": "096a5f826f668aaa634893d7acaf54196da8b58e2d61df4314b8bda33e7860a6",
+          "public_episode_sha256": "94ed06466955b4fbbed2b6cb44d14a0524607ce6282854d5804b77f40b156ee5",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "fe70670d61f12c80a96a2a365489ea3980d6a4f272a9912c35c56259a5ef7581"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "41126405e84c475d1068c6272014e3d432fccd23ccf3d9563c431de714ded314"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "ff381a42d500ba39bff3f025ba771c7469c092e612aaec3812f1552f42e36a1a"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "4eb5764bc530748294c4a67242c9fbd28751d95c9a825aeb53f27a071836228b"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "54381ff5ba04b6dab96ffeabd751c758806e9599023dc8e2e2819ee372547a3f"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "54381ff5ba04b6dab96ffeabd751c758806e9599023dc8e2e2819ee372547a3f"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "7043b59843d563e8632b003746183a5012ddab18f47d1d81d689a337390b8847"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "108519a3d4b47fe83d4d9e2a9b8a5020343af58459b1888f0d2f8506c39a93e4"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "108519a3d4b47fe83d4d9e2a9b8a5020343af58459b1888f0d2f8506c39a93e4"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-043",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 45026,
+            "complete_input_tokens": 45026,
+            "known_output_subtotal": 1220,
+            "complete_output_tokens": 1220,
+            "duration_ms": 24884.189584,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 43,
+          "state": "closed_observation",
+          "physical_ordinal": 183,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-044",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m2-e0",
+          "source_episode_sha256": "c1a9af5bb226b589dc7a584db854a41d6781b1820d35b32546cd4ee5edf79304",
+          "public_episode_sha256": "d278cf555caa63dd56eeb21726a31bdd1da6c4df09049ed025233e3ed3d5100d",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "3f90dc55b4d436a06307179b14f2b88aafefea2c766a34bd32f3b2fa97862396"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "28a32180c57e083ac5b958f8fcd7ad324c01181acae53dc92ace4746f7257cde"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "88e24c873e617a454204a49a742f194f304bf31252be71e1dadd22629d14df8f"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "3ef02ba5e5f8aab5466a2e01f1e7810f301cfdf03c28245b1e4c24ae8763d41f"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "3e04a67a643057def6249fe2bbf9aa8f8c78532a97e3a4490ea6287a134bfbea"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "3e04a67a643057def6249fe2bbf9aa8f8c78532a97e3a4490ea6287a134bfbea"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "e4ef2cb06e1dbf813acad23be2f4c4dd48ee2ff6328e5391e06d464b557b2d2e"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "c0a648294ad3dbc546f8690ca68ae18780539174d1abe697531bd31c164a92b6"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "c0a648294ad3dbc546f8690ca68ae18780539174d1abe697531bd31c164a92b6"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-044",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 50303,
+            "complete_input_tokens": 50303,
+            "known_output_subtotal": 1316,
+            "complete_output_tokens": 1316,
+            "duration_ms": 61427.920165999996,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 44,
+          "state": "closed_observation",
+          "physical_ordinal": 184,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-045",
+          "case_id": "task-switch-01-a-n16-r2",
+          "condition_id": "m1-e0",
+          "source_episode_sha256": "c268c6809aa6d181196100ceb395aacccb64099f49d93e0ad80d99aadcf1ac94",
+          "public_episode_sha256": "61677ff5851b761f12fb8faac0f570edfed424d6f2a5892b2f7a81bcffbf9487",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "ebead71777555ad38d470c614fd31981795c9c5072b51a9fc92b771a200ff4a6"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "2c20c9b9f714fd902f50607a24e9b088d4370e88d79620e30ec4ba27e6a5634d"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "d6d7fd7fc4d50b2cd5925fa3feb193e5a5c1b4bdd8f9841e24b7ea79f4115ef9"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "55ac31d7ff3aa5deb584a49a9487676835fe1a1026e0b87a916291f7f314dee8"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "369ea1e10c17772f7bd6e6ba9648093099f854646d708bb22af7fc44358da121"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "369ea1e10c17772f7bd6e6ba9648093099f854646d708bb22af7fc44358da121"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "2b41bae728448341d3097805b9cf13e560c2f0bd7d8a8018d1334710d5352a12"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "dd0b6b0041a172ac9efa8c98acc3ea77c1a0bd3f7fa3e704beb1d3982264f69a"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "dd0b6b0041a172ac9efa8c98acc3ea77c1a0bd3f7fa3e704beb1d3982264f69a"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [
+              "business-expense-groups"
+            ],
+            "outcome": "fail",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-045",
+            "known_model_http_requests": 8,
+            "actual_model_http_requests": 8,
+            "known_input_subtotal": 51422,
+            "complete_input_tokens": 51422,
+            "known_output_subtotal": 2002,
+            "complete_output_tokens": 2002,
+            "duration_ms": 76438.07275,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 45,
+          "state": "closed_observation",
+          "physical_ordinal": 185,
+          "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-046",
+          "case_id": "task-switch-01-a-n16-r2",
+          "condition_id": "m1-e1",
+          "source_episode_sha256": "05c5037f0fc8362f9a90133e2b85841397879baacda70f343e11401a7fd22e9a",
+          "public_episode_sha256": "b937780c0268ffa53a1200269e6e0a26c7baa04ca43072dc38e94c41d262af06",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [
+              "turn_control_stopped",
+              "reported_model_unavailable_after_provider_error",
+              "runtime_not_a_business_episode:cancelled"
+            ],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "ab08eb47f4282f89a641bbc595bb7c4fe34e053f50853263b1daf4693db292d9"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "4a62a00a9c8b9a34bc7a4adaea42d1a4425a5c6890f063f1db392905a84aac3d"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "bed37bcfff57e266ea855bdc7ce74748268928950a7706c27daaec69fb903bde"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "bed84d530e82951129892f27ad52e36f0beb1ffcb3c15d345267eed69d253ff9"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "1c046c419ec2dcd680c6514aa9715b12fbe0d9006f10bb0263a4f33631bd9796"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 3,
+                "sha256": "1c046c419ec2dcd680c6514aa9715b12fbe0d9006f10bb0263a4f33631bd9796"
+              }
+            ],
+            "status": "invalid"
+          },
+          "result": {
+            "critical_failures": [
+              "business-replenishment",
+              "inventory-policy-read",
+              "business-expense-groups"
+            ],
+            "outcome": "not_applicable",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing-pilot80-run-1-four-auto-business-pilot80-046",
+            "known_model_http_requests": 1,
+            "actual_model_http_requests": 1,
+            "known_input_subtotal": 0,
+            "complete_input_tokens": null,
+            "known_output_subtotal": 0,
+            "complete_output_tokens": null,
+            "duration_ms": 2269091.7892090003,
+            "currency_cost": null
+          },
+          "original_stop_batch": true,
+          "original_stop_reason": "turn_control_unverified_or_stopped"
+        },
+        {
+          "order": 46,
+          "state": "unstarted",
+          "case_id": "ambiguity-01-a-n16-r1",
+          "condition_id": "m0-e1"
+        },
+        {
+          "order": 47,
+          "state": "unstarted",
+          "case_id": "ambiguity-01-a-n16-r1",
+          "condition_id": "m0-e0"
+        },
+        {
+          "order": 48,
+          "state": "unstarted",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m3-e0"
+        },
+        {
+          "order": 49,
+          "state": "unstarted",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m3-e1"
+        },
+        {
+          "order": 50,
+          "state": "unstarted",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m0-e1"
+        },
+        {
+          "order": 51,
+          "state": "unstarted",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m0-e0"
+        },
+        {
+          "order": 52,
+          "state": "unstarted",
+          "case_id": "no-skill-01-a-n16-r1",
+          "condition_id": "m2-e0"
+        },
+        {
+          "order": 53,
+          "state": "unstarted",
+          "case_id": "no-skill-01-a-n16-r1",
+          "condition_id": "m2-e1"
+        },
+        {
+          "order": 54,
+          "state": "unstarted",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m0-e1"
+        },
+        {
+          "order": 55,
+          "state": "unstarted",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m0-e0"
+        },
+        {
+          "order": 56,
+          "state": "unstarted",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m1-e0"
+        },
+        {
+          "order": 57,
+          "state": "unstarted",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m1-e1"
+        },
+        {
+          "order": 58,
+          "state": "unstarted",
+          "case_id": "no-skill-01-a-n16-r1",
+          "condition_id": "m0-e1"
+        },
+        {
+          "order": 59,
+          "state": "unstarted",
+          "case_id": "no-skill-01-a-n16-r1",
+          "condition_id": "m0-e0"
+        },
+        {
+          "order": 60,
+          "state": "unstarted",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m1-e0"
+        },
+        {
+          "order": 61,
+          "state": "unstarted",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m1-e1"
+        },
+        {
+          "order": 62,
+          "state": "unstarted",
+          "case_id": "equivalent-01-a-n16-r1",
+          "condition_id": "m2-e1"
+        },
+        {
+          "order": 63,
+          "state": "unstarted",
+          "case_id": "equivalent-01-a-n16-r1",
+          "condition_id": "m2-e0"
+        },
+        {
+          "order": 64,
+          "state": "unstarted",
+          "case_id": "no-skill-01-a-n16-r1",
+          "condition_id": "m3-e0"
+        },
+        {
+          "order": 65,
+          "state": "unstarted",
+          "case_id": "no-skill-01-a-n16-r1",
+          "condition_id": "m3-e1"
+        },
+        {
+          "order": 66,
+          "state": "unstarted",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m2-e1"
+        },
+        {
+          "order": 67,
+          "state": "unstarted",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m2-e0"
+        },
+        {
+          "order": 68,
+          "state": "unstarted",
+          "case_id": "equivalent-01-a-n16-r1",
+          "condition_id": "m0-e0"
+        },
+        {
+          "order": 69,
+          "state": "unstarted",
+          "case_id": "equivalent-01-a-n16-r1",
+          "condition_id": "m0-e1"
+        },
+        {
+          "order": 70,
+          "state": "unstarted",
+          "case_id": "scripts-assets-01-a-n16-r1",
+          "condition_id": "m1-e1"
+        },
+        {
+          "order": 71,
+          "state": "unstarted",
+          "case_id": "scripts-assets-01-a-n16-r1",
+          "condition_id": "m1-e0"
+        },
+        {
+          "order": 72,
+          "state": "unstarted",
+          "case_id": "scripts-assets-01-a-n16-r1",
+          "condition_id": "m3-e0"
+        },
+        {
+          "order": 73,
+          "state": "unstarted",
+          "case_id": "scripts-assets-01-a-n16-r1",
+          "condition_id": "m3-e1"
+        },
+        {
+          "order": 74,
+          "state": "unstarted",
+          "case_id": "equivalent-01-a-n16-r1",
+          "condition_id": "m1-e1"
+        },
+        {
+          "order": 75,
+          "state": "unstarted",
+          "case_id": "equivalent-01-a-n16-r1",
+          "condition_id": "m1-e0"
+        },
+        {
+          "order": 76,
+          "state": "unstarted",
+          "case_id": "task-switch-01-a-n16-r2",
+          "condition_id": "m3-e0"
+        },
+        {
+          "order": 77,
+          "state": "unstarted",
+          "case_id": "task-switch-01-a-n16-r2",
+          "condition_id": "m3-e1"
+        },
+        {
+          "order": 78,
+          "state": "unstarted",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m0-e1"
+        },
+        {
+          "order": 79,
+          "state": "unstarted",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m0-e0"
+        }
+      ]
+    }
+  ]
+}

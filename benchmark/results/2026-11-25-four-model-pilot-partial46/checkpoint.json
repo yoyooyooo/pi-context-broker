@@ -1,0 +1,569 @@
+{
+  "version": 1,
+  "kind": "standing-benchmark-public-checkpoint",
+  "boundary": "closed_prefix_retained",
+  "collector": {
+    "version": "1.2.0",
+    "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+  },
+  "resource_policy": {
+    "mode": "unbounded"
+  },
+  "per_batch_user_approval_required": false,
+  "condition_epoch": {
+    "id": "standing-four-auto-pilot80-epoch-1",
+    "started_at": "2026-11-25T09:54:26.969Z",
+    "authorization_sha256": "a630feb19255729ba6a9de991cf6b5cdbc890ed1454342094437b7a276c42627"
+  },
+  "accounting": {
+    "prior_physical_reservations": 139,
+    "actual_new_reservations": 46,
+    "physical_reservations": 185,
+    "prior_registrations": 20,
+    "registrations": 21,
+    "planned_scientific_observations": 80,
+    "unobserved_scientific_slots": 34
+  },
+  "linked_history": {
+    "commit": "aa3b222bc7a489e168ab89d30df4b0b2c6aecb77",
+    "path": "benchmark/results/2026-11-25-observer-repair-continuation",
+    "url": "https://github.com/yoyooyooo/pi-context-broker/tree/aa3b222bc7a489e168ab89d30df4b0b2c6aecb77/benchmark/results/2026-11-25-observer-repair-continuation",
+    "release_manifest_sha256": "198e9696af073593d81829654f5d2e809e3a68d322da7f1e080fb99430d6c66d",
+    "public_inventory_sha256": "994caf6748cd26c7e26c1bf9018cfc7bda605370748bdcc87c9544c5e171764b",
+    "physical_reservations": 104,
+    "registrations": 13,
+    "status": "linked_not_replayed",
+    "baseline_receipt_sha256": "be5f7a1a0420febadf2aa3de662a7f51f05012f05ca2df854fb4c72f64b10da4"
+  },
+  "historical_accounting": {
+    "known_subtotal": {
+      "model_requests": 476,
+      "input_tokens": 2402549,
+      "output_tokens": 63085,
+      "duration_ms": 3871650.5499549997
+    },
+    "total_usage": {
+      "model_requests": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "duration_ms": 3871650.5499549997
+    },
+    "total_usage_status": "incomplete",
+    "monetary_status": "unpriced",
+    "unknown_usage_run_ids": [
+      "benchmark-own-product-confirmation-unstarted-17-1-006",
+      "benchmark-route-gate-3-003",
+      "benchmark-terra-6-1-approved-gate-1-008",
+      "benchmark-two-model-admission-2-001",
+      "benchmark-two-model-admission-3-008",
+      "benchmark-two-model-cohort-3-expansion-021"
+    ]
+  },
+  "prior_standing_accounting": {
+    "rows": [
+      {
+        "physical_ordinal": 105,
+        "run_id": "standing42-run-1-codemode-24-001",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 16194,
+        "complete_input_tokens": 16194,
+        "known_output_subtotal": 269,
+        "complete_output_tokens": 269,
+        "duration_ms": 31822.893333,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 106,
+        "run_id": "standing42-run-2-codemode-24-001",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 16172,
+        "complete_input_tokens": 16172,
+        "known_output_subtotal": 258,
+        "complete_output_tokens": 258,
+        "duration_ms": 27523.511584,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 107,
+        "run_id": "standing42-run-2-codemode-24-002",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 14080,
+        "complete_input_tokens": 14080,
+        "known_output_subtotal": 435,
+        "complete_output_tokens": 435,
+        "duration_ms": 22809.711416000002,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 108,
+        "run_id": "standing42-run-2-codemode-24-003",
+        "known_model_http_requests": 5,
+        "actual_model_http_requests": 5,
+        "known_input_subtotal": 18211,
+        "complete_input_tokens": 18211,
+        "known_output_subtotal": 592,
+        "complete_output_tokens": 592,
+        "duration_ms": 28450.971833,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 109,
+        "run_id": "standing42-run-2-codemode-24-004",
+        "known_model_http_requests": 5,
+        "actual_model_http_requests": 5,
+        "known_input_subtotal": 20865,
+        "complete_input_tokens": 20865,
+        "known_output_subtotal": 379,
+        "complete_output_tokens": 379,
+        "duration_ms": 41952.773541999995,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 110,
+        "run_id": "standing42-run-2-codemode-24-005",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 16093,
+        "complete_input_tokens": 16093,
+        "known_output_subtotal": 293,
+        "complete_output_tokens": 293,
+        "duration_ms": 31168.197708,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 111,
+        "run_id": "standing42-run-2-codemode-24-006",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 14223,
+        "complete_input_tokens": 14223,
+        "known_output_subtotal": 385,
+        "complete_output_tokens": 385,
+        "duration_ms": 15784.790500000001,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 112,
+        "run_id": "standing42-run-2-codemode-24-007",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 16001,
+        "complete_input_tokens": 16001,
+        "known_output_subtotal": 353,
+        "complete_output_tokens": 353,
+        "duration_ms": 15887.668625,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 113,
+        "run_id": "standing42-run-2-codemode-24-008",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 18035,
+        "complete_input_tokens": 18035,
+        "known_output_subtotal": 263,
+        "complete_output_tokens": 263,
+        "duration_ms": 42481.275333,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 114,
+        "run_id": "standing42-run-2-codemode-24-009",
+        "known_model_http_requests": 5,
+        "actual_model_http_requests": 5,
+        "known_input_subtotal": 24299,
+        "complete_input_tokens": 24299,
+        "known_output_subtotal": 496,
+        "complete_output_tokens": 496,
+        "duration_ms": 36414.835374999995,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 115,
+        "run_id": "standing42-run-2-codemode-24-010",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 17061,
+        "complete_input_tokens": 17061,
+        "known_output_subtotal": 599,
+        "complete_output_tokens": 599,
+        "duration_ms": 20581.780292000003,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 116,
+        "run_id": "standing42-run-2-codemode-24-011",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 16119,
+        "complete_input_tokens": 16119,
+        "known_output_subtotal": 366,
+        "complete_output_tokens": 366,
+        "duration_ms": 14859.107458,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 117,
+        "run_id": "standing42-run-2-codemode-24-012",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 18034,
+        "complete_input_tokens": 18034,
+        "known_output_subtotal": 272,
+        "complete_output_tokens": 272,
+        "duration_ms": 32891.918957999995,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 118,
+        "run_id": "standing42-run-2-codemode-24-013",
+        "known_model_http_requests": 5,
+        "actual_model_http_requests": 5,
+        "known_input_subtotal": 21334,
+        "complete_input_tokens": 21334,
+        "known_output_subtotal": 335,
+        "complete_output_tokens": 335,
+        "duration_ms": 41769.29325,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 119,
+        "run_id": "standing42-run-2-codemode-24-014",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 14793,
+        "complete_input_tokens": 14793,
+        "known_output_subtotal": 495,
+        "complete_output_tokens": 495,
+        "duration_ms": 26617.111875000002,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 120,
+        "run_id": "standing42-run-2-codemode-24-015",
+        "known_model_http_requests": 7,
+        "actual_model_http_requests": 7,
+        "known_input_subtotal": 30171,
+        "complete_input_tokens": 30171,
+        "known_output_subtotal": 693,
+        "complete_output_tokens": 693,
+        "duration_ms": 35834.572416999996,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 121,
+        "run_id": "standing42-run-2-codemode-24-016",
+        "known_model_http_requests": 5,
+        "actual_model_http_requests": 5,
+        "known_input_subtotal": 23260,
+        "complete_input_tokens": 23260,
+        "known_output_subtotal": 425,
+        "complete_output_tokens": 425,
+        "duration_ms": 40500.185708000005,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 122,
+        "run_id": "standing42-run-2-codemode-24-017",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 18027,
+        "complete_input_tokens": 18027,
+        "known_output_subtotal": 264,
+        "complete_output_tokens": 264,
+        "duration_ms": 38322.483374999996,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 123,
+        "run_id": "standing42-run-2-codemode-24-018",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 16049,
+        "complete_input_tokens": 16049,
+        "known_output_subtotal": 332,
+        "complete_output_tokens": 332,
+        "duration_ms": 16876.381834,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 124,
+        "run_id": "standing42-run-2-codemode-24-019",
+        "known_model_http_requests": 8,
+        "actual_model_http_requests": 8,
+        "known_input_subtotal": 31123,
+        "complete_input_tokens": 31123,
+        "known_output_subtotal": 676,
+        "complete_output_tokens": 676,
+        "duration_ms": 28653.597625,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 125,
+        "run_id": "standing42-run-2-codemode-24-020",
+        "known_model_http_requests": 7,
+        "actual_model_http_requests": 7,
+        "known_input_subtotal": 29875,
+        "complete_input_tokens": 29875,
+        "known_output_subtotal": 424,
+        "complete_output_tokens": 424,
+        "duration_ms": 43316.122084,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 126,
+        "run_id": "standing42-run-2-codemode-24-021",
+        "known_model_http_requests": 6,
+        "actual_model_http_requests": 6,
+        "known_input_subtotal": 28023,
+        "complete_input_tokens": 28023,
+        "known_output_subtotal": 442,
+        "complete_output_tokens": 442,
+        "duration_ms": 38929.683042,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 127,
+        "run_id": "standing42-run-2-codemode-24-022",
+        "known_model_http_requests": 7,
+        "actual_model_http_requests": 7,
+        "known_input_subtotal": 30447,
+        "complete_input_tokens": 30447,
+        "known_output_subtotal": 645,
+        "complete_output_tokens": 645,
+        "duration_ms": 26785.337,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 128,
+        "run_id": "standing42-run-2-codemode-24-023",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 14020,
+        "complete_input_tokens": 14020,
+        "known_output_subtotal": 335,
+        "complete_output_tokens": 335,
+        "duration_ms": 19560.999832999998,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 129,
+        "run_id": "standing42-run-2-codemode-24-024",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 16105,
+        "complete_input_tokens": 16105,
+        "known_output_subtotal": 245,
+        "complete_output_tokens": 245,
+        "duration_ms": 36162.692417,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 130,
+        "run_id": "standing42-run-2-scale-implicit-n64-r1-001",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 27252,
+        "complete_input_tokens": 27252,
+        "known_output_subtotal": 265,
+        "complete_output_tokens": 265,
+        "duration_ms": 36035.067042,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 131,
+        "run_id": "standing42-run-2-scale-implicit-n64-r1-002",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 38131,
+        "complete_input_tokens": 38131,
+        "known_output_subtotal": 358,
+        "complete_output_tokens": 358,
+        "duration_ms": 18613.765124999998,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 132,
+        "run_id": "standing42-run-2-scale-implicit-n256-r1-001",
+        "known_model_http_requests": 5,
+        "actual_model_http_requests": 5,
+        "known_input_subtotal": 67811,
+        "complete_input_tokens": 67811,
+        "known_output_subtotal": 290,
+        "complete_output_tokens": 290,
+        "duration_ms": 58892.290499999996,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 133,
+        "run_id": "standing42-run-2-scale-implicit-n256-r1-002",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 125212,
+        "complete_input_tokens": 125212,
+        "known_output_subtotal": 349,
+        "complete_output_tokens": 349,
+        "duration_ms": 23991.870625000003,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 134,
+        "run_id": "standing42-run-2-scale-references-n16-r2-001",
+        "known_model_http_requests": 8,
+        "actual_model_http_requests": 8,
+        "known_input_subtotal": 39419,
+        "complete_input_tokens": 39419,
+        "known_output_subtotal": 664,
+        "complete_output_tokens": 664,
+        "duration_ms": 52293.29075,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 135,
+        "run_id": "standing42-run-2-scale-references-n16-r2-002",
+        "known_model_http_requests": 9,
+        "actual_model_http_requests": 9,
+        "known_input_subtotal": 41859,
+        "complete_input_tokens": 41859,
+        "known_output_subtotal": 1065,
+        "complete_output_tokens": 1065,
+        "duration_ms": 40465.2075,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 136,
+        "run_id": "standing42-run-2-scale-references-n16-r4-001",
+        "known_model_http_requests": 14,
+        "actual_model_http_requests": 14,
+        "known_input_subtotal": 76702,
+        "complete_input_tokens": 76702,
+        "known_output_subtotal": 1304,
+        "complete_output_tokens": 1304,
+        "duration_ms": 135054.660416,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 137,
+        "run_id": "standing42-run-2-scale-references-n16-r4-002",
+        "known_model_http_requests": 18,
+        "actual_model_http_requests": 18,
+        "known_input_subtotal": 104078,
+        "complete_input_tokens": 104078,
+        "known_output_subtotal": 1906,
+        "complete_output_tokens": 1906,
+        "duration_ms": 88669.8265,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 138,
+        "run_id": "standing42-run-2-scale-tariff-n16-r8-001",
+        "known_model_http_requests": 20,
+        "actual_model_http_requests": 20,
+        "known_input_subtotal": 112725,
+        "complete_input_tokens": 112725,
+        "known_output_subtotal": 1471,
+        "complete_output_tokens": 1471,
+        "duration_ms": 131321.178625,
+        "currency_cost": null
+      },
+      {
+        "physical_ordinal": 139,
+        "run_id": "standing42-run-2-scale-tariff-n16-r8-002",
+        "known_model_http_requests": 24,
+        "actual_model_http_requests": 24,
+        "known_input_subtotal": 159657,
+        "complete_input_tokens": 159657,
+        "known_output_subtotal": 2909,
+        "complete_output_tokens": 2909,
+        "duration_ms": 112509.907542,
+        "currency_cost": null
+      }
+    ],
+    "usage": {
+      "reserved_episodes": 35,
+      "episodes_with_observed_model_send_lower_bound": 35,
+      "known_model_http_requests": 230,
+      "actual_model_http_requests": 230,
+      "known_input_subtotal": 1291460,
+      "complete_input_tokens": 1291460,
+      "known_output_subtotal": 20852,
+      "complete_output_tokens": 20852,
+      "complete_currency_cost": null,
+      "currency_cost_status": "incomplete_or_unpriced",
+      "unknown_usage_run_ids": [],
+      "summed_observed_episode_duration_ms": 1453804.961042
+    }
+  },
+  "new_observations": {
+    "actual_new_observations": 46,
+    "scopes": [
+      {
+        "scope_id": "standing-pilot80-run-1-four-auto-business-pilot80",
+        "work_item_id": "four-auto-business-pilot80",
+        "source_plan_sha256": "2b9b2557cfb7beb6c92b3c257a27562be37887d0e8888e67aec6549b74bdb5ca",
+        "source_ledger_sha256": "76665e3f25d3f1aae6f953066f669d04dae03e79a70c84818b84c90c6be0f6b2",
+        "collector": {
+          "version": "1.2.0",
+          "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+        },
+        "scientific_slots": 80,
+        "dispatch_slots": 80,
+        "actual_runs": 46,
+        "admission_valid": 45,
+        "admission_invalid": 1,
+        "verified_success": 19,
+        "business_pass": 41,
+        "full_contract_pass": 19,
+        "full_contract_unknown": 19,
+        "last_reason": "turn_control_unverified_or_stopped",
+        "package": "packages/standing-pilot80-run-1-four-auto-business-pilot80",
+        "public_analysis_sha256": "3a6eb9289baffff20fb58d21538ef225630956bd74d7f94e5deb1d8d32219fd0",
+        "usage": {
+          "reserved_episodes": 46,
+          "episodes_with_observed_model_send_lower_bound": 46,
+          "known_model_http_requests": 250,
+          "actual_model_http_requests": 250,
+          "known_input_subtotal": 1443395,
+          "complete_input_tokens": null,
+          "known_output_subtotal": 42130,
+          "complete_output_tokens": null,
+          "complete_currency_cost": null,
+          "currency_cost_status": "incomplete_or_unpriced",
+          "unknown_usage_run_ids": [
+            "standing-pilot80-run-1-four-auto-business-pilot80-046"
+          ],
+          "summed_observed_episode_duration_ms": 4012861.161251
+        }
+      }
+    ],
+    "usage": {
+      "reserved_episodes": 46,
+      "episodes_with_observed_model_send_lower_bound": 46,
+      "known_model_http_requests": 250,
+      "actual_model_http_requests": 250,
+      "known_input_subtotal": 1443395,
+      "complete_input_tokens": null,
+      "known_output_subtotal": 42130,
+      "complete_output_tokens": null,
+      "complete_currency_cost": null,
+      "currency_cost_status": "incomplete_or_unpriced",
+      "unknown_usage_run_ids": [
+        "standing-pilot80-run-1-four-auto-business-pilot80-046"
+      ],
+      "summed_observed_episode_duration_ms": 4012861.161251
+    }
+  },
+  "unstarted_tail": [],
+  "source_work_plan_sha256": "b35245a384f7426fc71635f9b0123834088937b2d841ade34abfd085cee1d874",
+  "source_controller_sha256": "c1b29c874168aaf1d91cd117f57e30802382b367ce6c94084644fae650ffeaad",
+  "source_attempt_receipt_sha256": "907caae558af95c2817368deaf9bd56d385dfd3feafe576a49187db9faf74a5a",
+  "cross_condition_pooling": false,
+  "historical_codemode7_added_to_new_code24": false,
+  "scientific_acceptance_implied_by_completion": false,
+  "full_history_currency_cost": null,
+  "full_history_usage_complete": false,
+  "publication_model_requests": 0
+}

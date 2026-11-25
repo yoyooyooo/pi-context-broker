@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "kind": "four-model-pilot-original-partial46-public-replay-summary",
+  "status": "passed",
+  "completed_at_utc": "2026-11-25T12:41:37.783Z",
+  "source_export_receipt_sha256": "68042790d2e766ddb289de951060b7c945000a33010f26da2363585aff44effe",
+  "source_replay_receipt_sha256": "9571c3995ab77168b0243ae149eceb2a4788f2246c546ed130d494f607baff4d",
+  "release_manifest": {
+    "path": "../benchmark/results/2026-11-25-four-model-pilot-partial46/release-manifest.json",
+    "sha256": "1860ba6f535d0682592bfc9d515cfcde2422569f8ba588e3f99c9ac109c3d07d"
+  },
+  "public_files": 1539,
+  "public_bytes": 114812174,
+  "public_inventory_sha256": "9b88c5efb6f39eefe6d9b22200abded10817af527825e1cc5659bd53bf8b4f52",
+  "collector": {
+    "version": "1.2.0",
+    "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+  },
+  "isolation_canaries": {
+    "public_readable": true,
+    "private_sources_denied": true,
+    "private_writes_denied": true,
+    "public_writes_denied": true,
+    "network_denied": true,
+    "inherited_credentials": false
+  },
+  "packages": [
+    {
+      "scope_id": "standing-pilot80-run-1-four-auto-business-pilot80",
+      "work_item_id": "four-auto-business-pilot80",
+      "collector": {
+        "version": "1.2.0",
+        "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+      },
+      "path": "packages/standing-pilot80-run-1-four-auto-business-pilot80",
+      "completed": 46,
+      "dispatch_slots": 80,
+      "scientific_slots": 80,
+      "source_plan_sha256": "2b9b2557cfb7beb6c92b3c257a27562be37887d0e8888e67aec6549b74bdb5ca",
+      "source_ledger_sha256": "76665e3f25d3f1aae6f953066f669d04dae03e79a70c84818b84c90c6be0f6b2",
+      "source_protocol_sha256": "1afb95466a38b0705d3d8d5286411e731cfd4b560431b34d7ce69ca86d4816c7",
+      "last_reason": "turn_control_unverified_or_stopped",
+      "public_manifest_file_sha256": "7cffea3ed52372f882108eb43ba843717954a3a25c243a0e383f19ab1f3ec72e",
+      "source_analysis_sha256": "d0d5377f6118d7440ff59b95f33698fc3f7d0f8cfd179ef90abf0e4fbe7e34cd",
+      "public_analysis_sha256": "3a6eb9289baffff20fb58d21538ef225630956bd74d7f94e5deb1d8d32219fd0",
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "3a6eb9289baffff20fb58d21538ef225630956bd74d7f94e5deb1d8d32219fd0",
+        "original_analysis_sha256": "d0d5377f6118d7440ff59b95f33698fc3f7d0f8cfd179ef90abf0e4fbe7e34cd",
+        "model_requests": 0
+      },
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "5edebd31424799949be695f1590356ae5c1904b004733e2cb7b92d6ac9aa9608",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    }
+  ],
+  "incremental_accounting": {
+    "status": "verified",
+    "actual_new_observations": 46,
+    "physical_reservations": 185,
+    "packages": 1,
+    "usage": {
+      "reserved_episodes": 46,
+      "episodes_with_observed_model_send_lower_bound": 46,
+      "known_model_http_requests": 250,
+      "actual_model_http_requests": 250,
+      "known_input_subtotal": 1443395,
+      "complete_input_tokens": null,
+      "known_output_subtotal": 42130,
+      "complete_output_tokens": null,
+      "complete_currency_cost": null,
+      "currency_cost_status": "incomplete_or_unpriced",
+      "unknown_usage_run_ids": [
+        "standing-pilot80-run-1-four-auto-business-pilot80-046"
+      ],
+      "summed_observed_episode_duration_ms": 4012861.161251
+    },
+    "model_requests": 0,
+    "scope": "public original-slot lineage and resource accounting; prior results linked separately, without regrading or cross-condition pooling"
+  },
+  "public_inventory_unchanged": true,
+  "original_export_unchanged": true,
+  "subject_model_requests": 0,
+  "limitations": [
+    "Public hashes, locators, normalized statistics and resource accounting are replayed; private grading and raw chains are not.",
+    "A completed scientific schedule does not itself establish product acceptance.",
+    "Input and time chart title-only differences are recorded; other claimed analysis/table/quality artifacts are byte-identical."
+  ]
+}
