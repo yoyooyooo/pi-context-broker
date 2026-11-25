@@ -610,6 +610,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (piConsumption && input.source !== undefined && !sourceIds.includes(String(input.source))) throw hostError("SOURCE_UNAVAILABLE");
       const selectedLibrary = options.librarySelection ? await options.librarySelection.selected(ctx) : undefined;
       const selectedSources = input.source === undefined ? selectedLibrary ? [selectedLibrary.source.id] : sourceIds : [String(input.source)];
+      const listGeneration = generation, listMetadataGeneration = metadataGeneration;
       const explicitSource = input.source !== undefined && selectedLibrary && input.source !== selectedLibrary.source.id ? String(input.source) : undefined;
       const isolated = explicitSource !== undefined || options.librarySelection && !options.librarySelection.isCurrent(ctx)
         ? await options.getRecords(ctx, readSignal, input.refresh === true ? selectedSources : undefined, explicitSource) : undefined;
@@ -653,6 +654,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         failures: (piConsumption ? failures : listedFailures).map(({ sourceId, code }) => ({ source: sourceId, code })),
       };
       checkPreparationSignal(readSignal);
+      // Explicit-source candidates remain usable without publishing that Library
+      // as the default directory or adopting any body. Retired replies add none.
+      if (isolated && generation === listGeneration && metadataGeneration === listMetadataGeneration
+        && options.librarySelection?.isCurrent(ctx) !== false)
+        for (const record of selected) hostRecords.set(recordIdentity(record), record);
       const active = host.getActiveTools?.();
       const model = adapter.paths.host === "pi" && active?.some(name => name === "read" || name === useToolName)
         ? { ...result, records: result.records.map(({ id: _id, scope: _scope, ...record }) => record) }
