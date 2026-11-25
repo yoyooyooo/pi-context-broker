@@ -46,7 +46,7 @@ export const HELP = `Usage:
     [--skills ABSOLUTE_DIRECTORY] [--models ABSOLUTE_MODELS_JSON]
     [--pi-mode broker|native] [--native-skills ABSOLUTE_DIRECTORY]
     [--pi-extension ABSOLUTE_ENTRY ...]
-    [--pass-env ENV_NAME ...] [--timeout-ms MILLISECONDS]
+    [--pass-env ENV_NAME ...] [--timeout-ms MILLISECONDS|none]
     [--stdin inherit|ignore] -- ARGUMENTS
 
 create freezes both refs in independent clones with a task branch. build copies
@@ -91,8 +91,10 @@ baseline normally; each build/run records and uses the current tool identities.
 Command stdout/stderr go to runs/<id>/*.log; the launcher prints a JSON result.
 Command tests receive their own copy of both source snapshots and dependencies;
 --cwd cli|broker selects that run's copy. Stdin defaults to ignore for headless
-commands; use --stdin inherit for RPC or explicit piped input. An optional timeout
-stops only this run's owned process group.
+commands; use --stdin inherit for RPC or explicit piped input. The run timeout
+defaults to 10 minutes; positive values may be at most 1 hour. --timeout-ms none
+starts no run deadline timer. Signals still stop only this run's owned process
+group, escalating to SIGKILL after 3 seconds if needed.
 closeout reads source identities and retained references; without a manifest it
 returns review_required (exit 2). A complete manifest proves retained or trashed
 dispositions for both sources. It never moves/deletes files or scans foreign
@@ -427,12 +429,15 @@ async function child(command, args, { cwd, env, log, timeout = 600_000, stdin = 
   });
   // A parent can exit while its descendants still own the pipes/process group.
   const stop = signal => { if (!closed && proc.pid) { try { process.kill(-proc.pid, signal); } catch {} } };
-  const onSignal = () => stop('SIGTERM');
+  let killTimer;
+  const onSignal = () => {
+    stop('SIGTERM');
+    killTimer ??= setTimeout(() => stop('SIGKILL'), 3000);
+  };
   process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal);
   proc.stdout.pipe(out); proc.stderr.pipe(err);
   if (proc.pid) await save(log + '.process.json', { pid: proc.pid, process_group: proc.pid, started_at: new Date().toISOString(), command });
-  let killTimer;
-  const timer = setTimeout(() => { timedOut = true; stop('SIGTERM'); killTimer = setTimeout(() => stop('SIGKILL'), 3000); }, timeout);
+  const timer = timeout === null ? undefined : setTimeout(() => { timedOut = true; onSignal(); }, timeout);
   try {
     const result = await completion;
     await Promise.all([out, err].map(stream => stream.writableFinished ? undefined : new Promise((done, reject) => { stream.once('finish', done); stream.once('error', reject); })));
@@ -764,8 +769,12 @@ export async function runEnvironment(options) {
   assert.ok(['workspace', 'cli', 'broker'].includes(cwdChoice), '--cwd must be workspace, cli, or broker');
   assert.ok(options.target === 'command' || cwdChoice === 'workspace', '--cwd is only for command tests');
   if (options.target === 'pi') validatePiArguments(options.args);
-  const timeout = Number(options['timeout-ms'] ?? 600_000);
-  assert.ok(Number.isSafeInteger(timeout) && timeout > 0 && timeout <= 3_600_000, 'Timeout must be 1..3600000 milliseconds');
+  const timeoutInput = options['timeout-ms'];
+  const timeout = timeoutInput === undefined ? 600_000
+    : timeoutInput === null || timeoutInput === 'none' ? null
+    : ['number', 'string'].includes(typeof timeoutInput) ? Number(timeoutInput) : NaN;
+  assert.ok(timeout === null || (Number.isSafeInteger(timeout) && timeout > 0 && timeout <= 3_600_000),
+    'Timeout must be 1..3600000 milliseconds, none, or null');
   const stdin = options.stdin ?? 'ignore';
   assert.ok(['inherit', 'ignore'].includes(stdin), '--stdin must be inherit or ignore');
   const runId = validId(options.id ?? id('run')), root = join(options.root, 'runs', runId);
@@ -825,7 +834,7 @@ export async function runEnvironment(options) {
   await save(join(root, 'run.json'), { version: VERSION, kind: 'isolated-development-run', environment_id: environment.environment_id,
     run_id: runId, root, build_id: options.build, build_root: buildRoot, target: options.target, cwd,
     runtime, pi_launch: piLaunch, candidate: { mode: checked.candidate_mode, entries: checked.selected_entries }, launcher: await toolIdentity(fileURLToPath(import.meta.url)),
-    runtime_observer: await toolIdentity(fileURLToPath(new URL('./paired-runtime-identity.mjs', import.meta.url))), stdin,
+    runtime_observer: await toolIdentity(fileURLToPath(new URL('./paired-runtime-identity.mjs', import.meta.url))), stdin, timeout_ms: timeout,
     argument_sha256: hash(JSON.stringify(args)), passed_environment_names: options['pass-env'],
     remote: { library: options.library ?? null, parent: options.parent ?? null },
     paths: Object.fromEntries(Object.entries(env).filter(([name, value]) => name !== 'PATH' && typeof value === 'string' && own(root, value))) });
@@ -835,7 +844,7 @@ export async function runEnvironment(options) {
   let artifactStatus = 'passed';
   try { await checkEnvironment(options); } catch { artifactStatus = 'changed'; }
   const receipt = { status: result.exit_code === 0 && !result.timed_out && artifactStatus === 'passed' && runtimeCheck.status === 'unchanged' ? 'passed' : 'failed',
-    scope: 'isolated-development-run', root, run_id: runId, build_id: options.build,
+    scope: 'isolated-development-run', root, run_id: runId, build_id: options.build, timeout_ms: timeout,
     ...result, command_status: result.timed_out ? 'timed_out' : result.exit_code === 0 ? 'succeeded' : 'failed',
     runtime_check: runtimeCheck, frozen_artifacts: artifactStatus,
     actual_pi_process: options.target === 'pi' && result.spawned ? 'launched' : 'not_asserted',

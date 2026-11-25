@@ -433,6 +433,115 @@ dependency:fs.realpathSync(dependency),owner:fs.readFileSync(dependency,'utf8')}
     await assert.rejects(stat(join(rootA, 'runs/must-not-start')), { code: 'ENOENT' });
   });
 
+  await t.test('run deadline selection preserves bounded defaults and starts no run timer for explicit none or null', async t => {
+    let probeTimers;
+    for (const [name, input, expected] of [
+      ['default', undefined, 600_000], ['maximum', 3_600_000, 3_600_000],
+      ['none', 'none', null], ['null', null, null],
+    ]) {
+      const options = parseArgs(['run', '--root', rootA, '--build', 'fixture', '--target', 'command',
+        '--id', 'deadline-' + name, ...(typeof input === 'string' ? ['--timeout-ms', input] : []),
+        '--', 'node', '-e', 'setTimeout(() => console.log("child completed"), 100)']);
+      if (typeof input !== 'string') options['timeout-ms'] = input;
+      const deadlines = [], realSetTimeout = globalThis.setTimeout;
+      const timer = t.mock.method(globalThis, 'setTimeout', (...args) => {
+        deadlines.push(args[1]);
+        return realSetTimeout(...args);
+      });
+      let receipt;
+      try { receipt = await runEnvironment(options); } finally { timer.mock.restore(); }
+      assert.equal(receipt.status, 'passed', name);
+      assert.equal(receipt.timed_out, false, name);
+      assert.equal(receipt.timeout_ms, expected, name);
+      assert.equal((await readJson(join(receipt.root, 'run.json'))).timeout_ms, expected, name);
+      assert.equal((await readFile(receipt.stdout, 'utf8')).trim(), 'child completed', name);
+      if (expected !== null) assert.equal(deadlines.filter(delay => delay === expected).length, 1,
+        name + ' must install exactly the selected wall timer');
+      const remaining = expected === null ? deadlines : deadlines.filter(delay => delay !== expected);
+      if (name === 'default') probeTimers = remaining;
+      else assert.deepEqual(remaining, probeTimers, name + ' must keep only the unchanged runtime probe timers');
+    }
+    for (const value of [0, '0', Infinity, 'Infinity', NaN, -1, 1.5, 3_600_001, '', 'null', 'None', true, false, [], {}]) {
+      await assert.rejects(runEnvironment({ root: rootA, build: 'fixture', target: 'command',
+        id: 'invalid-deadline', 'timeout-ms': value, 'pass-env': [], args: ['node', '-e', 'throw new Error("launched")'] }),
+      /Timeout must be/);
+    }
+    await assert.rejects(stat(join(rootA, 'runs/invalid-deadline')), { code: 'ENOENT' });
+  });
+
+  await t.test('unbounded CLI runs reap owned signal-resistant descendants on SIGINT and SIGTERM', { timeout: 20_000 }, async t => {
+    const sentinel = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
+    const sentinelClosed = new Promise(resolve => sentinel.once('close', resolve));
+    const launchers = [], runRoots = [];
+    t.after(async () => {
+      for (const { process: launcher } of launchers) if (launcher.exitCode === null && launcher.signalCode === null) launcher.kill('SIGKILL');
+      const groups = [];
+      for (const runRoot of runRoots) {
+        const owned = await readJson(join(runRoot, 'command.process.json')).catch(error => {
+          if (error.code === 'ENOENT') return undefined; throw error;
+        });
+        if (owned) groups.push(owned.process_group);
+      }
+      for (const pid of [...groups, sentinel.pid]) {
+        try { process.kill(-pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+      }
+      await Promise.all([sentinelClosed, ...launchers.map(item => item.closed)]);
+    });
+    await new Promise((resolve, reject) => { sentinel.once('spawn', resolve); sentinel.once('error', reject); });
+    const alive = pid => {
+      try { process.kill(pid, 0); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; }
+    };
+    const waitFor = async (read, message) => {
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const value = await read();
+        if (value) return value;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      assert.fail(message);
+    };
+    for (const signal of ['SIGINT', 'SIGTERM']) {
+      const runId = 'unbounded-' + signal.toLowerCase(), runRoot = join(rootA, 'runs', runId);
+      runRoots.push(runRoot);
+      const payload = `const {spawn} = require('node:child_process'), fs = require('node:fs');
+process.on('SIGTERM', () => {});
+const descendant = spawn(process.execPath, ['-e',
+  'process.on("SIGTERM", () => {}); console.log("ready"); setInterval(() => {}, 1000)'],
+  {stdio: ['ignore', 'pipe', 'inherit']});
+descendant.stdout.once('data', () => {
+  const ready = process.env.PAIRED_RUN_ROOT + '/descendant.json';
+  fs.writeFileSync(ready + '.pending', JSON.stringify({pid: descendant.pid, parent: process.pid}));
+  fs.renameSync(ready + '.pending', ready);
+});
+descendant.stdout.pipe(process.stdout);
+setInterval(() => {}, 1000);`;
+      const launcher = spawn(process.execPath, [new URL('./paired-environment.mjs', import.meta.url).pathname,
+        'run', '--root', rootA, '--build', 'fixture', '--target', 'command', '--id', runId,
+        '--timeout-ms', 'none', '--', 'node', '-e', payload], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const closed = new Promise((resolve, reject) => { launcher.once('close', (code, received) => resolve({ code, signal: received })); launcher.once('error', reject); });
+      launchers.push({ process: launcher, closed });
+      let stdout = '', stderr = '';
+      launcher.stdout.on('data', data => { stdout += data; }); launcher.stderr.on('data', data => { stderr += data; });
+      const descendant = await waitFor(() => readJson(join(runRoot, 'descendant.json')).catch(error => {
+        if (error.code === 'ENOENT') return undefined; throw error;
+      }), 'The actual owned descendant must become ready');
+      const owned = await readJson(join(runRoot, 'command.process.json'));
+      assert.equal(descendant.parent, owned.pid);
+      assert.equal(launcher.kill(signal), true);
+      const exit = await closed;
+      assert.equal(exit.signal, null, stderr);
+      assert.notEqual(exit.code, 0, stdout);
+      const receipt = await readJson(join(runRoot, 'result.json'));
+      assert.equal(receipt.timeout_ms, null);
+      assert.equal(receipt.timed_out, false, 'Cancellation must not be relabelled as a deadline');
+      assert.equal(receipt.signal, 'SIGKILL', 'A signal-resistant group must be reaped after the cancellation grace period');
+      assert.equal(receipt.status, 'failed');
+      assert.equal(receipt.frozen_artifacts, 'passed');
+      assert.doesNotThrow(() => process.kill(sentinel.pid, 0), 'An unrelated owned sentinel must stay alive');
+      await waitFor(() => !alive(descendant.pid) && !alive(owned.pid), 'The owned parent and descendant must not survive cancellation');
+    }
+  });
+
   await t.test('timeout reaps owned descendants after their parent exits without killing another process', { timeout: 5000 }, async t => {
     const sentinel = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
       detached: true, stdio: 'ignore',
@@ -461,6 +570,7 @@ process.exit(0);`;
       'timeout-ms': '500', 'pass-env': [], args: ['node', '-e', payload],
     });
     assert.equal(receipt.timed_out, true, 'An exited parent must not cancel the deadline for descendants holding pipes');
+    assert.equal(receipt.timeout_ms, 500);
     assert.equal(receipt.status, 'failed', 'A timeout must fail even when the parent exited zero');
     assert.equal(receipt.frozen_artifacts, 'passed');
     assert.doesNotThrow(() => process.kill(sentinel.pid, 0), 'The unrelated process must stay alive');
