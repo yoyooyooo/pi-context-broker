@@ -211,9 +211,18 @@ For an RPC harness that exchanges messages interactively, launch the harness wit
 `--target command` and let it spawn the private `pi` command with its own pipes.
 The launcher's stdout is a result receipt, not a transparent RPC stream.
 
-`--timeout-ms` controls the run deadline. The default is 10 minutes and the
-maximum is 1 hour. A timeout stops only that run's owned process group and leaves
-its evidence available. Every invocation allocates its own run ID and paths:
+`--timeout-ms` controls the run deadline. Omitting it keeps the 10-minute default;
+positive integer values remain limited to 1 hour. Select `--timeout-ms none` to
+run without a deadline timer. Direct callers select the same behavior with
+`runEnvironment({ ..., 'timeout-ms': null })`; omitting the property still uses
+the default. Zero and infinity are rejected. `run.json` and `result.json` record
+the selected `timeout_ms`, with `null` meaning no run deadline.
+
+A timeout or a launcher `SIGINT`/`SIGTERM` stops only that run's owned process
+group. Cancellation still works without a deadline, escalating to `SIGKILL`
+after 3 seconds if the group has not closed. Evidence remains available, and
+signal cancellation does not mark the result `timed_out`.
+Every invocation allocates its own run ID and paths:
 
 | State | Selection |
 | --- | --- |
