@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "kind": "observer-repair-incremental-checkpoint",
+  "boundary": "closed_prefix",
+  "accounting": {
+    "prior_physical_reservations": 89,
+    "actual_new_reservations": 15,
+    "physical_reservations": 104,
+    "approved_total": 139,
+    "hard_cap": 144,
+    "unstarted_approved": 35,
+    "unallocated": 5
+  },
+  "linked_history": {
+    "commit": "65121fb82fe9b0ac6a0c7f722fe3b8284f982fab",
+    "path": "benchmark/results/2026-11-24-own-provider-stop89",
+    "url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+    "release_manifest_sha256": "030763d78896f08694115b9495b1041c8c7b1b5d4283392b5bf1775bf42a71ec",
+    "physical_reservations": 89,
+    "status": "linked_not_replayed"
+  },
+  "prior_unknown_usage_run_ids": [
+    "benchmark-own-product-confirmation-unstarted-17-1-006",
+    "benchmark-route-gate-3-003",
+    "benchmark-terra-6-1-approved-gate-1-008",
+    "benchmark-two-model-admission-2-001",
+    "benchmark-two-model-admission-3-008",
+    "benchmark-two-model-cohort-3-expansion-021"
+  ],
+  "prior_stop_retained": {
+    "run_id": "benchmark-own-product-provider-stop-unstarted-11-1-003",
+    "admission": "invalid",
+    "stop_batch": true,
+    "usage": {
+      "model_requests": 5,
+      "input_tokens": 23142,
+      "output_tokens": 376,
+      "duration_ms": 110313.063417
+    }
+  },
+  "new_observations": {
+    "actual_new_observations": 15,
+    "scopes": [
+      {
+        "scope_id": "own-product-observer-repair-unstarted-8-3",
+        "source_plan_sha256": "20951f3f371ee9d6287d9ffbae2b92c3ae927c775c9a0f7b6aad5daeb0ab86ea",
+        "source_ledger_sha256": "e555bf321c4b35e90e07239fde58ec5284a951cedf4ac72ee47a0a5b8ab7d6d9",
+        "scientific_slots": 20,
+        "dispatch_slots": 8,
+        "actual_runs": 8,
+        "admission_valid": 8,
+        "admission_invalid": 0,
+        "verified_success": 2,
+        "valid_business_unknown": 6,
+        "last_reason": "planned_slots_completed",
+        "package": "packages/own-product-observer-repair-unstarted-8-3",
+        "public_analysis_sha256": "9c3d7e61c01cb9ae940ce4e94c7caeaa32459890564bbc8307798b73214f298e",
+        "usage": {
+          "reserved_episodes": 8,
+          "episodes_with_observed_model_send_lower_bound": 8,
+          "known_model_http_requests": 35,
+          "actual_model_http_requests": 35,
+          "known_input_subtotal": 157460,
+          "complete_input_tokens": 157460,
+          "known_output_subtotal": 2533,
+          "complete_output_tokens": 2533,
+          "complete_currency_cost": null,
+          "currency_cost_status": "incomplete_or_unpriced",
+          "unknown_usage_run_ids": [],
+          "summed_observed_episode_duration_ms": 272271.214418
+        }
+      },
+      {
+        "scope_id": "continuation-codemode-24",
+        "source_plan_sha256": "775261a1a1697a2941b5715f78d5ca09db3068b31e619fb1b014df48f0a8a3b2",
+        "source_ledger_sha256": "ed04a3ad5c20689e3d7f8973d506abe3a37afc9a2d80d5188b66d03cab3aac2f",
+        "scientific_slots": 24,
+        "dispatch_slots": 24,
+        "actual_runs": 7,
+        "admission_valid": 7,
+        "admission_invalid": 0,
+        "verified_success": 6,
+        "valid_business_unknown": 1,
+        "last_reason": "batch_budget_exhausted",
+        "package": "packages/continuation-codemode-24",
+        "public_analysis_sha256": "596bf42bcdc3633ff659cfb1dc404cf26112195b2157c9bb3e703c1cd046aabf",
+        "usage": {
+          "reserved_episodes": 7,
+          "episodes_with_observed_model_send_lower_bound": 7,
+          "known_model_http_requests": 31,
+          "actual_model_http_requests": 31,
+          "known_input_subtotal": 120222,
+          "complete_input_tokens": 120222,
+          "known_output_subtotal": 2868,
+          "complete_output_tokens": 2868,
+          "complete_currency_cost": null,
+          "currency_cost_status": "incomplete_or_unpriced",
+          "unknown_usage_run_ids": [],
+          "summed_observed_episode_duration_ms": 177348.906042
+        }
+      }
+    ],
+    "usage": {
+      "reserved_episodes": 15,
+      "episodes_with_observed_model_send_lower_bound": 15,
+      "known_model_http_requests": 66,
+      "actual_model_http_requests": 66,
+      "known_input_subtotal": 277682,
+      "complete_input_tokens": 277682,
+      "known_output_subtotal": 5401,
+      "complete_output_tokens": 5401,
+      "complete_currency_cost": null,
+      "currency_cost_status": "incomplete_or_unpriced",
+      "unknown_usage_run_ids": [],
+      "summed_observed_episode_duration_ms": 449620.12046
+    }
+  },
+  "registered_scopes": [
+    {
+      "scope_id": "own-product-observer-repair-unstarted-8-3",
+      "dispatch_slots": 8,
+      "actual_runs": 8,
+      "last_reason": "planned_slots_completed"
+    },
+    {
+      "scope_id": "continuation-codemode-24",
+      "dispatch_slots": 24,
+      "actual_runs": 7,
+      "last_reason": "batch_budget_exhausted"
+    }
+  ],
+  "source_authority_sha256": "a175a394944c7554ddb458fc8dcc164530bf9a38d1f9f3dd3b69c122b1db3e4f",
+  "source_controller_sha256": "62055507c7aa4d6a298841bd74cc7db2dc5d03e302f33c46846a653904cf719c",
+  "observer_repair_source_sha256": "ffc99433f052cfec565585ec0081e75df3c68a116a15df166d58a9c75242a065",
+  "apparatus": "New observer-only derived builds; installed products and dependencies reused byte for byte, no source recompilation. Original results stay unchanged.",
+  "no_combined_scientific_scoring": true,
+  "full_history_currency_cost": null,
+  "full_history_usage_complete": false,
+  "publication_model_requests": 0
+}

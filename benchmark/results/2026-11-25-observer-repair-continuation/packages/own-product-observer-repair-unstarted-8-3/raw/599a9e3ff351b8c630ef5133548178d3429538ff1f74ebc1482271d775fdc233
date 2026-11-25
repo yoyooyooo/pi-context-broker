@@ -1,0 +1,13 @@
+---
+name: [identity:5205410a8a9be36c3bfa]
+description: "松涛66仓库批次清单整理"
+---
+
+
+# 松涛66仓库批次清单整理
+
+清单是简单三列 CSV，没有逗号转义。去掉单元格首尾空格，把 depot 按 assets/depots.json 转为代码，count 转为整数。scripts/normalize.mjs 可执行同样转换，输入和输出路径分别为两个参数。可执行脚本，也可按相同规则处理。每行必须附上 assets/format-marker.bin 字节的小写十六进制值作为 format\_marker\_hex。输出 id、depot、count、format\_marker\_hex。
+
+本材料为可公开复现的合成业务资料，许可 CC0-1.0。
+
+金额一律使用整数分；若有舍入，按文中规则执行。
