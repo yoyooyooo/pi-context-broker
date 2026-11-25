@@ -1,0 +1,346 @@
+{
+  "version": 1,
+  "kind": "public-observer-continuation-validation",
+  "status": "actual-export-and-independent-replay-verified",
+  "created_at": "2026-11-25T02:24:34.865941+00:00",
+  "release_path": "benchmark/results/2026-11-25-observer-repair-continuation",
+  "publication_version": "1.0.6",
+  "accounting": {
+    "prior_physical_reservations": 89,
+    "actual_new_reservations": 15,
+    "physical_reservations": 104,
+    "approved_total": 139,
+    "hard_cap": 144,
+    "unstarted_approved": 35,
+    "unallocated": 5
+  },
+  "new_observations": {
+    "admission_valid": 15,
+    "business_contract_pass": 15,
+    "full_contract_pass": 8,
+    "full_contract_unknown": 7,
+    "new_core_stops": 0,
+    "new_unknown_token_usage": 0
+  },
+  "scopes": [
+    {
+      "scope_id": "own-product-observer-repair-unstarted-8-3",
+      "public_files": 384,
+      "actual_runs": 8,
+      "scientific_slots": 20,
+      "admission_valid": 8,
+      "business_pass": 8,
+      "full_contract_pass": 2,
+      "full_contract_unknown": 6,
+      "known_model_http_requests": 35,
+      "input_tokens": 157460,
+      "output_tokens": 2533,
+      "total_tokens": 159993,
+      "tool_calls": 37,
+      "duration_ms": 272271.214418,
+      "source_analysis_sha256": "dcf1f3e14e157b70fb71ac70fe67121b943fb28bd3d00a79a909a450576949d6",
+      "public_analysis_sha256": "9c3d7e61c01cb9ae940ce4e94c7caeaa32459890564bbc8307798b73214f298e",
+      "public_manifest_file_sha256": "48631523a66ca6a047c6166a12a4919a3158d08a098506aa9e8f1c7868161f56",
+      "replay_status": "verified",
+      "regenerated_report_files": 13,
+      "byte_identical_analysis_tables_quality": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    },
+    {
+      "scope_id": "continuation-codemode-24",
+      "public_files": 327,
+      "actual_runs": 7,
+      "scientific_slots": 24,
+      "admission_valid": 7,
+      "business_pass": 7,
+      "full_contract_pass": 6,
+      "full_contract_unknown": 1,
+      "known_model_http_requests": 31,
+      "input_tokens": 120222,
+      "output_tokens": 2868,
+      "total_tokens": 123090,
+      "tool_calls": 37,
+      "duration_ms": 177348.906042,
+      "source_analysis_sha256": "172e93ec42e45f6a34bd903af57f75467da89ff923f6ab53c9a5d3e9dce948e7",
+      "public_analysis_sha256": "596bf42bcdc3633ff659cfb1dc404cf26112195b2157c9bb3e703c1cd046aabf",
+      "public_manifest_file_sha256": "922efd14b1d63e8f35db275db75546f47d665371d2e52871e46068139dbe27e6",
+      "replay_status": "verified",
+      "regenerated_report_files": 13,
+      "byte_identical_analysis_tables_quality": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "reserved_episodes": 15,
+    "episodes_with_observed_model_send_lower_bound": 15,
+    "known_model_http_requests": 66,
+    "actual_model_http_requests": 66,
+    "known_input_subtotal": 277682,
+    "complete_input_tokens": 277682,
+    "known_output_subtotal": 5401,
+    "complete_output_tokens": 5401,
+    "complete_currency_cost": null,
+    "currency_cost_status": "incomplete_or_unpriced",
+    "unknown_usage_run_ids": [],
+    "summed_observed_episode_duration_ms": 449620.12046
+  },
+  "prior_unknown_usage_count": 6,
+  "full_history_usage_complete": false,
+  "full_history_currency_cost": null,
+  "combined_scientific_scoring": false,
+  "linked_history": {
+    "commit": "65121fb82fe9b0ac6a0c7f722fe3b8284f982fab",
+    "path": "benchmark/results/2026-11-24-own-provider-stop89",
+    "url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+    "release_manifest_sha256": "030763d78896f08694115b9495b1041c8c7b1b5d4283392b5bf1775bf42a71ec",
+    "physical_reservations": 89,
+    "status": "linked_not_replayed",
+    "files": 248,
+    "bytes": 11421401,
+    "inventory_sha256": "ebfd93e87b44dce989f09c72493d3259fb1d811e14a5d58ef87af54ed4b01640",
+    "public_worktree_copy_identical": true,
+    "history_replayed": false
+  },
+  "actual_execution": {
+    "own": {
+      "requested_limits": [
+        1,
+        7,
+        1
+      ],
+      "new_completed": [
+        1,
+        6,
+        1
+      ],
+      "closing_reasons": [
+        "operator_slice_limit",
+        "batch_budget_exhausted",
+        "planned_slots_completed"
+      ],
+      "source_ledger_file_sha256": "e555bf321c4b35e90e07239fde58ec5284a951cedf4ac72ee47a0a5b8ab7d6d9"
+    },
+    "codemode": {
+      "configured_slots": 24,
+      "planned_slice_limits": [
+        8,
+        8,
+        8
+      ],
+      "first_requested_limit": 8,
+      "actual_first_slice": 7,
+      "cli_exit_code": 0,
+      "batch_closing_reason": "batch_budget_exhausted",
+      "driver_status": "stopped",
+      "driver_error": "Unexpected started prefix: 7 !== 8",
+      "retries": 0,
+      "automatic_resume": false,
+      "source_ledger_file_sha256": "ed04a3ad5c20689e3d7f8973d506abe3a37afc9a2d80d5188b66d03cab3aac2f",
+      "pre_batch_command_ms": 2128401,
+      "batch_wall_clock_ms": 5461711.3645,
+      "batch_wall_clock_limit_ms": 5100000,
+      "episode_runtime_ms": 177348.906042
+    }
+  },
+  "model_window": {
+    "start_utc": "2026-11-24T02:08:50.700Z",
+    "end_utc": "2026-11-25T02:08:50.700Z",
+    "status": "expired",
+    "modified": false,
+    "checkpoint_observed_at": "2026-11-25T02:10:22.470820+00:00",
+    "checkpoint": {
+      "sha256": "9ce1d9573110f82290e1554864cd9963164ddecba22a84e7f9dee72619af950d",
+      "bytes": 35308
+    },
+    "physical_closed": 104,
+    "registrations": 13,
+    "remaining_unstarted": 35,
+    "active_leases": [],
+    "unresolved_started_runs": [],
+    "new_window_requires_new_explicit_authority": true
+  },
+  "publication": {
+    "prepare": {
+      "stage": "prepare",
+      "exit_code": 0,
+      "started_at": "2026-11-25T01:52:32.379893+00:00",
+      "completed_at": "2026-11-25T01:59:25.150245+00:00",
+      "result_sha256": "e37f131ce2e20a6903ef327bc232d85c66308ae7c63b10d371b5b905fb370b75",
+      "stdout_sha256": "a661ec8e8ca9f977d0e1b55b08283f7c4c60d2fd06290591440d97b170b3f112",
+      "stderr_bytes": 0
+    },
+    "standalone_inspect_executed": false,
+    "validation_sequence": "prepare calls inspectInput before writing input; export independently calls inspectInput again; then isolated public-only replay",
+    "input_file": {
+      "sha256": "33aa37f070de518fb18b3a95b84ae685cb03cacd93ccd49e2d1e884f96f7fa57",
+      "bytes": 5056
+    },
+    "export": {
+      "completed_at": "2026-11-25T02:13:05.456Z",
+      "command": {
+        "stage": "export",
+        "exit_code": 0,
+        "started_at": "2026-11-25T02:00:02.505262+00:00",
+        "completed_at": "2026-11-25T02:13:05.490272+00:00",
+        "result_sha256": "f2fdd2c7416efa750cd0af001bcbb4b15e6bff394bd42e82e0025e9468200875",
+        "stdout_sha256": "2a0c8f1072fa231938047ed03ea833e943ac5769738fff001d9483205f90aaa0",
+        "stderr_bytes": 0
+      },
+      "receipt": {
+        "sha256": "040f6d5d5989ead1363c12527cfdee76a932125c2a0b8fd4d66a85daf1444d2d",
+        "bytes": 50683
+      },
+      "public_files": 716,
+      "public_bytes": 39411020,
+      "public_inventory_sha256": "994caf6748cd26c7e26c1bf9018cfc7bda605370748bdcc87c9544c5e171764b",
+      "release_manifest_file": {
+        "sha256": "198e9696af073593d81829654f5d2e809e3a68d322da7f1e080fb99430d6c66d",
+        "bytes": 175601
+      },
+      "subject_model_requests": 0,
+      "privacy": {
+        "status": "passed",
+        "policy": "unchanged publisher 1.0.6",
+        "files": 716,
+        "text_files": 715,
+        "reviewed_binary_files": 1,
+        "literal_hits": 0,
+        "private_values_printed": false,
+        "known_identifier_count": 210,
+        "path_prefix_count": 4,
+        "limitation": "Known supplied values and unchanged publisher patterns; no claim to detect every unknown private value."
+      }
+    },
+    "independent_review": {
+      "completed_at": "2026-11-25T02:22:31.543Z",
+      "receipt": {
+        "sha256": "fe4b6c03ff79b203132510e9a8bd6e87a433536196c915f8171a9a8a66ae0b61",
+        "bytes": 15646
+      },
+      "command_result": {
+        "sha256": "43729b06004749320234d5b0ed234ad998dbac1e4992f1c528dcf8661373a73e",
+        "bytes": 1293
+      },
+      "privacy": {
+        "status": "passed",
+        "files": 716,
+        "text_files": 715,
+        "reviewed_binary_files": 1,
+        "literal_hits": 0,
+        "known_identifier_count": 210,
+        "path_prefix_count": 4,
+        "private_values_printed": false,
+        "policy": "Existing publisher1.0.6 patterns and known supplied values; no universal unknown-value guarantee."
+      },
+      "model_requests": 0
+    },
+    "isolated_replay": {
+      "completed_at": "2026-11-25T02:14:42.623Z",
+      "command": {
+        "stage": "replay",
+        "exit_code": 0,
+        "started_at": "2026-11-25T02:14:41.257872+00:00",
+        "completed_at": "2026-11-25T02:14:42.629168+00:00",
+        "result_sha256": "7309685c8a4674ce99a36904076b15f1a6c23f560065abaaef34bd8b04e3954b",
+        "stdout_sha256": "9364a4af94e03370c581a3e1b2157aa45ab651da40318a7a9ba5a75441c1aac1",
+        "stderr_bytes": 0
+      },
+      "receipt": {
+        "sha256": "182f26a0c318db79f2a3ed1a776c25bc0b292e9149b37513f73b068db3718256",
+        "bytes": 6404
+      },
+      "isolation_canaries": {
+        "public_readable": true,
+        "private_sources_denied": true,
+        "private_writes_denied": true,
+        "public_writes_denied": true,
+        "network_denied": true,
+        "inherited_credentials": false
+      },
+      "packages_replayed": 2,
+      "public_inventory_unchanged": true,
+      "original_export_unchanged": true,
+      "incremental_accounting": {
+        "status": "verified",
+        "actual_new_observations": 15,
+        "physical_reservations": 104,
+        "packages": 2,
+        "usage": {
+          "reserved_episodes": 15,
+          "episodes_with_observed_model_send_lower_bound": 15,
+          "known_model_http_requests": 66,
+          "actual_model_http_requests": 66,
+          "known_input_subtotal": 277682,
+          "complete_input_tokens": 277682,
+          "known_output_subtotal": 5401,
+          "complete_output_tokens": 5401,
+          "complete_currency_cost": null,
+          "currency_cost_status": "incomplete_or_unpriced",
+          "unknown_usage_run_ids": [],
+          "summed_observed_episode_duration_ms": 449620.12046
+        },
+        "model_requests": 0,
+        "scope": "public package statistics, incremental counts/costs and new Own lineage; prior89 remains linked"
+      },
+      "subject_model_requests": 0,
+      "limitations": [
+        "Private raw hash chains, graders, live quiet/PID state and historical results are not replayed.",
+        "This checks the new release inventory and actual per-package replays. It does not grant product acceptance or another dispatch.",
+        "Only analysis, tables and quality.svg are claimed byte-identical; input/time title-only differences are explicitly listed."
+      ]
+    }
+  },
+  "source_identities": {
+    "controller_file_sha256": "62055507c7aa4d6a298841bd74cc7db2dc5d03e302f33c46846a653904cf719c",
+    "authority_file_sha256": "a175a394944c7554ddb458fc8dcc164530bf9a38d1f9f3dd3b69c122b1db3e4f",
+    "apparatus_repair_file_sha256": "ffc99433f052cfec565585ec0081e75df3c68a116a15df166d58a9c75242a065",
+    "publisher_sha256": "219791be176bf722248c3a2a3d73738647f2dd97cc6aadab1877391e6858f236",
+    "adapter_sha256": "f9eabd425424978a91c13d215b6efcd0b8aede063d65e38ea8b2181a8139bb02"
+  },
+  "checkpoint_field_semantics": {
+    "valid_business_unknown": "Existing exporter name counts normalized result.outcome=unknown, the full contract outcome; business-only status is separate."
+  },
+  "report": {
+    "path": "docs/benchmark-observer-repair-continuation-2026-11-25.md",
+    "sha256": "d2a738f9762c49f67e698cff79ba463bd32e79674094d4a3cb57156a538405cd",
+    "bytes": 14044
+  },
+  "integration": {
+    "target_branch": "benchmark",
+    "base_commit": "65121fb82fe9b0ac6a0c7f722fe3b8284f982fab",
+    "exact_head_ci_and_merge_reported_by_pull_request": true,
+    "ci_or_merge_claimed_in_this_file": false
+  },
+  "limitations": [
+    "Counts of closed observations are not counts of passing experiments.",
+    "Own scientific denominator20 and CodeMode24 remain separate; no pooled scientific scores.",
+    "Business-only checks and full-contract outcomes are separate.",
+    "The source stopped003 and six historical unknown-usage records remain unchanged.",
+    "No complete historical monetary cost is available.",
+    "Independent replay checks normalized public projections; no private grading or historical model execution is repeated.",
+    "Input/time charts have only the documented title differences; not all13 report files are claimed byte-identical.",
+    "Known-value privacy checks do not guarantee detection of every unknown private value."
+  ]
+}

@@ -1,0 +1,864 @@
+{
+  "version": 1,
+  "kind": "descriptive-own20-incremental-lineage",
+  "linked_history": {
+    "commit": "65121fb82fe9b0ac6a0c7f722fe3b8284f982fab",
+    "path": "benchmark/results/2026-11-24-own-provider-stop89",
+    "url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+    "release_manifest_sha256": "030763d78896f08694115b9495b1041c8c7b1b5d4283392b5bf1775bf42a71ec",
+    "physical_reservations": 89,
+    "status": "linked_not_replayed"
+  },
+  "rows": [
+    {
+      "original_slot_number": 1,
+      "original_order": 0,
+      "original_slot_id": "m0-e1--continuation-01-a-n16-r2--r0",
+      "case_id": "continuation-01-a-n16-r2",
+      "condition_id": "m0-e1",
+      "owner_experiment_id": "benchmark-own-product-confirmation-2",
+      "physical_ordinal": 78,
+      "run_id": "benchmark-own-product-confirmation-2-001",
+      "admission": {
+        "status": "valid"
+      },
+      "source_episode_sha256": "b30433165d888f7e9d741b28baed78128a4bb2afd5289e1053cd526dd7d01fc0",
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/0"
+      }
+    },
+    {
+      "original_slot_number": 2,
+      "original_order": 1,
+      "original_slot_id": "m0-e0--continuation-01-a-n16-r2--r0",
+      "case_id": "continuation-01-a-n16-r2",
+      "condition_id": "m0-e0",
+      "owner_experiment_id": "benchmark-own-product-confirmation-2",
+      "physical_ordinal": 79,
+      "run_id": "benchmark-own-product-confirmation-2-002",
+      "admission": {
+        "status": "valid"
+      },
+      "source_episode_sha256": "e3975378ca6f6d79e35c1ed7e929a96eaca85208fef847f75b2d55247b6c7332",
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/1"
+      }
+    },
+    {
+      "original_slot_number": 3,
+      "original_order": 2,
+      "original_slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+      "case_id": "explicit-01-a-n16-r1",
+      "condition_id": "m0-e0",
+      "owner_experiment_id": "benchmark-own-product-confirmation-2",
+      "physical_ordinal": 80,
+      "run_id": "benchmark-own-product-confirmation-2-003",
+      "admission": {
+        "status": "invalid"
+      },
+      "source_episode_sha256": "090c3a496d321833f3d782e5be723f7a636a8a125d7015bf3b3b151d39b0848f",
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/2"
+      }
+    },
+    {
+      "original_slot_number": 4,
+      "original_order": 3,
+      "original_slot_id": "m0-e1--explicit-01-a-n16-r1--r0",
+      "case_id": "explicit-01-a-n16-r1",
+      "condition_id": "m0-e1",
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "physical_ordinal": 81,
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-001",
+      "admission": {
+        "status": "valid"
+      },
+      "source_episode_sha256": "6a1742ac71a1e1aae2d7667f7c83be2555261c3c024c506b7f4468b226082d21",
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/3"
+      }
+    },
+    {
+      "original_slot_number": 5,
+      "original_order": 4,
+      "original_slot_id": "m0-e1--equivalent-01-a-n16-r1--r0",
+      "case_id": "equivalent-01-a-n16-r1",
+      "condition_id": "m0-e1",
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "physical_ordinal": 82,
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-002",
+      "admission": {
+        "status": "valid"
+      },
+      "source_episode_sha256": "5e7af7f5709db61029da160527aecc283e54f94f3e3efa4e472b9b6fd11233b9",
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/4"
+      }
+    },
+    {
+      "original_slot_number": 6,
+      "original_order": 5,
+      "original_slot_id": "m0-e0--equivalent-01-a-n16-r1--r0",
+      "case_id": "equivalent-01-a-n16-r1",
+      "condition_id": "m0-e0",
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "physical_ordinal": 83,
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-003",
+      "admission": {
+        "status": "valid"
+      },
+      "source_episode_sha256": "99e07cc516aca0cf795ddfd4059ac9580193f932d504a935e70c4a5fb90681c7",
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/5"
+      }
+    },
+    {
+      "original_slot_number": 7,
+      "original_order": 6,
+      "original_slot_id": "m0-e0--task-switch-01-a-n16-r2--r0",
+      "case_id": "task-switch-01-a-n16-r2",
+      "condition_id": "m0-e0",
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "physical_ordinal": 84,
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-004",
+      "admission": {
+        "status": "valid"
+      },
+      "source_episode_sha256": "d802263e272c12327dedd0efe08b07b3174f1009d970f92e3433b6704f56eb74",
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/6"
+      }
+    },
+    {
+      "original_slot_number": 8,
+      "original_order": 7,
+      "original_slot_id": "m0-e1--task-switch-01-a-n16-r2--r0",
+      "case_id": "task-switch-01-a-n16-r2",
+      "condition_id": "m0-e1",
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "physical_ordinal": 85,
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-005",
+      "admission": {
+        "status": "valid"
+      },
+      "source_episode_sha256": "756e44a0f122ccb2eb8726355447ff79e9a7e1062ac8e08d5f6abf26edc5c54d",
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/7"
+      }
+    },
+    {
+      "original_slot_number": 9,
+      "original_order": 8,
+      "original_slot_id": "m0-e1--complementary-01-a-n16-r1--r0",
+      "case_id": "complementary-01-a-n16-r1",
+      "condition_id": "m0-e1",
+      "owner_experiment_id": "benchmark-own-product-confirmation-unstarted-17-1",
+      "physical_ordinal": 86,
+      "run_id": "benchmark-own-product-confirmation-unstarted-17-1-006",
+      "admission": {
+        "status": "invalid"
+      },
+      "source_episode_sha256": "505d1b31cd161f35fce13e381936073bc450ae7a74fd545930f94e8969d898a1",
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/8"
+      }
+    },
+    {
+      "original_slot_number": 10,
+      "original_order": 9,
+      "original_slot_id": "m0-e0--complementary-01-a-n16-r1--r0",
+      "case_id": "complementary-01-a-n16-r1",
+      "condition_id": "m0-e0",
+      "owner_experiment_id": "benchmark-own-product-provider-stop-unstarted-11-1",
+      "physical_ordinal": 87,
+      "run_id": "benchmark-own-product-provider-stop-unstarted-11-1-001",
+      "admission": {
+        "status": "valid",
+        "reasons": []
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "unknown",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "source_episode_sha256": "387e864d5d42dea2ccd4127e4f15c24efbf075c1cf46e42a61744af5af95e1a7",
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/9"
+      }
+    },
+    {
+      "original_slot_number": 11,
+      "original_order": 10,
+      "original_slot_id": "m0-e0--references-01-a-n16-r1--r0",
+      "case_id": "references-01-a-n16-r1",
+      "condition_id": "m0-e0",
+      "owner_experiment_id": "benchmark-own-product-provider-stop-unstarted-11-1",
+      "physical_ordinal": 88,
+      "run_id": "benchmark-own-product-provider-stop-unstarted-11-1-002",
+      "admission": {
+        "status": "valid",
+        "reasons": []
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "unknown",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "source_episode_sha256": "363760ba2e01688dea951f591219aef0954bbd844fc4bf4b5d7dc5eb70a51953",
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/10"
+      }
+    },
+    {
+      "original_slot_number": 12,
+      "original_order": 11,
+      "original_slot_id": "m0-e1--references-01-a-n16-r1--r0",
+      "case_id": "references-01-a-n16-r1",
+      "condition_id": "m0-e1",
+      "owner_experiment_id": "benchmark-own-product-provider-stop-unstarted-11-1",
+      "physical_ordinal": 89,
+      "run_id": "benchmark-own-product-provider-stop-unstarted-11-1-003",
+      "admission": {
+        "status": "invalid",
+        "reasons": [
+          "core_notion_evidence_incomplete",
+          "runtime_not_a_business_episode:invalid"
+        ]
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "not_applicable",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "source_episode_sha256": "b53c918f20bd02480675fd392d5b95d5569919771493af7025708f9c674b13b8",
+      "original_stop_batch": true,
+      "original_stop_reason": "subject_requested_stop",
+      "state": "linked_observation",
+      "linked_public_observation": {
+        "release_url": "https://github.com/yoyooyooo/pi-context-broker/tree/65121fb82fe9b0ac6a0c7f722fe3b8284f982fab/benchmark/results/2026-11-24-own-provider-stop89",
+        "file": "own20-lineage.json",
+        "file_sha256": "4ec5ede6d9de07686a228a7255f17e3f62af1bf79e05d39d23d8b62a893f18d7",
+        "pointer": "/rows/11"
+      }
+    },
+    {
+      "original_slot_number": 13,
+      "original_order": 12,
+      "original_slot_id": "m0-e1--scripts-assets-01-a-n16-r1--r0",
+      "case_id": "scripts-assets-01-a-n16-r1",
+      "condition_id": "m0-e1",
+      "state": "closed_observation",
+      "owner_experiment_id": "benchmark-own-product-observer-repair-unstarted-8-3",
+      "physical_ordinal": 90,
+      "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-001",
+      "source_episode_sha256": "92a36e08c1ffc7e635f3cc4a0eb978abb0f4da05508369d7f115c999367a792e",
+      "admission": {
+        "completeness": {
+          "attempts": "complete",
+          "interventions": "complete",
+          "tools": "complete"
+        },
+        "reasons": [],
+        "refs": [
+          {
+            "artifact_id": "collection-launcher-result",
+            "pointer": "",
+            "sha256": "0efbd5f9506e475bd3149392f1326cea1c02b24af9dce7488f08830eb92852e8"
+          },
+          {
+            "artifact_id": "collection-readback",
+            "pointer": "",
+            "sha256": "899023bc5f1c39be7fd0f3c8fe5eeee033c4eb41d63755e39c995bcd2b4fd70a"
+          },
+          {
+            "artifact_id": "collection-runtime-result",
+            "pointer": "",
+            "sha256": "8151e6d6a73994aafbdb9a8836256ed210bbb03d9bba2da0489de62e892f1281"
+          }
+        ],
+        "status": "valid"
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "unknown",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "usage": {
+        "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-001",
+        "known_model_http_requests": 5,
+        "actual_model_http_requests": 5,
+        "known_input_subtotal": 24340,
+        "complete_input_tokens": 24340,
+        "known_output_subtotal": 521,
+        "complete_output_tokens": 521,
+        "duration_ms": 42486.859249999994,
+        "currency_cost": null
+      },
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "public_episode_reference": {
+        "public_episode_sha256": "cac7a24fc5de1a18a8f0754e57dc7222bd570bc79157b1a8070aeb74117789cb",
+        "public_file": "packages/own-product-observer-repair-unstarted-8-3/analysis-input.json",
+        "public_file_sha256": "0533c961a1aaa9b8fd9ac729a9b956d5d6aa6e7470a3edc88d23c7eca2a31c02",
+        "pointer": "/episodes/0"
+      }
+    },
+    {
+      "original_slot_number": 14,
+      "original_order": 13,
+      "original_slot_id": "m0-e0--scripts-assets-01-a-n16-r1--r0",
+      "case_id": "scripts-assets-01-a-n16-r1",
+      "condition_id": "m0-e0",
+      "state": "closed_observation",
+      "owner_experiment_id": "benchmark-own-product-observer-repair-unstarted-8-3",
+      "physical_ordinal": 91,
+      "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-002",
+      "source_episode_sha256": "acfda8985d68457b3a9bf56bca087fe929cd2df7ddfff352ead1bcb5af9fac39",
+      "admission": {
+        "completeness": {
+          "attempts": "complete",
+          "interventions": "complete",
+          "tools": "complete"
+        },
+        "reasons": [],
+        "refs": [
+          {
+            "artifact_id": "collection-launcher-result",
+            "pointer": "",
+            "sha256": "bb19fc46e823ced0d801b174f81e1557bbaeea8e4f5d9d949093ddd8ec6256ee"
+          },
+          {
+            "artifact_id": "collection-readback",
+            "pointer": "",
+            "sha256": "0e8fa6b1a42d5bd6d22bc903834630d200d84f0163ea2ffa521fb5d3b4dec9aa"
+          },
+          {
+            "artifact_id": "collection-runtime-result",
+            "pointer": "",
+            "sha256": "7fd998ddfdd3f86f31b488037db208684c7204229a49ad0403fb832e1f5a5591"
+          }
+        ],
+        "status": "valid"
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "unknown",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "usage": {
+        "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-002",
+        "known_model_http_requests": 5,
+        "actual_model_http_requests": 5,
+        "known_input_subtotal": 24491,
+        "complete_input_tokens": 24491,
+        "known_output_subtotal": 647,
+        "complete_output_tokens": 647,
+        "duration_ms": 47271.255750000004,
+        "currency_cost": null
+      },
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "public_episode_reference": {
+        "public_episode_sha256": "fdae535b9e1cce7469a5fa0df2a9012523d7177ba7ec2d95e58cb13abb3cb208",
+        "public_file": "packages/own-product-observer-repair-unstarted-8-3/analysis-input.json",
+        "public_file_sha256": "0533c961a1aaa9b8fd9ac729a9b956d5d6aa6e7470a3edc88d23c7eca2a31c02",
+        "pointer": "/episodes/1"
+      }
+    },
+    {
+      "original_slot_number": 15,
+      "original_order": 14,
+      "original_slot_id": "m0-e0--implicit-01-a-n16-r1--r0",
+      "case_id": "implicit-01-a-n16-r1",
+      "condition_id": "m0-e0",
+      "state": "closed_observation",
+      "owner_experiment_id": "benchmark-own-product-observer-repair-unstarted-8-3",
+      "physical_ordinal": 92,
+      "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-003",
+      "source_episode_sha256": "dffb960e61c687640a54706f682e5c54d8cd130525069a0e93005a2c421ca7c6",
+      "admission": {
+        "completeness": {
+          "attempts": "complete",
+          "interventions": "complete",
+          "tools": "complete"
+        },
+        "reasons": [],
+        "refs": [
+          {
+            "artifact_id": "collection-launcher-result",
+            "pointer": "",
+            "sha256": "d80c09dc64fbc4fc561d0223bbebadabc329c245b9686662a55bfbeb033ce961"
+          },
+          {
+            "artifact_id": "collection-readback",
+            "pointer": "",
+            "sha256": "264baa9a1975f32d3c621f23bf944e5bd6448502fcb4f4097b286d84097b5cba"
+          },
+          {
+            "artifact_id": "collection-runtime-result",
+            "pointer": "",
+            "sha256": "dbb75a9b8cec59eb365f46d633a7c23a12a519e4d4e75b903d5b71205544fe9f"
+          }
+        ],
+        "status": "valid"
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "unknown",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "usage": {
+        "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-003",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 17298,
+        "complete_input_tokens": 17298,
+        "known_output_subtotal": 249,
+        "complete_output_tokens": 249,
+        "duration_ms": 47330.783083,
+        "currency_cost": null
+      },
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "public_episode_reference": {
+        "public_episode_sha256": "d400dd34e8e7b8a01b2de78a558bce3d5e95665d5e759a0b9e006ca6ff55c9ee",
+        "public_file": "packages/own-product-observer-repair-unstarted-8-3/analysis-input.json",
+        "public_file_sha256": "0533c961a1aaa9b8fd9ac729a9b956d5d6aa6e7470a3edc88d23c7eca2a31c02",
+        "pointer": "/episodes/2"
+      }
+    },
+    {
+      "original_slot_number": 16,
+      "original_order": 15,
+      "original_slot_id": "m0-e1--implicit-01-a-n16-r1--r0",
+      "case_id": "implicit-01-a-n16-r1",
+      "condition_id": "m0-e1",
+      "state": "closed_observation",
+      "owner_experiment_id": "benchmark-own-product-observer-repair-unstarted-8-3",
+      "physical_ordinal": 93,
+      "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-004",
+      "source_episode_sha256": "3ebe12d5208942500b34391aed5cb3983d2057147464505038d7ae0bde6e6050",
+      "admission": {
+        "completeness": {
+          "attempts": "complete",
+          "interventions": "complete",
+          "tools": "complete"
+        },
+        "reasons": [],
+        "refs": [
+          {
+            "artifact_id": "collection-launcher-result",
+            "pointer": "",
+            "sha256": "b1ed8587e4945d02ad6f684869f1fbeca0df95e50821a39aa0812c2405a33f4a"
+          },
+          {
+            "artifact_id": "collection-readback",
+            "pointer": "",
+            "sha256": "d964059657b45414a262975f15aa19a60e7306a32f18328bbc58d48c158c3725"
+          },
+          {
+            "artifact_id": "collection-runtime-result",
+            "pointer": "",
+            "sha256": "15ada333254b1947f2cb9be5e088e97f34822525697e16456cde76bb4e6b43b5"
+          }
+        ],
+        "status": "valid"
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "unknown",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "usage": {
+        "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-004",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 17983,
+        "complete_input_tokens": 17983,
+        "known_output_subtotal": 247,
+        "complete_output_tokens": 247,
+        "duration_ms": 31558.404209,
+        "currency_cost": null
+      },
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "public_episode_reference": {
+        "public_episode_sha256": "00ae20e481552609a7209d67ff4fb72f474cf8fde3b45467a6f66d55f89e0e9a",
+        "public_file": "packages/own-product-observer-repair-unstarted-8-3/analysis-input.json",
+        "public_file_sha256": "0533c961a1aaa9b8fd9ac729a9b956d5d6aa6e7470a3edc88d23c7eca2a31c02",
+        "pointer": "/episodes/3"
+      }
+    },
+    {
+      "original_slot_number": 17,
+      "original_order": 16,
+      "original_slot_id": "m0-e1--no-skill-01-a-n16-r1--r0",
+      "case_id": "no-skill-01-a-n16-r1",
+      "condition_id": "m0-e1",
+      "state": "closed_observation",
+      "owner_experiment_id": "benchmark-own-product-observer-repair-unstarted-8-3",
+      "physical_ordinal": 94,
+      "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-005",
+      "source_episode_sha256": "d6c1c5da5571545c0b7eec60a4a465b4407587bd620ef90f4356dcc643684d6f",
+      "admission": {
+        "completeness": {
+          "attempts": "complete",
+          "interventions": "complete",
+          "tools": "complete"
+        },
+        "reasons": [],
+        "refs": [
+          {
+            "artifact_id": "collection-launcher-result",
+            "pointer": "",
+            "sha256": "eb7236c25a06f23440e9e9deead9029cc0830a6bc4f24d18501e73174238446c"
+          },
+          {
+            "artifact_id": "collection-readback",
+            "pointer": "",
+            "sha256": "a7a00f5a8e98a27cdd0a002a510ae5f209180231b69c001d63fb6cb86ffe20cf"
+          },
+          {
+            "artifact_id": "collection-runtime-result",
+            "pointer": "",
+            "sha256": "e4deb81f991334dd4939fe1b99824fd9347c3902266801f253a84b0ed76871b0"
+          }
+        ],
+        "status": "valid"
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "pass",
+        "unassisted_success": true,
+        "verified_success": true
+      },
+      "usage": {
+        "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-005",
+        "known_model_http_requests": 3,
+        "actual_model_http_requests": 3,
+        "known_input_subtotal": 12403,
+        "complete_input_tokens": 12403,
+        "known_output_subtotal": 152,
+        "complete_output_tokens": 152,
+        "duration_ms": 23610.450375,
+        "currency_cost": null
+      },
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "public_episode_reference": {
+        "public_episode_sha256": "607e377422b4412542dcc4bfd5d19a523b92545ed10686d5664987be1f0a44e8",
+        "public_file": "packages/own-product-observer-repair-unstarted-8-3/analysis-input.json",
+        "public_file_sha256": "0533c961a1aaa9b8fd9ac729a9b956d5d6aa6e7470a3edc88d23c7eca2a31c02",
+        "pointer": "/episodes/4"
+      }
+    },
+    {
+      "original_slot_number": 18,
+      "original_order": 17,
+      "original_slot_id": "m0-e0--no-skill-01-a-n16-r1--r0",
+      "case_id": "no-skill-01-a-n16-r1",
+      "condition_id": "m0-e0",
+      "state": "closed_observation",
+      "owner_experiment_id": "benchmark-own-product-observer-repair-unstarted-8-3",
+      "physical_ordinal": 95,
+      "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-006",
+      "source_episode_sha256": "8ba027130823174e8637edf1b823ce031f1c3a2714ddf3401975217e99aafa95",
+      "admission": {
+        "completeness": {
+          "attempts": "complete",
+          "interventions": "complete",
+          "tools": "complete"
+        },
+        "reasons": [],
+        "refs": [
+          {
+            "artifact_id": "collection-launcher-result",
+            "pointer": "",
+            "sha256": "e18e55e40c6fa2d8f2350f48ba5706c989c71897d3a4d451d1f0e7b067cf8846"
+          },
+          {
+            "artifact_id": "collection-readback",
+            "pointer": "",
+            "sha256": "d8675d7f7cbbd787921a9d1f59992062697b4e86676ddff7a599ddf3cdedcdc4"
+          },
+          {
+            "artifact_id": "collection-runtime-result",
+            "pointer": "",
+            "sha256": "76345410c685dd207b6fd5356fcbbff9351be63ee956e36b702916eada42dc62"
+          }
+        ],
+        "status": "valid"
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "pass",
+        "unassisted_success": true,
+        "verified_success": true
+      },
+      "usage": {
+        "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-006",
+        "known_model_http_requests": 3,
+        "actual_model_http_requests": 3,
+        "known_input_subtotal": 11853,
+        "complete_input_tokens": 11853,
+        "known_output_subtotal": 126,
+        "complete_output_tokens": 126,
+        "duration_ms": 14935.012084,
+        "currency_cost": null
+      },
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "public_episode_reference": {
+        "public_episode_sha256": "ef56909739dd24cf166502d2dd2a9a1bd29c73363661b92ce7d2cef0366f5365",
+        "public_file": "packages/own-product-observer-repair-unstarted-8-3/analysis-input.json",
+        "public_file_sha256": "0533c961a1aaa9b8fd9ac729a9b956d5d6aa6e7470a3edc88d23c7eca2a31c02",
+        "pointer": "/episodes/5"
+      }
+    },
+    {
+      "original_slot_number": 19,
+      "original_order": 18,
+      "original_slot_id": "m0-e0--ambiguity-01-a-n16-r1--r0",
+      "case_id": "ambiguity-01-a-n16-r1",
+      "condition_id": "m0-e0",
+      "state": "closed_observation",
+      "owner_experiment_id": "benchmark-own-product-observer-repair-unstarted-8-3",
+      "physical_ordinal": 96,
+      "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-007",
+      "source_episode_sha256": "59b187f466a7cb779551255989fd9f8070918e7d7d396fd894e45fafcae41d21",
+      "admission": {
+        "completeness": {
+          "attempts": "complete",
+          "interventions": "complete",
+          "tools": "complete"
+        },
+        "reasons": [],
+        "refs": [
+          {
+            "artifact_id": "collection-launcher-result",
+            "pointer": "",
+            "sha256": "e27ca96e1637d85d6e10e8ec435c59d2210732003cd0cf3ff640893e7fce1807"
+          },
+          {
+            "artifact_id": "collection-readback",
+            "pointer": "",
+            "sha256": "9893e890cd5410f5341c4d2fe20ae28eae437f7ecbdc5c8f62623f250b0a0fbc"
+          },
+          {
+            "artifact_id": "collection-runtime-result",
+            "pointer": "",
+            "sha256": "b5b4f9bb39d72ba1566f5502c495e4e419683d99ac01ec41b0e33a2356f448aa"
+          },
+          {
+            "artifact_id": "collection-turn-control-receipt",
+            "pointer": "",
+            "sha256": "67f7049a3166511f76f0f872a516471c09ecbeb9d689b2426103024c1e6d1789"
+          },
+          {
+            "artifact_id": "collection-turn-controller-journal",
+            "line": 1,
+            "sha256": "f49157260bc6dcbb4e85cd79541348f4e68d93152190e294d61b36ea205aa5e6"
+          },
+          {
+            "artifact_id": "collection-turn-controller-journal",
+            "line": 6,
+            "sha256": "f49157260bc6dcbb4e85cd79541348f4e68d93152190e294d61b36ea205aa5e6"
+          },
+          {
+            "artifact_id": "collection-turn-subject-result",
+            "pointer": "",
+            "sha256": "e058d721c87a4dc7cc368a2875c03bdcff0fa38d945af137935518ba36ae73a8"
+          },
+          {
+            "artifact_id": "collection-turn-subject-journal",
+            "line": 1,
+            "sha256": "7fb70b57559053cb04a903c7c1fbd1bba4ad4ef43be5cf7a473ffe6b1ee313b3"
+          },
+          {
+            "artifact_id": "collection-turn-subject-journal",
+            "line": 6,
+            "sha256": "7fb70b57559053cb04a903c7c1fbd1bba4ad4ef43be5cf7a473ffe6b1ee313b3"
+          }
+        ],
+        "status": "valid"
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "unknown",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "usage": {
+        "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-007",
+        "known_model_http_requests": 5,
+        "actual_model_http_requests": 5,
+        "known_input_subtotal": 21377,
+        "complete_input_tokens": 21377,
+        "known_output_subtotal": 281,
+        "complete_output_tokens": 281,
+        "duration_ms": 31959.048959,
+        "currency_cost": null
+      },
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "public_episode_reference": {
+        "public_episode_sha256": "2571735fe0899e987ad352c20f5674fc2238a8311db64922ce0205ae3c0b9966",
+        "public_file": "packages/own-product-observer-repair-unstarted-8-3/analysis-input.json",
+        "public_file_sha256": "0533c961a1aaa9b8fd9ac729a9b956d5d6aa6e7470a3edc88d23c7eca2a31c02",
+        "pointer": "/episodes/6"
+      }
+    },
+    {
+      "original_slot_number": 20,
+      "original_order": 19,
+      "original_slot_id": "m0-e1--ambiguity-01-a-n16-r1--r0",
+      "case_id": "ambiguity-01-a-n16-r1",
+      "condition_id": "m0-e1",
+      "state": "closed_observation",
+      "owner_experiment_id": "benchmark-own-product-observer-repair-unstarted-8-3",
+      "physical_ordinal": 97,
+      "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-008",
+      "source_episode_sha256": "294a4bf72b172690a780556c22d4b3361c55892773ad77f6442472ddbf8fed65",
+      "admission": {
+        "completeness": {
+          "attempts": "complete",
+          "interventions": "complete",
+          "tools": "complete"
+        },
+        "reasons": [],
+        "refs": [
+          {
+            "artifact_id": "collection-launcher-result",
+            "pointer": "",
+            "sha256": "6d504addfeae0a6a36e0b1b462ef777752381e1514b3b3123b6b1be7f44b43f9"
+          },
+          {
+            "artifact_id": "collection-readback",
+            "pointer": "",
+            "sha256": "3aadd9b701c52119786cb7cc18411232947991e27c56c70accd84e6a23244708"
+          },
+          {
+            "artifact_id": "collection-runtime-result",
+            "pointer": "",
+            "sha256": "f097715cadbfe66ff76de417142616b88b49888e43aa5ded243a594326266628"
+          },
+          {
+            "artifact_id": "collection-turn-control-receipt",
+            "pointer": "",
+            "sha256": "6052c39d10408c0ea09a43bdda9185aaf4a801b1a36277824b4b592770ffcd67"
+          },
+          {
+            "artifact_id": "collection-turn-controller-journal",
+            "line": 1,
+            "sha256": "b4e14f1f1a71e996f93d3031e3f04d8292d8bf737b917a38f27766b76ab15617"
+          },
+          {
+            "artifact_id": "collection-turn-controller-journal",
+            "line": 6,
+            "sha256": "b4e14f1f1a71e996f93d3031e3f04d8292d8bf737b917a38f27766b76ab15617"
+          },
+          {
+            "artifact_id": "collection-turn-subject-result",
+            "pointer": "",
+            "sha256": "cd62b8085390923a8182059f51b65e863df6deaa19e9e1559bc65f0955dceb65"
+          },
+          {
+            "artifact_id": "collection-turn-subject-journal",
+            "line": 1,
+            "sha256": "92bb689e76efb4707722d579d22035343dc2d57e4473f79ef8a8f39f9885d78c"
+          },
+          {
+            "artifact_id": "collection-turn-subject-journal",
+            "line": 6,
+            "sha256": "92bb689e76efb4707722d579d22035343dc2d57e4473f79ef8a8f39f9885d78c"
+          }
+        ],
+        "status": "valid"
+      },
+      "result": {
+        "critical_failures": [],
+        "outcome": "unknown",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "usage": {
+        "run_id": "benchmark-own-product-observer-repair-unstarted-8-3-008",
+        "known_model_http_requests": 6,
+        "actual_model_http_requests": 6,
+        "known_input_subtotal": 27715,
+        "complete_input_tokens": 27715,
+        "known_output_subtotal": 310,
+        "complete_output_tokens": 310,
+        "duration_ms": 33119.400708,
+        "currency_cost": null
+      },
+      "original_stop_batch": false,
+      "original_stop_reason": null,
+      "public_episode_reference": {
+        "public_episode_sha256": "c6cb78b05a44f2ef0e3ca085d06ac8feb3afb6cd3edfa7ec0553362f3a1fafc5",
+        "public_file": "packages/own-product-observer-repair-unstarted-8-3/analysis-input.json",
+        "public_file_sha256": "0533c961a1aaa9b8fd9ac729a9b956d5d6aa6e7470a3edc88d23c7eca2a31c02",
+        "pointer": "/episodes/7"
+      }
+    }
+  ],
+  "combined_scores_computed": false,
+  "scientific_denominator": 20,
+  "current_dispatch_limit": 8,
+  "current_primary_inputs": 8
+}
