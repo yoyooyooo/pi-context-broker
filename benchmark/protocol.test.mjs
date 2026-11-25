@@ -72,6 +72,36 @@ function assertCode(value, code, options = { stage: 'execute' }) {
   for (const error of result.errors) { assert.equal(typeof error.path, 'string'); assert.equal(typeof error.message, 'string'); }
 }
 
+test('standing protocols explicitly remove quotas and expiry while binding one complete scientific schedule', () => {
+  const value = frozenFixture(), epoch = { id: 'synthetic-standing-epoch', started_at: '2026-11-25T07:00:00Z',
+    authorization: { path: '/synthetic/grant.json', sha256: digest('standing-grant') } };
+  value.policies.campaign = { version: 1, kind: 'benchmark-standing-campaign', id: 'synthetic-attempt', role: 'task_continuation',
+    authorization_id: 'synthetic-grant', work_plan_id: 'synthetic-work-plan', work_item_id: 'synthetic-item',
+    condition_epoch: epoch, planned_episodes: declaredSchedule(value).length, resource_policy: { mode: 'unbounded' } };
+  value.policies.pilot.max_scheduled_episodes = null; value.policies.pilot.route_gate_episodes = null;
+  value.policies.reruns.max_episodes = null;
+  value.policies.analysis = { capped_time_horizon_ms: 60000 };
+  const budget = value.policies.budgets[0]; budget.mode = 'unbounded';
+  for (const key of Object.keys(budget.episode)) budget.episode[key] = null;
+  for (const key of Object.keys(budget.batch)) if (key !== 'max_concurrency') budget.batch[key] = null;
+  value.models.forEach(model => {
+    model.route = 'fixed/' + model.id;
+    model.routing = { mode: 'fixed-route', model_variant: model.id, reported_model_ids: [model.route] };
+    model.backend.window = { mode: 'standing', start: epoch.started_at, end: null };
+  });
+  assertValid(seal(value));
+  for (const [change, code] of [
+    [v => { delete v.policies.campaign; }, 'standing_authorization_required'],
+    [v => { delete v.policies.budgets[0].mode; }, 'standing_resource_policy'],
+    [v => { v.policies.budgets[0].episode.max_model_requests = 5; }, 'unbounded_resource_limits'],
+    [v => { v.policies.pilot.max_scheduled_episodes = 144; }, 'standing_resource_policy'],
+    [v => { v.policies.campaign.planned_episodes++; }, 'standing_schedule'],
+    [v => { delete v.policies.analysis; }, 'standing_analysis_horizon'],
+    [v => { v.models[0].backend.window.start = '2026-11-26T07:00:00Z'; }, 'condition_epoch_mismatch'],
+    [v => { delete v.models[0].backend.window.mode; }, 'route_window_invalid'],
+  ]) { const changed = clone(value); change(changed); assertCode(seal(changed), code); }
+});
+
 test('the engineering-window role freezes a descriptive pilot suffix while retaining integer millisecond limits', () => {
   const value = frozenFixture(), selected = declaredSchedule(value).slice(1);
   value.policies.campaign = { version: 1, kind: 'benchmark-finite-campaign', id: 'synthetic-engineering-window', role: ENGINEERING_WINDOW_CONTINUATION,

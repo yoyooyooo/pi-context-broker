@@ -11,12 +11,13 @@ import { verifyExecutionImplementation } from './implementation.mjs';
 import { verifyZeroSendRepair } from './resumption.mjs';
 import { readEpisodeFixtureBindings } from './fixture-dispatch.mjs';
 import { verifyCollectionRecovery, verifyCollectionRecoveryResults } from './collection-recovery.mjs';
+import { modelWindowContains } from './model-window.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
 
 export function assertSubjectModelWindow(model, now = Date.now()) {
-  assert.ok(now >= Date.parse(model.backend.window.start) && now < Date.parse(model.backend.window.end), 'The declared model route window has expired');
+  assert.ok(modelWindowContains(model.backend.window, now), 'The declared model route window is not open');
 }
 
 export async function loadExecution(plan) {
@@ -178,7 +179,7 @@ export async function executeBatchPlan({ plan, maximumNewEpisodes = Infinity, an
       assertSubjectModelWindow(model);
       const raw = await runSubject({ environmentRoot: input.environment_root, buildId: candidate.build_id,
         mode: candidate.mode, binding, model: { ...model, baseUrl: input.model_base_url }, modelsFile: input.models_file,
-        runtime: input.runtime, controlRoot: input.control_root, runId, conditionId: condition.id, budget: budget.episode,
+        runtime: input.runtime, controlRoot: input.control_root, runId, conditionId: condition.id, budget: budget.episode, budgetMode: budget.mode ?? 'bounded',
         codeMode: condition.code_mode, expected: expectation, credential: input.credential,
         notionEntry: candidate.mode === 'broker' ? binding.notion_entry ?? candidate.notion_entry : undefined });
       return storeResult(raw, slot);

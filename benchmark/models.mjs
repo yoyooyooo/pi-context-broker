@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { validateRoutingPolicy } from './reported-model.mjs';
+import { validModelWindow } from './model-window.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const APIS = new Set(['openai-completions', 'openai-responses']);
@@ -57,7 +58,7 @@ export async function resolveModelCredential({ sourceFile, provider, apiKeyEnv =
 }
 
 export function verifiedModelConditions({ registry, adapterReceipts, parameters, window, routing }) {
-  assert.ok(Date.parse(window.start) < Date.parse(window.end));
+  assert.ok(validModelWindow(window), 'Model condition window is invalid');
   if (routing !== undefined) {
     assert.ok(routing && typeof routing === 'object' && !Array.isArray(routing), 'Routing policies must be keyed by selected route');
     assert.deepEqual(Object.keys(routing).sort(), registry.models.map(model => model.id).sort(), 'Every selected route needs exactly one frozen routing policy');

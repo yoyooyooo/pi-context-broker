@@ -28,6 +28,7 @@ export function createAnalysisPlan(protocol) {
   return {schema_version:1,id:protocol.id + '/analysis-plan',protocol_sha256:protocol.protocol_sha256,
     slots:[...slots.values()],confirmation:protocol.phase === 'confirmation',
     resource_bounds:structuredClone(policy.resource_bounds ?? {}),
+    ...(policy.capped_time_horizon_ms !== undefined ? {capped_time_horizon_ms:policy.capped_time_horizon_ms} : {}),
     ...(policy.success_budgets ? {success_budgets:structuredClone(policy.success_budgets)} : {}),
     ...(policy.interactions ? {interactions:structuredClone(policy.interactions)} : {})};
 }
@@ -91,9 +92,9 @@ const coverageValue=r=>outcomeFor(r)===null?null:['pass','fail'].includes(outcom
 const upperValue=r=>outcomeFor(r)===null?null:outcomeFor(r)==='fail'?0:1;
 
 function budgetCutoffs(condition,protocol,plan) {
-  const budget=protocol.policies.budgets.find(b=>b.id===condition.budget_id)?.episode;
-  return {time_ms:plan.success_budgets?.time_ms??[Math.round(budget.max_duration_ms/4),Math.round(budget.max_duration_ms/2),budget.max_duration_ms],
-    input_tokens:plan.success_budgets?.input_tokens??(budget.max_input_tokens?[Math.round(budget.max_input_tokens/4),Math.round(budget.max_input_tokens/2),budget.max_input_tokens]:[])};
+  const policy=protocol.policies.budgets.find(b=>b.id===condition.budget_id),budget=policy?.episode;
+  return {time_ms:plan.success_budgets?.time_ms??(policy?.mode==='unbounded'?[]:[Math.round(budget.max_duration_ms/4),Math.round(budget.max_duration_ms/2),budget.max_duration_ms]),
+    input_tokens:plan.success_budgets?.input_tokens??(policy?.mode!=='unbounded'&&budget.max_input_tokens?[Math.round(budget.max_input_tokens/4),Math.round(budget.max_input_tokens/2),budget.max_input_tokens]:[])};
 }
 function budgetValue(record,axis,cutoff) {
   const outcome=outcomeFor(record);
@@ -195,8 +196,8 @@ function metricsForCondition(condition, records, protocol, plan, maps, compariso
   const outputTotal=resource(records,maps,weights,e=>present(e.measurements.output_total.value));
   const rawTime=resource(records,maps,weights,e=>present(e.timing.duration_ms));
   const budget=protocol.policies.budgets.find(b=>b.id===condition.budget_id);
-  const tau=budget?.episode.max_duration_ms;
-  if(!Number.isFinite(tau)||tau<=0)throw new Error('Capped-time analysis requires the preregistered positive episode duration');
+  const tau=plan.capped_time_horizon_ms??budget?.episode.max_duration_ms;
+  if(!Number.isFinite(tau)||tau<=0)throw new Error('Capped-time analysis requires a preregistered positive measurement horizon or bounded episode duration');
   const capped=r=>cappedValue(r,tau);
   const cappedRows=caseRows(records,maps.cases,weights,capped);
   const within=(r,b)=>{

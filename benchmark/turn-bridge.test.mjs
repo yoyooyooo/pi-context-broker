@@ -99,6 +99,42 @@ async function retainProof(fixture, result, subjectResult, extra = {}) {
     result, subject: subjectResult, ...extra });
 }
 
+test('unbounded turn exchange completes with real child, delayed event, and no implicit null deadlines', { timeout: 15000 }, async () => {
+  const f = await setup('unbounded-exchange', { limits: { mode: 'unbounded', wallMs: null, waitMs: null, eventMs: null, pollMs: 5 } });
+  const controller = await createTurnBridgeController(f.config), subject = await launchSubject(f);
+  let writes = 0;
+  const result = await controller.serve({ subject: subject.done, executeEvent: async ({ eventId }) => {
+    await new Promise(resolve => setTimeout(resolve, 50)); writes++;
+    await writeFile(join(f.config.runRoot, 'workspace/policy.txt'), 'v2\n'); return receipt(f.config, eventId, 'applied');
+  } });
+  const exited = await subject.done;
+  assert.equal(result.status, 'completed'); assert.equal(exited.code, 0, exited.stderr); assert.equal(writes, 1);
+  await retainProof(f, result, exited, { actual_fixture_writes: writes });
+});
+
+test('unbounded controller remains cancellable while waiting for the subject', { timeout: 15000 }, async () => {
+  const f = await setup('unbounded-cancel', { events: [], limits: { mode: 'unbounded', wallMs: null, waitMs: null, eventMs: null, pollMs: 5 } });
+  const controller = await createTurnBridgeController(f.config), abort = new AbortController();
+  setTimeout(() => abort.abort(), 50);
+  const result = await controller.serve({ subject: new Promise(() => {}), signal: abort.signal });
+  assert.equal(result.status, 'stopped'); assert.equal(result.reason, 'TURN_BRIDGE_CANCELLED');
+});
+
+test('unbounded pending event cancels on subject exit and retains unknown effect without a resume', { timeout: 15000 }, async () => {
+  const f = await setup('unbounded-event-cancel', { limits: { mode: 'unbounded', wallMs: null, waitMs: null, eventMs: null, pollMs: 5 } });
+  const controller = await createTurnBridgeController(f.config), subject = await launchSubject(f, { cancelAfterMs: 100 });
+  let cancelled = false;
+  const result = await controller.serve({ subject: subject.done, executeEvent: ({ signal }) => new Promise(resolve => {
+    signal.addEventListener('abort', () => { cancelled = true; resolve({ status: 'unknown', effect_unknown: true }); }, { once: true });
+  }) });
+  const exited = await subject.done;
+  assert.equal(exited.code, 2); assert.equal(result.status, 'stopped'); assert.equal(cancelled, true);
+  const rows = await readTurnBridgeJournal(result.journal.path);
+  assert.equal(rows.find(row => row.type === 'event_result').data.result.status, 'unknown');
+  assert.equal(rows.some(row => row.type === 'checkpoint_decided' && row.data.response.action === 'continue'), false);
+  await retainProof(f, result, exited, { actual_fixture_writes: 0 });
+});
+
 test('real child pauses, receives only frozen public clarification, then observes one verified update in the same session', { timeout: 15000 }, async () => {
   const f = await setup('multiturn', { clarifications: [{ topic_id: 'delivery-mode', max_questions: 1, response: '请使用普通配送。', expected_value: 'PRIVATE_EXPECTED_VALUE_DO_NOT_DELIVER' }] });
   const controller = await createTurnBridgeController(f.config), subject = await launchSubject(f, { duplicateFirst: true });

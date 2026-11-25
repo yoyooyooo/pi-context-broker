@@ -105,7 +105,12 @@
           "routing": {
             "type": "object",
             "properties": {
-              "mode": { "enum": ["fixed-route", "auto-route"] },
+              "mode": {
+                "enum": [
+                  "fixed-route",
+                  "auto-route"
+                ]
+              },
               "model_variant": {
                 "type": "string",
                 "maxLength": 120,
@@ -121,7 +126,11 @@
                 }
               }
             },
-            "required": ["mode", "model_variant", "reported_model_ids"],
+            "required": [
+              "mode",
+              "model_variant",
+              "reported_model_ids"
+            ],
             "additionalProperties": false
           },
           "api": {
@@ -198,8 +207,18 @@
                     "format": "date-time"
                   },
                   "end": {
-                    "type": "string",
-                    "format": "date-time"
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mode": {
+                    "const": "standing"
                   }
                 },
                 "required": [
@@ -767,34 +786,185 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "capped_time_horizon_ms": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "required": [],
           "additionalProperties": false
         },
         "campaign": {
-          "type": "object",
-          "properties": {
-            "version": { "const": 1 },
-            "kind": { "const": "benchmark-finite-campaign" },
-            "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$" },
-            "role": { "enum": ["route_gate_only", "acceptance", "unstarted_followup", "confirmation_continuation", "engineering_window_continuation"] },
-            "reservation_limit": { "type": "integer", "minimum": 1, "maximum": 144 },
-            "max_scheduled_episodes": { "const": 144 },
-            "history_quality": { "const": "excluded_retained_in_campaign_costs" },
-            "new_unknown_usage": { "const": "stop_scope" },
-            "selection": {
+          "anyOf": [
+            {
               "type": "object",
               "properties": {
-                "source_plan_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-                "slot_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+                "version": {
+                  "const": 1
+                },
+                "kind": {
+                  "const": "benchmark-finite-campaign"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+                },
+                "role": {
+                  "enum": [
+                    "route_gate_only",
+                    "acceptance",
+                    "unstarted_followup",
+                    "confirmation_continuation",
+                    "engineering_window_continuation"
+                  ]
+                },
+                "reservation_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 144
+                },
+                "max_scheduled_episodes": {
+                  "const": 144
+                },
+                "history_quality": {
+                  "const": "excluded_retained_in_campaign_costs"
+                },
+                "new_unknown_usage": {
+                  "const": "stop_scope"
+                },
+                "selection": {
+                  "type": "object",
+                  "properties": {
+                    "source_plan_sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "slot_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 1
+                    }
+                  },
+                  "required": [
+                    "source_plan_sha256",
+                    "slot_ids"
+                  ],
+                  "additionalProperties": false
+                }
               },
-              "required": ["source_plan_sha256", "slot_ids"],
+              "required": [
+                "version",
+                "kind",
+                "id",
+                "role",
+                "reservation_limit",
+                "max_scheduled_episodes",
+                "history_quality",
+                "new_unknown_usage"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "const": 1
+                },
+                "kind": {
+                  "const": "benchmark-standing-campaign"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+                },
+                "role": {
+                  "const": "task_continuation"
+                },
+                "authorization_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+                },
+                "work_plan_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+                },
+                "work_item_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+                },
+                "condition_epoch": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+                    },
+                    "started_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "authorization": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "sha256"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "started_at",
+                    "authorization"
+                  ],
+                  "additionalProperties": false
+                },
+                "planned_episodes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "resource_policy": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "unbounded"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "version",
+                "kind",
+                "id",
+                "role",
+                "authorization_id",
+                "work_plan_id",
+                "work_item_id",
+                "condition_epoch",
+                "planned_episodes",
+                "resource_policy"
+              ],
               "additionalProperties": false
             }
-          },
-          "required": ["version", "kind", "id", "role", "reservation_limit", "max_scheduled_episodes", "history_quality", "new_unknown_usage"],
-          "additionalProperties": false
+          ]
         },
         "budgets": {
           "type": "array",
@@ -1018,6 +1188,9 @@
                   "pricing_sha256"
                 ],
                 "additionalProperties": false
+              },
+              "mode": {
+                "const": "unbounded"
               }
             },
             "required": [
@@ -1466,10 +1639,24 @@
           "type": "object",
           "properties": {
             "max_scheduled_episodes": {
-              "const": 144
+              "anyOf": [
+                {
+                  "const": 144
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "route_gate_episodes": {
-              "const": 24
+              "anyOf": [
+                {
+                  "const": 24
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "gate_included": {
               "const": true
@@ -1482,41 +1669,103 @@
                 {
                   "type": "object",
                   "properties": {
-                    "version": { "const": 1 },
+                    "version": {
+                      "const": 1
+                    },
                     "id": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
                     },
-                    "role": { "enum": ["gate", "expansion"] },
-                    "gate_episodes": { "const": 16 },
-                    "minimum_valid_real_per_condition": { "const": 4 },
-                    "history_quality": { "const": "excluded_retained_in_campaign_costs" },
-                    "legacy_first24": { "const": "incomplete_not_satisfied" },
-                    "new_unknown_usage": { "const": "stop_scope" }
+                    "role": {
+                      "enum": [
+                        "gate",
+                        "expansion"
+                      ]
+                    },
+                    "gate_episodes": {
+                      "const": 16
+                    },
+                    "minimum_valid_real_per_condition": {
+                      "const": 4
+                    },
+                    "history_quality": {
+                      "const": "excluded_retained_in_campaign_costs"
+                    },
+                    "legacy_first24": {
+                      "const": "incomplete_not_satisfied"
+                    },
+                    "new_unknown_usage": {
+                      "const": "stop_scope"
+                    }
                   },
-                  "required": ["version", "id", "role", "gate_episodes",
-                    "minimum_valid_real_per_condition", "history_quality", "legacy_first24", "new_unknown_usage"],
+                  "required": [
+                    "version",
+                    "id",
+                    "role",
+                    "gate_episodes",
+                    "minimum_valid_real_per_condition",
+                    "history_quality",
+                    "legacy_first24",
+                    "new_unknown_usage"
+                  ],
                   "additionalProperties": false
                 },
                 {
                   "type": "object",
                   "properties": {
-                    "version": { "const": 1 },
-                    "kind": { "const": "benchmark-prospective-cohort" },
+                    "version": {
+                      "const": 1
+                    },
+                    "kind": {
+                      "const": "benchmark-prospective-cohort"
+                    },
                     "id": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
                     },
-                    "role": { "enum": ["gate", "expansion"] },
-                    "model_count": { "type": "integer", "minimum": 1, "maximum": 6 },
-                    "gate_episodes": { "type": "integer", "minimum": 8, "maximum": 144 },
-                    "minimum_valid_real_per_condition": { "const": 4 },
-                    "reservation_limit": { "type": "integer", "minimum": 24, "maximum": 144 },
-                    "history_quality": { "const": "excluded_retained_in_campaign_costs" },
-                    "new_unknown_usage": { "const": "stop_scope" }
+                    "role": {
+                      "enum": [
+                        "gate",
+                        "expansion"
+                      ]
+                    },
+                    "model_count": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 6
+                    },
+                    "gate_episodes": {
+                      "type": "integer",
+                      "minimum": 8,
+                      "maximum": 144
+                    },
+                    "minimum_valid_real_per_condition": {
+                      "const": 4
+                    },
+                    "reservation_limit": {
+                      "type": "integer",
+                      "minimum": 24,
+                      "maximum": 144
+                    },
+                    "history_quality": {
+                      "const": "excluded_retained_in_campaign_costs"
+                    },
+                    "new_unknown_usage": {
+                      "const": "stop_scope"
+                    }
                   },
-                  "required": ["version", "kind", "id", "role", "model_count", "gate_episodes",
-                    "minimum_valid_real_per_condition", "reservation_limit", "history_quality", "new_unknown_usage"],
+                  "required": [
+                    "version",
+                    "kind",
+                    "id",
+                    "role",
+                    "model_count",
+                    "gate_episodes",
+                    "minimum_valid_real_per_condition",
+                    "reservation_limit",
+                    "history_quality",
+                    "new_unknown_usage"
+                  ],
                   "additionalProperties": false
                 }
               ]

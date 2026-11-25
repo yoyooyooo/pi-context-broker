@@ -146,7 +146,7 @@ export function validateEpisodeConfig(config) {
   assert.ok(config.admission?.captureOnly || isAbsolute(config.admission?.expectedFile), 'BENCHMARK_EXPECTATION_REQUIRED');
   const parameters = config.model.parameters ?? {};
   for (const key of Object.keys(parameters)) assert.ok(['thinkingLevel', 'maxTokens', 'temperature'].includes(key), 'BENCHMARK_UNSUPPORTED_MODEL_PARAMETER: ' + key);
-  assert.ok(Number.isSafeInteger(parameters.maxTokens) && parameters.maxTokens >= 16 && parameters.maxTokens <= config.limits.maxOutputTokens, 'BENCHMARK_OUTPUT_PARAMETER_REQUIRED');
+  assert.ok(Number.isSafeInteger(parameters.maxTokens) && parameters.maxTokens >= 16 && (config.limits.mode === 'unbounded' || parameters.maxTokens <= config.limits.maxOutputTokens), 'BENCHMARK_OUTPUT_PARAMETER_REQUIRED');
   assert.ok(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(parameters.thinkingLevel), 'BENCHMARK_THINKING_LEVEL_REQUIRED');
   return config;
 }
@@ -278,7 +278,7 @@ export async function runEpisode(input, hooks = {}) {
   };
   recorder.record('runtime_start', { entry_kind: 'pi-sdk', pid: process.pid, ppid: process.ppid, cwd: process.cwd(), runtime_module: fileURLToPath(import.meta.url), started_monotonic_ns: startedNs, no_automatic_model_retry: true });
   try {
-    timer = setTimeout(() => stop('BENCHMARK_WALL_LIMIT'), config.limits.wallTimeMs);
+    if (config.limits.mode !== 'unbounded') timer = setTimeout(() => stop('BENCHMARK_WALL_LIMIT'), config.limits.wallTimeMs);
     onSigTerm = () => { cancelled = true; stop('BENCHMARK_SIGNAL', { signal: 'SIGTERM' }); };
     onSigInt = () => { cancelled = true; stop('BENCHMARK_SIGNAL', { signal: 'SIGINT' }); };
     process.on('SIGTERM', onSigTerm); process.on('SIGINT', onSigInt);
@@ -378,7 +378,7 @@ export async function runEpisode(input, hooks = {}) {
       request.context_ref = await recorder.save('request-' + sequence + '-context', context);
       request.start_ref = recorder.record('model_request_start', { request_id: request.id, model: selectedModel(requestModel), context_ref: request.context_ref, reasoning: options.reasoning ?? null, capture_only: config.admission.captureOnly === true });
       const effectiveOutputCap = config.admission.captureOnly ? config.model.parameters.maxTokens : budget.outputCap(config.model.parameters.maxTokens);
-      recorder.record('request_effective_parameters', { request_id: request.id, requested: config.model.parameters, effective_max_tokens: effectiveOutputCap, remaining_output_tokens: budget.limits.maxOutputTokens - budget.state.output_tokens });
+      recorder.record('request_effective_parameters', { request_id: request.id, requested: config.model.parameters, effective_max_tokens: effectiveOutputCap, remaining_output_tokens: budget.limits.mode === 'unbounded' ? null : budget.limits.maxOutputTokens - budget.state.output_tokens });
       const guarded = {
         ...options, maxTokens: effectiveOutputCap, ...(config.model.parameters.temperature !== undefined ? { temperature: config.model.parameters.temperature } : {}), maxRetries: 0, transport: 'sse',
         fetch: guardedFetch({ request, model: requestModel, budget, admitted: () => admitted && !config.admission.captureOnly, record: recorder.record }),
