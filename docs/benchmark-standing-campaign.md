@@ -138,6 +138,30 @@ reservation cannot silently become a new model request. Recovery first resolves
 the actual execution evidence, then continues with an existing safe prefix or a
 new immutable attempt under the same grant.
 
+When the controller itself failed between completed subject runs, a repaired
+controller can close that old invocation explicitly:
+
+```sh
+node benchmark/cli.mjs reconcile --root ABS_OLD_BATCH --lease OBSERVED_DEAD_LEASE_ID --retire-reason 'Recorded controller defect and repair identity'
+```
+
+This action requires the named dead batch owner, no campaign lease, exact
+registration and reservation bindings, and complete ordered pairs of started
+and completed runs. Every completed evidence bundle is verified. An unresolved
+send or orphan reservation must be resolved first. The command makes zero
+model requests and does not execute the old plan with a different controller.
+It retains the old lease, writes an immutable retirement intent, and appends
+one `batch_closed` footer with reason `interrupted_controller_failure`.
+Its recorded implementation identifies the controller that performed closure.
+Repeating the same retirement preserves the original prefix and footer;
+partial footer writes can complete from that exact intent.
+
+Retirement does not complete missing scientific slots. Keep the old partial
+analysis, all outcomes and usage. A source repair requires a new controller
+identity and work plan; a fresh full design remains separate from the old
+partial design. The existing `reconcile` command without `--retire-reason`
+still only releases a dead lease and does not close an invocation.
+
 The runner receipt is `standing-campaign-runner-receipt`. It binds the plan,
 grant, work plan, item and attempt, and records the actual ledger and checkpoints.
 The receipt does not label a failed invocation as zero sends merely because
