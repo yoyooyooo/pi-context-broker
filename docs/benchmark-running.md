@@ -5,6 +5,25 @@ run state. It adds public business cases, private grading, actual Pi SDK episode
 and evidence analysis. Use the maintained runtime and an explicitly named frozen
 build. The ordinary daily `next` verification gate remains separate.
 
+## Choose the authorized execution path
+
+For a user grant that authorizes all later task-related batches without resource
+limits, follow [Standing Benchmark continuation](benchmark-standing-campaign.md).
+Bind the actual grant, a scientific work plan, a condition epoch and a separate
+ledger through `setup.standing`. Run `configure`, then `run-standing --plan
+ABS_FROZEN_PLAN --out ABS_NEW_RUNNER --slice 8`. The slice controls checkpoints;
+it imposes no cumulative episode, request, token, spend or time limit. Subsequent
+repairs and work plans use the same grant without another batch approval.
+Keep actual failures, unknowns and costs, reconcile ambiguous sends, and create
+a new immutable attempt when the repair changes its inputs.
+
+The remaining bounded examples and historical continuation contracts describe
+their original plans. Their budgets, expiry windows and approval requirements
+do not apply to a standing work plan. Review results through the common
+`status`, `journey`, `analyze` and `reanalysis` entry points below.
+
+## Retained historical plans
+
 The [2026-11-22 two-model pilot report](benchmark-two-model-pilot-2026-11-22.md)
 records the actual GPT-6.2 Sol and Grok-4.6 results, the retained local-budget
 classification repair, and the later Notion-startup stop. Its frozen plan is
@@ -20,12 +39,12 @@ records eight executions, an interrupted response with unknown token usage, and
 the actual route-gate rejection. It includes public replay and a separately
 labelled decision draft; later paid work remains stopped.
 
-For newly authorized work after a closed scope, use
+For newly authorized bounded work after a closed scope, use
 [finite prospective cohorts](benchmark-prospective-cohorts.md). They retain the
 original campaign ledger, freeze all historical costs and failures, and require
 fresh apparatus evidence for each concrete model set.
 
-## Start from an existing setup
+## Start from an existing bounded setup
 
 Read the task's setup JSON, its purpose and total budget before running anything.
 Use absolute paths. The setup names two environments, selected model routes,
