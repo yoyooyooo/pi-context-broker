@@ -151,7 +151,8 @@ controller can close that old invocation explicitly:
 node benchmark/cli.mjs reconcile --root ABS_OLD_BATCH --lease OBSERVED_DEAD_LEASE_ID --retire-reason 'Recorded controller defect and repair identity'
 ```
 
-This action requires the named dead batch owner, no campaign lease, exact
+This action acquires the same exclusive campaign lease as dispatch before
+re-reading evidence or writing a footer. It requires the named dead batch owner, exact
 registration and reservation bindings, and complete ordered pairs of started
 and completed runs. Every completed evidence bundle is verified. An unresolved
 send or orphan reservation must be resolved first. The command makes zero
@@ -159,8 +160,16 @@ model requests and does not execute the old plan with a different controller.
 It retains the old lease, writes an immutable retirement intent, and appends
 one `batch_closed` footer with reason `interrupted_controller_failure`.
 Its recorded implementation identifies the controller that performed closure.
+Concurrent reconciliation cannot admit another runner while this lease is held.
 Repeating the same retirement preserves the original prefix and footer;
 partial footer writes can complete from that exact intent.
+If retirement itself is interrupted, first inspect and release its separately
+named dead campaign lease with `reconcile --root ABS_OLD_BATCH --lease
+OBSERVED_DEAD_CAMPAIGN_LEASE_ID --scope-only true`. This preserves that scope
+lease and leaves the batch lease and ledger untouched. Then repeat the original
+retirement command. Scope-only recovery and retirement cannot be combined.
+An already reconciled matching batch lease is also retained when retiring its
+still-open invocation.
 
 Retirement does not complete missing scientific slots. Keep the old partial
 analysis, all outcomes and usage. A source repair requires a new controller

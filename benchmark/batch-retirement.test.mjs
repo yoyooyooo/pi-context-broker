@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { assertRetirablePrefix } from './batch-retirement.mjs';
 import { parseBenchmarkArgs } from './cli.mjs';
+import { benchmarkMain } from './cli.mjs';
 
 function fixture() {
   const plan = { id: 'retirement-fixture', plan_sha256: 'a'.repeat(64),
@@ -68,4 +69,11 @@ test('retirement is an explicit reasoned CLI action and introduces no execution 
   assert.equal(parseBenchmarkArgs([...args, '--retire-reason', 'Controller schema defect'])['retire-reason'], 'Controller schema defect');
   for (const flag of ['--allow-unresolved', '--ignore-identity', '--controller', '--budget', '--model'])
     assert.throws(() => parseBenchmarkArgs([...args, flag, '/override']));
+});
+
+test('scope-only recovery is explicit and cannot also retire or accept a false-like value', async () => {
+  const args = ['reconcile', '--root', '/absent/batch', '--lease', 'observed-campaign-lease'];
+  assert.equal(parseBenchmarkArgs([...args, '--scope-only', 'true'])['scope-only'], 'true');
+  await assert.rejects(benchmarkMain([...args, '--scope-only', 'false']), /scope-only accepts true only/);
+  await assert.rejects(benchmarkMain([...args, '--scope-only', 'true', '--retire-reason', 'mixed action']), /Choose scope-only recovery or retirement/);
 });
