@@ -1,0 +1,465 @@
+{
+  "version": 1,
+  "kind": "retained-benchmark-census-recomputed-summary",
+  "observations": 104,
+  "analysis_strata": 16,
+  "original_collector_versions": {
+    "1.0.0": 1,
+    "1.0.1": 2,
+    "1.0.2": 10,
+    "1.1.0": 91
+  },
+  "normalizer_strata": {
+    "1.0.0 -> 1.1.0": 13,
+    "1.1.0 -> 1.1.0": 91
+  },
+  "original_outcomes": {
+    "fail": 14,
+    "not_applicable": 11,
+    "pass": 25,
+    "unknown": 54
+  },
+  "reanalysis_outcomes": {
+    "fail": 14,
+    "not_applicable": 11,
+    "pass": 38,
+    "unknown": 41
+  },
+  "admission": {
+    "invalid": 11,
+    "valid": 93
+  },
+  "business_status": {
+    "fail": 19,
+    "pass": 85
+  },
+  "original_contracts": {
+    "artifact-json:fail": 19,
+    "artifact-json:pass": 97,
+    "clarification:unknown": 6,
+    "resources:fail": 4,
+    "resources:pass": 37,
+    "resources:unknown": 26,
+    "selection:fail": 9,
+    "selection:pass": 33,
+    "selection:unknown": 62
+  },
+  "reanalysis_contracts": {
+    "artifact-json:fail": 19,
+    "artifact-json:pass": 97,
+    "clarification:unknown": 6,
+    "resources:fail": 5,
+    "resources:pass": 50,
+    "resources:unknown": 12,
+    "selection:fail": 9,
+    "selection:pass": 49,
+    "selection:unknown": 46
+  },
+  "contract_changes": {
+    "resources:unknown>fail": 1,
+    "resources:unknown>pass": 13,
+    "selection:unknown>pass": 16
+  },
+  "changed_contracts": [
+    {
+      "ordinal": 22,
+      "id": "refund-policy-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 22,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 23,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 32,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 33,
+      "id": "routing-policy-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 33,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 41,
+      "id": "reconcile-and-privacy-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 42,
+      "id": "inventory-policy-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 42,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 46,
+      "id": "grant-chain-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 46,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 71,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 73,
+      "id": "routing-policy-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 73,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 77,
+      "id": "tax-source-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 77,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 79,
+      "id": "routing-policy-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 79,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 83,
+      "id": "tax-source-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 83,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 84,
+      "id": "inventory-policy-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 87,
+      "id": "reconcile-and-privacy-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 87,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 89,
+      "id": "grant-chain-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "fail"
+    },
+    {
+      "ordinal": 89,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 92,
+      "id": "routing-policy-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 92,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 96,
+      "id": "delivery-rate-read",
+      "kind": "resources",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 96,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    },
+    {
+      "ordinal": 104,
+      "id": "legal-selection",
+      "kind": "selection",
+      "before": "unknown",
+      "after": "pass"
+    }
+  ],
+  "recovered_outcome_ordinals": [
+    22,
+    23,
+    32,
+    33,
+    42,
+    46,
+    73,
+    77,
+    79,
+    83,
+    87,
+    92,
+    104
+  ],
+  "recovered_resource_ordinals": [
+    22,
+    33,
+    41,
+    42,
+    46,
+    73,
+    77,
+    79,
+    83,
+    84,
+    87,
+    92,
+    96
+  ],
+  "recovered_selection_ordinals": [
+    22,
+    23,
+    32,
+    33,
+    42,
+    46,
+    71,
+    73,
+    77,
+    79,
+    83,
+    87,
+    89,
+    92,
+    96,
+    104
+  ],
+  "clarification_unknown_ordinals": [
+    30,
+    31,
+    70,
+    71,
+    96,
+    97
+  ],
+  "remaining_unknown_resources": [
+    {
+      "ordinal": 31,
+      "contract": "delivery-rate-read",
+      "boundaries": [
+        "complete_legal_resource_path_unobserved",
+        "clarification_coverage_not_complete",
+        "opaque_or_failed_tool_observation"
+      ]
+    },
+    {
+      "ordinal": 36,
+      "contract": "manifest-data-read",
+      "boundaries": [
+        "complete_legal_resource_path_unobserved",
+        "opaque_or_failed_tool_observation"
+      ]
+    },
+    {
+      "ordinal": 37,
+      "contract": "manifest-data-read",
+      "boundaries": [
+        "complete_legal_resource_path_unobserved",
+        "opaque_or_failed_tool_observation"
+      ]
+    },
+    {
+      "ordinal": 67,
+      "contract": "manifest-data-read",
+      "boundaries": [
+        "complete_legal_resource_path_unobserved",
+        "codemode_descendant_census_not_successfully_closed",
+        "opaque_or_failed_tool_observation"
+      ]
+    },
+    {
+      "ordinal": 78,
+      "contract": "routing-policy-read",
+      "boundaries": [
+        "frozen_snapshot_identity_mismatch"
+      ]
+    },
+    {
+      "ordinal": 81,
+      "contract": "refund-policy-read",
+      "boundaries": [
+        "frozen_snapshot_identity_mismatch"
+      ]
+    },
+    {
+      "ordinal": 82,
+      "contract": "tax-source-read",
+      "boundaries": [
+        "frozen_snapshot_identity_mismatch"
+      ]
+    },
+    {
+      "ordinal": 85,
+      "contract": "inventory-policy-read",
+      "boundaries": [
+        "frozen_snapshot_identity_mismatch"
+      ]
+    },
+    {
+      "ordinal": 88,
+      "contract": "grant-chain-read",
+      "boundaries": [
+        "frozen_snapshot_and_version_identity_mismatch"
+      ]
+    },
+    {
+      "ordinal": 90,
+      "contract": "manifest-data-read",
+      "boundaries": [
+        "complete_legal_resource_path_unobserved",
+        "opaque_or_failed_tool_observation"
+      ]
+    },
+    {
+      "ordinal": 91,
+      "contract": "manifest-data-read",
+      "boundaries": [
+        "complete_legal_resource_path_unobserved",
+        "opaque_or_failed_tool_observation"
+      ]
+    },
+    {
+      "ordinal": 93,
+      "contract": "routing-policy-read",
+      "boundaries": [
+        "frozen_snapshot_identity_mismatch"
+      ]
+    }
+  ],
+  "evidence_boundaries": {
+    "clarification_coverage_not_complete": 6,
+    "codemode_descendant_census_not_successfully_closed": 15,
+    "complete_legal_resource_path_unobserved": 6,
+    "frozen_snapshot_and_version_identity_mismatch": 1,
+    "frozen_snapshot_identity_mismatch": 5,
+    "opaque_or_failed_tool_observation": 45
+  },
+  "usage": {
+    "known_model_requests": 476,
+    "complete_episode_input_fields": 2402549,
+    "complete_episode_output_fields": 63085,
+    "known_attempt_input_lower_bound": 2406425,
+    "known_attempt_output_lower_bound": 63121,
+    "known_duration_ms": 3871650.5499549997,
+    "unknown_usage_ordinals": [
+      3,
+      5,
+      13,
+      50,
+      66,
+      86
+    ]
+  },
+  "historical_reported_subtotal": {
+    "model_requests": 476,
+    "input_tokens": 2402549,
+    "output_tokens": 63085,
+    "duration_ms": 3871650.5499549997
+  },
+  "partial_usage_addition": {
+    "input_tokens": 3876,
+    "output_tokens": 36
+  },
+  "original_admission_business_usage_and_failures_preserved": true,
+  "model_requests": 0,
+  "private_graders_replayed": false,
+  "cross_stratum_pooling": false,
+  "historical_primary_statistics_replaced": false,
+  "scope": "Arithmetic and consistency of the included comparison census; external source fingerprints are references, not reproduced private evidence."
+}

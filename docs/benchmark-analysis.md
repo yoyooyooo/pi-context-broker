@@ -429,3 +429,7 @@ capabilities within a case cap, preferring distinct clusters. It emits no
 noninferiority proof. `releasePolicy` reports whether evidence is reviewable,
 incomplete, blocked or inconclusive; the existing daily gate remains
 separate and manual release review remains explicit.
+
+The [2026-11-25 retained-evidence census](benchmark-retained-evidence-census-2026-11-25.md)
+records a separate descriptive view of 104 historical observations in 16 analysis
+strata. Its five-file public package replays census arithmetic and consistency.

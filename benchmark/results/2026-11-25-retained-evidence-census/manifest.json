@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "kind": "benchmark-public-evidence-comparison-census",
+  "publication_version": "1.0.6",
+  "sanitizer_source_sha256": "219791be176bf722248c3a2a3d73738647f2dd97cc6aadab1877391e6858f236",
+  "historical_release": {
+    "url": "https://github.com/yoyooyooo/pi-context-broker/tree/aa3b222bc7a489e168ab89d30df4b0b2c6aecb77/benchmark/results/2026-11-25-observer-repair-continuation",
+    "commit": "aa3b222bc7a489e168ab89d30df4b0b2c6aecb77",
+    "release_manifest_sha256": "198e9696af073593d81829654f5d2e809e3a68d322da7f1e080fb99430d6c66d",
+    "public_inventory_sha256": "994caf6748cd26c7e26c1bf9018cfc7bda605370748bdcc87c9544c5e171764b",
+    "observations": 104,
+    "source_baseline_file_sha256": "be5f7a1a0420febadf2aa3de662a7f51f05012f05ca2df854fb4c72f64b10da4"
+  },
+  "observations": 104,
+  "analysis_strata": 16,
+  "raw_evidence_embedded": false,
+  "private_graders_replayed": false,
+  "model_requests": 0,
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "918d742380c551d41c3b0c36bd1e3e2eeee8aa1f6eb931ea59559bf30f3d8d48",
+      "bytes": 4059
+    },
+    {
+      "path": "census.json",
+      "sha256": "5568f724981d5db7f050bc7c60ccc2a58a19dfea70920e0ce2c9bbbc6211a0f1",
+      "bytes": 584226
+    },
+    {
+      "path": "recompute.mjs",
+      "sha256": "89f2f69d862558dcaa424e84917b274ab974f663c601e2097c2c5bdc72ec5360",
+      "bytes": 11575
+    },
+    {
+      "path": "summary.json",
+      "sha256": "10df1008d3227ed1aa5957068dfb4f0e8126717a5c4b5b7f814cf3600d51f459",
+      "bytes": 9767
+    }
+  ],
+  "manifest_sha256": "29b6682d39c2e5bf928a504476cbe034f441df25dec49c59370e0650c12d72b3"
+}
