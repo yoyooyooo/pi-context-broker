@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { installHostSkills, type HostSkills, type HostSkillOptions } from "../src/host-skills";
 import { SourceError, sourceFailureMessage } from "../src/notion-source";
 import { createActivationFeedback } from "../src/activation-feedback";
+import { createLibrarySelection } from "../src/library-selection";
 import { buildCliGuidance, buildInjectedContextMessage, installSkillGuidance } from "../src/index";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
@@ -86,7 +87,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   } } : {}) };
   const calls: PreparationPurpose[] = [];
   const persisted: SelectionMode[] = [];
-  const sources: Array<{ id: string; type: "notion"; prefetch: false }> = [{ id: owner.sourceId, type: "notion", prefetch: false }];
+  const sources: Array<{ id: string; type: "notion"; prefetch: false; library?: string }> = [{ id: owner.sourceId, type: "notion", prefetch: false }];
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   let search: NativeSkillSearchDefinition | undefined, tool: NativeSkillPrepareDefinition | undefined, graphTool: NativeSkillGraphDefinition | undefined;
   const api: ExtensionAPI = { ...(hostKind === "omp" ? { pi: {} } : {}), on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); },
@@ -103,7 +104,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
-  const install = async (prepareGraph: (purpose: PreparationPurpose, signal: AbortSignal | undefined, policy: ConsumptionPolicy | undefined, requested: readonly SkillRecord[], pins: ReadonlyMap<string, string> | undefined) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs" | "resolveRelativeReference" | "resolveSkillReference" | "sessionBinding">> = {}, adapter?: HostCapabilities) => {
+  const install = async (prepareGraph: (purpose: PreparationPurpose, signal: AbortSignal | undefined, policy: ConsumptionPolicy | undefined, requested: readonly SkillRecord[], pins: ReadonlyMap<string, string> | undefined) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs" | "resolveRelativeReference" | "resolveSkillReference" | "sessionBinding" | "librarySelection">> = {}, adapter?: HostCapabilities) => {
     let host: HostSkills;
     host = await installHostSkills(api, {
       config: { sources },
@@ -1067,6 +1068,49 @@ function oneRecordGraph(f: Awaited<ReturnType<typeof fixture>>, record: SkillRec
     lock: { ...vector, sha256: hash(canonical(vector)) }, effects: noConsumptionWrites(),
     usage: { prepared_nodes: 1, instruction_bytes: Buffer.byteLength(record.body!), context_bytes: 4000, max_depth: 0 } };
 }
+
+test("an explicit B list returns a usable scoped candidate without changing the current Library A", async () => {
+  const a = await fixture(true), b = await fixture(true, false, "pi", "b".repeat(64), false,
+    { libraryId: "00000000-0000-4000-8000-000000000099", sourceId: "library-b" });
+  const rootA = a.root.locator, rootB = b.root.locator;
+  if (rootA?.type !== "shared_skill" || rootB?.type !== "shared_skill") throw new Error("Expected complete owners");
+  a.sources[0]!.library = rootA.library_id; b.sources[0]!.library = rootB.library_id; a.sources.push(...b.sources);
+  const table = { database_id: rootA.database_id, data_source_id: rootA.data_source_id, property_ids: {} };
+  const selection = createLibrarySelection({ sources: a.sources }, async options => ({ version: 2,
+    library_id: options.library ?? rootA.library_id, operation_id: "fixture-init", skills: table, files: table, records: table, sources: table }),
+  async options => options.library ?? rootA.library_id);
+  const metadata = (records: SkillRecord[]) => ({ records: records.map(record => ({ ...record, body: undefined, preparationBinding: undefined })), failures: [] });
+  const requests: Array<string | undefined> = [], entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  let delay = false;
+  const { search, tool, host } = await a.install(async (purpose, _signal, _policy, requested) => {
+    expect(requested.map(record => [record.id, record.sourceId, record.sourceScope])).toEqual([[b.root.id, "library-b", b.root.sourceScope]]);
+    return [oneRecordGraph(b, b.root, purpose)];
+  }, { librarySelection: selection, getRecords: async (_ctx, _signal, _refresh, source) => {
+    requests.push(source);
+    if (source === "library-b" && delay) { entered.resolve(); await release.promise; }
+    return metadata(source === "library-b" ? b.records : a.records);
+  }, lookupReference: async () => metadata(a.records), persistGraphs: (graphs, ctx, mode) => persistSessionSelection(a.api, ctx, graphs, mode) });
+  await host.refresh(a.ctx);
+  const before = sessionSelection(a.ctx);
+  const listed = JSON.parse(sourceMessageText((await search.execute("explicit-b", { source: "library-b", query: "root", refresh: true }, undefined, undefined, a.ctx)).content));
+  expect(listed.records).toHaveLength(1); expect(listed.records[0].ref).toMatch(/^sr:/);
+  expect(requests.at(-1)).toBe("library-b"); expect(a.calls).toEqual([]); expect(a.resourceReads).toEqual([]);
+  expect(JSON.stringify(listed)).not.toContain(b.root.body!); expect(sessionSelection(a.ctx)).toEqual(before);
+  expect((await selection.selected(a.ctx))?.source.id).toBe("controlled");
+  const used = await tool.execute("use-listed-b", { ref: listed.records[0].ref }, undefined, undefined, a.ctx);
+  expect(preparationDetails(used)).toMatchObject({ records: [{ binding: { scope: b.root.sourceScope, record: { id: b.root.id, locator: rootB } } }] });
+  expect(JSON.parse(sourceMessageText(used.content)).records.map((record: { content: string }) => record.content)).toEqual([b.root.body]);
+  expect(sessionSelection(a.ctx).scopes.get(b.root.sourceScope!)?.bindings.get(b.root.id!)).toEqual(b.root.preparationBinding);
+  expect((await selection.selected(a.ctx))?.source.id).toBe("controlled");
+  const defaults = JSON.parse(sourceMessageText((await search.execute("still-a", { query: "root" }, undefined, undefined, a.ctx)).content));
+  expect(defaults.records.map((record: { source: string }) => record.source)).toEqual(["controlled"]);
+  delay = true;
+  const retired = search.execute("retired-b", { source: "library-b", query: "member", refresh: true }, undefined, undefined, a.ctx).catch(error => error);
+  await entered.promise; host.invalidate(); release.resolve();
+  expect(await retired).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+  await expect(tool.execute("unpublished-b", { ref: b.member.ref }, undefined, undefined, a.ctx)).rejects.toMatchObject({ code: "SOURCE_REFERENCE_MISSING" });
+  expect(a.calls).toEqual(["use"]);
+});
 
 for (const spelling of ["canonical", "transport-alias"] as const) for (const discovered of [false, true])
 test("full-owner use routes A from active B with " + spelling + " and A directory " + discovered, async () => {
