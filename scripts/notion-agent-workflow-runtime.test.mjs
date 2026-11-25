@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { access, mkdir, mkdtemp, readFile, realpath, rename, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { agentWorkflowArgs, agentWorkflowEnvironment, agentWorkflowProjectSettings, agentWorkflowSourceConfig, selectWorkflowLibrary, workflowSelectedLibrary, bindPairedWorkflowEvidence, prepareWorkflowTemporaryEnvironment, prepareWorkflowMcpAuthorization, workflowImplementationEvidence, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog } from './notion-agent-workflow-runtime.mjs';
+import { agentWorkflowArgs, agentWorkflowEnvironment, agentWorkflowProjectSettings, agentWorkflowSourceConfig, selectWorkflowLibrary, workflowSelectedLibrary, bindPairedWorkflowEvidence, prepareWorkflowTemporaryEnvironment, prepareWorkflowMcpAuthorization, workflowImplementationEvidence, workflowSourceSlice, workflowCatalogFault, awaitWorkflowCatalog, workflowToolHistory } from './notion-agent-workflow-runtime.mjs';
 import { validateCandidateTurn } from './verify-pi-daily-candidate.mjs';
 
 const execute = promisify(execFile);
@@ -354,4 +354,32 @@ test('workflow owner capture rejects changed ordinary settings and skips the bin
   const implementation = await workflowImplementationEvidence(evidence, { registration: { reusesRegisteredBroker: false } });
   assert.equal(implementation.ordinaryInstallationArtifact, undefined);
   await assert.rejects(readFile(join(evidence, 'ordinary-installation.json')), { code: 'ENOENT' });
+});
+
+test('tool history seals original task, source and SDK response artifacts per segment without reading materialized resources', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'workflow-tool-history-'));
+  const segments = [];
+  for (const index of [1, 2]) {
+    const directory = join(root, 'segment-' + index);
+    await mkdir(join(directory, 'sdk-responses'), { recursive: true });
+    const files = Object.fromEntries(['tasks', 'source', 'sdk'].map(name => [name, join(directory, name + '.jsonl')]));
+    await writeFile(files.tasks, '{"segment":' + index + '}\n');
+    await writeFile(files.source, '{"clockId":"segment-' + index + '"}\n');
+    await writeFile(files.sdk, JSON.stringify({ phase: 'sdk-end', operation: 'read', requestId: 'read-' + index,
+      responseFile: 'read-' + index + '.json' }) + '\n');
+    await writeFile(join(directory, 'sdk-responses', 'read-' + index + '.json'),
+      JSON.stringify({ outputEvidence: { path: '/never-open-materialized-output', content: 'already observed' } }));
+    segments.push({ index, observer: { files } });
+  }
+  const history = await workflowToolHistory(segments);
+  assert.equal(history.version, 1); assert.equal(history.sdkSegments.length, 2);
+  for (const [index, segment] of history.sdkSegments.entries()) {
+    assert.deepEqual(segment.tasks, history.artifacts[index]);
+    for (const artifact of [segment.tasks, segment.source, segment.sdk, segment.responses[0].artifact]) {
+      const bytes = await readFile(artifact.path);
+      assert.equal(artifact.sha256, createHash('sha256').update(bytes).digest('hex'));
+      assert.equal(artifact.bytes, bytes.length);
+    }
+    assert.equal(segment.responses[0].requestId, 'read-' + (index + 1));
+  }
 });

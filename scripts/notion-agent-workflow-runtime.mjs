@@ -400,6 +400,24 @@ async function sourceIdentity(path, repository) {
   return { repository, commit, dirty: status.length > 0, tree_sha256: sha(JSON.stringify(hashes)) };
 }
 
+// Seal existing observer outputs from each original process segment. This adds
+// no source read: SDK result bytes were already captured at the SDK boundary.
+export async function workflowToolHistory(segments) {
+  const sdkSegments = [];
+  for (const segment of segments) {
+    const files = segment.observer.files, tasks = await identity(files.tasks);
+    const responses = [];
+    for (const end of (await rows(files.sdk)).filter(row => row.phase === 'sdk-end' && row.operation === 'read')) {
+      const directory = join(dirname(files.sdk), 'sdk-responses'), path = resolve(directory, end.responseFile);
+      assert.equal(dirname(path), directory, 'SDK response must stay in its observed segment');
+      assert.equal(end.responseFile, end.requestId + '.json', 'Retain the original SDK response filename');
+      responses.push({ requestId: end.requestId, artifact: await identity(path) });
+    }
+    sdkSegments.push({ tasks, sdk: await identity(files.sdk), source: await identity(files.source), responses });
+  }
+  return { version: 1, artifacts: sdkSegments.map(segment => segment.tasks), sdkSegments };
+}
+
 async function writeObservers(control, config, sourceCache, bodies, index) {
   await mkdir(control, { recursive: true, mode: 0o700 });
   const payloads = join(control, 'payloads'), branches = join(control, 'branches'), responses = join(control, 'sdk-responses'), toolResults = join(control, 'tool-results');
@@ -579,8 +597,7 @@ export async function runAgentWorkflow(config) {
       observed.cliProcesses = { version: 1, artifacts: cliProcesses.artifacts,
         sourceArtifact: await identity(owner.observer.files.source),
         window: { startNs: receipt.startedNs, endNs: receipt.endedNs } };
-      observed.toolHistory = { version: 1, artifacts: await Promise.all(result.segments
-        .filter(item => item.index <= receipt.segment).map(item => identity(item.observer.files.tasks))) };
+      observed.toolHistory = await workflowToolHistory(result.segments.filter(item => item.index <= receipt.segment));
 
       const frozenBindings = await json(join(evidence, 'turn-' + receipt.id + '-bindings.json'));
       const turn = await json(join(evidence, 'turn-' + receipt.id + '-input.json'));

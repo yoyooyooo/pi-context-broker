@@ -132,7 +132,7 @@ export function captureDirectoryInventorySpawn(options, { fs, crypto, path, plan
 
 /** The call's schema/runtime and the full source ledger are independently verified
  * by their existing owners. Bind this exact executed input to one real child. */
-export function verifyNotionAgentDirectoryInventory(call, { source, session, runtimeEvidence } = {}) {
+export function verifyNotionAgentDirectoryInventory(call, { source, session, runtimeEvidence, sourceObservationWindow } = {}) {
   const blocked = reason => ({ status: 'blocked', code: 'DIRECTORY_INVENTORY_UNPROVEN', reason });
   const input = call?.arguments, event = call?.event, result = call?.result, owner = event?.toolSource;
   const runtime = runtimeEvidence?.get(call?.id), plan = directoryInventoryPlan(input?.command);
@@ -149,6 +149,9 @@ export function verifyNotionAgentDirectoryInventory(call, { source, session, run
   const ns = value => typeof value === 'string' && /^\d+$/u.test(value) ? BigInt(value) : null;
   const startTime = ns(event.monotonicNs), endTime = ns(result.monotonicNs);
   if (startTime === null || endTime === null || startTime >= endTime) return blocked('tool-lifetime');
+  const windowStart = ns(sourceObservationWindow?.startedNs), windowEnd = ns(sourceObservationWindow?.endedNs);
+  if (windowStart === null || windowEnd === null || windowStart >= windowEnd
+    || windowStart > startTime || windowEnd < endTime) return blocked('source-observation-window');
   const expectedArgv = hash(JSON.stringify(['/bin/bash', '-c', input.command]));
   const starts = events.filter(row => row.phase === 'unmatched_child_start' && row.parentPid === event.pid
     && row.argvSha256 === expectedArgv && ns(row.monotonicNs) !== null
@@ -173,6 +176,8 @@ export function verifyNotionAgentDirectoryInventory(call, { source, session, run
     || proof.environment?.loaderOverrides !== false || proof.environment?.ripgrepConfiguration !== false) return blocked('spawn-context-not-proved');
   const phases = name => events.filter(row => row.phase === name && row.childId === start.childId && row.parentPid === event.pid);
   const spawned = phases('unmatched_child_spawn'), exited = phases('unmatched_child_exit'), closed = phases('unmatched_child_close');
+  // Pi can complete after exit and stdio end, before the child's close event.
+  // The completed source observation, not the tool result, bounds close.
   if (spawned.length !== 1 || exited.length !== 1 || closed.length !== 1 || phases('unmatched_child_error').length
     || !Number.isSafeInteger(spawned[0].childPid) || spawned[0].childPid <= 0
     || exited[0].childPid !== spawned[0].childPid || closed[0].childPid !== spawned[0].childPid
@@ -180,7 +185,8 @@ export function verifyNotionAgentDirectoryInventory(call, { source, session, run
     || closed[0].directoryInventoryUnchanged !== true
     || [spawned[0], exited[0], closed[0]].some(row => ns(row.monotonicNs) === null)
     || ns(spawned[0].monotonicNs) < ns(start.monotonicNs) || ns(exited[0].monotonicNs) < ns(spawned[0].monotonicNs)
-    || ns(closed[0].monotonicNs) < ns(exited[0].monotonicNs) || ns(closed[0].monotonicNs) > endTime)
+    || ns(exited[0].monotonicNs) > endTime
+    || ns(closed[0].monotonicNs) < ns(exited[0].monotonicNs) || ns(closed[0].monotonicNs) > windowEnd)
     return blocked('child-terminal-or-program-drift');
   return { status: 'passed', toolCallId: call.id, owner: 'observed-builtin-directory-inventory',
     childId: start.childId, childPid: spawned[0].childPid, inputSha256: event.inputSha256,

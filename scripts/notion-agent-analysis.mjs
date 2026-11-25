@@ -8,7 +8,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { verifyNotionAgentDirectoryInventory } from './notion-agent-inventory-evidence.mjs';
 import { validateAgentAssertion, validateAgentBindings } from './notion-agent-scenarios.mjs';
-import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation, inspectedLocalReadEvidence, verifyObservedPiToolRuntime } from './notion-agent-tool-lineage.mjs';
+import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation, inspectedLocalReadEvidence, inspectedPiToolRuntime, verifyObservedPiToolRuntime } from './notion-agent-tool-lineage.mjs';
 import { verifyPreparationEvidence, visibleDiscoveryCards } from './skill-preparation-evidence.mjs';
 import { parseSourceObservation } from './skill-consumption-source-observer.mjs';
 import { verifyNotionAgentCliProcesses, verifyNotionAgentSingleProjectionRestore, verifyNotionAgentOriginalSourceResume } from './notion-agent-cli-process.mjs';
@@ -348,7 +348,7 @@ async function verifiedArtifact(artifact, readArtifact) {
 
 async function retainedToolHistory(record, readArtifact) {
   need(record?.version === 1 && Array.isArray(record.artifacts) && record.artifacts.length > 0,
-    'TOOL_HISTORY_MISSING', 'Reusing a historical local read needs its sealed actual tool observations');
+    'TOOL_HISTORY_MISSING', 'Reusing a retained read needs its sealed actual tool observations');
   const rows = [], sources = new Map(), paths = new Set();
   for (const artifact of record.artifacts) {
     need(!paths.has(artifact.path), 'TOOL_HISTORY_DUPLICATED', 'A historical observer artifact was supplied twice');
@@ -372,6 +372,143 @@ async function retainedToolHistory(record, readArtifact) {
     }
   }
   return { rows, sources };
+}
+
+// The caller supplies a fully correlated native child, verified Pi runtime and
+// Broker owner, and the hash-bound branch of this exact provider request.
+// SDK identity comes from the original same-segment read, never body equality.
+export async function verifyNotionAgentNestedResourceRead({ call, parent, brokerOwner, runtimeEvidence,
+  branch, branchArtifact, taskArtifact, sdkSegment, payload, frozenBodies, readArtifact }) {
+  const requireProof = (condition, message) => need(condition, 'NESTED_RESOURCE_PROOF_MISSING', message, { toolCallId: call.id });
+  requireProof(call.name === 'read' && call.provenance?.kind === 'native-nested-summary'
+    && call.parentToolCallId === parent?.id && parent.name === 'codemode' && parent.container?.complete === true,
+  'A resource read needs its complete native code-mode parent and actual callbacks');
+  const source = call.event.toolSource;
+  requireProof(source && ['path', 'source', 'scope', 'origin', 'baseDir'].every(key => source[key] === brokerOwner.source[key]),
+    'The actual read must belong to the verified frozen Broker');
+  for (const item of [call, parent]) {
+    const runtime = runtimeEvidence.get(item.id), implementation = inspectedPiToolRuntime(item.event.toolRuntime);
+    requireProof(implementation && runtime && isDeepStrictEqual(runtime.implementation, implementation)
+      && runtime.toolCallId === item.id && runtime.toolName === item.name
+      && runtime.pid === item.event.pid && runtime.inputSha256 === item.event.inputSha256
+      && item.result?.isError === false && item.native?.isError === false,
+    'The child and parent need their own verified runtime and successful results');
+  }
+  const callIndex = branch.findIndex(entry => entry.id === parent.native.assistantEntryId);
+  const resultIndex = branch.findIndex(entry => entry.id === parent.native.resultEntryId);
+  requireProof(callIndex >= 0 && resultIndex > callIndex, 'The original native call and result must remain on this request branch');
+  const prior = branch.slice(0, callIndex);
+  const refs = ref => prior.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref'
+    && entry.data?.version === 1 && entry.data.ref === ref);
+  requireProof(/^sr:R[A-Za-z0-9_-]{22}$/u.test(call.arguments?.path ?? '')
+    && Object.keys(call.arguments).every(key => key === 'path'), 'Only the complete original single-resource short-ref read is covered');
+  const resources = refs(call.arguments.path), resource = resources[0]?.data.target;
+  requireProof(resources.length === 1 && resource?.kind === 'resource', 'The resource short ref must exist uniquely before the native call');
+  const owners = refs(resource.owner), selected = owners[0]?.data.target, identity = selected?.identity;
+  requireProof(owners.length === 1 && selected?.kind === 'selected' && identity?.source === 'notion'
+    && digest(identity.scope) && /^s_[a-f0-9]{64}$/u.test(selected.snapshot_id ?? '') && digest(selected.version_id),
+  'The resource must name one complete pre-call Notion selection');
+  const fixed = parseNativeReference(resource.ref), main = parseNativeReference(selected.ref);
+  requireProof(hasExactNativeOwner(fixed) && fixed.selector === identity.id && fixed.path === resource.path
+    && fixed.snapshot === selected.snapshot_id && main.selector === identity.id && main.snapshot === selected.snapshot_id
+    && main.path === selected.entrypoint && nativeReferenceLibrary(fixed) === identity.locator?.library_id
+    && nonempty(resource.file_id) && digest(resource.sha256) && Number.isSafeInteger(resource.bytes) && resource.bytes > 0,
+  'The selected owner and resource must retain their exact fixed identity and file binding');
+  const frozen = frozenBodies.get(resource.sha256);
+  requireProof(frozen && frozen.bytes === resource.bytes, 'The original resource needs the independently frozen complete body');
+
+  requireProof(isDeepStrictEqual(sdkSegment?.tasks, taskArtifact), 'SDK evidence must name this exact historical task segment');
+  const sdkText = (await verifiedArtifact(sdkSegment.sdk, readArtifact)).toString('utf8');
+  requireProof(sdkText.endsWith('\n'), 'Retain the complete SDK observation');
+  const sdk = sdkText.trimEnd().split('\n').map(JSON.parse);
+  const pid = call.event.pid, first = sdk[0], last = sdk.at(-1);
+  requireProof(Number.isSafeInteger(pid) && pid > 0 && call.result.pid === pid && parent.event.pid === pid && parent.result.pid === pid
+    && first?.phase === 'sdk-observer-start' && first.pid === pid && last?.phase === 'sdk-observer-end' && last.pid === pid
+    && last.pending === 0 && sdk.filter(row => row.phase === 'sdk-observer-start').length === 1
+    && sdk.filter(row => row.phase === 'sdk-observer-end').length === 1 && !sdk.some(row => row.phase === 'sdk-observer-error'),
+  'The SDK and complete native callbacks must belong to one original process');
+  const clock = value => { requireProof(/^\d+$/u.test(value ?? ''), 'The actual original monotonic clock is required'); return BigInt(value); };
+  const from = clock(call.event.monotonicNs), to = clock(call.result.monotonicNs);
+  requireProof(clock(parent.event.monotonicNs) < from && from < to && to < clock(parent.result.monotonicNs),
+    'The child must finish inside the actual parent window');
+  const reads = sdk.filter(row => row.phase === 'sdk-start' && row.operation === 'read'
+    && row.pid === pid && clock(row.monotonic_ns) >= from && clock(row.monotonic_ns) <= to);
+  requireProof(reads.length === 1, 'Exactly one SDK read may supply this child result');
+  const start = reads[0], ends = sdk.filter(row => row.phase === 'sdk-end' && row.requestId === start.requestId);
+  requireProof(sdk.filter(row => row.phase === 'sdk-start' && row.requestId === start.requestId).length === 1 && ends.length === 1,
+    'The original SDK request needs one start and end');
+  const end = ends[0];
+  requireProof(end.operation === 'read' && end.pid === pid && end.status === 'completed' && end.resultObserved === true
+    && clock(end.monotonic_ns) >= clock(start.monotonic_ns) && clock(end.monotonic_ns) <= to,
+  'The successful SDK read must complete within the same child window');
+  const sourceObservation = parseSourceObservation((await verifiedArtifact(sdkSegment.source, readArtifact)).toString('utf8'));
+  requireProof(sourceObservation.complete === true && sourceObservation.errors.length === 0 && sourceObservation.events[0]?.pid === pid,
+    'Retain this process segment complete source observation and clock');
+  const sourceRows = sourceObservation.events.filter(row => row.requestId === 'sdk:' + pid + ':' + start.requestId);
+  const starts = sourceRows.filter(row => row.phase === 'started'), completions = sourceRows.filter(row => row.phase === 'completed');
+  requireProof(starts.length === 1 && completions.length === 1, 'The SDK request must have its exact original source observation');
+  for (const [row, counterpart] of [[starts[0], start], [completions[0], end]]) {
+    requireProof(row.kind === 'sdk' && row.operation === 'read' && row.pid === pid
+      && row.sourceMonotonicNs === counterpart.monotonic_ns && nonempty(row.source_id)
+      && row.library === nativeReferenceLibrary(fixed) && clock(row.monotonicNs) >= from && clock(row.monotonicNs) <= to,
+    'Source identity and both clocks must agree with this same-segment SDK read');
+  }
+  requireProof(starts[0].source_id === completions[0].source_id && completions[0].status === 'completed',
+    'Source start and completion must name the same successful owner');
+  const responses = (sdkSegment.responses ?? []).filter(row => row.requestId === start.requestId);
+  requireProof(responses.length === 1 && end.responseFile === start.requestId + '.json'
+    && responses[0].artifact.path === join(dirname(sdkSegment.sdk.path), 'sdk-responses', end.responseFile),
+  'Retain the exact response file named by the original SDK end');
+  const responseArtifact = responses[0].artifact;
+  const receipt = JSON.parse((await verifiedArtifact(responseArtifact, readArtifact)).toString('utf8'));
+  const value = receipt.value, output = receipt.outputEvidence;
+  requireProof(receipt.version === 2 && receipt.transport === 'sdk' && receipt.operation === 'read'
+    && receipt.requestId === start.requestId && receipt.status === 'completed' && receipt.resultObserved === true,
+  'The sealed SDK response must be the actual complete read result');
+  requireProof(value?.record?.id === identity.id && isDeepStrictEqual(value.record.locator, identity.locator)
+    && value.scope === identity.scope && value.snapshot_id === selected.snapshot_id && value.version_id === selected.version_id
+    && value.path === resource.path && value.ref === resource.ref && value.sha256 === resource.sha256 && value.bytes === resource.bytes
+    && value.entrypoint_sha256 === selected.body_sha256 && value.entrypoint === selected.entrypoint
+    && value.freshness?.policy === 'pinned',
+  'The SDK response must match the full pre-call owner, scope, version, path and source bytes');
+  const files = value.file_bindings?.filter(file => file.path === resource.path) ?? [];
+  requireProof(files.length === 1 && files[0].file_id === resource.file_id && nonempty(files[0].page_id),
+    'The SDK response must retain the original exact File binding');
+  requireProof(output?.path === value.output && output.sha256 === resource.sha256 && output.bytes === resource.bytes
+    && output.content === frozen.text && Buffer.byteLength(output.content) === output.bytes && hash(output.content) === output.sha256,
+  'Use the already observed complete SDK output, never reopen the Store or infer bytes from a directory');
+  const readContent = async item => {
+    const bytes = await verifiedArtifact(item.result.contentArtifact, readArtifact);
+    requireProof(item.result.content?.sha256 === hash(bytes) && item.result.content.bytes === bytes.length,
+      'The sealed result must match its original callback content identity');
+    const content = JSON.parse(bytes.toString('utf8'));
+    requireProof(Array.isArray(content) && content.every(part => part.type === 'text' && typeof part.text === 'string'),
+      'This proof covers complete text results only');
+    return content;
+  };
+  const childContent = await readContent(call), parentContent = await readContent(parent);
+  requireProof(textOf(childContent) === output.content, 'The child result must contain precisely the full SDK resource body');
+  requireProof(isDeepStrictEqual(parentContent, branch[resultIndex]?.message?.content),
+    'The parent callback must equal its complete retained native result');
+  const messages = (payload.messages ?? []).map((message, index) => ({ message, index }))
+    .filter(({ message }) => message.role === 'tool' && message.tool_call_id === parent.id);
+  requireProof(messages.length === 1 && textOf(messages[0].message.content) === textOf(parentContent),
+    'The actual outer provider message must equal this exact parent native result');
+  const text = textOf(parentContent), offset = text.indexOf(output.content);
+  requireProof(offset >= 0 && text.indexOf(output.content, offset + 1) < 0,
+    'The parent must deliver one complete unmodified copy of this proven child body');
+  return { owner: identity.id, scope: identity.scope, snapshot_id: selected.snapshot_id, version_id: selected.version_id,
+    path: resource.path, sha256: resource.sha256, bytes: resource.bytes, purpose: 'resource',
+    messageIndex: messages[0].index, toolCallId: parent.id, content: { sha256: hash(text), bytes: Buffer.byteLength(text) },
+    delivery: { start: offset, end: offset + output.content.length, encoding: 'raw' },
+    native: { kind: 'nested-sdk-resource', toolCallId: call.id, rootToolCallId: parent.id,
+      callEntryId: parent.native.assistantEntryId, resultEntryId: parent.native.resultEntryId,
+      resourceEntryId: resources[0].id, ownerEntryId: owners[0].id, branchArtifact, taskArtifact,
+      sdkArtifact: sdkSegment.sdk, sourceArtifact: sdkSegment.source, responseArtifact,
+      requestId: start.requestId, pid, clockId: sourceObservation.events[0].clockId,
+      startedNs: start.monotonic_ns, endedNs: end.monotonic_ns,
+      childResultArtifact: call.result.contentArtifact, parentResultArtifact: parent.result.contentArtifact,
+      brokerOwner, runtimeProfile: runtimeEvidence.get(call.id).implementation.profile } };
 }
 
 async function observedCandidateCli(observed, readArtifact) {
@@ -597,7 +734,7 @@ async function nativeSourceReceipts(artifact, session, responseEntryId, readArti
           branchArtifact: { path: artifact.path, sha256: artifact.sha256, bytes: artifact.bytes } } });
     } catch (error) { rejected.push({ receiptEntryId: entry.id, reason: error.message }); }
   }
-  return { receipts, rejected };
+  return { receipts, rejected, branch: snapshot.entries };
 }
 
 function boundNotionDeliveries(payload, tasks, frozenBodies) {
@@ -1079,20 +1216,20 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
   // and this request's exact tool message. It does not infer a fresh read.
   let history;
   const historicalRoots = new Map();
-  const historicalReadAttempts = async (path, payload, payloadTime) => {
+  const retainedReadAttempts = async (matches, payload, payloadTime, includeCurrent = false) => {
     const delivered = new Set((payload.messages ?? []).filter(message => message.role === 'tool').map(message => message.tool_call_id));
     const calls = [], session = observed.session;
-    for (const root of session.attempts.filter(call => call.active && call.userEntryId !== session.currentUserId && delivered.has(call.id))) {
+    for (const root of session.attempts.filter(call => call.active && (includeCurrent || call.userEntryId !== session.currentUserId) && delivered.has(call.id))) {
       const terminal = session.branchEntries.find(entry => entry.id === root.resultEntryId)?.message;
       const members = terminal?.nestedCalls?.calls ?? [];
-      if (![root, ...members].some(call => call.name === 'read' && actualReadPath(call.arguments?.path) === path)) continue;
+      if (![root, ...members].some(call => call.name === 'read' && matches(call, root))) continue;
       need(session.contributions.some(row => row.entryId === root.assistantEntryId && row.role === 'assistant')
         && session.contributions.some(row => row.entryId === root.resultEntryId && row.role === 'toolResult'),
-      'HISTORICAL_READ_NOT_RETAINED', 'An omitted or compacted historical result cannot supply local read identity');
+      'HISTORICAL_READ_NOT_RETAINED', 'An omitted or compacted historical result cannot supply read identity');
       if (!historicalRoots.has(root.id)) {
         history ??= await retainedToolHistory(observed.toolHistory, readArtifact);
         const ids = new Set([root.id, ...members.map(call => call.id)]);
-        const runtimeEvidence = await verifyObservedPiToolRuntime(history.rows, readArtifact);
+        const runtimeEvidence = history.runtimeEvidence ??= await verifyObservedPiToolRuntime(history.rows, readArtifact);
         const correlation = correlateNotionAgentToolAttempts({ tasks: history.rows.filter(row => ids.has(row.toolCallId)),
           session: { ...session, attempts: [root] }, currentUserId: root.userEntryId, runtimeEvidence });
         if (!correlation.complete) {
@@ -1105,7 +1242,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           callArtifact: history.sources.get(call.event), resultArtifact: history.sources.get(call.result),
         } })));
       }
-      for (const call of historicalRoots.get(root.id).filter(call => call.name === 'read' && actualReadPath(call.arguments?.path) === path)) {
+      for (const call of historicalRoots.get(root.id).filter(call => call.name === 'read' && matches(call, root))) {
         need(/^\d+$/u.test(payloadTime ?? '') && BigInt(call.result.monotonicNs) < BigInt(payloadTime),
           'HISTORICAL_READ_ORDER_UNPROVEN', 'A reused result must have completed before this actual provider payload');
         calls.push(call);
@@ -1199,7 +1336,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
         need(shared.toolObservation, 'TOOL_OBSERVATION_UNPROVEN', 'Native local body delivery needs complete actual tool observations');
         const frozen = uniqueBodies.get(privateBindings.bodies[key].sha256);
         const calls = [];
-        const available = [...shared.attempts.values(), ...await historicalReadAttempts(path, payload, task.monotonicNs)];
+        const available = [...shared.attempts.values(), ...await retainedReadAttempts(call => actualReadPath(call.arguments?.path) === path, payload, task.monotonicNs)];
         for (const call of available.filter(call => call.name === 'read' && call.result?.isError === false &&
           call.native?.isError === false && actualReadPath(call.arguments?.path) === path)) {
           let content;
@@ -1225,6 +1362,26 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
       const native = uniqueBodies.size ? await nativeSourceReceipts(task.branch, observed.session, nativeMatches[0].entryId, readArtifact)
         : { receipts: [], rejected: [] };
       const notion = boundNotionDeliveries(payload, [...tasks, ...native.receipts], uniqueBodies);
+      const resourceRef = (call, root) => call.id !== root.id && native.branch?.some(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref'
+        && entry.data?.ref === call.arguments?.path && entry.data.target?.kind === 'resource'
+        && uniqueBodies.has(entry.data.target.sha256));
+      for (const call of await retainedReadAttempts(resourceRef, payload, task.monotonicNs, true)) {
+        if (call.provenance?.kind !== 'native-nested-summary') continue;
+        try {
+          const parent = historicalRoots.get(call.rootToolCallId).find(item => item.id === call.parentToolCallId);
+          const taskArtifact = history.sources.get(call.event);
+          need(parent && [call.result, parent.event, parent.result].every(row => isDeepStrictEqual(history.sources.get(row), taskArtifact)),
+            'NESTED_RESOURCE_SEGMENT_MISMATCH', 'The nested resource callbacks must belong to one original task segment');
+          const segments = observed.toolHistory.sdkSegments?.filter(segment => isDeepStrictEqual(segment.tasks, taskArtifact)) ?? [];
+          need(segments.length === 1, 'NESTED_RESOURCE_SEGMENT_MISSING', 'Retain exactly one SDK/source binding for this task segment');
+          shared.resourceBrokerOwner ??= await observedBrokerToolOwner(observed, readArtifact);
+          notion.deliveries.push(await verifyNotionAgentNestedResourceRead({ call, parent, brokerOwner: shared.resourceBrokerOwner,
+            runtimeEvidence: history.runtimeEvidence, branch: native.branch, branchArtifact: task.branch, taskArtifact,
+            sdkSegment: segments[0], payload, frozenBodies: uniqueBodies, readArtifact }));
+        } catch (error) {
+          notion.rejected.push({ toolCallId: call.id, code: error.code ?? 'NESTED_RESOURCE_PROOF_INVALID', reason: error.message });
+        }
+      }
       payloads.push({ request: request.request, api: end.modelApi, nativeResponseEntryId: nativeMatches[0].entryId,
         ...(end.modelApi === 'openai-responses' ? { responseId: end.sseCompletion.response.id, responseModel: end.sseCompletion.response.model } : {}),
         wireRequestId: sent.id, sha256: task.sha256, bytes: task.bytes, bodies, bodyObservation, nativeReadBodies,
@@ -1324,7 +1481,7 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           preparation: call.preparedRead });
       } else if (call.name === 'bash' && source?.source === 'builtin' && source.path === 'builtin:bash') {
         const inventory = verifyNotionAgentDirectoryInventory(call, { source: observed.source, session: observed.session,
-          runtimeEvidence: shared.runtimeEvidence });
+          runtimeEvidence: shared.runtimeEvidence, sourceObservationWindow: observed.sourceObservationWindow });
         if (inventory.status === 'passed') toolOwners.set(call.id, inventory);
       } else if (['read', 'grep', 'find', 'ls', 'tool_search'].includes(call.name) &&
         source?.source === 'builtin' && source.path === builtinPath) {
