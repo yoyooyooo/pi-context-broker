@@ -72,8 +72,9 @@ async function fixture() {
   let stage = 'prepare';
   const observer = observeEpisodeNotion({ config: { runRoot, controlDir, correlation: { episode_id: 'notion-observer-apparatus' } }, recorder,
     context: () => ({ stage, turn_id: stage === 'user_task' ? 'turn-1' : null, model_request_id: null, active_tool_call_ids: stage === 'user_task' ? ['parent-1', 'child-1'] : [] }) });
-  const operation = (name, value, { metricsObserved = true, completeResult = true, trace = [], id = randomUUID(), sequence = rows => rows } = {}) => {
-    const common = { version: 1, id, operation: name, source_id: 'notion', database: 'fixture-database', pid: process.pid };
+  const operation = (name, value, { metricsObserved = true, completeResult = true, trace = [], id = randomUUID(), sequence = rows => rows,
+    sourceId = 'notion', database = 'fixture-database' } = {}) => {
+    const common = { version: 1, id, operation: name, source_id: sourceId, database, pid: process.pid };
     const rows = [[metricChannel, { ...common, event: 'start', monotonic_ns: process.hrtime.bigint().toString() }]];
     if (completeResult) rows.push([resultChannel, { version: 1, id, operation: name, value }]);
     rows.push([metricChannel, { ...common, event: 'end', monotonic_ns: process.hrtime.bigint().toString(), status: 'completed',
@@ -91,6 +92,39 @@ async function fixture() {
       }
     } };
 }
+
+test('repeated catalog lists replace one source/database projection while retaining every operation receipt', async () => {
+  const f = await fixture(), first = catalog(), refreshed = catalog();
+  refreshed.records[0].description = 'Updated refund policy';
+  refreshed.records[0].body_sha256 = 'b'.repeat(64);
+  const ids = [f.operation('list', first), f.operation('list', refreshed)];
+  let result;
+  try {
+    const candidate = f.observer.candidate([{ type: 'notion', id: 'notion' }]);
+    assert.deepEqual(candidate.projection.catalogs, [{ source_id: 'notion', database: 'fixture-database', facets: stableNotionCatalog(refreshed) }]);
+    assert.deepEqual(candidate.evidence.map(item => item.operation_id), ids);
+  } finally { result = await f.close(); }
+  assert.deepEqual(result.operations.map(item => item.operation_id), ids);
+  assert.ok(result.operations.every(item => item.status === 'completed' && item.result_observed && item.receipt_ref));
+});
+
+test('catalog projection retains distinct source/database pairs and sorts independently of observation order', async () => {
+  const identities = [{ sourceId: 'zeta', database: 'database-a' }, { sourceId: 'alpha', database: 'database-b' }, { sourceId: 'alpha', database: 'database-a' }];
+  const projections = [];
+  for (const order of [identities, [...identities].reverse()]) {
+    const f = await fixture();
+    try {
+      for (const identity of order) f.operation('list', catalog(), identity);
+      const candidate = f.observer.candidate([{ type: 'notion', id: 'alpha' }, { type: 'notion', id: 'zeta' }]);
+      assert.deepEqual(candidate.projection.catalogs.map(item => [item.source_id, item.database]), [
+        ['alpha', 'database-a'], ['zeta', 'database-a'], ['alpha', 'database-b'],
+      ]);
+      assert.equal(candidate.evidence.length, 3);
+      projections.push(candidate.projection);
+    } finally { await f.close(); }
+  }
+  assert.deepEqual(projections[0], projections[1]);
+});
 
 test('a legal resolve sequence retains all five SDK operations and zero-request resolution', async () => {
   const f = await fixture();
