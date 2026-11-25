@@ -625,7 +625,9 @@ test("a Required omitted from fresh metadata is rejected by role before its miss
     const missing = await h.tool("notion_use").execute("ordinary-absent-reference", {
       ref: "skill://absent/SKILL.md?library=00000000-0000-4000-8000-000000000099",
     }, undefined, undefined, h.ctx).catch(error => error);
-    expect(missing.code).toBe("SOURCE_REFERENCE_MISSING");
+    expect(missing.code).toBe("SKILL_NOT_FOUND");
+    expect(h.f.calls.slice(calls).map(call => call.operation)).toEqual(["list"]);
+    expect(h.selected()).toEqual(before); expect(h.active()).toEqual(active);
     expect(missing.message).not.toContain("Enabled=false");
   } finally { await h.close(); }
 });
