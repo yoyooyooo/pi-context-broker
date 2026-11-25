@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { fileIdentity, sha256 } from './episode-evidence.mjs';
-import { createEpisodeBudget, guardedFetch, providerUsage } from './episode-policy.mjs';
+import { codemodeExtensionOptions, createEpisodeBudget, guardedFetch, providerUsage } from './episode-policy.mjs';
 import { finishEpisodeRequest, reserveEpisodeRequest } from './episode-runner.mjs';
 import { providerReportedModel } from '../reported-model.mjs';
 
@@ -58,6 +58,10 @@ test('maintained Pi adapter and CodeMode apparatus proof over owned loopback HTT
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     for (const scenario of [{ id: 'guard-and-census', api: 'openai-completions', guard: true }, { id: 'completions-and-nested', api: 'openai-completions', nested: true }, { id: 'responses', api: 'openai-responses' },
+      { id: 'required-completions-and-nested', api: 'openai-completions', policy: 'required', nested: true },
+      { id: 'required-responses', api: 'openai-responses', policy: 'required' },
+      { id: 'off-completions', api: 'openai-completions', policy: 'off' },
+      { id: 'off-responses', api: 'openai-responses', policy: 'off' },
       { id: 'completions-reported-mismatch', api: 'openai-completions', nested: true, enforceReported: true, reportedModel: 'wrong-variant' },
       { id: 'completions-reported-missing', api: 'openai-completions', nested: true, enforceReported: true, omitReported: true },
       { id: 'responses-reported-mismatch', api: 'openai-responses', enforceReported: true, reportedModel: 'wrong-variant' }]) {
@@ -74,12 +78,13 @@ test('maintained Pi adapter and CodeMode apparatus proof over owned loopback HTT
       let currentRequest, identityStop;
       const record = (type, data) => { runtimeRecords.push({ type, data: structuredClone(data) }); return { artifact_id: 'observed', pointer: '/runtime_records/' + (runtimeRecords.length - 1) }; };
       const loader = new sdk.DefaultResourceLoader({ cwd, agentDir, settingsManager, noExtensions: true, noSkills: true, noContextFiles: true, noPromptTemplates: true, noThemes: true,
-        additionalExtensionPaths: ['builtin:codemode'], extensionFactories: [
-          { name: 'codemode', builtin: true, factory: sdk.createCodemodeExtension({ mode: 'on', models: false }) },
+        additionalExtensionPaths: ['builtin:codemode', 'builtin:tool_search'], extensionFactories: [
+          { name: 'codemode', builtin: true, factory: sdk.createCodemodeExtension(codemodeExtensionOptions(scenario.policy ?? 'free')) },
+          { name: 'tool_search', builtin: true, factory: sdk.createToolSearchExtension() },
           { name: 'silent-proof', factory: api => { api.on('context_with_system', event => ({ messages: event.messages.map(message => message.role === 'system' ? { ...message, content: String(message.content) + '\nCONTROLLED_SILENT_EXTENSION' } : message) })); if (scenario.guard) api.on('before_provider_request', () => { throw new Error('CONTROLLED_EXTENSION_THROW'); }); } },
         ] });
       await loader.reload();
-      const { session } = await sdk.createAgentSession({ cwd, agentDir, modelRuntime, settingsManager, resourceLoader: loader, model: modelRuntime.getModel('benchmark-loopback', 'fixture'), thinkingLevel: 'off', tools: ['+codemode'], sessionManager: sdk.SessionManager.inMemory(cwd) });
+      const { session } = await sdk.createAgentSession({ cwd, agentDir, modelRuntime, settingsManager, resourceLoader: loader, model: modelRuntime.getModel('benchmark-loopback', 'fixture'), thinkingLevel: 'off', tools: [scenario.policy === 'off' ? '-codemode' : '+codemode', '+tool_search'], sessionManager: sdk.SessionManager.inMemory(cwd) });
       session.subscribe(event => {
         events.push(event);
         if (scenario.enforceReported && currentRequest && event.type === 'message_end' && event.message.role === 'assistant') {
@@ -121,6 +126,18 @@ test('maintained Pi adapter and CodeMode apparatus proof over owned loopback HTT
         await writeFile(join(directory, 'observed.json'), JSON.stringify(result, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
         const artifact = await fileIdentity(join(directory, 'observed.json'), scenario.id);
         assert.equal(result.preview_contains_marker, true); assert.ok(result.extensions.some(extension => extension.path.includes('silent-proof')));
+        for (const payload of payloads) {
+          const names = payload.tools.map(tool => tool.function?.name ?? tool.name);
+          assert.equal(names.includes('codemode'), scenario.policy !== 'off');
+          assert.equal(names.includes('read'), scenario.policy !== 'required');
+          assert.equal(names.includes('bash'), scenario.policy !== 'required');
+          assert.equal(names.includes('write'), scenario.policy !== 'required');
+          assert.equal(names.includes('tool_search'), true, 'Model-only discovery remains declared in Pi only mode');
+          if (scenario.policy === 'required') {
+            const description = payload.tools.find(tool => (tool.function?.name ?? tool.name) === 'codemode');
+            assert.match(description.function?.description ?? description.description, /read\(/);
+          }
+        }
         if (scenario.guard) {
           assert.equal(received.length, 0); assert.equal(payloads.length, 1); assert.equal(extensionErrors.length, 1);
           assert.match(assistants.at(-1).errorMessage, /CONTROLLED_OUTER_TRANSPORT_GUARD/);

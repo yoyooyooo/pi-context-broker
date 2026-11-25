@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { observeProviderTransport, readProviderTransport } from '../../scripts/skill-consumption-provider.mjs';
 import { bindReferences, candidateDifferences, createEpisodeRecorder, exists, fileIdentity, inside, inventory, normalizeCandidate, observeSharedGit, readJson, sha256 } from './episode-evidence.mjs';
-import { createEpisodeBudget, EpisodeStop, guardedFetch, providerUsage } from './episode-policy.mjs';
+import { codemodeExtensionOptions, createEpisodeBudget, EpisodeStop, guardedFetch, providerUsage } from './episode-policy.mjs';
 import { observeEpisodeNotion } from './episode-notion.mjs';
 import { assessReportedModel, providerReportedModel, validateRoutingPolicy } from '../reported-model.mjs';
 
@@ -300,7 +300,8 @@ export async function runEpisode(input, hooks = {}) {
     const model = modelRuntime.getPhysicalModel(config.model.provider, config.model.id);
     assertModel(config, model);
     assert.ok(!config.model.apiKeyEnv || typeof process.env[config.model.apiKeyEnv] === 'string' && process.env[config.model.apiKeyEnv].length, 'BENCHMARK_CREDENTIAL_ENV_MISSING');
-    const codeEnabled = (config.codeMode.policy ?? (config.codeMode.enabled ? 'free' : 'off')) !== 'off';
+    const codePolicy = config.codeMode.policy ?? (config.codeMode.enabled ? 'free' : 'off');
+    const codeEnabled = codePolicy !== 'off';
     const observerFactory = api => {
       transport = observeProviderTransport(api, { diagnostics, fs, crypto, path, output: transportPath, checkoutRoot: resolve(fileURLToPath(new URL('../..', import.meta.url))), clockId: config.correlation.episode_id });
       api.on('tool_call', event => {
@@ -315,7 +316,7 @@ export async function runEpisode(input, hooks = {}) {
       noExtensions: true, noSkills: true, noContextFiles: true, noPromptTemplates: true, noThemes: true,
       additionalExtensionPaths: [...profile.extensions.map(extension => extension.path), 'builtin:codemode', 'builtin:tool_search'], additionalSkillPaths: profile.native_skill_roots,
       extensionFactories: [
-        { name: 'codemode', builtin: true, replaceable: true, factory: sdk.createCodemodeExtension({ mode: 'on', models: false }) },
+        { name: 'codemode', builtin: true, replaceable: true, factory: sdk.createCodemodeExtension(codemodeExtensionOptions(codePolicy)) },
         { name: 'tool_search', builtin: true, replaceable: true, factory: sdk.createToolSearchExtension() },
         { name: 'benchmark-observer', factory: observerFactory },
       ],

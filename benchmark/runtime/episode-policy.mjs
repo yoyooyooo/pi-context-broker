@@ -4,6 +4,12 @@ export class EpisodeStop extends Error {
   constructor(code, details = {}) { super(code); this.name = 'EpisodeStop'; this.code = code; this.details = details; }
 }
 
+/** Required uses Pi's supported script-only exposure; off stays registered but inactive. */
+export function codemodeExtensionOptions(policy) {
+  assert.ok(['free', 'off', 'required'].includes(policy), 'BENCHMARK_CODEMODE_POLICY_INVALID');
+  return { mode: policy === 'required' ? 'only' : 'on', models: false };
+}
+
 const finite = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const field = (object, path) => path.reduce((value, key) => value?.[key], object);
 

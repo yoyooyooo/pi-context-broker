@@ -366,9 +366,17 @@ inconclusive decision. Zero observed failures or all ties do not establish a
 narrow noninferiority margin.
 
 `allowed_changes` declares differences between environments. Code Mode `free`,
-`off` and `required` are separate policy conditions. The runtime records the
-actual declarations and calls; use policy interactions rather than grouping
-episodes afterward according to whether a model happened to call Code Mode.
+`off` and `required` are separate policy conditions. `free` activates Pi's `on`
+mode; `off` leaves Code Mode inactive; `required` activates Pi's `only` mode.
+In `only`, active direct tools remain callable inside Code Mode but their direct
+declarations are hidden. Model-only tools such as `tool_search` remain declared.
+This uses Pi's supported exposure policy and does not force a tool call when a
+task needs none. The runtime records the actual declarations and calls; use
+policy interactions rather than grouping episodes afterward according to whether
+a model happened to call Code Mode.
+Older captures that recorded `required` while constructing Pi with `mode: 'on'`
+do not demonstrate this policy. Retain them under their actual runtime identity;
+new required diagnostics need a newly frozen controller and capture.
 
 ## Visibility and public distribution
 
