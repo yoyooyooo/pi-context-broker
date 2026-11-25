@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { fileIdentity, sha256 } from './episode-evidence.mjs';
 import { codemodeExtensionOptions, createEpisodeBudget, guardedFetch, providerUsage } from './episode-policy.mjs';
@@ -13,6 +13,51 @@ const pairedRoot = process.env.PAIRED_RUN_ROOT;
 const fixtureUsage = { prompt_tokens: 100, completion_tokens: 30, total_tokens: 130, prompt_tokens_details: { cached_tokens: 20, cache_write_tokens: 10 }, completion_tokens_details: { reasoning_tokens: 5 } };
 const responsesUsage = { input_tokens: 100, output_tokens: 30, total_tokens: 130, input_tokens_details: { cached_tokens: 20, cache_write_tokens: 10 }, output_tokens_details: { reasoning_tokens: 5 } };
 const sse = object => 'data: ' + JSON.stringify(object) + '\n\n';
+
+test('maintained Pi awaits broker refresh before an admission context preview', { skip: !pairedRoot && 'Run through the existing paired SDK proof; no provider or Notion request is made.', timeout: 30000 }, async () => {
+  const run = JSON.parse(await readFile(join(pairedRoot, 'run.json'), 'utf8'));
+  const piRoot = dirname(dirname(dirname(run.pi_launch.entry))), sdk = await import(pathToFileURL(join(piRoot, 'dist/index.js')).href);
+  const directory = join(pairedRoot, 'admission-readiness-proof'), cwd = join(directory, 'workspace'), agentDir = join(directory, 'agent');
+  await mkdir(cwd, { recursive: true }); await mkdir(agentDir);
+  const settingsManager = sdk.SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, cacheWarming: 'off' });
+  const modelRuntime = await sdk.ModelRuntime.create({ authPath: join(agentDir, 'auth.json'), modelsPath: null, modelsStorePath: join(agentDir, 'model-store.json'), allowModelNetwork: false, refreshOnCreate: false });
+  modelRuntime.registerProvider('readiness-proof', { baseUrl: 'http://127.0.0.1:9/v1', api: 'openai-completions', apiKey: 'controlled-unused-key', models: [{ id: 'fixture', name: 'fixture', reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 10000, maxTokens: 256 }] });
+  const publication = Promise.withResolvers(), enteredRefresh = Promise.withResolvers(), errors = [], commands = [];
+  let startup, ready = false, modelRequests = 0;
+  const loader = new sdk.DefaultResourceLoader({ cwd, agentDir, settingsManager, noExtensions: true, noSkills: true, noContextFiles: true, noPromptTemplates: true, noThemes: true,
+    extensionFactories: [{ name: 'delayed-catalog-proof', factory: api => {
+      api.on('session_start', () => { startup = publication.promise.then(() => { ready = true; }); void startup; });
+      api.registerCommand('context-broker', { description: 'Owned admission-readiness fixture.', handler: async args => {
+        commands.push(args); if (args === 'refresh') { enteredRefresh.resolve(); await startup; }
+      } });
+      api.on('context_with_system', event => ({ messages: event.messages.map(message => message.role === 'system'
+        ? { ...message, content: String(message.content) + '\n' + (ready ? 'OWNED_CATALOG_READY' : 'OWNED_CATALOG_PENDING') } : message) }));
+    } }] });
+  await loader.reload();
+  const { session } = await sdk.createAgentSession({ cwd, agentDir, modelRuntime, settingsManager, resourceLoader: loader, model: modelRuntime.getModel('readiness-proof', 'fixture'), thinkingLevel: 'off', sessionManager: sdk.SessionManager.inMemory(cwd) });
+  session.agent.streamFunction = () => { modelRequests++; throw new Error('READINESS_PROOF_MODEL_FORBIDDEN'); };
+  try {
+    await session.bindExtensions({ mode: 'rpc', onError: error => errors.push(error) });
+    const initial = [{ role: 'system', content: session.systemPrompt, timestamp: 0 }];
+    // The old ordering takes a real SDK projection while startup publication is pending.
+    const pending = await session.agent.transformContext(initial);
+    assert.match(JSON.stringify(pending), /OWNED_CATALOG_PENDING/);
+    const refresh = session.prompt('/context-broker refresh');
+    await enteredRefresh.promise;
+    let previewStarted = false;
+    const projected = refresh.then(() => { previewStarted = true; return session.agent.transformContext(initial); });
+    await Promise.resolve(); assert.equal(previewStarted, false, 'The command must await metadata publication');
+    publication.resolve();
+    const complete = await projected;
+    assert.match(JSON.stringify(complete), /OWNED_CATALOG_READY/);
+    assert.doesNotMatch(JSON.stringify(complete), /OWNED_CATALOG_PENDING/);
+    assert.equal(modelRequests, 0); assert.deepEqual(errors, []); assert.deepEqual(commands, ['refresh']);
+    await writeFile(join(directory, 'observed.json'), JSON.stringify({ version: 1,
+      scope: 'Actual Pi SDK command-await/context-transform contract with controlled delayed metadata; no live catalog or business result.',
+      previous_order: pending, refresh_before_preview: complete, commands, provider_requests: modelRequests, notion_requests: 0,
+      source: await fileIdentity(fileURLToPath(new URL('./episode-runner.mjs', import.meta.url))) }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  } finally { publication.resolve(); await session.dispose(); }
+});
 
 test('maintained Pi adapter and CodeMode apparatus proof over owned loopback HTTP', { skip: !pairedRoot && 'Run through shared paired-environment --target command; no public provider is contacted.', timeout: 30000 }, async () => {
   const run = JSON.parse(await readFile(join(pairedRoot, 'run.json'), 'utf8'));

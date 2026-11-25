@@ -348,7 +348,7 @@ export async function runEpisode(input, hooks = {}) {
     });
     await Promise.race([session.bindExtensions({ uiContext: ui, mode: 'rpc', onError: error => { extensionErrors.push(error); recorder.record('extension_error', error); }, shutdownHandler: () => stop('BENCHMARK_EXTENSION_SHUTDOWN') }), stopping]);
     if (config.mode === 'broker') {
-      for (const command of ['status', 'roots', 'catalogs']) await Promise.race([session.prompt('/context-broker ' + command), stopping]);
+      for (const command of ['refresh', 'status', 'roots', 'catalogs']) await Promise.race([session.prompt('/context-broker ' + command), stopping]);
       assert.equal(preflightModelAttempt, false, 'BENCHMARK_DIAGNOSTIC_STARTED_MODEL');
     }
     assert.equal(extensionErrors.length, 0, 'BENCHMARK_EXTENSION_STARTUP_ERROR');

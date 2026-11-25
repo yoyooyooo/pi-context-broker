@@ -66,6 +66,14 @@ inputs may share this expectation. Each actual episode independently verifies
 its public input bytes, loaded resources and first serialized request before
 transport. An expectation mismatch stops before submitting the business task.
 
+Broker admission awaits the existing `/context-broker refresh` command before
+projecting the initial context. This waits for catalog publication; transport
+idleness alone cannot update a context already captured during discovery.
+Capture and execution must use the same credential injection for their named
+environment variables so their projections undergo the same redaction. Capture still blocks
+provider transport and business tool execution. Keep older expectations and
+failed admissions, and create a new capture identity after a runtime change.
+
 Cases with multiple turns, fixture events or frozen clarification responses also
 require a completed build containing the current common turn runtime. Configuration
 checks this before preparing any remote fixture; capture and execution check it
