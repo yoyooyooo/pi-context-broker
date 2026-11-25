@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseNativeReference, hasExactNativeOwner, nativeReferenceLibrary } from '../packages/context-broker/src/native-reference.ts';
+import { parseNativeReference, hasExactNativeOwner, nativeReferenceLibrary, nativeSkillId } from '../packages/context-broker/src/native-reference.ts';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -1113,6 +1113,101 @@ export async function verifyNotionAgentContentSearch(expected, observed, binding
 /** Analyze one real turn. Only the outside controller receives private bindings.
  * readArtifact and inspectPayload are injected I/O/pure helpers, never model tools. */
 /** A user's statement that a page is gone cannot replace an actual failed current read. */
+// The shared catalog resolver is pure: a complete online list can succeed and
+// then resolve the exact absent owner to SKILL_NOT_FOUND without an SDK read.
+// Only its already captured, sealed response can prove that path.
+async function unavailableCatalogProof({ call, item, library, sourceId, observed, source, within, readArtifact }) {
+  const operations = source.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.operation === 'list'
+    && row.pid === call.event.pid && row.source_id === sourceId && sameLibrary(row.library, library) && within(row.monotonicNs));
+  if (operations.length === 0) return undefined;
+  const prove = (condition, message) => need(condition, 'UNAVAILABLE_CATALOG_PROOF_MISSING', message, { toolCallId: call.id });
+  prove(operations.length === 1, 'The failed tool needs one exact-source catalog invocation');
+  const operation = operations[0], pid = call.event.pid, prefix = 'sdk:' + pid + ':';
+  prove(operation.requestId.startsWith(prefix) && call.result.pid === pid, 'The catalog and native result must belong to this actual process');
+  const requestId = operation.requestId.slice(prefix.length), window = observed.sourceObservationWindow;
+  prove(/^\d+$/u.test(window?.startedNs ?? '') && /^\d+$/u.test(window?.endedNs ?? '')
+    && BigInt(window.startedNs) <= BigInt(call.event.monotonicNs) && BigInt(call.event.monotonicNs) < BigInt(call.result.monotonicNs)
+    && BigInt(call.result.monotonicNs) <= BigInt(window.endedNs), 'The whole failed tool must lie inside the current observation window');
+  const segments = observed.toolHistory?.sdkSegments?.filter(segment => segment.responses?.some(row => row.requestId === requestId)) ?? [];
+  prove(segments.length === 1, 'Keep one sealed original SDK catalog response, never reopen an unbound file');
+  const segment = segments[0], rawSource = parseSourceObservation((await verifiedArtifact(segment.source, readArtifact)).toString('utf8'));
+  prove(rawSource.complete === true && rawSource.errors.length === 0 && rawSource.events[0]?.pid === pid,
+    'The catalog needs the complete original process source observation');
+  const rows = rawSource.events.filter(row => row.requestId === operation.requestId);
+  prove(isDeepStrictEqual(rows, source.filter(row => row.requestId === operation.requestId)) && rows.every(row => within(row.monotonicNs)),
+    'Catalog source rows must be the exact current tool-window observations');
+  const starts = rows.filter(row => row.phase === 'started'), ends = rows.filter(row => row.phase === 'completed');
+  prove(starts.length === 1 && ends.length === 1 && isDeepStrictEqual(starts[0], operation), 'Keep one actual catalog start and completion');
+  const end = ends[0];
+  prove(end.kind === 'sdk' && end.operation === 'list' && end.pid === pid && end.source_id === sourceId
+    && sameLibrary(end.library, library) && end.status === 'completed' && end.sdkStarted === true && end.errorCode === null,
+  'The exact-source catalog must have completed successfully');
+  const sdkText = (await verifiedArtifact(segment.sdk, readArtifact)).toString('utf8');
+  prove(sdkText.endsWith('\n'), 'Keep the complete original SDK ledger');
+  const sdk = sdkText.trimEnd().split('\n').map(JSON.parse), first = sdk[0], last = sdk.at(-1);
+  prove(first?.phase === 'sdk-observer-start' && first.pid === pid && last?.phase === 'sdk-observer-end'
+    && last.pid === pid && last.pending === 0 && !sdk.some(row => row.phase === 'sdk-observer-error')
+    && sdk.filter(row => row.phase === 'sdk-observer-start').length === 1
+    && sdk.filter(row => row.phase === 'sdk-observer-end').length === 1, 'The original SDK observer must finish completely in this process');
+  const sdkStarts = sdk.filter(row => row.phase === 'sdk-start' && row.requestId === requestId);
+  const sdkEnds = sdk.filter(row => row.phase === 'sdk-end' && row.requestId === requestId);
+  prove(sdkStarts.length === 1 && sdkEnds.length === 1, 'The catalog response needs one matching original SDK start and end');
+  const sdkStart = sdkStarts[0], sdkEnd = sdkEnds[0];
+  for (const [row, counterpart] of [[operation, sdkStart], [end, sdkEnd]])
+    prove(counterpart.operation === 'list' && counterpart.pid === pid && within(counterpart.monotonic_ns)
+      && row.sourceMonotonicNs === counterpart.monotonic_ns, 'SDK and Source must agree on the exact catalog invocation and clocks');
+  prove(BigInt(sdkStart.monotonic_ns) < BigInt(sdkEnd.monotonic_ns) && sdkEnd.status === 'completed'
+    && sdkEnd.resultObserved === true && sdkEnd.metricsComplete === true, 'The actual SDK catalog result and metrics must be complete');
+  const responses = segment.responses.filter(row => row.requestId === requestId), responseArtifact = responses[0]?.artifact;
+  prove(responses.length === 1 && sdkEnd.responseFile === requestId + '.json'
+    && responseArtifact?.path === join(dirname(segment.sdk.path), 'sdk-responses', sdkEnd.responseFile),
+  'Use only the response file named by the original SDK completion');
+  const receipt = JSON.parse((await verifiedArtifact(responseArtifact, readArtifact)).toString('utf8'));
+  prove(receipt.version === 2 && receipt.transport === 'sdk' && receipt.operation === 'list' && receipt.requestId === requestId
+    && receipt.status === 'completed' && receipt.resultObserved === true && receipt.sdk_started === true && receipt.metrics_observed === true,
+  'The sealed catalog must be the actual SDK result');
+  const http = rows.filter(row => row.phase === 'attempt'), metrics = rows.filter(row => row.phase === 'metrics');
+  const trace = receipt.metrics?.trace?.filter(row => row.event === 'attempt') ?? [];
+  prove(http.length > 0 && metrics.length === 1 && metrics[0].observed === true && metrics[0].complete === true
+    && metrics[0].trace_dropped === 0 && metrics[0].total_requests === http.length && receipt.metrics?.complete === true
+    && receipt.metrics.trace_dropped === 0 && receipt.metrics.total_requests === http.length && trace.length === http.length
+    && trace.every((attempt, index) => attempt.outcome === 'success' && attempt.http_status >= 200 && attempt.http_status < 300
+      && Object.entries(attempt).every(([key, value]) => isDeepStrictEqual(http[index][key], value))),
+  'Catalog absence needs the complete successful HTTP attempts, not a cache hit or partial request trace');
+  const value = receipt.value, freshness = value?.freshness, coverage = value?.coverage;
+  const from = Date.parse(sdkStart.at), to = Date.parse(sdkEnd.at), validated = Date.parse(freshness?.validated_at);
+  prove(value?.source === 'notion' && digest(item.scope) && value.scope === item.scope && sameLibrary(value.library_id, library)
+    && ['refresh', 'max_age'].includes(freshness?.policy) && freshness.stale === false && freshness.age_ms === 0
+    && Number.isFinite(from) && Number.isFinite(to) && from <= validated && validated <= to && value.fetched_at === validated,
+  'Catalog scope and freshness must belong to this original owner and actual online invocation');
+  prove(!['view', 'view_selection', 'view_query', 'profile', 'capability_directory', 'query', 'limit', 'cursor', 'has_more', 'next_cursor', 'total_count']
+    .some(key => Object.hasOwn(value, key)) && coverage?.method === 'explicit_library' && coverage.exhaustive === true
+    && coverage.search_index_limited === false && Array.isArray(coverage.failed_sources) && coverage.failed_sources.length === 0
+    && Array.isArray(value.records) && value.count === value.records.length && Array.isArray(value.databases) && value.databases.length === 1,
+  'Only an exhaustive unfiltered complete Library catalog can prove an absent owner');
+  const database = value.databases[0], descriptor = database.shared_library, skills = descriptor?.skills;
+  prove(database.role === 'content' && descriptor?.version === 2 && sameLibrary(descriptor.library_id, library)
+    && nonempty(skills?.database_id) && nonempty(skills.data_source_id) && database.database_id === skills.database_id
+    && isDeepStrictEqual(database.data_source_ids, [skills.data_source_id])
+    && isDeepStrictEqual(coverage.queried_data_sources, [skills.data_source_id])
+    && http.some(row => row.method === 'POST' && row.request_kind === 'notion_metadata' && row.target?.data_source_id === skills.data_source_id),
+  'The full catalog must have queried the exact Library Skills data source');
+  const identities = new Set(), pages = new Set();
+  for (const record of value.records) {
+    const locator = record?.locator;
+    prove(locator?.type === 'shared_skill' && sameLibrary(locator.library_id, library)
+      && locator.database_id === skills.database_id && locator.data_source_id === skills.data_source_id
+      && nonempty(locator.page_id) && nonempty(locator.skill_id) && record.id === nativeSkillId(library, locator.skill_id)
+      && !identities.has(record.id) && !pages.has(libraryKey(locator.page_id)), 'Every catalog row needs a unique exact Library owner');
+    identities.add(record.id); pages.add(libraryKey(locator.page_id));
+  }
+  prove(nonempty(item.pageId) && !identities.has(item.owner) && !pages.has(libraryKey(item.pageId)),
+    'The exact original logical and physical owner must be absent from the complete catalog');
+  return { evidence: 'fresh-exhaustive-catalog', requestId: operation.requestId, httpAttempts: http.length,
+    scope: value.scope, count: value.count, validatedAt: freshness.validated_at, queriedDataSources: coverage.queried_data_sources,
+    sdkArtifact: segment.sdk, sourceArtifact: segment.source, responseArtifact };
+}
+
 export async function verifyNotionAgentUnavailableReference(expected, observed, bindings, { attempts, delivery, source, readArtifact = readFile }) {
   const item = bindings.private.objects[expected.object];
   need(item?.kind === 'notion' && nonempty(item.owner), 'UNAVAILABLE_OWNER_MISSING', 'Bind the original independently read owner');
@@ -1138,6 +1233,19 @@ export async function verifyNotionAgentUnavailableReference(expected, observed, 
     demand(isDeepStrictEqual(content, native.content), 'UNAVAILABLE_RESULT_CHANGED', 'Replay original failure bytes');
     const within = time => /^\d+$/u.test(time ?? '') && /^\d+$/u.test(call.event.monotonicNs ?? '') && /^\d+$/u.test(call.result.monotonicNs ?? '')
       && BigInt(time) >= BigInt(call.event.monotonicNs) && BigInt(time) <= BigInt(call.result.monotonicNs);
+    const delivered = async (currentWindow = false) => {
+      const payloads = [];
+      for (const payload of delivery.requests) {
+        const task = observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === payload.sha256);
+        if (currentWindow && (!/^\d+$/u.test(task?.monotonicNs ?? '') || BigInt(task.monotonicNs) <= BigInt(call.result.monotonicNs)
+          || !/^\d+$/u.test(observed.sourceObservationWindow?.endedNs ?? '')
+          || BigInt(task.monotonicNs) > BigInt(observed.sourceObservationWindow.endedNs))) continue;
+        const raw = providerPayloadView(JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8')), payload.api, observed.session, payload.nativeResponseEntryId);
+        if ((raw.messages ?? []).some(message => message.role === 'tool' && message.tool_call_id === call.deliveryToolCallId
+          && textOf(message.content) === textOf(content))) payloads.push(payload.sha256);
+      }
+      return payloads;
+    };
     const operations = source.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.pid === call.event.pid
       && row.source_id === sourceId && sameLibrary(row.library, library) && ['read', 'resolve', 'read-resources', 'consume'].includes(row.operation) && within(row.monotonicNs));
     for (const operation of operations) {
@@ -1145,16 +1253,23 @@ export async function verifyNotionAgentUnavailableReference(expected, observed, 
       if (end?.status !== 'failed' || !['SKILL_NOT_FOUND', 'SOURCE_NOT_FOUND', 'NOT_FOUND'].includes(end.errorCode)) continue;
       const http = source.filter(row => row.phase === 'attempt' && row.requestId === operation.requestId);
       if (http.length === 0 || !textOf(content).includes(end.errorCode)) continue;
-      const payloads = [];
-      for (const payload of delivery.requests) {
-        const task = observed.tasks.find(row => row.phase === 'provider_payload' && row.sha256 === payload.sha256);
-        const raw = providerPayloadView(JSON.parse((await verifiedArtifact({ path: task?.payloadFile, sha256: payload.sha256, bytes: payload.bytes }, readArtifact)).toString('utf8')), payload.api, observed.session, payload.nativeResponseEntryId);
-        if ((raw.messages ?? []).some(message => message.role === 'tool' && message.tool_call_id === call.deliveryToolCallId
-          && textOf(message.content) === textOf(content))) payloads.push(payload.sha256);
-      }
+      const payloads = await delivered();
       if (payloads.length) proofs.push({ toolCallId: call.id, requestId: operation.requestId, sourceId, library, owner: item.owner,
         path: expected.path, errorCode: end.errorCode, httpAttempts: http.length, payloads, result: call.result.contentArtifact });
     }
+    if (proofs.some(proof => proof.toolCallId === call.id)) continue;
+    let failure;
+    try { failure = JSON.parse(textOf(content)); } catch { continue; }
+    const admission = failure?.admission;
+    if (admission?.version !== 1 || admission.phase !== 'execute' || admission.stage !== 'reference' || admission.code !== 'SKILL_NOT_FOUND'
+      || admission.signal_aborted !== false || !Number.isSafeInteger(admission.generation_started)
+      || admission.generation_started !== admission.generation_current
+      || !failure.error?.startsWith('context-broker source ' + sourceId + ' unavailable (SKILL_NOT_FOUND).')) continue;
+    const payloads = await delivered(true);
+    if (payloads.length === 0) continue;
+    const catalog = await unavailableCatalogProof({ call, item, library, sourceId, observed, source, within, readArtifact });
+    if (catalog) proofs.push({ ...catalog, toolCallId: call.id, sourceId, library, owner: item.owner, path: expected.path,
+      errorCode: 'SKILL_NOT_FOUND', payloads, result: call.result.contentArtifact });
   }
   demand(proofs.length > 0, 'UNAVAILABLE_ONLINE_READ_UNPROVEN', 'Only an online failure of the exact original root inside that tool attempt proves unavailability');
   return { object: expected.object, proofs };
