@@ -15,6 +15,10 @@ import { verifyCollectionRecovery, verifyCollectionRecoveryResults } from './col
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
 
+export function assertSubjectModelWindow(model, now = Date.now()) {
+  assert.ok(now >= Date.parse(model.backend.window.start) && now < Date.parse(model.backend.window.end), 'The declared model route window has expired');
+}
+
 export async function loadExecution(plan) {
   validateBatchPlan(plan);
   const input = plan.execution;
@@ -171,8 +175,7 @@ export async function executeBatchPlan({ plan, maximumNewEpisodes = Infinity, an
       if (collectionRecoveryReference)
         collectionRecovery = await verifyCollectionRecovery({ reference: collectionRecoveryReference, plan });
       const { condition, model, binding, candidate, expectation } = argsFor(slot);
-      const now = Date.now();
-      assert.ok(now >= Date.parse(model.backend.window.start) && now <= Date.parse(model.backend.window.end), 'The declared model route window has expired');
+      assertSubjectModelWindow(model);
       const raw = await runSubject({ environmentRoot: input.environment_root, buildId: candidate.build_id,
         mode: candidate.mode, binding, model: { ...model, baseUrl: input.model_base_url }, modelsFile: input.models_file,
         runtime: input.runtime, controlRoot: input.control_root, runId, conditionId: condition.id, budget: budget.episode,

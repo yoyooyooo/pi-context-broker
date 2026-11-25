@@ -3,7 +3,7 @@ import environmentSchema from './schemas/environment-manifest.schema.json' with 
 import protocolSchema from './schemas/protocol.schema.json' with { type: 'json' };
 import metricDictionary from './metrics.json' with { type: 'json' };
 import { canonicalAutoGroupLabel, validateRoutingPolicy } from './reported-model.mjs';
-import { scheduleProtocol, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION, selectsUnstartedSlots } from './campaign-selection.mjs';
+import { scheduleProtocol, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION, selectsUnstartedSlots } from './campaign-selection.mjs';
 
 const REQUIRED_EVIDENCE = ['runtime_identity', 'loaded_manifest', 'visible_materials',
   'model_requests', 'usage', 'tool_lineage', 'business_readback', 'completion_boundary', 'interventions'];
@@ -466,6 +466,8 @@ function policyChecks(value, maps, pairCells, stage, errors) {
       issue(errors, '/policies/campaign', 'followup_descriptive_pilot', 'An unstarted follow-up keeps the full scientific denominator and remains a descriptive pilot');
     if (confirmationContinuation && (value.phase !== 'confirmation' || policies.decision.mode !== 'acceptance'))
       issue(errors, '/policies/campaign', 'continuation_original_confirmation', 'A confirmation continuation retains the original confirmation design and acceptance policy');
+    if (scope.role === ENGINEERING_WINDOW_CONTINUATION && (value.phase !== 'pilot' || policies.decision.mode !== 'descriptive'))
+      issue(errors, '/policies/campaign', 'engineering_window_descriptive_pilot', 'An engineering window continuation retains the original descriptive pilot design');
     if (scope.role === 'route_gate_only') {
       const cases = value.corpus.cases.map(item => item.id), modes = value.environments.map(environment => environment.pi.mode);
       if (value.phase !== 'pilot' || value.purpose !== 'native_calibration' || value.models.length !== 1

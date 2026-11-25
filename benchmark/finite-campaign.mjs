@@ -7,13 +7,14 @@ import { readCampaignHistory } from './campaign-history.mjs';
 import { isProspectiveCohort, assertCohortModelEvidence, scopeModelIdentity, scopeEnvironmentIdentity } from './prospective-cohort.mjs';
 import { assertScopePlan, readPilotScopeAmendment, readScopeCompletedResults } from './pilot-scope.mjs';
 import { readEvidenceBundle } from './evidence/store.mjs';
-import { scheduleProtocol as expectedSchedule, declaredSchedule, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION, selectsUnstartedSlots, assertFollowupSelection } from './campaign-selection.mjs';
+import { scheduleProtocol as expectedSchedule, declaredSchedule, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION, selectsUnstartedSlots, assertFollowupSelection } from './campaign-selection.mjs';
 import { readApprovedCampaign, approvedCampaignBinding, assertApprovedCampaignBinding } from './approved-campaign.mjs';
 import { readAliasRevisionStop, assertRetainedAliasEpisode } from './campaign-alias-revision.mjs';
 import { readHistoryExtension } from './campaign-history-extension.mjs';
 import { readPartialConfirmationHistory, assertConfirmationContinuation, assertContinuationModels } from './campaign-confirmation-continuation.mjs';
 import { readProviderStopHistory, assertProviderStopContinuation, assertProviderStopModels, assertRetainedProviderStopEpisode } from './campaign-provider-stop-continuation.mjs';
 import { readObserverRepairHistory, assertObserverRepairContinuation, assertObserverRepairModels, assertObserverRepairEngineeringProtocol } from './campaign-observer-repair-continuation.mjs';
+import { assertEngineeringWindowProtocol, verifyEngineeringHistoricalPlan, readEngineeringHistoricalAuthority } from './campaign-engineering-window-continuation.mjs';
 
 export const FINITE_CAMPAIGN = 'benchmark-finite-campaign';
 export const isFiniteCampaign = value => value?.kind === FINITE_CAMPAIGN;
@@ -57,7 +58,7 @@ async function noLeases(execution) {
 export function finiteCampaignPolicy(input, { scheduledEpisodes } = {}) {
   if (!input) return undefined;
   assert.equal(input.kind, FINITE_CAMPAIGN); assert.ok(safe(input.id));
-  assert.ok(['route_gate_only', 'acceptance', UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION].includes(input.role), 'FINITE_ROLE');
+  assert.ok(['route_gate_only', 'acceptance', UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION].includes(input.role), 'FINITE_ROLE');
   assert.ok(Number.isSafeInteger(scheduledEpisodes) && scheduledEpisodes > 0 && scheduledEpisodes <= 144, 'FINITE_SCHEDULE_COUNT');
   if (input.role === 'route_gate_only') assert.equal(scheduledEpisodes, 8, 'FINITE_GATE_REQUIRES_EIGHT');
   if (selectsUnstartedSlots(input.role)) {
@@ -89,6 +90,9 @@ function assertProtocolExecution({ protocol, execution, slots }) {
   assert.ok(protocol.models.every(model => model.routing), 'FINITE_ROUTING_REQUIRED');
   if (policy.role === UNSTARTED_FOLLOWUP) assert.equal(protocol.phase, 'pilot', 'FOLLOWUP_PILOT_ONLY');
   if (policy.role === CONFIRMATION_CONTINUATION) assert.equal(protocol.phase, 'confirmation', 'CONFIRMATION_CONTINUATION_PHASE');
+  if (policy.role === ENGINEERING_WINDOW_CONTINUATION) {
+    assert.equal(protocol.phase, 'pilot'); assert.equal(protocol.policies.decision.mode, 'descriptive');
+  }
   if (policy.role === 'route_gate_only') {
     assert.equal(protocol.phase, 'pilot'); assert.equal(protocol.purpose, 'native_calibration');
     assert.equal(protocol.models.length, 1); assert.equal(protocol.environments.length, 2); assert.equal(protocol.conditions.length, 2);
@@ -220,7 +224,7 @@ export async function assertConfirmationUnexposed(protocol, execution, history, 
   }
 }
 
-async function assertHistoricalPlan(plan) {
+async function assertHistoricalPlan(plan, currentAuthority) {
   assert.equal(plan?.version, 1); assert.equal(plan.kind, 'benchmark-batch-plan');
   assert.equal(plan.plan_sha256, fingerprint({ ...plan, plan_sha256: null }), 'FINITE_HISTORY_PLAN_CHANGED');
   const validation = validateProtocol(plan.protocol, { stage: 'execute' }); assert.ok(validation.valid, JSON.stringify(validation.errors));
@@ -229,6 +233,9 @@ async function assertHistoricalPlan(plan) {
     assert.ok(isFiniteCampaign(plan.protocol.policies.campaign) && isFiniteCampaign(plan.execution.campaign_scope), 'FINITE_HISTORY_TYPED_SCOPE_REQUIRED');
     const amendment = await shallowFinite(plan.execution.campaign_scope.amendment);
     assertFiniteCampaignPlan(plan, amendment);
+    if (currentAuthority?.value.version === 7 && currentAuthority.engineeringContinuation.scopes.some(scope => scope.plan.id === plan.id)) {
+      await verifyEngineeringHistoricalPlan(plan, amendment, currentAuthority); return;
+    }
     const continuedSource = amendment.version === 2 ? await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment,
       await readApprovedCampaign(amendment.prospective_authorization.reference)) : undefined;
     await assertConfirmationUnexposed(plan.protocol, plan.execution, amendment.history, continuedSource);
@@ -284,7 +291,7 @@ export async function assertHistoricalOriginalResult(input, approvedBoundary, re
 }
 
 async function readHistoryWithAuthority(options, authorized, requiredIntervals = []) {
-  const history = await readCampaignHistory({ ...options, assertPlan: assertHistoricalPlan,
+  const history = await readCampaignHistory({ ...options, assertPlan: plan => assertHistoricalPlan(plan, authorized),
     assertOriginalCompleted: input => assertHistoricalOriginalResult(input, authorized?.value.history.scheduled_episodes ?? 13, requiredIntervals),
     assertModelEvidence: (episode, model, plan) => {
       if (authorized?.retainedProviderStop && episode.identity.run_id === authorized.retainedProviderStop.run_id)
@@ -433,13 +440,29 @@ async function assertPredecessorComplete(value, predecessor, authorized = null) 
   }
 }
 
+async function authorityAtBoundary(reference, context) {
+  if (context.engineering) {
+    if (fingerprint(reference) === fingerprint(context.engineeringReference)) return context.engineering;
+    return readEngineeringHistoricalAuthority(reference, context.engineering);
+  }
+  return readApprovedCampaign(reference);
+}
+
+async function boundaryContext(reference) {
+  const context = { allocations: new Set() };
+  if (reference && (await verified(reference)).version === 7) {
+    context.engineering = await readApprovedCampaign(reference); context.engineeringReference = reference;
+  }
+  return context;
+}
+
 async function authorizedScope(value, context) {
   if (value.version !== 2) return null;
   const binding = value.prospective_authorization;
-  if (!context.authorized) context.authorized = await readApprovedCampaign(binding.reference);
+  if (!context.authorized) context.authorized = await authorityAtBoundary(binding.reference, context);
   if (context.reference && fingerprint(binding.reference) !== fingerprint(context.reference)) {
-    const next = await readApprovedCampaign(binding.reference);
-    assert.ok([2, 3, 4, 5, 6].includes(next.value.version), 'APPROVAL_LINEAGE_CHANGED');
+    const next = await authorityAtBoundary(binding.reference, context);
+    assert.ok([2, 3, 4, 5, 6, 7].includes(next.value.version), 'APPROVAL_LINEAGE_CHANGED');
     assert.deepEqual(next.value.revision.parent_authorization, context.reference, 'APPROVAL_LINEAGE_CHANGED');
     assert.deepEqual(value.predecessor, next.value.predecessor, 'APPROVAL_REVISION_PREDECESSOR_CHANGED');
     if (next.value.version === 2)
@@ -454,7 +477,8 @@ async function authorizedScope(value, context) {
   assert.equal(value.id, allocation.id, 'APPROVAL_SCOPE_ID_CHANGED'); assert.equal(value.role, allocation.role, 'APPROVAL_SCOPE_ROLE_CHANGED');
   assert.ok(value.reservation_limit <= allocation.reservation_limit, 'APPROVAL_ALLOCATION_LIMIT');
   if (value.role === CONFIRMATION_CONTINUATION) assert.ok([4, 5, 6].includes(authorized.value.version), 'CONFIRMATION_CONTINUATION_AUTHORITY_REQUIRED');
-  if ([4, 5, 6].includes(authorized.value.version)) {
+  if (value.role === ENGINEERING_WINDOW_CONTINUATION) assert.equal(authorized.value.version, 7, 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED');
+  if ([4, 5, 6, 7].includes(authorized.value.version)) {
     assert.equal(value.reservation_limit, allocation.reservation_limit, 'CONFIRMATION_CONTINUATION_EXACT_ALLOCATION_REQUIRED');
     const index = authorized.value.allocations.findIndex(item => item.id === allocation.id);
     if (index === 0) assert.deepEqual(value.predecessor, authorized.value.predecessor, 'CONFIRMATION_CONTINUATION_INITIAL_PREDECESSOR_CHANGED');
@@ -472,7 +496,11 @@ async function authorizedScope(value, context) {
 }
 
 async function assertAuthorizedProtocol(protocol, execution, slots, value, authorized) {
-  if (!authorized) { assert.notEqual(value.role, CONFIRMATION_CONTINUATION, 'CONFIRMATION_CONTINUATION_AUTHORITY_REQUIRED'); return; }
+  if (!authorized) {
+    assert.notEqual(value.role, CONFIRMATION_CONTINUATION, 'CONFIRMATION_CONTINUATION_AUTHORITY_REQUIRED');
+    assert.notEqual(value.role, ENGINEERING_WINDOW_CONTINUATION, 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED'); return;
+  }
+  if (authorized.value.version === 7) return assertEngineeringWindowProtocol(protocol, execution, slots, value, authorized);
   if (authorized.value.version === 6) {
     assertObserverRepairModels(protocol, authorized);
     if (value.role === CONFIRMATION_CONTINUATION) return assertObserverRepairContinuation(protocol, execution, slots, value, authorized);
@@ -575,7 +603,9 @@ async function readLineage(reference, seen = new Set(), context = { allocations:
 
 export async function verifyFiniteCampaign(value) {
   assertShape(value);
-  const context = { allocations: new Set(), histories: [], originalIntervals: [] }, predecessor = await readLineage(value.predecessor.amendment, new Set(), context);
+  const context = await boundaryContext(value.prospective_authorization?.reference);
+  Object.assign(context, { histories: [], originalIntervals: [] });
+  const predecessor = await readLineage(value.predecessor.amendment, new Set(), context);
   const authorized = await authorizedScope(value, context);
   await predecessorRegistration(value, predecessor); await assertPredecessorComplete(value, predecessor, authorized);
   // A later accepted baseline cannot waive an earlier amendment's original
@@ -598,9 +628,9 @@ export async function prepareFiniteCampaign({ setup, protocol, execution, slots,
   const policy = assertProtocolExecution({ protocol, execution, slots });
   assert.deepEqual(policy, finiteCampaignPolicy(input, { scheduledEpisodes: slots.length }));
   await noLeases(execution);
-  const context = { allocations: new Set() }, previous = await readLineage(input.predecessor.amendment, new Set(), context);
+  const context = await boundaryContext(input.prospective_authorization), previous = await readLineage(input.predecessor.amendment, new Set(), context);
   if (predecessor) assert.deepEqual(previous, predecessor, 'FINITE_VERIFIED_PREDECESSOR_CHANGED');
-  const approved = input.prospective_authorization ? await readApprovedCampaign(input.prospective_authorization) : null;
+  const approved = context.engineering ?? (input.prospective_authorization ? await readApprovedCampaign(input.prospective_authorization) : null);
   const prospective = approved ? approvedCampaignBinding(input.prospective_authorization, approved.value, input.allocation_id) : null;
   if (previous.version === 2 && isFiniteCampaign(previous)) assert.ok(prospective, 'APPROVAL_LINEAGE_REQUIRED');
   const history = await readFiniteCampaignHistory({ planFiles: input.history_plan_files, pilotLedgerRoot: execution.pilot_ledger_root,

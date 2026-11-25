@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 
 export const UNSTARTED_FOLLOWUP = 'unstarted_followup';
 export const CONFIRMATION_CONTINUATION = 'confirmation_continuation';
-export const selectsUnstartedSlots = role => [UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION].includes(role);
+export const ENGINEERING_WINDOW_CONTINUATION = 'engineering_window_continuation';
+export const selectsUnstartedSlots = role => [UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION].includes(role);
 const sorted = values => [...values].sort();
 
 export function assertFollowupSelection(selection) {

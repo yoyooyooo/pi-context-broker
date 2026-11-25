@@ -7,6 +7,7 @@ import metricDictionary from './metrics.json' with { type: 'json' };
 import environmentSchema from './schemas/environment-manifest.schema.json' with { type: 'json' };
 import protocolSchema from './schemas/protocol.schema.json' with { type: 'json' };
 import { METRIC_ENTRIES } from './analysis/metrics.mjs';
+import { declaredSchedule, ENGINEERING_WINDOW_CONTINUATION } from './campaign-selection.mjs';
 
 const digest = label => fingerprint({ synthetic_test_identity: label });
 const clone = value => structuredClone(value);
@@ -70,6 +71,24 @@ function assertCode(value, code, options = { stage: 'execute' }) {
   assert(result.errors.some(error => error.code === code), JSON.stringify(result.errors, null, 2));
   for (const error of result.errors) { assert.equal(typeof error.path, 'string'); assert.equal(typeof error.message, 'string'); }
 }
+
+test('the engineering-window role freezes a descriptive pilot suffix while retaining integer millisecond limits', () => {
+  const value = frozenFixture(), selected = declaredSchedule(value).slice(1);
+  value.policies.campaign = { version: 1, kind: 'benchmark-finite-campaign', id: 'synthetic-engineering-window', role: ENGINEERING_WINDOW_CONTINUATION,
+    reservation_limit: selected.length, max_scheduled_episodes: 144, history_quality: 'excluded_retained_in_campaign_costs', new_unknown_usage: 'stop_scope',
+    selection: { source_plan_sha256: digest('old-source-plan'), slot_ids: selected.map(slot => slot.slot_id) } };
+  value.policies.budgets[0].batch.max_episodes = selected.length; value.policies.budgets[0].episode.max_retries = 0;
+  value.policies.decision.mode = 'descriptive';
+  value.models[0].route = 'fixed/' + value.models[0].id;
+  value.models[0].routing = { mode: 'fixed-route', model_variant: value.models[0].id, reported_model_ids: [value.models[0].route] };
+  assertValid(seal(value));
+  const wrongPhase = clone(value); wrongPhase.phase = 'confirmation';
+  assertCode(seal(wrongPhase), 'engineering_window_descriptive_pilot');
+  const wrongDecision = clone(value); wrongDecision.policies.decision.mode = 'acceptance';
+  assertCode(seal(wrongDecision), 'engineering_window_descriptive_pilot');
+  const fractional = clone(value); fractional.policies.budgets[0].batch.max_duration_ms = 4922651.093958;
+  assert.equal(validateProtocol(seal(fractional), { stage: 'execute' }).valid, false);
+});
 function modelComparison(purpose = 'model_evolution') {
   const value = frozenFixture(); value.purpose = purpose; value.allowed_changes = ['model'];
   value.environments = [value.environments[0]];
