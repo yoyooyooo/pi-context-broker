@@ -7,6 +7,24 @@ import { brokerDiagnosticsProjection, catalogCandidateReferences, finishEpisodeR
 const limits = { wallTimeMs: 60000, maxModelRequests: 3, maxToolCalls: 4, maxHttpAttempts: 3, maxInputTokens: 300000, maxOutputTokens: 16000, maxTotalTokens: 316000 };
 const usage = (input, output) => providerUsage('openai-completions', { usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output } });
 
+test('explicit unbounded execution meters every request without cumulative ceilings or a null-as-zero stop', () => {
+  const unlimited = { mode: 'unbounded', ...Object.fromEntries(Object.keys(limits).map(key => [key, null])) };
+  const budget = createEpisodeBudget(unlimited);
+  for (let index = 0; index < 1001; index++) {
+    assert.equal(budget.request(), index + 1); assert.equal(budget.attempt(), index + 1); assert.equal(budget.tool(), index + 1);
+    budget.usage(usage(1000000, 4096));
+  }
+  assert.equal(budget.state.input_tokens, 1001000000); assert.equal(budget.state.output_tokens, 4100096);
+  assert.equal(budget.outputCap(4096), 4096); assert.equal(budget.state.stop, null);
+  assert.ok(budget.payload('openai-responses', { max_output_tokens: 4096, input: [] }).estimated_tokens > 0);
+  assert.throws(() => budget.payload('openai-completions', { messages: [] }), { code: 'BENCHMARK_OUTPUT_CAP_UNENFORCED' });
+  const unknown = createEpisodeBudget(unlimited); unknown.usage(null);
+  assert.throws(() => unknown.request(), { code: 'BENCHMARK_USAGE_UNKNOWN' });
+  const { mode, ...undeclared } = unlimited;
+  assert.throws(() => createEpisodeBudget(undeclared), /BENCHMARK_LIMIT_REQUIRED/);
+  assert.throws(() => createEpisodeBudget({ ...unlimited, maxModelRequests: 1 }), /BENCHMARK_LIMIT_REQUIRED/);
+});
+
 test('reported-model mismatch accounts the complete response before blocking the next SDK request', () => {
   const budget = createEpisodeBudget(limits), routing = { mode: 'auto-route', model_variant: 'grok-4.7', reported_model_ids: ['grok/grok-4.7'] };
   budget.request(); budget.attempt();

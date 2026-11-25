@@ -94,6 +94,37 @@ test('all failures use capped time and cost per success/p95 are not_reached',()=
   assert.equal(c.cost_per_success.status,'not_reached');
   assert.equal(c.capped_time.p95_success_time.status,'not_reached');
 });
+test('unbounded execution uses its registered measurement horizon without inventing budget cutoffs',()=>{
+  const p=exampleProtocol();
+  p.policies.budgets[0].mode='unbounded';
+  p.policies.budgets[0].episode.max_duration_ms=null;p.policies.budgets[0].episode.max_input_tokens=null;
+  p.policies.analysis={capped_time_horizon_ms:250};p.protocol_sha256=fingerprint({...p,protocol_sha256:null});
+  const analysisPlan=createAnalysisPlan(p),episodes=exampleEpisodes(p,{outcome:'fail',duration:10});
+  const metrics=score(p,episodes,analysisPlan).conditions[0].metrics;
+  assert.equal(analysisPlan.capped_time_horizon_ms,250);assert.equal(metrics.capped_time.estimate,250);
+  assert.equal(metrics.capped_time.raw_elapsed_ms.estimate,10);
+  assert.deepEqual(metrics.success_by_budget.time_ms,[]);assert.deepEqual(metrics.success_by_budget.input_tokens,[]);
+  analysisPlan.capped_time_horizon_ms=500;
+  assert.throws(()=>score(p,episodes,analysisPlan),/frozen protocol expansion/);
+});
+test('a measurement horizon caps a metric while late observed success and full usage remain actual evidence',()=>{
+  const p=exampleProtocol();p.policies.budgets[0].mode='unbounded';
+  p.policies.budgets[0].episode.max_duration_ms=null;p.policies.budgets[0].episode.max_input_tokens=null;
+  p.policies.analysis={capped_time_horizon_ms:250,success_budgets:{time_ms:[100,250,1000],input_tokens:[100,1000]}};
+  p.protocol_sha256=fingerprint({...p,protocol_sha256:null});
+  const metrics=score(p,exampleEpisodes(p,{outcome:'pass',duration:1100,successTime:900,attemptInputs:[900]})).conditions[0].metrics;
+  assert.equal(metrics.verified_quality.estimate,1);assert.equal(metrics.capped_time.tau_ms,250);
+  assert.equal(metrics.capped_time.estimate,250);assert.equal(metrics.capped_time.raw_elapsed_ms.estimate,1100);
+  assert.equal(metrics.input_total.estimate,900);assert.equal(metrics.capped_time.p95_success_time.status,'not_reached');
+  assert.deepEqual(metrics.success_by_budget.time_ms.map(row=>row.estimate),[0,0,1]);
+  assert.deepEqual(metrics.success_by_budget.input_tokens.map(row=>row.estimate),[0,1]);
+});
+test('an explicit analysis horizon overrides the old duration default without changing execution policy',()=>{
+  const p=exampleProtocol();p.policies.analysis={capped_time_horizon_ms:250};
+  p.protocol_sha256=fingerprint({...p,protocol_sha256:null});
+  assert.equal(score(p,exampleEpisodes(p,{outcome:'fail'})).conditions[0].metrics.capped_time.estimate,250);
+  assert.equal(p.policies.budgets[0].episode.max_duration_ms,1000);
+});
 test('unknown outcomes get no success credit without becoming known failures',()=>{
   const p=exampleProtocol(),s=score(p,exampleEpisodes(p,{outcome:'unknown'})),c=s.conditions[0].metrics;
   assert.equal(c.verified_quality.estimate,0);assert.equal(c.known_failure.estimate,0);assert.equal(c.evidence_coverage.estimate,0);

@@ -1,7 +1,7 @@
 // Reviewed portable sources, shared by both evidence exporters and the isolated
 // revision verifier. Do not copy the controller or private corpus wholesale.
 const evidenceSources = [
-  'protocol.mjs', 'campaign-selection.mjs', 'reported-model.mjs', 'provider-binding.mjs',
+  'protocol.mjs', 'model-window.mjs', 'campaign-selection.mjs', 'reported-model.mjs', 'provider-binding.mjs',
   'metrics.json', 'schemas/protocol.schema.json', 'schemas/environment-manifest.schema.json',
   'evidence/store.mjs', 'evidence/normalize.mjs',
 ];

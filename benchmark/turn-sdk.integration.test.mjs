@@ -9,6 +9,8 @@ import { inventoryPublicInputs } from './subject.mjs';
 
 const environment = process.env.BENCHMARK_TURN_SDK_ENV, buildId = process.env.BENCHMARK_TURN_SDK_BUILD;
 const proofDirectory = process.env.BENCHMARK_TURN_SDK_PROOF_ROOT;
+const resourceMode = process.env.BENCHMARK_TURN_SDK_RESOURCE_MODE ?? 'bounded';
+assert.ok(['bounded', 'unbounded'].includes(resourceMode), 'Select a declared apparatus resource mode');
 const sha = value => createHash('sha256').update(value).digest('hex');
 const readJson = path => readFile(path, 'utf8').then(JSON.parse);
 async function save(path, value, mode = 0o600) {
@@ -19,7 +21,7 @@ async function save(path, value, mode = 0o600) {
 }
 const sse = value => 'data: ' + JSON.stringify(value) + '\n\n';
 
-test('shared launcher, maintained Pi session and production turn hook use only an owned loopback provider', {
+test('shared launcher, maintained Pi session and production turn hook use only an owned loopback provider (' + resourceMode + ')', {
   skip: !(environment && buildId && proofDirectory) && 'Set explicit owned ENV, fresh BUILD and PROOF_ROOT; this test never uses a real provider.',
   timeout: 120000,
 }, async () => {
@@ -56,7 +58,7 @@ test('shared launcher, maintained Pi session and production turn hook use only a
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const proof = { version: 1, kind: 'shared-maintained-pi-turn-bridge-apparatus',
     scope: 'owned-loopback-only; synthetic fixture effect; not a real model route, live Notion update or business score',
-    real_model_calls: 0, external_provider_requests: 0, build_id: buildId, status: 'running' };
+    real_model_calls: 0, external_provider_requests: 0, build_id: buildId, resource_mode: resourceMode, status: 'running' };
   const keyName = 'BENCHMARK_TURN_LOOPBACK_KEY', previousKey = process.env[keyName]; process.env[keyName] = 'controlled-non-provider-credential';
   try {
     const skillRoot = join(controlRoot, 'initial-skills'), inventory = [];
@@ -107,6 +109,11 @@ test('shared launcher, maintained Pi session and production turn hook use only a
         max_input_tokens: 1000000, max_output_tokens: 4096 }, codeMode: 'free',
       credential: { source_file: models.path, provider: 'benchmark-loopback', api_key_env: keyName },
     };
+    if (resourceMode === 'unbounded') {
+      options.budgetMode = 'unbounded';
+      options.budget = { max_duration_ms: null, max_model_requests: null, max_http_attempts: null,
+        max_input_tokens: null, max_output_tokens: null, max_retries: null };
+    }
     const capture = await runSubject({ ...options, runId: captureId, captureOnly: true }, { fixtureOperations });
     proof.capture = capture;
     assert.equal(capture.status, 'captured', JSON.stringify(capture.episode?.error)); assert.equal(received.length, 0);
@@ -116,6 +123,13 @@ test('shared launcher, maintained Pi session and production turn hook use only a
     proof.observed = observed; proof.fixture_effects = effects; proof.loopback_http_requests = received.length;
     assert.equal(observed.status, 'completed', JSON.stringify(observed.episode?.error));
     assert.equal(observed.stop_batch, false); assert.equal(observed.turn_control.status, 'completed');
+    if (resourceMode === 'unbounded') {
+      assert.equal(observed.shared.timeout_ms, null); assert.equal(capture.shared.timeout_ms, null);
+      const launch = await readJson(join(controlRoot, runId + '.launch.json'));
+      assert.equal(launch.runtime_config.limits.mode, 'unbounded');
+      assert.ok(Object.entries(launch.runtime_config.limits).every(([key, value]) => key === 'mode' || value === null));
+      assert.equal(launch.runtime_config.model.parameters.maxTokens, 256);
+    }
     assert.deepEqual(observed.episode.turns.map(turn => turn.id), ['turn-1', 'clarification-1', 'turn-2']);
     const events = (await readFile(join(runRoot, 'benchmark/runtime/events.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
     const ends = events.filter(event => event.type === 'user_turn_end');

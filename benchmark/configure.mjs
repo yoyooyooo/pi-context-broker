@@ -23,6 +23,7 @@ import { readApprovedCampaign } from './approved-campaign.mjs';
 import { assertObserverRepairSetup } from './campaign-observer-repair-continuation.mjs';
 import { ENGINEERING_WINDOW_DRAFT, assertEngineeringWindowSetup, isEngineeringContinuationAuthority } from './campaign-engineering-window-continuation.mjs';
 import { ENGINEERING_PREFLIGHT_REPAIR_DRAFT } from './campaign-engineering-preflight-repair.mjs';
+import { assertStandingSetup, standingCampaignPolicy } from './standing-campaign.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = async (path, value) => {
@@ -73,9 +74,10 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   assert.ok(isAbsolute(setup.environment_root) && isAbsolute(setup.control_root));
   assert.ok(Array.isArray(setup.candidates));
   const environmentPairs = comparisonEnvironmentPairs(setup.candidates.length, setup.environment_pairs);
-  if (setup.candidates.length !== 2) assert.ok(setup.campaign_scope, 'Four candidates require an explicit finite campaign');
-  assert.ok(!(setup.pilot_scope && setup.campaign_scope), 'A setup cannot mix scope contracts');
+  if (setup.candidates.length !== 2) assert.ok(setup.campaign_scope || setup.standing, 'Four candidates require an explicit campaign design');
+  assert.ok([setup.pilot_scope, setup.campaign_scope, setup.standing].filter(Boolean).length <= 1, 'A setup cannot mix scope contracts');
   assert.ok(setup.budget && setup.decision && setup.models && setup.corpus);
+  const standing = setup.standing ? await assertStandingSetup(setup) : null;
   if (setup.campaign_scope?.prospective_authorization) {
     const reference = setup.campaign_scope.prospective_authorization;
     const bytes = await readFile(reference.path); assert.equal(sha(bytes), reference.sha256);
@@ -99,7 +101,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     assert.equal(proof.setup_sha256, fingerprint(setup)); assert.equal(proof.plan_sha256, existing.plan_sha256);
     if (snapshot) assert.deepEqual(existing.execution.corpus_snapshot, setup.corpus.snapshot);
     await verifyExecutionImplementation(existing.execution.implementation);
-    if (existing.execution.pilot_scope || existing.execution.campaign_scope) await verifyCampaignScope(existing);
+    if (existing.execution.pilot_scope || existing.execution.campaign_scope || existing.execution.standing_scope) await verifyCampaignScope(existing);
     const bindings = await readJson(existing.execution.case_bindings_file);
     assert.equal(sha(await readFile(existing.execution.case_bindings_file)), existing.execution.case_bindings_sha256);
     if (proof.material_original_bindings) {
@@ -185,7 +187,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const schedule = { pairs: comparisonPairs({ models, cases, repetitions: setup.repetitions ?? 1,
     orderingSeed: setup.ordering_seed ?? 0, environmentCount: setup.candidates.length, environmentPairs }),
   assessments: [], policies: { ordering: { seed: setup.ordering_seed ?? 0 },
-    ...(setup.campaign_scope ? { campaign: setup.campaign_scope } : {}) } };
+    ...(standing ? { campaign: standingCampaignPolicy(standing, { scheduledEpisodes: standing.item.planned_episodes }) }
+      : setup.campaign_scope ? { campaign: setup.campaign_scope } : {}) } };
   const scheduled = scheduleProtocol(schedule), captureSlots = startupCaptureSchedule(schedule, cases, setup.episode_fixtures);
   const candidatesByCondition = Object.fromEntries(models.flatMap((_model, mi) => setup.candidates.map((candidate, ei) => ['m' + mi + '-e' + ei, candidate])));
   const prepared = await prepareEpisodeFixtures({ id: setup.id, environmentRoot: setup.environment_root, controlRoot: root,
@@ -230,10 +233,11 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
         assert.equal(launch.runtime_config.mode, job.candidate.mode);
         assert.equal(launch.runtime_config.model.id, job.model.route);
         assert.deepEqual(launch.runtime_config.runtime, runtime);
+        assert.equal(launch.runtime_config.limits.mode ?? 'bounded', setup.budget.mode ?? 'bounded', 'Retained capture resource policy changed');
       } catch (error) { if (error.code !== 'ENOENT') throw error; raw = null; }
       if (!raw) raw = await runSubject({ environmentRoot: setup.environment_root, buildId: job.candidate.build_id, mode: job.candidate.mode,
         binding: job.binding, model: { ...job.model, baseUrl: registry.base_url }, modelsFile, runtime,
-        controlRoot: root, runId: id, conditionId: 'm' + job.mi + '-e' + job.ei, budget: setup.budget.episode,
+        controlRoot: root, runId: id, conditionId: 'm' + job.mi + '-e' + job.ei, budget: setup.budget.episode, budgetMode: setup.budget.mode ?? 'bounded',
         codeMode: job.candidate.code_mode, captureOnly: true, credential, notionEntry: job.candidate.notion_entry });
       await save(captureFile, raw);
       assert.equal(raw.status, 'captured', 'No-model capture failed: ' + id);
@@ -272,7 +276,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const protocol = preregisterComparison({ id: setup.id, phase: setup.phase, purpose: setup.purpose, environments, models,
     corpus: corpus.publicCorpus, cases, repetitions: setup.repetitions ?? 1, budget: setup.budget, decision: setup.decision,
     analysis: setup.analysis, pilotScope: pilotScopePolicy(setup.pilot_scope, { modelCount: models.length }),
-    campaignScope: setup.campaign_scope ? finiteCampaignPolicy(setup.campaign_scope, { scheduledEpisodes: scheduled.length }) : undefined,
+    campaignScope: standing ? standingCampaignPolicy(standing, { scheduledEpisodes: scheduled.length })
+      : setup.campaign_scope ? finiteCampaignPolicy(setup.campaign_scope, { scheduledEpisodes: scheduled.length }) : undefined,
     environmentPairs, allowedChanges: setup.allowed_changes, orderingSeed: setup.ordering_seed });
   assert.deepEqual(scheduleProtocol(protocol), scheduled, 'Fixture ownership differs from the final frozen comparison schedule');
   const conditions = Object.fromEntries(protocol.conditions.map(condition => {
@@ -288,7 +293,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     adapter_evidence_file: setup.models.adapter_evidence_file,
     ...(snapshot ? { corpus_snapshot: structuredClone(setup.corpus.snapshot) } : {}),
     ...(prepared.registration ? { episode_fixtures: prepared.registration } : {}),
-    ...(setup.pilot_ledger_root ? { pilot_ledger_root: setup.pilot_ledger_root } : {}), ...(setup.route_gate ? { route_gate: setup.route_gate } : {}) };
+    ...(standing ? { pilot_ledger_root: standing.ledgerRoot }
+      : setup.pilot_ledger_root ? { pilot_ledger_root: setup.pilot_ledger_root } : {}), ...(setup.route_gate ? { route_gate: setup.route_gate } : {}) };
   const resumption = await prepareZeroSendResumption({ setup, protocol, captures: results, currentSchedule: scheduleProtocol(protocol) });
   if (resumption) execution.resumption = resumption;
   execution.instrumentation = await instrumentationIdentity(execution);

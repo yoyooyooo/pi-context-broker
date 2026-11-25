@@ -22,8 +22,14 @@ export class TurnBridgeError extends Error {
 }
 function limits(input = {}) {
   const result = { ...defaults, ...input };
-  for (const [key, value] of Object.entries(result)) assert.ok(Number.isSafeInteger(value) && value > 0, 'TURN_BRIDGE_LIMIT: ' + key);
-  assert.ok(result.pollMs <= 1000 && result.eventMs <= result.waitMs, 'TURN_BRIDGE_LIMIT_ORDER');
+  const unbounded = result.mode === 'unbounded';
+  assert.ok(result.mode === undefined || unbounded, 'TURN_BRIDGE_RESOURCE_MODE');
+  for (const [key, value] of Object.entries(result)) {
+    if (key === 'mode') continue;
+    const noDeadline = unbounded && ['wallMs', 'waitMs', 'eventMs'].includes(key);
+    assert.ok(noDeadline ? value === null : Number.isSafeInteger(value) && value > 0, 'TURN_BRIDGE_LIMIT: ' + key);
+  }
+  assert.ok(result.pollMs <= 1000 && (unbounded || result.eventMs <= result.waitMs), 'TURN_BRIDGE_LIMIT_ORDER');
   return result;
 }
 async function ownedDirectory(directory, { create = false } = {}) {
@@ -130,16 +136,23 @@ function checkIdentity(packet, expected) {
   assert.equal(packet.version, 1);
   for (const key of ['bridge_id', 'run_id', 'episode_id']) assert.equal(packet[key], expected[key], 'TURN_BRIDGE_PACKET_IDENTITY');
 }
-async function boundedCall(callback, milliseconds) {
-  const abort = new AbortController(); let timer;
+async function boundedCall(callback, milliseconds, signal) {
+  const abort = new AbortController(); let timer, cancelled;
+  if (signal?.aborted) throw signal.reason;
   const operation = Promise.resolve().then(() => callback(abort.signal));
   operation.catch(() => {});
   try {
-    return await Promise.race([operation, new Promise((_, reject) => { timer = setTimeout(() => {
-      abort.abort(new TurnBridgeError('TURN_BRIDGE_EVENT_TIMEOUT'));
-      reject(new TurnBridgeError('TURN_BRIDGE_EVENT_TIMEOUT'));
-    }, milliseconds); })]);
-  } finally { clearTimeout(timer); }
+    const pending = [operation];
+    if (milliseconds !== null) pending.push(new Promise((_, reject) => { timer = setTimeout(() => {
+      const error = new TurnBridgeError('TURN_BRIDGE_EVENT_TIMEOUT'); abort.abort(error); reject(error);
+    }, milliseconds); }));
+    if (signal) pending.push(new Promise((_, reject) => {
+      cancelled = () => { abort.abort(signal.reason); reject(signal.reason); };
+      signal.addEventListener('abort', cancelled, { once: true });
+      if (signal.aborted) cancelled();
+    }));
+    return await Promise.race(pending);
+  } finally { clearTimeout(timer); if (cancelled) signal.removeEventListener('abort', cancelled); }
 }
 async function actualCheckpoint(request, config, sessionId) {
   const file = join(config.runRoot, 'benchmark/runtime/events.jsonl');
@@ -237,15 +250,18 @@ export async function createTurnBridgeController(input) {
       assert.equal(served, false, 'TURN_BRIDGE_CONTROLLER_ALREADY_SERVED'); served = true;
       assert.ok(subject && typeof subject.then === 'function', 'TURN_BRIDGE_SUBJECT_PROMISE_REQUIRED');
       let subjectEnded = false, subjectError, sessionId, result, pendingRequest, sequence = 1;
-      Promise.resolve(subject).then(() => { subjectEnded = true; }, error => { subjectEnded = true; subjectError = String(error?.message ?? error); });
+      const operations = new AbortController(), cancelOperations = () => operations.abort(new TurnBridgeError('TURN_BRIDGE_CANCELLED'));
+      if (signal?.aborted) cancelOperations(); else signal?.addEventListener('abort', cancelOperations, { once: true });
+      Promise.resolve(subject).then(() => { subjectEnded = true; operations.abort(new TurnBridgeError('TURN_BRIDGE_SUBJECT_ENDED')); },
+        error => { subjectEnded = true; subjectError = String(error?.message ?? error); operations.abort(new TurnBridgeError('TURN_BRIDGE_SUBJECT_ENDED')); });
       const started = performance.now(), queue = [...plan.turns], delivered = new Map(), root = publicRoot(config.runRoot);
       const envelope = { version: 1, bridge_id: bridgeId, ...ids };
       const decisions = new Map(log.rows.filter(row => row.type === 'checkpoint_decided').map(row => [row.data.response.sequence, row.data]));
-      const stopReason = () => signal?.aborted ? 'TURN_BRIDGE_CANCELLED' : subjectEnded ? 'TURN_BRIDGE_SUBJECT_ENDED' : performance.now() - started > config.limits.wallMs ? 'TURN_BRIDGE_CONTROLLER_TIMEOUT' : null;
+      const stopReason = () => signal?.aborted ? 'TURN_BRIDGE_CANCELLED' : subjectEnded ? 'TURN_BRIDGE_SUBJECT_ENDED' : config.limits.wallMs !== null && performance.now() - started > config.limits.wallMs ? 'TURN_BRIDGE_CONTROLLER_TIMEOUT' : null;
       const awaitPath = async file => {
         const began = performance.now();
         while (!await exists(file)) { const reason = stopReason(); if (reason) throw new TurnBridgeError(reason);
-          if (performance.now() - began > config.limits.waitMs) throw new TurnBridgeError('TURN_BRIDGE_CHECKPOINT_TIMEOUT');
+          if (config.limits.waitMs !== null && performance.now() - began > config.limits.waitMs) throw new TurnBridgeError('TURN_BRIDGE_CHECKPOINT_TIMEOUT');
           await delay(config.limits.pollMs); }
       };
       // The shared launcher creates run.json before its initial write has
@@ -255,7 +271,7 @@ export async function createTurnBridgeController(input) {
         const file = join(config.runRoot, 'run.json'), began = performance.now();
         let last = null, attempts = 0, recordedPending = false;
         for (;;) {
-          const reason = stopReason() ?? (performance.now() - began >= config.limits.waitMs ? 'TURN_BRIDGE_RUN_MANIFEST_TIMEOUT' : null);
+          const reason = stopReason() ?? (config.limits.waitMs !== null && performance.now() - began >= config.limits.waitMs ? 'TURN_BRIDGE_RUN_MANIFEST_TIMEOUT' : null);
           if (reason) {
             if (last) await log.append('run_manifest_unavailable', { reason, elapsed_ms: performance.now() - began, attempts, last_observation: last });
             throw new TurnBridgeError(reason);
@@ -286,7 +302,7 @@ export async function createTurnBridgeController(input) {
               recordedPending = true;
             }
           }
-          await delay(Math.min(config.limits.pollMs, Math.max(1, config.limits.waitMs - (performance.now() - began))));
+          await delay(config.limits.waitMs === null ? config.limits.pollMs : Math.min(config.limits.pollMs, Math.max(1, config.limits.waitMs - (performance.now() - began))));
         }
       };
       const eventState = id => log.rows.filter(row => row.data?.event_id === id && ['event_started', 'event_result'].includes(row.type)).at(-1);
@@ -296,7 +312,7 @@ export async function createTurnBridgeController(input) {
         const callContext = { event: structuredClone(event), eventId: event.id, episodeId: config.episodeId, runId: config.runId, idempotencyKey };
         if (prior?.type === 'event_started') {
           let reconciled;
-          try { reconciled = await verifiedReceipt(await boundedCall(abortSignal => reconcileEvent ? reconcileEvent({ ...callContext, signal: abortSignal }) : { status: 'unknown' }, config.limits.eventMs), config, event.id); }
+          try { reconciled = await verifiedReceipt(await boundedCall(abortSignal => reconcileEvent ? reconcileEvent({ ...callContext, signal: abortSignal }) : { status: 'unknown' }, config.limits.eventMs, operations.signal), config, event.id); }
           catch (error) { reconciled = { status: 'unknown', reason: error.message }; }
           await log.append('event_reconciled', { event_id: event.id, idempotency_key: idempotencyKey, result: reconciled });
           if (reconciled.status !== 'not_applied') {
@@ -305,7 +321,7 @@ export async function createTurnBridgeController(input) {
         }
         await log.append('event_started', { event_id: event.id, idempotency_key: idempotencyKey });
         let value;
-        try { value = await verifiedReceipt(await boundedCall(abortSignal => executeEvent ? executeEvent({ ...callContext, signal: abortSignal }) : { status: 'unknown' }, config.limits.eventMs), config, event.id); }
+        try { value = await verifiedReceipt(await boundedCall(abortSignal => executeEvent ? executeEvent({ ...callContext, signal: abortSignal }) : { status: 'unknown' }, config.limits.eventMs, operations.signal), config, event.id); }
         catch (error) { value = { status: 'unknown', reason: error.message }; }
         if (value.event_id !== undefined && value.event_id !== event.id) value = { status: 'unknown', reason: 'event-receipt-wrong-event' };
         await log.append('event_result', { event_id: event.id, idempotency_key: idempotencyKey, result: value }); return value;
@@ -340,7 +356,7 @@ export async function createTurnBridgeController(input) {
             let action = 'continue', reason = null, continuation = null, topicId = null;
             const available = clarifications.filter(item => (delivered.get(item.topic_id) ?? 0) < item.max_questions);
             if (selectClarification && available.length > 0) {
-              const selected = await boundedCall(abortSignal => selectClarification({ turn: structuredClone(queue[index]), observation, available: structuredClone(available), signal: abortSignal }), config.limits.eventMs);
+              const selected = await boundedCall(abortSignal => selectClarification({ turn: structuredClone(queue[index]), observation, available: structuredClone(available), signal: abortSignal }), config.limits.eventMs, operations.signal);
               if (selected !== null && selected !== undefined) {
                 topicId = typeof selected === 'string' ? selected : selected.topic_id;
                 const allowed = available.find(item => item.topic_id === topicId);
@@ -382,6 +398,7 @@ export async function createTurnBridgeController(input) {
           } catch (publicationError) { await log.append('stop_receipt_unpublished', { reason: publicationError.message }); }
         }
       } finally {
+        signal?.removeEventListener('abort', cancelOperations);
         await log.append('controller_end', result);
         result.journal = await log.close(); await releaseOwner();
       }
@@ -401,7 +418,7 @@ export async function connectTurnBridge(input) {
     const began = performance.now();
     while (!await exists(file)) {
       if (closed || config.signal?.aborted) throw new TurnBridgeError('TURN_BRIDGE_CANCELLED');
-      if (performance.now() - began > config.limits.waitMs) throw new TurnBridgeError('TURN_BRIDGE_RECEIPT_TIMEOUT');
+      if (config.limits.waitMs !== null && performance.now() - began > config.limits.waitMs) throw new TurnBridgeError('TURN_BRIDGE_RECEIPT_TIMEOUT');
       await delay(config.limits.pollMs);
     }
   };

@@ -45,38 +45,40 @@ export function outputTokenCap(api, payload) {
 }
 
 export function createEpisodeBudget(limits) {
+  const unbounded = limits?.mode === 'unbounded';
+  assert.ok(limits?.mode === undefined || unbounded, 'BENCHMARK_RESOURCE_MODE');
   for (const key of ['wallTimeMs', 'maxModelRequests', 'maxToolCalls', 'maxHttpAttempts', 'maxInputTokens', 'maxOutputTokens', 'maxTotalTokens']) {
-    assert.ok(Number.isSafeInteger(limits?.[key]) && limits[key] > 0, 'BENCHMARK_LIMIT_REQUIRED: ' + key);
+    assert.ok(unbounded ? limits[key] === null : Number.isSafeInteger(limits?.[key]) && limits[key] > 0, 'BENCHMARK_LIMIT_REQUIRED: ' + key);
   }
   const started = performance.now();
   const state = { requests: 0, attempts: 0, tools: 0, input_tokens: 0, output_tokens: 0, tokens: 0, usage_unknown: false, stop: null };
   const reject = (code, details) => { state.stop ??= { code, details }; throw new EpisodeStop(code, details); };
   const available = () => {
     if (state.stop) throw new EpisodeStop(state.stop.code, state.stop.details);
-    if (performance.now() - started >= limits.wallTimeMs) reject('BENCHMARK_WALL_LIMIT', {});
+    if (!unbounded && performance.now() - started >= limits.wallTimeMs) reject('BENCHMARK_WALL_LIMIT', {});
     if (state.usage_unknown) reject('BENCHMARK_USAGE_UNKNOWN', {});
   };
   return {
     state, limits, available, reject,
-    request() { available(); if (state.requests >= limits.maxModelRequests) reject('BENCHMARK_REQUEST_LIMIT', {}); return ++state.requests; },
+    request() { available(); if (!unbounded && state.requests >= limits.maxModelRequests) reject('BENCHMARK_REQUEST_LIMIT', {}); return ++state.requests; },
     payload(api, payload) {
       available(); const cap = outputTokenCap(api, payload), input = inputByteGuard(payload);
-      const remainingInput = limits.maxInputTokens - state.input_tokens, remainingOutput = limits.maxOutputTokens - state.output_tokens;
-      if (!Number.isSafeInteger(cap) || cap <= 0 || cap > remainingOutput) reject('BENCHMARK_OUTPUT_CAP_UNENFORCED', { observed: cap ?? null, remaining_output: remainingOutput });
-      if (input.estimated_tokens > remainingInput) reject('BENCHMARK_INPUT_PREFLIGHT_LIMIT', { ...input, remaining_input: remainingInput });
-      if (state.tokens + input.estimated_tokens + cap > limits.maxTotalTokens) reject('BENCHMARK_TOTAL_PREFLIGHT_LIMIT', { consumed: state.tokens, input, output_cap: cap });
+      const remainingInput = unbounded ? null : limits.maxInputTokens - state.input_tokens, remainingOutput = unbounded ? null : limits.maxOutputTokens - state.output_tokens;
+      if (!Number.isSafeInteger(cap) || cap <= 0 || !unbounded && cap > remainingOutput) reject('BENCHMARK_OUTPUT_CAP_UNENFORCED', { observed: cap ?? null, remaining_output: remainingOutput });
+      if (!unbounded && input.estimated_tokens > remainingInput) reject('BENCHMARK_INPUT_PREFLIGHT_LIMIT', { ...input, remaining_input: remainingInput });
+      if (!unbounded && state.tokens + input.estimated_tokens + cap > limits.maxTotalTokens) reject('BENCHMARK_TOTAL_PREFLIGHT_LIMIT', { consumed: state.tokens, input, output_cap: cap });
       return input;
     },
-    outputCap(requested) { available(); const remaining = limits.maxOutputTokens - state.output_tokens; if (remaining < 16) reject('BENCHMARK_OUTPUT_LIMIT', { remaining }); return Math.min(requested, remaining); },
-    attempt() { available(); if (state.attempts >= limits.maxHttpAttempts) reject('BENCHMARK_HTTP_ATTEMPT_LIMIT', {}); return ++state.attempts; },
-    tool() { available(); if (state.tools >= limits.maxToolCalls) reject('BENCHMARK_TOOL_LIMIT', {}); return ++state.tools; },
+    outputCap(requested) { available(); if (unbounded) return requested; const remaining = limits.maxOutputTokens - state.output_tokens; if (remaining < 16) reject('BENCHMARK_OUTPUT_LIMIT', { remaining }); return Math.min(requested, remaining); },
+    attempt() { available(); if (!unbounded && state.attempts >= limits.maxHttpAttempts) reject('BENCHMARK_HTTP_ATTEMPT_LIMIT', {}); return ++state.attempts; },
+    tool() { available(); if (!unbounded && state.tools >= limits.maxToolCalls) reject('BENCHMARK_TOOL_LIMIT', {}); return ++state.tools; },
     usage(usage) {
       if (!usage?.complete_for_token_budget || !finite(usage.total)) { state.usage_unknown = true; return; }
       state.input_tokens += usage.input; state.output_tokens += usage.output;
       state.tokens += usage.total;
-      if (state.input_tokens > limits.maxInputTokens) state.stop ??= { code: 'BENCHMARK_INPUT_LIMIT', details: { observed: state.input_tokens } };
-      if (state.output_tokens > limits.maxOutputTokens) state.stop ??= { code: 'BENCHMARK_OUTPUT_LIMIT', details: { observed: state.output_tokens } };
-      if (state.tokens > limits.maxTotalTokens) state.stop ??= { code: 'BENCHMARK_TOTAL_LIMIT', details: { observed: state.tokens } };
+      if (!unbounded && state.input_tokens > limits.maxInputTokens) state.stop ??= { code: 'BENCHMARK_INPUT_LIMIT', details: { observed: state.input_tokens } };
+      if (!unbounded && state.output_tokens > limits.maxOutputTokens) state.stop ??= { code: 'BENCHMARK_OUTPUT_LIMIT', details: { observed: state.output_tokens } };
+      if (!unbounded && state.tokens > limits.maxTotalTokens) state.stop ??= { code: 'BENCHMARK_TOTAL_LIMIT', details: { observed: state.tokens } };
     },
   };
 }

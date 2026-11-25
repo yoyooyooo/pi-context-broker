@@ -9,12 +9,16 @@ import { prepareEngineeringWindowDraft } from './campaign-engineering-window-con
 import { prepareEngineeringPreflightRepairDraft } from './campaign-engineering-preflight-repair.mjs';
 import { prepareApprovedEngineeringWindowContinuation, prepareApprovedEngineeringPreflightRepair } from './approved-campaign.mjs';
 import { runEngineeringWindowBatch, runEngineeringPreflightRepairBatch } from './engineering-runner.mjs';
+import { runStandingBatch } from './standing-runner.mjs';
+import { createStandingHistoryBaseline } from './standing-campaign.mjs';
 import { prepareEngineeringControllerComposition } from './engineering-source.mjs';
 import { createHash } from 'node:crypto';
 
 const HELP = `Benchmark: frozen comparisons, actual episodes, and offline evidence
 
   node benchmark/cli.mjs configure --setup ABS_SETUP_JSON
+  node benchmark/cli.mjs prepare-standing-history --request ABS_REQUEST --out ABS_NEW_BASELINE
+  node benchmark/cli.mjs run-standing --plan ABS_STANDING_PLAN --out ABS_NEW_RUNNER [--slice POSITIVE_INTEGER]
   node benchmark/cli.mjs draft-engineering-window --request ABS_REQUEST --out ABS_NEW_DRAFT
   node benchmark/cli.mjs compose-engineering-controller --request ABS_REQUEST --out ABS_NEW_COMPOSITION
   node benchmark/cli.mjs prepare-engineering-window --draft ABS_DRAFT --decision ABS_APPROVAL --out ABS_NEW_AUTHORITY
@@ -42,13 +46,19 @@ const HELP = `Benchmark: frozen comparisons, actual episodes, and offline eviden
 
 configure uses the shared paired environment and maintained Pi SDK, performs
 zero provider sends, checks actual loading and final serialization, and freezes
-the concrete bounded plan. run accepts that plan only; no arbitrary prompt or
+the concrete scientific plan. run accepts that plan only; no arbitrary prompt or
 silent model fallback is accepted. Invalid, unknown and failed evidence stays.
 The legacy first24 gate and explicit prospective scope gates retain the same
-144 scheduled-episode campaign cap. See docs/benchmark-pilot-scope.md for the
+144 scheduled-episode campaign cap in their historical contracts. See docs/benchmark-pilot-scope.md for the
 two-model gate, verified zero-send repair and single manual route amendment.
 Explicit campaign_scope keeps the same ledger and original stop/usage evidence.
 See docs/benchmark-finite-campaign.md for finite route gates and acceptance.
+setup.standing binds one reusable user grant to an immutable work plan and a
+separate ledger. Its scientific sample count is not an authorization quota;
+requests, tokens, cumulative time, batches and grant duration are unbounded.
+run-standing --slice controls checkpoint frequency only. Recovery retains the
+failed attempt and continues under the same grant after the fault is resolved.
+See docs/benchmark-standing-campaign.md for the standing contract.
 analyze replays normalized observations; reanalysis re-reads original artifacts
 and the private oracle before scoring. Both perform zero model requests.
 Collection recovery registers an exact storage-only projection and controller
@@ -67,6 +77,7 @@ export function parseBenchmarkArgs(args) {
   const flags = { validate: ['protocol', 'stage'], manifest: ['file', 'stage'],
     phase0: ['root', 'build', 'mode', 'skills', 'expected', 'condition', 'id', 'out'], 'freeze-load': ['file', 'out'],
     configure: ['setup'], run: ['plan', 'limit', 'analysis-revision', 'collection-recovery'], status: ['root'], gate: ['root', 'out'], reconcile: ['root', 'lease'], analyze: ['root', 'out'], reanalysis: ['root', 'out'],
+    'prepare-standing-history': ['request', 'out'], 'run-standing': ['plan', 'out', 'slice'],
     'draft-engineering-window': ['request', 'out'], 'prepare-engineering-window': ['draft', 'decision', 'out'],
     'draft-engineering-preflight-repair': ['request', 'out'], 'prepare-engineering-preflight-repair': ['draft', 'decision', 'out'],
     'compose-engineering-controller': ['request', 'out'],
@@ -91,6 +102,18 @@ export async function benchmarkMain(args) {
   const options = parseBenchmarkArgs(args);
   if (options.action === 'help') return { help: HELP };
   if (options.action === 'phase0') return phaseZero(options);
+  if (options.action === 'prepare-standing-history') {
+    for (const key of ['request', 'out']) assert.ok(options[key] && isAbsolute(options[key]), '--' + key + ' must be absolute');
+    const value = await createStandingHistoryBaseline(JSON.parse(await readFile(options.request, 'utf8')));
+    await writeFile(options.out, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    return { status: 'prepared', kind: value.kind, output: options.out,
+      reference: { path: options.out, sha256: createHash('sha256').update(await readFile(options.out)).digest('hex') }, model_requests: 0, execution_performed: false };
+  }
+  if (options.action === 'run-standing') {
+    for (const key of ['plan', 'out']) assert.ok(options[key] && isAbsolute(options[key]), '--' + key + ' must be absolute');
+    assert.ok(options.slice === undefined || /^[1-9][0-9]*$/.test(options.slice), '--slice is a positive checkpoint interval');
+    return runStandingBatch({ planFile: options.plan, outputRoot: options.out, maximumSlice: options.slice === undefined ? 8 : Number(options.slice) });
+  }
   if (['draft-engineering-window', 'prepare-engineering-window', 'draft-engineering-preflight-repair',
     'prepare-engineering-preflight-repair', 'compose-engineering-controller'].includes(options.action)) {
     const inputs = options.action.startsWith('prepare-') ? ['draft', 'decision', 'out'] : ['request', 'out'];
@@ -204,7 +227,7 @@ export async function benchmarkMain(args) {
 
 export function benchmarkResultExitCode(action, result) {
   return result.valid === false || ['failed', 'rejected'].includes(result.status)
-    || (['run-engineering-window', 'run-engineering-preflight-repair'].includes(action) && result.status !== 'completed') ? 1 : 0;
+    || (['run-standing', 'run-engineering-window', 'run-engineering-preflight-repair'].includes(action) && result.status !== 'completed') ? 1 : 0;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -215,8 +238,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exitCode = benchmarkResultExitCode(process.argv[2], result);
   } catch (error) {
     process.stdout.write(JSON.stringify({ status: 'failed', error: error.message,
-      execution_performed: ['run', 'run-engineering-window', 'run-engineering-preflight-repair'].includes(process.argv[2]) ? null : false,
-      ...(['run', 'run-engineering-window', 'run-engineering-preflight-repair'].includes(process.argv[2]) ? { next_step: 'Read the retained batch status before any further run; an exception does not prove zero requests.' } : {}) }) + '\n');
+      execution_performed: ['run', 'run-standing', 'run-engineering-window', 'run-engineering-preflight-repair'].includes(process.argv[2]) ? null : false,
+      ...(['run', 'run-standing', 'run-engineering-window', 'run-engineering-preflight-repair'].includes(process.argv[2]) ? { next_step: 'Read the retained batch status before any further run; an exception does not prove zero requests.' } : {}) }) + '\n');
     process.exitCode = 1;
   }
 }

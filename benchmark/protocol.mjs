@@ -4,6 +4,7 @@ import protocolSchema from './schemas/protocol.schema.json' with { type: 'json' 
 import metricDictionary from './metrics.json' with { type: 'json' };
 import { canonicalAutoGroupLabel, validateRoutingPolicy } from './reported-model.mjs';
 import { scheduleProtocol, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION, selectsUnstartedSlots } from './campaign-selection.mjs';
+import { isStandingWindow, modelWindowCondition, modelWindowEnd, validModelWindow } from './model-window.mjs';
 
 const REQUIRED_EVIDENCE = ['runtime_identity', 'loaded_manifest', 'visible_materials',
   'model_requests', 'usage', 'tool_lineage', 'business_readback', 'completion_boundary', 'interventions'];
@@ -87,7 +88,7 @@ function modelCondition(model) {
     provider: model.provider, route: model.route, api: model.api, parameters: model.parameters,
     ...(model.routing ? { routing: model.routing } : {}),
     backend: { identity: model.backend.identity, observability: model.backend.observability,
-      window: { start: Date.parse(model.backend.window.start), end: Date.parse(model.backend.window.end) } },
+      window: modelWindowCondition(model.backend.window) },
   };
 }
 function validTimestamp(value) {
@@ -354,7 +355,7 @@ function comparisonChecks(value, maps, ref, errors) {
     if (!value.allowed_changes.includes('code_mode') && a.code_mode !== b.code_mode)
       issue(errors, path, 'undeclared_code_mode', 'Code Mode policy differs without a registered change');
     const start = Math.max(Date.parse(ma.backend.window.start), Date.parse(mb.backend.window.start));
-    const end = Math.min(Date.parse(ma.backend.window.end), Date.parse(mb.backend.window.end));
+    const end = Math.min(modelWindowEnd(ma.backend.window), modelWindowEnd(mb.backend.window));
     if (start >= end && value.purpose !== 'model_evolution')
       issue(errors, path, 'route_window_mismatch', 'Contemporary comparisons require overlapping route observation windows');
     pairCells.push({ pair, conditions, item });
@@ -410,7 +411,7 @@ function comparisonChecks(value, maps, ref, errors) {
             issue(errors, '/pairs', 'interaction_fairness', 'Interaction changes fixed ' + field + ' between its model groups');
         const modelA = maps.models.get(first.model_id), modelB = maps.models.get(second.model_id);
         if (modelA && modelB && Math.max(Date.parse(modelA.backend.window.start), Date.parse(modelB.backend.window.start))
-          >= Math.min(Date.parse(modelA.backend.window.end), Date.parse(modelB.backend.window.end)))
+          >= Math.min(modelWindowEnd(modelA.backend.window), modelWindowEnd(modelB.backend.window)))
           issue(errors, '/pairs', 'interaction_window', 'Interaction model groups require overlapping observation windows');
       }
     }
@@ -420,6 +421,7 @@ function comparisonChecks(value, maps, ref, errors) {
 
 function policyChecks(value, maps, pairCells, stage, errors) {
   const policies = value.policies;
+  const standing = policies.campaign?.kind === 'benchmark-standing-campaign';
   unique(value.allowed_changes, '/allowed_changes', errors);
   unique(policies.ordering.condition_order, '/policies/ordering/condition_order', errors);
   if (!setSame(policies.ordering.condition_order, value.conditions.map(c => c.id)))
@@ -451,7 +453,20 @@ function policyChecks(value, maps, pairCells, stage, errors) {
   } else if (policies.campaign?.selection !== undefined)
     issue(errors, '/policies/campaign/selection', 'followup_role_required', 'Only an explicitly authorized unstarted follow-up may select a schedule suffix');
   const totalScheduled = selectedSlots?.length ?? (value.pairs.length * 2 + value.assessments.filter(a => a.expected_support === 'supported').length);
-  if (policies.campaign) {
+  if (standing) {
+    const scope = policies.campaign;
+    if (policies.pilot.scope)
+      issue(errors, '/policies/campaign', 'standing_legacy_scope', 'Standing execution cannot inherit a legacy finite scope');
+    if (scope.planned_episodes !== totalScheduled)
+      issue(errors, '/policies/campaign/planned_episodes', 'standing_schedule', 'The work item must describe the complete frozen scientific schedule');
+    if (policies.pilot.max_scheduled_episodes !== null || policies.pilot.route_gate_episodes !== null
+        || policies.reruns.max_episodes !== null || policies.budgets.some(budget => budget.mode !== 'unbounded'))
+      issue(errors, '/policies', 'standing_resource_policy', 'Standing execution has no authorization quotas, gate allowance or rerun budget');
+    if (value.models.some(model => !model.routing))
+      issue(errors, '/models', 'campaign_routing', 'Every standing campaign model requires a frozen reported-model routing contract');
+    if (!Number.isSafeInteger(policies.analysis?.capped_time_horizon_ms) || policies.analysis.capped_time_horizon_ms <= 0)
+      issue(errors, '/policies/analysis/capped_time_horizon_ms', 'standing_analysis_horizon', 'Register a positive measurement horizon separately from unbounded execution resources');
+  } else if (policies.campaign) {
     const scope = policies.campaign;
     if (policies.pilot.scope || !['pilot', 'confirmation'].includes(value.phase))
       issue(errors, '/policies/campaign', 'campaign_phase', 'A finite campaign requires its own pilot or confirmation contract without a legacy scope');
@@ -478,6 +493,8 @@ function policyChecks(value, maps, pairCells, stage, errors) {
         issue(errors, '/policies/campaign', 'finite_route_gate_shape', 'A route-only gate is one model in Broker/native with the same four cases, once per condition');
     }
   }
+  if (!standing && (policies.pilot.max_scheduled_episodes !== 144 || policies.pilot.route_gate_episodes !== 24))
+    issue(errors, '/policies/pilot', 'legacy_pilot_limits', 'Historical finite protocols retain their registered 144/24 limits');
   if (policies.pilot.scope) {
     const scope = policies.pilot.scope;
     if (value.phase !== 'pilot') issue(errors, '/policies/pilot/scope', 'pilot_scope_phase', 'A prospective scope remains inside the pilot campaign');
@@ -511,17 +528,25 @@ function policyChecks(value, maps, pairCells, stage, errors) {
         issue(errors, '/policies/pilot/scope', 'pilot_scope_gate_schedule', 'The prospective gate requires sixteen new episodes, four per condition');
     }
   }
-  if (value.phase === 'pilot' && totalScheduled + (policies.reruns.max_episodes ?? 0) > policies.pilot.max_scheduled_episodes)
+  if (!standing && value.phase === 'pilot' && totalScheduled + (policies.reruns.max_episodes ?? 0) > policies.pilot.max_scheduled_episodes)
     issue(errors, '/pairs', 'pilot_episode_limit', 'Pilot planned attempts plus reserved replacements cannot exceed 144 including the first 24');
   for (const [i, budget] of policies.budgets.entries()) {
     const path = '/policies/budgets/' + i;
+    if (budget.mode === 'unbounded') {
+      if (!standing)
+        issue(errors, path + '/mode', 'standing_authorization_required', 'Unbounded resources require a standing campaign with its authorization binding');
+      if (Object.values(budget.episode).some(item => item !== null)
+          || Object.entries(budget.batch).some(([key, item]) => key !== 'max_concurrency' && item !== null)
+          || budget.monetary.policy !== 'unpriced')
+        issue(errors, path, 'unbounded_resource_limits', 'Unbounded resources use explicit null limits and retain actual usage accounting');
+    }
     const selected = new Set(value.conditions.filter(c => c.budget_id === budget.id).map(c => c.id));
     const scheduled = selectedSlots ? selectedSlots.filter(slot => selected.has(slot.condition_id)).length
       : value.pairs.reduce((count, p) => count + p.condition_ids.filter(id => selected.has(id)).length, 0)
         + value.assessments.filter(a => selected.has(a.condition_id) && a.expected_support === 'supported').length;
     if (budget.batch.max_episodes !== null && scheduled + (policies.reruns.max_episodes ?? 0) > budget.batch.max_episodes)
       issue(errors, path + '/batch/max_episodes', 'batch_episode_limit', 'Plan and reserved reruns exceed the frozen scheduling budget');
-    if (value.phase === 'pilot' && budget.batch.max_episodes > 144)
+    if (!standing && value.phase === 'pilot' && budget.batch.max_episodes > 144)
       issue(errors, path + '/batch/max_episodes', 'pilot_episode_limit', 'Pilot budgets cannot authorize more than 144 scheduled episodes');
     if (policies.ordering.concurrency !== null && budget.batch.max_concurrency !== null && policies.ordering.concurrency > budget.batch.max_concurrency)
       issue(errors, path + '/batch/max_concurrency', 'concurrency_limit', 'Declared global concurrency exceeds this batch budget');
@@ -563,8 +588,11 @@ function policyChecks(value, maps, pairCells, stage, errors) {
           (/(^|\/)group\//.test(id) || (/(^|\/)auto\//.test(id) && !(routing.mode === 'auto-route' && id === model.route)) || !matchesVariant(id))))
         issue(errors, path + '/routing/reported_model_ids', 'reported_model_alias', 'Reported labels must name the declared variant or its exact authorized auto route or canonical group');
     }
-    if (Date.parse(model.backend.window.start) >= Date.parse(model.backend.window.end))
+    if (!validModelWindow(model.backend.window))
       issue(errors, path + '/backend/window', 'route_window_invalid', 'Route window start must precede its end');
+    if (standing ? !isStandingWindow(model.backend.window)
+        || model.backend.window.start !== policies.campaign.condition_epoch.started_at : model.backend.window.mode !== undefined || model.backend.window.end === null)
+      issue(errors, path + '/backend/window', 'condition_epoch_mismatch', 'An open model epoch requires the same standing campaign condition start');
     if (model.backend.observability === 'reported' && model.backend.identity === null)
       issue(errors, path + '/backend/identity', 'reported_identity_missing', 'A reported backend must include the observed identity');
     if (model.backend.observability === 'opaque_alias' && model.backend.identity !== null)
@@ -615,11 +643,13 @@ function policyChecks(value, maps, pairCells, stage, errors) {
   if (value.status === 'frozen' || stage === 'execute') {
     requireValue(value.registered_at, '/registered_at', errors);
     for (const [i, budget] of policies.budgets.entries()) {
-      unresolved(budget.episode, '/policies/budgets/' + i + '/episode', errors);
-      unresolved(budget.batch, '/policies/budgets/' + i + '/batch', errors);
+      if (budget.mode !== 'unbounded') {
+        unresolved(budget.episode, '/policies/budgets/' + i + '/episode', errors);
+        unresolved(budget.batch, '/policies/budgets/' + i + '/batch', errors);
+      } else requireValue(budget.batch.max_concurrency, '/policies/budgets/' + i + '/batch/max_concurrency', errors);
     }
     requireValue(policies.ordering.concurrency, '/policies/ordering/concurrency', errors);
-    requireValue(policies.reruns.max_episodes, '/policies/reruns/max_episodes', errors);
+    if (!standing) requireValue(policies.reruns.max_episodes, '/policies/reruns/max_episodes', errors);
     for (const key of ['interval_method', 'boundary_method', 'multiple_comparisons'])
       requireValue(policies.statistics[key], '/policies/statistics/' + key, errors);
     for (const key of ['absolute_quality_required', 'unassisted_quality_required'])

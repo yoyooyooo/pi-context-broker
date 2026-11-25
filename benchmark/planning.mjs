@@ -8,6 +8,7 @@ import { ANALYSIS_VERSION } from './analysis/compare.mjs';
 import { createPreregistrationTemplate } from './templates/preregistration.mjs';
 import { bindPublicCaseToFixture, materializeLocal, planCaseVariant, validateCorpus } from './corpus/index.mjs';
 import { inventoryPublicInputs } from './subject.mjs';
+import { isStandingCampaign } from './standing-campaign.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
@@ -137,7 +138,9 @@ export function preregisterComparison({ id, phase, purpose, environments, models
   if (analysis !== undefined) value.policies.analysis = structuredClone(analysis);
   if (pilotScope !== undefined) value.policies.pilot.scope = structuredClone(pilotScope);
   if (campaignScope !== undefined) value.policies.campaign = structuredClone(campaignScope);
-  value.policies.reruns.max_episodes = 0;
+  const standing = isStandingCampaign(campaignScope);
+  value.policies.reruns.max_episodes = standing ? null : 0;
+  if (standing) { value.policies.pilot.max_scheduled_episodes = null; value.policies.pilot.route_gate_episodes = null; }
   value.policies.evidence = { ...value.policies.evidence, observer_version: 'benchmark-pi-sdk-1',
     normalizer_version: EVIDENCE_VERSION, scoring_version: ANALYSIS_VERSION };
   value.protocol_sha256 = fingerprint({ ...value, protocol_sha256: null });

@@ -136,10 +136,13 @@ export async function readSubjectTurnControl({ controlRoot, runRoot, runId, requ
 
 /** The only paid subject dispatch path; the controller itself never invokes a provider. */
 export async function runSubject({ environmentRoot, buildId, mode, binding, model, modelsFile, runtime,
-  controlRoot, runId, conditionId, budget, codeMode = 'free', expected, captureOnly = false, credential, notionEntry }, apparatus = {}) {
+  controlRoot, runId, conditionId, budget, budgetMode = 'bounded', codeMode = 'free', expected, captureOnly = false, credential, notionEntry }, apparatus = {}) {
   for (const path of [environmentRoot, modelsFile, controlRoot]) assert.ok(isAbsolute(path));
   assert.ok(['native', 'broker'].includes(mode));
   assert.ok(['free', 'off', 'required'].includes(codeMode));
+  assert.ok(['bounded', 'unbounded'].includes(budgetMode), 'BENCHMARK_RESOURCE_MODE');
+  const unbounded = budgetMode === 'unbounded';
+  if (unbounded) assert.ok(Object.values(budget).every(value => value === null), 'BENCHMARK_UNBOUNDED_LIMITS_MUST_BE_NULL');
   const turnRuntimeBuild = await (apparatus.verifyTurnRuntimeBuild ?? verifyTurnRuntimeBuild)({ environmentRoot, buildId, binding, model });
   if (!captureOnly) {
     assert.ok(expected && isAbsolute(expected.path), 'Paid execution requires the exact frozen expectation');
@@ -159,8 +162,9 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
     controller = await createTurnBridgeController({ runRoot: root, controllerRoot: bridgeRoot, runId, episodeId: runId,
       turns, events, clarifications, evidenceRoots: adapter.evidenceRoots,
       policy: { clarification: clarificationPolicy, fixture: binding.fixture_control ?? null, native_event_scope: 'publish-version-only' },
-      limits: { wallMs: budget.max_duration_ms + 60000, waitMs: budget.max_duration_ms,
-        eventMs: Math.min(60000, budget.max_duration_ms), pollMs: 25 } });
+      limits: unbounded ? { mode: 'unbounded', wallMs: null, waitMs: null, eventMs: null, pollMs: 25 }
+        : { wallMs: budget.max_duration_ms + 60000, waitMs: budget.max_duration_ms,
+          eventMs: Math.min(60000, budget.max_duration_ms), pollMs: 25 } });
   }
   const parameters = model.parameters;
   const launch = { run_id: runId, source_retention_root: join(controlRoot, 'controller-sources'),
@@ -169,9 +173,9 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
     runtime_config: { version: 1, mode,
       model: { provider: model.provider, id: model.route ?? model.id, api: model.api, baseUrl: model.baseUrl,
         apiKeyEnv: credential.api_key_env, parameters, ...(model.routing ? { routing: structuredClone(model.routing) } : {}) }, runtime,
-      limits: { wallTimeMs: budget.max_duration_ms, maxModelRequests: budget.max_model_requests, maxToolCalls: 40,
+      limits: { ...(unbounded ? { mode: 'unbounded' } : {}), wallTimeMs: budget.max_duration_ms, maxModelRequests: budget.max_model_requests, maxToolCalls: unbounded ? null : 40,
         maxHttpAttempts: budget.max_http_attempts, maxInputTokens: budget.max_input_tokens,
-        maxOutputTokens: budget.max_output_tokens, maxTotalTokens: budget.max_input_tokens + budget.max_output_tokens },
+        maxOutputTokens: budget.max_output_tokens, maxTotalTokens: unbounded ? null : budget.max_input_tokens + budget.max_output_tokens },
       admission: { captureOnly, ...(expected ? { expectedFile: expected.path } : {}) },
       turns,
       correlation: { run_id: runId, episode_id: runId, candidate_id: conditionId, task_id: binding.id },
@@ -189,7 +193,7 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
       'pi-mode': mode, ...(mode === 'native' ? { 'native-skills': binding.skills_root }
         : notionEntry ? { entry: notionEntry } : { skills: binding.skills_root }),
       models: modelsFile, 'pass-env': [credential.api_key_env, ...(notionEntry ? ['NOTION_API_TOKEN'] : [])],
-      'timeout-ms': Math.min(3600000, budget.max_duration_ms + 60000),
+      'timeout-ms': unbounded ? 'none' : Math.min(3600000, budget.max_duration_ms + 60000),
       args: ['node', join(environmentRoot, 'builds', buildId, 'source/broker/benchmark/subject.mjs'), launchFile] }));
     const bridge = controller ? controller.serve({ subject, executeEvent: adapter.executeEvent, reconcileEvent: adapter.reconcileEvent,
       selectClarification: observation => selectFrozenClarification(observation, clarificationPolicy) }) : Promise.resolve(null);

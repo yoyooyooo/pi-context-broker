@@ -11,9 +11,12 @@ import { FINITE_CAMPAIGN, isFiniteCampaign, prepareFiniteCampaign, readFiniteCam
   assertFiniteCampaignPlan, verifyFiniteCampaignScope, verifyFiniteCampaignCurrentState, finiteCampaignReservationFields } from './finite-campaign.mjs';
 import { readApprovedCampaign } from './approved-campaign.mjs';
 import { isEngineeringHistoricalPredecessor, readEngineeringHistoricalPredecessor, isEngineeringContinuationAuthority } from './campaign-engineering-window-continuation.mjs';
+import { isStandingCampaign, prepareStandingScope, readStandingAmendment, verifyStandingPlan,
+  standingReservationFields, reconcileStandingLease } from './standing-campaign.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const hasFiniteScope = plan => Boolean(plan.protocol.policies.campaign || plan.execution.campaign_scope);
+const hasStandingScope = plan => isStandingCampaign(plan.protocol.policies.campaign) || Boolean(plan.execution.standing_scope);
 async function readRecord(path) {
   assert.ok(isAbsolute(path));
   assert.ok((await lstat(path)).isFile(), 'Campaign records must be ordinary files');
@@ -42,6 +45,7 @@ async function save(path, value) {
  * discriminant can select the finite campaign implementation. */
 export async function readCampaignAmendment(ref) {
   const value = await verified(ref);
+  if (isStandingCampaign(value)) return readStandingAmendment(ref);
   return isFiniteCampaign(value) ? readFiniteCampaignAmendment(ref) : readPilotScopeAmendment(ref);
 }
 
@@ -97,6 +101,7 @@ async function engineeringAuthority(reference) {
 
 export async function prepareCampaignScope(input) {
   const { setup, protocol, execution } = input;
+  if (setup.standing) return prepareStandingScope(input);
   if (!setup.campaign_scope) {
     const registration = await preparePilotScope(input);
     return registration ? { field: 'pilot_scope', registration } : null;
@@ -121,6 +126,7 @@ export async function prepareCampaignScope(input) {
 }
 
 export function verifyCampaignScope(plan, options = {}) {
+  if (hasStandingScope(plan)) return verifyStandingPlan(plan, options);
   return hasFiniteScope(plan) ? verifyFiniteCampaignScope(plan, options) : verifyPilotScope(plan, options);
 }
 
@@ -128,6 +134,7 @@ export function verifyCampaignScope(plan, options = {}) {
  * The amendment is proved in this call and consumed immediately; callers cannot
  * provide a cached amendment or suppress any current-state checks. */
 export async function verifyCampaignDispatch(plan, { activate = false, ...options } = {}) {
+  if (hasStandingScope(plan)) return verifyStandingPlan(plan, { activate, ...options });
   const amendment = await checkCampaignScope(plan, { activate });
   return hasFiniteScope(plan) ? verifyFiniteCampaignCurrentState(plan, amendment, options) : verifyPilotScope(plan, options);
 }
@@ -136,11 +143,13 @@ export async function verifyCampaignDispatch(plan, { activate = false, ...option
 export const acquireCampaignLease = acquirePilotScopeLease;
 
 export function campaignReservationFields(plan, amendment, planReference) {
+  if (hasStandingScope(plan)) return standingReservationFields(plan, amendment, planReference);
   return hasFiniteScope(plan) ? finiteCampaignReservationFields(plan, amendment, planReference)
     : scopeReservationFields(plan, amendment, planReference);
 }
 
 export async function checkCampaignScope(plan, { activate = false } = {}) {
+  if (hasStandingScope(plan)) return verifyStandingPlan(plan, { activate });
   if (!hasFiniteScope(plan)) return checkLegacyCampaignScope(plan, { activate });
   const registration = plan.execution.campaign_scope;
   assert.ok(registration && isFiniteCampaign(plan.protocol.policies.campaign));
@@ -167,6 +176,7 @@ export async function checkCampaignScope(plan, { activate = false } = {}) {
 }
 
 export async function reconcileCampaignLease({ plan, leaseId, batchLease }) {
+  if (hasStandingScope(plan)) return reconcileStandingLease({ plan, leaseId, batchLease });
   if (!hasFiniteScope(plan)) return reconcilePilotScopeLease({ plan, leaseId, batchLease });
   const registration = plan.execution.campaign_scope;
   assert.ok(registration && isFiniteCampaign(plan.protocol.policies.campaign));

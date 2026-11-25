@@ -7,12 +7,26 @@ import { verifyGateReference } from './gate.mjs';
 import { verifyCampaignScope, verifyCampaignDispatch, acquireCampaignLease, campaignReservationFields, reconcileCampaignLease } from './campaign-dispatch.mjs';
 import { isProspectiveCohort } from './prospective-cohort.mjs';
 import { scheduleProtocol } from './campaign-selection.mjs';
+import { STANDING_CAMPAIGN, reserveStandingEpisode } from './standing-campaign.mjs';
+import { modelWindowContains } from './model-window.mjs';
 export { scheduleProtocol } from './campaign-selection.mjs';
 
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 const safe = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(value);
 
 function validatePilotLedger(protocol, execution) {
+  if (protocol.policies.campaign?.kind === STANDING_CAMPAIGN || execution.standing_scope) {
+    const policy = protocol.policies.campaign, registration = execution.standing_scope;
+    assert.ok(policy && registration, 'A standing policy and its execution registration must agree');
+    assert.equal(policy.kind, STANDING_CAMPAIGN); assert.equal(registration.kind, STANDING_CAMPAIGN);
+    assert.equal(registration.version, 1); assert.equal(registration.id, policy.id); assert.equal(registration.role, policy.role);
+    assert.equal(protocol.policies.pilot.scope, undefined); assert.equal(execution.pilot_scope, undefined);
+    assert.equal(execution.campaign_scope, undefined); assert.equal(execution.resumption, undefined);
+    assert.ok(isAbsolute(registration.amendment?.path ?? '') && /^[a-f0-9]{64}$/.test(registration.amendment.sha256));
+    assert.ok(isAbsolute(execution.pilot_ledger_root ?? ''));
+    assert.equal(execution.pilot_ledger_root, resolve(execution.pilot_ledger_root));
+    return;
+  }
   const finite = protocol.policies.campaign || execution.campaign_scope;
   if (finite) {
     const policy = protocol.policies.campaign, registration = execution.campaign_scope;
@@ -158,7 +172,7 @@ async function runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconci
   validateBatchPlan(plan);
   assert.ok(typeof executeEpisode === 'function');
   assert.ok(maximumNewEpisodes === Infinity || Number.isSafeInteger(maximumNewEpisodes) && maximumNewEpisodes >= 0);
-  if (plan.protocol.phase === 'pilot' || plan.execution.campaign_scope) {
+  if (plan.protocol.phase === 'pilot' || plan.execution.campaign_scope || plan.execution.standing_scope) {
     const frozen = plan.execution.pilot_ledger_root;
     assert.ok(pilotLedgerRoot === undefined || pilotLedgerRoot === frozen, 'Pilot ledger override differs from the frozen plan');
     assert.equal(await realpath(dirname(frozen)), dirname(frozen), 'Pilot ledger parent must be canonical');
@@ -218,15 +232,17 @@ async function runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconci
   }
   let verifiedPilotGate = false;
   function deadlineReason(condition, budget) {
-    if (performance.now() - startedAt >= budget.batch.max_duration_ms) return 'batch_budget_exhausted';
+    if (budget.mode !== 'unbounded' && performance.now() - startedAt >= budget.batch.max_duration_ms) return 'batch_budget_exhausted';
     const model = plan.protocol.models.find(item => item.id === condition.model_id), now = Date.now();
-    if (now < Date.parse(model.backend.window.start) || now >= Date.parse(model.backend.window.end)) return 'model_window_closed';
+    if (!modelWindowContains(model.backend.window, now)) return 'model_window_closed';
     return null;
   }
   async function reservePilot(runId, slot, condition, budget) {
-    if (plan.protocol.phase !== 'pilot' && !plan.execution.campaign_scope) return;
+    if (plan.protocol.phase !== 'pilot' && !plan.execution.campaign_scope && !plan.execution.standing_scope) return;
     assert.equal(pilotLedgerRoot, plan.execution.pilot_ledger_root, 'Pilot ledger must remain bound to the frozen plan');
     assert.equal(await realpath(pilotLedgerRoot), pilotLedgerRoot, 'Pilot ledger cannot change to a symlink');
+    if (plan.execution.standing_scope) return reserveStandingEpisode({ plan, amendment: scopeAmendment, slot, runId,
+      planReference: { path: planPath, sha256: createHash('sha256').update(await readFile(planPath)).digest('hex') } });
     await verifyCampaignDispatch(plan, { forReservation: Boolean(scopeAmendment) });
     const scopeFields = scopeAmendment ? campaignReservationFields(plan, scopeAmendment,
       { path: planPath, sha256: createHash('sha256').update(await readFile(planPath)).digest('hex') }) : {};
@@ -271,8 +287,8 @@ async function runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconci
     if (used.unknown) { stopReason = 'unknown_budget_usage'; break; }
     const deadline = deadlineReason(condition, budget);
     if (deadline) { stopReason = deadline; break; }
-    if (used.episodes >= budget.batch.max_episodes
-      || ['model_requests', 'input_tokens', 'output_tokens', 'duration_ms'].some(k => used[k] + budget.episode['max_' + k] > budget.batch['max_' + k])) {
+    if (budget.mode !== 'unbounded' && (used.episodes >= budget.batch.max_episodes
+      || ['model_requests', 'input_tokens', 'output_tokens', 'duration_ms'].some(k => used[k] + budget.episode['max_' + k] > budget.batch['max_' + k]))) {
       stopReason = 'batch_budget_exhausted'; break;
     }
     const runId = plan.id + '-' + String(slot.order + 1).padStart(3, '0');
