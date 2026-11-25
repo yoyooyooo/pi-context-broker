@@ -444,3 +444,9 @@ publish 34 completed observations across six separate analyses, plus the retired
 first attempt's 1/24 partial result in its original stratum. All seven public
 packages have actual isolated replay evidence; the unrun store-fault eight remain
 explicitly pending in a new material lineage.
+
+The [2026-11-25 four-model pilot partial result](benchmark-four-model-pilot-2026-11-25.md)
+retains the original 80-slot denominator: 45 valid observations, one cancelled
+observation with unknown usage, and 34 unstarted slots. Its public package has
+actual isolated statistical and accounting replay. Any later work covering the
+unstarted slots is a separate declared execution stratum.
