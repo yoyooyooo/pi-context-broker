@@ -11,6 +11,8 @@ import { PROVIDER_STOP_REVISION, readProviderStopHistory } from './campaign-prov
 import { OBSERVER_REPAIR_REVISION, readObserverRepairHistory } from './campaign-observer-repair-continuation.mjs';
 import { CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION } from './campaign-selection.mjs';
 import { ENGINEERING_WINDOW_REVISION, readEngineeringWindowDecision, readEngineeringWindowHistory, readEngineeringWindowParent } from './campaign-engineering-window-continuation.mjs';
+import { ENGINEERING_PREFLIGHT_REPAIR_REVISION, readEngineeringPreflightRepairDecision,
+  readEngineeringPreflightRepairContext } from './campaign-engineering-preflight-repair.mjs';
 
 export const APPROVED_CAMPAIGN = 'benchmark-approved-prospective-campaign';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -66,8 +68,8 @@ async function decision(reference) {
 function assertShape(value) {
   keys(value, ['version', 'kind', 'id', 'user_approval', 'proposal', 'predecessor', 'environment_root', 'pilot_ledger_root',
     'history', 'history_checkpoint_sha256', 'max_scheduled_episodes', 'new_reservation_ceiling', 'total_reservation_ceiling',
-    'allocations', 'authorization_sha256', ...([2, 3, 4, 5, 6, 7].includes(value.version) ? ['revision'] : [])], 'APPROVED_CAMPAIGN_SHAPE');
-  assert.ok([1, 2, 3, 4, 5, 6, 7].includes(value.version)); assert.equal(value.kind, APPROVED_CAMPAIGN); assert.ok(safe(value.id));
+    'allocations', 'authorization_sha256', ...([2, 3, 4, 5, 6, 7, 8].includes(value.version) ? ['revision'] : [])], 'APPROVED_CAMPAIGN_SHAPE');
+  assert.ok([1, 2, 3, 4, 5, 6, 7, 8].includes(value.version)); assert.equal(value.kind, APPROVED_CAMPAIGN); assert.ok(safe(value.id));
   assert.equal(value.authorization_sha256, fingerprint({ ...value, authorization_sha256: null }), 'APPROVED_CAMPAIGN_CHANGED');
   assert.ok(canonical(value.environment_root) && canonical(value.pilot_ledger_root));
   assert.equal(value.max_scheduled_episodes, 144);
@@ -87,7 +89,7 @@ function assertShape(value) {
     keys(allocation, ['id', 'work_index', 'role', 'reservation_limit'], 'APPROVAL_ALLOCATION_SHAPE');
     assert.ok(safe(allocation.id)); assert.ok(Number.isSafeInteger(allocation.work_index) && allocation.work_index >= 0);
     assert.ok(['unstarted_followup', 'route_gate_only', 'acceptance', ...([4, 5, 6].includes(value.version) ? [CONFIRMATION_CONTINUATION] : []),
-      ...(value.version === 7 ? [ENGINEERING_WINDOW_CONTINUATION] : [])].includes(allocation.role));
+      ...([7, 8].includes(value.version) ? [ENGINEERING_WINDOW_CONTINUATION] : [])].includes(allocation.role));
     assert.ok(Number.isSafeInteger(allocation.reservation_limit) && allocation.reservation_limit > 0);
   }
   assert.equal(value.allocations.reduce((sum, item) => sum + item.reservation_limit, 0), value.new_reservation_ceiling);
@@ -155,6 +157,7 @@ export async function readApprovedCampaign(reference, ancestors = new Set()) {
   const next = new Set(ancestors); next.add(reference.path);
   const value = await verified(reference);
   assert.ok(inside(value.environment_root, reference.path), 'APPROVAL_DOCUMENT_OUTSIDE_OWNER');
+  if (value.version === 8) return verifyEngineeringPreflightRepair(value, next);
   if (value.version === 7) return verifyEngineeringWindowContinuation(value, next);
   if (value.version === 6) return verifyObserverRepairContinuation(value, next);
   if (value.version === 5) return verifyProviderStopContinuation(value, next);
@@ -465,5 +468,49 @@ export async function prepareApprovedEngineeringWindowContinuation({ draftRefere
   const continuation = await readEngineeringWindowHistory({ parent, parentReference: accepted.draft.parent_authorization,
     draft: accepted.draft, predecessor: accepted.draft.predecessor, currentBoundary: true });
   const value = engineeringWindowAuthority(parent, accepted, continuation, draftReference, userApproval);
+  assertShape(value); return value;
+}
+
+function engineeringPreflightRepairAuthority(parent, accepted, continuation, draftReference, userApproval) {
+  const previous = parent.value, draft = accepted.draft;
+  const value = { ...structuredClone(previous), version: 8, id: draft.id, allocations: structuredClone(continuation.allocations),
+    revision: { kind: ENGINEERING_PREFLIGHT_REPAIR_REVISION, parent_authorization: cleanReference(draft.parent_authorization),
+      user_approval: cleanReference(userApproval), draft: cleanReference(draftReference), checkpoint: cleanReference(draft.checkpoint),
+      controller_source: cleanReference(draft.controller_source), zero_send_proof: cleanReference(draft.zero_send_proof),
+      zero_send_review_record: cleanReference(draft.zero_send_review_record), retained_attempt: structuredClone(draft.retained_attempt),
+      superseded_unactivated_owner: structuredClone(draft.superseded_unactivated_owner), consumed_allocations: continuation.consumed,
+      partial_allocation: structuredClone(continuation.transition), resource_carryover: structuredClone(continuation.resourceCarryover),
+      next_allocation_id: continuation.allocations[0].id, model_window: structuredClone(continuation.modelWindow),
+      science: structuredClone(continuation.science), engineering_designs: cleanReference(previous.revision.engineering_designs) },
+    authorization_sha256: null };
+  value.authorization_sha256 = fingerprint(value); return value;
+}
+
+async function verifyEngineeringPreflightRepair(value, ancestors) {
+  assertShape(value); assert.equal(value.version, 8); assert.equal(value.revision.kind, ENGINEERING_PREFLIGHT_REPAIR_REVISION);
+  const accepted = await readEngineeringPreflightRepairDecision(value.revision.draft, value.revision.user_approval);
+  assert.deepEqual(value.revision.parent_authorization, accepted.draft.parent_authorization);
+  const { parent, continuation } = await readEngineeringPreflightRepairContext({ draft: accepted.draft, ancestors });
+  assert.ok(inside(parent.value.environment_root, value.revision.user_approval.path));
+  assert.deepEqual(value, engineeringPreflightRepairAuthority(parent, accepted, continuation, value.revision.draft, value.revision.user_approval),
+    'ENGINEERING_PREFLIGHT_REPAIR_AUTHORITY_CHANGED');
+  const draft = accepted.draft;
+  return { value, approval: parent.approval, proposal: parent.proposal, original: parent.original ?? parent,
+    retainedAliasStop: parent.retainedAliasStop, retainedProviderStop: parent.retainedProviderStop, apparatusBridges: parent.apparatusBridges,
+    engineeringContinuation: { ...continuation, decision: accepted.decision, draft: cleanReference(value.revision.draft) },
+    engineeringPreflightRepair: { parent, parentReference: cleanReference(draft.parent_authorization),
+      draft: cleanReference(value.revision.draft), decision: accepted.decision,
+      zeroSendProof: cleanReference(draft.zero_send_proof), zeroSendReviewRecord: cleanReference(draft.zero_send_review_record),
+      retainedAttempt: structuredClone(draft.retained_attempt), supersededOwner: structuredClone(draft.superseded_unactivated_owner),
+      replacementOwner: structuredClone(draft.continuation) } };
+}
+
+/** The original window is inherited. Preparation checks the current104/13
+ * boundary before and after evidence verification; historical readers do not. */
+export async function prepareApprovedEngineeringPreflightRepair({ draftReference, userApproval }) {
+  const accepted = await readEngineeringPreflightRepairDecision(draftReference, userApproval);
+  const { parent, continuation } = await readEngineeringPreflightRepairContext({ draft: accepted.draft, currentBoundary: true });
+  assert.ok(inside(parent.value.environment_root, userApproval.path));
+  const value = engineeringPreflightRepairAuthority(parent, accepted, continuation, draftReference, userApproval);
   assertShape(value); return value;
 }

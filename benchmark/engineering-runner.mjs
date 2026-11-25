@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { validateBatchPlan } from './batch.mjs';
 import { readApprovedCampaign, approvedCampaignBinding } from './approved-campaign.mjs';
 import { ENGINEERING_WINDOW_REVISION } from './campaign-engineering-window-continuation.mjs';
+import { ENGINEERING_PREFLIGHT_REPAIR_REVISION } from './campaign-engineering-preflight-repair.mjs';
 import { verifyAuthorizedHistoryPlan } from './finite-campaign.mjs';
 import { executeBatchPlan, analyzeBatch } from './controller.mjs';
 import { runEngineeringSlices } from './engineering-progress.mjs';
@@ -12,9 +13,19 @@ import { runEngineeringSlices } from './engineering-progress.mjs';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 
-/** A new claim owns this bounded v7 invocation series. The old engineering
- * runner/claim is never adopted. executeBatchPlan retains every live guard. */
-export async function runEngineeringWindowBatch({ planFile, outputRoot, maximumSlice = 8 }) {
+export function assertEngineeringRunnerAuthority(authorized, version) {
+  assert.ok(version === 7 || version === 8);
+  assert.equal(authorized.value.version, version, 'ENGINEERING_RUNNER_ENTRYPOINT_AUTHORITY_MISMATCH');
+  assert.equal(authorized.value.revision.kind, version === 7 ? ENGINEERING_WINDOW_REVISION : ENGINEERING_PREFLIGHT_REPAIR_REVISION);
+  if (version === 8) assert.ok(authorized.engineeringPreflightRepair, 'ENGINEERING_PREFLIGHT_REPAIR_CONTEXT_REQUIRED');
+}
+
+export const runEngineeringWindowBatch = input => runTypedEngineeringBatch(input, 7);
+export const runEngineeringPreflightRepairBatch = input => runTypedEngineeringBatch(input, 8);
+
+/** Each public entry has one exact authority type. A new claim owns its bounded
+ * invocation series; executeBatchPlan retains every live dispatch guard. */
+async function runTypedEngineeringBatch({ planFile, outputRoot, maximumSlice = 8 }, version) {
   assert.ok(isAbsolute(planFile) && isAbsolute(outputRoot));
   assert.equal(resolve(planFile), planFile); assert.equal(await realpath(planFile), planFile); assert.ok((await lstat(planFile)).isFile());
   assert.equal(resolve(outputRoot), outputRoot); assert.equal(await realpath(dirname(outputRoot)), dirname(outputRoot));
@@ -26,7 +37,7 @@ export async function runEngineeringWindowBatch({ planFile, outputRoot, maximumS
   const amendment = JSON.parse(amendmentBytes), authorityReference = amendment.prospective_authorization?.reference;
   assert.ok(authorityReference, 'ENGINEERING_WINDOW_APPROVAL_REQUIRED');
   const authorized = await readApprovedCampaign(authorityReference);
-  assert.equal(authorized.value.version, 7); assert.equal(authorized.value.revision.kind, ENGINEERING_WINDOW_REVISION);
+  assertEngineeringRunnerAuthority(authorized, version);
   assert.deepEqual(amendment.prospective_authorization, approvedCampaignBinding(authorityReference, authorized.value, amendment.id));
   assert.equal(plan.execution.campaign_scope.id, amendment.id);
   // Reuse this same freshly verified authority for the shallow frozen-plan
@@ -34,9 +45,14 @@ export async function runEngineeringWindowBatch({ planFile, outputRoot, maximumS
   await verifyAuthorizedHistoryPlan(plan, amendment, authorized, authorityReference);
   assert.equal(await realpath(authorized.value.environment_root), authorized.value.environment_root);
   assert.ok(outputRoot.startsWith(authorized.value.environment_root + '/control/'), 'ENGINEERING_WINDOW_RUNNER_OWNER_REQUIRED');
+  if (version === 8) {
+    const window = authorized.engineeringContinuation.modelWindow;
+    assert.ok(Date.now() >= Date.parse(window.start) && Date.now() < Date.parse(window.end), 'ENGINEERING_PREFLIGHT_REPAIR_ORIGINAL_WINDOW_CLOSED');
+  }
+  const kind = version === 7 ? 'engineering-window' : 'engineering-preflight-repair';
   // mkdir is exclusive: an interrupted or completed runner claim is retained.
   await mkdir(outputRoot, { mode: 0o700 });
-  await save(join(outputRoot, 'claim.json'), { version: 1, kind: 'engineering-window-runner-claim',
+  await save(join(outputRoot, 'claim.json'), { version: 1, kind: kind + '-runner-claim',
     plan: { path: planFile, sha256: sha(bytes) }, authority: authorityReference, pid: process.pid,
     started_at: new Date().toISOString(), maximum_slice: maximumSlice, automatic_retry: false, automatic_resume: false });
   let checkpoints = 0, ledgerSnapshot = null;
@@ -58,7 +74,7 @@ export async function runEngineeringWindowBatch({ planFile, outputRoot, maximumS
       writeCheckpoint: async checkpoint => {
         checkpoints++;
         await save(join(outputRoot, 'checkpoint-' + String(checkpoints).padStart(3, '0') + '.json'), {
-          version: 1, kind: 'engineering-window-prefix-checkpoint', recorded_at: new Date().toISOString(), ...checkpoint,
+          version: 1, kind: kind + '-prefix-checkpoint', recorded_at: new Date().toISOString(), ...checkpoint,
           plan: { path: planFile, sha256: sha(bytes) }, ledger: ledgerSnapshot });
       },
       verifySnapshot: async () => assert.deepEqual(await ledgerReference(), ledgerSnapshot, 'ENGINEERING_WINDOW_LEDGER_CHANGED_DURING_REVIEW'),
@@ -70,7 +86,7 @@ export async function runEngineeringWindowBatch({ planFile, outputRoot, maximumS
           completed_prefix: checkpoint.completed_prefix, output: analysis, new_completed: checkpoint.new_completed });
       },
     });
-    const receipt = { version: 1, kind: 'engineering-window-runner-receipt', status: result.action === 'finish' ? 'completed' : 'stopped',
+    const receipt = { version: 1, kind: kind + '-runner-receipt', status: result.action === 'finish' ? 'completed' : 'stopped',
       completed_at: new Date().toISOString(), checkpoints, result, automatic_resume: false };
     await save(join(outputRoot, 'receipt.json'), receipt); return receipt;
   } catch (error) {
@@ -78,7 +94,7 @@ export async function runEngineeringWindowBatch({ planFile, outputRoot, maximumS
     // the actual ledger rather than claiming a completed count or zero sends.
     let ledger = null;
     try { ledger = await ledgerReference(); } catch {}
-    const receipt = { version: 1, kind: 'engineering-window-runner-receipt', status: 'stopped', completed_at: new Date().toISOString(),
+    const receipt = { version: 1, kind: kind + '-runner-receipt', status: 'stopped', completed_at: new Date().toISOString(),
       checkpoints, ledger, error: { name: error.name, message: error.message }, execution_performed: null, automatic_resume: false };
     await save(join(outputRoot, 'receipt.json'), receipt); return receipt;
   }

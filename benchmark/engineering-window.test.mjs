@@ -196,7 +196,7 @@ test('prospective preparation requires the exact104/13 physical boundary without
   }
 });
 
-test('v7 setup preserves old science, applies residual resources only to CodeMode and binds the executing composition', async t => {
+test('v7 and v8 setup preserve old science, apply residual resources only to CodeMode and bind the executing composition', async t => {
   const root = await temporary(t), window = { start: '2030-01-01T00:00:00Z', end: '2030-01-02T00:00:00Z' };
   const oldWindow = { start: '2029-12-30T00:00:00Z', end: '2029-12-31T00:00:00Z' };
   const original = { version: 1, id: 'source-code24', phase: 'pilot', purpose: 'environment_iteration', environment_root: root,
@@ -227,6 +227,21 @@ test('v7 setup preserves old science, applies residual resources only to CodeMod
     x => { x.corpus.selections[0].caseId = 'another-case'; }, x => { x.candidates[0].code_mode = 'off'; },
     x => { x.analysis.interactions.push({ kind: 'new-scoring-claim' }); }, x => { x.campaign_scope.selection.slot_ids.reverse(); }]) {
     const changed = structuredClone(setup); mutate(changed); await assert.rejects(assertEngineeringWindowSetup(changed, authorized));
+  }
+  const repair = structuredClone(authorized); repair.value.version = 8; repair.value.revision = { kind: 'accepted-engineering-preflight-repair' };
+  const repairId = 'engineering-codemode-window-17-2', repairExperiment = 'benchmark-codemode-window-17-2';
+  repair.value.allocations[0].id = repairId;
+  Object.assign(repair.engineeringContinuation.transition, { allocation_id: repairId, experiment_id: repairExperiment });
+  const repairSetup = structuredClone(setup); repairSetup.id = repairExperiment;
+  repairSetup.campaign_scope.id = repairSetup.campaign_scope.allocation_id = repairId;
+  repairSetup.control_root = join(root, 'control/new-repair');
+  await assertEngineeringWindowSetup(repairSetup, repair);
+  for (const mutate of [x => { x.id = 'benchmark-codemode-window-17-1'; },
+    x => { x.campaign_scope.allocation_id = 'engineering-codemode-window-17-1'; },
+    x => { x.campaign_scope.selection.slot_ids.reverse(); }, x => { x.budget.batch.max_model_requests++; },
+    x => { x.models.window.end = '2030-01-03T00:00:00Z'; }, x => { x.models.parameters.maxTokens = 8192; },
+    x => { x.runtime.node = '/changed/node'; }]) {
+    const changed = structuredClone(repairSetup); mutate(changed); await assert.rejects(assertEngineeringWindowSetup(changed, repair));
   }
   const wrongSource = structuredClone(authorized); wrongSource.engineeringContinuation.controllerImplementation.sha256 = sha('wrong-source');
   await assert.rejects(assertEngineeringWindowSetup(setup, wrongSource), /ENGINEERING_WINDOW_EXECUTING_SOURCE_CHANGED/);
