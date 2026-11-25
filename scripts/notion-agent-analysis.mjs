@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
 import { providerApplicationCompletion } from './skill-consumption-provider.mjs';
 import { verifyNotionAgentDirectoryInventory } from './notion-agent-inventory-evidence.mjs';
+import { isAgentSourceHandoff } from './notion-agent-source-handoff.mjs';
 import { validateAgentAssertion, validateAgentBindings } from './notion-agent-scenarios.mjs';
 import { correlateNotionAgentToolAttempts, inspectNotionAgentReadOnlyContainer, inspectedCompactReadImplementation, inspectedLocalReadEvidence, inspectedPiToolRuntime, verifyObservedPiToolRuntime } from './notion-agent-tool-lineage.mjs';
 import { verifyPreparationEvidence, visibleDiscoveryCards } from './skill-preparation-evidence.mjs';
@@ -1677,7 +1678,11 @@ export async function analyzeNotionAgentTurn(turn, observed, bindings, { inspect
           && isDeepStrictEqual(original.intent, raw.intent), 'SOURCE_RESUME_INTENT_CHANGED', 'Keep the original root, operation and frozen input fingerprint');
         const before = JSON.parse(JSON.parse((await verifiedArtifact(raw.before, readArtifact)).toString('utf8')).stdout);
         const after = JSON.parse(JSON.parse((await verifiedArtifact(raw.after, readArtifact)).toString('utf8')).stdout);
-        demand(before.operation?.intent?.operation_id === raw.operationId && before.operation?.in_flight === null
+        const fixture = privateBindings.fixture, owned = fixture.objects[expected.object];
+        const library = fixture.libraries?.[owned.library] ?? fixture.library;
+        const interrupted = raw.interrupted && JSON.parse((await verifiedArtifact(raw.interrupted, readArtifact)).toString('utf8'));
+        demand(isAgentSourceHandoff({ inspection: before, operationId: raw.operationId, library,
+          sourceId: raw.sourceId, sourcePageId: owned.sourcePageId, inputSha256: raw.intent.input_sha256, interrupted })
           && before.library?.library_id === raw.libraryId && after.library?.library_id === raw.libraryId
           && after.status === 'not_found' && after.operation === null, 'SOURCE_RESUME_LIFECYCLE_INVALID', 'The exact public intent must finish in its original Library and Store');
         demand(raw.retired?.id === before.operation.record_page_id && (raw.retired.in_trash === true || raw.retired.archived === true),

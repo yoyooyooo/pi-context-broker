@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { validateAgentFixtureRecipe } from './notion-agent-scenarios.mjs';
+import { isAgentSourceHandoff } from './notion-agent-source-handoff.mjs';
 import { NATIVE_MAIN_EXACT_RESOURCES, agentFixtureCreateArgs, assertAgentFixtureImportCreation,
   agentFixtureRelationArgs as relationArgs, agentFixtureUsesNativeMarkdown } from './notion-agent-authoring.mjs';
 
@@ -950,10 +951,12 @@ async function interruptAgentSourceWrite(bindings, event, runtime) {
   const interrupted = await interruptSourceWrite(bindings, event, writer);
   const operation = await cli(writer, ['ctl', 'library', 'operation', owned.sourceId, '--kind', 'source', '--library', writer.libraryId], 'agent-source-before');
   const intent = operation.value.operation;
-  assert.equal(operation.value.status, 'observed'); assert.equal(operation.value.library.library_id, writer.libraryId);
-  assert.equal(intent.intent.operation_id, owned.sourceOperation.id); assert.equal(intent.intent.owner.id, owned.sourceId);
-  assert.equal(intent.local_lifecycle?.phase, 'active'); assert.equal(intent.in_flight, null);
-  assert.ok(pageId(intent.record_page_id)); assert.ok(digest(intent.intent.input_sha256));
+  const readback = await json(owned.sourceOperation.observation.path);
+  assert.deepEqual(await artifact(owned.sourceOperation.observation.path), owned.sourceOperation.observation);
+  assert.deepEqual(readback.command, interrupted.command);
+  assert.ok(isAgentSourceHandoff({ inspection: operation.value, operationId: owned.sourceOperation.id, library: writer.library,
+    sourceId: owned.sourceId, sourcePageId: owned.sourcePageId, inputSha256: readback.cli.error.details.input_sha256, interrupted: readback }),
+    'The interrupted Source must be eligible for its original operation');
   const storePath = join(writer.env.NTN_SKILLS_HOME, 'state.sqlite'), store = await lstat(storePath);
   assert.ok(store.isFile() && !store.isSymbolicLink());
   Object.assign(owned.sourceOperation, { actor: 'agent', libraryId: writer.libraryId, roots: writer.env,
@@ -992,7 +995,7 @@ async function verifyAgentSourceResume(bindings, event, runtime) {
   const readback = await captureReadback(bindings, event.object, { version, key: event.object + '-agent-resumed' });
   const result = { version: 1, status: 'passed', actor: 'independent-readback', libraryId: writer.libraryId,
     sourceId: owned.sourceId, operationId: original.id, declaration: original.input, cli: original.cli, node: original.node,
-    roots: original.roots, store: original.store, intent: original.intent, before: original.inspection, after: operation.artifact,
+    roots: original.roots, store: original.store, intent: original.intent, before: original.inspection, after: operation.artifact, interrupted: original.observation,
     retired, readback, controllerResumeCommands: 0 };
   const path = join(writer.root, 'readbacks', event.object + '-agent-resume-' + randomUUID() + '.json'); await save(path, result);
   original.phase = 'agent-resumed'; original.resumeObservation = await artifact(path);
