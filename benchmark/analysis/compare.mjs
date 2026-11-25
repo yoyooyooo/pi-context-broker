@@ -145,7 +145,7 @@ function interactionSpecifications(protocol,plan,groups,kind) {
   }
   return specs;
 }
-function inferenceClaims(protocol,plan,conditions,groups,specifications) {
+export function inferenceClaims(protocol,plan,conditions,groups,specifications) {
   const claims=[],add=(id,kind,origin='registered-analysis')=>claims.push({id,kind,origin});
   for(const condition of conditions) {
     for(const metric of ['verified_quality','unassisted_quality','capped_time','currency_cost'])add('condition/'+condition.id+'/'+metric,'condition');
@@ -343,7 +343,8 @@ function clean(value) {
   if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([k])=>!k.startsWith('_')).map(([k,v])=>[k,clean(v)]));
   return value;
 }
-export function scoreExperiment({protocol,episodes,plan=createAnalysisPlan(protocol)}) {
+/** Shared admission and fixed-slot expansion; episodes retain their physical identities. */
+export function prepareAnalysisRecords({protocol,episodes,plan=createAnalysisPlan(protocol)}) {
   if(protocol.policies.statistics.interval_method!==INTERVAL_METHOD||protocol.policies.statistics.boundary_method!==BOUNDARY_METHOD||
     protocol.policies.statistics.multiple_comparisons!==MULTIPLICITY_METHOD)throw new Error('Unsupported or unfrozen statistical method');
   if(protocol.protocol_sha256!==fingerprint({...protocol,protocol_sha256:null}))throw new Error('Frozen protocol fingerprint mismatch');
@@ -398,11 +399,17 @@ export function scoreExperiment({protocol,episodes,plan=createAnalysisPlan(proto
   const groups=[...comparisonGroups.values()];
   const specifications=Object.fromEntries(['model_environment','code_mode'].map(kind=>[kind,interactionSpecifications(protocol,plan,groups,kind)]));
   const claimPolicy=inferenceClaims(protocol,plan,activeConditions,groups,Object.values(specifications).flat());
-  const comparisons=claimPolicy.count;
+  return {protocol,plan,maps,records,episodeIds,activeConditions,groups,specifications,claimPolicy};
+}
+
+/** Pure scoring kernel. Study callers supply a separately registered analysis view,
+ * not a forged execution protocol or edited normalized episodes. */
+export function summarizeAnalysisRecords(context,{comparisons=context.claimPolicy.count}={}) {
+  const {protocol,plan,maps,records,activeConditions,groups,specifications}=context;
   const conditionResults=activeConditions.map(c=>metricsForCondition(c,records.filter(r=>r.slot.condition_id===c.id),protocol,plan,maps,comparisons));
   const conditions=new Map(conditionResults.map(c=>[c.condition_id,c]));
   const compare=[];
-  for(const group of comparisonGroups.values()) {
+  for(const group of groups) {
     const a=conditions.get(group.aId),b=conditions.get(group.bId);
     const pairRecords=group.pairs.map(p=>({slot:{case_id:p.case_id,repeat:p.repeat},episode:null,pair:p}));
     const deltaRows=caseRows(pairRecords,maps.cases,protocol.policies.statistics.family_weights,r=>{
@@ -433,6 +440,15 @@ export function scoreExperiment({protocol,episodes,plan=createAnalysisPlan(proto
     result.decision=adoptionDecision(a,result,protocol.policies.decision,plan.confirmation===true);
     compare.push(result);
   }
+  return {conditions:conditionResults,comparisons:compare,
+    model_environment_interaction:computeInteractions(protocol,plan,compare,conditions,'model_environment',specifications.model_environment,maps,comparisons),
+    code_mode_interaction:computeInteractions(protocol,plan,compare,conditions,'code_mode',specifications.code_mode,maps,comparisons)};
+}
+
+export function scoreExperiment(input) {
+  const context=prepareAnalysisRecords(input);
+  const {protocol,plan,maps,records,episodeIds,claimPolicy}=context,comparisons=claimPolicy.count;
+  const result=summarizeAnalysisRecords(context),conditionResults=result.conditions,compare=result.comparisons;
   const invalid=[...episodeIds.values()].filter(e=>e.admission.status==='invalid').map(e=>({
     episode_id:e.identity.episode_id,run_id:e.identity.run_id,retest_of:e.identity.retest_of??null,
     reasons:e.admission.reasons??[],actual_attempts:e.measurements.actual_attempts,
@@ -461,8 +477,8 @@ export function scoreExperiment({protocol,episodes,plan=createAnalysisPlan(proto
     cost_ledger:{actual_runs:episodeIds.size,valid_runs:episodeIds.size-invalid.length,invalid_runs:invalid.length,
       known_actual_attempts:[...episodeIds.values()].reduce((s,e)=>s+e.measurements.known_actual_attempts,0),
       known_input_subtotal:[...episodeIds.values()].reduce((s,e)=>s+e.measurements.input_total.known_subtotal,0),invalid},
-    cost_frontier:frontier,model_environment_interaction:computeInteractions(protocol,plan,compare,conditions,'model_environment',specifications.model_environment,maps,comparisons),
-    code_mode_interaction:computeInteractions(protocol,plan,compare,conditions,'code_mode',specifications.code_mode,maps,comparisons),
+    cost_frontier:frontier,model_environment_interaction:result.model_environment_interaction,
+    code_mode_interaction:result.code_mode_interaction,
     episode_refs:[...episodeIds.values()].map(e=>({episode_id:e.identity.episode_id,run_id:e.identity.run_id,
       episode_sha256:e.episode_sha256,raw_artifacts:e.artifacts.map(a=>({id:a.id,sha256:a.sha256,path:a.path}))})),
     limitations:['Model quality uses verified business success and applicable contracts; unknown earns no success credit.',
@@ -471,7 +487,7 @@ export function scoreExperiment({protocol,episodes,plan=createAnalysisPlan(proto
       'Input ratio inference needs an independently verified preregistered bound; missing bounds never yield noninferiority.',
       'No reanalysis can create a new model execution, unseen confirmation or a missing model-by-environment cell.'],
     analysis_sha256:null};
-  const result=clean(output);result.analysis_sha256=fingerprint(result);return result;
+  const cleaned=clean(output);cleaned.analysis_sha256=fingerprint(cleaned);return cleaned;
 }
 export function costFrontier(configurations,qualityRequired) {
   if(!Number.isFinite(qualityRequired)||qualityRequired<0||qualityRequired>1)return {status:'unavailable',reason:'No preregistered absolute quality requirement',eligible:[],frontier:[],groups:[]};

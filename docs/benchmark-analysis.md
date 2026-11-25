@@ -4,6 +4,11 @@ This layer records what was observed, scores the frozen batch, and reproduces
 reports without a model. It does not admit a model route, launch episodes,
 repair the subject, or replace the shared daily verification gate.
 
+For a preregistered comparison split across physical material panels, see
+[study analysis](benchmark-study-analysis.md). It reuses this scorer with global
+family weights, original cluster identities and a frozen joint claim ledger.
+Ordinary single-panel reports and engineering or route checks do not need it.
+
 ## Public entry points
 
 | Module | Exports |
