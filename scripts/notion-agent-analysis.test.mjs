@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { inspectNotionAgentSession, captureNotionAgentSelection, analyzeNotionAgentTurn, verifyNotionAgentUnavailableReference } from './notion-agent-analysis.mjs';
+import { inspectNotionAgentSession, captureNotionAgentSelection, analyzeNotionAgentTurn, verifyNotionAgentUnavailableReference, verifyNotionAgentNestedResourceRead } from './notion-agent-analysis.mjs';
+import { inspectedPiToolRuntime, reviewedPiToolRuntimeProfile } from './notion-agent-tool-lineage.mjs';
 import { candidatePayloadBodies } from './verify-pi-daily-candidate.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -1841,4 +1842,120 @@ test('Responses analysis cannot borrow a native call that happened after this re
   const result = await f.run([{ kind: 'completed' }]);
   assert.notEqual(result.status, 'passed');
   assert.ok(result.assertions.some(row => row.code === 'RESPONSES_TOOL_IDENTITY_UNPROVEN'), JSON.stringify(result.assertions));
+});
+
+function nestedResourceProofFixture() {
+  const files = new Map(), pid = 20, library = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const owner = 'skill://synthetic-travel?library=' + library, snapshot = 's_' + 'b'.repeat(64);
+  const body = 'Lodging is capped at 70.\n', resourceRef = 'sr:R' + 'B'.repeat(22), selectedRef = 'sr:S' + 'A'.repeat(22);
+  const fileRef = owner.replace('?library=', '/rates.md?library=') + '&snapshot=' + snapshot;
+  const put = (path, value, json = true) => {
+    const bytes = Buffer.from(json ? JSON.stringify(value) : value); files.set(path, bytes);
+    return { path, sha256: hash(bytes), bytes: bytes.length };
+  };
+  const brokerOwner = { source: { path: '/owned/broker/src/index.ts', source: '/owned/broker',
+    baseDir: '/owned/broker', origin: 'package', scope: 'project' }, commit: 'c'.repeat(40), entrySha256: 'd'.repeat(64) };
+  const selected = { kind: 'selected', identity: { source: 'notion', kind: 'skill', id: owner, scope: 'a'.repeat(64),
+    locator: { type: 'shared_skill', library_id: library, page_id: 'fixture-page', database_id: 'fixture-db', data_source_id: 'fixture-ds' } },
+    snapshot_id: snapshot, version_id: 'c'.repeat(64), body_sha256: hash('main'), entrypoint: 'SKILL.md',
+    ref: owner.replace('?library=', '/SKILL.md?library=') + '&snapshot=' + snapshot };
+  const resource = { kind: 'resource', owner: selectedRef, path: 'rates.md', ref: fileRef,
+    file_id: 'file-' + hash('fixture-file'), sha256: hash(body), bytes: Buffer.byteLength(body) };
+  const childContent = [{ type: 'text', text: body }], parentContent = [{ type: 'text', text: 'Actual child output:\n' + body }];
+  const makeCall = (id, name, args, from, to, content) => {
+    const artifact = put('/owned/segment/tool-results/' + id + '.json', content);
+    return { id, name, arguments: args, native: { isError: false, assistantEntryId: 'native-call', resultEntryId: 'native-result' },
+      event: { toolCallId: id, toolName: name, inputSha256: hash(JSON.stringify(args)), pid, monotonicNs: from },
+      result: { pid, monotonicNs: to, isError: false, contentArtifact: artifact, content: { sha256: artifact.sha256, bytes: artifact.bytes } } };
+  };
+  const parent = makeCall('outer', 'codemode', { code: 'text(await tools.read({path:"' + resourceRef + '"}))' }, '50', '250', parentContent);
+  parent.container = { complete: true };
+  const call = makeCall('child', 'read', { path: resourceRef }, '100', '200', childContent);
+  Object.assign(call, { parentToolCallId: parent.id, rootToolCallId: parent.id, provenance: { kind: 'native-nested-summary' } });
+  call.event.toolSource = { ...brokerOwner.source };
+  // As in the pure lineage tests, runtimeEvidence represents the output of the
+  // separately tested sealed-byte verifier; these are synthetic observations.
+  const runtimeEvidence = new Map();
+  for (const item of [call, parent]) {
+    const packageRoot = '/maintained/pi';
+    item.event.toolRuntime = { version: 1, packageRoot, entry: packageRoot + '/dist/bundle/cli.js',
+      files: Object.entries(reviewedPiToolRuntimeProfile.files).map(([relativePath, file]) => ({
+        relativePath, path: packageRoot + '/' + relativePath, artifact: { path: '/sealed/' + file.sha256, ...file } })) };
+    runtimeEvidence.set(item.id, { implementation: inspectedPiToolRuntime(item.event.toolRuntime),
+      toolCallId: item.id, toolName: item.name, inputSha256: item.event.inputSha256, pid });
+  }
+  const branch = [
+    entry('selected', null, 'custom', { customType: 'context-broker-short-ref', data: { version: 1, ref: selectedRef, target: selected } }),
+    entry('resource', 'selected', 'custom', { customType: 'context-broker-short-ref', data: { version: 1, ref: resourceRef, target: resource } }),
+    message('native-call', 'resource', 'assistant', []),
+    message('native-result', 'native-call', 'toolResult', parentContent, { toolCallId: parent.id }),
+  ];
+  const sdk = [{ phase: 'sdk-observer-start', pid },
+    { phase: 'sdk-start', operation: 'read', requestId: 'read-1', pid, monotonic_ns: '120' },
+    { phase: 'sdk-end', operation: 'read', requestId: 'read-1', pid, monotonic_ns: '140',
+      status: 'completed', resultObserved: true, responseFile: 'read-1.json' },
+    { phase: 'sdk-observer-end', pid, pending: 0 }];
+  const sourceRows = [{ phase: 'source_observer_start', kind: 'observer', pid, monotonicNs: '1' },
+    { phase: 'started', kind: 'sdk', requestId: 'sdk:20:read-1', pid, operation: 'read',
+      library, source_id: 'notion-fixture', sourceMonotonicNs: '120', monotonicNs: '121' },
+    { phase: 'metrics', kind: 'metrics', requestId: 'sdk:20:read-1', observed: true, complete: true,
+      total_requests: 0, trace_dropped: 0, monotonicNs: '141' },
+    { phase: 'completed', kind: 'sdk', requestId: 'sdk:20:read-1', pid, operation: 'read', status: 'completed',
+      library, source_id: 'notion-fixture', sourceMonotonicNs: '140', monotonicNs: '142' },
+    { phase: 'source_observer_end', kind: 'observer', operations: 1, sdkStarts: 1, cliStarts: 0,
+      unmatchedChildren: 0, errors: 0, complete: true, pendingRequestIds: [], monotonicNs: '300' }];
+  const receipt = { version: 2, transport: 'sdk', operation: 'read', requestId: 'read-1', status: 'completed', resultObserved: true,
+    value: { record: { id: owner, locator: selected.identity.locator }, scope: selected.identity.scope,
+      snapshot_id: snapshot, version_id: selected.version_id, entrypoint_sha256: selected.body_sha256,
+      entrypoint: selected.entrypoint, path: resource.path, ref: fileRef, sha256: resource.sha256, bytes: resource.bytes,
+      freshness: { policy: 'pinned' }, file_bindings: [{ path: resource.path, file_id: resource.file_id, page_id: 'fixture-file-page' }],
+      output: '/owned/cache/observed-output' },
+    outputEvidence: { path: '/owned/cache/observed-output', sha256: resource.sha256, bytes: resource.bytes, content: body } };
+  const taskArtifact = put('/owned/segment/tasks.jsonl', 'sealed synthetic task observations\n', false);
+  const sdkSegment = { tasks: taskArtifact };
+  const seal = () => {
+    sdkSegment.sdk = put('/owned/segment/sdk.jsonl', sdk.map(row => JSON.stringify(row)).join('\n') + '\n', false);
+    let previous = null;
+    const rows = sourceRows.map((row, index) => {
+      const value = { version: 1, sequence: index + 1, previousSha256: previous, clockId: 'fixture-segment', ...row };
+      previous = hash(JSON.stringify(value)); return { ...value, eventSha256: previous };
+    });
+    sdkSegment.source = put('/owned/segment/source.jsonl', rows.map(row => JSON.stringify(row)).join('\n') + '\n', false);
+    sdkSegment.responses = [{ requestId: 'read-1', artifact: put('/owned/segment/sdk-responses/read-1.json', receipt) }];
+  };
+  seal();
+  const value = { call, parent, brokerOwner, runtimeEvidence, branch, branchArtifact: put('/owned/branch.json', branch),
+    taskArtifact, sdkSegment, payload: { messages: [{ role: 'tool', tool_call_id: parent.id, content: parentContent }] },
+    frozenBodies: new Map([[resource.sha256, { text: body, bytes: resource.bytes, sha256: resource.sha256 }]]),
+    readArtifact: async path => { if (!files.has(path)) throw new Error('Missing fixture artifact'); return files.get(path); } };
+  return { value, files, sdk, sourceRows, receipt, seal, resource, selected };
+}
+
+test('nested resource proof links the pre-call owner, original SDK read, child result and exact outer message', async () => {
+  const f = nestedResourceProofFixture(), proof = await verifyNotionAgentNestedResourceRead(f.value);
+  assert.equal(proof.owner, f.selected.identity.id);
+  assert.equal(proof.version_id, f.selected.version_id);
+  assert.equal(proof.native.toolCallId, 'child'); assert.equal(proof.toolCallId, 'outer');
+  assert.equal(proof.native.requestId, 'read-1');
+  assert.equal(proof.native.kind, 'nested-sdk-resource');
+  assert.deepEqual(proof.native.taskArtifact, f.value.taskArtifact);
+  assert.deepEqual(proof.native.responseArtifact, f.value.sdkSegment.responses[0].artifact);
+});
+
+for (const [reason, change] of [
+  ['wrong owner', f => { f.receipt.value.record.id = 'skill://another?library=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'; f.seal(); }],
+  ['wrong scope', f => { f.receipt.value.scope = 'e'.repeat(64); f.seal(); }],
+  ['wrong version', f => { f.receipt.value.version_id = 'e'.repeat(64); f.seal(); }],
+  ['ambiguous SDK reads', f => { f.sdk.splice(2, 0, { ...f.sdk[1], requestId: 'other-read' }); f.seal(); }],
+  ['missing SDK receipt', f => { f.value.sdkSegment.responses = []; }],
+  ['missing child result', f => { delete f.value.call.result.contentArtifact; }],
+  ['different original segment', f => { f.value.sdkSegment.tasks = { ...f.value.taskArtifact, sha256: 'e'.repeat(64) }; }],
+  ['different source clock', f => { f.sourceRows[1].sourceMonotonicNs = '119'; f.seal(); }],
+  ['owner appended after the call', f => { const row = f.value.branch.shift(); f.value.branch.push(row); }],
+  ['altered SDK output bytes', f => { f.receipt.outputEvidence.content = 'another body'; f.seal(); }],
+  ['altered outer provider message', f => { f.value.payload.messages[0].content = 'Invented output with the same body:\n' + f.receipt.outputEvidence.content; }],
+  ['unverified runtime', f => { f.value.runtimeEvidence.clear(); }],
+]) test('nested resource proof rejects ' + reason, async () => {
+  const f = nestedResourceProofFixture(); change(f);
+  await assert.rejects(verifyNotionAgentNestedResourceRead(f.value));
 });
