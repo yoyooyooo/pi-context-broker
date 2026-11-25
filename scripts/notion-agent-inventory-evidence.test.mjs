@@ -28,7 +28,29 @@ test('real child inventory permits result before close within its observation; u
     assert.equal(captured, undefined);
     optionsObserved = event.options;
     captured = captureDirectoryInventorySpawn(event.options, { fs, crypto, path });
-    assert.ok(captured, 'The actual normalized spawn must produce the bounded proof');
+    if (!captured) {
+      const describeProgram = file => {
+        try {
+          const realpath = fs.realpathSync(file), stat = fs.statSync(realpath);
+          return { path: file, realpath, uid: stat.uid, mode: stat.mode & 0o777, isFile: stat.isFile() };
+        } catch (error) { return { path: file, errorCode: error.code ?? 'UNKNOWN' }; }
+      };
+      const selectedLs = ['/bin/ls', '/usr/bin/ls'].find(file => {
+        try { fs.accessSync(file, fs.constants.X_OK); return fs.statSync(file).isFile(); } catch { return false; }
+      });
+      // This fixture owns its command and PATH. Never emit environment values.
+      assert.fail('The actual normalized spawn must produce the bounded proof: ' + JSON.stringify({
+        node: process.version, platform: process.platform,
+        fileType: typeof optionsObserved.file, fileMatches: optionsObserved.file === '/bin/bash',
+        argvIsArray: Array.isArray(optionsObserved.args),
+        argvTypes: Array.isArray(optionsObserved.args) ? optionsObserved.args.map(value => typeof value) : null,
+        argvMatches: JSON.stringify(optionsObserved.args) === JSON.stringify(['/bin/bash', '-c', command]),
+        cwdType: typeof optionsObserved.cwd, cwdMatches: optionsObserved.cwd === cwd,
+        environmentKeys: Array.isArray(optionsObserved.envPairs) ? optionsObserved.envPairs.map(pair =>
+          typeof pair === 'string' && pair.indexOf('=') > 0 ? pair.slice(0, pair.indexOf('=')) : '<malformed>') : null,
+        shell: describeProgram('/bin/bash'), selectedLs: selectedLs ? describeProgram(selectedLs) : null,
+      }));
+    }
     rows.push({ phase: 'unmatched_child_start', childId: 'owned-child', parentPid: process.pid,
       childPid: null, argumentCount: event.options.args.length, executableSha256: sha(event.options.file), argvSha256: sha(JSON.stringify(event.options.args)), directoryInventory: captured.proof, monotonicNs: now() });
   };
