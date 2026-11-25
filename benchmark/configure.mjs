@@ -21,7 +21,8 @@ import { prepareMaterialOwnership, verifyMaterialOwnership } from './material-ow
 import { CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION, declaredSchedule } from './campaign-selection.mjs';
 import { readApprovedCampaign } from './approved-campaign.mjs';
 import { assertObserverRepairSetup } from './campaign-observer-repair-continuation.mjs';
-import { ENGINEERING_WINDOW_DRAFT, assertEngineeringWindowSetup } from './campaign-engineering-window-continuation.mjs';
+import { ENGINEERING_WINDOW_DRAFT, assertEngineeringWindowSetup, isEngineeringContinuationAuthority } from './campaign-engineering-window-continuation.mjs';
+import { ENGINEERING_PREFLIGHT_REPAIR_DRAFT } from './campaign-engineering-preflight-repair.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = async (path, value) => {
@@ -80,9 +81,10 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     const bytes = await readFile(reference.path); assert.equal(sha(bytes), reference.sha256);
     const preview = JSON.parse(bytes);
     assert.notEqual(preview.kind, ENGINEERING_WINDOW_DRAFT, 'ENGINEERING_WINDOW_DRAFT_NOT_DISPATCHABLE');
+    assert.notEqual(preview.kind, ENGINEERING_PREFLIGHT_REPAIR_DRAFT, 'ENGINEERING_PREFLIGHT_REPAIR_DRAFT_NOT_DISPATCHABLE');
     if (preview.version === 6) await assertObserverRepairSetup(setup, await readApprovedCampaign(reference));
-    if (preview.version === 7) await assertEngineeringWindowSetup(setup, await readApprovedCampaign(reference));
-    if (setup.campaign_scope.role === ENGINEERING_WINDOW_CONTINUATION) assert.equal(preview.version, 7, 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED');
+    if ([7, 8].includes(preview.version)) await assertEngineeringWindowSetup(setup, await readApprovedCampaign(reference));
+    if (setup.campaign_scope.role === ENGINEERING_WINDOW_CONTINUATION) assert.ok(isEngineeringContinuationAuthority(preview), 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED');
   }
   else assert.notEqual(setup.campaign_scope?.role, ENGINEERING_WINDOW_CONTINUATION, 'ENGINEERING_WINDOW_APPROVAL_REQUIRED');
   const snapshot = await readCorpusSnapshot(setup);

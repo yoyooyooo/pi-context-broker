@@ -23,10 +23,13 @@ export const ENGINEERING_WINDOW_DRAFT = 'engineering-window-continuation-proposa
 export const ENGINEERING_SOURCE3_CONTROLLER_SHA256 = '62055507c7aa4d6a298841bd74cc7db2dc5d03e302f33c46846a653904cf719c';
 export const ENGINEERING_CONTROLLER_OVERLAY = Object.freeze(['batch.mjs', 'campaign-dispatch.mjs', 'finite-campaign.mjs', 'campaign-selection.mjs',
   'protocol.mjs', 'schemas/protocol.schema.json', 'approved-campaign.mjs', 'campaign-engineering-window-continuation.mjs',
-  'engineering-progress.mjs', 'engineering-runner.mjs', 'engineering-source.mjs', 'configure.mjs', 'controller.mjs', 'cli.mjs']);
+  'engineering-progress.mjs', 'engineering-runner.mjs', 'engineering-source.mjs', 'configure.mjs', 'controller.mjs', 'cli.mjs',
+  'campaign-engineering-preflight-repair.mjs']);
 export const ENGINEERING_WINDOW_SCIENCE = Object.freeze({ reporting: 'separate-model-window-protocols',
   paired_denominator: 'original_declared_schedule', missing_cells: 'retained_unknown', cross_window_pairing: false });
 const resources = ['model_requests', 'input_tokens', 'output_tokens', 'duration_ms'];
+export const isEngineeringContinuationAuthority = value => value?.version === 7
+  || value?.version === 8 && value.revision?.kind === 'accepted-engineering-preflight-repair';
 const known = usage => resources.every(key => Number.isFinite(usage?.[key]) && usage[key] >= 0);
 const safe = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(value);
 const sorted = values => [...values].sort();
@@ -345,7 +348,7 @@ export async function readEngineeringWindowParent(draft, ancestors = new Set()) 
 }
 
 export async function readEngineeringHistoricalAuthority(reference, authorized) {
-  assert.equal(authorized.value.version, 7); const continuation = authorized.engineeringContinuation;
+  assert.ok(isEngineeringContinuationAuthority(authorized.value)); const continuation = authorized.engineeringContinuation;
   assert.ok(continuation.historicalAuthorityReferences.some(item => fingerprint(item) === fingerprint(reference)), 'ENGINEERING_WINDOW_FOREIGN_HISTORICAL_AUTHORITY');
   const reader = await historicalModule(continuation.historicalController, 'approved-campaign.mjs');
   return reader.readApprovedCampaign(reference);
@@ -359,7 +362,7 @@ async function verifySource3HistoricalPlan(plan, amendment, parent, parentRefere
 }
 
 export async function verifyEngineeringHistoricalPlan(plan, amendment, authorized) {
-  assert.equal(authorized.value.version, 7); const continuation = authorized.engineeringContinuation;
+  assert.ok(isEngineeringContinuationAuthority(authorized.value)); const continuation = authorized.engineeringContinuation;
   const scope = continuation.scopes.find(item => item.plan.id === plan.id); assert.ok(scope, 'ENGINEERING_WINDOW_FOREIGN_HISTORICAL_PLAN');
   assert.deepEqual((await file(join(plan.execution.control_root, 'plan.json'))).reference, scope.planReference);
   assert.deepEqual(amendment, scope.amendment);
@@ -367,7 +370,7 @@ export async function verifyEngineeringHistoricalPlan(plan, amendment, authorize
 }
 
 export function isEngineeringHistoricalPredecessor(reference, authorized) {
-  return authorized?.value.version === 7 && fingerprint(reference) === fingerprint(authorized.value.predecessor.amendment);
+  return isEngineeringContinuationAuthority(authorized?.value) && fingerprint(reference) === fingerprint(authorized.value.predecessor.amendment);
 }
 
 export async function readEngineeringHistoricalPredecessor(reference, authorized) {
@@ -415,7 +418,7 @@ export async function verifyEngineeringInstrumentation(execution, continuation) 
 }
 
 async function engineeringSetupDesign(setup, authorized) {
-  assert.equal(authorized.value.version, 7, 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED');
+  assert.ok(isEngineeringContinuationAuthority(authorized.value), 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED');
   const continuation = authorized.engineeringContinuation, allocation = authorized.value.allocations.find(item => item.id === setup.campaign_scope?.allocation_id);
   assert.ok(allocation, 'ENGINEERING_WINDOW_ALLOCATION_REQUIRED'); assert.equal(setup.campaign_scope.id, allocation.id);
   assert.equal(setup.campaign_scope.role, allocation.role); assert.equal(setup.budget.batch.max_episodes, allocation.reservation_limit);
@@ -452,7 +455,7 @@ export async function assertEngineeringWindowSetup(setup, authorized) {
 /** Historical reads compare frozen execution identity with the approved private
  * composition; they do not require the verifier itself to be that controller. */
 export async function assertEngineeringWindowProtocol(protocol, execution, slots, amendment, authorized) {
-  assert.equal(authorized.value.version, 7, 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED');
+  assert.ok(isEngineeringContinuationAuthority(authorized.value), 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED');
   const continuation = authorized.engineeringContinuation;
   assertSameConfirmationModels(protocol, continuation.source, continuation.modelWindow);
   await verifyEngineeringInstrumentation(execution, continuation);

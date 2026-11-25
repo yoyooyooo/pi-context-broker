@@ -6,8 +6,9 @@ import { validateProtocol, validateEnvironmentManifest } from './protocol.mjs';
 import { freezeExpectation } from './runtime/observation.mjs';
 import { phaseZero } from './phase-zero.mjs';
 import { prepareEngineeringWindowDraft } from './campaign-engineering-window-continuation.mjs';
-import { prepareApprovedEngineeringWindowContinuation } from './approved-campaign.mjs';
-import { runEngineeringWindowBatch } from './engineering-runner.mjs';
+import { prepareEngineeringPreflightRepairDraft } from './campaign-engineering-preflight-repair.mjs';
+import { prepareApprovedEngineeringWindowContinuation, prepareApprovedEngineeringPreflightRepair } from './approved-campaign.mjs';
+import { runEngineeringWindowBatch, runEngineeringPreflightRepairBatch } from './engineering-runner.mjs';
 import { prepareEngineeringControllerComposition } from './engineering-source.mjs';
 import { createHash } from 'node:crypto';
 
@@ -18,6 +19,9 @@ const HELP = `Benchmark: frozen comparisons, actual episodes, and offline eviden
   node benchmark/cli.mjs compose-engineering-controller --request ABS_REQUEST --out ABS_NEW_COMPOSITION
   node benchmark/cli.mjs prepare-engineering-window --draft ABS_DRAFT --decision ABS_APPROVAL --out ABS_NEW_AUTHORITY
   node benchmark/cli.mjs run-engineering-window --plan ABS_V7_PLAN --out ABS_NEW_RUNNER [--limit POSITIVE_INTEGER]
+  node benchmark/cli.mjs draft-engineering-preflight-repair --request ABS_REQUEST --out ABS_NEW_DRAFT
+  node benchmark/cli.mjs prepare-engineering-preflight-repair --draft ABS_DRAFT --decision ABS_APPROVAL --out ABS_NEW_AUTHORITY
+  node benchmark/cli.mjs run-engineering-preflight-repair --plan ABS_V8_PLAN --out ABS_NEW_RUNNER [--limit POSITIVE_INTEGER]
   node benchmark/cli.mjs run --plan ABS_FROZEN_PLAN [--limit NONNEGATIVE_INTEGER] [--analysis-revision ABS_JSON | --collection-recovery ABS_JSON]
   node benchmark/cli.mjs status --root ABS_BATCH_DIRECTORY
   node benchmark/cli.mjs gate --root ABS_GATE_BATCH --out ABS_NEW_GATE_JSON
@@ -64,8 +68,10 @@ export function parseBenchmarkArgs(args) {
     phase0: ['root', 'build', 'mode', 'skills', 'expected', 'condition', 'id', 'out'], 'freeze-load': ['file', 'out'],
     configure: ['setup'], run: ['plan', 'limit', 'analysis-revision', 'collection-recovery'], status: ['root'], gate: ['root', 'out'], reconcile: ['root', 'lease'], analyze: ['root', 'out'], reanalysis: ['root', 'out'],
     'draft-engineering-window': ['request', 'out'], 'prepare-engineering-window': ['draft', 'decision', 'out'],
+    'draft-engineering-preflight-repair': ['request', 'out'], 'prepare-engineering-preflight-repair': ['draft', 'decision', 'out'],
     'compose-engineering-controller': ['request', 'out'],
     'run-engineering-window': ['plan', 'out', 'limit'],
+    'run-engineering-preflight-repair': ['plan', 'out', 'limit'],
     'register-reanalysis': ['plan', 'replacements', 'out', 'reason'],
     'register-collection-recovery': ['plan', 'frozen-controller', 'reason'],
     journey: ['root', 'run'], query: ['root', 'condition', 'outcome'] };
@@ -85,22 +91,27 @@ export async function benchmarkMain(args) {
   const options = parseBenchmarkArgs(args);
   if (options.action === 'help') return { help: HELP };
   if (options.action === 'phase0') return phaseZero(options);
-  if (['draft-engineering-window', 'prepare-engineering-window', 'compose-engineering-controller'].includes(options.action)) {
-    const inputs = options.action === 'prepare-engineering-window' ? ['draft', 'decision', 'out'] : ['request', 'out'];
+  if (['draft-engineering-window', 'prepare-engineering-window', 'draft-engineering-preflight-repair',
+    'prepare-engineering-preflight-repair', 'compose-engineering-controller'].includes(options.action)) {
+    const inputs = options.action.startsWith('prepare-') ? ['draft', 'decision', 'out'] : ['request', 'out'];
     for (const key of inputs) assert.ok(options[key] && isAbsolute(options[key]), '--' + key + ' must be absolute');
     const reference = async path => ({ path, sha256: createHash('sha256').update(await readFile(path)).digest('hex') });
     const value = options.action === 'prepare-engineering-window'
       ? await prepareApprovedEngineeringWindowContinuation({ draftReference: await reference(options.draft), userApproval: await reference(options.decision) })
+      : options.action === 'prepare-engineering-preflight-repair'
+        ? await prepareApprovedEngineeringPreflightRepair({ draftReference: await reference(options.draft), userApproval: await reference(options.decision) })
+      : options.action === 'draft-engineering-preflight-repair' ? await prepareEngineeringPreflightRepairDraft(JSON.parse(await readFile(options.request, 'utf8')))
       : options.action === 'draft-engineering-window' ? await prepareEngineeringWindowDraft(JSON.parse(await readFile(options.request, 'utf8')))
         : await prepareEngineeringControllerComposition(JSON.parse(await readFile(options.request, 'utf8')));
     await writeFile(options.out, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-    return { status: options.action === 'draft-engineering-window' ? 'draft' : 'prepared', kind: value.kind,
+    return { status: options.action.startsWith('draft-') ? 'draft' : 'prepared', kind: value.kind,
       output: options.out, reference: await reference(options.out), execution_performed: false, model_requests: 0 };
   }
-  if (options.action === 'run-engineering-window') {
+  if (['run-engineering-window', 'run-engineering-preflight-repair'].includes(options.action)) {
     for (const key of ['plan', 'out']) assert.ok(options[key] && isAbsolute(options[key]), '--' + key + ' must be absolute');
     assert.ok(options.limit === undefined || /^[1-9][0-9]*$/.test(options.limit), '--limit is a positive integer');
-    return runEngineeringWindowBatch({ planFile: options.plan, outputRoot: options.out, maximumSlice: options.limit === undefined ? 8 : Number(options.limit) });
+    const run = options.action === 'run-engineering-window' ? runEngineeringWindowBatch : runEngineeringPreflightRepairBatch;
+    return run({ planFile: options.plan, outputRoot: options.out, maximumSlice: options.limit === undefined ? 8 : Number(options.limit) });
   }
   if (options.action === 'register-reanalysis') {
     for (const key of ['plan', 'replacements', 'out']) assert.ok(options[key] && isAbsolute(options[key]), '--' + key + ' must be absolute');
@@ -193,7 +204,7 @@ export async function benchmarkMain(args) {
 
 export function benchmarkResultExitCode(action, result) {
   return result.valid === false || ['failed', 'rejected'].includes(result.status)
-    || (action === 'run-engineering-window' && result.status !== 'completed') ? 1 : 0;
+    || (['run-engineering-window', 'run-engineering-preflight-repair'].includes(action) && result.status !== 'completed') ? 1 : 0;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -204,8 +215,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exitCode = benchmarkResultExitCode(process.argv[2], result);
   } catch (error) {
     process.stdout.write(JSON.stringify({ status: 'failed', error: error.message,
-      execution_performed: ['run', 'run-engineering-window'].includes(process.argv[2]) ? null : false,
-      ...(['run', 'run-engineering-window'].includes(process.argv[2]) ? { next_step: 'Read the retained batch status before any further run; an exception does not prove zero requests.' } : {}) }) + '\n');
+      execution_performed: ['run', 'run-engineering-window', 'run-engineering-preflight-repair'].includes(process.argv[2]) ? null : false,
+      ...(['run', 'run-engineering-window', 'run-engineering-preflight-repair'].includes(process.argv[2]) ? { next_step: 'Read the retained batch status before any further run; an exception does not prove zero requests.' } : {}) }) + '\n');
     process.exitCode = 1;
   }
 }

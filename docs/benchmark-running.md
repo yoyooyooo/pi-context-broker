@@ -161,6 +161,21 @@ at the accepted total of 139. This continuation remains a descriptive record of
 apparatus changes, not an assertion that all historical observations share one
 measurement identity.
 
+## Engineering window and a stopped preflight
+
+The [v7 engineering-window contract](benchmark-engineering-window-continuation.md)
+owns the separately approved remaining35 after the original window expired.
+If its first configure stops before any new reservation, the original claim and
+capture directories remain occupied. The bounded
+[v8 preflight-repair contract](benchmark-engineering-preflight-repair.md) requires
+independent zero-send evidence and a new explicit decision, preserves that exact
+v7 window, and changes only the unactivated CodeMode owner to `-2`.
+Use its explicit `draft-engineering-preflight-repair`,
+`prepare-engineering-preflight-repair` and `run-engineering-preflight-repair`
+commands. Changing a control directory or repeating the v7 command does not
+authorize a new attempt. The actual stopped invocation and pending repair are
+recorded in [the retained preflight report](benchmark-preflight-repair-2026-11-25.md).
+
 ## Initial route gate and recovery
 
 The initial pilot has a shared maximum of 144 scheduled episodes, including

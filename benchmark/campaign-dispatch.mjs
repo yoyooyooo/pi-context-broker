@@ -10,7 +10,7 @@ import { preparePilotScope, readPilotScopeAmendment, verifyPilotScope,
 import { FINITE_CAMPAIGN, isFiniteCampaign, prepareFiniteCampaign, readFiniteCampaignAmendment,
   assertFiniteCampaignPlan, verifyFiniteCampaignScope, verifyFiniteCampaignCurrentState, finiteCampaignReservationFields } from './finite-campaign.mjs';
 import { readApprovedCampaign } from './approved-campaign.mjs';
-import { isEngineeringHistoricalPredecessor, readEngineeringHistoricalPredecessor } from './campaign-engineering-window-continuation.mjs';
+import { isEngineeringHistoricalPredecessor, readEngineeringHistoricalPredecessor, isEngineeringContinuationAuthority } from './campaign-engineering-window-continuation.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const hasFiniteScope = plan => Boolean(plan.protocol.policies.campaign || plan.execution.campaign_scope);
@@ -92,7 +92,7 @@ async function latestRegistration(root, engineeringAuthority, currentPreview) {
 }
 
 async function engineeringAuthority(reference) {
-  return reference && (await verified(reference)).version === 7 ? readApprovedCampaign(reference) : undefined;
+  return reference && isEngineeringContinuationAuthority(await verified(reference)) ? readApprovedCampaign(reference) : undefined;
 }
 
 export async function prepareCampaignScope(input) {

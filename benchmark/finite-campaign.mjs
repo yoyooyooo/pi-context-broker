@@ -14,7 +14,7 @@ import { readHistoryExtension } from './campaign-history-extension.mjs';
 import { readPartialConfirmationHistory, assertConfirmationContinuation, assertContinuationModels } from './campaign-confirmation-continuation.mjs';
 import { readProviderStopHistory, assertProviderStopContinuation, assertProviderStopModels, assertRetainedProviderStopEpisode } from './campaign-provider-stop-continuation.mjs';
 import { readObserverRepairHistory, assertObserverRepairContinuation, assertObserverRepairModels, assertObserverRepairEngineeringProtocol } from './campaign-observer-repair-continuation.mjs';
-import { assertEngineeringWindowProtocol, verifyEngineeringHistoricalPlan, readEngineeringHistoricalAuthority } from './campaign-engineering-window-continuation.mjs';
+import { assertEngineeringWindowProtocol, verifyEngineeringHistoricalPlan, readEngineeringHistoricalAuthority, isEngineeringContinuationAuthority } from './campaign-engineering-window-continuation.mjs';
 
 export const FINITE_CAMPAIGN = 'benchmark-finite-campaign';
 export const isFiniteCampaign = value => value?.kind === FINITE_CAMPAIGN;
@@ -233,7 +233,7 @@ async function assertHistoricalPlan(plan, currentAuthority) {
     assert.ok(isFiniteCampaign(plan.protocol.policies.campaign) && isFiniteCampaign(plan.execution.campaign_scope), 'FINITE_HISTORY_TYPED_SCOPE_REQUIRED');
     const amendment = await shallowFinite(plan.execution.campaign_scope.amendment);
     assertFiniteCampaignPlan(plan, amendment);
-    if (currentAuthority?.value.version === 7 && currentAuthority.engineeringContinuation.scopes.some(scope => scope.plan.id === plan.id)) {
+    if (isEngineeringContinuationAuthority(currentAuthority?.value) && currentAuthority.engineeringContinuation.scopes.some(scope => scope.plan.id === plan.id)) {
       await verifyEngineeringHistoricalPlan(plan, amendment, currentAuthority); return;
     }
     const continuedSource = amendment.version === 2 ? await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment,
@@ -450,20 +450,33 @@ async function authorityAtBoundary(reference, context) {
 
 async function boundaryContext(reference) {
   const context = { allocations: new Set() };
-  if (reference && (await verified(reference)).version === 7) {
+  if (reference && isEngineeringContinuationAuthority(await verified(reference))) {
     context.engineering = await readApprovedCampaign(reference); context.engineeringReference = reference;
   }
   return context;
 }
 
-async function authorizedScope(value, context) {
+/** Internal scope check; dispatch readers supply the verified authority context.
+ * Exported for offline boundary fixtures, never an authority constructor. */
+export async function authorizedScope(value, context) {
   if (value.version !== 2) return null;
   const binding = value.prospective_authorization;
   if (!context.authorized) context.authorized = await authorityAtBoundary(binding.reference, context);
   if (context.reference && fingerprint(binding.reference) !== fingerprint(context.reference)) {
     const next = await authorityAtBoundary(binding.reference, context);
-    assert.ok([2, 3, 4, 5, 6, 7].includes(next.value.version), 'APPROVAL_LINEAGE_CHANGED');
-    assert.deepEqual(next.value.revision.parent_authorization, context.reference, 'APPROVAL_LINEAGE_CHANGED');
+    assert.ok([2, 3, 4, 5, 6, 7, 8].includes(next.value.version), 'APPROVAL_LINEAGE_CHANGED');
+    if (next.value.version === 8) {
+      // The failed v7 configure never registered an allocation. Its verified
+      // zero-send repair inherits predecessor13 from v6 without inventing a
+      // v7 registration or allowing arbitrary skipped authority ancestors.
+      const repair = next.engineeringPreflightRepair; assert.ok(repair, 'ENGINEERING_PREFLIGHT_REPAIR_CONTEXT_REQUIRED');
+      assert.ok(isEngineeringContinuationAuthority(next.value), 'ENGINEERING_PREFLIGHT_REPAIR_AUTHORITY_REQUIRED');
+      assert.equal(repair.parent.value.version, 7);
+      assert.equal(repair.parent.value.revision.kind, 'accepted-engineering-window-continuation');
+      assert.deepEqual(next.value.revision.parent_authorization, repair.parentReference, 'APPROVAL_LINEAGE_CHANGED');
+      assert.deepEqual(repair.parent.value.revision.parent_authorization, context.reference, 'APPROVAL_LINEAGE_CHANGED');
+      assert.deepEqual(next.value.predecessor, repair.parent.value.predecessor, 'APPROVAL_REVISION_PREDECESSOR_CHANGED');
+    } else assert.deepEqual(next.value.revision.parent_authorization, context.reference, 'APPROVAL_LINEAGE_CHANGED');
     assert.deepEqual(value.predecessor, next.value.predecessor, 'APPROVAL_REVISION_PREDECESSOR_CHANGED');
     if (next.value.version === 2)
       assert.equal(binding.allocation_id, next.value.revision.followup_allocation_id, 'ALIAS_REVISION_FOLLOWUP_FIRST');
@@ -477,8 +490,8 @@ async function authorizedScope(value, context) {
   assert.equal(value.id, allocation.id, 'APPROVAL_SCOPE_ID_CHANGED'); assert.equal(value.role, allocation.role, 'APPROVAL_SCOPE_ROLE_CHANGED');
   assert.ok(value.reservation_limit <= allocation.reservation_limit, 'APPROVAL_ALLOCATION_LIMIT');
   if (value.role === CONFIRMATION_CONTINUATION) assert.ok([4, 5, 6].includes(authorized.value.version), 'CONFIRMATION_CONTINUATION_AUTHORITY_REQUIRED');
-  if (value.role === ENGINEERING_WINDOW_CONTINUATION) assert.equal(authorized.value.version, 7, 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED');
-  if ([4, 5, 6, 7].includes(authorized.value.version)) {
+  if (value.role === ENGINEERING_WINDOW_CONTINUATION) assert.ok(isEngineeringContinuationAuthority(authorized.value), 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED');
+  if ([4, 5, 6, 7, 8].includes(authorized.value.version)) {
     assert.equal(value.reservation_limit, allocation.reservation_limit, 'CONFIRMATION_CONTINUATION_EXACT_ALLOCATION_REQUIRED');
     const index = authorized.value.allocations.findIndex(item => item.id === allocation.id);
     if (index === 0) assert.deepEqual(value.predecessor, authorized.value.predecessor, 'CONFIRMATION_CONTINUATION_INITIAL_PREDECESSOR_CHANGED');
@@ -500,7 +513,7 @@ async function assertAuthorizedProtocol(protocol, execution, slots, value, autho
     assert.notEqual(value.role, CONFIRMATION_CONTINUATION, 'CONFIRMATION_CONTINUATION_AUTHORITY_REQUIRED');
     assert.notEqual(value.role, ENGINEERING_WINDOW_CONTINUATION, 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED'); return;
   }
-  if (authorized.value.version === 7) return assertEngineeringWindowProtocol(protocol, execution, slots, value, authorized);
+  if (isEngineeringContinuationAuthority(authorized.value)) return assertEngineeringWindowProtocol(protocol, execution, slots, value, authorized);
   if (authorized.value.version === 6) {
     assertObserverRepairModels(protocol, authorized);
     if (value.role === CONFIRMATION_CONTINUATION) return assertObserverRepairContinuation(protocol, execution, slots, value, authorized);
