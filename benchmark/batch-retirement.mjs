@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { open, readFile, realpath, rename, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { batchStatus, validateBatchPlan } from './batch.mjs';
+import { acquireCampaignLease } from './campaign-dispatch.mjs';
 import { executionImplementation } from './implementation.mjs';
 import { assertCompletedStandingEvidence, inspectStandingLedger, readStandingAmendment,
   readStandingAuthorization } from './standing-campaign.mjs';
@@ -61,7 +62,19 @@ export function assertRetirablePrefix({ plan, rows, lease, reservations }) {
 /** A new controller can retire an old, byte-bound invocation without claiming
  * to execute its frozen implementation. The intent retains the exact prefix
  * and footer, so retries cannot append a second closure or invent observations. */
-export async function retireInterruptedStandingBatch({ controlRoot, leaseId, reason, inspectOnly = false }) {
+export async function retireInterruptedStandingBatch(options) {
+  assert.ok(isAbsolute(options.controlRoot) && resolve(options.controlRoot) === options.controlRoot);
+  assert.equal(await realpath(options.controlRoot), options.controlRoot);
+  if (options.inspectOnly) return retireOwned(options);
+  const plan = validateBatchPlan(JSON.parse(await readFile(join(options.controlRoot, 'plan.json'))));
+  assert.ok(plan.execution.standing_scope, 'RETIREMENT_REQUIRES_STANDING_PLAN');
+  const amendment = await readStandingAmendment(plan.execution.standing_scope.amendment);
+  const release = await acquireCampaignLease(plan, amendment);
+  try { return await retireOwned({ ...options, campaignLeaseOwned: true }); }
+  finally { await release(); }
+}
+
+async function retireOwned({ controlRoot, leaseId, reason, inspectOnly = false, campaignLeaseOwned = false }) {
   assert.ok(isAbsolute(controlRoot) && resolve(controlRoot) === controlRoot);
   assert.equal(await realpath(controlRoot), controlRoot);
   assert.match(leaseId, /^[A-Za-z0-9-]+$/);
@@ -73,10 +86,12 @@ export async function retireInterruptedStandingBatch({ controlRoot, leaseId, rea
   const amendment = await readStandingAmendment(plan.execution.standing_scope.amendment);
   await readStandingAuthorization(amendment.authorization);
   const leasePath = join(controlRoot, 'lease.json'), retainedPath = join(controlRoot, 'lease-retired-' + leaseId + '.json');
+  const interruptedPath = join(controlRoot, 'lease-interrupted-' + leaseId + '.json');
   const intentPath = join(controlRoot, 'retirement-' + leaseId + '.json');
   let intentBytes = await optional(intentPath), intent = intentBytes && JSON.parse(intentBytes);
   const activeLeaseBytes = await optional(leasePath), retainedLeaseBytes = await optional(retainedPath);
-  const leaseBytes = activeLeaseBytes ?? retainedLeaseBytes;
+  const interruptedLeaseBytes = await optional(interruptedPath);
+  const leaseBytes = activeLeaseBytes ?? retainedLeaseBytes ?? interruptedLeaseBytes;
   assert.ok(leaseBytes, 'RETIREMENT_MATCHING_LEASE_REQUIRED');
   const lease = JSON.parse(leaseBytes);
   assert.equal(lease.id, leaseId); assert.equal(lease.plan_sha256, plan.plan_sha256); dead(lease.pid);
@@ -86,7 +101,11 @@ export async function retireInterruptedStandingBatch({ controlRoot, leaseId, rea
   assert.ok(prefix.length && prefix.at(-1) === 10, 'RETIREMENT_INCOMPLETE_PREFIX');
   const rows = prefix.toString().split('\n').filter(Boolean).map(JSON.parse);
   const boundary = await inspectStandingLedger({ ledgerRoot: amendment.pilot_ledger_root, baseline: amendment.baseline });
-  assert.equal(boundary.lease, null, 'RETIREMENT_CAMPAIGN_LEASE_ACTIVE');
+  if (campaignLeaseOwned) {
+    assert.equal(boundary.lease?.pid, process.pid, 'RETIREMENT_CAMPAIGN_LEASE_NOT_OWNED');
+    assert.equal(boundary.lease.plan_sha256, plan.plan_sha256);
+    assert.equal(boundary.lease.control_root, controlRoot); assert.equal(boundary.lease.scope_id, plan.id);
+  } else assert.equal(boundary.lease, null, 'RETIREMENT_CAMPAIGN_LEASE_ACTIVE');
   const registration = boundary.registrations.find(item => item.value.id === plan.id);
   assert.ok(registration); assert.deepEqual(registration.value.plan, ref(planPath, planBytes));
   if (activeLeaseBytes) assert.equal(boundary.registrations.at(-1).value.id, plan.id, 'RETIREMENT_ATTEMPT_ALREADY_RETIRED');
@@ -107,7 +126,7 @@ export async function retireInterruptedStandingBatch({ controlRoot, leaseId, rea
       new_episodes: checked.invocationStarts, retirement: intentPath, retained_lease_id: leaseId,
       model_execution: false, detail: reason }, 'RETIREMENT_CLOSURE_CHANGED');
   } else {
-    assert.ok(activeLeaseBytes, 'RETIREMENT_INTENT_REQUIRED');
+    assert.ok(activeLeaseBytes || interruptedLeaseBytes, 'RETIREMENT_INTENT_REQUIRED');
     intent = { ...identity, implementation: await executionImplementation(), closure: {
       version: 1, seq: rows.length + 1, at: new Date().toISOString(), monotonic_ns: process.hrtime.bigint().toString(),
       clock_domain: 'retirement-' + leaseId, type: 'batch_closed', reason: 'interrupted_controller_failure',
@@ -124,7 +143,7 @@ export async function retireInterruptedStandingBatch({ controlRoot, leaseId, rea
   // A fixed offset with the immutable intended bytes makes an interrupted
   // footer write recoverable without deleting or rewriting the original prefix.
   if (ledgerBytes.length !== expected.length) {
-    assert.ok(activeLeaseBytes, 'RETIREMENT_ACTIVE_DEAD_LEASE_REQUIRED');
+    assert.ok(activeLeaseBytes || interruptedLeaseBytes, 'RETIREMENT_DEAD_LEASE_REQUIRED');
     const file = await open(ledgerPath, 'r+');
     try {
       assert.deepEqual(await readFile(ledgerPath), ledgerBytes, 'RETIREMENT_LEDGER_CHANGED');
@@ -138,8 +157,17 @@ export async function retireInterruptedStandingBatch({ controlRoot, leaseId, rea
   }
   assert.deepEqual(await readFile(ledgerPath), expected, 'RETIREMENT_CLOSURE_CHANGED');
   if (activeLeaseBytes) {
-    assert.deepEqual(await readFile(leasePath), leaseBytes, 'RETIREMENT_LEASE_CHANGED');
-    await rename(leasePath, retainedPath);
+    try {
+      assert.deepEqual(await readFile(leasePath), leaseBytes, 'RETIREMENT_LEASE_CHANGED');
+      await rename(leasePath, retainedPath);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      assert.deepEqual(await readFile(interruptedPath), leaseBytes, 'RETIREMENT_LEASE_CHANGED');
+    }
+  }
+  if (!(await optional(retainedPath))) {
+    assert.deepEqual(await readFile(interruptedPath), leaseBytes, 'RETIREMENT_LEASE_CHANGED');
+    await writeFile(retainedPath, leaseBytes, { flag: 'wx', mode: 0o600 });
   }
   assert.deepEqual(await readFile(retainedPath), leaseBytes);
   return { ...await batchStatus(controlRoot), retirement: ref(intentPath, intentBytes), model_requests: 0, execution_performed: false };
