@@ -438,3 +438,9 @@ separate and manual release review remains explicit.
 The [2026-11-25 retained-evidence census](benchmark-retained-evidence-census-2026-11-25.md)
 records a separate descriptive view of 104 historical observations in 16 analysis
 strata. Its five-file public package replays census arithmetic and consistency.
+
+The [2026-11-25 engineering results](benchmark-standing-engineering-2026-11-25.md)
+publish 34 completed observations across six separate analyses, plus the retired
+first attempt's 1/24 partial result in its original stratum. All seven public
+packages have actual isolated replay evidence; the unrun store-fault eight remain
+explicitly pending in a new material lineage.

@@ -1,0 +1,4 @@
+"kind","id","metric","unit","currency","status","estimate","interval_status","lcb","ucb","reason","origin","confirmation"
+"code_mode_interaction","gpt62-candidate-native-free-off","quality","ratio_difference","","unknown","","unavailable","","","Incomplete matched four-cell observations","preregistered-plan","false"
+"code_mode_interaction","gpt62-candidate-native-free-off","time","milliseconds","","unknown","","unavailable","","","Incomplete matched four-cell observations","preregistered-plan","false"
+"code_mode_interaction","gpt62-candidate-native-free-off","cost","currency","","unknown","","unavailable","","","Missing or incompatible currency cost","preregistered-plan","false"

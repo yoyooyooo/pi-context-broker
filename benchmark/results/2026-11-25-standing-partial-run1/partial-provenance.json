@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "kind": "standing-benchmark-retired-scope-partial-provenance",
+  "scope_id": "standing42-run-1-codemode-24",
+  "original_attempt_id": "standing42-run-1",
+  "condition_epoch": {
+    "id": "standing-engineering-epoch-1",
+    "started_at": "2026-11-25T08:49:10.898Z"
+  },
+  "collector": {
+    "version": "1.2.0",
+    "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+  },
+  "subject_controller_sha256": "0c601e85201f21ad33096f3ce2c5fcdd25873ce2ec7283a694b94f6fa821c3dc",
+  "subject_implementation_sha256": "d392f9b78f0ed601498723cbb616f412df456d0092d072639116032c39c0014a",
+  "failed_attempt": {
+    "sha256": "cbfc77333632deb2ef8601c5b188964944c31bbd5d25b65082c3348d039e5e77",
+    "status": "stopped",
+    "publication_ready": false
+  },
+  "retirement": {
+    "sha256": "fa35ebde38dd1e7799584d5249e43f17007d51fb821ae1398bcfb1b098b4933c",
+    "reason": "interrupted_controller_failure",
+    "recovery_implementation_sha256": "174e6db5462f015f218b050e003a4abf56906eacd74b7c9323371ad44af5f42b",
+    "model_requests": 0
+  },
+  "source_plan_sha256": "3961768a5a3f37f8206b762c10ea2c86529066d88e593ea926aa978af0c0469f",
+  "source_work_plan_sha256": "f7f87c7506ee8eda0e883dc9154f2cb94f0ff7ee9614cf8c5d0f3d0a959041e5",
+  "source_ledger_prefix_sha256": "32f3cfb087c36654947a71f15adbbaa6817f61f9d0b09c68b45b1ca584734f79",
+  "source_closed_ledger_sha256": "4f0403569d76fa8f8e01e307647ec90a34620a85be26aca6f5dc444e12731604",
+  "source_episode_sha256": "392331d825c1bca32b575d4198604404d0c8ba1618ec4854eb7ac293aa0140da",
+  "source_analysis_sha256": "889785ea3331bbadbf6a48d290c4223e7ac8f2baa8f7bc1e3e8308341f8b1788",
+  "public_analysis_sha256": "9bd479c96276d6ab3ba1321bb1883f22e58588f7a8419efe5914fd18a42236b5",
+  "scope": {
+    "observed": 1,
+    "planned": 24,
+    "unstarted": 23
+  },
+  "work_plan": {
+    "observed": 1,
+    "planned": 42,
+    "unstarted": 41
+  },
+  "historical_boundary": {
+    "observations": 104,
+    "registrations": 13,
+    "source_sha256": "be5f7a1a0420febadf2aa3de662a7f51f05012f05ca2df854fb4c72f64b10da4"
+  },
+  "original_physical_ordinal": 105,
+  "original_global_registration": 14,
+  "actual_usage": {
+    "run_id": "standing42-run-1-codemode-24-001",
+    "known_model_http_requests": 4,
+    "actual_model_http_requests": 4,
+    "known_input_subtotal": 16194,
+    "complete_input_tokens": 16194,
+    "known_output_subtotal": 269,
+    "complete_output_tokens": 269,
+    "duration_ms": 31822.893333,
+    "currency_cost": null
+  },
+  "currency_cost": null,
+  "currency_status": "unknown",
+  "cross_epoch_pooling": false,
+  "later_full_42_included": false,
+  "scientific_acceptance_claimed": false,
+  "publication_model_requests": 0,
+  "replay_scope": "public file identity and normalized statistical reaggregation; no private grader or raw-chain rerun"
+}

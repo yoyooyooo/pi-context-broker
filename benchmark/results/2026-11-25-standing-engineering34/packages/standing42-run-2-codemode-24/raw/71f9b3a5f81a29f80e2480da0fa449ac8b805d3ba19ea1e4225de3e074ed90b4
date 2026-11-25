@@ -1,0 +1,10 @@
+{"at":"2026-11-25T09:44:49.541Z","channels":["context-broker.notion-sdk","context-broker.notion-sdk-result"],"phase":"sdk-observer-start","pid":95318}
+{"at":"2026-11-25T09:44:50.828Z","monotonic_ns":"204664620796791","operation":"list","phase":"sdk-start","pid":95318,"requestId":"[id:e78211c5c84a62f8527a]","transport":"sdk"}
+{"at":"2026-11-25T09:44:57.108Z","metricsComplete":true,"monotonic_ns":"204670898031416","operation":"list","phase":"sdk-end","pid":95318,"requestId":"[id:e78211c5c84a62f8527a]","responseFile":"[id:e78211c5c84a62f8527a].json","resultObserved":true,"status":"completed","transport":"sdk"}
+{"at":"2026-11-25T09:45:00.100Z","monotonic_ns":"204673892648500","operation":"consume","phase":"sdk-start","pid":95318,"requestId":"[id:98a6371204789b95b0e5]","transport":"sdk"}
+{"at":"2026-11-25T09:45:07.576Z","metricsComplete":true,"monotonic_ns":"204681367661541","operation":"consume","phase":"sdk-end","pid":95318,"requestId":"[id:98a6371204789b95b0e5]","responseFile":"[id:98a6371204789b95b0e5].json","resultObserved":true,"status":"completed","transport":"sdk"}
+{"at":"2026-11-25T09:45:11.545Z","monotonic_ns":"204685338260583","operation":"read","phase":"sdk-start","pid":95318,"requestId":"[id:c99df61e148b8c6f748a]","transport":"sdk"}
+{"at":"2026-11-25T09:45:15.588Z","metricsComplete":true,"monotonic_ns":"204689378712958","operation":"read","phase":"sdk-end","pid":95318,"requestId":"[id:c99df61e148b8c6f748a]","responseFile":"[id:c99df61e148b8c6f748a].json","resultObserved":true,"status":"completed","transport":"sdk"}
+{"at":"2026-11-25T09:45:18.291Z","monotonic_ns":"204692084212833","operation":"read-resources","phase":"sdk-start","pid":95318,"requestId":"[id:211e22d2941600a3cb14]","transport":"sdk"}
+{"at":"2026-11-25T09:45:22.102Z","metricsComplete":true,"monotonic_ns":"204695892452833","operation":"read-resources","phase":"sdk-end","pid":95318,"requestId":"[id:211e22d2941600a3cb14]","responseFile":"[id:211e22d2941600a3cb14].json","resultObserved":true,"status":"completed","transport":"sdk"}
+{"at":"2026-11-25T09:45:31.476Z","pending":0,"phase":"sdk-observer-end","pid":95318}

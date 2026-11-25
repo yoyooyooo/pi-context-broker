@@ -1,0 +1,346 @@
+{
+  "version": 1,
+  "kind": "standing-benchmark-public-checkpoint",
+  "boundary": "closed_prefix_retained",
+  "collector": {
+    "version": "1.2.0",
+    "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+  },
+  "resource_policy": {
+    "mode": "unbounded"
+  },
+  "per_batch_user_approval_required": false,
+  "condition_epoch": {
+    "id": "standing-engineering-epoch-2",
+    "started_at": "2026-11-25T09:39:36.803Z",
+    "authorization_sha256": "a630feb19255729ba6a9de991cf6b5cdbc890ed1454342094437b7a276c42627"
+  },
+  "accounting": {
+    "prior_physical_reservations": 105,
+    "actual_new_reservations": 34,
+    "physical_reservations": 139,
+    "prior_registrations": 14,
+    "registrations": 20,
+    "planned_scientific_observations": 42,
+    "unobserved_scientific_slots": 8
+  },
+  "linked_history": {
+    "commit": "aa3b222bc7a489e168ab89d30df4b0b2c6aecb77",
+    "path": "benchmark/results/2026-11-25-observer-repair-continuation",
+    "url": "https://github.com/yoyooyooo/pi-context-broker/tree/aa3b222bc7a489e168ab89d30df4b0b2c6aecb77/benchmark/results/2026-11-25-observer-repair-continuation",
+    "release_manifest_sha256": "198e9696af073593d81829654f5d2e809e3a68d322da7f1e080fb99430d6c66d",
+    "public_inventory_sha256": "994caf6748cd26c7e26c1bf9018cfc7bda605370748bdcc87c9544c5e171764b",
+    "physical_reservations": 104,
+    "registrations": 13,
+    "status": "linked_not_replayed",
+    "baseline_receipt_sha256": "be5f7a1a0420febadf2aa3de662a7f51f05012f05ca2df854fb4c72f64b10da4"
+  },
+  "historical_accounting": {
+    "known_subtotal": {
+      "model_requests": 476,
+      "input_tokens": 2402549,
+      "output_tokens": 63085,
+      "duration_ms": 3871650.5499549997
+    },
+    "total_usage": {
+      "model_requests": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "duration_ms": 3871650.5499549997
+    },
+    "total_usage_status": "incomplete",
+    "monetary_status": "unpriced",
+    "unknown_usage_run_ids": [
+      "benchmark-own-product-confirmation-unstarted-17-1-006",
+      "benchmark-route-gate-3-003",
+      "benchmark-terra-6-1-approved-gate-1-008",
+      "benchmark-two-model-admission-2-001",
+      "benchmark-two-model-admission-3-008",
+      "benchmark-two-model-cohort-3-expansion-021"
+    ]
+  },
+  "prior_standing_accounting": {
+    "rows": [
+      {
+        "physical_ordinal": 105,
+        "run_id": "standing42-run-1-codemode-24-001",
+        "known_model_http_requests": 4,
+        "actual_model_http_requests": 4,
+        "known_input_subtotal": 16194,
+        "complete_input_tokens": 16194,
+        "known_output_subtotal": 269,
+        "complete_output_tokens": 269,
+        "duration_ms": 31822.893333,
+        "currency_cost": null
+      }
+    ],
+    "usage": {
+      "reserved_episodes": 1,
+      "episodes_with_observed_model_send_lower_bound": 1,
+      "known_model_http_requests": 4,
+      "actual_model_http_requests": 4,
+      "known_input_subtotal": 16194,
+      "complete_input_tokens": 16194,
+      "known_output_subtotal": 269,
+      "complete_output_tokens": 269,
+      "complete_currency_cost": null,
+      "currency_cost_status": "incomplete_or_unpriced",
+      "unknown_usage_run_ids": [],
+      "summed_observed_episode_duration_ms": 31822.893333
+    }
+  },
+  "new_observations": {
+    "actual_new_observations": 34,
+    "scopes": [
+      {
+        "scope_id": "standing42-run-2-codemode-24",
+        "work_item_id": "codemode-24",
+        "source_plan_sha256": "608ba6f2c68241e406ed05ce7b6c9fbb555d1a3e0d778615cb50242150a74747",
+        "source_ledger_sha256": "d4e4cd08b3ae47c6666a382c467ca49ca004ffe1a0b5eabe78c6c82c0e70d816",
+        "collector": {
+          "version": "1.2.0",
+          "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+        },
+        "scientific_slots": 24,
+        "dispatch_slots": 24,
+        "actual_runs": 24,
+        "admission_valid": 24,
+        "admission_invalid": 0,
+        "verified_success": 16,
+        "business_pass": 24,
+        "full_contract_pass": 16,
+        "full_contract_unknown": 7,
+        "last_reason": "planned_slots_completed",
+        "package": "packages/standing42-run-2-codemode-24",
+        "public_analysis_sha256": "6c4c44ad88169016fa3544fba73c9343d73f3926f46f9734ce35249fb4ddaa20",
+        "usage": {
+          "reserved_episodes": 24,
+          "episodes_with_observed_model_send_lower_bound": 24,
+          "known_model_http_requests": 116,
+          "actual_model_http_requests": 116,
+          "known_input_subtotal": 482420,
+          "complete_input_tokens": 482420,
+          "known_output_subtotal": 10002,
+          "complete_output_tokens": 10002,
+          "complete_currency_cost": null,
+          "currency_cost_status": "incomplete_or_unpriced",
+          "unknown_usage_run_ids": [],
+          "summed_observed_episode_duration_ms": 724135.003084
+        }
+      },
+      {
+        "scope_id": "standing42-run-2-scale-implicit-n64-r1",
+        "work_item_id": "scale-implicit-n64-r1",
+        "source_plan_sha256": "7a80c5a0327096d4bb5d50a48bcc64a733963657467d9dae3729625e18edfc16",
+        "source_ledger_sha256": "2c23f4c9c2c62a9efa76b1fdbaea5795a5f50d6791954331b52585b06bc9f3ef",
+        "collector": {
+          "version": "1.2.0",
+          "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+        },
+        "scientific_slots": 2,
+        "dispatch_slots": 2,
+        "actual_runs": 2,
+        "admission_valid": 2,
+        "admission_invalid": 0,
+        "verified_success": 2,
+        "business_pass": 2,
+        "full_contract_pass": 2,
+        "full_contract_unknown": 0,
+        "last_reason": "planned_slots_completed",
+        "package": "packages/standing42-run-2-scale-implicit-n64-r1",
+        "public_analysis_sha256": "87dac07ed23a3c36d8e233a34ab21ca2b8f6f6fdf9e01f7c2329dfbb17450238",
+        "usage": {
+          "reserved_episodes": 2,
+          "episodes_with_observed_model_send_lower_bound": 2,
+          "known_model_http_requests": 8,
+          "actual_model_http_requests": 8,
+          "known_input_subtotal": 65383,
+          "complete_input_tokens": 65383,
+          "known_output_subtotal": 623,
+          "complete_output_tokens": 623,
+          "complete_currency_cost": null,
+          "currency_cost_status": "incomplete_or_unpriced",
+          "unknown_usage_run_ids": [],
+          "summed_observed_episode_duration_ms": 54648.832167
+        }
+      },
+      {
+        "scope_id": "standing42-run-2-scale-implicit-n256-r1",
+        "work_item_id": "scale-implicit-n256-r1",
+        "source_plan_sha256": "8011636d15bd318b287679efe360862f4a7df90b583baf8718cda3fd7e4b8e1f",
+        "source_ledger_sha256": "0ede52a6036bdc7ec9a7b7e84adac940019271aaf7e3aa70b95d545ae64bbcbb",
+        "collector": {
+          "version": "1.2.0",
+          "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+        },
+        "scientific_slots": 2,
+        "dispatch_slots": 2,
+        "actual_runs": 2,
+        "admission_valid": 2,
+        "admission_invalid": 0,
+        "verified_success": 1,
+        "business_pass": 2,
+        "full_contract_pass": 1,
+        "full_contract_unknown": 1,
+        "last_reason": "planned_slots_completed",
+        "package": "packages/standing42-run-2-scale-implicit-n256-r1",
+        "public_analysis_sha256": "1008cb5874d0f7e8ef535d422f87b7562c3c4b30b68139d44cb99fc291865ff6",
+        "usage": {
+          "reserved_episodes": 2,
+          "episodes_with_observed_model_send_lower_bound": 2,
+          "known_model_http_requests": 9,
+          "actual_model_http_requests": 9,
+          "known_input_subtotal": 193023,
+          "complete_input_tokens": 193023,
+          "known_output_subtotal": 639,
+          "complete_output_tokens": 639,
+          "complete_currency_cost": null,
+          "currency_cost_status": "incomplete_or_unpriced",
+          "unknown_usage_run_ids": [],
+          "summed_observed_episode_duration_ms": 82884.161125
+        }
+      },
+      {
+        "scope_id": "standing42-run-2-scale-references-n16-r2",
+        "work_item_id": "scale-references-n16-r2",
+        "source_plan_sha256": "0439ddb78848d188888be3ef774ff2651d258090a22d1156cfc507babed7ff13",
+        "source_ledger_sha256": "b256c2b8b4ee24452a23f64d92a66240edba02e21cdc6807665cc355c3747d60",
+        "collector": {
+          "version": "1.2.0",
+          "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+        },
+        "scientific_slots": 2,
+        "dispatch_slots": 2,
+        "actual_runs": 2,
+        "admission_valid": 2,
+        "admission_invalid": 0,
+        "verified_success": 1,
+        "business_pass": 2,
+        "full_contract_pass": 1,
+        "full_contract_unknown": 1,
+        "last_reason": "planned_slots_completed",
+        "package": "packages/standing42-run-2-scale-references-n16-r2",
+        "public_analysis_sha256": "fd07f5a438394d724242996e9188e7822b2bf4cae9203fb510358e4b2746883b",
+        "usage": {
+          "reserved_episodes": 2,
+          "episodes_with_observed_model_send_lower_bound": 2,
+          "known_model_http_requests": 17,
+          "actual_model_http_requests": 17,
+          "known_input_subtotal": 81278,
+          "complete_input_tokens": 81278,
+          "known_output_subtotal": 1729,
+          "complete_output_tokens": 1729,
+          "complete_currency_cost": null,
+          "currency_cost_status": "incomplete_or_unpriced",
+          "unknown_usage_run_ids": [],
+          "summed_observed_episode_duration_ms": 92758.49825
+        }
+      },
+      {
+        "scope_id": "standing42-run-2-scale-references-n16-r4",
+        "work_item_id": "scale-references-n16-r4",
+        "source_plan_sha256": "a477356e07e9f9802be16873fd2f30dbbd13954bcd979229f279d9f736ae80c9",
+        "source_ledger_sha256": "00ff1cad835d17866ac287fa69f2037c10762a132faf430a7851e3e2805a271e",
+        "collector": {
+          "version": "1.2.0",
+          "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+        },
+        "scientific_slots": 2,
+        "dispatch_slots": 2,
+        "actual_runs": 2,
+        "admission_valid": 2,
+        "admission_invalid": 0,
+        "verified_success": 0,
+        "business_pass": 2,
+        "full_contract_pass": 0,
+        "full_contract_unknown": 1,
+        "last_reason": "planned_slots_completed",
+        "package": "packages/standing42-run-2-scale-references-n16-r4",
+        "public_analysis_sha256": "956ee5f08aa957f4e535ce7f9f6f19f9b2a9b98ae8fef2371840d3c3a6df6201",
+        "usage": {
+          "reserved_episodes": 2,
+          "episodes_with_observed_model_send_lower_bound": 2,
+          "known_model_http_requests": 32,
+          "actual_model_http_requests": 32,
+          "known_input_subtotal": 180780,
+          "complete_input_tokens": 180780,
+          "known_output_subtotal": 3210,
+          "complete_output_tokens": 3210,
+          "complete_currency_cost": null,
+          "currency_cost_status": "incomplete_or_unpriced",
+          "unknown_usage_run_ids": [],
+          "summed_observed_episode_duration_ms": 223724.486916
+        }
+      },
+      {
+        "scope_id": "standing42-run-2-scale-tariff-n16-r8",
+        "work_item_id": "scale-tariff-n16-r8",
+        "source_plan_sha256": "aee8b6d605d27ef90a0111e0f394c877897132be6cb3d5ac6065a404c061bb25",
+        "source_ledger_sha256": "17b416784fef36a027df584d0280fe9922d18cddc87ec26bc44883d24c905609",
+        "collector": {
+          "version": "1.2.0",
+          "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+        },
+        "scientific_slots": 2,
+        "dispatch_slots": 2,
+        "actual_runs": 2,
+        "admission_valid": 2,
+        "admission_invalid": 0,
+        "verified_success": 1,
+        "business_pass": 2,
+        "full_contract_pass": 1,
+        "full_contract_unknown": 1,
+        "last_reason": "planned_slots_completed",
+        "package": "packages/standing42-run-2-scale-tariff-n16-r8",
+        "public_analysis_sha256": "98817002d5db069c6a62b4a5426e7386de2605633c14bed23a479954c5c7d0ac",
+        "usage": {
+          "reserved_episodes": 2,
+          "episodes_with_observed_model_send_lower_bound": 2,
+          "known_model_http_requests": 44,
+          "actual_model_http_requests": 44,
+          "known_input_subtotal": 272382,
+          "complete_input_tokens": 272382,
+          "known_output_subtotal": 4380,
+          "complete_output_tokens": 4380,
+          "complete_currency_cost": null,
+          "currency_cost_status": "incomplete_or_unpriced",
+          "unknown_usage_run_ids": [],
+          "summed_observed_episode_duration_ms": 243831.086167
+        }
+      }
+    ],
+    "usage": {
+      "reserved_episodes": 34,
+      "episodes_with_observed_model_send_lower_bound": 34,
+      "known_model_http_requests": 226,
+      "actual_model_http_requests": 226,
+      "known_input_subtotal": 1275266,
+      "complete_input_tokens": 1275266,
+      "known_output_subtotal": 20583,
+      "complete_output_tokens": 20583,
+      "complete_currency_cost": null,
+      "currency_cost_status": "incomplete_or_unpriced",
+      "unknown_usage_run_ids": [],
+      "summed_observed_episode_duration_ms": 1421982.067709
+    }
+  },
+  "unstarted_tail": [
+    {
+      "work_item_id": "store-fault-8",
+      "planned_episodes": 8,
+      "registered": false,
+      "state": "unstarted",
+      "source_plan_sha256": null,
+      "source_ledger_sha256": null
+    }
+  ],
+  "source_work_plan_sha256": "dfa5ddf273e3c93aa1ea32f51b10e51df5ed66b2b366cfeb8a10864123511df4",
+  "source_controller_sha256": "c1b29c874168aaf1d91cd117f57e30802382b367ce6c94084644fae650ffeaad",
+  "source_attempt_receipt_sha256": "54dee06e973b6d9dfd981b86fabe35a38958de3740aeb18531bb319074204994",
+  "cross_condition_pooling": false,
+  "historical_codemode7_added_to_new_code24": false,
+  "scientific_acceptance_implied_by_completion": false,
+  "full_history_currency_cost": null,
+  "full_history_usage_complete": false,
+  "publication_model_requests": 0
+}

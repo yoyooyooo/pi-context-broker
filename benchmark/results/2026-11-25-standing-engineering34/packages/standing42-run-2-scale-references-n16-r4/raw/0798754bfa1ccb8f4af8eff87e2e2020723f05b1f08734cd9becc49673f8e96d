@@ -1,0 +1,6 @@
+#!/usr/bin/env node
+import { readFileSync, writeFileSync } from 'node:fs';
+const policy = JSON.parse(readFileSync(new URL('../assets/tariff.json', import.meta.url), 'utf8'));
+const rows = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+const result = rows.map(row => ({ id: row.id, fee_cents: policy.base_cents + Math.max(0, Math.ceil(row.weight_kg - policy.included_kg)) * policy.per_extra_kg_cents }));
+writeFileSync(process.argv[3], JSON.stringify(result, null, 2) + '\n');

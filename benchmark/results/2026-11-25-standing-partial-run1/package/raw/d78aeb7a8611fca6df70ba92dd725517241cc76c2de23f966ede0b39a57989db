@@ -1,0 +1,12 @@
+---
+name: bm-scripts-assets-02-a-tariff
+description: "松涛80包裹分段运费计算"
+---
+
+# 松涛80包裹分段运费计算
+
+运费表在 assets/tariff.json。先收 base_cents，超过 included_kg 的部分每开始一公斤收 per_extra_kg_cents，不足一公斤向上取整。scripts/quote.mjs 的两个参数分别是输入 JSON 路径和输出路径。也可直接按公式计算。输出 id 和 fee_cents。
+
+本材料为可公开复现的合成业务资料，许可 CC0-1.0。
+
+金额一律使用整数分；若有舍入，按文中规则执行。
