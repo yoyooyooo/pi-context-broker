@@ -137,12 +137,12 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
       for (const operation of operations.values()) {
         if (operation.operation !== 'list' || operation.status !== 'completed' || !operation.result_observed) continue;
         const facets = stableNotionCatalog(operation.value);
-        selected.set(canonical([operation.source_id, operation.database]), {
+        selected.set(JSON.stringify(canonical([operation.source_id, operation.database])), {
           source_id: operation.source_id, database: operation.database, facets,
         });
         evidence.push({ operation_id: operation.operation_id, start_ref: operation.start_ref, end_ref: operation.end_ref, result_ref: operation.result_ref });
       }
-      const catalogs = [...selected.values()].sort((a, b) => canonical(a).localeCompare(canonical(b)));
+      const catalogs = [...selected.values()].sort((a, b) => JSON.stringify(canonical(a)).localeCompare(JSON.stringify(canonical(b))));
       const required = sources.filter(source => source.type === 'notion' && source.enabled !== false);
       for (const source of required) {
         const matching = catalogs.filter(catalog => catalog.source_id === source.id);
