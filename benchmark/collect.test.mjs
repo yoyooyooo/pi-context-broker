@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { canonicalJson, fingerprint } from './protocol.mjs';
 import { collectEpisode, collectRawUsage, deliveredSourceBodies, deriveRedactedProviderBinding } from './collect.mjs';
 import { exampleProtocol } from './analysis/fixtures.mjs';
+import { assertCompletedStandingEvidence } from './standing-campaign.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture({ outcome='pass', missingUsage=false, tools=[], source=false, opaque=false, capture=false, budgetStopped=false, adapter=true,
@@ -86,6 +87,36 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
 const collect=f=>collectEpisode({...f,...f.args});
 
 const routing={mode:'auto-route',model_variant:'grok-4.7',reported_model_ids:['grok-4.7','grok/grok-4.7']};
+function standingEvidenceInput(f,result) {
+  return { plan:{id:f.protocol.id,slots:[f.slot],execution:{environment_root:f.root},
+    protocol:{...f.protocol,environments:[{id:f.condition.environment_id,manifest_sha256:f.condition.environment_sha256,build:{id:f.raw.shared.build_id}}]}},
+  event:{...f.slot,run_id:f.raw.run_id,result:{normalized_directory:result.paths.bundle,episode_sha256:result.episode_sha256,
+    budget_usage:result.budget_usage,stop_batch:result.stop_batch,stop_reason:result.stop_reason}} };
+}
+test('standing verifier accepts the actual collector 1.2 normalized shape without a top-level core_evidence field',async t=>{
+  for(const api of ['openai-completions','openai-responses']){
+    const f=await fixture({routing,api,reportedModels:['grok-4.7']}),result=await collect(f);
+    t.diagnostic('Retained task-owned collector fixture: '+f.root);
+    assert.equal(result.collector_version,'1.2.0');assert.equal(result.bundle.episode.identity.collector_version,'1.2.0');
+    assert.equal(Object.hasOwn(result.bundle.episode,'core_evidence'),false);
+    assert.deepEqual(result.bundle.episode.admission.completeness,{attempts:'complete',tools:'complete',interventions:'complete'});
+    const {plan,event}=standingEvidenceInput(f,result);
+    await assertCompletedStandingEvidence(plan,event);
+  }
+});
+test('standing verifier rejects incomplete canonical admission while preserving an honest stopped observation',async t=>{
+  for(const dimension of ['attempts','tools','interventions']){
+    const f=await fixture({routing,reportedModels:['grok-4.7']});
+    t.diagnostic('Retained task-owned incomplete collector fixture: '+f.root);
+    f.raw.episode.coverage[dimension]='partial';await f.save(f.raw.result_path,f.raw.episode);
+    const result=await collect(f),{plan,event}=standingEvidenceInput(f,result);
+    assert.equal(result.bundle.episode.admission.completeness[dimension],'partial');
+    // A controller cannot describe an incomplete collection as safe to continue.
+    const continuing=structuredClone(event);continuing.result.stop_batch=false;
+    await assert.rejects(assertCompletedStandingEvidence(plan,continuing),/STANDING_NEW_CORE_(?:INVALID|INCOMPLETE)/);
+    if(result.stop_batch) await assertCompletedStandingEvidence(plan,event);
+  }
+});
 test('collector binds every original server label to its actual attempt and freezes the extraction module',async()=>{
   for(const api of ['openai-completions','openai-responses']){
     const result=await collect(await fixture({routing,api,reportedModels:['grok/grok-4.7','grok-4.7']}));
