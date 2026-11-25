@@ -63,6 +63,21 @@ This continuation applies to an operator slice, not a retained core-evidence
 stop. A core stop remains in force on later invocations until an eligible,
 verified analysis revision resolves it or a new protocol declares the repair.
 
+Each live finite-campaign boundary freshly verifies the registration chain,
+all authorized historical evidence and the current completed prefix. The latest
+full history proof also reconstructs every ancestor's accounting prefix and
+retains each ancestor's original-result requirements. The same boundary uses
+that verified amendment immediately; no proof survives into the next reservation.
+Dispatch repeats this check after acquiring the campaign lease.
+
+The controller checks both the invocation wall-clock budget and the absolute
+model window again after that proof, immediately before each exclusive pilot
+reservation. The window includes its start and excludes its end. Expiration
+closes the batch with `batch_budget_exhausted` or `model_window_closed` and
+does not start another episode or consume another reservation. A requested
+slice limit is an upper bound; use the recorded completed prefix and closure
+reason when deciding whether an independently authorized continuation is possible.
+
 ## Review the result
 
 ```sh

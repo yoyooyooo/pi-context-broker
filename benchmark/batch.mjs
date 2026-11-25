@@ -4,7 +4,7 @@ import { appendFile, mkdir, readFile, realpath, rename, writeFile } from 'node:f
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fingerprint, validateProtocol } from './protocol.mjs';
 import { verifyGateReference } from './gate.mjs';
-import { verifyCampaignScope, acquireCampaignLease, checkCampaignScope, campaignReservationFields, reconcileCampaignLease } from './campaign-dispatch.mjs';
+import { verifyCampaignScope, verifyCampaignDispatch, acquireCampaignLease, campaignReservationFields, reconcileCampaignLease } from './campaign-dispatch.mjs';
 import { isProspectiveCohort } from './prospective-cohort.mjs';
 import { scheduleProtocol } from './campaign-selection.mjs';
 export { scheduleProtocol } from './campaign-selection.mjs';
@@ -138,15 +138,16 @@ export async function batchStatus(controlRoot) {
 export async function runBatch({ plan, executeEpisode, maximumNewEpisodes = Infinity, reconcileEpisode, pilotLedgerRoot,
   analysisRevisionReference, analysisRevision }) {
   validateBatchPlan(plan);
-  await checkCampaignScope(plan);
-  const scopeAmendment = await verifyCampaignScope(plan, { analysisRevisionReference, analysisRevision });
+  const scopeAmendment = await verifyCampaignDispatch(plan, { analysisRevisionReference, analysisRevision });
   if (scopeAmendment && plan.execution.pilot_scope?.role === 'expansion') {
     const gate = await verifyRouteGate(plan, { analysisRevisionReference, analysisRevision });
     assert.ok(gate.passed, 'PILOT_SCOPE_GATE_REQUIRED: expansion cannot start before the prospective gate passes');
   }
   const release = scopeAmendment ? await acquireCampaignLease(plan, scopeAmendment) : null;
   try {
-    await checkCampaignScope(plan, { activate: true });
+    // The lease can be acquired after another controller changed the boundary.
+    // Re-read both registration and current evidence under our own lease.
+    await verifyCampaignDispatch(plan, { activate: true, analysisRevisionReference, analysisRevision });
     return await runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconcileEpisode, pilotLedgerRoot,
       analysisRevisionReference, analysisRevision, scopeAmendment });
   } finally { if (release) await release(); }
@@ -216,12 +217,17 @@ async function runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconci
     return sums;
   }
   let verifiedPilotGate = false;
-  async function reservePilot(runId, slot) {
+  function deadlineReason(condition, budget) {
+    if (performance.now() - startedAt >= budget.batch.max_duration_ms) return 'batch_budget_exhausted';
+    const model = plan.protocol.models.find(item => item.id === condition.model_id), now = Date.now();
+    if (now < Date.parse(model.backend.window.start) || now >= Date.parse(model.backend.window.end)) return 'model_window_closed';
+    return null;
+  }
+  async function reservePilot(runId, slot, condition, budget) {
     if (plan.protocol.phase !== 'pilot' && !plan.execution.campaign_scope) return;
     assert.equal(pilotLedgerRoot, plan.execution.pilot_ledger_root, 'Pilot ledger must remain bound to the frozen plan');
     assert.equal(await realpath(pilotLedgerRoot), pilotLedgerRoot, 'Pilot ledger cannot change to a symlink');
-    await checkCampaignScope(plan);
-    if (scopeAmendment) await verifyCampaignScope(plan, { forReservation: true });
+    await verifyCampaignDispatch(plan, { forReservation: Boolean(scopeAmendment) });
     const scopeFields = scopeAmendment ? campaignReservationFields(plan, scopeAmendment,
       { path: planPath, sha256: createHash('sha256').update(await readFile(planPath)).digest('hex') }) : {};
     // O_EXCL reservations make the cap independent of retries, batch names and concurrent controllers.
@@ -231,7 +237,11 @@ async function runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconci
         if (!gate.passed) throw Object.assign(new Error('Route evidence gate must pass before expanding beyond the first 24 scheduled episodes'), { code: 'ROUTE_GATE' });
         verifiedPilotGate = true;
       }
-      try { await save(join(pilotLedgerRoot, String(n).padStart(3, '0') + '.json'), { run_id: runId, experiment_id: plan.id, slot_id: slot.slot_id, at: new Date().toISOString(), ...scopeFields }); return n; }
+      // History, the legacy route gate and an EEXIST scan can cross a deadline.
+      // Check immediately before every exclusive reservation, not only before
+      // the costly proof. Expiration closes the batch without a started slot.
+      const reason = deadlineReason(condition, budget); if (reason) return { reason };
+      try { await save(join(pilotLedgerRoot, String(n).padStart(3, '0') + '.json'), { run_id: runId, experiment_id: plan.id, slot_id: slot.slot_id, at: new Date().toISOString(), ...scopeFields }); return { ordinal: n }; }
       catch (error) { if (error.code !== 'EEXIST') throw error; }
     }
     throw Object.assign(new Error('Pilot scheduling cap reached including invalid and replacements'), { code: 'PILOT_CAP' });
@@ -259,13 +269,18 @@ async function runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconci
     const condition = plan.protocol.conditions.find(c => c.id === slot.condition_id);
     const budget = limits.find(b => b.id === condition.budget_id), used = usageFor(budget.id);
     if (used.unknown) { stopReason = 'unknown_budget_usage'; break; }
-    if (used.episodes >= budget.batch.max_episodes || performance.now() - startedAt >= budget.batch.max_duration_ms
+    const deadline = deadlineReason(condition, budget);
+    if (deadline) { stopReason = deadline; break; }
+    if (used.episodes >= budget.batch.max_episodes
       || ['model_requests', 'input_tokens', 'output_tokens', 'duration_ms'].some(k => used[k] + budget.episode['max_' + k] > budget.batch['max_' + k])) {
       stopReason = 'batch_budget_exhausted'; break;
     }
     const runId = plan.id + '-' + String(slot.order + 1).padStart(3, '0');
     assert.ok(safe(runId));
-    try { await reservePilot(runId, slot); }
+    try {
+      const reservation = await reservePilot(runId, slot, condition, budget);
+      if (reservation?.reason) { stopReason = reservation.reason; break; }
+    }
     catch (error) {
       if (!['PILOT_CAP', 'COHORT_CAP', 'ROUTE_GATE'].includes(error.code)) throw error;
       stopReason = error.code === 'PILOT_CAP' ? 'pilot_cap' : error.code === 'COHORT_CAP' ? 'cohort_cap' : 'route_gate_pending'; break;

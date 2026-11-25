@@ -3,7 +3,12 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, realpath, writeFile, rename, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { test, before, after, mock } from 'node:test';
+
+// Synthetic protocols declare this fixed route window. Production dispatch now
+// checks it before reserving a slot as well as before starting the subject.
+before(() => mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-22T12:00:00Z') }));
+after(() => mock.timers.reset());
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { fingerprint, validateProtocol } from './protocol.mjs';
@@ -14,7 +19,7 @@ import { writeRouteGate, verifyGateReference } from './gate.mjs';
 import { pilotScopePolicy, preparePilotScope, readPilotScopeAmendment, scopeReservationFields } from './pilot-scope.mjs';
 import { PROSPECTIVE_COHORT, readCohortHistory } from './prospective-cohort.mjs';
 import { FINITE_CAMPAIGN, finiteCampaignPolicy, prepareFiniteCampaign, assertFiniteCampaignPlan,
-  readFiniteCampaignAmendment, verifyFiniteCampaign, verifyFiniteCampaignScope, finiteCampaignReservationFields, readFiniteCampaignHistory, readAliasRevisionHistory, verifyFiniteOriginalResults, readAcceptedHistoryExtension, readAcceptedConfirmationContinuation, readProviderStopCampaignHistory } from './finite-campaign.mjs';
+  readFiniteCampaignAmendment, verifyFiniteCampaign, verifyFiniteCampaignScope, finiteCampaignReservationFields, readFiniteCampaignHistory, readAliasRevisionHistory, verifyFiniteOriginalResults, readAcceptedHistoryExtension, readAcceptedConfirmationContinuation, readProviderStopCampaignHistory, assertHistoricalAccountingPrefixes, assertHistoricalOriginalResult } from './finite-campaign.mjs';
 import { exampleEnvelope } from './analysis/fixtures.mjs';
 import { normalizeEpisode } from './evidence/normalize.mjs';
 import { writeEvidenceBundle } from './evidence/store.mjs';
@@ -23,7 +28,7 @@ import { prepareApprovedCampaign, prepareApprovedCampaignRevision, prepareApprov
 import { declaredSchedule, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION } from './campaign-selection.mjs';
 import { startupCaptureSchedule, captureBindingsForCase } from './configure.mjs';
 import { scoreExperiment } from './analysis/compare.mjs';
-import { checkCampaignScope } from './campaign-dispatch.mjs';
+import { checkCampaignScope, verifyCampaignDispatch } from './campaign-dispatch.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n');
@@ -282,6 +287,7 @@ test('explicit approval advances the exact stopped 50-prefix, while old scope an
     for (const reference of [f.approvedDocument.user_approval, f.approvedDocument.proposal]) {
       const bytes = await readFile(reference.path); await writeFile(reference.path, Buffer.concat([bytes, Buffer.from(' ')]));
       await assert.rejects(verifyFiniteCampaignScope(gate.plan, { forReservation: true }), /REFERENCED_BYTES_CHANGED/);
+      await assert.rejects(verifyCampaignDispatch(gate.plan, { forReservation: true }), /REFERENCED_BYTES_CHANGED/);
       await writeFile(reference.path, bytes);
     }
     const original = f.approvalInputs;
@@ -575,6 +581,85 @@ test('campaign scope checks fully reread the registered current once and preserv
     finally { await rename(leasePath, join(f.owner, 'retained-registration-check-lease.json')); }
     await checkCampaignScope(plan);
   });
+
+  await t.test('a fresh combined boundary detects same-length raw changes and changed registration references', async () => {
+    await verifyCampaignDispatch(plan);
+    const episode = await read(join(current.amendment.history.episodes[0].directory, 'episode.json'));
+    const rawPath = episode.artifacts[0].path, bytes = await readFile(rawPath), changed = Buffer.from(bytes);
+    changed[0] ^= 1;
+    try {
+      await writeFile(rawPath, changed);
+      await assert.rejects(verifyCampaignDispatch(plan), /hash|changed|mismatch/i);
+    } finally { await writeFile(rawPath, bytes); }
+    await verifyCampaignDispatch(plan);
+    const registrationBytes = await readFile(registrationPath), registration = JSON.parse(registrationBytes);
+    try {
+      registration.amendment.sha256 = '0'.repeat(64); await save(registrationPath, registration);
+      await assert.rejects(verifyCampaignDispatch(plan), /reference changed/i);
+    } finally { await writeFile(registrationPath, registrationBytes); }
+  });
+
+  await t.test('latest history proves every older accounting field, not only the episode prefix', async () => {
+    const history = current.amendment.history, planIds = new Map();
+    for (const item of history.plans) planIds.set(item.plan.path, (await read(item.plan.path)).id);
+    assertHistoricalAccountingPrefixes(history, [history], planIds);
+    const changes = [
+      h => { h.known_subtotal.input_tokens++; }, h => { h.total_usage.model_requests = 0; },
+      h => { h.total_usage_status = 'known'; }, h => { h.monetary_status = 'priced'; },
+      h => { h.unknown_usage_run_ids.reverse(); }, h => { h.plans.reverse(); },
+      h => { h.plans[0].analysis_revision = { path: '/foreign', sha256: '0'.repeat(64) }; },
+      h => { h.reservations[0].reference.sha256 = '0'.repeat(64); }
+    ];
+    for (const change of changes) {
+      const altered = structuredClone(history); change(altered);
+      assert.throws(() => assertHistoricalAccountingPrefixes(history, [altered], planIds), /PREFIX_ACCOUNTING_CHANGED/);
+    }
+  });
+});
+
+test('the latest registered reader rejects a resealed older finite accounting aggregate', async () => {
+  const f = await fixture(), first = await prepare(f, { id: 'prefix-owner' });
+  await writeClosedPlan(first.plan, { startOrdinal: f.count + 1 });
+  const afterFirst = await successor(f, first, 3), latest = await prepare(afterFirst, { id: 'prefix-latest' });
+  await checkCampaignScope(latest.plan, { activate: true });
+  const firstAmendmentPath = first.plan.execution.campaign_scope.amendment.path;
+  const changed = await read(firstAmendmentPath); changed.history.known_subtotal.input_tokens++;
+  changed.amendment_sha256 = fingerprint({ ...changed, amendment_sha256: null }); await save(firstAmendmentPath, changed);
+  const changedAmendmentRef = await reference(firstAmendmentPath);
+  first.plan.execution.campaign_scope.amendment = changedAmendmentRef; resealPlan(first.plan);
+  const firstPlanPath = join(first.plan.execution.control_root, 'plan.json'); await save(firstPlanPath, first.plan);
+  const changedPlanRef = await reference(firstPlanPath), firstRegistrationPath = join(f.pilot, 'scope-registration-003.json');
+  const firstRegistration = await read(firstRegistrationPath); firstRegistration.amendment = changedAmendmentRef;
+  await save(firstRegistrationPath, firstRegistration); const changedRegistrationRef = await reference(firstRegistrationPath);
+  for (let ordinal = f.count + 1; ordinal <= afterFirst.count; ordinal++) {
+    const path = join(f.pilot, String(ordinal).padStart(3, '0') + '.json'), reservation = await read(path);
+    Object.assign(reservation, { plan: changedPlanRef, plan_sha256: first.plan.plan_sha256, scope_amendment_sha256: changed.amendment_sha256 });
+    await save(path, reservation);
+  }
+  const latestPath = latest.plan.execution.campaign_scope.amendment.path, amendedLatest = await read(latestPath);
+  amendedLatest.predecessor = { registration: changedRegistrationRef, amendment: changedAmendmentRef };
+  amendedLatest.history.plans.find(item => item.plan.path === firstPlanPath).plan = changedPlanRef;
+  for (const item of amendedLatest.history.reservations) item.reference = await reference(item.reference.path);
+  amendedLatest.amendment_sha256 = fingerprint({ ...amendedLatest, amendment_sha256: null }); await save(latestPath, amendedLatest);
+  latest.plan.execution.campaign_scope.amendment = await reference(latestPath); resealPlan(latest.plan);
+  await save(join(latest.plan.execution.control_root, 'plan.json'), latest.plan);
+  const latestRegistrationPath = join(f.pilot, 'scope-registration-004.json'), latestRegistration = await read(latestRegistrationPath);
+  latestRegistration.predecessor = changedRegistrationRef; latestRegistration.amendment = latest.plan.execution.campaign_scope.amendment;
+  await save(latestRegistrationPath, latestRegistration);
+  await assert.rejects(checkCampaignScope(latest.plan), /FINITE_HISTORY_PREFIX_ACCOUNTING_CHANGED/);
+});
+
+test('a later accepted baseline cannot waive an earlier original-result interval', async () => {
+  const f = await fixture(), plan = await read(f.historyPlans[2]), slot = plan.slots[0];
+  const result = await resultFor(plan, slot, 'ancestor-original-core', { valid: false });
+  const input = { plan, event: { ...slot, run_id: 'ancestor-original-core', result }, ordinal: 14, hasRevision: true };
+  const required = [{ after: 13, through: 37 }];
+  await assertHistoricalOriginalResult(input, 104);
+  await assert.rejects(assertHistoricalOriginalResult(input, 104, required), /FINITE_ORIGINAL_CORE_INVALID/);
+  await assert.rejects(assertHistoricalOriginalResult({ ...input,
+    event: { ...input.event, result: { ...result, stop_batch: true } } }, 104, required), /FINITE_ORIGINAL_CORE_STOP/);
+  await assert.rejects(assertHistoricalOriginalResult({ ...input,
+    event: { ...input.event, result: { ...result, budget_usage: { ...result.budget_usage, input_tokens: null } } } }, 104, required), /FINITE_ORIGINAL_UNKNOWN_USAGE/);
 });
 
 test('actual batch dispatch charges the shared ledger under its campaign lease for gate and genuine confirmation', async () => {

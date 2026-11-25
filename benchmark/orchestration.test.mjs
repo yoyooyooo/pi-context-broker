@@ -2,13 +2,20 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { test, before, after, mock } from 'node:test';
+
+// Synthetic protocols declare this fixed route window. Production dispatch now
+// checks it before reserving a slot as well as before starting the subject.
+before(() => mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-22T12:00:00Z') }));
+after(() => mock.timers.reset());
 import { fingerprint } from './protocol.mjs';
 import { createPreregistrationTemplate } from './templates/preregistration.mjs';
 import { freezeBatchPlan, runBatch } from './batch.mjs';
 import { snapshotModels } from './models.mjs';
 import { ensureRemoteParent } from './remote.mjs';
 import { preregisterComparison } from './planning.mjs';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 
 // These identities exist only to test the controller. No synthetic test result is a Benchmark score.
 function protocol() {
@@ -39,6 +46,82 @@ async function plan() {
   return freezeBatchPlan({ protocol: protocol(), execution: { environment_root: root, control_root: join(root, 'batch') } });
 }
 const knownResult = () => ({ status: 'completed', budget_usage: { model_requests: 1, input_tokens: 30, output_tokens: 10, duration_ms: 50 } });
+
+async function deadlinePlan() {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-reservation-deadline-'))), pilot = join(root, 'pilot');
+  await mkdir(pilot);
+  const p = protocol(); p.phase = 'pilot'; p.protocol_sha256 = fingerprint({ ...p, protocol_sha256: null });
+  return freezeBatchPlan({ protocol: p, execution: { environment_root: root, control_root: join(root, 'batch'), pilot_ledger_root: pilot } });
+}
+
+for (const deadline of ['batch', 'model']) test('a ' + deadline + ' deadline reached during proof closes before reservation', async t => {
+  const p = await deadlinePlan(), pilot = p.execution.pilot_ledger_root;
+  const registration = join(pilot, 'scope-registration.json'), ledger = join(p.execution.control_root, 'ledger.jsonl');
+  const originalRead = fs.promises.readFile; let reached = false, monotonic = 0, now = Date.parse('2026-11-22T12:00:00Z');
+  t.mock.method(performance, 'now', () => monotonic); t.mock.method(Date, 'now', () => now);
+  fs.promises.readFile = async (...args) => {
+    if (String(args[0]) === registration && !reached) {
+      let text = ''; try { text = await originalRead(ledger, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (text.includes('batch_opened')) {
+        reached = true;
+        if (deadline === 'batch') monotonic = p.protocol.policies.budgets[0].batch.max_duration_ms;
+        else now = Date.parse(p.protocol.models[0].backend.window.end);
+      }
+    }
+    return originalRead(...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    const status = await runBatch({ plan: p, executeEpisode: () => assert.fail('Deadline must block the subject') });
+    assert.equal(reached, true, 'The clock must cross after batch_opened during reservation proof');
+    assert.equal(status.last.reason, deadline === 'batch' ? 'batch_budget_exhausted' : 'model_window_closed');
+    assert.equal(status.last.new_episodes, 0); assert.equal(status.scheduled, 0); assert.deepEqual(status.unresolved_runs, []);
+    assert.deepEqual((await readdir(pilot)).filter(name => /^\d{3}\.json$/.test(name)), []);
+    assert.equal((await readdir(p.execution.control_root)).includes('lease.json'), false);
+  } finally { fs.promises.readFile = originalRead; syncBuiltinESMExports(); }
+});
+
+test('a model deadline reached in an EEXIST scan cannot reserve the next ordinal', async t => {
+  const p = await deadlinePlan(), pilot = p.execution.pilot_ledger_root, occupied = join(pilot, '001.json');
+  const retained = '{"existing":"retained"}\n'; await writeFile(occupied, retained);
+  let now = Date.parse('2026-11-22T12:00:00Z'), attempted = 0;
+  t.mock.method(Date, 'now', () => now);
+  const originalWrite = fs.promises.writeFile;
+  fs.promises.writeFile = async (...args) => {
+    if (String(args[0]) === occupied && args[2]?.flag === 'wx') {
+      attempted++;
+      try { return await originalWrite(...args); }
+      catch (error) { if (error.code === 'EEXIST') now = Date.parse(p.protocol.models[0].backend.window.end); throw error; }
+    }
+    return originalWrite(...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    const status = await runBatch({ plan: p, executeEpisode: () => assert.fail('Expired scan must not dispatch') });
+    assert.equal(attempted, 1); assert.equal(status.last.reason, 'model_window_closed');
+    assert.equal(status.scheduled, 0); assert.deepEqual(status.unresolved_runs, []);
+    assert.deepEqual((await readdir(pilot)).filter(name => /^\d{3}\.json$/.test(name)), ['001.json']);
+    assert.equal(await readFile(occupied, 'utf8'), retained);
+  } finally { fs.promises.writeFile = originalWrite; syncBuiltinESMExports(); }
+});
+
+test('an already closed model window records a zero-start batch without spending a reservation', async t => {
+  const p = await deadlinePlan(); t.mock.method(Date, 'now', () => Date.parse(p.protocol.models[0].backend.window.end));
+  const status = await runBatch({ plan: p, executeEpisode: () => assert.fail('Closed window must not dispatch') });
+  assert.equal(status.last.reason, 'model_window_closed'); assert.equal(status.last.new_episodes, 0);
+  assert.deepEqual(status.unresolved_runs, []); assert.equal(status.scheduled, 0);
+  assert.deepEqual((await readdir(p.execution.pilot_ledger_root)).filter(name => /^\d{3}\.json$/.test(name)), []);
+});
+
+test('model-window start is inclusive and the preceding instant cannot reserve', async t => {
+  const before = await deadlinePlan(), atStart = Date.parse(before.protocol.models[0].backend.window.start); let now = atStart - 1;
+  t.mock.method(Date, 'now', () => now);
+  const closed = await runBatch({ plan: before, executeEpisode: () => assert.fail('Not yet inside the model window') });
+  assert.equal(closed.last.reason, 'model_window_closed'); assert.equal(closed.scheduled, 0);
+  const opened = await deadlinePlan(); now = atStart;
+  const accepted = await runBatch({ plan: opened, executeEpisode: async () => knownResult(), maximumNewEpisodes: 1 });
+  assert.equal(accepted.completed, 1); assert.equal(accepted.last.reason, 'operator_slice_limit');
+});
 
 test('comparison registration freezes optional analysis policy before execution', () => {
   const p = protocol();

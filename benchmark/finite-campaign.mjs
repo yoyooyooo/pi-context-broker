@@ -278,11 +278,14 @@ async function originalLedger(plan) {
   return bytes.toString('utf8').split('\n').filter(Boolean).map((line, index) => { const row = JSON.parse(line); assert.equal(row.seq, index + 1); return row; });
 }
 
-export async function readFiniteCampaignHistory({ prospectiveAuthorization, ...options }) {
-  const authorized = prospectiveAuthorization ? await readApprovedCampaign(prospectiveAuthorization) : null;
+export async function assertHistoricalOriginalResult(input, approvedBoundary, requiredIntervals = []) {
+  const required = input.ordinal > approvedBoundary || requiredIntervals.some(({ after, through }) => input.ordinal > after && input.ordinal <= through);
+  if (required) await assertOriginalCompleted(input);
+}
+
+async function readHistoryWithAuthority(options, authorized, requiredIntervals = []) {
   const history = await readCampaignHistory({ ...options, assertPlan: assertHistoricalPlan,
-    assertOriginalCompleted: input => authorized && input.ordinal <= authorized.value.history.scheduled_episodes
-      ? undefined : assertOriginalCompleted(input),
+    assertOriginalCompleted: input => assertHistoricalOriginalResult(input, authorized?.value.history.scheduled_episodes ?? 13, requiredIntervals),
     assertModelEvidence: (episode, model, plan) => {
       if (authorized?.retainedProviderStop && episode.identity.run_id === authorized.retainedProviderStop.run_id)
         assertRetainedProviderStopEpisode(episode, model, plan, authorized.retainedProviderStop);
@@ -292,6 +295,11 @@ export async function readFiniteCampaignHistory({ prospectiveAuthorization, ...o
     } });
   if (authorized) assertPrefix(history, authorized.value.history);
   return history;
+}
+
+export async function readFiniteCampaignHistory({ prospectiveAuthorization, ...options }) {
+  const authorized = prospectiveAuthorization ? await readApprovedCampaign(prospectiveAuthorization) : null;
+  return readHistoryWithAuthority(options, authorized);
 }
 
 /** Read the exact next, stopped route result for a prospective alias repair.
@@ -353,6 +361,26 @@ function assertPrefix(current, expected) {
   assert.ok(current.scheduled_episodes >= expected.scheduled_episodes);
   for (const key of ['reservations', 'episodes']) assert.deepEqual(current[key].slice(0, expected.scheduled_episodes), expected[key], 'FINITE_HISTORY_PREFIX_CHANGED');
   for (const entry of expected.plans) assert.deepEqual(current.plans.find(item => item.plan.path === entry.plan.path), entry, 'FINITE_HISTORY_OWNER_CHANGED');
+}
+
+/** A latest raw-history proof also proves older prefixes only when every old
+ * aggregate and owner record is reconstructed, not merely its episode list. */
+export function assertHistoricalAccountingPrefixes(history, prefixes, planIds) {
+  for (const expected of prefixes) {
+    const count = expected.scheduled_episodes, episodes = history.episodes.slice(0, count);
+    assert.equal(episodes.length, count, 'FINITE_HISTORY_PREFIX_TRUNCATED');
+    const owners = new Set(episodes.map(episode => episode.experiment_id));
+    const known_subtotal = Object.fromEntries(usageKeys.map(key => [key,
+      episodes.reduce((sum, episode) => sum + (episode.budget_usage[key] ?? 0), 0)]));
+    const unknown_usage_run_ids = episodes.filter(episode => !knownUsage(episode.budget_usage)).map(episode => episode.run_id).sort();
+    const prefix = { reservations: history.reservations.slice(0, count),
+      plans: history.plans.filter(item => owners.has(planIds.get(item.plan.path))), episodes,
+      unknown_usage_run_ids, known_subtotal,
+      total_usage: Object.fromEntries(usageKeys.map(key => [key,
+        episodes.every(episode => episode.budget_usage[key] !== null) ? known_subtotal[key] : null])),
+      total_usage_status: unknown_usage_run_ids.length ? 'incomplete' : 'known', monetary_status: 'unpriced', scheduled_episodes: count };
+    assert.deepEqual(prefix, expected, 'FINITE_HISTORY_PREFIX_ACCOUNTING_CHANGED');
+  }
 }
 async function predecessorRegistration(value, predecessor) {
   const ref = value.predecessor.registration; assert.equal(dirname(ref.path), value.pilot_ledger_root);
@@ -540,16 +568,24 @@ async function readLineage(reference, seen = new Set(), context = { allocations:
   const value = await shallowFinite(reference), predecessor = await readLineage(value.predecessor.amendment, seen, context);
   const authorized = await authorizedScope(value, context);
   await predecessorRegistration(value, predecessor); await assertPredecessorComplete(value, predecessor, authorized);
+  context.histories?.push(value.history);
+  context.originalIntervals?.push({ after: authorized?.value.history.scheduled_episodes ?? 13, through: value.history.scheduled_episodes });
   return value;
 }
 
 export async function verifyFiniteCampaign(value) {
   assertShape(value);
-  const context = { allocations: new Set() }, predecessor = await readLineage(value.predecessor.amendment, new Set(), context);
+  const context = { allocations: new Set(), histories: [], originalIntervals: [] }, predecessor = await readLineage(value.predecessor.amendment, new Set(), context);
   const authorized = await authorizedScope(value, context);
   await predecessorRegistration(value, predecessor); await assertPredecessorComplete(value, predecessor, authorized);
-  await readFiniteCampaignHistory({ planFiles: value.history.plans.map(item => item.plan.path), pilotLedgerRoot: value.pilot_ledger_root, expected: value.history,
-    ...(authorized ? { prospectiveAuthorization: value.prospective_authorization.reference } : {}) });
+  // A later accepted baseline cannot waive an earlier amendment's original
+  // result predicates. Apply their required ordinal intervals to this one raw
+  // history read, then reconstruct every older complete accounting prefix.
+  const history = await readHistoryWithAuthority({ planFiles: value.history.plans.map(item => item.plan.path),
+    pilotLedgerRoot: value.pilot_ledger_root, expected: value.history }, authorized, context.originalIntervals);
+  const planIds = new Map();
+  for (const entry of history.plans) planIds.set(entry.plan.path, (await verified(entry.plan)).id);
+  assertHistoricalAccountingPrefixes(history, context.histories, planIds);
   return value;
 }
 export async function readFiniteCampaignAmendment(reference) {
@@ -611,7 +647,16 @@ export function finiteCampaignReservationFields(plan, amendment, planReference) 
 export async function verifyFiniteCampaignScope(plan, options = {}) {
   const registration = plan.execution.campaign_scope;
   if (!registration) { assert.equal(plan.protocol.policies.campaign, undefined); return null; }
-  const amendment = await readFiniteCampaignAmendment(registration.amendment); assertFiniteCampaignPlan(plan, amendment);
+  const amendment = await readFiniteCampaignAmendment(registration.amendment);
+  return verifyFiniteCampaignCurrentState(plan, amendment, options);
+}
+
+/** Internal handoff from the historical reader above or the live dispatch
+ * boundary. Both fully read this amendment in the same call before entering.
+ * This helper checks the mutable current prefix, not the amendment's history;
+ * it is never selected by a caller-supplied cache or skip option. */
+export async function verifyFiniteCampaignCurrentState(plan, amendment, options = {}) {
+  assertFiniteCampaignPlan(plan, amendment);
   const continuedSource = amendment.version === 2 ? await assertAuthorizedProtocol(plan.protocol, plan.execution, plan.slots, amendment,
     await readApprovedCampaign(amendment.prospective_authorization.reference)) : undefined;
   await assertConfirmationUnexposed(plan.protocol, plan.execution, amendment.history, continuedSource);
