@@ -18,7 +18,10 @@ export function reviewedDirectoryInventoryProgram(name, file) {
     ]);
     return known.get(file.sha256) === file.bytes;
   }
-  return ['bash', 'ls', 'head'].includes(name) && ['/bin/' + name, '/usr/bin/' + name].includes(file.realpath) && file.uid === 0;
+  const canonicalPaths = ['/bin/' + name, '/usr/bin/' + name];
+  // Ubuntu 26.04 resolves its system ls to this root-owned uutils path.
+  if (name === 'ls') canonicalPaths.push('/usr/lib/cargo/bin/coreutils/ls');
+  return ['bash', 'ls', 'head'].includes(name) && canonicalPaths.includes(file.realpath) && file.uid === 0;
 }
 
 

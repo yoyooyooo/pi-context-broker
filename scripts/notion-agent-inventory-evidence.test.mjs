@@ -6,7 +6,7 @@ import * as crypto from 'node:crypto';
 import * as diagnostics from 'node:diagnostics_channel';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { directoryInventoryPlan, captureDirectoryInventorySpawn, verifyNotionAgentDirectoryInventory } from './notion-agent-inventory-evidence.mjs';
+import { directoryInventoryPlan, reviewedDirectoryInventoryProgram, captureDirectoryInventorySpawn, verifyNotionAgentDirectoryInventory } from './notion-agent-inventory-evidence.mjs';
 
 const sha = value => crypto.createHash('sha256').update(value).digest('hex');
 const now = () => process.hrtime.bigint().toString();
@@ -17,6 +17,17 @@ test('inventory grammar excludes shell execution and ripgrep subprocess/configur
     'ls ' + String.fromCharCode(96) + 'touch changed' + String.fromCharCode(96), 'PATH=/other ls', 'rg --pre tool --files',
     'rg --files | bash', 'rg --files | head -n -50', 'ls; ', 'pwd && ls', 'rg --files | head -0', 'rg --files | head -301', 'ls /outside', 'bash -c pwd', 'pwd &', 'ls\\n; pwd'])
     assert.equal(directoryInventoryPlan(command), undefined, command);
+});
+
+test('program review permits only the observed root-owned uutils ls target', () => {
+  const file = { path: '/bin/ls', realpath: '/usr/lib/cargo/bin/coreutils/ls',
+    bytes: 1, sha256: 'a'.repeat(64), uid: 0, mode: 0o755 };
+  assert.equal(reviewedDirectoryInventoryProgram('ls', file), true);
+  for (const change of [{ uid: 1 }, { mode: 0o775 }, { mode: 0o757 }, { mode: 0o644 },
+    { realpath: '/usr/lib/cargo/bin/coreutils/head' }, { realpath: '/usr/bin/coreutils' },
+    { realpath: '/tmp/coreutils/ls' }])
+    assert.equal(reviewedDirectoryInventoryProgram('ls', { ...file, ...change }), false);
+  for (const name of ['bash', 'head', 'rg']) assert.equal(reviewedDirectoryInventoryProgram(name, file), false);
 });
 
 test('real child inventory permits result before close within its observation; unknown contexts fail', async () => {
