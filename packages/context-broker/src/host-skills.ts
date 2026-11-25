@@ -1803,10 +1803,12 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     // Without an independent lookup, failed discovery cannot establish absence.
     if (!candidates.length && !options.lookupReference && discoveryError) throw discoveryError;
     const active = gate.active?.prepared ?? (turnPrompts?.signal.aborted ? undefined : turnPrompts?.snapshots);
-    const scopes = [...(active?.values() ?? [])].filter(record => record.sourceScope !== undefined);
-    // An explicit owner is a call target, independent of the ambient task roots.
-    // Its source, current authorization scope and ambiguity are checked below.
-    if (!short && !hasExactNativeOwner(reference) && scopes.length)
+    // A complete reference selects its Library. Only active scopes in that
+    // Library may disambiguate its configured sources.
+    const targetLibrary = hasExactNativeOwner(reference) ? nativeReferenceLibrary(reference) : undefined;
+    const scopes = [...(active?.values() ?? [])].filter(record => record.sourceScope !== undefined
+      && (targetLibrary === undefined || record.locator?.type === "shared_skill" && record.locator.library_id === targetLibrary));
+    if (!short && scopes.length)
       candidates = candidates.filter(record => scopes.some(scope => scope.sourceId === record.sourceId && scope.sourceScope === record.sourceScope));
     if (candidates.length > 1) throw new InvocationError(selector, "ambiguous", candidates);
     const selected = candidates[0];
