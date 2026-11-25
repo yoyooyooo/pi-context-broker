@@ -11,13 +11,13 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "4edc7c05100c7047c9e8074e53fd15130c1c35da6ee2db789ba344b53c01efc5",
+    "packages/context-broker/src/host-skills.ts": "9913f66446ba51f4f3cb1800a0879af3859a28fc064c879c218de9fc26ffd33e",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "dc3c97493542f11345aadbc35e2b49e351f1047cf5063ed50e09b2177b312622",
     "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
-    "packages/context-broker/scripts/host-prepare.test.ts": "a2cd528eacacff58207764b10db77388551207434a8370a2e9b67725163257fc",
+    "packages/context-broker/scripts/host-prepare.test.ts": "a7630e6d33f377d830db3a5e06dc184d71aafe2b9f6a6d6c313f877a7d87913c",
     "packages/context-broker/scripts/session-active.test.ts": "9e6b85e7db03965db5dbe5a2741472c2eee9c32e09f80c484f92f093d0d17186",
     "packages/context-broker/scripts/native-read-session.test.ts": "a00f16b9c35e3a3a03e31665aff043534bd8385d97e15e4948af9703ff1fcab1",
     "packages/context-broker/scripts/skill-context-session.test.ts": "f9917449d7af5c0f1c111b8966b8b98717bf8e2cd709f0ba9fd3eb9a7eb891c6",
@@ -1179,7 +1179,14 @@
       "guard_review": "Reviewed Availability, ReadRace, FreshnessPublication, SelectionGraph, DeliveryBoundary and RecoveryClosure mappings: no change to evidence/order/epoch/cancel/authorization, fixed-root or Requires commit, full body/serializer, active/pending projection or recovery guards. Presentation is not a new state writer. Added early-replay and ownership tests preserve existing execution assertions. 74 focused regressions and real Pi list/use/read plus fresh-process resume passed on bee95e8; CI must re-run all existing formal cases and actual guard mutations.",
       "proof_limit": "No change to finite domains, model actions, rules, cases or mutation targets. These hashes bind reviewed bytes only, not a refinement proof or live UI acceptance."
     },
-    "library_root_pi_rendering_integration": "Reviewed the Library root implementation rebased onto fa758957c799e886dd25069da19c283e9ab97387. Relative to the reviewed Library host, host-skills.ts adds only the optional renderer factory and two renderer spreads before explicit tool fields. All input admission, owner, Library selection, request ordering, publication, cancellation and graph commit guards retain their exact bytes. pi-host-adapter.ts is exactly the reviewed current next implementation. pi-read-adapter.test.ts retains the Library reference fixtures and adds the upstream replay/third-party ownership tests without weakening existing assertions. The consumption command includes both Library selection and renderer suites. Retest the combined source; these hashes are correspondence only, not a refinement proof or live acceptance."
+    "library_root_pi_rendering_integration": "Reviewed the Library root implementation rebased onto fa758957c799e886dd25069da19c283e9ab97387. Relative to the reviewed Library host, host-skills.ts adds only the optional renderer factory and two renderer spreads before explicit tool fields. All input admission, owner, Library selection, request ordering, publication, cancellation and graph commit guards retain their exact bytes. pi-host-adapter.ts is exactly the reviewed current next implementation. pi-read-adapter.test.ts retains the Library reference fixtures and adds the upstream replay/third-party ownership tests without weakening existing assertions. The consumption command includes both Library selection and renderer suites. Retest the combined source; these hashes are correspondence only, not a refinement proof or live acceptance.",
+    "explicit_full_owner_use": {
+      "reviewed_from": "a62262c6be526ac8054eeab3d5c72829021e606d",
+      "routing": "Reviewed the real cross-Library use counterexample: an unknown complete current owner now enters the existing scoped resolver. Known canonical candidates and every fixed snapshot retain their previous path. An explicit complete owner is not narrowed by ambient prepared roots; current Source availability, established credential scope and ambiguity still gate the chosen record.",
+      "preserved_guards": "Resolver return identity/path/snapshot, enabled metadata, lifecycle generation/session/cancellation, short-handle source binding, authored relative ownership, selected pins, confirmed fixed restoration, graph validation and delayed commit retain their guards. No default Library selection or catalog publication is changed.",
+      "regressions": "The existing host-prepare suite now exercises canonical root and neutral transport alias with A present or absent from the directory while B is prepared; wrong owner and established scope; cancel/session/generation; and an authored short target retaining its own selected old pin. Existing production host-refresh fixed-read denial, scope, released/foreign branch and prior-confirmation cases remain passing.",
+      "proof_limit": "This is controlled source regression evidence, not a successful natural replay or final installed/native CI. The LibrarySession explicit-call versus ambient-default contract already requires this routing distinction. No finite model, bound, case inventory, expected rule or mutation target changed; these hashes bind the inspected owner and regression bytes only."
+    }
   },
   "library_session_design": {
     "status": "implementation_correspondence_reviewed",

@@ -235,7 +235,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const resolved = resolveReference(value, ctx), requested = resolved.reference;
     const physicalPage = notionPageId(requested.selector);
     const canonical = hasExactNativeOwner(requested);
-    if (resolved.short || canonical || !physicalPage && !options.resolveSkillReference)
+    // Fixed references retain the selected/confirmed read path. An unknown
+    // current owner must use the scoped resolver, not the ambient Library list.
+    const known = canonical && (requested.snapshot !== undefined || [...hostRecords.values()].some(record =>
+      record.source === "notion" && record.ref?.startsWith("skill://") && parseNativeReference(record.ref).selector === requested.selector));
+    if (resolved.short || known || !physicalPage && !options.resolveSkillReference)
       return { ...resolved, canonicalRef: resolved.short?.canonicalRef ?? value };
     if (!options.resolveSkillReference) throw hostError("SOURCE_REFERENCE_MISSING");
     const observedGeneration = generation, sessionId = ctx.sessionManager?.getSessionId?.(), sessionFile = ctx.sessionManager?.getSessionFile?.();
@@ -1800,7 +1804,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (!candidates.length && !options.lookupReference && discoveryError) throw discoveryError;
     const active = gate.active?.prepared ?? (turnPrompts?.signal.aborted ? undefined : turnPrompts?.snapshots);
     const scopes = [...(active?.values() ?? [])].filter(record => record.sourceScope !== undefined);
-    if (!short && scopes.length) candidates = candidates.filter(record => scopes.some(scope => scope.sourceId === record.sourceId && scope.sourceScope === record.sourceScope));
+    // An explicit owner is a call target, independent of the ambient task roots.
+    // Its source, current authorization scope and ambiguity are checked below.
+    if (!short && !hasExactNativeOwner(reference) && scopes.length)
+      candidates = candidates.filter(record => scopes.some(scope => scope.sourceId === record.sourceId && scope.sourceScope === record.sourceScope));
     if (candidates.length > 1) throw new InvocationError(selector, "ambiguous", candidates);
     const selected = candidates[0];
     if (!selected) return { status: "missing", scopes: lookupScopes, failures: lookupFailures, lists: lookupLists, failure: missingFailure };

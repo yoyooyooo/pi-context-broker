@@ -1,4 +1,4 @@
-import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
+import { nativeFileRef, nativeSkillId, parseNativeReference, withNativeSnapshot } from "../src/native-reference";
 import { expect, test, setSystemTime } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
@@ -32,7 +32,8 @@ function preparationDetails(result: { details?: unknown }): Record<string, unkno
   if (!preparation || typeof preparation !== "object" || Array.isArray(preparation)) throw new Error("Expected preparation proof");
   return Object.fromEntries(Object.entries(preparation));
 }
-async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKind: "pi" | "omp" = "pi", identityScope = scope, withBodyCard = false) {
+async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKind: "pi" | "omp" = "pi", identityScope = scope, withBodyCard = false,
+  owner = { libraryId: "1031b73d-3a2f-589c-9bdb-ebb50a7eb063", sourceId: "controlled" }) {
   const owned = await mkdtemp(join(tmpdir(), "broker-host-prepare-"));
   const directory = withDirectoryAlias ? join(owned, "alias") : owned;
   if (withDirectoryAlias) {
@@ -43,20 +44,21 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   const resourceText = new Map<string, string>(), resourceReads: string[] = [];
   const ensure = async (path: string) => { await mkdir(path, { recursive: true }); };
   for (const [index, name] of ["root", "required", "member"].entries()) {
-    const id = nativeSkillId("1031b73d-3a2f-589c-9bdb-ebb50a7eb063", String(name));
+    const id = nativeSkillId(owner.libraryId, String(name));
     const metadata: ContentRecord = {
       id, kind: "skill", name, alias: name, description: withBodyCard && name === "member" ? 'Controlled member <metadata> & "原文".' : "Controlled " + name, enabled: true, default_context: index === 0,
       entrypoint: "SKILL.md", ref: nativeFileRef(id, "SKILL.md"),
-      locator: { type: "shared_skill", library_id: "1031b73d-3a2f-589c-9bdb-ebb50a7eb063", skill_id: name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
+      locator: { type: "shared_skill", library_id: owner.libraryId, skill_id: name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
         database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" },
     };
-    const body = "\ufeff---\r\nname: " + name + "\r\n---\r\nExact " + name + " <instructions>.\r\n"
+    const body = "\ufeff---\r\nname: " + name + "\r\n---\r\nExact " + name + " <instructions>.\r\n" + (owner.sourceId === "controlled" ? "" : owner.sourceId + " owner bytes.\r\n")
       + (withBodyCard && name === "root" ? '\r\n## Members\r\n\r\n- [member](skill://member/SKILL.md?library=1031b73d-3a2f-589c-9bdb-ebb50a7eb063) — Controlled member <metadata> & "原文".\r\n' : "");
     const snapshotId = "s_" + hash(name), path = join(directory, name, "SKILL.md");
     await mkdir(join(directory, name), { recursive: true });
     await writeFile(path, body);
     let selected: SkillRecord = {
-      ...metadata, source: "notion", sourceId: "controlled", sourceScope: identityScope, body, path, snapshotId, versionId: hash(body),
+      ...metadata, source: "notion", sourceId: owner.sourceId, sourceScope: identityScope, body, path, snapshotId, versionId: hash(body),
+      ...(owner.sourceId === "controlled" ? {} : { token: owner.sourceId + "/" + name }),
       aliases: [], normalizedAliases: [], normalizedName: name, normalizedDescription: metadata.description, autoloadEnabled: true, defaultDiscovery: false,
       preparationBinding: { record: metadata, scope: identityScope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(metadata.ref, snapshotId) },
       preparationDirectory: { files: [], required: [], candidates: [], references: [] },
@@ -84,7 +86,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   } } : {}) };
   const calls: PreparationPurpose[] = [];
   const persisted: SelectionMode[] = [];
-  const sources: Array<{ id: string; type: "notion"; prefetch: false }> = [{ id: "controlled", type: "notion", prefetch: false }];
+  const sources: Array<{ id: string; type: "notion"; prefetch: false }> = [{ id: owner.sourceId, type: "notion", prefetch: false }];
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   let search: NativeSkillSearchDefinition | undefined, tool: NativeSkillPrepareDefinition | undefined, graphTool: NativeSkillGraphDefinition | undefined;
   const api: ExtensionAPI = { ...(hostKind === "omp" ? { pi: {} } : {}), on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); },
@@ -97,7 +99,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
     const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope: identityScope, roots: [root!.id!],
       required: purpose === "use" ? [{ from: root!.id!, to: required!.id!, ref: required!.preparationBinding!.ref }] : [],
       bindings: selected.map(record => record.preparationBinding!) };
-    return { purpose, sourceId: "controlled", scope: identityScope, roots: [root!.id!], records: selected, bindings: selected.map(record => record.preparationBinding!), lock: { ...vector, sha256: hash(canonical(vector)) },
+    return { purpose, sourceId: owner.sourceId, scope: identityScope, roots: [root!.id!], records: selected, bindings: selected.map(record => record.preparationBinding!), lock: { ...vector, sha256: hash(canonical(vector)) },
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
@@ -1065,6 +1067,119 @@ function oneRecordGraph(f: Awaited<ReturnType<typeof fixture>>, record: SkillRec
     lock: { ...vector, sha256: hash(canonical(vector)) }, effects: noConsumptionWrites(),
     usage: { prepared_nodes: 1, instruction_bytes: Buffer.byteLength(record.body!), context_bytes: 4000, max_depth: 0 } };
 }
+
+for (const spelling of ["canonical", "transport-alias"] as const) for (const discovered of [false, true])
+test("full-owner use routes A from active B with " + spelling + " and A directory " + discovered, async () => {
+  const b = await fixture(true), a = await fixture(true, false, "pi", "b".repeat(64), false,
+    { libraryId: "00000000-0000-4000-8000-000000000099", sourceId: "library-a" });
+  b.sources.push(...a.sources);
+  const resolutions: string[] = [], targets: string[] = [];
+  const { tool, host } = await b.install(async (purpose, _signal, _policy, requested) => {
+    expect(requested).toHaveLength(1);
+    const owner = requested[0]?.sourceId === a.root.sourceId ? a : b;
+    expect(requested[0]?.id).toBe(owner.root.id);
+    targets.push(owner.root.id!);
+    return [oneRecordGraph(owner, owner.root, purpose)];
+  }, {
+    getRecords: async () => ({ records: discovered ? [...b.records, ...a.records] : b.records, failures: [] }),
+    lookupReference: async () => ({ records: b.records, failures: [] }),
+    resolveSkillReference: async ref => { resolutions.push(ref); return { ref: a.root.ref!, record: a.root }; },
+  });
+  await b.emit("input", { source: "rpc", text: "$root task in B" }, b.ctx);
+  await host.prepareMany([b.root], b.ctx);
+  const ref = spelling === "canonical" ? a.root.id! : a.root.id!.replace("?", "/entrypoint.md/..?");
+  const result = await tool.execute("cross-owner-use", { ref }, undefined, undefined, b.ctx);
+  expect(targets).toEqual([b.root.id!, a.root.id!]);
+  expect(resolutions).toEqual(discovered ? [] : [ref]);
+  const body = JSON.parse(sourceMessageText(result.content));
+  expect(body.records.map((record: { content: string }) => record.content)).toEqual([a.root.body]);
+  expect(preparationDetails(result)).toMatchObject({ records: [
+    { binding: { record: { id: a.root.id, locator: a.root.locator }, scope: a.root.sourceScope } },
+  ] });
+});
+
+test("full-owner lookup rejects a foreign owner or changed established scope before preparation", async () => {
+  for (const mismatch of ["owner", "scope"] as const) {
+    const b = await fixture(true), a = await fixture(true, false, "pi", "b".repeat(64), false,
+      { libraryId: "00000000-0000-4000-8000-000000000099", sourceId: "library-a" });
+    b.sources.push(...a.sources);
+    const { tool, host } = await b.install(async purpose => [oneRecordGraph(b, b.root, purpose)], {
+      getRecords: async () => ({ records: [...b.records, a.member], failures: [] }),
+      resolveSkillReference: async () => ({ ref: mismatch === "owner" ? b.root.ref! : a.root.ref!,
+        record: mismatch === "owner" ? b.root : { ...a.root, sourceScope: "c".repeat(64) } }),
+    });
+    await b.emit("input", { source: "rpc", text: "$root task in B" }, b.ctx);
+    await host.prepareMany([b.root], b.ctx);
+    const entries = structuredClone(b.session.entries);
+    await expect(tool.execute("wrong-" + mismatch, { ref: a.root.id! }, undefined, undefined, b.ctx))
+      .rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
+    expect(b.calls).toEqual(["use"]);
+    expect(b.session.entries).toEqual(entries);
+  }
+});
+
+test("full-owner lookup cannot publish after cancellation, session replacement or a retired generation", async () => {
+  for (const change of ["cancel", "session", "generation"] as const) {
+    const b = await fixture(true), a = await fixture(true, false, "pi", "b".repeat(64), false,
+      { libraryId: "00000000-0000-4000-8000-000000000099", sourceId: "library-a" });
+    b.sources.push(...a.sources);
+    const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<{ ref: string; record: SkillRecord }>();
+    const controller = new AbortController();
+    const { tool, host } = await b.install(undefined, {
+      resolveSkillReference: async () => { started.resolve(); return finish.promise; },
+    });
+    const pending = tool.execute("late-owner", { ref: a.root.id! }, controller.signal, undefined, b.ctx)
+      .then(value => ({ value }), error => ({ error }));
+    expect(await Promise.race([started.promise.then(() => "started"), pending])).toBe("started");
+    if (change === "cancel") controller.abort();
+    else if (change === "session") b.session.id = "another-session";
+    else host.invalidate();
+    finish.resolve({ ref: a.root.ref!, record: a.root });
+    expect(await pending).toMatchObject({ error: { code: "SOURCE_ACTIVATION_CANCELLED" } });
+    expect(b.calls).toEqual([]); expect(b.persisted).toEqual([]);
+  }
+});
+
+test("full-owner adoption keeps its authored short target and that target's old pin while B is active", async () => {
+  const b = await fixture(true), a = await fixture(true, false, "pi", "b".repeat(64), false,
+    { libraryId: "00000000-0000-4000-8000-000000000099", sourceId: "library-a" });
+  b.sources.push(...a.sources);
+  const old = a.required, current = { ...old, snapshotId: "s_" + hash("new A required"), body: "New A required bytes.\n" };
+  persistSessionSelection(b.api, b.ctx, [oneRecordGraph(a, old, "use")], "extend");
+  const selected = sessionSelection(b.ctx).scopes.get(a.root.sourceScope!)!.bindings.get(old.id!)!;
+  const targets: string[] = [], relative: unknown[] = [];
+  const { tool, host } = await b.install(async (purpose, _signal, _policy, requested, pins) => {
+    const record = requested[0]!;
+    const owner = record.sourceId === a.root.sourceId ? a : b;
+    const original = owner.records.find(value => value.id === record.id)!;
+    if (record.id === old.id) expect(pins?.get(old.id!)).toBe(old.snapshotId);
+    targets.push(record.id!);
+    return [oneRecordGraph(owner, original, purpose)];
+  }, {
+    resolveSkillReference: async (ref, _ctx, _signal, _refresh, sourceId) => {
+      const selector = parseNativeReference(ref).selector;
+      if (selector === a.root.id) return { ref: a.root.ref!, record: a.root };
+      expect(selector).toBe(old.id); expect(sourceId).toBe(a.root.sourceId);
+      return { ref, record: current };
+    },
+    resolveRelativeReference: async (record, from, path) => {
+      relative.push({ id: record.id, sourceId: record.sourceId, from, path }); return current.ref!;
+    },
+    sessionBinding: (record, ctx) => sessionSelection(ctx).scopes.get(record.sourceScope!)?.bindings.get(record.id!),
+    persistGraphs: (graphs, ctx, mode) => persistSessionSelection(b.api, ctx, graphs, mode),
+  });
+  await b.emit("input", { source: "rpc", text: "$root task in B" }, b.ctx);
+  await host.prepareMany([b.root], b.ctx);
+  await tool.execute("full-A", { ref: a.root.id! }, undefined, undefined, b.ctx);
+  const path = "skill://required/SKILL.md";
+  const read = await nativeRead(b, path, "authored-short-A", a.root.preparationBinding!.ref);
+  expect(relative).toEqual([{ id: a.root.id, sourceId: a.root.sourceId, from: a.root.preparationBinding!.ref, path }]);
+  expect(targets).toEqual([b.root.id!, a.root.id!, old.id!]);
+  expect(sourceMessageText(read.content)).toStartWith(old.body!);
+  expect(sourceMessageText(read.content)).not.toContain(current.body);
+  expect(read.details).toMatchObject({ contextBrokerRead: { binding: { record: { id: old.id } }, snapshotId: old.snapshotId } });
+  expect(sessionSelection(b.ctx).scopes.get(a.root.sourceScope!)!.bindings.get(old.id!)).toEqual(selected);
+});
 
 test("relative read uses the actual fixed containing file and inspects the independently resolved member", async () => {
   const f = await fixture(true), resolved: Array<{ id: string | undefined; from: string; path: string }> = [];
