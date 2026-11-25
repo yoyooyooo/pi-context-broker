@@ -33,14 +33,14 @@
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
     "packages/context-broker/src/notion-source.ts": "a8a77d98b33a9b6dc4968fbd4ff30c336e87aa45d29ab343d9c76f1ed92b610e",
     "packages/context-broker/src/pi-host-adapter.ts": "3230ccb80a90f1374b08559a432df6d15736c2cb58634bdcf6274108f7c021d2",
-    "packages/context-broker/scripts/host-refresh.test.ts": "0ff7c7c2e5e887150049eb439522cb73a512971df3a793bde81aea7c64184f1c",
+    "packages/context-broker/scripts/host-refresh.test.ts": "525ae88b2622dfe07b6f2a2c55aee04db23c4cba29fd86c083c307609ceccc6c",
     "packages/context-broker/scripts/session-refresh.test.ts": "5e3f715774593d8a95cdf4c9869bf010a70c2e792943350b08d2657b6dfe8cf4",
     "packages/context-broker/scripts/session-recovery.test.ts": "e27252382fa86515966b3dc90d1e33dbdbd6324a1fe8d32288d9aaae7dd27cfc",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "2313a9df2496d9bb02589cd21ae18899d289d808c3cd8889eeb6fdc9477748e2",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "5a906e9a1468c0764999557f0e4f8cf011345f4708eeec7a7622581cc3765cf7",
     "packages/context-broker/scripts/notion-source-sdk.test.ts": "3786836128bb0a4c1b82b49f671e9a7112868a847a383d553381959b2e0c9c9d",
     "packages/context-broker/scripts/pi-read-adapter.test.ts": "fe3aaac44d90c4610addc8cb26a64fa17414cb9619d0e8e7da15ebebf529355c",
-    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "7a884c7cf8987a2d3076948b9fc35f66ba8d02165d5fa5903751afc598fb7da1",
+    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "492c6db358cbb983c3fb6fa61051d26eec6210049eafad99e33fffad35c825be",
     "packages/context-broker/scripts/notion-entry.test.ts": "7ff3897a2cd5aebed74786139c1d565e63ce58023c25774b0757f4ff5e1fc238",
     "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
     "packages/context-broker/scripts/read-intent-status.test.ts": "a7f9efed5d60515cfa667c1baf40d6e4dc289bd0a57731189c48d31c1a941393",
@@ -1204,6 +1204,7 @@
     "explicit_sources": "The default config/discovery path uses only the captured selected Source. Explicit $name@source or namespaced selection obtains that configured Source on demand under the accepted context; its directory is not published into the default menu or Profile. The OMP/Pi soft-miss replay separately holds an explicit B Prompt while the default moves A to C, observes one complete B body/full root, then requires the next input to use C. Unqualified overlapping names never borrow B.",
     "write_receipts": "CLI write invalidation copies the accepted complete Source map and exact record bindings at tool_call. A later default/config change cannot reinterpret A receipt ownership, while an explicit --library B from A still maps to enabled B. These process-result and mixed-source grammar obligations are concrete tests beyond LibrarySession primary-default/one-explicit-call variables.",
     "oracle": "The admitted A context, A producer target, original pin and active parent branch are independent expectations. A failed B is tested again after the remote resolver recovers and a fresh admission is made; it remains blocked with zero new resolver calls. Existing UUID/selector fixtures retain foreign/malformed cases and complete-body, denial, cancellation and graph assertions.",
-    "evidence_boundary": "Hashes bind inspected owner/test bytes; they do not claim passing model/mutation/installed/live evidence. LibrarySession enumerates two roots and one explicit call, not arbitrary simultaneous Sources, real UUID parsing, Pi serialization, Notion permissions or remote CAS. Exact case inventories and expected rule/broken sets remain unchanged."
+    "evidence_boundary": "Hashes bind inspected owner/test bytes; they do not claim passing model/mutation/installed/live evidence. LibrarySession enumerates two roots and one explicit call, not arbitrary simultaneous Sources, real UUID parsing, Pi serialization, Notion permissions or remote CAS. Exact case inventories and expected rule/broken sets remain unchanged.",
+    "qualified_reference_fixture": "The active-session SDK fixture now reports SKILL_NOT_FOUND for an exact owner absent from its actual catalog, matching the production catalog resolver instead of throwing a test assertion. The existing missing-reference regression expects that current lookup result, asserts exactly one list call, and independently checks selected and active state remain unchanged. The preceding Required-role rejection still requires zero SDK calls and unchanged state. No production guard, model, rule, case or mutation target changed."
   }
 }

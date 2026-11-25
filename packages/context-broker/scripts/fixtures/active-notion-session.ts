@@ -95,7 +95,8 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   f.state.resolve = (target, catalog) => {
     const ref = bindNativeReference(parseNativeReference(target), "00000000-0000-4000-8000-000000000099");
     const rows = (catalog as typeof f.state.catalog).records;
-    const row = rows.find(item => item.id === ref.selector); assert.ok(row);
+    const row = rows.find(item => item.id === ref.selector);
+    if (!row) throw Object.assign(new Error("Exact ID unavailable"), { code: "SKILL_NOT_FOUND" });
     return { record: row, scope, ref: nativeFileRef(row.id, ref.path || row.entrypoint) };
   };
   const revise = (name: string, body: string, entrypoint = record(name).entrypoint!) => {
