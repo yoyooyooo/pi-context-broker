@@ -1171,9 +1171,8 @@ async function unavailableCatalogProof({ call, item, library, sourceId, observed
   prove(http.length > 0 && metrics.length === 1 && metrics[0].observed === true && metrics[0].complete === true
     && metrics[0].trace_dropped === 0 && metrics[0].total_requests === http.length && receipt.metrics?.complete === true
     && receipt.metrics.trace_dropped === 0 && receipt.metrics.total_requests === http.length && trace.length === http.length
-    && trace.every((attempt, index) => attempt.outcome === 'success' && attempt.http_status >= 200 && attempt.http_status < 300
-      && Object.entries(attempt).every(([key, value]) => isDeepStrictEqual(http[index][key], value))),
-  'Catalog absence needs the complete successful HTTP attempts, not a cache hit or partial request trace');
+    && trace.every((attempt, index) => Object.entries(attempt).every(([key, value]) => isDeepStrictEqual(http[index][key], value))),
+  'Catalog absence needs every original HTTP attempt, not a cache hit or partial request trace');
   const value = receipt.value, freshness = value?.freshness, coverage = value?.coverage;
   const from = Date.parse(sdkStart.at), to = Date.parse(sdkEnd.at), validated = Date.parse(freshness?.validated_at);
   prove(value?.source === 'notion' && digest(item.scope) && value.scope === item.scope && sameLibrary(value.library_id, library)
@@ -1190,7 +1189,8 @@ async function unavailableCatalogProof({ call, item, library, sourceId, observed
     && nonempty(skills?.database_id) && nonempty(skills.data_source_id) && database.database_id === skills.database_id
     && isDeepStrictEqual(database.data_source_ids, [skills.data_source_id])
     && isDeepStrictEqual(coverage.queried_data_sources, [skills.data_source_id])
-    && http.some(row => row.method === 'POST' && row.request_kind === 'notion_metadata' && row.target?.data_source_id === skills.data_source_id),
+    && http.some(row => row.method === 'POST' && row.request_kind === 'notion_metadata' && row.target?.data_source_id === skills.data_source_id
+      && row.outcome === 'success' && row.http_status >= 200 && row.http_status < 300),
   'The full catalog must have queried the exact Library Skills data source');
   const identities = new Set(), pages = new Set();
   for (const record of value.records) {
@@ -1258,18 +1258,34 @@ export async function verifyNotionAgentUnavailableReference(expected, observed, 
         path: expected.path, errorCode: end.errorCode, httpAttempts: http.length, payloads, result: call.result.contentArtifact });
     }
     if (proofs.some(proof => proof.toolCallId === call.id)) continue;
-    let failure;
-    try { failure = JSON.parse(textOf(content)); } catch { continue; }
-    const admission = failure?.admission;
-    if (admission?.version !== 1 || admission.phase !== 'execute' || admission.stage !== 'reference' || admission.code !== 'SKILL_NOT_FOUND'
-      || admission.signal_aborted !== false || !Number.isSafeInteger(admission.generation_started)
-      || admission.generation_started !== admission.generation_current
-      || !failure.error?.startsWith('context-broker source ' + sourceId + ' unavailable (SKILL_NOT_FOUND).')) continue;
+    let nativeFailure;
+    if (call.name === 'read') {
+      let failure;
+      try { failure = JSON.parse(textOf(content)); } catch { continue; }
+      const admission = failure?.admission;
+      if (admission?.version !== 1 || admission.phase !== 'execute' || admission.stage !== 'reference' || admission.code !== 'SKILL_NOT_FOUND'
+        || admission.signal_aborted !== false || !Number.isSafeInteger(admission.generation_started)
+        || admission.generation_started !== admission.generation_current
+        || !failure.error?.startsWith('context-broker source ' + sourceId + ' unavailable (SKILL_NOT_FOUND).')) continue;
+      nativeFailure = { kind: 'read-admission', generationObserved: true };
+    } else {
+      // Before acquisition, notion_use throws SourceError unchanged. Pi keeps
+      // only Error.message and empty details; it produces no generation receipt.
+      const nativeCalls = observed.session.attempts?.filter(attempt => attempt.id === call.id) ?? [];
+      const attempt = nativeCalls[0];
+      if (typeof call.arguments?.ref !== 'string' || Object.keys(call.arguments).some(key => !['ref', 'refresh'].includes(key))
+        || call.arguments.refresh !== undefined && typeof call.arguments.refresh !== 'boolean'
+        || nativeCalls.length !== 1 || attempt.active !== true || attempt.name !== 'notion_use'
+        || attempt.resultEntryId !== call.native.resultEntryId || !isDeepStrictEqual(attempt.arguments, call.arguments)
+        || native.toolName !== 'notion_use' || !isDeepStrictEqual(native.details, {})
+        || !isDeepStrictEqual(content, [{ type: 'text', text: 'context-broker source operation failed (SKILL_NOT_FOUND)' }])) continue;
+      nativeFailure = { kind: 'pi-error-message', generationObserved: false };
+    }
     const payloads = await delivered(true);
     if (payloads.length === 0) continue;
     const catalog = await unavailableCatalogProof({ call, item, library, sourceId, observed, source, within, readArtifact });
     if (catalog) proofs.push({ ...catalog, toolCallId: call.id, sourceId, library, owner: item.owner, path: expected.path,
-      errorCode: 'SKILL_NOT_FOUND', payloads, result: call.result.contentArtifact });
+      errorCode: 'SKILL_NOT_FOUND', nativeFailure, payloads, result: call.result.contentArtifact });
   }
   demand(proofs.length > 0, 'UNAVAILABLE_ONLINE_READ_UNPROVEN', 'Only an online failure of the exact original root inside that tool attempt proves unavailability');
   return { object: expected.object, proofs };

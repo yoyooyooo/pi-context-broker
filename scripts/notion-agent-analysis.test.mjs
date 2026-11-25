@@ -53,7 +53,7 @@ test('unavailable original reference requires its own online failed tool read, n
     { ...options, delivery: { requests: [changedPayload] } }), /online failure/u);
 });
 
-function unavailableCatalogFixture() {
+function unavailableCatalogFixture(tool = 'read') {
   // Synthetic identities with the real list -> pure resolver -> native error
   // shape. The catalog response was captured before the tool result, not read
   // from a Store or reconstructed from the expected missing object.
@@ -69,12 +69,13 @@ function unavailableCatalogFixture() {
     effects: { version: 1, remote_writes: 'unknown', author_content: 'unknown' },
     admission: { version: 1, phase: 'execute', stage: 'reference', code: 'SKILL_NOT_FOUND',
       generation_started: 3, generation_current: 3, signal_aborted: false } };
-  const content = [{ type: 'text', text: JSON.stringify(error) }];
+  const content = [{ type: 'text', text: tool === 'notion_use'
+    ? 'context-broker source operation failed (SKILL_NOT_FOUND)' : JSON.stringify(error) }];
   const failed = put('/owned/segment/tool-results/read-a.json', content);
-  const call = { id: 'read-a|fc_fixture', name: 'read', arguments: { path: owner },
+  const call = { id: 'read-a|fc_fixture', name: tool, arguments: tool === 'notion_use' ? { ref: owner } : { path: owner },
     event: { pid, monotonicNs: '100' }, native: { resultEntryId: 'result-a' },
     result: { pid, isError: true, monotonicNs: '200', contentArtifact: failed }, deliveryToolCallId: 'read-a|fc_fixture' };
-  const payload = { input: [{ type: 'function_call', call_id: 'read-a', id: 'fc_fixture', name: 'read', arguments: JSON.stringify(call.arguments) },
+  const payload = { input: [{ type: 'function_call', call_id: 'read-a', id: 'fc_fixture', name: tool, arguments: JSON.stringify(call.arguments) },
     { type: 'function_call_output', call_id: 'read-a', output: content[0].text }] };
   const bindings = { private: { objects: { original: { kind: 'notion', owner, scope,
     pageId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' } } } };
@@ -114,8 +115,8 @@ function unavailableCatalogFixture() {
     additionalLibrary: { sourceId: 'notion-b', library: otherLibrary } } },
     sourceObservationWindow: { startedNs: '1', endedNs: '250', includesStartup: true },
     session: { branchEntries: [{ id: 'call-a', message: { role: 'assistant', api: 'openai-responses' } },
-      { id: 'result-a', message: { role: 'toolResult', toolCallId: call.id, isError: true, content } }],
-      attempts: [{ id: call.id, name: 'read', arguments: call.arguments, active: true, assistantEntryId: 'call-a', resultEntryId: 'result-a', callLine: 2, resultLine: 3 }],
+      { id: 'result-a', message: { role: 'toolResult', toolCallId: call.id, toolName: tool, isError: true, content, details: {} } }],
+      attempts: [{ id: call.id, name: tool, arguments: call.arguments, active: true, assistantEntryId: 'call-a', resultEntryId: 'result-a', callLine: 2, resultLine: 3 }],
       contributions: [{ entryId: 'call-a', role: 'assistant' }, { entryId: 'result-a', role: 'toolResult' }],
       assistantMessages: [{ active: true, entryId: 'answer', api: 'openai-responses', line: 4 }] },
     toolHistory: { version: 1, sdkSegments: [] } };
@@ -147,6 +148,62 @@ test('unavailable original reference accepts a fresh exhaustive exact-library ca
   assert.equal(result.proofs[0].owner, f.bindings.private.objects.original.owner);
   assert.equal(result.proofs[0].httpAttempts, 1);
   assert.equal(result.proofs[0].responseArtifact.sha256, f.observed.toolHistory.sdkSegments[0].responses[0].artifact.sha256);
+});
+
+test('unavailable catalog proof accepts a completely observed retry ending in a successful exact-data-source query', async () => {
+  const f = unavailableCatalogFixture(), success = f.sourceRows[2];
+  const failed = { ...success, outcome: 'failure', http_status: 429 };
+  success.attempt = 2;
+  f.sourceRows.splice(2, 0, failed);
+  f.sourceRows[4].total_requests = 2;
+  const trace = f.receipt.metrics.trace[0];
+  f.receipt.metrics.trace = [{ ...trace, outcome: 'failure', http_status: 429 }, { ...trace, attempt: 2 }];
+  f.receipt.metrics.total_requests = 2;
+  f.seal();
+  const proof = await f.run();
+  assert.equal(proof.proofs[0].httpAttempts, 2);
+  assert.equal(proof.proofs[0].evidence, 'fresh-exhaustive-catalog');
+});
+
+test('unavailable catalog proof accepts the source-derived Pi notion_use error shape without inventing a read admission', async () => {
+  // SourceError.message is passed through Pi's createErrorToolResult; unlike
+  // read, an early use resolver failure has no Broker admission envelope.
+  const f = unavailableCatalogFixture('notion_use'), proof = await f.run();
+  assert.equal(proof.proofs[0].evidence, 'fresh-exhaustive-catalog');
+  assert.deepEqual(proof.proofs[0].nativeFailure, { kind: 'pi-error-message', generationObserved: false });
+});
+
+test('unavailable notion_use catalog proof rejects other native error shapes, calls and outputs', async t => {
+  const replaceContent = (f, content) => {
+    const bytes = Buffer.from(JSON.stringify(content)), path = f.call.result.contentArtifact.path;
+    f.files.set(path, bytes); f.call.result.contentArtifact = { path, sha256: hash(bytes), bytes: bytes.length };
+    f.observed.session.branchEntries[1].message.content = content;
+    f.payload.input[1].output = content.map(row => row.text ?? '').join('\n');
+  };
+  const exact = 'context-broker source operation failed (SKILL_NOT_FOUND)';
+  const cases = [
+    ['Error prefix', f => replaceContent(f, [{ type: 'text', text: 'Error: ' + exact }])],
+    ['stack suffix', f => replaceContent(f, [{ type: 'text', text: exact + '\n    at resolver' }])],
+    ['another error code', f => replaceContent(f, [{ type: 'text', text: 'context-broker source operation failed (SOURCE_REFERENCE_MISSING)' }])],
+    ['read envelope substituted for native use error', f => replaceContent(f, [{ type: 'text', text: JSON.stringify({ error: exact, admission: { code: 'SKILL_NOT_FOUND' } }) }])],
+    ['multiple text blocks', f => replaceContent(f, [{ type: 'text', text: exact }, { type: 'text', text: '' }])],
+    ['extra text block field', f => replaceContent(f, [{ type: 'text', text: exact, extra: true }])],
+    ['nonempty native details', f => { f.observed.session.branchEntries[1].message.details = { code: 'SKILL_NOT_FOUND' }; }],
+    ['missing native details', f => { delete f.observed.session.branchEntries[1].message.details; }],
+    ['wrong native tool name', f => { f.observed.session.branchEntries[1].message.toolName = 'read'; }],
+    ['inactive native call', f => { f.observed.session.attempts[0].active = false; }],
+    ['different native arguments', f => { f.observed.session.attempts[0].arguments = { ref: 'skill://another-policy?library=' + f.otherLibrary }; }],
+    ['different native result entry', f => { f.observed.session.attempts[0].resultEntryId = 'another-result'; }],
+    ['multiple requested refs', f => { f.call.arguments.ref = [f.bindings.private.objects.original.owner, 'skill://another-policy?library=' + f.otherLibrary]; }],
+    ['ownerless requested ref', f => { f.call.arguments.ref = 'skill://original-policy'; }],
+    ['different provider output', f => { f.payload.input[1].output = 'SKILL_NOT_FOUND'; }],
+    ['wrong catalog owner', f => { f.receipt.value.library_id = f.otherLibrary; }],
+    ['non-exhaustive catalog', f => { f.receipt.value.coverage.exhaustive = false; }],
+  ];
+  for (const [name, change] of cases) await t.test(name, async () => {
+    const f = unavailableCatalogFixture('notion_use'); change(f); f.seal();
+    await assert.rejects(f.run(), error => error.code?.startsWith('UNAVAILABLE_'));
+  });
 });
 
 test('unavailable catalog proof rejects incomplete, stale, wrong-owner and mismatched invocation evidence', async t => {
