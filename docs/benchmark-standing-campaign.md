@@ -87,6 +87,12 @@ it does not revoke the standing grant. The transport does not blindly replay
 an ambiguous provider send. New repaired attempts retain the failed attempt,
 its reservations, its known usage and its unknown costs.
 
+Completed evidence uses the normalized episode's `admission.status` and
+`admission.completeness` for attempts, tools and interventions. The normalized
+episode has no top-level `core_evidence` field. The same public
+`assertCompletedStandingEvidence(plan, event)` check verifies retained raw
+references, identity, usage and completeness for dispatch and recovery readers.
+
 Analysis success thresholds are measurement criteria. They must be explicitly
 declared for an unbounded condition, rather than inferred from a null execution
 duration. They never stop execution.

@@ -285,7 +285,8 @@ export function standingReservationFields(plan, amendment, planReference) {
     condition_epoch_id: amendment.condition_epoch.id };
 }
 
-async function assertCompletedEvidence(plan, event) {
+/** Verify retained raw bytes and the normalizer's admission/completeness contract. */
+export async function assertCompletedStandingEvidence(plan, event) {
   const result = event.result, slot = plan.slots.find(item => item.slot_id === event.slot_id);
   assert.ok(slot); assert.ok(typeof result.stop_batch === 'boolean');
   const { episode } = await readEvidenceBundle({ directory: result.normalized_directory, rawRoot: plan.execution.environment_root });
@@ -301,8 +302,9 @@ async function assertCompletedEvidence(plan, event) {
     duration_ms: measurement(episode.timing.duration_ms) }, 'STANDING_USAGE_CHANGED');
   if (!result.stop_batch) {
     assertCohortModelEvidence(episode, plan.protocol.models.find(item => item.id === condition.model_id));
-    assert.equal(episode.admission.status, 'valid'); assert.equal(episode.core_evidence, 'complete');
-    for (const key of ['attempts', 'tools', 'interventions']) assert.equal(episode.admission.completeness[key], 'complete');
+    assert.equal(episode.admission.status, 'valid', 'STANDING_NEW_CORE_INVALID');
+    for (const key of ['attempts', 'tools', 'interventions'])
+      assert.equal(episode.admission.completeness[key], 'complete', 'STANDING_NEW_CORE_INCOMPLETE: ' + key);
     assert.equal(episode.measurements.actual_attempts.status, 'known'); assert.ok(episode.measurements.actual_attempts.value > 0);
     assert.equal(episode.measurements.input_total.value.status, 'known'); assert.equal(episode.measurements.output_total.value.status, 'known');
     assert.equal(episode.timing.duration_ms.status, 'known'); assert.ok(episode.attempts.filter(item => item.sent).every(item => item.adapter.verified));
@@ -343,7 +345,7 @@ export async function verifyStandingPlan(plan, { activate = false, forReservatio
       assert.ok(rows.length && rows.at(-1).type === 'batch_closed', 'STANDING_PREDECESSOR_NOT_CLOSED');
       assert.equal(rows.filter(item => item.type === 'episode_started').length,
         rows.filter(item => item.type === 'episode_completed').length, 'STANDING_PREDECESSOR_UNRESOLVED');
-      for (const event of rows.filter(item => item.type === 'episode_completed')) await assertCompletedEvidence(predecessor, event);
+      for (const event of rows.filter(item => item.type === 'episode_completed')) await assertCompletedStandingEvidence(predecessor, event);
       assert.equal(await optional(join(predecessor.execution.control_root, 'lease.json')), null, 'STANDING_PREDECESSOR_LEASE_ACTIVE');
     }
     const sequence = boundary.local_registrations + 1;
@@ -371,7 +373,7 @@ export async function verifyStandingPlan(plan, { activate = false, forReservatio
     assert.equal(starts[index].run_id, value.run_id);
     for (const [key, expected] of Object.entries(slot)) assert.deepEqual(starts[index][key], expected, 'STANDING_START_SLOT_CHANGED');
   }
-  for (const event of completed) await assertCompletedEvidence(plan, event);
+  for (const event of completed) await assertCompletedStandingEvidence(plan, event);
   if (forReservation) {
     assert.equal(starts.length, completed.length, 'STANDING_UNRESOLVED_PREVIOUS_EXECUTION');
     assert.ok(completed.every(item => item.result.stop_batch === false && knownUsage(item.result.budget_usage)), 'STANDING_REPAIR_REQUIRED');
