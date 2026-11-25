@@ -11,10 +11,10 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "4edc7c05100c7047c9e8074e53fd15130c1c35da6ee2db789ba344b53c01efc5",
+    "packages/context-broker/src/host-skills.ts": "9913f66446ba51f4f3cb1800a0879af3859a28fc064c879c218de9fc26ffd33e",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
-    "packages/context-broker/scripts/host-prepare.test.ts": "a2cd528eacacff58207764b10db77388551207434a8370a2e9b67725163257fc",
+    "packages/context-broker/scripts/host-prepare.test.ts": "a7630e6d33f377d830db3a5e06dc184d71aafe2b9f6a6d6c313f877a7d87913c",
     "scripts/check-consumer-observation-mutations.mjs": "3ee2b6cc2909687ad54b619eff64b5722cfae5ead0c7a12c21bd013f8157801f",
     "packages/context-broker/scripts/host-refresh.test.ts": "0ff7c7c2e5e887150049eb439522cb73a512971df3a793bde81aea7c64184f1c",
     "packages/context-broker/scripts/resource-read-host.test.ts": "1411774432d57f3cfff2a514d5d9cf237ae4b84f8479b519491bbea67280317d",
@@ -420,6 +420,7 @@
     "explicit_sources": "The default config/discovery path uses only the captured selected Source. Explicit $name@source or namespaced selection obtains that configured Source on demand under the accepted context; its directory is not published into the default menu or Profile. The OMP/Pi soft-miss replay separately holds an explicit B Prompt while the default moves A to C, observes one complete B body/full root, then requires the next input to use C. Unqualified overlapping names never borrow B.",
     "write_receipts": "CLI write invalidation copies the accepted complete Source map and exact record bindings at tool_call. A later default/config change cannot reinterpret A receipt ownership, while an explicit --library B from A still maps to enabled B. These process-result and mixed-source grammar obligations are concrete tests beyond LibrarySession primary-default/one-explicit-call variables.",
     "oracle": "The admitted A context, A producer target, original pin and active parent branch are independent expectations. A failed B is tested again after the remote resolver recovers and a fresh admission is made; it remains blocked with zero new resolver calls. Existing UUID/selector fixtures retain foreign/malformed cases and complete-body, denial, cancellation and graph assertions.",
-    "evidence_boundary": "Hashes bind inspected owner/test bytes; they do not claim passing model/mutation/installed/live evidence. LibrarySession enumerates two roots and one explicit call, not arbitrary simultaneous Sources, real UUID parsing, Pi serialization, Notion permissions or remote CAS. Exact case inventories and expected rule/broken sets remain unchanged."
+    "evidence_boundary": "Hashes bind inspected owner/test bytes; they do not claim passing model/mutation/installed/live evidence. LibrarySession enumerates two roots and one explicit call, not arbitrary simultaneous Sources, real UUID parsing, Pi serialization, Notion permissions or remote CAS. Exact case inventories and expected rule/broken sets remain unchanged.",
+    "qualified_reference_routing": "Reviewed the actual host-skills and host-prepare changes from f3ee63c through 372837c. Unknown complete current owners now enter the existing exact-Library resolver, and explicit owners are not narrowed by ambient active-task scopes. Existing source identity, authorization, ambiguity, cancellation/session/generation, fixed snapshot and publication guards are unchanged. New actual-host cases cover canonical and transport-alias inputs, known and unknown A catalogs while B is active, foreign owner/scope rejection, retired lookups, authored short references and an existing A pin. This correspondence update binds reviewed bytes only. All observations models, bounds, cases, expected rules and real guard mutations remain unchanged."
   }
 }
