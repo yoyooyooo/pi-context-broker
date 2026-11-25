@@ -49,4 +49,4 @@ node benchmark/results/2026-11-25-retained-evidence-census/recompute.mjs \
 
 已完成的隔离复算在禁止网络、私有读取、私有写入和公开包写入的环境中通过，复算 104 条、16 层的计数、合同变化与两种已知成本口径，源包和副本字节不变。该运行的独立 receipt 指纹为 `084eef597c4f77e42509f964f8b065918f9436bf01beeceaf1909b2b4e010e64`。
 
-此入口复算公开 census 的算术与一致性，不执行私有 grader，不重放全部外部 raw，不重建缺失观察，也不调用模型。源码归属不一致、缺完整资源路径和 clarification 可观察性不足的项目继续保留 unknown。这份历史对照独立于后续真实 42 条条件。
+此入口复算公开 census 的算术与一致性，不执行私有 grader，不重放全部外部 raw，不重建缺失观察，也不调用模型。源码归属不一致、缺完整资源路径和 clarification 可观察性不足的项目继续保留 unknown。这份历史对照独立于后续计划的 42 条真实运行。
