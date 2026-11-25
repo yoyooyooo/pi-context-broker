@@ -1,0 +1,2231 @@
+{
+  "version": 1,
+  "kind": "standing-benchmark-original-slot-lineage",
+  "collector": {
+    "version": "1.2.0",
+    "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+  },
+  "condition_epoch": {
+    "id": "standing-engineering-epoch-2",
+    "started_at": "2026-11-25T09:39:36.803Z",
+    "authorization_sha256": "a630feb19255729ba6a9de991cf6b5cdbc890ed1454342094437b7a276c42627"
+  },
+  "groups": [
+    {
+      "scope_id": "standing42-run-2-codemode-24",
+      "work_item_id": "codemode-24",
+      "completed": 24,
+      "rows": [
+        {
+          "order": 0,
+          "state": "closed_observation",
+          "physical_ordinal": 106,
+          "run_id": "standing42-run-2-codemode-24-001",
+          "case_id": "scripts-assets-02-a-n16-r1",
+          "condition_id": "m0-e2",
+          "source_episode_sha256": "c1f4ebbeb10226c2682862495ce4b59553a71423da6d896d55ea4f24d54f1e96",
+          "public_episode_sha256": "a0cedd1f0dcfe91802ddca35b165294ffc59f57d30984325fc3887078dede8ca",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "954285c715d451dc332a25d10f1ff163f9d8eb016466a7f1cd01c045fea52ec8"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "2e6d9c7dbbdd38d9b4bb804c493c0e554973f53cb0d91c58c3121cfd00601391"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "a2942dd49d05196304fc1c36ed4d0bcc227cfb36a38ad227139efeff79bb8625"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-001",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 16172,
+            "complete_input_tokens": 16172,
+            "known_output_subtotal": 258,
+            "complete_output_tokens": 258,
+            "duration_ms": 27523.511584,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 1,
+          "state": "closed_observation",
+          "physical_ordinal": 107,
+          "run_id": "standing42-run-2-codemode-24-002",
+          "case_id": "scripts-assets-02-a-n16-r1",
+          "condition_id": "m0-e3",
+          "source_episode_sha256": "1a5b1cd51bffa95286aa4de6c9ce1198dc745a3b2d1c047099a7e43683dd3468",
+          "public_episode_sha256": "d395b45be7294466a001e3243e12f5b6e9bf2ac30c101e8aa074301a3db8dfbe",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "12410dbb1f3d01d32a7ea6b40c6dd2f106b353290ea2d2f421c8cac720ece17f"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "6d0b368bf9121f189fb51020d6d53adb0d8b88afd78d89b780e0ad80adb8b507"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "9bf59bd9bb0a8eb4007018ab9e81e75cde536a11bd59ac982692274471fcf5bd"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-002",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 14080,
+            "complete_input_tokens": 14080,
+            "known_output_subtotal": 435,
+            "complete_output_tokens": 435,
+            "duration_ms": 22809.711416000002,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 2,
+          "state": "closed_observation",
+          "physical_ordinal": 108,
+          "run_id": "standing42-run-2-codemode-24-003",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m0-e3",
+          "source_episode_sha256": "720b3c4ee0c29b321e34826715ee795ace4a986341a75d37e038e47fb1683f5b",
+          "public_episode_sha256": "bdd96f6b593e5fd8b991f39552d654a106a1a4adf6205ec3dc7d624b98e51a2f",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "3eb9e0dc7214b24c19b1f3e25b3c534ef093b91ce005ee7d08f7934fc324b208"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "714bf8244714a197c857578c068f714d225a5e39cf0fdd26b26567080327a946"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "02e6f0ed9cc2e473dffb55584f702483123cd88f0b8b11284dee3841549e3351"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-003",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 18211,
+            "complete_input_tokens": 18211,
+            "known_output_subtotal": 592,
+            "complete_output_tokens": 592,
+            "duration_ms": 28450.971833,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 3,
+          "state": "closed_observation",
+          "physical_ordinal": 109,
+          "run_id": "standing42-run-2-codemode-24-004",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m0-e2",
+          "source_episode_sha256": "e9f665ada5995b7fad5068a6cef6d300a1675d62a22b874ada9b313de110e3af",
+          "public_episode_sha256": "1b7399d7944a8eb480b55067860539d71fef30d6c0e2248b3206effebe1ba017",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "21295e725116382ac09d382803b1f54a4f48e696c996e4f9a6e6cdaa4ab94954"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "70508a976fcfa856d9a888a1a6c71edf10049c4472d06831d2d9f0190f7d5649"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "01256b64a3898f6081910fb2649815f2c370f6e0a705f0088b35cfb089b8db0a"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-004",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 20865,
+            "complete_input_tokens": 20865,
+            "known_output_subtotal": 379,
+            "complete_output_tokens": 379,
+            "duration_ms": 41952.773541999995,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 4,
+          "state": "closed_observation",
+          "physical_ordinal": 110,
+          "run_id": "standing42-run-2-codemode-24-005",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m0-e2",
+          "source_episode_sha256": "7793cfc89244d8c39307f8b055003ab70c96badfd12064ebdd558d1addb92007",
+          "public_episode_sha256": "bf76252a84c2e4084224c39d3f046f9e1f774c44c0391a4e1facac415776e6a3",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "46484bd4c936d4fcdfe7d6c20ff113bc6b42ec3e9f84477db77fa7e11f936a9d"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "89fdb593044feb4a556cf3cff5c7089c749936ad8dfa5fdc6808e9f4337cd95e"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "0ff72e2ed735f981a8497b7439abe1ebbdf62fb12e687960540be407af6f0651"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-005",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 16093,
+            "complete_input_tokens": 16093,
+            "known_output_subtotal": 293,
+            "complete_output_tokens": 293,
+            "duration_ms": 31168.197708,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 5,
+          "state": "closed_observation",
+          "physical_ordinal": 111,
+          "run_id": "standing42-run-2-codemode-24-006",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m0-e3",
+          "source_episode_sha256": "57411b224088bf7bfb5ac672bd22243879f50591587ddc133029fe61e25abf94",
+          "public_episode_sha256": "dc061d963e55648399ade69d63840f874d4e73159731785e9e44735ca477cada",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "ec1c142c8035027cfb132149d457af5df67443957c7bc7c2646fd7b93b36cb37"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "a9c90388243351bdda066fdd36474eb488e23b0ce32b859ea6e6bc4e95424dde"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "20fbf03cfa781513b486f37e912c19b88b695dd050d40538bf28814eda611e30"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-006",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 14223,
+            "complete_input_tokens": 14223,
+            "known_output_subtotal": 385,
+            "complete_output_tokens": 385,
+            "duration_ms": 15784.790500000001,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 6,
+          "state": "closed_observation",
+          "physical_ordinal": 112,
+          "run_id": "standing42-run-2-codemode-24-007",
+          "case_id": "scripts-assets-02-a-n16-r1",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "848c2efd460241350416c832c149b11ff63b7fdaddd27d913ed742c0f795dabf",
+          "public_episode_sha256": "11a6b13d488e14a05f8694920ff539b27a3d1f555290d640a7a6914bfb9dbd40",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "7def8ef6314e10f85a060d82a94e8e9d50aa6aaa185197dc7069401c40624f04"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "d3f85724c98da16ddb7e2588249c891d817a50ce9f2d23838db3b057b725b3ad"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "485834848e7e9e2e90518a5259f052587b8473810d59511a47a19ab0dfc06e0f"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-007",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 16001,
+            "complete_input_tokens": 16001,
+            "known_output_subtotal": 353,
+            "complete_output_tokens": 353,
+            "duration_ms": 15887.668625,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 7,
+          "state": "closed_observation",
+          "physical_ordinal": 113,
+          "run_id": "standing42-run-2-codemode-24-008",
+          "case_id": "scripts-assets-02-a-n16-r1",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "17c731f7adc9e92089eea5d7b7112645a9c5c02689e29d2a0a6dd75a7da46622",
+          "public_episode_sha256": "fa7fc2f9fdb8fac95f8c187b52ee8a1fd00607f8baa25adbcbdc32a08fb78f5f",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "9f1cb3243697960ca5986e81e13dbc5dfff004a6ebb744185ad9234565453737"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "5f0bda96d7b32e9f3f629c9add75af5f04a6cfa69538170409cf681313637dfb"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "9172259951992bd13683eaadde6fa570d0a645eda7450752c638b3a45dd50b34"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-008",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 18035,
+            "complete_input_tokens": 18035,
+            "known_output_subtotal": 263,
+            "complete_output_tokens": 263,
+            "duration_ms": 42481.275333,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 8,
+          "state": "closed_observation",
+          "physical_ordinal": 114,
+          "run_id": "standing42-run-2-codemode-24-009",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "7737511262c5aa2ced6bbcf9dc5df38531741dda570ff0f02ccbeb39925a13dc",
+          "public_episode_sha256": "3eb432413b69f0fd907ad6ff28a35def4e19daf2875463e99dab2bc6729b79b9",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "52d8e1bf484436feb8ddeabbe491b53e2051f8d05ee7fb96ebd1f76433544bbd"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "1a98dec6446800128dd0c5d0b2aef6d81fbc206742eb15449d2691fb00ad2f8c"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "25b07cefad5bdbc69b15a08787846ed1039adaec7fab69d1f68514713049c34f"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-009",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 24299,
+            "complete_input_tokens": 24299,
+            "known_output_subtotal": 496,
+            "complete_output_tokens": 496,
+            "duration_ms": 36414.835374999995,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 9,
+          "state": "closed_observation",
+          "physical_ordinal": 115,
+          "run_id": "standing42-run-2-codemode-24-010",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "af4f145df257c32ecfebac9e353c85a3f6ebabfbd2fec648d7648624d49c01ae",
+          "public_episode_sha256": "9e2ba0c47c79606fe04e5ddc07c4aa70a40a83c60b7db4ac998872c08a06ff11",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "d8f0e32fe8d29a42d74c0cc3f802c25e1f792626d0a6a7de50114d1cf896d3e3"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "c3438c3be3168a8c8cec95bc04bb807b81708787a181d76f4dd70273bc107b63"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "006d86c48972f4f39ff688646c02ac7b758d17be628da5dbff243893df9f005c"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-010",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 17061,
+            "complete_input_tokens": 17061,
+            "known_output_subtotal": 599,
+            "complete_output_tokens": 599,
+            "duration_ms": 20581.780292000003,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 10,
+          "state": "closed_observation",
+          "physical_ordinal": 116,
+          "run_id": "standing42-run-2-codemode-24-011",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "241e9a41fa4d186602aa597a4b0e3fe2563c13c4fb03e63f7710a0971f87035b",
+          "public_episode_sha256": "0ae0849de08816b147083275bae18cb7bd12e6d5e3687bff1ed0cd066ca95c62",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "6934b8f64009d49b9910ef459a23061ee887299596564c44677760182fcb3744"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "7d81af090316ae3ca15e696631035ed72973b576435488e5291798807716728d"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "d1e6d0cfbf47a9f741002d7e1a5f0537a67223070a81446a026f092082ed84c7"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-011",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 16119,
+            "complete_input_tokens": 16119,
+            "known_output_subtotal": 366,
+            "complete_output_tokens": 366,
+            "duration_ms": 14859.107458,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 11,
+          "state": "closed_observation",
+          "physical_ordinal": 117,
+          "run_id": "standing42-run-2-codemode-24-012",
+          "case_id": "explicit-01-a-n16-r1",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "4edfa34ebfbd346fa6eea9a817df276cbf721ebfdf5562276cd7b964a3770936",
+          "public_episode_sha256": "4543a2b649b0cabbd1f271ef6ef0fc20885323e0aa557b59a0a370e2bd68ae94",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "e04482b65b5182ad268115126efd577ff1baa5dd60ac077117190b7b19f6a35d"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "a616e9a1b1270d58fb2b5117c659606c69cef3a96cc411e995b30c6cbe00e349"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "bd368dc07987b8e73117013fe709f31c4f20ac33bc11fc556e4e2fdac4d35873"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-012",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 18034,
+            "complete_input_tokens": 18034,
+            "known_output_subtotal": 272,
+            "complete_output_tokens": 272,
+            "duration_ms": 32891.918957999995,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 12,
+          "state": "closed_observation",
+          "physical_ordinal": 118,
+          "run_id": "standing42-run-2-codemode-24-013",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m0-e2",
+          "source_episode_sha256": "b152d2ef5dd5d302af1f4859f8297512dceb2e0e7f33edd2324150198ab87005",
+          "public_episode_sha256": "1b069724677e9a16cdb2dd404937e7d1b7004869bf99ea95dcb2ba5fc7871e0b",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "50b0196217631f6d9300f33023e1fc17b055fbfed5f720425028010c703549b9"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "cfff8393ac5f3b58d834261a875207d2602914c6c5bb7cdb4ea90b2f9babe1a4"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "8f557732e68b8891244b8abd9373022abd675d911723664d99ff85bdbde81ebf"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-013",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 21334,
+            "complete_input_tokens": 21334,
+            "known_output_subtotal": 335,
+            "complete_output_tokens": 335,
+            "duration_ms": 41769.29325,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 13,
+          "state": "closed_observation",
+          "physical_ordinal": 119,
+          "run_id": "standing42-run-2-codemode-24-014",
+          "case_id": "complementary-01-a-n16-r1",
+          "condition_id": "m0-e3",
+          "source_episode_sha256": "217cdb81f275ceed208bb9fea7764385ce891a5ff6ce6a6a0883519b1f534fb7",
+          "public_episode_sha256": "895cbeb4d879b299a66b7e2475cec22528aca2157eece561be91f38293dffe64",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "3063f172c193d6f10209bce623df14fdf4503c195e4680fb311e59739a71d803"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "45fa6d42b6f12395bab6ec115cb300433b82a9e41f323aef3c53eadbd69f397e"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "aacb3c1ddd7cad3c0698503f20a123ed1948bad5b5331416f3608e486840633b"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-014",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 14793,
+            "complete_input_tokens": 14793,
+            "known_output_subtotal": 495,
+            "complete_output_tokens": 495,
+            "duration_ms": 26617.111875000002,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 14,
+          "state": "closed_observation",
+          "physical_ordinal": 120,
+          "run_id": "standing42-run-2-codemode-24-015",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "9ec69581172a7429fa270239dedea5aad2ef24550a312755f6107dda67380c59",
+          "public_episode_sha256": "06b94998b150c2de6fb93b417d8ccac0c401bfb3140ccadca1e6551b19efa30b",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "a598aa57521dd6b8437ade850b7fba2f104a8c19a6ff0e407a84f3914d5aae1d"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "6c76afc03607d90a1f534bf8933d793548032bd55c1a4428c0d4a8f770f71443"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "5ab9cd7db03c243b950e19032cf0f994a005d46896bc9b0c836300dd9e5ebffe"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-015",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 30171,
+            "complete_input_tokens": 30171,
+            "known_output_subtotal": 693,
+            "complete_output_tokens": 693,
+            "duration_ms": 35834.572416999996,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 15,
+          "state": "closed_observation",
+          "physical_ordinal": 121,
+          "run_id": "standing42-run-2-codemode-24-016",
+          "case_id": "references-01-a-n16-r1",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "63193c8183c7099936ca16678f0c9020eac5c854a36a3517d9b80357f7aa3de2",
+          "public_episode_sha256": "50750ed95062b3570d6639089fa85557fad42e465e447344d349a251e86c139f",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "09e465754b856ee45a0b0f66dc6ddc59241def286da4ac5a42a1a2164d2296a5"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "31c6027eef8c2c7b81ab51f0b3cee1e3a20869cdfc61e3bf47e2b8062ec65588"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "b3746b6af164a833a0e6326c40647c56cb34b31fe6b9e63c3e47ec97605934d4"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [
+              "grant-chain-read"
+            ],
+            "outcome": "fail",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-016",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 23260,
+            "complete_input_tokens": 23260,
+            "known_output_subtotal": 425,
+            "complete_output_tokens": 425,
+            "duration_ms": 40500.185708000005,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 16,
+          "state": "closed_observation",
+          "physical_ordinal": 122,
+          "run_id": "standing42-run-2-codemode-24-017",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "3cba42a48ccf5a3c782598f168288ab2bc095b04a275630271797b838ad28e36",
+          "public_episode_sha256": "55c937acae83d354f704f0673c3c163ae4362ac96eb0b5b9d41a44cbb47182c5",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "76fff1502f2f119e79ff93f0f06a7ed8845e7e4b8c264a242adbaa6e0dd59a8e"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "2beeac238c00cdca7c06b347f7933e4592b3eee5bc23e1b971f2f77e5ba51310"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "4531655e7bec94ac38fa50e6d2697e0a2fe4f4ce2f34a4b0d5f03689308f622a"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-017",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 18027,
+            "complete_input_tokens": 18027,
+            "known_output_subtotal": 264,
+            "complete_output_tokens": 264,
+            "duration_ms": 38322.483374999996,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 17,
+          "state": "closed_observation",
+          "physical_ordinal": 123,
+          "run_id": "standing42-run-2-codemode-24-018",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "29198def25ec4a8c11b063648c8bd5988bd7abe3697c623a927b1a3156e0a439",
+          "public_episode_sha256": "aeb050139a0d8b40d3158911178d1664129f5b062b8c1415cce94f85ed806d8b",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "439170e96bf34b098cfac288af80e35f64d00b0f03c00b00d816a9ab373c40da"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "8488284a0ed8959ae1edb50963d114afd29348b87d08d69bdb9bb61b3ec24dcc"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "d059bfd843d593ab0019bf16b51478b76c47b91acb60ee9b983d52aae0de4aef"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-018",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 16049,
+            "complete_input_tokens": 16049,
+            "known_output_subtotal": 332,
+            "complete_output_tokens": 332,
+            "duration_ms": 16876.381834,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 18,
+          "state": "closed_observation",
+          "physical_ordinal": 124,
+          "run_id": "standing42-run-2-codemode-24-019",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m0-e3",
+          "source_episode_sha256": "76dd94a8a5c4f218fae88c3abd491efc244e543ec41313f222477646c0cd1de7",
+          "public_episode_sha256": "15a4d58ce0b5a61130b6257953ef10478b8ffe684b77fcab381549bba110a518",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "5c64a4a3cababd73b6f7a7b10378729c12dc434378e64a3d8ca28e6545cf2e77"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "10dcd8838a1906714b352e36756d2e904e19d9478e41bde3e79dbec1aba1727e"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "8f06fe38c9c57b4286fca0ba91e449daf8506e38830d9c80e1b285a783ca1857"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "92d32906365bcbce5b0859282c409832521cfd052867451c0b1f6a64f827340f"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "7c0d130d1aa17631f697b490c9e99633b1d01a7b79e239bfd4b4f334469c7fa3"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "7c0d130d1aa17631f697b490c9e99633b1d01a7b79e239bfd4b4f334469c7fa3"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "15aecf4b3991cb0eb904069e9ade36bbd3b09488bb84ee8089969b9e2db74a9d"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "e81427a7c8a732e18984c52b95f5d61aaa5a1b63896fe4f79d6e2db5c94dde86"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "e81427a7c8a732e18984c52b95f5d61aaa5a1b63896fe4f79d6e2db5c94dde86"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-019",
+            "known_model_http_requests": 8,
+            "actual_model_http_requests": 8,
+            "known_input_subtotal": 31123,
+            "complete_input_tokens": 31123,
+            "known_output_subtotal": 676,
+            "complete_output_tokens": 676,
+            "duration_ms": 28653.597625,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 19,
+          "state": "closed_observation",
+          "physical_ordinal": 125,
+          "run_id": "standing42-run-2-codemode-24-020",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m0-e2",
+          "source_episode_sha256": "e77c5656e4b3bf6a954a0ffc94765cd19d2efc55e069f58ff89fc284d0c64e37",
+          "public_episode_sha256": "c4b0cf12e985667bf3269f41132d2bf5e5ba744b7a21b48255b06ecaa30c27e7",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "db41c490e6c6e4c95e46a113dfa62e18ec3056b675668eb09a9234c8b95695aa"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "3e1d5f52dd650b002c88e18fac36ca5524ee668fbfda4d352238fd390b5bf321"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "134bf8162cb5342c3e1e037e611b46134060f3e9b39b303bcd04ccd2b53a999a"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "8a5e87fe6913c7072ca9614bb878a6131f98e7f9a197ffee1f015f1012e2c460"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "b8e6afddc6266053e63ef70396dc2922f683a10b5c508cb9ef9f02342a0f1946"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "b8e6afddc6266053e63ef70396dc2922f683a10b5c508cb9ef9f02342a0f1946"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "a9f86f5c8bcde83634aaf68072b1c55f81b1128a6d45accde2e1f92872ad2f93"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "af9fa95fcd07f0211893fa7abf091a3c213d37c23437e417b211d90ed73dc0b8"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "af9fa95fcd07f0211893fa7abf091a3c213d37c23437e417b211d90ed73dc0b8"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-020",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 29875,
+            "complete_input_tokens": 29875,
+            "known_output_subtotal": 424,
+            "complete_output_tokens": 424,
+            "duration_ms": 43316.122084,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 20,
+          "state": "closed_observation",
+          "physical_ordinal": 126,
+          "run_id": "standing42-run-2-codemode-24-021",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "f97b391e39168c2a15afd6942098580eeb836a4080b10bd98d380b9ebc806af1",
+          "public_episode_sha256": "97244c7962c5864bfcd5d32b9f4df8062d0641d9b4a72fde0cf3789ecd3ac947",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "92d43574e096745186778a5557267a864b0889587fce09c1a78c18b7dff89e19"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "49f42725fc371dfc833d068d934767078cefc9d05f4c09b1b8f8dd3c884681e5"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "eb04b5036a2fb23e10adbbc3fb0e114fa266a81878ed56db428afc875da8f260"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "05fc0fb415e21583109fb630c80992583f5bb1cb24ec7ba8dfbe0e0bd6cfb13a"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "200c88889df2077c07c97a32892f6f638a4529e29113bc2926a3d13998478e7a"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "200c88889df2077c07c97a32892f6f638a4529e29113bc2926a3d13998478e7a"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "bf705ae8ce0a6e73fed2369082f6648b590f454d69071939cab64df0a6af9b09"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "f69922e5915645b4a33974c14f25d15bb4ccf1ee45d018958cbe7eb4af5a4abb"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "f69922e5915645b4a33974c14f25d15bb4ccf1ee45d018958cbe7eb4af5a4abb"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-021",
+            "known_model_http_requests": 6,
+            "actual_model_http_requests": 6,
+            "known_input_subtotal": 28023,
+            "complete_input_tokens": 28023,
+            "known_output_subtotal": 442,
+            "complete_output_tokens": 442,
+            "duration_ms": 38929.683042,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 21,
+          "state": "closed_observation",
+          "physical_ordinal": 127,
+          "run_id": "standing42-run-2-codemode-24-022",
+          "case_id": "continuation-01-a-n16-r2",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "f8c1bbda35306442a722b9a2d5850bc16e78044a79f5362c01601d20858c9721",
+          "public_episode_sha256": "77df86eb0cce4d356672fce18a6bb077a782d65e2f832204262d266330aaf72d",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "207b634d36e3246e5c1c425613e2253b9c2f94a369c6eab4f9cd80f1519ccde3"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "28f3c63fedded02b3be3144b38333e6f07c1391741772b3ec2ba5cbebce63f26"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "b676bee2b15ecabcd6017b67a6fd26a375da4df973795a442e16d713c28371f8"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "13e78a242681ffbef6a9fcf90962a1a9331a8c7a907b9082a354eafa73e1bd1b"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "8bb31b4d2ce7644e1db4bce57b61b27eb0053f0541ad10edea2a0c2385169dd8"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "8bb31b4d2ce7644e1db4bce57b61b27eb0053f0541ad10edea2a0c2385169dd8"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "a4b6de42d8d1591433b240b61ba731fd8bf981c35e085d8a004b9c67d5b76b56"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "889eef372defc51f87765e081087fbd475485a185799f65be4f556500cb2e495"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "889eef372defc51f87765e081087fbd475485a185799f65be4f556500cb2e495"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-022",
+            "known_model_http_requests": 7,
+            "actual_model_http_requests": 7,
+            "known_input_subtotal": 30447,
+            "complete_input_tokens": 30447,
+            "known_output_subtotal": 645,
+            "complete_output_tokens": 645,
+            "duration_ms": 26785.337,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 22,
+          "state": "closed_observation",
+          "physical_ordinal": 128,
+          "run_id": "standing42-run-2-codemode-24-023",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m0-e3",
+          "source_episode_sha256": "e1afd6bd953f71356d13e4e2d3ed89f36a495aa8803241882a8e936f67a4b968",
+          "public_episode_sha256": "6d1e02561d29c3d3e090e6d37feb932b1b406fae842838e5a50e785b9b1fc1d3",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "5d303bfb8ade05ad106d455fc67d824499a031540ec7f922a520aa4a6ec7d4c3"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "c83849d474b86a879ceb66db2ffb3469ac302b2c0a0b2aaa838fa7d4ab294515"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "b9bed111b8067c97f26f6eaf1e6e7a876300acf061faea0b183a3177aa7da64e"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-023",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 14020,
+            "complete_input_tokens": 14020,
+            "known_output_subtotal": 335,
+            "complete_output_tokens": 335,
+            "duration_ms": 19560.999832999998,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 23,
+          "state": "closed_observation",
+          "physical_ordinal": 129,
+          "run_id": "standing42-run-2-codemode-24-024",
+          "case_id": "implicit-01-a-n16-r1",
+          "condition_id": "m0-e2",
+          "source_episode_sha256": "48ce50f2b5d7d87ce6598517e5234e231e3fbd7fc89198ac632385f2b229cae9",
+          "public_episode_sha256": "db3a871736ac88ab70db5ac980040cfe8eba588968b37bb48be2f613095c917f",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "253fb1141d708a4d980cd83709eefcc7472cdc9b62f5a1be56a3c141f2aeef6c"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "56aaccf2f783c0af2845123d9b845631956294f8a08c186a8a843004bf5d1055"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "990f2894ccaec6d2119d2fc035b28a1629806243312705cee144c001c3159103"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-codemode-24-024",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 16105,
+            "complete_input_tokens": 16105,
+            "known_output_subtotal": 245,
+            "complete_output_tokens": 245,
+            "duration_ms": 36162.692417,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        }
+      ]
+    },
+    {
+      "scope_id": "standing42-run-2-scale-implicit-n64-r1",
+      "work_item_id": "scale-implicit-n64-r1",
+      "completed": 2,
+      "rows": [
+        {
+          "order": 0,
+          "state": "closed_observation",
+          "physical_ordinal": 130,
+          "run_id": "standing42-run-2-scale-implicit-n64-r1-001",
+          "case_id": "implicit-01-a-n64-r1",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "1043632e812da5e0c94653f79f061cb968bd38c5b44cdb54e704349c47e9a8c2",
+          "public_episode_sha256": "494195760c140b405b1e00265a2366069bfe1cc8c332e6c32354a49ddfa96a5c",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "a2d3c1400f3b2b30ab7433bbb284a14c82a3b1586bab6ca1c2cc05275701b013"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "fc5800339845f42ef12f3c0300b225da71d364c7f99a7960502860af070eb826"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "80170a03d406d7cdcc6f5f92cb7cd91aa2cc4b38582905a0ce4888217de83bd5"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-scale-implicit-n64-r1-001",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 27252,
+            "complete_input_tokens": 27252,
+            "known_output_subtotal": 265,
+            "complete_output_tokens": 265,
+            "duration_ms": 36035.067042,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 1,
+          "state": "closed_observation",
+          "physical_ordinal": 131,
+          "run_id": "standing42-run-2-scale-implicit-n64-r1-002",
+          "case_id": "implicit-01-a-n64-r1",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "cf407372dbf6db3b90447938bfff9103a2aaeece3bdbd515d2405ddb4ceb992f",
+          "public_episode_sha256": "28d4d9bd5aa325636a6febe51ab6cb8c7dff9a019cda8999d1d1fc0aa739fa55",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "6da7f9b78e43f9f08c53a0e5565fbe38e68edd879f4548d9e08c3d0677fcec7b"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "5cb88ae4b0857910e3db6afa7df79463c25de4963e852f3a3f7a15eb536a67dd"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "473972195284daf5c480ad324166547f398c84d2018bd03ca689f54f29e065c4"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-scale-implicit-n64-r1-002",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 38131,
+            "complete_input_tokens": 38131,
+            "known_output_subtotal": 358,
+            "complete_output_tokens": 358,
+            "duration_ms": 18613.765124999998,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        }
+      ]
+    },
+    {
+      "scope_id": "standing42-run-2-scale-implicit-n256-r1",
+      "work_item_id": "scale-implicit-n256-r1",
+      "completed": 2,
+      "rows": [
+        {
+          "order": 0,
+          "state": "closed_observation",
+          "physical_ordinal": 132,
+          "run_id": "standing42-run-2-scale-implicit-n256-r1-001",
+          "case_id": "implicit-01-a-n256-r1",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "7e324264b4457e8cf596b74f4d3d2149c778c4a432c9d8c948be8c3b1eb8f5f2",
+          "public_episode_sha256": "91b9e6ce1ca8ba402ece3e89b87b9211b09c2927649ff7c8c68eec68dc1521d0",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "9e5412f5e66cfea6ceb755593161ba7675d649a3e6269c23878219279159b955"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "4936b1b09bbe175f4080dbdf67ab146b285f33b4bf8e307fa4a5bef30e7bd9c3"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "703186b9ebe2b7969605c4e8d28e6f2e4181fbf4731b361f5ae83afb0447cd59"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-scale-implicit-n256-r1-001",
+            "known_model_http_requests": 5,
+            "actual_model_http_requests": 5,
+            "known_input_subtotal": 67811,
+            "complete_input_tokens": 67811,
+            "known_output_subtotal": 290,
+            "complete_output_tokens": 290,
+            "duration_ms": 58892.290499999996,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 1,
+          "state": "closed_observation",
+          "physical_ordinal": 133,
+          "run_id": "standing42-run-2-scale-implicit-n256-r1-002",
+          "case_id": "implicit-01-a-n256-r1",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "036c1481a614da428fdd80c75f9cb4087bdc389bb924f53fa5d3f1d82af865d8",
+          "public_episode_sha256": "6edab6a3653a435570659cecf3328fafbd6fc43c0b898bb17bf60b4465419875",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "25597d4bb71d67084c6eb55aafb30fb13133785ee13d7d4fd714b1416adfff9f"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "122784460782d6b5b60f1a77ea9cf5e8c0a670c4b3036cdeb56ff2f9b4f366b5"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "efeb492f5a01e7c882a8a7c72d592ab7e98666391888363d747481e4cb091aec"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-scale-implicit-n256-r1-002",
+            "known_model_http_requests": 4,
+            "actual_model_http_requests": 4,
+            "known_input_subtotal": 125212,
+            "complete_input_tokens": 125212,
+            "known_output_subtotal": 349,
+            "complete_output_tokens": 349,
+            "duration_ms": 23991.870625000003,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        }
+      ]
+    },
+    {
+      "scope_id": "standing42-run-2-scale-references-n16-r2",
+      "work_item_id": "scale-references-n16-r2",
+      "completed": 2,
+      "rows": [
+        {
+          "order": 0,
+          "state": "closed_observation",
+          "physical_ordinal": 134,
+          "run_id": "standing42-run-2-scale-references-n16-r2-001",
+          "case_id": "references-01-a-n16-r2",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "5d60b7db7bccdfdc3d17245798ff3d7f27e02d2833fe38e84ae4532d9985b9fe",
+          "public_episode_sha256": "aaf761190d7a819a7c142637138e03643b161be6bfee974276f0802e2dff7313",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "cdf8755bf0e85129a4647e0c4399e93310744ee7982a28c7d87c4f1a655179e2"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "2f795bcac81afa5ec261766183ac1b7dbb5db9412be6ed9d5e03ced8d252da65"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "955a8628cc71978c2011587dace2b4ef5c02ec851c1ce66ea80b62b2a94cbb61"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "1f02c492d6e63a6d4f9d5c1cf54f22143ae11126727d51686d483ec226b3346b"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "c6daca0145bfdaa795b48f179496aa4ff96b8212a8481a151dc9140d50561fab"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "c6daca0145bfdaa795b48f179496aa4ff96b8212a8481a151dc9140d50561fab"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "97616930adcbe9eba081ee0581940fced3dc9379250e0efa74fab6b7f133e2b0"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "b70592143526a4f7d2327edb8a41455324a6868d4449cfe37294310eb8512874"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "b70592143526a4f7d2327edb8a41455324a6868d4449cfe37294310eb8512874"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-scale-references-n16-r2-001",
+            "known_model_http_requests": 8,
+            "actual_model_http_requests": 8,
+            "known_input_subtotal": 39419,
+            "complete_input_tokens": 39419,
+            "known_output_subtotal": 664,
+            "complete_output_tokens": 664,
+            "duration_ms": 52293.29075,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 1,
+          "state": "closed_observation",
+          "physical_ordinal": 135,
+          "run_id": "standing42-run-2-scale-references-n16-r2-002",
+          "case_id": "references-01-a-n16-r2",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "b997bbbbb36cb89013da2854bd6e1f5dae24182ebcfa7c88de288f60459ef62b",
+          "public_episode_sha256": "52e3d96d51397fe179cd81fbad53b1f8c3e0d083efa11c694ade8daa06d34b5a",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "78bc6fcee15648776f12cd39cb556640ca6466e82fec44825636525d50f6b913"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "156d688dc08c32576dd530f7aae278cd92392f0c47fe517f4c3e6f890b6945d9"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "849555b3d0875eb65bc7964ec183d5b8891a3cc3a6b0a1a9922be30b62acf95d"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "8e6c8cbe55fab5661b80a8476b094548bad39c66323602de3816b25f405fb7ff"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "a212a9e6d5256e94dcc7823cbf3e4a4b62a45df78542f9b4ec017669a9bd7810"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 6,
+                "sha256": "a212a9e6d5256e94dcc7823cbf3e4a4b62a45df78542f9b4ec017669a9bd7810"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "fcff6bc32ab3fbbf77386aa95589acf486fc86b99607884a69601d47d88ee3cf"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "9daee252c04fbb1dec83af33ce03ab006778764f7c40ff9360b54c856a1819ca"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 6,
+                "sha256": "9daee252c04fbb1dec83af33ce03ab006778764f7c40ff9360b54c856a1819ca"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-scale-references-n16-r2-002",
+            "known_model_http_requests": 9,
+            "actual_model_http_requests": 9,
+            "known_input_subtotal": 41859,
+            "complete_input_tokens": 41859,
+            "known_output_subtotal": 1065,
+            "complete_output_tokens": 1065,
+            "duration_ms": 40465.2075,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        }
+      ]
+    },
+    {
+      "scope_id": "standing42-run-2-scale-references-n16-r4",
+      "work_item_id": "scale-references-n16-r4",
+      "completed": 2,
+      "rows": [
+        {
+          "order": 0,
+          "state": "closed_observation",
+          "physical_ordinal": 136,
+          "run_id": "standing42-run-2-scale-references-n16-r4-001",
+          "case_id": "references-01-a-n16-r4",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "1c30161ba4f61b031ef0c47e1d3057d3205442825c1e7109a469abb07de6aec6",
+          "public_episode_sha256": "b70ab4a1e31979ffcea7d8eb93ba68e2d9d723304e8a0b47c4ad3d02ba018e2d",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "a60f1241492a5d1edae2ccf1f061e2c03226c6436eafe199df8c39ca8ba6c036"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "c7b83fd62ddde2b44f358d1ae7eceb61e9244f0c61728ff6ab282e93fc8634e1"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "fe59deea1b13a82350be9c10889d0cf29c6c481606fe14aa2c6fbcc19c1cc3c0"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "6460925ab9c7e1e98204564752f1258619b36b8b654e5d9124514057960f3e59"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "587e6113eadb7bf1d1382b9bc64db66a5c2e5fdf0e8050767b11678c4532e94a"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 10,
+                "sha256": "587e6113eadb7bf1d1382b9bc64db66a5c2e5fdf0e8050767b11678c4532e94a"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "94e257ea69b380b154d82566310d0a35f915a4e05a802bd4e3c2ccab578b9bbb"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "9bcc1fa8e42dae38fdfa1fbaaf5f47edef78a161c989a5247f907e34ace36990"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 10,
+                "sha256": "9bcc1fa8e42dae38fdfa1fbaaf5f47edef78a161c989a5247f907e34ace36990"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [
+              "grant-chain-read"
+            ],
+            "outcome": "fail",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-scale-references-n16-r4-001",
+            "known_model_http_requests": 14,
+            "actual_model_http_requests": 14,
+            "known_input_subtotal": 76702,
+            "complete_input_tokens": 76702,
+            "known_output_subtotal": 1304,
+            "complete_output_tokens": 1304,
+            "duration_ms": 135054.660416,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 1,
+          "state": "closed_observation",
+          "physical_ordinal": 137,
+          "run_id": "standing42-run-2-scale-references-n16-r4-002",
+          "case_id": "references-01-a-n16-r4",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "5c2976cc080cc29d90275f5624691bd7d9c92971c87122028f5eeb717a0ece72",
+          "public_episode_sha256": "7b579c8b2f4c01b803d408824a7c31c640b7ec885a55bf1ab78873df1f264dda",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "be54e1164e6f5984550e4415464d0d0fc10bae73351fed2df4ba71423a5311e9"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "b62fdb5ec92b82459e4dac0ef323709072ba1376a80e0c4549faaa0b4ff18ddb"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "46db57cd5ece449a7eb4b067fcbb80a8a5957a7e30598b893c4a9398c1027305"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "ef32eefcf11b16b40406c3d8f5519c7c2e013230e315f83f17072561c1dc6b43"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "bb67b7ec9366a47ba7c4382e09d951b119c308ce46dd53259a640667359a1950"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 10,
+                "sha256": "bb67b7ec9366a47ba7c4382e09d951b119c308ce46dd53259a640667359a1950"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "fe748286d3f3c3de5ed63361f6f88b4ac028c77f7364152f9011909a883f91e7"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "84c25e324cd8857adae8dbd8543f7b821fe922dd537763f851ce19520810c8bf"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 10,
+                "sha256": "84c25e324cd8857adae8dbd8543f7b821fe922dd537763f851ce19520810c8bf"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-scale-references-n16-r4-002",
+            "known_model_http_requests": 18,
+            "actual_model_http_requests": 18,
+            "known_input_subtotal": 104078,
+            "complete_input_tokens": 104078,
+            "known_output_subtotal": 1906,
+            "complete_output_tokens": 1906,
+            "duration_ms": 88669.8265,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        }
+      ]
+    },
+    {
+      "scope_id": "standing42-run-2-scale-tariff-n16-r8",
+      "work_item_id": "scale-tariff-n16-r8",
+      "completed": 2,
+      "rows": [
+        {
+          "order": 0,
+          "state": "closed_observation",
+          "physical_ordinal": 138,
+          "run_id": "standing42-run-2-scale-tariff-n16-r8-001",
+          "case_id": "scripts-assets-02-a-n16-r8",
+          "condition_id": "m0-e0",
+          "source_episode_sha256": "3bb32e51357cba3d17e705236c10dbf1691cf1fd11da1bc8f4bf4225a8d30b5e",
+          "public_episode_sha256": "3949d54dcfcf7c138d0683cbb44d69bf1e8d4fc7b22f860a035134f68da42842",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "4885caa3f76fb875d96578c0410f6ea25ba946e98bf6b53a85f399bb45460d20"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "2d78dd3116f8da675fa2ad9a2c82ba5ed081d9ad47c523187b5764dfc6376727"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "7cb09218f1c2d2ec9d5196238d89b2d206a19f14ae8127a7ad6cd6176b7bab81"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "0dcde6125044bcf0a600c64629ee01d0b51618f4b02513d30aa3a1442262d7d0"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "e3bcc6bdf9a957fb71e7e642e6ac899ea1a197e9a1edb4b48eece6fe386ed395"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 18,
+                "sha256": "e3bcc6bdf9a957fb71e7e642e6ac899ea1a197e9a1edb4b48eece6fe386ed395"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "a8f9ca3616a6730ec2a00ddbc3a76917623d880b387022aee6bc67c492368c0c"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "f091d27056e846b47ec2b353d43100f2289fe4dbcd6f052c23590192768dc022"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 18,
+                "sha256": "f091d27056e846b47ec2b353d43100f2289fe4dbcd6f052c23590192768dc022"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "unknown",
+            "unassisted_success": false,
+            "verified_success": false
+          },
+          "usage": {
+            "run_id": "standing42-run-2-scale-tariff-n16-r8-001",
+            "known_model_http_requests": 20,
+            "actual_model_http_requests": 20,
+            "known_input_subtotal": 112725,
+            "complete_input_tokens": 112725,
+            "known_output_subtotal": 1471,
+            "complete_output_tokens": 1471,
+            "duration_ms": 131321.178625,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        },
+        {
+          "order": 1,
+          "state": "closed_observation",
+          "physical_ordinal": 139,
+          "run_id": "standing42-run-2-scale-tariff-n16-r8-002",
+          "case_id": "scripts-assets-02-a-n16-r8",
+          "condition_id": "m0-e1",
+          "source_episode_sha256": "36cf63f0524100c7774d04dba777c5cf4185f8db4b2042ca4f10dc40473bce0f",
+          "public_episode_sha256": "63091b57a1fd1b6353a55d809affe73158fd6125bdf3ea607c851ed0d35604d0",
+          "admission": {
+            "completeness": {
+              "attempts": "complete",
+              "interventions": "complete",
+              "tools": "complete"
+            },
+            "reasons": [],
+            "refs": [
+              {
+                "artifact_id": "collection-launcher-result",
+                "pointer": "",
+                "sha256": "f291277861dd5074ce79e5b013b81f22b58db8294449d6f39d6231b880d6cf3b"
+              },
+              {
+                "artifact_id": "collection-readback",
+                "pointer": "",
+                "sha256": "72bc3c6046697afdfb28e1bab51f431aa3e46ee2e9cc74e871063318c3126a55"
+              },
+              {
+                "artifact_id": "collection-runtime-result",
+                "pointer": "",
+                "sha256": "7aa7dcace14c9fd8a6c6870561458a2df31966cbb1eb5e7ca991373395ba0656"
+              },
+              {
+                "artifact_id": "collection-turn-control-receipt",
+                "pointer": "",
+                "sha256": "0f2e824119e815e5c21263d371153af91074b4fb77c1a9eb6d367e75de283ab2"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 1,
+                "sha256": "f9efdf698c3922e71870261d2f2f2f2bf08323f46aa20a986c34f7c1f719bf44"
+              },
+              {
+                "artifact_id": "collection-turn-controller-journal",
+                "line": 18,
+                "sha256": "f9efdf698c3922e71870261d2f2f2f2bf08323f46aa20a986c34f7c1f719bf44"
+              },
+              {
+                "artifact_id": "collection-turn-subject-result",
+                "pointer": "",
+                "sha256": "4a146f9ccf4d2bf43ff18e28cfb1a09202ce17b601ae2a8f8b27c4ef287044a1"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 1,
+                "sha256": "aeae3aa015fd93ab28efb8b91abe9f45af715db612219872f35566fc0e181e49"
+              },
+              {
+                "artifact_id": "collection-turn-subject-journal",
+                "line": 18,
+                "sha256": "aeae3aa015fd93ab28efb8b91abe9f45af715db612219872f35566fc0e181e49"
+              }
+            ],
+            "status": "valid"
+          },
+          "result": {
+            "critical_failures": [],
+            "outcome": "pass",
+            "unassisted_success": true,
+            "verified_success": true
+          },
+          "usage": {
+            "run_id": "standing42-run-2-scale-tariff-n16-r8-002",
+            "known_model_http_requests": 24,
+            "actual_model_http_requests": 24,
+            "known_input_subtotal": 159657,
+            "complete_input_tokens": 159657,
+            "known_output_subtotal": 2909,
+            "complete_output_tokens": 2909,
+            "duration_ms": 112509.907542,
+            "currency_cost": null
+          },
+          "original_stop_batch": false,
+          "original_stop_reason": null
+        }
+      ]
+    }
+  ]
+}

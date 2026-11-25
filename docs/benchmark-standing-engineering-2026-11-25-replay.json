@@ -1,0 +1,346 @@
+{
+  "version": 1,
+  "kind": "standing-results-public-replay-summary",
+  "status": "passed",
+  "completed_at": "2026-11-25T11:03:33.779Z",
+  "source_replay_receipt_sha256": "9c8863da3f9e16981bedc9e19c17bf108baee4e76a1d9c09ce41b4e2daa64db5",
+  "source_export_receipt_sha256": "04e4a008235af5081145df780deea7e61d33b876c8613f2c57b557dbbd2216a8",
+  "package_root": "../benchmark/results/2026-11-25-standing-engineering34",
+  "release_manifest_sha256": "4726e48686d160b6140b5e465a89f5cd1d7968cd915d1419fd5b33a71e6bbc3f",
+  "public_files": 3513,
+  "public_bytes": 148844414,
+  "public_inventory_sha256": "296c15aad4b2b713397a56e54acc69d55c4dd6f24c5d2b4ed230d7fd7d4e3c5a",
+  "collector": {
+    "version": "1.2.0",
+    "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+  },
+  "isolation_canaries": {
+    "public_readable": true,
+    "private_sources_denied": true,
+    "private_writes_denied": true,
+    "public_writes_denied": true,
+    "network_denied": true,
+    "inherited_credentials": false
+  },
+  "packages": [
+    {
+      "scope_id": "standing42-run-2-codemode-24",
+      "work_item_id": "codemode-24",
+      "collector": {
+        "version": "1.2.0",
+        "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+      },
+      "path": "packages/standing42-run-2-codemode-24",
+      "completed": 24,
+      "dispatch_slots": 24,
+      "scientific_slots": 24,
+      "source_plan_sha256": "608ba6f2c68241e406ed05ce7b6c9fbb555d1a3e0d778615cb50242150a74747",
+      "source_ledger_sha256": "d4e4cd08b3ae47c6666a382c467ca49ca004ffe1a0b5eabe78c6c82c0e70d816",
+      "source_protocol_sha256": "94ac9c2a72f710176e62d742fddf212582f7c7d7aef1a43f8ab57bca7dead85e",
+      "last_reason": "planned_slots_completed",
+      "public_manifest_file_sha256": "17ebde360da7b262c474bd63a0ef26daeeb5fb54cfd532024f75ea14b3f4010c",
+      "source_analysis_sha256": "acbca60553d31195b85091288be5569847f76499b1ae098501ef52a273212226",
+      "public_analysis_sha256": "6c4c44ad88169016fa3544fba73c9343d73f3926f46f9734ce35249fb4ddaa20",
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "6c4c44ad88169016fa3544fba73c9343d73f3926f46f9734ce35249fb4ddaa20",
+        "original_analysis_sha256": "acbca60553d31195b85091288be5569847f76499b1ae098501ef52a273212226",
+        "model_requests": 0
+      },
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "551e2c3cb68c59b37fb7f086cebab27be98fd3f8eeb5b89c26c47def139e339c",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    },
+    {
+      "scope_id": "standing42-run-2-scale-implicit-n64-r1",
+      "work_item_id": "scale-implicit-n64-r1",
+      "collector": {
+        "version": "1.2.0",
+        "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+      },
+      "path": "packages/standing42-run-2-scale-implicit-n64-r1",
+      "completed": 2,
+      "dispatch_slots": 2,
+      "scientific_slots": 2,
+      "source_plan_sha256": "7a80c5a0327096d4bb5d50a48bcc64a733963657467d9dae3729625e18edfc16",
+      "source_ledger_sha256": "2c23f4c9c2c62a9efa76b1fdbaea5795a5f50d6791954331b52585b06bc9f3ef",
+      "source_protocol_sha256": "2d9ee2cf6e384590fabd49bcb26b3b9e3501f4aada6cc9fe17969892e3ced48a",
+      "last_reason": "planned_slots_completed",
+      "public_manifest_file_sha256": "348e1028a483fb466f4970983af7e06d3b20428e45f7bf7f7fe17037e3cf64ed",
+      "source_analysis_sha256": "b0d860ce54584498746625df87620e32b2a824d21a07340768b9f7fb5a689691",
+      "public_analysis_sha256": "87dac07ed23a3c36d8e233a34ab21ca2b8f6f6fdf9e01f7c2329dfbb17450238",
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "87dac07ed23a3c36d8e233a34ab21ca2b8f6f6fdf9e01f7c2329dfbb17450238",
+        "original_analysis_sha256": "b0d860ce54584498746625df87620e32b2a824d21a07340768b9f7fb5a689691",
+        "model_requests": 0
+      },
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "12e1b337152f6bdd2a72988a57d939b4065586ee823518fa3f58f723d1f1a262",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    },
+    {
+      "scope_id": "standing42-run-2-scale-implicit-n256-r1",
+      "work_item_id": "scale-implicit-n256-r1",
+      "collector": {
+        "version": "1.2.0",
+        "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+      },
+      "path": "packages/standing42-run-2-scale-implicit-n256-r1",
+      "completed": 2,
+      "dispatch_slots": 2,
+      "scientific_slots": 2,
+      "source_plan_sha256": "8011636d15bd318b287679efe360862f4a7df90b583baf8718cda3fd7e4b8e1f",
+      "source_ledger_sha256": "0ede52a6036bdc7ec9a7b7e84adac940019271aaf7e3aa70b95d545ae64bbcbb",
+      "source_protocol_sha256": "02173a2c2a19d82615c593b4fa77df513e76fbf771bee46ca71ba21a158467f5",
+      "last_reason": "planned_slots_completed",
+      "public_manifest_file_sha256": "3121275d0d7a20292a421b9d949b546c626235f2af91fd51a7c097e41364bcd0",
+      "source_analysis_sha256": "5c202452710e84465fd2d8752ee7972096908ad335d15adc43737d28980927e4",
+      "public_analysis_sha256": "1008cb5874d0f7e8ef535d422f87b7562c3c4b30b68139d44cb99fc291865ff6",
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "1008cb5874d0f7e8ef535d422f87b7562c3c4b30b68139d44cb99fc291865ff6",
+        "original_analysis_sha256": "5c202452710e84465fd2d8752ee7972096908ad335d15adc43737d28980927e4",
+        "model_requests": 0
+      },
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "c22fff1ea5420913ac20650a6ae4df71895bc84f4182d4cdd9dfe50a1d7f6ffa",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    },
+    {
+      "scope_id": "standing42-run-2-scale-references-n16-r2",
+      "work_item_id": "scale-references-n16-r2",
+      "collector": {
+        "version": "1.2.0",
+        "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+      },
+      "path": "packages/standing42-run-2-scale-references-n16-r2",
+      "completed": 2,
+      "dispatch_slots": 2,
+      "scientific_slots": 2,
+      "source_plan_sha256": "0439ddb78848d188888be3ef774ff2651d258090a22d1156cfc507babed7ff13",
+      "source_ledger_sha256": "b256c2b8b4ee24452a23f64d92a66240edba02e21cdc6807665cc355c3747d60",
+      "source_protocol_sha256": "139980745dbd2b96a5217a4b76c9e347a89a73c38860f767ef610ccc09e6119b",
+      "last_reason": "planned_slots_completed",
+      "public_manifest_file_sha256": "cae38617e313987ec54cd6fbd51357362cc1b8a9762ef8edc88511b0ada5d2f5",
+      "source_analysis_sha256": "05b1680e019fe2509c73123d6baeeb3a668af34dbfaefe4526508e517d4cb35d",
+      "public_analysis_sha256": "fd07f5a438394d724242996e9188e7822b2bf4cae9203fb510358e4b2746883b",
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "fd07f5a438394d724242996e9188e7822b2bf4cae9203fb510358e4b2746883b",
+        "original_analysis_sha256": "05b1680e019fe2509c73123d6baeeb3a668af34dbfaefe4526508e517d4cb35d",
+        "model_requests": 0
+      },
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "2849b62e60cf1c8e6ca0c153c15918f996ba68c8547853cfece997fd985e105c",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    },
+    {
+      "scope_id": "standing42-run-2-scale-references-n16-r4",
+      "work_item_id": "scale-references-n16-r4",
+      "collector": {
+        "version": "1.2.0",
+        "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+      },
+      "path": "packages/standing42-run-2-scale-references-n16-r4",
+      "completed": 2,
+      "dispatch_slots": 2,
+      "scientific_slots": 2,
+      "source_plan_sha256": "a477356e07e9f9802be16873fd2f30dbbd13954bcd979229f279d9f736ae80c9",
+      "source_ledger_sha256": "00ff1cad835d17866ac287fa69f2037c10762a132faf430a7851e3e2805a271e",
+      "source_protocol_sha256": "5dd8f395b820cb68dc8f4b65734e49b33a41009349503770f8c56acefcbcbdd2",
+      "last_reason": "planned_slots_completed",
+      "public_manifest_file_sha256": "ea90ce18644373ef04321816bc5eabee1c0f48345fd62ff3ef79f02268082f68",
+      "source_analysis_sha256": "fcb3fafac4e378c41d959c727b81e2bcf837185ca5a02a2b93e79335fa89328f",
+      "public_analysis_sha256": "956ee5f08aa957f4e535ce7f9f6f19f9b2a9b98ae8fef2371840d3c3a6df6201",
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "956ee5f08aa957f4e535ce7f9f6f19f9b2a9b98ae8fef2371840d3c3a6df6201",
+        "original_analysis_sha256": "fcb3fafac4e378c41d959c727b81e2bcf837185ca5a02a2b93e79335fa89328f",
+        "model_requests": 0
+      },
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "f4f46ad9f96dc458054343aacd65e3aaa4de9ed932219949433c142150293b25",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    },
+    {
+      "scope_id": "standing42-run-2-scale-tariff-n16-r8",
+      "work_item_id": "scale-tariff-n16-r8",
+      "collector": {
+        "version": "1.2.0",
+        "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+      },
+      "path": "packages/standing42-run-2-scale-tariff-n16-r8",
+      "completed": 2,
+      "dispatch_slots": 2,
+      "scientific_slots": 2,
+      "source_plan_sha256": "aee8b6d605d27ef90a0111e0f394c877897132be6cb3d5ac6065a404c061bb25",
+      "source_ledger_sha256": "17b416784fef36a027df584d0280fe9922d18cddc87ec26bc44883d24c905609",
+      "source_protocol_sha256": "b3a6be3ebf68688ca0af3eb57c81f0ea50e32e555d3b792a0600df1ef325be0a",
+      "last_reason": "planned_slots_completed",
+      "public_manifest_file_sha256": "500c39cf096de94b8945c40f984be16e710bb7555ac91014dfa335bd4ca34899",
+      "source_analysis_sha256": "dc938f83b4e9f50ab9825b70f5b46f5bb0a9529412432bddc2683e5728e8d07d",
+      "public_analysis_sha256": "98817002d5db069c6a62b4a5426e7386de2605633c14bed23a479954c5c7d0ac",
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "98817002d5db069c6a62b4a5426e7386de2605633c14bed23a479954c5c7d0ac",
+        "original_analysis_sha256": "dc938f83b4e9f50ab9825b70f5b46f5bb0a9529412432bddc2683e5728e8d07d",
+        "model_requests": 0
+      },
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "0824a2225bff6d2adfbcc0afe13325ecd025774ee59fec988b4244c7f210ecff",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    }
+  ],
+  "incremental_accounting": {
+    "status": "verified",
+    "actual_new_observations": 34,
+    "physical_reservations": 139,
+    "packages": 6,
+    "usage": {
+      "reserved_episodes": 34,
+      "episodes_with_observed_model_send_lower_bound": 34,
+      "known_model_http_requests": 226,
+      "actual_model_http_requests": 226,
+      "known_input_subtotal": 1275266,
+      "complete_input_tokens": 1275266,
+      "known_output_subtotal": 20583,
+      "complete_output_tokens": 20583,
+      "complete_currency_cost": null,
+      "currency_cost_status": "incomplete_or_unpriced",
+      "unknown_usage_run_ids": [],
+      "summed_observed_episode_duration_ms": 1421982.067709
+    },
+    "model_requests": 0,
+    "scope": "public original-slot lineage and resource accounting; prior results linked separately, without regrading or cross-condition pooling"
+  },
+  "public_inventory_unchanged": true,
+  "original_export_unchanged": true,
+  "subject_model_requests": 0,
+  "limitations": [
+    "Public hashes, locators, normalized statistics and resource accounting are replayed; private grading and raw chains are not.",
+    "A completed scientific schedule does not itself establish product acceptance.",
+    "Input and time chart title-only differences are recorded; other claimed analysis/table/quality artifacts are byte-identical."
+  ],
+  "prior_partial": {
+    "source_replay_receipt_sha256": "77eb4b71d8a20abb7c80b3867ce9fc49d3cee188fa786eeda8aef5e03fd980a9",
+    "package_root": "../benchmark/results/2026-11-25-standing-partial-run1",
+    "release_manifest_sha256": "9083ced9642f7c054c918eea5cd16672d7861b92388abbb73ead2adc7194cd69",
+    "status": "passed",
+    "isolation_canaries": {
+      "public_readable": true,
+      "private_sources_denied": true,
+      "private_writes_denied": true,
+      "public_writes_denied": true,
+      "network_denied": true,
+      "inherited_credentials": false
+    },
+    "replay": {
+      "status": "verified",
+      "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+      "analysis_sha256": "9bd479c96276d6ab3ba1321bb1883f22e58588f7a8419efe5914fd18a42236b5",
+      "original_analysis_sha256": "889785ea3331bbadbf6a48d290c4223e7ac8f2baa8f7bc1e3e8308341f8b1788",
+      "model_requests": 0
+    },
+    "scope": {
+      "observed": 1,
+      "planned": 24,
+      "unstarted": 23
+    },
+    "original_usage": {
+      "run_id": "standing42-run-1-codemode-24-001",
+      "known_model_http_requests": 4,
+      "actual_model_http_requests": 4,
+      "known_input_subtotal": 16194,
+      "complete_input_tokens": 16194,
+      "known_output_subtotal": 269,
+      "complete_output_tokens": 269,
+      "duration_ms": 31822.893333,
+      "currency_cost": null
+    },
+    "public_copy_unchanged": true,
+    "original_export_unchanged": true,
+    "source_inputs_unchanged": true,
+    "subject_model_requests": 0,
+    "private_grading_replayed": false,
+    "cross_epoch_pooling": false
+  }
+}

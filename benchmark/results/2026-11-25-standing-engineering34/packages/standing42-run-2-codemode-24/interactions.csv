@@ -1,0 +1,4 @@
+"kind","id","metric","unit","currency","status","estimate","interval_status","lcb","ucb","reason","origin","confirmation"
+"code_mode_interaction","gpt62-candidate-native-free-off","quality","ratio_difference","","available","-0.6666666666666666","available","-2","2","","preregistered-plan","false"
+"code_mode_interaction","gpt62-candidate-native-free-off","time","milliseconds","","available","94269.379354","available","-360000","360000","","preregistered-plan","false"
+"code_mode_interaction","gpt62-candidate-native-free-off","cost","currency","","unknown","","unavailable","","","Missing or incompatible currency cost","preregistered-plan","false"

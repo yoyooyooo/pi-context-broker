@@ -1,0 +1,2 @@
+"candidate","reference","paired_units","quality_delta","quality_delta_lcb","quality_delta_ucb","input_ratio","input_ratio_interval_status","input_ratio_lcb","input_ratio_ucb","input_absolute_difference","capped_time_ratio","capped_time_ratio_lcb","capped_time_ratio_ucb","decision","decision_stage"
+"m0-e0","m0-e1","1","-1","-1","1","0.9417090709285936","unavailable","","","-2440","14.859390034687884","0","","descriptive","no_acceptance_claim"

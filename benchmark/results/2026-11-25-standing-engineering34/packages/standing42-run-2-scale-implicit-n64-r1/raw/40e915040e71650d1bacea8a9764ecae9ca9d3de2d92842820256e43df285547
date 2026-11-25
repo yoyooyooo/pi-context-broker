@@ -1,0 +1,17 @@
+---
+name: [identity:96a15fe5ccb7da130d9c]
+description: "松涛92包裹运输路由规则"
+---
+
+
+# 松涛92包裹运输路由规则
+
+处理需要给包裹选择承运线路的请求。读取 references/routing.json。
+
+易碎件使用 fragile\_route；其余重量小于或等于 express\_max\_kg 使用 express\_route，超过使用 standard\_route。
+
+输出 JSON 数组，每行保留 id，并写 route。不要用客户姓名或订单编号猜测线路。
+
+本材料为可公开复现的合成业务资料，许可 CC0-1.0。
+
+金额一律使用整数分；若有舍入，按文中规则执行。

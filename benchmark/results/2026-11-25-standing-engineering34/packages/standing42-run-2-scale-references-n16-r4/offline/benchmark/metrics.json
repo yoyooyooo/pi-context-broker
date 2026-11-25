@@ -1,0 +1,262 @@
+{
+  "schema_version": 1,
+  "version": "1.0.0",
+  "implementation_status": "implemented",
+  "precision_labels": [
+    "observed",
+    "reported",
+    "derived",
+    "estimated",
+    "unknown"
+  ],
+  "rules": {
+    "usage_semantics": "Adapter evidence must establish full input, cache and reasoning accounting; never infer by field names alone.",
+    "actual_retries": "Every sent attempt counts. Same payload sent twice is two attempts.",
+    "independence": "Case/material cluster is the independent sampling unit; repeats, turns and calls are not extra questions.",
+    "critical_contracts": "Business success and every applicable critical contract are required; efficiency cannot offset a violation.",
+    "intervals": "Pair and cluster structure must be preserved. Degenerate bootstrap cannot grant non-inferiority.",
+    "provenance": "Facts reference raw SHA-256 and a line or JSON pointer; derived values reference inputs and formula; inference is labelled."
+  },
+  "metrics": [
+    {
+      "id": "verified_quality",
+      "formula": "100 × sum_f weight_f × mean_case(mean_repeat(verified_success))",
+      "unit": "percent",
+      "aggregation": "case_repeat_then_family",
+      "evidence": [
+        "business_readback",
+        "completion_boundary"
+      ],
+      "analysis_entry": "metric:quality.verified/v1",
+      "missing": "unknown receives no success credit; retain fixed denominator"
+    },
+    {
+      "id": "known_failure",
+      "formula": "F / (S + F + U)",
+      "unit": "ratio",
+      "aggregation": "fixed_task_denominator",
+      "evidence": [
+        "business_readback"
+      ],
+      "analysis_entry": "metric:quality.known_failure/v1",
+      "missing": "unknown is not confirmed failure"
+    },
+    {
+      "id": "evidence_coverage",
+      "formula": "(S + F) / (S + F + U)",
+      "unit": "ratio",
+      "aggregation": "fixed_task_denominator",
+      "evidence": [
+        "business_readback"
+      ],
+      "analysis_entry": "metric:quality.coverage/v1",
+      "missing": "unknown remains in denominator"
+    },
+    {
+      "id": "success_identification_bounds",
+      "formula": "[S/N, (S+U)/N]",
+      "unit": "ratio_interval",
+      "aggregation": "fixed_task_denominator",
+      "evidence": [
+        "business_readback"
+      ],
+      "analysis_entry": "metric:quality.identification_bounds/v1",
+      "missing": "identification range is not a sampling confidence interval"
+    },
+    {
+      "id": "input_first",
+      "formula": "I_1 for the first actual provider attempt",
+      "unit": "tokens",
+      "aggregation": "first_attempt",
+      "evidence": [
+        "model_requests",
+        "usage"
+      ],
+      "analysis_entry": "metric:context.first/v1",
+      "missing": "unknown if first attempt has no verified full-input usage"
+    },
+    {
+      "id": "input_peak",
+      "formula": "max_j I_j",
+      "unit": "tokens",
+      "aggregation": "all_actual_attempts",
+      "evidence": [
+        "model_requests",
+        "usage"
+      ],
+      "analysis_entry": "metric:context.peak/v1",
+      "missing": "complete peak unknown if an attempt lacks usage; known peak separately"
+    },
+    {
+      "id": "input_total",
+      "formula": "sum_j I_j including failures and actual retries",
+      "unit": "tokens",
+      "aggregation": "all_actual_attempts",
+      "evidence": [
+        "model_requests",
+        "usage"
+      ],
+      "analysis_entry": "metric:context.total/v1",
+      "missing": "full total unknown when any attempt lacks usage; known subtotal and missing count separately"
+    },
+    {
+      "id": "input_ratio",
+      "formula": "weighted_mean(input_total_A) / weighted_mean(input_total_B)",
+      "unit": "ratio",
+      "aggregation": "ratio_of_weighted_means",
+      "evidence": [
+        "model_requests",
+        "usage"
+      ],
+      "analysis_entry": "metric:context.ratio/v1",
+      "missing": "zero denominator yields absolute difference, not infinity"
+    },
+    {
+      "id": "capped_time",
+      "formula": "T if verified success within tau; otherwise tau",
+      "unit": "milliseconds",
+      "aggregation": "all_valid_tasks",
+      "evidence": [
+        "completion_boundary",
+        "business_readback"
+      ],
+      "analysis_entry": "metric:time.capped/v1",
+      "missing": "raw elapsed time is separate; include unsuccessful valid tasks"
+    },
+    {
+      "id": "time_ratio",
+      "formula": "weighted_mean(capped_time_A) / weighted_mean(capped_time_B)",
+      "unit": "ratio",
+      "aggregation": "ratio_of_weighted_means",
+      "evidence": [
+        "completion_boundary",
+        "business_readback"
+      ],
+      "analysis_entry": "metric:time.ratio/v1",
+      "missing": "zero denominator yields absolute difference"
+    },
+    {
+      "id": "success_by_budget",
+      "formula": "sum_f weight_f × mean_case(mean_repeat(V × 1[usage <= b]))",
+      "unit": "ratio",
+      "aggregation": "fixed_task_denominator",
+      "evidence": [
+        "usage",
+        "completion_boundary",
+        "business_readback"
+      ],
+      "analysis_entry": "metric:budget.quality/v1",
+      "missing": "unknown usage cannot receive proven in-budget success"
+    },
+    {
+      "id": "unassisted_quality",
+      "formula": "sum_f weight_f × mean_case(mean_repeat(V × 1[extra_interventions = 0]))",
+      "unit": "ratio",
+      "aggregation": "fixed_task_denominator",
+      "evidence": [
+        "business_readback",
+        "interventions"
+      ],
+      "analysis_entry": "metric:quality.unassisted/v1",
+      "missing": "normal clarification and product self-recovery are not extra interventions"
+    },
+    {
+      "id": "interface_misuse_rate",
+      "formula": "episodes with confirmed interface misuse / all valid episodes",
+      "unit": "ratio",
+      "aggregation": "fixed_task_denominator",
+      "evidence": [
+        "tool_lineage"
+      ],
+      "analysis_entry": "metric:interface.misuse/v1",
+      "missing": "retain unknown and coverage; never divide by tool-call count"
+    },
+    {
+      "id": "cost_per_success",
+      "formula": "sum(all valid episode cost) / verified successes",
+      "unit": "currency",
+      "aggregation": "all_valid_tasks",
+      "evidence": [
+        "usage",
+        "model_requests",
+        "business_readback"
+      ],
+      "analysis_entry": "metric:cost.per_success/v1",
+      "missing": "unverified prices or missing cost => unknown; zero successes => not_reached"
+    },
+    {
+      "id": "version_transition",
+      "formula": "fixed-weight counts over pass/fail/unknown_A × pass/fail/unknown_B",
+      "unit": "matrix",
+      "aggregation": "paired_cases",
+      "evidence": [
+        "business_readback"
+      ],
+      "analysis_entry": "metric:quality.transitions/v1",
+      "missing": "unknown transitions are distinct; one flip is not causal proof"
+    },
+    {
+      "id": "model_environment_interaction",
+      "formula": "(Q_model2_envA - Q_model2_envB) - (Q_model1_envA - Q_model1_envB)",
+      "unit": "difference",
+      "aggregation": "paired_case_cluster",
+      "evidence": [
+        "business_readback"
+      ],
+      "analysis_entry": "metric:interaction.model_environment/v1",
+      "missing": "requires common tasks and all four declared cells"
+    },
+    {
+      "id": "code_mode_interaction",
+      "formula": "(Y_A_free - Y_B_free) - (Y_A_off - Y_B_off)",
+      "unit": "metric_specific_difference",
+      "aggregation": "paired_case_cluster",
+      "evidence": [
+        "tool_lineage",
+        "business_readback",
+        "usage"
+      ],
+      "analysis_entry": "metric:interaction.code_mode/v1",
+      "missing": "policy effect, not pure parallel execution"
+    },
+    {
+      "id": "cost_frontier",
+      "formula": "min tested configuration mean_cost subject to LCB(Q) >= required_quality",
+      "unit": "currency",
+      "aggregation": "tested_configurations",
+      "evidence": [
+        "usage",
+        "business_readback"
+      ],
+      "analysis_entry": "metric:cost.frontier/v1",
+      "missing": "unknown cost excluded; no qualifying configuration => not_reached"
+    }
+  ],
+  "result_dimensions": {
+    "experiment_validity": [
+      "valid",
+      "invalid"
+    ],
+    "business_result": [
+      "pass",
+      "fail",
+      "unknown"
+    ],
+    "consumption_contract": [
+      "pass",
+      "fail",
+      "unknown",
+      "not_applicable"
+    ],
+    "evidence_state": [
+      "complete",
+      "partial",
+      "unavailable"
+    ],
+    "capability_support": [
+      "supported",
+      "unsupported"
+    ]
+  },
+  "analysis_module": "benchmark/analysis/metrics.mjs#evaluateMetric"
+}
