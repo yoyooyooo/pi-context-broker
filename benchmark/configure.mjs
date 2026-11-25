@@ -18,9 +18,10 @@ import { pilotScopePolicy } from './pilot-scope.mjs';
 import { prepareCampaignScope, verifyCampaignScope } from './campaign-dispatch.mjs';
 import { finiteCampaignPolicy } from './finite-campaign.mjs';
 import { prepareMaterialOwnership, verifyMaterialOwnership } from './material-ownership.mjs';
-import { CONFIRMATION_CONTINUATION, declaredSchedule } from './campaign-selection.mjs';
+import { CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION, declaredSchedule } from './campaign-selection.mjs';
 import { readApprovedCampaign } from './approved-campaign.mjs';
 import { assertObserverRepairSetup } from './campaign-observer-repair-continuation.mjs';
+import { ENGINEERING_WINDOW_DRAFT, assertEngineeringWindowSetup } from './campaign-engineering-window-continuation.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = async (path, value) => {
@@ -59,7 +60,7 @@ export function captureBindingsForCase({ binding, conditionId, slots, slotBindin
  * though dispatch owns only the unstarted suffix. These are zero-model captures,
  * not retries of the original completed slots. Stateful copies are excluded. */
 export function startupCaptureSchedule(protocol, cases, episodeFixtures) {
-  if (protocol.policies.campaign?.role !== CONFIRMATION_CONTINUATION) return scheduleProtocol(protocol);
+  if (![CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION].includes(protocol.policies.campaign?.role)) return scheduleProtocol(protocol);
   assert.equal(episodeFixtures, undefined, 'CONFIRMATION_CONTINUATION_STATEFUL_FIXTURE_FORBIDDEN');
   assert.ok(cases.every(binding => binding.events.length === 0), 'CONFIRMATION_CONTINUATION_STATEFUL_FIXTURE_FORBIDDEN');
   return declaredSchedule(protocol);
@@ -77,8 +78,13 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   if (setup.campaign_scope?.prospective_authorization) {
     const reference = setup.campaign_scope.prospective_authorization;
     const bytes = await readFile(reference.path); assert.equal(sha(bytes), reference.sha256);
-    if (JSON.parse(bytes).version === 6) await assertObserverRepairSetup(setup, await readApprovedCampaign(reference));
+    const preview = JSON.parse(bytes);
+    assert.notEqual(preview.kind, ENGINEERING_WINDOW_DRAFT, 'ENGINEERING_WINDOW_DRAFT_NOT_DISPATCHABLE');
+    if (preview.version === 6) await assertObserverRepairSetup(setup, await readApprovedCampaign(reference));
+    if (preview.version === 7) await assertEngineeringWindowSetup(setup, await readApprovedCampaign(reference));
+    if (setup.campaign_scope.role === ENGINEERING_WINDOW_CONTINUATION) assert.equal(preview.version, 7, 'ENGINEERING_WINDOW_AUTHORITY_REQUIRED');
   }
+  else assert.notEqual(setup.campaign_scope?.role, ENGINEERING_WINDOW_CONTINUATION, 'ENGINEERING_WINDOW_APPROVAL_REQUIRED');
   const snapshot = await readCorpusSnapshot(setup);
   const root = setup.control_root;
   await mkdir(root, { recursive: true });
@@ -290,7 +296,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   await save(join(root, 'plan.json'), plan);
   await save(join(root, 'configuration-proof.json'), { version: 1, setup_sha256: fingerprint(setup), plan_sha256: plan.plan_sha256,
     status: 'ready', capture_count: results.length, covered_case_conditions: expanded.length, actual_model_requests: 0,
-    ...(setup.campaign_scope?.role === CONFIRMATION_CONTINUATION ? { capture_design_slots: captureSlots.length, selected_dispatch_slots: scheduled.length } : {}),
+    ...([CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION].includes(setup.campaign_scope?.role) ? { capture_design_slots: captureSlots.length, selected_dispatch_slots: scheduled.length } : {}),
     capture_scope: 'shared-identical-startup-inputs; every episode independently verifies public-input bytes and actual startup/final-request contracts',
     material_original_bindings: materialOriginalBindings, material_ownership: materialOwnership,
     frozen_slot_materializations: prepared.slots.size,
