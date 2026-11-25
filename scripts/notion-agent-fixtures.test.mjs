@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { isAgentSourceHandoff } from './notion-agent-source-handoff.mjs';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -964,4 +965,37 @@ test('a failed current read after enabling cannot publish a body version', async
   assert.equal(bindings.private.objects.off.versions.A.snapshot_id, undefined);
   assert.equal(bindings.private.objects.off.versions.A.version_id, undefined);
   assert.equal((await json(harness.statePath)).records[0].enabled, true, 'The successful public mutation remains visible even though evidence acquisition failed');
+});
+
+
+test('Source handoff permits observing an already-created never-replay request', () => {
+  const operationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', sourcePageId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const record = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', sourceId = 'owned-source', inputSha256 = '1'.repeat(64);
+  const library = { library_id: fixtureLibraryId, sources: { property_ids: { 'Source ID': 'source-id', Status: 'status', Operation: 'operation' } } };
+  const input = { operationId, sourcePageId, sourceId, inputSha256, library,
+    inspection: { ok: true, status: 'observed', library: { library_id: fixtureLibraryId }, operation: {
+      intent: { operation_id: operationId, owner: { kind: 'source', id: sourceId }, input_sha256: inputSha256 },
+      owner_state: { state: 'applying', operation_id: operationId }, owner_page_id: sourcePageId, owner_in_trash: false,
+      record_observed: true, record_page_id: record, local_lifecycle: { phase: 'active', record_page_id: record },
+      in_flight: { key: 'source:create', replay: 'never', request_sha256: '2'.repeat(64) }, source_progress: { next_index: 0, child_started: false },
+    } },
+    interrupted: { after: { skill: null, source: { id: sourcePageId, properties: Object.fromEntries(Object.entries({ 'Source ID': sourceId, Status: 'applying', Operation: operationId })
+      .map(([key, text]) => [key, { id: library.sources.property_ids[key], rich_text: [{ text: { content: text } }] }])) } },
+      cli: { ok: false, error: { code: 'REQUEST_BUDGET_EXHAUSTED', details: { operation_id: operationId, source_id: sourceId, source_page_id: sourcePageId, input_sha256: inputSha256 } } } },
+  };
+  assert.equal(isAgentSourceHandoff(input), true);
+  const idle = structuredClone(input); idle.inspection.operation.in_flight = null; delete idle.interrupted;
+  assert.equal(isAgentSourceHandoff(idle), true, 'The existing no-pending-request case remains eligible');
+  for (const [label, change] of [
+    ['another pending action', row => { row.inspection.operation.in_flight.key = 'source:update'; }],
+    ['another Source operation', row => { row.inspection.operation.owner_state.operation_id = 'other'; }],
+    ['another physical Source', row => { row.interrupted.after.source.id = fixtureLibraryId; }],
+    ['missing independent Source', row => { delete row.interrupted.after.source; }],
+    ['another Source state', row => { row.interrupted.after.source.properties.Status.rich_text[0].text.content = 'ready'; }],
+    ['changed input', row => { row.inputSha256 = '3'.repeat(64); }],
+    ['another Library', row => { row.inspection.library.library_id = sourcePageId; }],
+  ]) {
+    const changed = structuredClone(input); change(changed);
+    assert.equal(isAgentSourceHandoff(changed), false, label);
+  }
 });
