@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 import { readStandingAuthorization, numericStandingNames, standingCampaignPolicy, standingSetupProjection,
   assertStandingSetup, prepareStandingScope, verifyStandingPlan, inspectStandingLedger, reserveStandingEpisode, reconcileStandingLease } from './standing-campaign.mjs';
 import { classifyStandingProgress, runStandingSlices, withoutStandingAnalysisCredentials } from './standing-runner.mjs';
@@ -17,7 +15,7 @@ import { fingerprint } from './protocol.mjs';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 async function files(t) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-standing-test-')));
-  t.after(() => promisify(execFile)('/usr/bin/trash', [root]));
+  t.after(() => t.diagnostic('Retained task-owned fixtures (no permanent deletion): ' + root));
   return async (name, value) => {
     const path = join(root, name), bytes = JSON.stringify(value, null, 2) + '\n';
     await writeFile(path, bytes, { flag: 'wx' }); return { path, sha256: sha(bytes) };
@@ -161,7 +159,7 @@ test('serial prefix analysis has no task credentials and restores the exact envi
 
 test('real files bind a unique attempt, exclusive registration, reservation and retained orphan without provider calls', async t => {
   const environmentRoot = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-standing-ledger-test-')));
-  t.after(() => promisify(execFile)('/usr/bin/trash', [environmentRoot]));
+  t.after(() => t.diagnostic('Retained task-owned fixtures (no permanent deletion): ' + environmentRoot));
   const control = join(environmentRoot, 'control'), controlRoot = join(control, 'attempt-1'), ledgerRoot = join(control, 'standing-ledger');
   await mkdir(controlRoot, { recursive: true });
   const write = async (path, value) => {
