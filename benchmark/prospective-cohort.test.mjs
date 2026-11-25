@@ -3,7 +3,12 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { test, before, after, mock } from 'node:test';
+
+// Synthetic protocols declare this fixed route window. Production dispatch now
+// checks it before reserving a slot as well as before starting the subject.
+before(() => mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-22T12:00:00Z') }));
+after(() => mock.timers.reset());
 import { fingerprint } from './protocol.mjs';
 import { createPreregistrationTemplate } from './templates/preregistration.mjs';
 import { preregisterComparison } from './planning.mjs';

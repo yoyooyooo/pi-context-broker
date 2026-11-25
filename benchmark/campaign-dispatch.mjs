@@ -8,7 +8,7 @@ import { preparePilotScope, readPilotScopeAmendment, verifyPilotScope,
   acquirePilotScopeLease, checkCampaignScope as checkLegacyCampaignScope,
   scopeReservationFields, reconcilePilotScopeLease } from './pilot-scope.mjs';
 import { FINITE_CAMPAIGN, isFiniteCampaign, prepareFiniteCampaign, readFiniteCampaignAmendment,
-  assertFiniteCampaignPlan, verifyFiniteCampaignScope, finiteCampaignReservationFields } from './finite-campaign.mjs';
+  assertFiniteCampaignPlan, verifyFiniteCampaignScope, verifyFiniteCampaignCurrentState, finiteCampaignReservationFields } from './finite-campaign.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const hasFiniteScope = plan => Boolean(plan.protocol.policies.campaign || plan.execution.campaign_scope);
@@ -62,20 +62,26 @@ async function latestRegistration(root) {
   assert.equal(await realpath(root), root, 'Campaign ledger must be canonical');
   const firstPath = join(root, 'scope-registration.json');
   const firstRecord = await readRecord(firstPath), first = firstRecord.value;
-  const original = await readPilotScopeAmendment(first.amendment);
+  const original = await verified(first.amendment);
   assert.equal(original.version, 1); assert.equal(original.kind, 'benchmark-pilot-scope-amendment');
   assert.equal(first.id, original.id);
-  let latest = { value: first, reference: firstRecord.reference, sequence: 1, verifiedAmendment: original };
+  let latest = { value: first, reference: firstRecord.reference, sequence: 1 }, preview = original;
   const names = (await readdir(root)).filter(name => /^scope-registration-\d{3}\.json$/.test(name)).sort();
   for (const [index, name] of names.entries()) {
     const sequence = index + 2, path = join(root, name);
     assert.equal(name, 'scope-registration-' + String(sequence).padStart(3, '0') + '.json', 'CAMPAIGN_REGISTRATION_GAP');
     const record = await readRecord(path), row = record.value;
-    const amendment = await readCampaignAmendment(row.amendment);
+    const amendment = await verified(row.amendment);
     assertCampaignSuccession({ row, amendment, previous: latest, sequence });
-    latest = { value: { id: row.id, amendment: row.amendment }, reference: record.reference, sequence, verifiedAmendment: amendment };
+    latest = { value: { id: row.id, amendment: row.amendment }, reference: record.reference, sequence }; preview = amendment;
   }
-  return latest;
+  // Every registered link above retains its own byte hash and succession checks.
+  // The latest full reader then verifies the entire predecessor lineage and its
+  // historical observations. Replaying that full proof at each older row only
+  // repeats overlapping prefixes; it does not add another registration guard.
+  const verifiedAmendment = isFiniteCampaign(preview)
+    ? await readFiniteCampaignAmendment(latest.value.amendment) : await readPilotScopeAmendment(latest.value.amendment);
+  return { ...latest, verifiedAmendment };
 }
 
 export async function prepareCampaignScope(input) {
@@ -105,6 +111,14 @@ export function verifyCampaignScope(plan, options = {}) {
   return hasFiniteScope(plan) ? verifyFiniteCampaignScope(plan, options) : verifyPilotScope(plan, options);
 }
 
+/** One fresh live boundary. Historical readers use verifyCampaignScope instead.
+ * The amendment is proved in this call and consumed immediately; callers cannot
+ * provide a cached amendment or suppress any current-state checks. */
+export async function verifyCampaignDispatch(plan, { activate = false, ...options } = {}) {
+  const amendment = await checkCampaignScope(plan, { activate });
+  return hasFiniteScope(plan) ? verifyFiniteCampaignCurrentState(plan, amendment, options) : verifyPilotScope(plan, options);
+}
+
 // The same physical lease serializes legacy and finite controllers together.
 export const acquireCampaignLease = acquirePilotScopeLease;
 
@@ -125,14 +139,16 @@ export async function checkCampaignScope(plan, { activate = false } = {}) {
   const amendment = active ? latest.verifiedAmendment : await readFiniteCampaignAmendment(registration.amendment);
   assert.ok(isFiniteCampaign(amendment), 'FINITE_REGISTERED_AMENDMENT_REQUIRED');
   assertFiniteCampaignPlan(plan, amendment);
-  if (active) return;
+  if (active) return amendment;
   assert.deepEqual(amendment.predecessor.registration, latest.reference, 'CAMPAIGN_OTHER_ACTIVE_AMENDMENT');
-  const predecessor = await readCampaignAmendment(amendment.predecessor.amendment);
+  const predecessor = latest.verifiedAmendment;
+  assert.deepEqual(amendment.predecessor.amendment, latest.value.amendment, 'CAMPAIGN_PREDECESSOR_AMENDMENT_CHANGED');
   assert.deepEqual(latest.value, { id: predecessor.id, amendment: amendment.predecessor.amendment });
   if (activate) await save(join(plan.execution.pilot_ledger_root,
     'scope-registration-' + String(latest.sequence + 1).padStart(3, '0') + '.json'),
-  { version: 1, kind: 'benchmark-finite-campaign-succession', sequence: latest.sequence + 1,
-    predecessor: latest.reference, ...wanted });
+   { version: 1, kind: 'benchmark-finite-campaign-succession', sequence: latest.sequence + 1,
+     predecessor: latest.reference, ...wanted });
+  return amendment;
 }
 
 export async function reconcileCampaignLease({ plan, leaseId, batchLease }) {
