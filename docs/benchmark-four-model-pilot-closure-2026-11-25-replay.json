@@ -1,0 +1,221 @@
+{
+  "version": 1,
+  "kind": "public-pilot-suffix34-replay-summary",
+  "status": "passed",
+  "completed_at": "2026-11-25T13:20:08.672Z",
+  "source_export_receipt_sha256": "d50399eb2a8cd846092d3c22b04a206a651ea2944efc64601287fd00d2e82470",
+  "private_replay_receipt_sha256": "cee74e5f35dc97964743e8ae4568f90daea2a970eaa7134deb7af0c57554fbfb",
+  "source_attempt_receipt_sha256": "6ad44bd42b2c75ad7c5c5dd68ae34fdfcd73d9c996923c292e221ecbac10eaf6",
+  "cold_readback_sha256": "c396dd29c53b68a714630fd1b4478327784fdd38abb942f0940a44cfdf8021aa",
+  "public_root": "benchmark/results/2026-11-25-four-model-pilot-suffix34",
+  "release_manifest_sha256": "aef3cbc94609a2fe3c1162f371a8664c88694abd1b5191634bd85d9b002613e6",
+  "public_files": 1566,
+  "public_bytes": 85348759,
+  "public_inventory_sha256": "867a5185efe2d80d8af506e84c44bee611eed2d2c7dce135a3ba4eecc5227ad9",
+  "isolation_profile_sha256": "c13ccc345c9e345eee3ea8aa59c5ebc6a55b6fada009ee53e829908220753320",
+  "isolation_canaries": {
+    "public_readable": true,
+    "private_sources_denied": true,
+    "private_writes_denied": true,
+    "public_writes_denied": true,
+    "network_denied": true,
+    "inherited_credentials": false
+  },
+  "packages": [
+    {
+      "scope_id": "standing-pilot80-suffix34-run-1-suffix-gpt62-12",
+      "work_item_id": "suffix-gpt62-12",
+      "collector": {
+        "version": "1.2.0",
+        "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+      },
+      "path": "packages/standing-pilot80-suffix34-run-1-suffix-gpt62-12",
+      "completed": 12,
+      "dispatch_slots": 12,
+      "scientific_slots": 12,
+      "source_plan_sha256": "53c29062cd86d0e30ebbec819740d65323e844310b13c82ca47191972a653128",
+      "source_ledger_sha256": "8a5122bbc4be6d17ad2b70419e734c573d1e9bac0e8bf1e1aaff6e32ccfe51a8",
+      "source_protocol_sha256": "5ed48d439d3781e8809b2f2f6bcbecf79baf803895dc4435eeef1ea82b6cd3a4",
+      "last_reason": "planned_slots_completed",
+      "public_manifest_file_sha256": "a9b70d48c63c86bea3cfad5569f2f9fafeca0d3f2dc054065e08ef171505e76b",
+      "source_analysis_sha256": "a21c17bc6b81a7950f94e82e0c190253241041944fa33cda807c34e9b65f5cf9",
+      "public_analysis_sha256": "fadf83116cc2ddb08dd62aec172188f32c5a16c57f5fce27d26b8d3efb1745fa",
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "fadf83116cc2ddb08dd62aec172188f32c5a16c57f5fce27d26b8d3efb1745fa",
+        "original_analysis_sha256": "a21c17bc6b81a7950f94e82e0c190253241041944fa33cda807c34e9b65f5cf9",
+        "model_requests": 0
+      },
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "888cfff940a98ed92e8154fb486025ad04332b306fdd83f0767b13fb66904c35",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    },
+    {
+      "scope_id": "standing-pilot80-suffix34-run-1-suffix-grok46-8",
+      "work_item_id": "suffix-grok46-8",
+      "collector": {
+        "version": "1.2.0",
+        "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+      },
+      "path": "packages/standing-pilot80-suffix34-run-1-suffix-grok46-8",
+      "completed": 8,
+      "dispatch_slots": 8,
+      "scientific_slots": 8,
+      "source_plan_sha256": "4d82372c8dfd363bb4c470bb7d81df1db15a8a4211e71a16f3b2b9bd7e8c33b9",
+      "source_ledger_sha256": "35cbe907990b0d9aa5cd9722bd1d9c729a8a159c97496532521216b5a0700ea6",
+      "source_protocol_sha256": "6dd0cf60571c095204665ec01e23ec1f84847e18b34fc4fc02a688153dcdcb48",
+      "last_reason": "planned_slots_completed",
+      "public_manifest_file_sha256": "6431af4a587599c277872828c87785b9f6e64964f20ab08db8e5880139c0d512",
+      "source_analysis_sha256": "de5b72046e6b8431dabf85e92aa1572a3780fbedfffc8f074862d9fe8e6fabc9",
+      "public_analysis_sha256": "e7ec6db52173990bb6e2e3439f590bb518409a5024b1a2856ba34e1133741014",
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "e7ec6db52173990bb6e2e3439f590bb518409a5024b1a2856ba34e1133741014",
+        "original_analysis_sha256": "de5b72046e6b8431dabf85e92aa1572a3780fbedfffc8f074862d9fe8e6fabc9",
+        "model_requests": 0
+      },
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "7d889800a737c4062512fc533d897e5598cee683a18e0c2f063b03736af79e8f",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    },
+    {
+      "scope_id": "standing-pilot80-suffix34-run-1-suffix-grok47-6",
+      "work_item_id": "suffix-grok47-6",
+      "collector": {
+        "version": "1.2.0",
+        "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+      },
+      "path": "packages/standing-pilot80-suffix34-run-1-suffix-grok47-6",
+      "completed": 6,
+      "dispatch_slots": 6,
+      "scientific_slots": 6,
+      "source_plan_sha256": "136f8ef433ba59f21de6b551e23fb2772e908352c13f9091fb39dfda085859aa",
+      "source_ledger_sha256": "24dbb6fef474de423342ae421c1480d0c2b21e77fce4ecd10e1f588f8c3f0513",
+      "source_protocol_sha256": "1ffbfd8275b2d79bde21e3d7f426b3baa270e3f47caa78d02ab369ff1d3cf6d1",
+      "last_reason": "planned_slots_completed",
+      "public_manifest_file_sha256": "40bf085a90a786359625e14eb27001d0e04c05a403bb7b716f26241fdd8967fb",
+      "source_analysis_sha256": "033ffe3b51d84106af70be2a9bfad4cca1e0a349273f0d4d9e36c44ef58c0e41",
+      "public_analysis_sha256": "4ccc2e3de3113b1393cd9c28b91df1df22468a3f477a61fbeb29afcd4f3f2208",
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "4ccc2e3de3113b1393cd9c28b91df1df22468a3f477a61fbeb29afcd4f3f2208",
+        "original_analysis_sha256": "033ffe3b51d84106af70be2a9bfad4cca1e0a349273f0d4d9e36c44ef58c0e41",
+        "model_requests": 0
+      },
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "25eb0043cd19e4ced9877a5c091d9afc10fd929d552b0e0ba887529e9074d576",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    },
+    {
+      "scope_id": "standing-pilot80-suffix34-run-1-suffix-terra61-8",
+      "work_item_id": "suffix-terra61-8",
+      "collector": {
+        "version": "1.2.0",
+        "source_sha256": "d1603000b6bf48184688a056bf05f8fa2fa03e7edec2d93b58e33e7db51473ef"
+      },
+      "path": "packages/standing-pilot80-suffix34-run-1-suffix-terra61-8",
+      "completed": 8,
+      "dispatch_slots": 8,
+      "scientific_slots": 8,
+      "source_plan_sha256": "9e7e7ab96eda8097b515f2080f616fc176ad4bf02ff12ad5c0003484423010d9",
+      "source_ledger_sha256": "75f4c2e3dc1320bbcad37c9a5613f68675263f0c9b36b5b0a5ba807774114cc5",
+      "source_protocol_sha256": "ad10547ce25a128b0ff1f85ac2ad09d7228bdd8462da5414fed0d3c2765d5b05",
+      "last_reason": "planned_slots_completed",
+      "public_manifest_file_sha256": "ff259ac2b3dd6841f4ca982b1602d24ee2484bcd0fa3af42645b7240eec09127",
+      "source_analysis_sha256": "d88dc9787c71c2cdf28838d7a95395fe7888bc19db5489c9b77c75126a1c3fe2",
+      "public_analysis_sha256": "a7393ed85c73757af5ceb53d7d517b018df6585cc7bd21f62f8d46083a50585c",
+      "replay": {
+        "status": "verified",
+        "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+        "analysis_sha256": "a7393ed85c73757af5ceb53d7d517b018df6585cc7bd21f62f8d46083a50585c",
+        "original_analysis_sha256": "d88dc9787c71c2cdf28838d7a95395fe7888bc19db5489c9b77c75126a1c3fe2",
+        "model_requests": 0
+      },
+      "regenerated_report_files": 13,
+      "regenerated_report_manifest_file_sha256": "75f1987fd86a2b012f0d7259539e97cb3b868c7221b50386b8953d7c1fd3eac6",
+      "identical_analysis_tables_and_quality_chart": 9,
+      "chart_title_differences": [
+        {
+          "file": "input.svg",
+          "public": "Cumulative input",
+          "replay": "Cumulative input across actual attempts"
+        },
+        {
+          "file": "time.svg",
+          "public": "Capped time",
+          "replay": "Capped time across the full fixed denominator"
+        }
+      ]
+    }
+  ],
+  "packages_replayed": 4,
+  "incremental_accounting": {
+    "status": "verified",
+    "actual_new_observations": 34,
+    "physical_reservations": 219,
+    "packages": 4,
+    "usage": {
+      "reserved_episodes": 34,
+      "episodes_with_observed_model_send_lower_bound": 34,
+      "known_model_http_requests": 161,
+      "actual_model_http_requests": 161,
+      "known_input_subtotal": 844955,
+      "complete_input_tokens": 844955,
+      "known_output_subtotal": 25256,
+      "complete_output_tokens": 25256,
+      "complete_currency_cost": null,
+      "currency_cost_status": "incomplete_or_unpriced",
+      "unknown_usage_run_ids": [],
+      "summed_observed_episode_duration_ms": 1165212.19225
+    },
+    "model_requests": 0,
+    "scope": "public original-slot lineage and resource accounting; prior results linked separately, without regrading or cross-condition pooling"
+  },
+  "public_inventory_unchanged": true,
+  "original_export_unchanged": true,
+  "subject_model_requests": 0,
+  "limitations": [
+    "Public hashes, locators, normalized statistics and resource accounting are replayed; private grading and raw chains are not.",
+    "A completed scientific schedule does not itself establish product acceptance.",
+    "Input and time chart title-only differences are recorded; other claimed analysis/table/quality artifacts are byte-identical."
+  ]
+}

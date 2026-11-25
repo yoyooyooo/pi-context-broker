@@ -1,0 +1,7 @@
+"candidate","reference","axis","budget","estimate","interval_status","lcb","ucb","planned_repeats","known_repeats"
+"m0-e0","m0-e1","time_ms","45000","-0.25","available","-1","1","4","4"
+"m0-e0","m0-e1","time_ms","90000","0","available","-1","1","4","4"
+"m0-e0","m0-e1","time_ms","180000","0","available","-1","1","4","4"
+"m0-e0","m0-e1","input_tokens","75000","0","available","-1","1","4","4"
+"m0-e0","m0-e1","input_tokens","150000","0","available","-1","1","4","4"
+"m0-e0","m0-e1","input_tokens","300000","0","available","-1","1","4","4"

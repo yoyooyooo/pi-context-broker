@@ -1,0 +1,13 @@
+---
+name: [identity:48a84c1ae8e247db6003]
+description: "松涛51配送方式报价规则"
+---
+
+
+# 松涛51配送方式报价规则
+
+配送方式必须由用户确定，缺少时先询问，不能默认。读取 references/delivery.json 的每件整数分价格。输出 delivery\_mode 和 total\_cents。
+
+本材料为可公开复现的合成业务资料，许可 CC0-1.0。
+
+金额一律使用整数分；若有舍入，按文中规则执行。
