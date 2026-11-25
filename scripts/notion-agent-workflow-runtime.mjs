@@ -407,7 +407,7 @@ export async function workflowToolHistory(segments) {
   for (const segment of segments) {
     const files = segment.observer.files, tasks = await identity(files.tasks);
     const responses = [];
-    for (const end of (await rows(files.sdk)).filter(row => row.phase === 'sdk-end' && row.operation === 'read')) {
+    for (const end of (await rows(files.sdk)).filter(row => row.phase === 'sdk-end' && ['read', 'list'].includes(row.operation))) {
       const directory = join(dirname(files.sdk), 'sdk-responses'), path = resolve(directory, end.responseFile);
       assert.equal(dirname(path), directory, 'SDK response must stay in its observed segment');
       assert.equal(end.responseFile, end.requestId + '.json', 'Retain the original SDK response filename');

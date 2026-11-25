@@ -53,6 +53,142 @@ test('unavailable original reference requires its own online failed tool read, n
     { ...options, delivery: { requests: [changedPayload] } }), /online failure/u);
 });
 
+function unavailableCatalogFixture() {
+  // Synthetic identities with the real list -> pure resolver -> native error
+  // shape. The catalog response was captured before the tool result, not read
+  // from a Store or reconstructed from the expected missing object.
+  const library = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', otherLibrary = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const database = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', dataSource = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const owner = 'skill://original-policy?library=' + library, scope = 'a'.repeat(64), pid = 123;
+  const requestId = '11111111-1111-4111-8111-111111111111', sourceRequestId = 'sdk:' + pid + ':' + requestId;
+  const files = new Map(), put = (path, value, raw = false) => {
+    const bytes = Buffer.from(raw ? value : JSON.stringify(value)); files.set(path, bytes);
+    return { path, bytes: bytes.length, sha256: hash(bytes) };
+  };
+  const error = { error: 'context-broker source notion-a unavailable (SKILL_NOT_FOUND).',
+    effects: { version: 1, remote_writes: 'unknown', author_content: 'unknown' },
+    admission: { version: 1, phase: 'execute', stage: 'reference', code: 'SKILL_NOT_FOUND',
+      generation_started: 3, generation_current: 3, signal_aborted: false } };
+  const content = [{ type: 'text', text: JSON.stringify(error) }];
+  const failed = put('/owned/segment/tool-results/read-a.json', content);
+  const call = { id: 'read-a|fc_fixture', name: 'read', arguments: { path: owner },
+    event: { pid, monotonicNs: '100' }, native: { resultEntryId: 'result-a' },
+    result: { pid, isError: true, monotonicNs: '200', contentArtifact: failed }, deliveryToolCallId: 'read-a|fc_fixture' };
+  const payload = { input: [{ type: 'function_call', call_id: 'read-a', id: 'fc_fixture', name: 'read', arguments: JSON.stringify(call.arguments) },
+    { type: 'function_call_output', call_id: 'read-a', output: content[0].text }] };
+  const bindings = { private: { objects: { original: { kind: 'notion', owner, scope,
+    pageId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' } } } };
+  const sourceRows = [
+    { phase: 'source_observer_start', kind: 'observer', pid, monotonicNs: '1' },
+    { phase: 'started', kind: 'sdk', requestId: sourceRequestId, pid, operation: 'list',
+      library, source_id: 'notion-a', sourceMonotonicNs: '110', monotonicNs: '111' },
+    { phase: 'attempt', event: 'attempt', kind: 'http', requestId: sourceRequestId, monotonicNs: '181',
+      attempt: 1, request_kind: 'notion_metadata', method: 'POST', target: { data_source_id: dataSource }, http_status: 200, outcome: 'success' },
+    { phase: 'metrics', kind: 'metrics', requestId: sourceRequestId, observed: true, complete: true,
+      total_requests: 1, trace_dropped: 0, monotonicNs: '182' },
+    { phase: 'completed', kind: 'sdk', requestId: sourceRequestId, pid, operation: 'list',
+      library, source_id: 'notion-a', status: 'completed', sdkStarted: true, errorCode: null,
+      sourceMonotonicNs: '180', monotonicNs: '183' },
+    { phase: 'source_observer_end', kind: 'observer', operations: 1, sdkStarts: 1, cliStarts: 0,
+      unmatchedChildren: 0, errors: 0, complete: true, pendingRequestIds: [], monotonicNs: '300' },
+  ];
+  const sdk = [{ phase: 'sdk-observer-start', pid },
+    { phase: 'sdk-start', operation: 'list', requestId, pid, monotonic_ns: '110', at: stamp },
+    { phase: 'sdk-end', operation: 'list', requestId, pid, monotonic_ns: '180', at: '2026-11-21T14:00:00.100Z',
+      status: 'completed', resultObserved: true, metricsComplete: true, responseFile: requestId + '.json' },
+    { phase: 'sdk-observer-end', pid, pending: 0 }];
+  const receipt = { version: 2, transport: 'sdk', requestId, operation: 'list', status: 'completed',
+    resultObserved: true, sdk_started: true, metrics_observed: true,
+    metrics: { complete: true, total_requests: 1, trace_dropped: 0, trace: [{ event: 'attempt', attempt: 1,
+      request_kind: 'notion_metadata', method: 'POST', target: { data_source_id: dataSource }, http_status: 200, outcome: 'success' }] },
+    value: { scope, library_id: library, fetched_at: Date.parse('2026-11-21T14:00:00.090Z'), source: 'notion',
+      freshness: { policy: 'max_age', validated_at: '2026-11-21T14:00:00.090Z', age_ms: 0, max_age_ms: 300000, stale: false },
+      databases: [{ database_id: database, data_source_ids: [dataSource], role: 'content', shared_library: {
+        version: 2, library_id: library, skills: { database_id: database, data_source_id: dataSource } } }],
+      coverage: { method: 'explicit_library', exhaustive: true, queried_data_sources: [dataSource],
+        failed_sources: [], search_index_limited: false },
+      count: 1, records: [{ id: 'skill://another-policy?library=' + library, kind: 'skill',
+        locator: { type: 'shared_skill', page_id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          library_id: library, database_id: database, data_source_id: dataSource, skill_id: 'another-policy' } }] } };
+  const observed = { visibility: { source: { sourceId: 'notion-a', library,
+    additionalLibrary: { sourceId: 'notion-b', library: otherLibrary } } },
+    sourceObservationWindow: { startedNs: '1', endedNs: '250', includesStartup: true },
+    session: { branchEntries: [{ id: 'call-a', message: { role: 'assistant', api: 'openai-responses' } },
+      { id: 'result-a', message: { role: 'toolResult', toolCallId: call.id, isError: true, content } }],
+      attempts: [{ id: call.id, name: 'read', arguments: call.arguments, active: true, assistantEntryId: 'call-a', resultEntryId: 'result-a', callLine: 2, resultLine: 3 }],
+      contributions: [{ entryId: 'call-a', role: 'assistant' }, { entryId: 'result-a', role: 'toolResult' }],
+      assistantMessages: [{ active: true, entryId: 'answer', api: 'openai-responses', line: 4 }] },
+    toolHistory: { version: 1, sdkSegments: [] } };
+  const options = { attempts: [call], source: [], delivery: { requests: [] }, readArtifact: async path => files.get(path) };
+  const seal = () => {
+    let previous = null;
+    const rows = sourceRows.map((row, index) => {
+      const value = { version: 1, sequence: index + 1, previousSha256: previous, clockId: 'fixture-segment', ...row };
+      previous = hash(JSON.stringify(value)); return { ...value, eventSha256: previous };
+    });
+    options.source = rows.slice(1, -1); observed.source = options.source;
+    const segment = { sdk: put('/owned/segment/sdk.jsonl', sdk.map(row => JSON.stringify(row)).join('\n') + '\n', true),
+      source: put('/owned/segment/source.jsonl', rows.map(row => JSON.stringify(row)).join('\n') + '\n', true),
+      responses: [{ requestId, artifact: put('/owned/segment/sdk-responses/' + requestId + '.json', receipt) }] };
+    observed.toolHistory.sdkSegments = [segment];
+    const wire = put('/owned/segment/payload.json', payload);
+    options.delivery.requests = [{ ...wire, api: 'openai-responses', nativeResponseEntryId: 'answer' }];
+    observed.tasks = [{ phase: 'provider_payload', sha256: wire.sha256, payloadFile: wire.path, monotonicNs: '210' }];
+  };
+  seal();
+  return { observed, options, receipt, sdk, sourceRows, bindings, payload, call, seal, files, otherLibrary,
+    run: () => verifyNotionAgentUnavailableReference({ kind: 'unavailable-reference', object: 'original', path: 'SKILL.md' }, observed, bindings, options) };
+}
+
+test('unavailable original reference accepts a fresh exhaustive exact-library catalog with the same native and wire not-found', async () => {
+  const f = unavailableCatalogFixture(), result = await f.run();
+  assert.equal(result.proofs.length, 1);
+  assert.equal(result.proofs[0].evidence, 'fresh-exhaustive-catalog');
+  assert.equal(result.proofs[0].owner, f.bindings.private.objects.original.owner);
+  assert.equal(result.proofs[0].httpAttempts, 1);
+  assert.equal(result.proofs[0].responseArtifact.sha256, f.observed.toolHistory.sdkSegments[0].responses[0].artifact.sha256);
+});
+
+test('unavailable catalog proof rejects incomplete, stale, wrong-owner and mismatched invocation evidence', async t => {
+  const cases = [
+    ['wrong credential scope', f => { f.receipt.value.scope = 'b'.repeat(64); }],
+    ['wrong Library', f => { f.receipt.value.library_id = f.otherLibrary; }],
+    ['wrong configured Source', f => { for (const row of f.sourceRows.filter(row => row.source_id)) row.source_id = 'notion-b'; }],
+    ['stale catalog', f => { f.receipt.value.freshness.stale = true; }],
+    ['cached catalog', f => { f.receipt.value.source = 'cache'; }],
+    ['old validation time', f => { f.receipt.value.freshness.validated_at = '2026-11-20T14:00:00.090Z'; }],
+    ['filtered View', f => { f.receipt.value.view = 'an-active-view'; }],
+    ['limited page', f => { f.receipt.value.has_more = true; }],
+    ['non-exhaustive directory', f => { f.receipt.value.coverage.exhaustive = false; }],
+    ['failed data source', f => { f.receipt.value.coverage.failed_sources = ['unavailable-source']; }],
+    ['count mismatch', f => { f.receipt.value.count++; }],
+    ['wrong queried data source', f => { f.receipt.value.coverage.queried_data_sources = ['another-source']; }],
+    ['original ID still present', f => { f.receipt.value.records[0].id = f.bindings.private.objects.original.owner; f.receipt.value.records[0].locator.skill_id = 'original-policy'; }],
+    ['original page still present under another ID', f => { f.receipt.value.records[0].locator.page_id = f.bindings.private.objects.original.pageId; }],
+    ['row belongs to another Library', f => { f.receipt.value.records[0].locator.library_id = f.otherLibrary; }],
+    ['partial HTTP metrics', f => { f.receipt.metrics.trace_dropped = 1; }],
+    ['failed HTTP attempt', f => { f.receipt.metrics.trace[0].outcome = 'failure'; f.sourceRows[2].outcome = 'failure'; }],
+    ['SDK completion after tool result', f => { f.sdk[2].monotonic_ns = '201'; f.sourceRows[4].sourceMonotonicNs = '201'; }],
+    ['SDK response from another invocation', f => { f.receipt.requestId = '22222222-2222-4222-8222-222222222222'; }],
+    ['missing actual SDK result', f => { f.receipt.resultObserved = false; }],
+    ['native and wire error differ', f => { f.payload.input[1].output = 'SKILL_NOT_FOUND: different failure'; }],
+  ];
+  for (const [name, change] of cases) await t.test(name, async () => {
+    const f = unavailableCatalogFixture(); change(f); f.seal();
+    await assert.rejects(f.run(), error => error.code?.startsWith('UNAVAILABLE_'));
+  });
+  for (const [name, change] of [
+    ['missing observation window', f => { delete f.observed.sourceObservationWindow; }],
+    ['tool outside observation window', f => { f.observed.sourceObservationWindow.endedNs = '199'; }],
+    ['wire output before native result', f => { f.observed.tasks[0].monotonicNs = '199'; }],
+    ['unsealed catalog response', f => { f.observed.toolHistory.sdkSegments[0].responses = []; }],
+    ['changed response bytes', f => { const a = f.observed.toolHistory.sdkSegments[0].responses[0].artifact; f.files.set(a.path, Buffer.from('{}')); }],
+  ]) await t.test(name, async () => {
+    const f = unavailableCatalogFixture(); change(f);
+    await assert.rejects(f.run(), error => error.code?.startsWith('UNAVAILABLE_') || error.code === 'ARTIFACT_CHANGED');
+  });
+});
+
 test('native session keeps real tool attempts, failures and final identity', () => {
   const call = message('c', 'u', 'assistant', [{ type: 'toolCall', id: 't1', name: 'read', arguments: { path: '/owned/skill/SKILL.md' } }], { stopReason: 'toolUse' });
   const result = message('r', 'c', 'toolResult', [{ type: 'text', text: 'missing' }], { toolCallId: 't1', toolName: 'read', isError: true });

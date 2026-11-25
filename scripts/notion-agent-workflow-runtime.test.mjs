@@ -365,21 +365,23 @@ test('tool history seals original task, source and SDK response artifacts per se
     const files = Object.fromEntries(['tasks', 'source', 'sdk'].map(name => [name, join(directory, name + '.jsonl')]));
     await writeFile(files.tasks, '{"segment":' + index + '}\n');
     await writeFile(files.source, '{"clockId":"segment-' + index + '"}\n');
-    await writeFile(files.sdk, JSON.stringify({ phase: 'sdk-end', operation: 'read', requestId: 'read-' + index,
-      responseFile: 'read-' + index + '.json' }) + '\n');
+    await writeFile(files.sdk, ['read', 'list'].map(operation => JSON.stringify({ phase: 'sdk-end', operation, requestId: operation + '-' + index,
+      responseFile: operation + '-' + index + '.json' })).join('\n') + '\n');
     await writeFile(join(directory, 'sdk-responses', 'read-' + index + '.json'),
       JSON.stringify({ outputEvidence: { path: '/never-open-materialized-output', content: 'already observed' } }));
+    await writeFile(join(directory, 'sdk-responses', 'list-' + index + '.json'),
+      JSON.stringify({ operation: 'list', requestId: 'list-' + index, value: { records: [], count: 0 } }));
     segments.push({ index, observer: { files } });
   }
   const history = await workflowToolHistory(segments);
   assert.equal(history.version, 1); assert.equal(history.sdkSegments.length, 2);
   for (const [index, segment] of history.sdkSegments.entries()) {
     assert.deepEqual(segment.tasks, history.artifacts[index]);
-    for (const artifact of [segment.tasks, segment.source, segment.sdk, segment.responses[0].artifact]) {
+    for (const artifact of [segment.tasks, segment.source, segment.sdk, ...segment.responses.map(row => row.artifact)]) {
       const bytes = await readFile(artifact.path);
       assert.equal(artifact.sha256, createHash('sha256').update(bytes).digest('hex'));
       assert.equal(artifact.bytes, bytes.length);
     }
-    assert.equal(segment.responses[0].requestId, 'read-' + (index + 1));
+    assert.deepEqual(segment.responses.map(row => row.requestId), ['read-' + (index + 1), 'list-' + (index + 1)]);
   }
 });
