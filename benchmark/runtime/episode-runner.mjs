@@ -93,6 +93,13 @@ function catalogLocations(content, references) {
   return content;
 }
 
+/** Initial context contains the same branch-local catalog handles as the final
+ * request. Canonicalize only proven card locations in the comparison copy. */
+export function initialContextProjection(messages, catalogReferences = []) {
+  return stripMessageTime(messages).map(message => Object.hasOwn(message, 'content')
+    ? { ...message, content: catalogLocations(message.content, catalogReferences) } : message);
+}
+
 export function requestContract(payload, api, prompt, prefixes, catalogReferences = []) {
   assert.ok(payload && typeof payload === 'object' && !Array.isArray(payload), 'BENCHMARK_PROVIDER_PAYLOAD_INVALID');
   const copy = structuredClone(payload), key = api === 'openai-responses' ? 'input' : 'messages';
@@ -220,6 +227,9 @@ async function captureCandidate({ config, profile, session, installation, visibi
   const brokerConfiguration = await readJson(brokerConfig);
   assert.ok(await notion.waitIdle(), 'BENCHMARK_NOTION_STARTUP_PENDING');
   const notionCatalogs = notion.candidate(brokerConfiguration.sources ?? []);
+  const branch = session.sessionManager.getBranch();
+  const catalogReferences = catalogCandidateReferences({ shortRefs: referenceReader ? referenceReader.reduce(branch) : { bindings: new Map() },
+    catalogs: notionCatalogs.projection });
   const localSkillRoots = await Promise.all([...new Set([...(brokerConfiguration.skillRoots ?? []), ...(brokerConfiguration.extraSkillRoots ?? [])])].map(async root => {
     assert.ok(inside(config.runRoot, root), 'BENCHMARK_LOCAL_SKILL_ROOT_NOT_RUN_OWNED');
     return { root, ...await inventory(root) };
@@ -251,7 +261,13 @@ async function captureCandidate({ config, profile, session, installation, visibi
   };
   const publicSnapshot = scrub(snapshot);
   const { notion_catalog_evidence, ...stableSnapshot } = publicSnapshot;
-  return { snapshot: publicSnapshot, projection: normalizeCandidate({ ...stableSnapshot, broker_diagnostics: brokerDiagnosticsProjection(publicSnapshot.broker_diagnostics) }, prefixes) };
+  return { snapshot: publicSnapshot,
+    initial_context_catalog_evidence: scrub({ version: 1,
+      scope: 'current product branch bindings matched to independently observed catalog; initial-context comparison-only canonical locations',
+      session_id: session.sessionId, leaf_id: session.sessionManager.getLeafId(), branch,
+      reducer: referenceReader?.identity ?? null, bindings: catalogReferences }),
+    projection: normalizeCandidate({ ...stableSnapshot, initial_context: scrub(initialContextProjection(projected, catalogReferences)),
+      broker_diagnostics: brokerDiagnosticsProjection(publicSnapshot.broker_diagnostics) }, prefixes) };
 }
 
 /** One SDK session owns every natural turn. Shared paired-environment owns the process group. */

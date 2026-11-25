@@ -74,6 +74,14 @@ environment variables so their projections undergo the same redaction. Capture s
 provider transport and business tool execution. Keep older expectations and
 failed admissions, and create a new capture identity after a runtime change.
 
+Catalog candidate handles are random within each product session. Both initial
+context and final-request comparisons resolve them through the paired product's
+actual branch reducer and the independently observed complete catalog. Only
+verified card locations receive a stable comparison identity. Raw context,
+branch bindings, catalogs and provider payloads retain the original handles;
+unknown handles, misplaced handles and source, scope or owner drift still stop
+admission. Conditions without catalog handles retain their context unchanged.
+
 Cases with multiple turns, fixture events or frozen clarification responses also
 require a completed build containing the current common turn runtime. Configuration
 checks this before preparing any remote fixture; capture and execution check it
