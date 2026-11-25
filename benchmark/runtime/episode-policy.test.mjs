@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { candidateDifferences, normalizeCandidate } from './episode-evidence.mjs';
 import { createEpisodeBudget, EpisodeStop, guardedFetch, providerUsage } from './episode-policy.mjs';
-import { brokerDiagnosticsProjection, catalogCandidateReferences, finishEpisodeRequest, requestContract, reserveEpisodeRequest } from './episode-runner.mjs';
+import { brokerDiagnosticsProjection, catalogCandidateReferences, finishEpisodeRequest, initialContextProjection, requestContract, reserveEpisodeRequest } from './episode-runner.mjs';
 
 const limits = { wallTimeMs: 60000, maxModelRequests: 3, maxToolCalls: 4, maxHttpAttempts: 3, maxInputTokens: 300000, maxOutputTokens: 16000, maxTotalTokens: 316000 };
 const usage = (input, output) => providerUsage('openai-completions', { usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output } });
@@ -212,6 +212,39 @@ test('request catalog locations canonicalize only observed current-branch candid
     assert.ok(JSON.stringify(observed).includes('benchmark-candidate:'));
     assert.ok(!JSON.stringify(observed).includes(first.ref)); assert.ok(!JSON.stringify(observed).includes(second.ref));
   }
+});
+
+test('initial context compares equivalent branch handles while preserving raw context and no-handle conditions', () => {
+  const first = candidateFixture(1), second = candidateFixture(2);
+  const a = catalogPayload(first.ref, 'openai-completions').messages;
+  const b = catalogPayload(second.ref, 'openai-completions').messages;
+  const before = JSON.stringify({ a, b });
+  assert.notDeepEqual(a, b);
+  assert.deepEqual(initialContextProjection(a, catalogCandidateReferences(first)), initialContextProjection(b, catalogCandidateReferences(second)));
+  assert.equal(JSON.stringify({ a, b }), before);
+  const native = [{ role: 'system', content: 'Exact native guidance', toolsAdded: [{ name: 'read' }] }];
+  assert.deepEqual(initialContextProjection(native), native);
+});
+
+test('initial context retains catalog identity and content checks before admitting a branch handle', () => {
+  const f = candidateFixture(), refs = catalogCandidateReferences(f);
+  const messages = catalogPayload(f.ref, 'openai-completions').messages;
+  assert.throws(() => initialContextProjection(messages), /REFERENCE_UNOBSERVED/);
+  const misplaced = structuredClone(messages); misplaced[0].content += ' ' + f.ref;
+  assert.throws(() => initialContextProjection(misplaced, refs), /REFERENCE_OUTSIDE_LOCATION/);
+  for (const change of [
+    identity => { identity.source = 'other'; },
+    identity => { identity.scope = 'b'.repeat(64); },
+    identity => { identity.id = 'another-owner'; },
+    identity => { identity.locator.page_id = 'another-page'; },
+  ]) {
+    const wrong = candidateFixture();
+    const identity = structuredClone(wrong.identity); change(identity);
+    wrong.shortRefs.bindings.set(wrong.ref, { kind: 'candidate', identity });
+    assert.throws(() => catalogCandidateReferences(wrong), /IDENTITY_MISMATCH/);
+  }
+  const changed = structuredClone(messages); changed[1].content[0].text = catalogText(f.ref, 'Changed visible body');
+  assert.notDeepEqual(initialContextProjection(changed, refs), initialContextProjection(messages, refs));
 });
 
 test('an unobserved, mismatched or out-of-catalog short handle cannot be normalized into admission', () => {
