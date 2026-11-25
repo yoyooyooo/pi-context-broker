@@ -1,0 +1,3 @@
+"environment_id","scope_sha256","currency","status","minimum_complete_mean_cost","eligible","selected","confirmation"
+"broker-free","bfb1058bccd95efb0f71acc5a293fac94e12e6aa96da22c8d29f2cf7a0534eaa","","not_reached","","","","requires_independent_confirmation"
+"native-free","822e516f9d04eaec28642573c70eabc3acdb7e1d7cc4696d459b634ad4f79f0b","","not_reached","","","","requires_independent_confirmation"

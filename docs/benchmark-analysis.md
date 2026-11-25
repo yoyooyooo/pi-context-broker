@@ -450,3 +450,10 @@ retains the original 80-slot denominator: 45 valid observations, one cancelled
 observation with unknown usage, and 34 unstarted slots. Its public package has
 actual isolated statistical and accounting replay. Any later work covering the
 unstarted slots is a separate declared execution stratum.
+
+The [2026-11-25 pilot slot closure](benchmark-four-model-pilot-closure-2026-11-25.md)
+adds the 34 previously unstarted slots in four declared single-model scopes.
+All original 80 slots now have a disposition: 79 valid and one retained invalid
+observation with unknown usage. The four additional public packages have actual
+isolated replay evidence. Coverage and accounting totals retain the original
+46/80 report and the continuation's separate order, denominators and estimates.
