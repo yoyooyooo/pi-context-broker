@@ -12,9 +12,9 @@ import { codemodeExtensionOptions, createEpisodeBudget, EpisodeStop, guardedFetc
 import { observeEpisodeNotion } from './episode-notion.mjs';
 import { assessReportedModel, providerReportedModel, validateRoutingPolicy } from '../reported-model.mjs';
 import { nativeFileRef } from '../../packages/context-broker/src/native-reference.ts';
+import { assertRunSourceAbsent, assertSourceEnvironmentAbsent, sourceVisibility } from './episode-visibility.mjs';
 
 const ADMISSION_PROMPT = 'Benchmark candidate admission. Do not call tools. This request will be stopped before provider transmission.';
-const sourceEnvironment = ['PAIRED_CLI_SOURCE', 'PAIRED_BROKER_SOURCE', 'CONTEXT_BROKER_GRAPH_CORE', 'NTN_SKILLS_BUILD_ENTRY'];
 const selectionPath = value => typeof value === 'string' ? value : value?.path ?? value?.entry;
 const stripMessageTime = messages => messages.map(({ timestamp, ...message }) => message);
 const selectedModel = model => Object.fromEntries(['id', 'name', 'provider', 'api', 'baseUrl', 'reasoning', 'input', 'cost', 'contextWindow', 'maxTokens', 'compat', 'samplingParams', 'samplingParamsByThinkingLevel'].filter(key => model?.[key] !== undefined).map(key => [key, model[key]]));
@@ -192,17 +192,17 @@ export function validateEpisodeConfig(config) {
 }
 
 async function verifyVisibility(config) {
-  assert.ok(!await exists(join(config.runRoot, 'source')), 'BENCHMARK_SHARED_SOURCE_STILL_VISIBLE');
-  for (const name of sourceEnvironment) assert.equal(process.env[name], undefined, 'BENCHMARK_SOURCE_ENV_VISIBLE: ' + name);
+  await assertRunSourceAbsent(config.runRoot);
+  assertSourceEnvironmentAbsent();
   const receipt = await readJson(config.visibility);
-  assert.equal(receipt.version, 1); assert.equal(receipt.source_moved_outside_run, true);
+  assert.equal(receipt.version, 1); const source = sourceVisibility(receipt);
   assert.equal(receipt.projection_root, 'subject-runtime');
   const root = join(config.runRoot, receipt.projection_root);
   assert.ok(inside(root, fileURLToPath(import.meta.url)), 'BENCHMARK_RUNTIME_NOT_PROJECTED');
   const actual = await inventory(root);
   assert.deepEqual(actual.files, receipt.files, 'BENCHMARK_VISIBLE_SOURCE_INVENTORY_MISMATCH');
   for (const file of actual.files) assert.ok(!/(?:^|\/)(?:corpus|grader|oracle)(?:\/|[-_.])|\.test\./i.test(file.path), 'BENCHMARK_PRIVATE_MATERIAL_IN_PROJECTION');
-  return { receipt: await fileIdentity(config.visibility), projection: actual };
+  return { receipt: await fileIdentity(config.visibility), projection: actual, source };
 }
 
 async function sdkInstallation(piSelection) {
@@ -290,7 +290,7 @@ async function captureCandidate({ config, profile, session, installation, visibi
     initial_context_scope: 'public-initial-system-and-active-tools-through-the-real-context-transform; final-serializer-contract-is-separate',
     broker_config: brokerConfiguration, local_skill_roots: localSkillRoots, broker_diagnostics: notifications,
     notion_catalogs: notionCatalogs.projection, notion_catalog_evidence: notionCatalogs.evidence, notion_catalog_scope: notionCatalogs.scope,
-    visibility: { projection: visibility.projection, source_moved_outside_run: true },
+    visibility: { projection: visibility.projection, ...visibility.source },
   };
   const publicSnapshot = scrub(snapshot);
   const { notion_catalog_evidence, ...stableSnapshot } = publicSnapshot;

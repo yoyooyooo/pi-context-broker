@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -125,19 +125,19 @@ async function fixture({ clarifications = true, kind = 'publish-version', malfor
   };
   const launch = async shared => {
     childCalls++;
+    assert.equal(shared['command-source'], 'none');
     await mkdir(join(runRoot, 'workspace'), { recursive: true }); await mkdir(join(runRoot, 'pi-agent'));
-    await save(join(runRoot, 'source/corpus/oracle.json'), { sentinel: 'PRIVATE_ORACLE_83627' });
+    await save(join(source, 'corpus/oracle.json'), { sentinel: 'PRIVATE_ORACLE_83627' });
     await mkdir(join(runRoot, 'skills'), { recursive: true }); await cp(skillRoot, join(runRoot, 'skills/native'), { recursive: true });
-    const run = { run_id: runId, root: runRoot, build_root: buildRoot, paths: {},
+    const run = { run_id: runId, root: runRoot, build_root: buildRoot, paths: {}, command_source: 'none',
       pi_launch: { mode: 'native', native_corpus: { root: join(runRoot, 'skills/native') } } };
     for (const key of ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME', 'NTN_SKILLS_DATA_HOME']) {
       run.paths[key] = join(runRoot, key); await mkdir(run.paths[key]);
     }
     await save(join(runRoot, 'run.json'), run);
-    const child = spawn(process.execPath, shared.args.slice(1), { cwd: join(runRoot, 'workspace'),
-      env: { ...process.env, PAIRED_RUN_ROOT: runRoot, PAIRED_BUILD_ROOT: buildRoot,
-        PAIRED_CLI_SOURCE: join(runRoot, 'source/cli'), PAIRED_BROKER_SOURCE: join(runRoot, 'source/broker'),
-        CONTEXT_BROKER_GRAPH_CORE: join(runRoot, 'source/cli/core'), NTN_SKILLS_BUILD_ENTRY: '/apparatus-only' },
+    const childEnv = { ...process.env, PAIRED_RUN_ROOT: runRoot, PAIRED_BUILD_ROOT: buildRoot };
+    for (const name of ['PAIRED_CLI_SOURCE', 'PAIRED_BROKER_SOURCE', 'CONTEXT_BROKER_GRAPH_CORE', 'NTN_SKILLS_BUILD_ENTRY']) delete childEnv[name];
+    const child = spawn(process.execPath, shared.args.slice(1), { cwd: join(runRoot, 'workspace'), env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '', stderr = ''; child.stdout.on('data', b => { stdout += b; }); child.stderr.on('data', b => { stderr += b; });
     const timeout = setTimeout(() => child.kill('SIGKILL'), 10000);
@@ -195,6 +195,10 @@ test('runSubject launches a real isolated child; clarification and complete nati
   const publicText = (await textFiles(f.runRoot)).join('\n');
   for (const marker of ['PRIVATE_FIXTURE_POLICY_83627', 'PRIVATE_EXPECTED_VALUE_83627', 'PRIVATE_ORACLE_83627']) assert.ok(!publicText.includes(marker));
   const visibility = await json(join(f.runRoot, 'subject-visibility.json'));
+  assert.equal(visibility.source_disposition, 'not_copied'); assert.equal(visibility.command_source, 'none');
+  assert.equal(visibility.source_moved_outside_run, false);
+  await assert.rejects(lstat(join(f.runRoot, 'source')), { code: 'ENOENT' });
+  await assert.rejects(lstat(join(f.controlRoot, 'controller-sources')), { code: 'ENOENT' });
   assert.ok(visibility.files.some(file => file.path === 'benchmark/turn-bridge.mjs'));
   assert.ok(visibility.files.some(file => file.path === 'benchmark/reported-model.mjs'));
   assert.ok(!visibility.files.some(file => /fixture|corpus|grader/.test(file.path)));

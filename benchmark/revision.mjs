@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { sourceVisibility } from './runtime/episode-visibility.mjs';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative } from 'node:path';
@@ -140,7 +141,7 @@ async function provePreparationBoundary({ changes, sources, base, instrumentatio
   const expectations = [];
   for (const condition of Object.values(plan.execution.conditions)) for (const ref of Object.values(condition.expectations)) {
     const visibility = (await readJson(ref.path)).projection.visibility;
-    assert.equal(visibility.source_moved_outside_run, true);
+    sourceVisibility(visibility);
     assert.ok(visibility.projection.files.every(file => !/(?:^|\/)(?:corpus|analysis|evidence|tests?)(?:\/|$)|(?:oracle|grader|\.test\.)/.test(file.path)), 'ANALYSIS_REVISION_PRIVATE_SUBJECT_PROJECTION');
     expectations.push({ path: ref.path, sha256: ref.sha256, visibility_sha256: fingerprint(visibility) });
   }
