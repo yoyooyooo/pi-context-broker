@@ -2,19 +2,82 @@
 
 ## 当前 next 单轨入口
 
-本次调用者对照、已保留失败及分层验证见[新消费入口迁移记录](notion-consumption-contract-2026-11-05.md)。
+本页维护当前消费、会话与投递合同。公开配置见[英文参考](reference.md)和[中文参考](reference.zh-CN.md)，具体运行状态保留在对应 Issue/PR。
 
 Pi 注册 `notion_list({query?, source?, limit?, cursor?, refresh?})`、`notion_use({ref, refresh?})` 和原生 `read`。list 只返回候选元数据，`count`/`has_more` 表示当前查询分页；`coverage` 报告来源完整性，`freshness.sources` 独立报告原始验证时间、当前年龄、时限、策略和过期状态，未知观察为 null。完整覆盖不代表刚验证过，不把空页解释为最新完整空目录。创建后验证发现或要求最新目录时可用 `refresh:true`：指定 source 只刷新该配置来源，省略则刷新全部已启用配置来源，离线策略不变。它不改变当前回合或已采用的 root/Requires 版本；分页游标跨刷新失效，不能与 `refresh:true` 合用。`ref` 可为一个返回引用或一起需要的多个根。use 一次准备根与完整 Requires，read 只检查主文或精确资源，未选 Members 不读正文。普通本地 Skill 保留 Pi 原生路径。
 
-完整目录与 Default View 通过随包 `listCatalog` SDK 复用 core 查询和缓存。Skill/Router、Prompt 及有预算的预取统一进入 `consume`；首次物化主文并保留完整 File 目录，子文件沿准确绑定按需读取。`source.command`、CLI prepare/read 与完整 export 消费路径已删除，旧 SDK capability 缺失直接失败。管理和 doctor 保留配对 CLI。OMP/Tern 延后；本文历史结果不代表其当前可用性。
+用户点名询问某个 Notion Skill 是否存在或可用时，Agent 必须把名称作为 `query` 调用 `notion_list`，并设置 `refresh:true`。已有会话、先前查到或没查到、默认 View 已显示该名称，都不能省略这次核验；仍遵守用户明确指定的来源。查询只读元数据，保留已选 root/Requires 的固定版本。存在性与声明用途直接依据返回的元数据回答；用户要求检查或采用指令时，再读取或使用正文。只有当前新鲜且完整的查询才能说明搜索范围内未找到可用项；离线、过期、失败或部分结果不能证明当前不存在。 未找到只针对可用目录，不能据此推断物理 Notion 页面不存在。普通关键词搜索继续遵守既有 TTL；此规则由模型判断用户意图，不在宿主里匹配自然语言关键词。
+
+完整目录与 Default View 通过随包 `listCatalog` SDK 复用 core 查询和缓存。Skill/Router、Prompt 及有预算的预取统一进入 `consume`；首次物化主文并保留完整 File 目录，子文件沿准确绑定按需读取。`source.command`、CLI prepare/read 与完整 export 消费路径已删除，旧 SDK capability 缺失直接失败。管理和 doctor 保留配对 CLI。OMP/Tern 的当前验收范围单独报告。
 
 `notion_use` 使用 Pi 的 `exposure: model-only`、`defaultActive: true`，只允许模型顶层调用。`notion_ctl` 为 `deferred`、默认不激活，按需导出固定 canonical ref 或显式 CLI source。旧 `skill_prepare` 会话回执仍按原验证规则读取，历史 toolName 和正文不重写。内部返回、摘要、截断和只落盘不形成完整外层交付；正式边界仍由实际 provider 的完整正文和有效证明决定。
 
-被动 `context-broker.notion-sdk` 观察目录/正文操作及安全请求指标；私有验证驱动可显式订阅 `context-broker.notion-sdk-result` 取得同一调用 ID 的实际返回值。默认运行不订阅原文结果，metrics 不含凭据或正文。现有消费专项包含新工具、分页/覆盖、旧版本回执和 SDK 缺导出反例；安装态、真实 Notion/模型与双机验收另留每次产物身份，以下历史结果不自动升级为新合同结果。
+被动 `context-broker.notion-sdk` 观察目录/正文操作及安全请求指标；私有验证驱动可显式订阅 `context-broker.notion-sdk-result` 取得同一调用 ID 的实际返回值。默认运行不订阅原文结果，metrics 不含凭据或正文。现有消费专项包含新工具、分页/覆盖、旧版本回执和 SDK 缺导出反例；安装态、真实 Notion/模型与双机验收另留每次产物身份，旧运行结果不自动升级为新合同结果。
+
+## Choosing a tool and waiting for the CLI
+
+用户要求按某个 Skill 完成任务时，用 `notion_use({ref})` 准备根与完整 Requires；
+只介绍、比较或检查内容时用 `read({path})`，不把 `ref` 当作 read 参数。只读任务
+也可能需要采用指令，但选择指令不授权执行命令、写入或委派。复用当前完整结果；
+“查看最新”用 read refresh，“采用最新”才用 use refresh。
+
+`notion_ctl({cli_source: "SOURCE_ID"})` 返回当前明确 source 的配对 CLI argv、
+数据库范围和 `execution`，不执行命令或证明权限。与 `refs` 互斥，只接受一个
+启用且无歧义的 source，不猜全局安装或第一个来源。普通消费结果不携带机器路径。
+`execution.default_cli_timeout_ms` 为 `600000`；显式 `--timeout` 也使用毫秒。
+宿主等待窗口需覆盖该预算及启动、收尾余量。前台无法持续等待时，保留同一后台
+进程、Store 和凭据范围，等到真实终局；短轮询结束不授权杀掉或重复写入。
+
+## 从正文相对引用读取
+
+Pi 的单文件入口支持 `read({path:RELATIVE_PATH, from:FIXED_CONTAINING_FILE_REF})`。
+`from` 复制实际包含链接的主文 `sr:S`、资源 `sr:R`，或带 snapshot 的 canonical
+File ref。嵌套子文档使用自己的 owner、固定 manifest 与准确路径；未固定的 `sr:C` 不能作为基准。
+`path` 可以是相对文件路径或 `skill://` 引用；后者省略的 Library 来自 `from`。
+相对路径不接受绝对路径、`~/`、query 或 fragment。
+`from` 不与 `paths` 批读或 `refresh:true` 合用。
+
+SDK 先根据该文件的当前 Source revision 和原始仓库路径解析唯一贡献目标，
+Broker 再按目标自己的 owner、scope 和会话固定版本读取。已选目标不会因这次
+解析而换成新版本。没有可靠 Source 上下文时，使用目标的精确稳定引用；不按缓存
+位置、名称或相似文件名推断。来源失效、revision 变化、映射歧义、库外路径或离线
+无法解析都保留明确错误。
+
+结果沿现有 read 回执返回固定目标引用，只做检查，不激活指令、不展开 Requires，
+也不自动修改 Members。取消与分支切换继续阻止旧结果投递。普通本地 read 保持
+Pi 原生行为。参数示例见[相对文件读取](fixed-resource-batches.md#relative-paths-from-a-selected-file)。
+
+## Presentation and proof
+
+正常 use 结果保留所选根、Requires 的完整作者字符串和资源/关系目录。编译器不
+解析或裁剪作者 frontmatter、标题、XML、代码与链接。目录不加载未选 Member 正文。
+完整 graph lock、hash、canonical binding、预算和物化证明留在工具 details，
+显式证明导出与模型正文分开。Broker 渲染 hash 不写回 CLI 源内容证明。
+
+当前投影回执绑定编译器版本、完整模型文本 hash/bytes，以及每份源正文的真实位置。
+位置使用 JavaScript UTF-16 offset，字节与 SHA-256 使用 UTF-8。实际 content、
+toolCallId、scope、owner、pin、图与源 hash 都必须匹配；独立 details、未知编译器、
+坏 hash、移位 span 或截断不能构成 loaded。
+
+完整正文只在同一最终请求中已有可信同版本副本时替换为 `Already loaded.`，资源
+可用 `Already available.`。生成目录只有完整且同 scope/owner/snapshot/version
+的见证存在时才能省略；另一个省略标记、摘要或历史 loaded 状态均不能作见证。
+派生回执明确登记省略目录的完整 hash/bytes，重算文本和偏移；被替换正文不再证明
+交付。原始 Session 与工具结果保持全文，compaction 后按有效上下文重新计算。
+
+同一固定文件的关系与文件目录完全同 ref/path 时，可把描述归入文件对象并保留
+关系 ref。外部、未固定、歧义或冲突关系保持原信息。scalar 撤下只替换已验证正文
+span；生成 effects footer 仍须精确匹配该次操作，未知不能变成零写。预算按实际
+生成文本在提交选择前检查，不降低 SDK 权限、图预算和源完整性守卫。
+
+最终请求检查冻结 Broker 最后合法投影中的正文、目录、操作事实和工具声明，再与
+后续实际发送内容核对。恢复的原用户文本仍承担 user 角色义务，相同 assistant
+文字不能替代它。机器回执保留在私有预期中，不进入模型正文。有限模型只证明其
+声明状态性质，具体角色、布局、偏移和 HTTP 实体由实际内容与 transport 检查覆盖。
 
 ## 消费不写远端
 
-Pi `read` 与 `notion_use` 不公开 `readOnly`。携带该旧参数时，无论值为 true 或 false，都在 I/O 前返回 `INVALID_ARGUMENT`。随包 SDK v2 不接收这个参数，当前消费恒零语义写入，不通过首次读取 retention/adoption 或写 Records。旧选择缺少所需本地字节时，明确获取当前候选并重新选择，不承诺远端历史恢复。
+Pi `read` 与 `notion_use` 不公开 `readOnly`。携带该旧参数时，无论值为 true 或 false，都在 I/O 前返回 `INVALID_ARGUMENT`。随包 SDK v3 不接收这个参数，当前消费恒零语义写入，不通过首次读取 retention/adoption 或写 Records。旧选择缺少所需本地字节时，明确获取当前候选并重新选择，不承诺远端历史恢复。
 
 SDK 与构建 manifest 必须具备匹配的消费能力，缺失时在操作前拒绝；旧 `source.command` 同样在配置入口拒绝。此边界由 `notion-sdk.test.ts` 的无 readOnly 能力门槛和当前独立安装 HTTP 检查验证，不依赖用户选一个保护开关。
 
@@ -71,7 +134,7 @@ version-1 `effects` 只包含 `version`、`remote_writes` 和 `author_content`�
 | Enabled 关闭 | 阻止新的当前消费；已有完整固定原字节可继续用于旧会话，不偷偷改版 |
 | 真实认证或权限拒绝 | 对应正文从当前请求投影中移除，不能借旧缓存绕过 |
 
-刷新可以复用已返回的 `sr:C`、`sr:S` 或有本分支选择证明的固定 canonical 主文引用，包含主 File ID 时必须与该绑定完全一致。资源引用、伪造 File ID、错 owner 或错主路径不因 `refresh:true` 变成合法主入口。检查新版资源仍校验原 SDK fixed binding、hash、bytes、当前分支和权限；检查凭据不构成 active 指令。
+刷新可以复用已返回的 `sr:C`、`sr:S` 或有本分支选择证明的固定 canonical 主文引用，只按所选 manifest 的主路径解析，File ID 不再出现在公开引用中。资源引用、废弃的 `file_id` 参数、错 owner 或错主路径不因 `refresh:true` 变成合法主入口。检查新版资源仍校验原 SDK fixed binding、hash、bytes、当前分支和权限；检查凭据不构成 active 指令。
 
 ## 缓存丢失后的会话连续性
 
@@ -87,4 +150,7 @@ version-1 `effects` 只包含 `version`、`remote_writes` 和 `author_content`�
 
 [Broker Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-context-broker/SKILL.md) 按变化路由到现有check、当前SDK/安装与实际Pi助手；[integration](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/SKILL.md) 绑定同一CLI/SDK与真实decoder；[consumer-state](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-consumer-state/SKILL.md) 维护已有模型和守卫。
 
-`bun run check:broker` 与独立安装/current HTTP不能替代 AH-1188 当前主线下的实际日用配置、真实 Notion、Pi/provider/model 结果；AH-1063 仅为历史依据。实际受控 Pi 沿根目录 `scripts/notion-sdk-pi.mjs` 的四个当前 SDK v2 场景执行，见[当前验收复现](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/current-context-candidate.md)。原生终端专项未单独验收，OMP/Tern 延期。旧 CLI fixture、双宿主启动与远端历史恢复流程已退出当前地图。
+`bun run check:broker` 与独立安装/current HTTP 只证明各自受控边界。实际 Pi 沿根目录
+`scripts/notion-sdk-pi.mjs` 的当前 SDK v3 场景执行，见[当前验收复现](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/current-context-candidate.md)。
+真实 Notion、自然模型、正常安装和原生终端各自报告实际候选与观察，未执行项保持
+not_run。没有当前独立证据时，不宣称 OMP/Tern 或其他宿主已通过。

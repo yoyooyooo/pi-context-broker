@@ -249,7 +249,9 @@ test("host mock context stays logical-only and a lost resource blocks persistenc
     confirmDelivery: () => { persisted += 1; }, finalRequests: ledger,
   }, createPiHostAdapter(api));
   const emit = async (name: string, event: unknown = {}) => {
-    for (const handler of listeners.get(name) ?? []) await handler(event as never, ctx as never);
+    let result: unknown;
+    for (const handler of listeners.get(name) ?? []) result = await handler(event as never, ctx as never) ?? result;
+    return result;
   };
   try {
     await emit("agent_start", {});
@@ -261,8 +263,9 @@ test("host mock context stays logical-only and a lost resource blocks persistenc
     expect(ledger.recent().at(-1)?.disposition).toBe("logical-only");
     const before = persisted;
     await emit("context", { messages: [resourceTool("SECRET_RESOURCE_BODY\n\n" + effectsText)] });
-    await emit("before_provider_request", { payload: payload([]) });
-    expect(controller.signal.aborted).toBe(true);
+    const safe = await emit("before_provider_request", { payload: payload([]) });
+    expect(controller.signal.aborted).toBe(false);
+    expect(JSON.stringify(safe)).not.toContain("SECRET_RESOURCE_BODY");
     await emit("after_provider_response", { status: 200, headers: {} });
     expect(persisted).toBe(before);
     expect(ledger.recent().at(-1)?.errors).toContain("LOST_SOURCE_RESULT");
@@ -279,7 +282,7 @@ test("restored deferred source keeps its user-role obligation privately through 
   const record = { kind: "skill" as const, source: "notion" as const, sourceId: "owned", sourceScope: "scope", id: "record",
     name: "restored", body: "RESTORED_SOURCE_BODY", snapshotId: snapshot, path: "/immutable/SKILL.md", description: "fixture",
     aliases: [], normalizedName: "restored", normalizedDescription: "fixture", normalizedAliases: [], autoloadEnabled: false,
-    locator: { type: "shared_skill" as const, library_id: "lib", skill_id: "skill", page_id: "p", database_id: "db", data_source_id: "ds" } };
+    locator: { type: "shared_skill" as const, library_id: "93a845c1-6c12-5b02-b395-ecf819622e7f", skill_id: "skill", page_id: "p", database_id: "db", data_source_id: "ds" } };
   const original = { role: "user", content: "Use the selected Skill." };
   const draft = deferredSourceEntries([{ sourceEntry: { id: "user-1", type: "message", message: original }, messages: [original] }], "user-1",
     [{ role: "custom", customType: "context-broker", content: record.body, details: { records: [sourceDeliveryReceipt(record, record.body)] } }])!;
@@ -320,8 +323,12 @@ test("restored deferred source keeps its user-role obligation privately through 
         role: message === user && change === "role" ? "assistant" : message.role === "custom" ? "user" : message.role,
         content: message.content,
       }]);
-      await emit("before_provider_request", { payload: payload(actual) });
-      expect(controller.signal.aborted).toBe(change !== "none");
+      const safe = await emit("before_provider_request", { payload: payload(actual) });
+      expect(controller.signal.aborted).toBe(false);
+      if (change !== "none") {
+        expect(JSON.stringify(safe)).not.toContain(record.body);
+        expect(JSON.stringify(safe)).toContain("Use the selected Skill.");
+      }
       await emit("after_provider_response", { status: 200, headers: {} });
       expect(confirmed).toBe(change === "none" ? 1 : 0);
       expect(ledger.recent().at(-1)?.wireConfirmed).toBe(false);

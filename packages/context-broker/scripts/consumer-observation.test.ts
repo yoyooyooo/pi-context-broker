@@ -1,13 +1,36 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createConsumerObservations, currentEvidence } from "../src/consumer-observation";
 import { preparationFailureDetails } from "../src/prepare-protocol";
 import type { SkillRecord } from "../src/types";
 
-const record: SkillRecord = { id: "shared_skill:library:root", source: "notion", sourceId: "notion", sourceScope: "scope-a",
+const record: SkillRecord = { id: "skill://root?library=d81f4f38-325d-5797-995e-a48a903c6ae3", source: "notion", sourceId: "notion", sourceScope: "scope-a",
   name: "root", description: "A root", enabled: true, path: "/immutable/root/SKILL.md", aliases: [],
   normalizedName: "root", normalizedDescription: "a root", normalizedAliases: [], autoloadEnabled: true };
 const observed = (validatedAt: number, origin: "remote" | "cache" = "remote", enabled = true): SkillRecord => ({
   ...record, enabled, currentObservation: { origin, validatedAt, validUntil: validatedAt + 100 },
+});
+
+test("whole-result qualification revision advances only for accepted evidence and detects deny/allow ABA", () => {
+  let clock = 20;
+  const store = createConsumerObservations(() => 0, () => clock);
+  const revisions: number[] = [];
+  const unsubscribe = store.onChange(() => revisions.push(store.revision()));
+  const old = store.begin();
+  expect(store.observe(observed(clock), old)).toBe(true);
+  clock++;
+  expect(store.deny(record, store.begin(), "ACCESS_DENIED")).toBe(true);
+  expect(store.observe(observed(20, "cache"), old)).toBe(false);
+  clock++;
+  expect(store.observe(observed(clock), store.begin())).toBe(true);
+  expect(store.state(record)).toBe("available");
+  expect(store.revision()).toBe(3);
+  expect(revisions).toEqual([1, 2, 3]);
+  unsubscribe();
+  clock++;
+  store.deny(record, store.begin(), "AUTH_REQUIRED");
+  expect(store.revision()).toBe(4);
+  expect(revisions).toEqual([1, 2, 3]);
 });
 
 test("current source evidence preserves original validation time and excludes historical/offline data", () => {
@@ -67,8 +90,8 @@ test("scope and denied-state identity stay separate from fixed content and unkno
 });
 
 test("preparation failure attribution identifies the dependency rather than its caller", () => {
-  const scope = "a".repeat(64), root = "shared_skill:library:root", child = "shared_skill:library:required";
-  const ref = (id: string) => "skill://" + encodeURIComponent(id) + "/SKILL.md";
+  const scope = "a".repeat(64), root = "skill://root?library=d81f4f38-325d-5797-995e-a48a903c6ae3", child = "skill://required?library=d81f4f38-325d-5797-995e-a48a903c6ae3";
+  const ref = (id: string) => nativeFileRef(id, "SKILL.md");
   const error = { code: "CONTENT_DISABLED", details: { id: child } };
   const result = preparationFailureDetails({ preparation: { scope, nodes: [
     { state: "prepared", id: root, ref: ref(root) },

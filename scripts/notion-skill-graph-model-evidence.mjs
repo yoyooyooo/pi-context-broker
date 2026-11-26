@@ -1,3 +1,4 @@
+import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
@@ -77,15 +78,11 @@ export function graphSourceViews(receipts) {
         const bytes = Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8');
         assert.equal(bytes.length, file.bytes); assert.equal(hash(bytes), file.sha256);
         assert.equal(declared[0].bytes, file.bytes); assert.equal(declared[0].sha256, file.sha256);
-        const ref = new URL(file.ref), requested = new URL(file.requested_ref);
+        const ref = parseNativeReference(file.ref), requested = parseNativeReference(file.requested_ref);
         for (const parsed of [ref, requested]) {
-          assert.equal(parsed.protocol, 'skill:'); assert.equal(decodeURIComponent(parsed.hostname), selection.owner);
-          assert.equal(parsed.searchParams.get('snapshot'), selection.snapshot_id);
+          assert.equal(parsed.selector, selection.owner); assert.equal(parsed.path, file.path);
+          assert.equal(parsed.snapshot, selection.snapshot_id);
         }
-        assert.equal(ref.searchParams.get('file_id') ?? undefined, file.file_id);
-        if (requested.searchParams.has('file_id')) assert.equal(requested.searchParams.get('file_id'), file.file_id);
-        else assert.equal(requested.pathname, ref.pathname);
-        assert.equal(ref.pathname.slice(1).split('/').map(decodeURIComponent).join('/'), file.path);
         const identity = file.file_id ?? file.path;
         assert.ok(!paths.has(file.path) && !identities.has(identity), 'A resource operation cannot duplicate a selected file');
         paths.add(file.path); identities.add(identity);
@@ -234,12 +231,13 @@ export function graphSourceAccounting(events, receipts, { sourceMode, requireCon
     const ends = events.filter(event => event.phase === 'sdk-end' && event.requestId === start.requestId);
     const captured = receipts.filter(receipt => receipt.transport === 'sdk' && receipt.requestId === start.requestId);
     assert.equal(ends.length, 1, 'Every SDK operation must finish'); assert.equal(captured.length, 1, 'Every SDK result must have one raw receipt');
-    assert.equal(captured[0].operation, start.operation); assert.equal(captured[0].metrics?.complete, true, 'SDK HTTP metrics must be complete');
+    assert.equal(captured[0].operation, start.operation);
+    if (start.operation !== 'content-search') assert.equal(captured[0].metrics?.complete, true, 'SDK HTTP metrics must be complete');
     if (captured[0].status === 'completed') assert.equal(captured[0].resultObserved, true, 'SDK success without its actual return value is not evidence');
   }
   for (const start of events.filter(event => event.phase === 'child-spawn')) assert.equal(events.filter(event => event.phase === 'child-close' && event.id === start.id).length, 1, 'Every observed child must close');
   const sdk = receipts.filter(receipt => receipt.transport === 'sdk');
-  const sdkOperations = ['list', 'files', 'consume', 'read', 'read-resources', 'resolve'];
+  const sdkOperations = ['list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search'];
   assert.ok(sdk.every(receipt => sdkOperations.includes(receipt.operation)), 'Unknown SDK operation cannot disappear from source accounting');
   const childCalls = events.filter(event => (event.phase === 'child-spawn' || event.phase === 'alternate-child-api') && event.source);
   if (sourceMode === 'sdk') {
@@ -249,7 +247,9 @@ export function graphSourceAccounting(events, receipts, { sourceMode, requireCon
     if (requireConsumption) assert.ok(sdk.some(receipt => receipt.operation === 'consume'), 'The real consumer must reach the bundled SDK');
   }
   return { sourceMode, sdk_calls: Object.fromEntries(sdkOperations.map(operation => [operation, sdk.filter(receipt => receipt.operation === operation).length])),
-    cli_children: childCalls.length, actual_http_attempts: receipts.every(receipt => receipt.metrics?.complete)
+    // REST RequestMetrics do not observe the hosted MCP transport or OAuth.
+    // A counted SDK call must never turn missing MCP HTTP evidence into zero.
+    cli_children: childCalls.length, actual_http_attempts: !sdk.some(receipt => receipt.operation === 'content-search') && receipts.every(receipt => receipt.metrics?.complete)
       ? receipts.reduce((sum, receipt) => sum + receipt.metrics.trace.filter(event => event.event === 'attempt').length, 0) : null,
     source_results_observed: sdk.filter(receipt => receipt.resultObserved).length };
 }

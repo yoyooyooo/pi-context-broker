@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { access, lstat, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, mkdtemp, open, readFile, realpath, writeFile } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
@@ -36,6 +36,27 @@ const rows = async path => {
 const time = row => BigInt(row.monotonicNs ?? row.monotonic_ns ?? '0');
 const slice = (events, start, end) => events.filter(row => time(row) >= BigInt(start) && time(row) <= BigInt(end));
 
+export async function workflowImplementationEvidence(evidence, { registration, settingsIdentity }) {
+  const implementation = { version: 1, candidateArtifact: await identity(join(evidence, 'started.json')),
+    configArtifact: await identity(join(evidence, 'config.json')) };
+  if (registration.reusesRegisteredBroker) {
+    // Preserve the source spelling reported by Pi. User package paths resolve
+    // from settings.json, while a private candidate uses its project binding.
+    assert.deepEqual(await identity(settingsIdentity.path), settingsIdentity, 'Ordinary settings changed before owner capture');
+    const settings = await json(settingsIdentity.path), packages = settings.packages;
+    const selected = packages?.[registration.packageIndex];
+    assert.ok(Array.isArray(packages) && Number.isSafeInteger(registration.packageIndex) && registration.packageIndex >= 0
+      && registration.packageIndex < packages.length, 'Ordinary owner needs the selected settings slot');
+    assert.equal(typeof selected === 'string' ? selected : selected?.source, registration.source,
+      'Ordinary package source changed before owner capture');
+    const path = join(evidence, 'ordinary-installation.json');
+    await save(path, { version: 1, kind: 'ordinary-pi-package-binding', settingsDirectory: dirname(settingsIdentity.path),
+      settings: settingsIdentity, package: { index: registration.packageIndex, count: packages.length, source: registration.source } });
+    implementation.ordinaryInstallationArtifact = await identity(path);
+  }
+  return implementation;
+}
+
 export function workflowSourceSlice(events, startedNs, endedNs) {
   const ids = new Set(events.filter(row => row.phase === 'started' && time(row) <= BigInt(endedNs) &&
     events.some(end => end.phase === 'completed' && end.requestId === row.requestId && time(end) >= BigInt(startedNs))).map(row => row.requestId));
@@ -68,13 +89,13 @@ export async function workflowCatalogFault(bindings, ownedStateRoot) {
   return { mode: 'store-unavailable', expectedErrorCode: 'STATE_UNAVAILABLE', proof };
 }
 
-export async function awaitWorkflowCatalog(file, timeoutMs, { pendingOnly = false, sourceId, database, expectedFailure } = {}) {
+export async function awaitWorkflowCatalog(file, timeoutMs, { pendingOnly = false, sourceId, library, expectedFailure } = {}) {
   assert.ok(!pendingOnly || !expectedFailure, 'A catalog cannot be both pending and a verified failure');
   const startedAt = performance.now();
   while (performance.now() - startedAt < timeoutMs) {
     const events = await rows(file);
     const starts = events.filter(row => row.phase === 'started' && row.kind === 'sdk' && row.operation === 'list' &&
-      row.source_id === sourceId && typeof row.database === 'string' && row.database.replaceAll('-', '') === database.replaceAll('-', ''));
+      row.source_id === sourceId && typeof row.library === 'string' && row.library.replaceAll('-', '') === library.replaceAll('-', ''));
     if (pendingOnly) {
       const started = starts[0];
       if (started) {
@@ -147,13 +168,78 @@ export async function prepareWorkflowTemporaryEnvironment(fixture, env) {
   return { env: { ...env, TMPDIR: ownership.temporaryRoot }, projectContext: await identity(path) };
 }
 
-export function agentWorkflowEnvironment(inherited, { stateRoot, sourceConfigPath, evidence }) {
-  const env = { ...inherited, CONTEXT_BROKER_CONFIG: sourceConfigPath, NTN_SKILLS_HOME: join(stateRoot, 'state'),
+export function agentWorkflowEnvironment(inherited, { stateRoot, sourceConfigPath, evidence }, nodeExecArgv = process.execArgv) {
+  // Child Node processes do not inherit their parent's execArgv. Preserve an
+  // explicit standard proxy opt-in for both controller CLI setup and Pi.
+  const proxy = inherited.NODE_USE_ENV_PROXY === undefined && nodeExecArgv.includes('--use-env-proxy') ? { NODE_USE_ENV_PROXY: '1' } : {};
+  const env = { ...inherited, ...proxy, CONTEXT_BROKER_CONFIG: sourceConfigPath, NTN_SKILLS_HOME: join(stateRoot, 'state'),
     NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'config'), NTN_SKILLS_CACHE_HOME: join(stateRoot, 'cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'data'),
     NTN_SKILLS_SCHEDULER_ROOT: join(stateRoot, 'scheduler'),
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', BROKER_E2E_PROCESS_LEDGER: join(evidence, 'owned-processes.jsonl') };
   delete env.NTN_SKILLS_DEV_ROOT;
   return env;
+}
+
+/** Controller setup owns only this run's roots. RPC never receives an OAuth presenter. */
+export async function prepareWorkflowMcpAuthorization(scenario, { cli, node = process.execPath, cwd, env, evidence, expectedCli },
+  { loginTimeoutMs = 300000 } = {}) {
+  if (scenario.fixture.environment?.mcpAuthorization === undefined) return { status: 'not_required' };
+  assert.equal(scenario.fixture.environment.mcpAuthorization, 'cli-login');
+  assert.ok(scenario.turns.some(turn => turn.expect.some(expected => expected.kind === 'content-search')),
+    'Only an explicit content-search scenario may authorize MCP');
+  assert.ok(Number.isSafeInteger(loginTimeoutMs) && loginTimeoutMs > 0 && loginTimeoutMs <= 300000);
+  assert.ok(isAbsolute(cli) && isAbsolute(node) && isAbsolute(cwd) && isAbsolute(evidence));
+  for (const key of ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME', 'NTN_SKILLS_DATA_HOME'])
+    assert.ok(isAbsolute(env[key] ?? '') && inside(evidence, env[key]), 'MCP setup requires the new private run roots');
+  assert.ok(!env.NOTION_MCP_TOKEN?.trim(), 'Explicit login must not reuse an inherited MCP token');
+  assert.deepEqual(await identity(cli), expectedCli, 'The frozen public CLI changed before authorization');
+  const directory = join(evidence, 'mcp-authorization'); await mkdir(directory, { mode: 0o700 });
+  const result = { version: 1, actor: 'fixture-controller', scope: 'pre-agent-mcp-authorization', status: 'running',
+    startedAt: new Date().toISOString(), cli: expectedCli, node: await identity(node),
+    statePolicy: 'new-owned-run-roots; no credential files read or copied', loginTimeoutMs, commands: [],
+    mcpHttpAttempts: null, notClaimed: 'agent discovery, foreground Pi OAuth, or remote HTTP accounting' };
+  await save(join(directory, 'started.json'), result);
+  const run = async (name, args, timeoutMs) => {
+    const stdout = join(directory, name + '.stdout'), stderr = join(directory, name + '.stderr');
+    const out = await open(stdout, 'wx', 0o600), err = await open(stderr, 'wx', 0o600);
+    const command = { argv: [node, cli, ...args], startedAt: new Date().toISOString(), timeoutMs };
+    try {
+      Object.assign(command, await new Promise(resolveCommand => {
+        let timedOut = false, force, timer;
+        const child = spawn(node, [cli, ...args], { cwd, env, stdio: ['ignore', out.fd, err.fd] });
+        child.once('spawn', () => { command.pid = child.pid; });
+        const finish = outcome => { clearTimeout(timer); clearTimeout(force); resolveCommand({ ...outcome, timedOut }); };
+        child.once('error', () => finish({ exitCode: null, signal: null, spawnError: true }));
+        child.once('close', (exitCode, signal) => finish({ exitCode, signal }));
+        timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); force = setTimeout(() => child.kill('SIGKILL'), 2000); }, timeoutMs);
+      }));
+    } finally { await out.close(); await err.close(); }
+    Object.assign(command, { finishedAt: new Date().toISOString(), stdout: await identity(stdout), stderr: await identity(stderr) });
+    result.commands.push(command); await save(join(directory, name + '.json'), command);
+    assert.ok(command.exitCode === 0 && !command.timedOut && !command.spawnError, 'Public MCP ' + name + ' did not complete; retain its private setup evidence');
+    return json(stdout);
+  };
+  try {
+    // Manual opening keeps setup usable with the reviewer's signed-in browser.
+    // The authorization URL stays in this private stderr file, never a subject prompt.
+    const login = await run('login', ['auth', 'mcp', 'login', '--no-browser'], loginTimeoutMs);
+    const readback = await run('status', ['auth', 'mcp', 'status'], 10000);
+    assert.equal(login.ok, true); assert.equal(readback.ok, true);
+    assert.equal(readback.mcp?.oauth, 'ready'); assert.equal(readback.mcp.tokenSource, 'none');
+    assert.equal(readback.mcp.registered, true);
+    assert.ok(typeof readback.mcp.connectionId === 'string' && readback.mcp.connectionId.length > 0 &&
+      typeof readback.mcp.grantEpoch === 'string' && readback.mcp.grantEpoch.length > 0);
+    assert.equal(login.mcp?.connectionId, readback.mcp.connectionId); assert.equal(login.mcp?.grantEpoch, readback.mcp.grantEpoch);
+    result.connection = { id: readback.mcp.connectionId, grantEpoch: readback.mcp.grantEpoch };
+    result.status = 'passed';
+  } catch (error) {
+    result.status = 'failed'; result.error = { code: error.code ?? 'MCP_SETUP_FAILED', message: 'Public CLI authorization setup did not complete' };
+    throw error;
+  } finally {
+    assert.deepEqual(await identity(cli), expectedCli, 'The frozen public CLI changed during authorization');
+    result.finishedAt = new Date().toISOString(); await save(join(directory, 'result.json'), result);
+  }
+  return { ...result, artifact: await identity(join(directory, 'result.json')) };
 }
 
 export async function workflowHostLoader(host, owned, observed, args) {
@@ -176,9 +262,26 @@ export function agentWorkflowProjectSettings(settings, scenario) {
   return { ...structuredClone(settings), compaction: { ...settings.compaction, keepRecentTokens } };
 }
 
+export async function bindPairedWorkflowEvidence(bindings, brokerRoot, scenario) {
+  const expectedBodies = new Set((scenario?.turns ?? []).flatMap(turn => turn.expect)
+    .filter(expect => expect.kind === 'body').map(expect => expect.body));
+  for (const name of ['maintain', 'sync']) {
+    const object = 'paired-' + name, body = object + '@A/SKILL.md';
+    if (!expectedBodies.has(body)) continue;
+    const path = join(brokerRoot, 'dist/builtin-skills/ntn-skills-' + name, 'SKILL.md');
+    const file = await identity(path);
+    assert.equal(bindings.private.objects[object], undefined, 'The paired package owner is reserved for the actual loaded candidate');
+    assert.equal(bindings.private.bodies[body], undefined, 'The paired package body is reserved for the actual loaded candidate');
+    bindings.private.objects[object] = { kind: 'local', name: 'ntn-skills-' + name, path,
+      owner: 'package:' + file.realpath, currentVersion: 'A', versions: { A: { bodyKeys: [body] } } };
+    bindings.private.bodies[body] = { ...file, observedPath: path, object, version: 'A',
+      resourcePath: 'SKILL.md', origin: 'paired-package' };
+  }
+}
+
 async function input(config) {
   assert.equal(config.version, 1); assert.equal(config.scope, 'notion-agent-workflow');
-  const fields = ['version', 'scope', 'scenarioFile', 'scenarioId', 'profile', 'bindingsFile', 'brokerRoot', 'cliRoot', 'sourceId', 'database', 'packageIndex', 'evidenceRoot', 'model', 'thinkingLevel', 'timeoutMs', 'catalogTimeoutMs', 'viewId', 'retestOf'];
+  const fields = ['version', 'scope', 'scenarioFile', 'scenarioId', 'profile', 'bindingsFile', 'brokerRoot', 'cliRoot', 'sourceId', 'library', 'additionalLibrary', 'packageIndex', 'evidenceRoot', 'model', 'thinkingLevel', 'timeoutMs', 'catalogTimeoutMs', 'viewId', 'retestOf'];
   assert.ok(Object.keys(config).every(key => fields.includes(key)), 'Unsupported natural workflow configuration field');
   for (const key of ['timeoutMs', 'catalogTimeoutMs']) if (config[key] !== undefined)
     assert.ok(Number.isSafeInteger(config[key]) && config[key] > 0 && config[key] <= 2_147_483_647,
@@ -201,22 +304,71 @@ async function input(config) {
   }
   if (actualPackagePaths.length) bindings.private.facts['package-maintenance-path'] = { anyOf: [...new Set(actualPackagePaths)] };
   const declared = corpus.scenarios.find(item => item.id === config.scenarioId);
-  if (corpus.fixtures[declared?.fixture]?.environment?.offline === true) {
-    const path = join(config.brokerRoot, 'dist/builtin-skills/ntn-skills-maintain/SKILL.md');
-    const file = await identity(path), body = 'paired-maintain@A/SKILL.md';
-    assert.equal(bindings.private.objects['paired-maintain'], undefined, 'The paired package owner is reserved for the actual loaded candidate');
-    bindings.private.objects['paired-maintain'] = { kind: 'local', name: 'ntn-skills-maintain', path,
-      owner: 'package:' + file.realpath, currentVersion: 'A', versions: { A: { bodyKeys: [body] } } };
-    bindings.private.bodies[body] = { ...file, observedPath: path, object: 'paired-maintain', version: 'A',
-      resourcePath: 'SKILL.md', origin: 'paired-package' };
-  }
+  await bindPairedWorkflowEvidence(bindings, config.brokerRoot, declared);
   const scenario = bindAgentScenario(corpus, config.scenarioId, bindings, { profile: config.profile });
   assert.ok(bindings.private.fixture?.root && bindings.private.fixture?.runId, 'Use a real owned fixture binding');
-  assert.equal(bindings.private.fixture.entry.replaceAll('-', ''), config.database.replaceAll('-', ''), 'The fixture and candidate must use the same library');
+  assert.equal(bindings.private.fixture.libraryId.replaceAll('-', ''), config.library.replaceAll('-', ''), 'The fixture and candidate must use the same library');
+  if (scenario.fixture.kind === 'library-journey') {
+    assert.ok(config.additionalLibrary && bindings.private.fixture.libraries, 'Library journeys require two independently prepared roots');
+    assert.equal(bindings.private.fixture.libraries.A.library_id, config.library);
+    assert.equal(bindings.private.fixture.libraries.B.library_id, config.additionalLibrary.library);
+    assert.equal(config.viewId, undefined, 'Library journeys use complete root catalogs');
+  } else assert.equal(config.additionalLibrary, undefined, 'Additional Sources are reserved for the finite Library journeys');
   return { corpus, bindings, scenario };
 }
 
+/** One additional explicitly reviewed root, never discovery of arbitrary Sources. */
+export function agentWorkflowSourceConfig(original, options, additionalLibrary) {
+  const config = candidateSourceConfig(original, options);
+  if (additionalLibrary === undefined) return config;
+  assert.deepEqual(Object.keys(additionalLibrary).sort(), ['library', 'sourceId']);
+  assert.match(additionalLibrary.sourceId, /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,119}$/u);
+  assert.match(additionalLibrary.library, /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u);
+  assert.notEqual(additionalLibrary.library, options.library, 'The additional root must be distinct');
+  assert.ok(!config.sources.some(source => source.id === additionalLibrary.sourceId), 'Do not replace an existing Source');
+  config.sources.push({ id: additionalLibrary.sourceId, type: 'notion', library: additionalLibrary.library,
+    cacheDir: join(options.cacheDir, additionalLibrary.sourceId), prefetch: false });
+  return config;
+}
+
+/** Execute the user's public branch command and verify the actual persisted entries. */
+export async function selectWorkflowLibrary(rpc, library) {
+  assert.match(library, /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u);
+  const before = await rpc.command('get_state'), prior = await rpc.command('get_entries');
+  const completion = await rpc.prompt('/context-broker library ' + library);
+  assert.equal(completion.agentInvoked, false, 'Library control must not synthesize an Agent turn');
+  const after = await rpc.command('get_state'), entries = await rpc.command('get_entries');
+  assert.equal(after.sessionId, before.sessionId, 'Public Library selection must stay in the same session');
+  const previous = new Set(prior.entries.map(entry => entry.id));
+  const appended = entries.entries.filter(entry => !previous.has(entry.id) && entry.customType === 'ntn-skills-library-selection');
+  assert.deepEqual(appended.map(entry => entry.data), [
+    { version: 1, library, status: 'requested' }, { version: 1, library, status: 'ready' },
+  ], 'Public selection did not persist the requested and verified root');
+  const byId = new Map(entries.entries.map(entry => [entry.id, entry]));
+  let active;
+  for (let entry = byId.get(entries.leafId); entry; entry = byId.get(entry.parentId))
+    if (entry.customType === 'ntn-skills-library-selection') { active = entry; break; }
+  assert.equal(active?.id, appended[1].id, 'The ready Library entry must belong to the active branch');
+  return { actor: 'fixture-controller', command: '/context-broker library ' + library, sessionId: after.sessionId,
+    priorLeafId: prior.leafId, leafId: entries.leafId, entries: appended, completion };
+}
+
+export function workflowSelectedLibrary(config, snapshot) {
+  const entries = new Map(snapshot.entries.map(entry => [entry.id, entry]));
+  let selected;
+  for (let entry = entries.get(snapshot.leafId); entry; entry = entries.get(entry.parentId)) {
+    if (entry.customType === 'ntn-skills-library-selection') { selected = entry.data; break; }
+  }
+  assert.ok(selected === undefined || selected.status === 'ready', 'The active branch Library is not ready');
+  const library = selected?.library ?? config.library;
+  const sources = [{ sourceId: config.sourceId, library: config.library }, ...(config.additionalLibrary ? [config.additionalLibrary] : [])];
+  const matches = sources.filter(source => source.library === library);
+  assert.equal(matches.length, 1, 'The branch must select one explicitly reviewed Source');
+  return matches[0];
+}
+
 export async function planAgentWorkflow(config) {
+  if (config.profile === 'native-onboarding') return (await import('./notion-agent-onboarding.mjs')).planOnboardingWorkflow(config);
   const { scenario } = await input(config);
   const projectOverrides = agentWorkflowProjectSettings({}, scenario);
   return { version: 1, scope: config.scope, status: 'prepared_not_executed', scenario: scenario.id,
@@ -227,6 +379,9 @@ export async function planAgentWorkflow(config) {
       ...(projectOverrides.compaction ? ['Owned project compaction.keepRecentTokens=' + projectOverrides.compaction.keepRecentTokens + '; real RPC compaction and model summarization remain unchanged'] : [])],
     projectOverrides,
     limits: { promptTimeoutMs: config.timeoutMs ?? 1_800_000, catalogTimeoutMs: config.catalogTimeoutMs ?? 90000 },
+    mcpAuthorization: scenario.fixture.environment?.mcpAuthorization === 'cli-login'
+      ? { actor: 'fixture-controller', command: ['auth', 'mcp', 'login', '--no-browser'], timeoutMs: 300000, state: 'new-owned-run-roots' }
+      : { status: 'not_required' },
     oracle: 'controller-only files; no tools, expected answers or verification Skill inserted into subject prompts',
     scopeBoundary: 'project candidate using the real daily environment; not a two-machine installed-delivery result' };
 }
@@ -245,6 +400,24 @@ async function sourceIdentity(path, repository) {
   return { repository, commit, dirty: status.length > 0, tree_sha256: sha(JSON.stringify(hashes)) };
 }
 
+// Seal existing observer outputs from each original process segment. This adds
+// no source read: SDK result bytes were already captured at the SDK boundary.
+export async function workflowToolHistory(segments) {
+  const sdkSegments = [];
+  for (const segment of segments) {
+    const files = segment.observer.files, tasks = await identity(files.tasks);
+    const responses = [];
+    for (const end of (await rows(files.sdk)).filter(row => row.phase === 'sdk-end' && ['read', 'list'].includes(row.operation))) {
+      const directory = join(dirname(files.sdk), 'sdk-responses'), path = resolve(directory, end.responseFile);
+      assert.equal(dirname(path), directory, 'SDK response must stay in its observed segment');
+      assert.equal(end.responseFile, end.requestId + '.json', 'Retain the original SDK response filename');
+      responses.push({ requestId: end.requestId, artifact: await identity(path) });
+    }
+    sdkSegments.push({ tasks, sdk: await identity(files.sdk), source: await identity(files.source), responses });
+  }
+  return { version: 1, artifacts: sdkSegments.map(segment => segment.tasks), sdkSegments };
+}
+
 async function writeObservers(control, config, sourceCache, bodies, index) {
   await mkdir(control, { recursive: true, mode: 0o700 });
   const payloads = join(control, 'payloads'), branches = join(control, 'branches'), responses = join(control, 'sdk-responses'), toolResults = join(control, 'tool-results');
@@ -255,7 +428,7 @@ async function writeObservers(control, config, sourceCache, bodies, index) {
   const clockId = randomUUID();
   await writeFile(extensions[0], consumptionCostExtensionSource({ output: files.cost, checkoutRoot: root, runId: config.runId, sampleId: config.scenarioId + '-' + index, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(extensions[1], providerTransportExtensionSource({ output: files.transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
-  await writeFile(extensions[2], candidateTaskExtensionSource({ output: files.tasks, bodyFiles: bodies.filter(body => body.bytes > 0),
+  await writeFile(extensions[2], candidateTaskExtensionSource({ referenceParser: join(config.brokerRoot, "src/native-reference.ts"), output: files.tasks, bodyFiles: bodies.filter(body => body.bytes > 0),
     payloadDirectory: payloads, branchDirectory: branches, toolResultDirectory: toolResults }), { flag: 'wx', mode: 0o600 });
   const sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs'), hostPreload = join(control, 'host.cjs');
   const hostDirectory = join(control, 'host-process'); await mkdir(hostDirectory, { mode: 0o700 });
@@ -273,6 +446,7 @@ async function writeObservers(control, config, sourceCache, bodies, index) {
 
 /** Invoke through candidate-run --live. All private event handling stays here. */
 export async function runAgentWorkflow(config) {
+  if (config.profile === 'native-onboarding') return (await import('./notion-agent-onboarding.mjs')).runOnboardingWorkflow(config);
   const { corpus, bindings, scenario } = await input(config);
   const { analyzeNotionAgentTurn, inspectNotionAgentSession, captureNotionAgentSelection } = await import('./notion-agent-analysis.mjs');
   const { runAgentFixtureEvent } = await import('./notion-agent-fixtures.mjs');
@@ -294,14 +468,14 @@ export async function runAgentWorkflow(config) {
   const source = parse(await readFile(sourcePath, 'utf8'));
   const secretKeys = value => value && typeof value === 'object' && Object.entries(value).some(([key, child]) => /token|secret|password|authorization|api.?key/iu.test(key) || secretKeys(child));
   assert.ok(!secretKeys(source), 'Do not save a source configuration containing credentials');
-  const baseline = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json'].map(path => identity(join(config.brokerRoot, path))));
+  const baseline = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json', 'dist/ntn-skills-ref.cjs'].map(path => identity(join(config.brokerRoot, path))));
   const cliManifest = await json(join(config.cliRoot, 'package.json'));
   const sdkExport = cliManifest.exports?.['./sdk'];
   const sdkEntry = typeof sdkExport === 'string' ? sdkExport : sdkExport?.import;
   assert.ok(typeof sdkEntry === 'string' && sdkEntry.startsWith('./'), 'The paired package must export its current SDK');
   const cliFiles = await Promise.all(['package.json', 'dist/ntn-skills.js', sdkEntry].map(path => identity(join(config.cliRoot, path))));
   const runtime = await json(baseline[4].path);
-  verifyBundledRuntime({ manifest: runtime, cliBytes: await readFile(baseline[2].path), sdkBytes: await readFile(baseline[3].path), expectedVersion: cliManifest.version });
+  verifyBundledRuntime({ manifest: runtime, cliBytes: await readFile(baseline[2].path), sdkBytes: await readFile(baseline[3].path), refBytes: await readFile(baseline[5].path), expectedVersion: cliManifest.version });
   const build = await json(join(config.brokerRoot, 'dist/next-build.json'));
   for (const file of build.selected_cli.files) assert.equal((await identity(join(config.cliRoot, file.path))).sha256, file.sha256, 'Selected CLI/SDK build input changed: ' + file.path);
   const loadedPackageFiles = [];
@@ -321,15 +495,17 @@ export async function runAgentWorkflow(config) {
   const sourceCache = join(stateRoot, 'broker-cache'), sourceConfigPath = join(evidence, 'source-config.json');
   const viewId = fixture.viewId ?? config.viewId;
   if (fixture.viewId && config.viewId) assert.equal(config.viewId, fixture.viewId, 'Use the owned fixture View');
-  const candidateSource = candidateSourceConfig(source, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache, viewId });
+  const candidateSource = agentWorkflowSourceConfig(source, { sourceId: config.sourceId, library: config.library, cacheDir: sourceCache, viewId }, config.additionalLibrary);
   if (scenario.fixture.environment?.offline === true) {
     const selected = candidateSource.sources.find(item => item.id === config.sourceId);
     selected.discovery = { ...selected.discovery, offline: true };
     selected.activation = { ...selected.activation, offline: true };
   }
   await save(sourceConfigPath, candidateSource);
-  const sourceObservation = { sourceId: config.sourceId, database: config.database, configArtifact: await identity(sourceConfigPath) };
+  const sourceObservation = { sourceId: config.sourceId, library: config.library, ...(config.additionalLibrary ? { additionalLibrary: config.additionalLibrary } : {}), configArtifact: await identity(sourceConfigPath) };
   const env = agentWorkflowEnvironment(inheritedEnv, { stateRoot, sourceConfigPath, evidence });
+  await mkdir(env.NTN_SKILLS_CONFIG_HOME, { recursive: true, mode: 0o700 });
+  await save(join(env.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: config.library });
   if (scenario.fixture.environment?.catalog === 'unauthorized') env.NOTION_API_TOKEN = 'secret_owned_agent_workflow_invalid_identity';
   if (scenario.fixture.environment?.catalog === 'filtered-view') assert.ok(fixture.viewId, 'A filtered-view scenario requires a real owned Notion View binding');
   const selectedHost = await resolveHost('pi'), host = { ...selectedHost, parent_pid: process.pid, launcher: await identity(selectedHost.path) };
@@ -344,8 +520,7 @@ export async function runAgentWorkflow(config) {
     cache: 'cold', stateRoot, ownedStateRoot, sourceCache, schedulerRoot: env.NTN_SKILLS_SCHEDULER_ROOT, temporaryRoot: env.TMPDIR, projectContext,
     temporaryFiles: 'environment-convention-not-sandbox', oracle: 'independent', createdAt: result.startedAt });
   await save(join(evidence, 'started.json'), result);
-  const implementation = { version: 1, candidateArtifact: await identity(join(evidence, 'started.json')),
-    configArtifact: await identity(join(evidence, 'config.json')) };
+  const implementation = await workflowImplementationEvidence(evidence, { registration, settingsIdentity: before.settings });
   let rpc, segment, currentSession, segmentIndex = 0;
   const forkBindings = new Map();
   const start = async resume => {
@@ -382,12 +557,13 @@ export async function runAgentWorkflow(config) {
     await save(join(control, 'commands.json'), segment.commands);
     segment.commandsArtifact = await identity(join(control, 'commands.json'));
     const catalogMode = scenario.fixture.environment?.catalog ?? 'normal';
+    const catalogSelection = workflowSelectedLibrary(config, await rpc.command('get_entries'));
     if (['normal', 'filtered-view'].includes(catalogMode) && !scenario.fixture.environment?.offline)
       segment.catalogBarrier = await awaitWorkflowCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000,
-        { sourceId: config.sourceId, database: config.database, expectedFailure: await workflowCatalogFault(bindings, ownedStateRoot) });
+        { ...catalogSelection, expectedFailure: await workflowCatalogFault(bindings, ownedStateRoot) });
     else if (catalogMode === 'pending')
       segment.catalogBarrier = await awaitWorkflowCatalog(observer.files.source, config.catalogTimeoutMs ?? 90000,
-        { pendingOnly: true, sourceId: config.sourceId, database: config.database });
+        { pendingOnly: true, ...catalogSelection });
     else segment.catalogBarrier = { mode: catalogMode, waited: false };
   };
   const close = async () => {
@@ -421,11 +597,21 @@ export async function runAgentWorkflow(config) {
       observed.cliProcesses = { version: 1, artifacts: cliProcesses.artifacts,
         sourceArtifact: await identity(owner.observer.files.source),
         window: { startNs: receipt.startedNs, endNs: receipt.endedNs } };
-      observed.toolHistory = { version: 1, artifacts: await Promise.all(result.segments
-        .filter(item => item.index <= receipt.segment).map(item => identity(item.observer.files.tasks))) };
+      observed.toolHistory = await workflowToolHistory(result.segments.filter(item => item.index <= receipt.segment));
 
       const frozenBindings = await json(join(evidence, 'turn-' + receipt.id + '-bindings.json'));
       const turn = await json(join(evidence, 'turn-' + receipt.id + '-input.json'));
+      const continuation = turn.expect.find(expected => expected.kind === 'metadata-lookup' && expected.afterTurn);
+      if (continuation) {
+        const prior = result.turns.find(item => item.id === continuation.afterTurn);
+        assert.ok(prior, 'Metadata lookup continuation requires its actual earlier turn');
+        observed.metadataContinuation = {
+          previous: await identity(join(evidence, 'turn-' + prior.id + '-analysis.json')),
+          events: await Promise.all(result.events.map((event, index) => ({ event, index }))
+            .filter(({ event }) => event.afterTurn === prior.id)
+            .map(({ index }) => identity(join(evidence, 'event-' + (index + 1) + '.json')))),
+        };
+      }
       receipt.analysis = await analyzeNotionAgentTurn(turn, observed, frozenBindings, { inspectPayload: candidatePayloadBodies });
       receipt.status = receipt.analysis.status;
       await save(join(evidence, 'turn-' + receipt.id + '-analysis.json'), { observed, analysis: receipt.analysis });
@@ -433,13 +619,17 @@ export async function runAgentWorkflow(config) {
     }
   };
   try {
+    result.mcpAuthorization = await prepareWorkflowMcpAuthorization(scenario, { cli: cliFiles[1].path,
+      cwd, env, evidence, expectedCli: cliFiles[1] });
     await start();
     for (let index = 0; index < scenario.turns.length; index++) {
       const declared = corpus.scenarios.find(item => item.id === scenario.id).turns[index], receipt = result.turns[index];
       receipt.status = 'running';
       for (const event of declared.before ?? []) {
         const action = { event, startedNs: process.hrtime.bigint().toString(), afterTurn: index ? result.turns[index - 1].id : null };
-        if (event.kind === 'restart') {
+        if (event.kind === 'library-select') {
+          action.result = await selectWorkflowLibrary(rpc, fixture.libraries[event.library].library_id);
+        } else if (event.kind === 'restart') {
           const old = currentSession; await close(); await start(event.mode === 'resume' ? old.sessionFile : undefined);
           assert.equal(currentSession.sessionId === old.sessionId, event.mode === 'resume');
           action.result = { mode: event.mode, priorSessionId: old.sessionId, sessionId: currentSession.sessionId, pid: segment.pid };
@@ -465,7 +655,7 @@ export async function runAgentWorkflow(config) {
         } else if (event.kind === 'compact') {
           action.result = await rpc.command('compact');
           const entries = await rpc.command('get_entries'); assert.ok(entries.entries.some(entry => entry.type === 'compaction'), 'RPC compact did not persist a compaction');
-        } else action.result = await runAgentFixtureEvent(event, { bindings, bindingsPath: config.bindingsFile, ownedStateRoot, runtimeEnv: env });
+        } else action.result = await runAgentFixtureEvent(event, { bindings, bindingsPath: config.bindingsFile, ownedStateRoot, runtimeEnv: env, runtimeCli: baseline[2].path });
         action.finishedNs = process.hrtime.bigint().toString(); result.events.push(action);
         await save(join(evidence, 'event-' + result.events.length + '.json'), action);
       }
@@ -500,6 +690,18 @@ export async function runAgentWorkflow(config) {
         observed.selectionSnapshots.push({ payloadSha256: payload.sha256, selection: selection(await json(actual.path)) });
       }
       let readbackError;
+      for (const assertion of turn.expect.filter(expect => expect.kind === 'original-source-resume')) {
+        try {
+          const verified = await runAgentFixtureEvent({ kind: 'verify-agent-source-resume', object: assertion.object },
+            { bindings, bindingsPath: config.bindingsFile, ownedStateRoot, runtimeEnv: env, runtimeCli: baseline[2].path });
+          (observed.sourceResumes ??= {})[assertion.object] = verified.result;
+        } catch (error) {
+          readbackError = error;
+          observed.readbackFailure = { object: assertion.object, code: error.code ?? error.name, message: error.message,
+            ...(error.fixtureEventArtifact ? { artifact: error.fixtureEventArtifact } : {}) };
+          break;
+        }
+      }
       for (const assertion of turn.expect.filter(expect => expect.kind === 'business-readback')) {
         try {
           const declaration = bindings.private.readbacks[assertion.receipt];
@@ -572,7 +774,7 @@ async function writeWorkflowReceipts(result, config) {
       started_at: result.startedAt, finished_at: result.finishedAt, source_tuple: result.sourceTuple,
       loaded_artifacts: [...result.baseline.map((file, i) => ({ role: ['broker-package', 'broker-entry', 'embedded-cli', 'embedded-sdk', 'runtime-manifest'][i], path: file.realpath, sha256: file.sha256 })),
         { role: 'pi', path: result.hostArtifact.realpath, sha256: result.hostArtifact.sha256 }],
-      environment: { machine: hostname(), runtime: process.version, scope_fingerprint: sha(JSON.stringify({ profile: config.profile, source: result.before.source, settings: result.before.settings, library: config.database })) },
+      environment: { machine: hostname(), runtime: process.version, scope_fingerprint: sha(JSON.stringify({ profile: config.profile, source: result.before.source, settings: result.before.settings, library: config.library })) },
       initial_state: { cache: 'cold', session: 'fresh-session; declared lifecycle events retained in raw evidence', oracle: 'independent', proof: { uri: initial.path, sha256: initial.sha256 } },
       evidence: { layer: 'natural', notion: 'live', host: 'pi', provider: 'live', prompt_kind: 'natural' },
       raw_evidence: [{ uri: evidence.path, sha256: evidence.sha256 }, { uri: initial.path, sha256: initial.sha256 }],

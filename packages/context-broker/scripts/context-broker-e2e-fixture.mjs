@@ -27,6 +27,7 @@ export function isolatedEnv({ base, agentDir, ...overrides }) {
     NTN_SKILLS_HOME: join(base, "ntn", "state"),
     NTN_SKILLS_CACHE_HOME: join(base, "ntn", "cache"),
     NTN_SKILLS_DATA_HOME: join(base, "ntn", "data"),
+    NTN_SKILLS_SCHEDULER_ROOT: join(base, "ntn", "scheduler"),
     ...(process.env.BROKER_E2E_PROCESS_LEDGER ? { BROKER_E2E_PROCESS_LEDGER: process.env.BROKER_E2E_PROCESS_LEDGER } : {}),
     PI_CODING_AGENT_DIR: agentDir,
     OMP_CODING_AGENT_DIR: agentDir,

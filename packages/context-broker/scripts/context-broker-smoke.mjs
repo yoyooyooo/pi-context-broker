@@ -749,6 +749,7 @@ try {
   assert.equal(dollarAmbiguous, undefined, "ambiguous dollar skill must fail closed");
 
   const baseAutocompleteProvider = {
+    triggerCharacters: ["#", "@", "$"],
     async getSuggestions() {
       return {
         items: [{ value: "fallback", label: "fallback" }],
@@ -766,6 +767,16 @@ try {
     baseAutocompleteProvider,
     Promise.resolve(dollarRegistry),
   );
+  assert.deepEqual(autocompleteProvider.triggerCharacters, ["#", "@", "$"]);
+  assert.notEqual(autocompleteProvider.triggerCharacters, baseAutocompleteProvider.triggerCharacters);
+  assert.deepEqual(mod.createDollarSkillAutocompleteProvider(
+    { ...baseAutocompleteProvider, triggerCharacters: undefined },
+    Promise.resolve(dollarRegistry),
+  ).triggerCharacters, ["$"], "Pi must receive an explicit dollar trigger even without upstream triggers");
+  assert.deepEqual(mod.createDollarSkillAutocompleteProvider(
+    { ...baseAutocompleteProvider, triggerCharacters: ["#", "@"] },
+    Promise.resolve(dollarRegistry),
+  ).triggerCharacters, ["#", "@", "$"], "Preserve existing provider triggers");
   const autocompleteSignal = new AbortController().signal;
   const dollarSuggestions = await autocompleteProvider.getSuggestions(["use $pl"], 0, "use $pl".length, {
     signal: autocompleteSignal,
@@ -1114,14 +1125,14 @@ try {
   const outsideSourcePath = await writeSkill(temp, "outside-source", "name: outside-source\nautoload:\n  enabled: true", "Outside configured roots");
   await assert.rejects(sourcesMod.loadSourceSkill({ ...localMetadata, path: outsideSourcePath, id: outsideSourcePath }, localSourceConfig), { code: "SOURCE_IDENTITY_MISMATCH" });
   assert.equal(await readFile(localSourcePath, "utf8"), (await sourcesMod.loadSourceSkill(localMetadata, localSourceConfig)).body);
-  const bundledDiscovery = await mod.buildDollarRegistry({ skillRoots: [], sources: [{ type: "notion", id: "offline-builtin", database: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] });
+  const bundledDiscovery = await mod.buildDollarRegistry({ skillRoots: [], sources: [{ type: "notion", id: "offline-builtin", library: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] });
   const bundledRecords = bundledDiscovery.records.filter(builtinMod.isBundledBuiltin);
   assert.deepEqual(bundledRecords.map(record => record.alias).sort(), [...builtinMod.BUNDLED_SKILL_NAMES].sort());
   const sharedRoot = join(temp, "builtin-shared");
   await mkdir(sharedRoot);
   const builtin = bundledRecords[0];
   await symlink(join(builtin.path, ".."), join(sharedRoot, builtin.alias), "dir");
-  const configuredDiscovery = await mod.buildRawDollarRegistry({ skillRoots: [sharedRoot], sources: [{ type: "notion", id: "offline-builtin", database: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] });
+  const configuredDiscovery = await mod.buildRawDollarRegistry({ skillRoots: [sharedRoot], sources: [{ type: "notion", id: "offline-builtin", library: "00000000-0000-4000-8000-000000000099", discovery: { offline: true } }] });
   assert.equal(configuredDiscovery.records.filter(record => record.name === builtin.name).length, 1, "A configured physical alias retains one official bundled identity");
   assert.ok(configuredDiscovery.records.some(record => record.id === builtin.id));
   const nativePrompt = `<skill><name>native-builtin-alias</name><description>Native alias</description><location>${join(sharedRoot, builtin.alias, "SKILL.md")}</location></skill>`;
@@ -1304,7 +1315,7 @@ try {
     const events = new Map(), commands = new Map(), sends = [];
     const api = { on(name, handler) { events.set(name, [...(events.get(name) ?? []), handler]); }, registerCommand(name, command) { commands.set(name, command); }, sendUserMessage(value) { sends.push(value); } };
     const ctx = { mode: mode === "omp" ? "tui" : "rpc", sessionManager: { getSessionId: () => "prompt-session" } };
-    const prompt = { kind: "prompt", id: "shared_skill:prompt:task", enabled: true, ref: "skill://shared_skill%3Aprompt%3Atask/PROMPT.md", locator: { type: "shared_skill", library_id: "prompt", skill_id: "task", page_id: "11111111-1111-4111-8111-111111111111", database_id: "22222222-2222-4222-8222-222222222222", data_source_id: "33333333-3333-4333-8333-333333333333" }, sourceId: "notion", source: "notion", sourceScope: "scope", name: "task", token: "notion/task", path: "/metadata/PROMPT.md", entrypoint: "PROMPT.md", description: "Task", aliases: [], normalizedName: "task", normalizedAliases: [], normalizedDescription: "task", autoloadEnabled: false, defaultDiscovery: false };
+    const prompt = { kind: "prompt", id: "skill://task?library=4d5b7e72-294c-5979-9ee5-f001de765cf4", enabled: true, ref: "skill://task/PROMPT.md?library=4d5b7e72-294c-5979-9ee5-f001de765cf4", locator: { type: "shared_skill", library_id: "4d5b7e72-294c-5979-9ee5-f001de765cf4", skill_id: "task", page_id: "11111111-1111-4111-8111-111111111111", database_id: "22222222-2222-4222-8222-222222222222", data_source_id: "33333333-3333-4333-8333-333333333333" }, sourceId: "notion", source: "notion", sourceScope: "scope", name: "task", token: "notion/task", path: "/metadata/PROMPT.md", entrypoint: "PROMPT.md", description: "Task", aliases: [], normalizedName: "task", normalizedAliases: [], normalizedDescription: "task", autoloadEnabled: false, defaultDiscovery: false };
     let reads = 0, upstream = 1, host;
     const adapter = { paths: {}, submission: mode === "omp" ? { mode: "command", receipt: "handoff" } : { mode: "transform", receipt: "input-digest" }, handledInput: { action: "handled" }, continuedInput: { action: "continue" }, transformInput: (text, images) => ({ action: "transform", text, images }), registerCatalog: async records => { assert.ok(records.every(record => record.kind !== "prompt")); return true; }, buildPrompt: async () => { throw Error("Prompt must not use native Skill prompt"); }, installEditor: async () => {}, reload: async () => {}, updatedRead: input => ({ input }) };
     host = await hostSkillsMod.installHostSkills(api, { config: {}, getRecords: async () => ({ records: [prompt], failures: [] }), loadRecord: async record => { reads++; return { ...record, path: `/snapshots/s${upstream}/PROMPT.md`, body: `TASK_REQUIREMENTS_s${upstream}`, snapshotId: `snapshot-${upstream}` }; }, needsPreflightPrompt: () => true, preflightPrompt: async (_text, context, signal) => { await host.activate(prompt, context, signal); }, taskPrompt: async (text, context, signal) => text + "\n" + (await host.activate(prompt, context, signal)).body }, adapter);

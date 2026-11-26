@@ -2,7 +2,7 @@
 
 ## 默认 SDK 的 CI 安装门禁
 
-当前只验证 Broker 与配对的 ntn-skills SDK v2。CI 和 publish 钉住相同的 CLI commit，从该输入构建 Broker，再用独立空 HOME 做生产依赖安装。SDK v1、CLI 消费回退、旧 snapshot/cache fixture、Pi 1.4 兼容和 OMP/Tern 门禁已退出当前路径。
+当前只验证 Broker 与配对的 ntn-skills SDK v3。CI 和 publish 钉住相同的 CLI commit，从该输入构建 Broker，再用独立空 HOME 做生产依赖安装。SDK v1、CLI 消费回退、旧 snapshot/cache fixture、Pi 1.4 兼容和 OMP/Tern 门禁已退出当前路径。
 
 从本轮配对 CLI 创建一个 current HTTP fixture：
 
@@ -11,7 +11,7 @@ node /absolute/notion-skills-cli/scripts/sdk-fixture.ts --outdir /absolute/new-c
 NTN_SKILLS_BUILD_ENTRY=/absolute/installed/ntn-skills/dist/ntn-skills.js node scripts/verify-artifacts.mjs --fixture /absolute/new-current-fixture/fixture.json --source-http-helper /absolute/notion-skills-cli/scripts/sdk-source-fixture.mjs
 ```
 
-`verify-artifacts.mjs` 只接受这两个参数。它打包 Broker，独立安装，核对同包 CLI/SDK 的 runtime manifest、SDK v2、必需能力和实际 hash，读取随包 Skill 与参考文件，并复用 `verify-notion-sdk-installed.mjs`。
+`verify-artifacts.mjs` 只接受这两个参数。它打包 Broker，独立安装，核对同包 CLI/SDK 的 runtime manifest、SDK v3、必需能力和实际 hash，读取随包 Skill 与参考文件，并复用 `verify-notion-sdk-installed.mjs`。
 
 安装消费从空缓存访问受控 current Notion HTTP，覆盖超过 100 条目录/Files 的分页、准确主文、完整 manifest/File 绑定、暖缓存、use、标量与批量文本/二进制资源、错误 scope/物理 owner 和两处取消。HTTP 只允许 GET 与查询 POST；任何未声明请求或语义写入失败。SDK 消费不启动 CLI 子进程，校验不改写安装文件。
 

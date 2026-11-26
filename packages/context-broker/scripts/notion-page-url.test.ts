@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { currentNotionFixture } from "./fixtures/current-notion-source";
 import { activeNotionSession } from "./fixtures/active-notion-session";
 import { sourceMessageText } from "../src/session-source-snapshot";
+import { nativeFileRef } from "../src/native-reference";
 
 const pageUrl = (page: string) => "https://app.notion.com/p/owned/Skill-" + page.replaceAll("-", "").toUpperCase()
   + "?v=ffffffffffffffffffffffffffffffff&source=copy_link";
@@ -49,13 +50,16 @@ test("public page URL spellings normalize only physical page IDs and reject unre
   expect(() => parseNativeReference(pageUrl(id))).toThrow(expect.objectContaining({ code: "SOURCE_REFERENCE_INVALID" }));
 });
 
-test("a physical page ref preserves an exact resource path and its snapshot owner", async () => {
+test("a physical page resolves once before its canonical resource path and snapshot are used", async () => {
   const f = await currentNotionFixture(), page = f.record.locator.page_id;
-  const current = await f.boundary.resolveNotionReference("skill://" + page.toUpperCase() + "/references/guide.md", [f.source], f.root);
+  const owner = await f.boundary.resolveNotionReference(pageUrl(page), [f.source], f.root);
+  const current = await f.boundary.resolveNotionReference(nativeFileRef(owner.record.id!, "references/guide.md"), [f.source], f.root);
   expect(current.ref).toBe(f.record.ref.replace("SKILL.md", "references/guide.md"));
-  const fixed = await f.boundary.resolveNotionReference("skill://" + page + "/references/guide.md?snapshot=" + f.snapshot, [f.source], f.root);
+  const fixed = await f.boundary.resolveNotionReference(nativeFileRef(owner.record.id!, "references/guide.md", f.snapshot), [f.source], f.root);
   expect(fixed.ref).toBe(f.files[1]!.ref);
-  expect(f.calls.map(call => call.operation)).toEqual(["list", "files"]);
+  expect(f.calls.map(call => call.operation)).toEqual(["list", "list", "files"]);
+  await expect(f.boundary.resolveNotionReference("skill://" + page + "/references/guide.md", [f.source], f.root))
+    .rejects.toMatchObject({ code: "SKILL_NOT_FOUND" });
 });
 
 test("an exact page remains available in an incomplete catalog without claiming complete absence", async () => {

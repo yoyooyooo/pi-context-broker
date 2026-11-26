@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { parseNativeReference, hasExactNativeOwner, bindNativeReference } from '../packages/context-broker/src/native-reference.ts';
 
 export function decodeCatalogText(value) {
   const entities = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
@@ -6,18 +7,14 @@ export function decodeCatalogText(value) {
 }
 
 /** Select the owner of the supplied ref; the public read still validates its pin. */
-export function selectLiveCatalogRecord(records, ref) {
-  const owner = value => {
-    const match = /^skill:\/\/([^/]+)\//u.exec(value ?? '');
-    assert.ok(match, 'A public Skill ref with an owner and path is required');
-    return decodeURIComponent(match[1]);
-  };
-  const target = owner(ref);
-  const uuid = value => typeof value === 'string' && /^(?:[a-f0-9]{32}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/iu.test(value) ? value.replaceAll('-', '').toLowerCase() : undefined;
-  const current = records.filter(record => record.locator?.type === 'shared_skill');
-  const exact = current.filter(record => record.id === target || record.ref === ref || owner(record.ref) === target
-    || uuid(target) !== undefined && record.locator?.type === 'shared_skill' && uuid(record.locator.page_id) === uuid(target));
-  const matches = exact.length ? exact : current.filter(record => record.name === target || record.alias === target);
+export function selectLiveCatalogRecord(records, ref, libraryId) {
+  let target = parseNativeReference(ref);
+  if (!hasExactNativeOwner(target)) {
+    assert.ok(typeof libraryId === 'string', 'A contextual stable ID requires an explicitly bound Library');
+    target = bindNativeReference(target, libraryId);
+  }
+  const matches = records.filter(record => record.locator?.type === 'shared_skill'
+    && record.id === target.selector && parseNativeReference(record.ref).selector === target.selector);
   assert.equal(matches.length, 1, 'Requested real Skill owner must match exactly one selected catalog record');
   return matches[0];
 }

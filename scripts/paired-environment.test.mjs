@@ -1,16 +1,21 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, realpath, rename, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readlink, realpath, rename, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { test } from 'node:test';
 import {
-  checkEnvironment, createEnvironment, inventory, parseArgs, runEnvironment, runtimeEnvironment, validatePiArguments,
+  checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, seedBunCache, seedNpmCache, validatePiArguments, verifySelectedCliPair,
 } from './paired-environment.mjs';
+import { fileInventory, selectedCliInputs } from './next-build-identity.mjs';
 
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
 const writeJson = (path, value) => writeFile(path, JSON.stringify(value) + '\n');
 const inside = (root, path) => path.startsWith(root + sep);
+const legacyCliInputs = ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills'];
+const selectedRefBytes = await readFile(new URL('../packages/context-broker/dist/ntn-skills-ref.cjs', import.meta.url));
+const identitySource = await readFile(new URL('./next-build-identity.mjs', import.meta.url), 'utf8');
+const legacyIdentitySource = identitySource.replace(/^export const selectedCliInputs = .*;\n/m, '');
 const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -33,7 +38,7 @@ async function sourceRepository(root, name) {
 async function sealedBuild(root, buildId = 'fixture', realCliEntry) {
   const environment = await readJson(join(root, 'environment.json'));
   const buildRoot = join(root, 'builds', buildId);
-  for (const path of ['cli/dist', 'cli/skills', 'broker/dist', 'broker/src', 'source/cli', 'source/broker']) {
+  for (const path of ['cli/dist', 'cli/skills', 'broker/dist', 'broker/src', 'source/cli', 'source/broker/scripts']) {
     await mkdir(join(buildRoot, path), { recursive: true });
   }
   await writeJson(join(buildRoot, 'cli/package.json'), { name: 'paired-cli-fixture', version: '0.0.0', type: 'module' });
@@ -44,6 +49,7 @@ async function sealedBuild(root, buildId = 'fixture', realCliEntry) {
       'if(result.error)console.error(result.error.message);process.exitCode=result.status??1;\n'
     : 'console.log(JSON.stringify({fixture:"cli",args:process.argv.slice(2)}));\n');
   await writeFile(join(buildRoot, 'cli/dist/sdk.js'), 'export const fixture = true;\n');
+  await writeFile(join(buildRoot, 'cli/dist/ref.cjs'), selectedRefBytes);
   await writeFile(join(buildRoot, 'cli/skills/SKILL.md'), '# Fixture\n');
   await writeJson(join(buildRoot, 'broker/package.json'), { name: 'paired-broker-fixture', version: '0.0.0', type: 'module' });
   await writeFile(join(buildRoot, 'broker/src/index.ts'), 'export const fixture = true;\n');
@@ -54,7 +60,8 @@ async function sealedBuild(root, buildId = 'fixture', realCliEntry) {
   await mkdir(join(buildRoot, 'source/broker/node_modules/.bin'), { recursive: true });
   await writeFile(join(buildRoot, 'source/broker/node_modules/fixture/index.js'), 'original dependency\n');
   await symlink('../fixture/index.js', join(buildRoot, 'source/broker/node_modules/.bin/fixture'));
-  const selectedCli = await inventory(join(buildRoot, 'cli'));
+  await writeFile(join(buildRoot, 'source/broker/scripts/next-build-identity.mjs'), legacyIdentitySource);
+  const selectedCli = await fileInventory(join(buildRoot, 'cli'), legacyCliInputs);
   await writeJson(join(buildRoot, 'broker/dist/next-build.json'), { selected_cli: selectedCli });
   const packages = {};
   for (const name of ['cli', 'broker']) packages[name] = await inventory(join(buildRoot, name));
@@ -65,6 +72,15 @@ async function sealedBuild(root, buildId = 'fixture', realCliEntry) {
     source_tree: await inventory(join(buildRoot, 'source')), packages, tools: environment.tools,
   });
   return buildRoot;
+}
+
+async function resealPair(root, selectedCli) {
+  await writeJson(join(root, 'broker/dist/next-build.json'), { selected_cli: selectedCli });
+  const build = await readJson(join(root, 'build.json'));
+  build.selected_cli_sha256 = selectedCli.sha256;
+  for (const name of ['cli', 'broker']) build.packages[name] = await inventory(join(root, name));
+  build.source_tree = await inventory(join(root, 'source'));
+  await writeJson(join(root, 'build.json'), build);
 }
 
 test('paired environments isolate writable state and detect artifact changes', async t => {
@@ -116,14 +132,22 @@ test('paired environments isolate writable state and detect artifact changes', a
 
   await t.test('argument boundary retains target flags but rejects ambiguous launcher options', () => {
     const parsed = parseArgs(['run', '--root', retained, '--build', 'b1', '--target', 'cli',
-      '--pass-env', 'ONE', '--pass-env', 'TWO', '--', '--database', 'target-owned', '--help']);
-    assert.deepEqual(parsed.args, ['--database', 'target-owned', '--help']);
+      '--pass-env', 'ONE', '--pass-env', 'TWO', '--', '--library', 'target-owned', '--help']);
+    assert.deepEqual(parsed.args, ['--library', 'target-owned', '--help']);
     assert.deepEqual(parsed['pass-env'], ['ONE', 'TWO']);
     assert.throws(() => parseArgs(['run', '--root', retained, '--root', retained]), /Repeated/);
     assert.throws(() => parseArgs(['build', '--root', retained, '--latest', 'true']), /Unknown/);
     assert.throws(() => parseArgs(['check', '--root', 'relative']), /absolute/);
     assert.throws(() => parseArgs(['build', '--root', retained, '--', 'unexpected']), /Only run/);
     assert.deepEqual(parseArgs(['build', '--root', retained, '--pass-env', 'HTTPS_PROXY'])['pass-env'], ['HTTPS_PROXY']);
+    for (const kind of ['bun', 'npm']) {
+      assert.equal(parseArgs(['build', '--root', retained])[kind + '-cache-from'], undefined);
+      assert.throws(() => parseArgs(['build', '--root', retained, '--' + kind + '-cache-from', retained]), /together/);
+      assert.throws(() => parseArgs(['build', '--root', retained, '--' + kind + '-cache-sha256', 'a'.repeat(64)]), /together/);
+      assert.throws(() => parseArgs(['build', '--root', retained, '--' + kind + '-cache-from', 'relative', '--' + kind + '-cache-sha256', 'a'.repeat(64)]), /absolute/);
+      assert.throws(() => parseArgs(['build', '--root', retained, '--' + kind + '-cache-from', retained, '--' + kind + '-cache-sha256', 'bad']), /SHA-256/);
+      assert.equal(parseArgs(['build', '--root', retained, '--' + kind + '-cache-from', retained, '--' + kind + '-cache-sha256', 'a'.repeat(64)])[kind + '-cache-sha256'], 'a'.repeat(64));
+    }
   });
 
   await t.test('inventory detects executable/content changes and rejects external links', async () => {
@@ -216,6 +240,93 @@ test('paired environments isolate writable state and detect artifact changes', a
     await assert.rejects(checkEnvironment({ root: rootA }), /simple build\/run ID|type string/);
   });
 
+  await t.test('selected CLI pairing accepts absent legacy export and the explicit six-input contract', async () => {
+    await verifySelectedCliPair(buildA, await readJson(join(buildA, 'broker/dist/next-build.json')));
+    const buildId = 'explicit-cli-inputs', root = await sealedBuild(rootA, buildId);
+    await writeFile(join(root, 'cli/THIRD_PARTY_NOTICES.md'), 'Selected notice bytes\n');
+    await writeFile(join(root, 'source/broker/scripts/next-build-identity.mjs'), identitySource);
+    const selectedCli = await fileInventory(join(root, 'cli'), selectedCliInputs);
+    await resealPair(root, selectedCli);
+    await verifySelectedCliPair(root, { selected_cli: selectedCli });
+    assert.equal((await checkEnvironment({ root: rootA, build: buildId })).status, 'passed');
+    await assert.rejects(verifySelectedCliPair(root, { selected_cli: await fileInventory(join(root, 'cli'), legacyCliInputs) }), /complete selected CLI\/SDK/);
+    await assert.rejects(verifySelectedCliPair(root, {
+      selected_cli: await fileInventory(join(root, 'cli'), selectedCliInputs.filter(name => name !== 'dist/ref.cjs')),
+    }), /complete selected CLI\/SDK/);
+  });
+
+  await t.test('selected CLI pairing does not fall back for null or incomplete explicit declarations', async () => {
+    for (const [id, declaration] of [['null', null], ['missing-sdk', legacyCliInputs.filter(name => name !== 'dist/sdk.js')]]) {
+      const root = await sealedBuild(rootA, 'invalid-cli-inputs-' + id);
+      await writeFile(join(root, 'source/broker/scripts/next-build-identity.mjs'),
+        legacyIdentitySource + '\nexport const selectedCliInputs = ' + JSON.stringify(declaration) + ';\n');
+      const selectedCli = await fileInventory(join(root, 'cli'), declaration ?? legacyCliInputs);
+      await assert.rejects(verifySelectedCliPair(root, { selected_cli: selectedCli }), /selected CLI input declaration|Selected CLI input declaration/);
+    }
+  });
+
+  await t.test('ordinary checks reject omitted selected files and changed CLI bytes despite matching outer inventories', async () => {
+    for (const action of ['omit-sdk', 'replace-sdk']) {
+      const buildId = 'pairing-' + action, root = await sealedBuild(rootA, buildId);
+      const selectedCli = action === 'omit-sdk'
+        ? await fileInventory(join(root, 'cli'), legacyCliInputs.filter(name => name !== 'dist/sdk.js'))
+        : (await readJson(join(root, 'broker/dist/next-build.json'))).selected_cli;
+      if (action === 'replace-sdk') await writeFile(join(root, 'cli/dist/sdk.js'), 'export const replaced = true;\n');
+      await resealPair(root, selectedCli);
+      await assert.rejects(checkEnvironment({ root: rootA, build: buildId }), /complete selected CLI\/SDK/);
+    }
+  });
+
+  for (const kind of ['bun', 'npm']) await t.test(kind + ' cache seed receipt remains bound without depending on the retained source cache', async () => {
+    const buildId = kind + '-seed-receipt', root = await sealedBuild(rootA, buildId), receipt = join(root, kind + '-cache-seed.json');
+    await writeJson(receipt, { source: { cache_root: '/unavailable/retired-build/cache' }, validation_scope: 'Fixture receipt' });
+    const build = await readJson(join(root, 'build.json'));
+    build[kind + '_cache_seed'] = { path: receipt, sha256: (await inventory(root)).files.find(file => file.path === kind + '-cache-seed.json').sha256 };
+    await writeJson(join(root, 'build.json'), build);
+    assert.equal((await checkEnvironment({ root: rootA, build: buildId })).status, 'passed');
+    await writeJson(receipt, { source: { cache_root: '/changed-source/cache' } });
+    await assert.rejects(checkEnvironment({ root: rootA, build: buildId }), /Cache seed receipt changed/);
+  });
+
+  await t.test('packed candidates run actual clean-installed entries and freeze archives and dependencies', async () => {
+    const buildId = 'packed-candidate', root = await sealedBuild(rootA, buildId);
+    await writeJson(join(root, 'cli/package.json'), { name: 'ntn-skills', version: '0.0.0', type: 'module',
+      bin: { 'ntn-skills': './dist/ntn-skills.js' }, exports: { './sdk': { import: './dist/sdk.js' }, './ref': { require: './dist/ref.cjs' } } });
+    await writeJson(join(root, 'broker/package.json'), { name: 'pi-context-broker', version: '0.0.0', type: 'module', pi: { extensions: ['./src/index.ts'] } });
+    await writeFile(join(root, 'broker/dist/ntn-skills-sdk.mjs'), 'export const SDK_VERSION=3;\n');
+    await writeFile(join(root, 'cli/THIRD_PARTY_NOTICES.md'), 'Complete selected CLI notice fixture\n');
+    await writeFile(join(root, 'broker/dist/NOTICES.txt'), 'Other notices\nComplete selected CLI notice fixture\n');
+    await writeFile(join(root, 'source/broker/scripts/next-build-identity.mjs'), identitySource);
+    const selectedCli = await fileInventory(join(root, 'cli'), selectedCliInputs);
+    await writeJson(join(root, 'broker/dist/next-build.json'), { selected_cli: selectedCli });
+    await mkdir(join(root, 'logs')); await mkdir(join(root, 'build-state/config'), { recursive: true }); await mkdir(join(root, 'build-state/tmp'));
+    const environment = await readJson(join(rootA, 'environment.json'));
+    const env = runtimeEnvironment(join(root, 'build-state'), root, process.env, [], environment.tools.node.path);
+    await writeFile(env.npm_config_userconfig, '');
+    const candidate = await installPackedPair(root, environment.tools, env);
+    const build = await readJson(join(root, 'build.json'));
+    build.selected_cli_sha256 = selectedCli.sha256; build.candidate = candidate;
+    for (const name of ['cli', 'broker']) build.packages[name] = await inventory(join(root, name));
+    build.source_tree = await inventory(join(root, 'source'));
+    await writeJson(join(root, 'build.json'), build);
+    const checked = await checkEnvironment({ root: rootA, build: buildId });
+    assert.equal(checked.candidate_mode, 'packed');
+    assert.equal(checked.selected_entries.cli, join(root, 'installed/cli/node_modules/ntn-skills/dist/ntn-skills.js'));
+    for (const target of ['cli', 'command']) {
+      const receipt = await runEnvironment({ root: rootA, build: buildId, target, id: 'packed-' + target, 'pass-env': [],
+        args: target === 'cli' ? ['--help'] : ['ntn-skills', '--help'] });
+      assert.equal(receipt.status, 'passed'); assert.deepEqual((await readJson(receipt.stdout)).args, ['--help']);
+      assert.deepEqual((await readJson(join(receipt.root, 'run.json'))).candidate.entries, checked.selected_entries);
+    }
+    const original = await readFile(checked.selected_entries.cli);
+    await writeFile(checked.selected_entries.cli, 'throw new Error("replaced candidate")');
+    await assert.rejects(checkEnvironment({ root: rootA, build: buildId }), /Frozen installed candidate changed/);
+    await assert.rejects(runEnvironment({ root: rootA, build: buildId, target: 'cli', id: 'packed-must-not-start', 'pass-env': [], args: [] }), /Frozen installed candidate changed/);
+    await writeFile(checked.selected_entries.cli, original);
+    await writeFile(candidate.packages.cli.closure.archive.path, 'changed archive');
+    await assert.rejects(checkEnvironment({ root: rootA, build: buildId }), /Frozen candidate archive changed/);
+  });
+
   await t.test('concurrent runs own state, preserve HOME and refuse to reuse an occupied run', async () => {
     const payload = `const fs = require('node:fs'), path = require('node:path');
 const names = ['NTN_SKILLS_HOME','NTN_SKILLS_CACHE_HOME','NTN_SKILLS_SCHEDULER_ROOT',
@@ -236,7 +347,7 @@ pi:JSON.parse(fs.readFileSync(path.join(process.env.PI_CODING_AGENT_DIR,'setting
       const state = states[index], runRoot = receipts[index].root;
       assert.equal(state.home, process.env.HOME);
       assert.equal(state.cwd, join(runRoot, 'workspace'));
-      assert.deepEqual(state.cli.sources, []);
+      assert.deepEqual(state.cli, {});
       assert.deepEqual(state.broker.sources, []);
       assert.deepEqual(state.broker.skillRoots, []);
       assert.deepEqual(state.pi.packages, []);
@@ -491,29 +602,30 @@ process.exit(0);`;
   await t.test('remote declarations preserve CLI arguments and configure the selected Broker source', async () => {
     const entry = '11111111-2222-3333-4444-555555555555';
     const receipt = await runEnvironment({ root: rootA, build: 'fixture', target: 'cli',
-      id: 'entry', entry, 'pass-env': [], args: ['--help'] });
+      id: 'entry', library: entry, 'pass-env': [], args: ['--help'] });
     assert.equal(receipt.status, 'passed');
     assert.deepEqual((await readJson(receipt.stdout)).args, ['--help']);
     const broker = await readJson(join(receipt.root, 'config/broker.json'));
-    assert.equal(broker.sources[0].database, entry);
+    assert.equal(broker.sources[0].library, entry);
+    assert.equal((await readJson(join(receipt.root, 'config/cli/config.json'))).default_library, entry);
     assert.ok(inside(receipt.root, broker.sources[0].cacheDir));
-    assert.equal((await readJson(join(receipt.root, 'run.json'))).remote.entry, entry);
+    assert.equal((await readJson(join(receipt.root, 'run.json'))).remote.library, entry);
     for (const [name, args] of [
-      ['consume', ['list', '--database', entry, '--json']],
-      ['read', ['read', 'selected-skill', '--database', entry, '--json']],
-      ['manage', ['ctl', 'library', 'init', '--entry', entry]],
+      ['consume', ['list', '--library', entry, '--json']],
+      ['read', ['read', 'selected-skill', '--library', entry, '--json']],
+      ['manage', ['ctl', 'library', 'init', '--library', entry]],
     ]) {
       for (const target of ['cli', 'command']) {
         const result = await runEnvironment({ root: rootA, build: 'fixture', target,
-          id: 'entry-' + name + '-' + target, entry, 'pass-env': [],
+          id: 'entry-' + name + '-' + target, library: entry, 'pass-env': [],
           args: target === 'cli' ? args : ['ntn-skills', ...args] });
         assert.equal(result.status, 'passed');
         assert.deepEqual((await readJson(result.stdout)).args, args);
       }
     }
     const declared = await runEnvironment({ root: rootA, build: 'fixture', target: 'command',
-      id: 'entry-declaration', entry, 'pass-env': [], args: ['node', '-e',
-        'console.log(JSON.stringify({entry:process.env.PAIRED_NOTION_ENTRY}));'] });
+      id: 'entry-declaration', library: entry, 'pass-env': [], args: ['node', '-e',
+        'console.log(JSON.stringify({entry:process.env.PAIRED_NOTION_LIBRARY}));'] });
     assert.equal((await readJson(declared.stdout)).entry, entry);
   });
 
@@ -528,13 +640,13 @@ process.exit(0);`;
     // credentials and private state; the real parser, not argv echo, decides.
     for (const [name, args, help] of [
       ['help', ['--help'], /ntn-skills/],
-      ['consume', ['list', '--database', entry, '--help'], /--database/],
-      ['read', ['read', 'selected-skill', '--database', entry, '--help'], /--database/],
-      ['manage', ['ctl', 'library', 'init', '--entry', entry, '--help'], /--entry/],
+      ['consume', ['list', '--library', entry, '--help'], /--library/],
+      ['read', ['read', 'selected-skill', '--library', entry, '--help'], /--library/],
+      ['manage', ['ctl', 'library', 'init', '--library', entry, '--help'], /--library/],
     ]) {
       for (const target of ['cli', 'command']) {
         const result = await runEnvironment({ root: rootA, build: 'real-cli-parser', target,
-          id: 'real-entry-' + name + '-' + target, entry, 'pass-env': [],
+          id: 'real-entry-' + name + '-' + target, library: entry, 'pass-env': [],
           args: target === 'cli' ? args : ['ntn-skills', ...args] });
         assert.equal(result.status, 'passed', await readFile(result.stderr, 'utf8'));
         assert.match(await readFile(result.stdout, 'utf8'), help);
@@ -703,5 +815,96 @@ process.exit(0);`;
     await symlink(external, join(root, 'broker'), 'dir');
     await assert.rejects(checkEnvironment({ root: rootA, build: buildId }),
       /symlink|canonical|outside|external/i);
+  });
+});
+
+for (const kind of ['bun', 'npm']) test(kind + ' cache seeding copies only pinned idle local inputs into an independent cache', async t => {
+  const seed = kind === 'bun' ? seedBunCache : seedNpmCache;
+  const retained = await realpath(await mkdtemp(join(tmpdir(), 'paired-cache-test-')));
+  t.diagnostic('Retained cache fixtures (no permanent deletion): ' + retained);
+  async function fixture(name, live = false) {
+    const base = join(retained, name), source = join(base, 'prior/builds/source'), target = join(base, 'next/builds/target');
+    for (const [environment, build] of [[join(base, 'prior'), source], [join(base, 'next'), target]]) {
+      await mkdir(join(build, 'logs'), { recursive: true });
+      await writeJson(join(environment, 'environment.json'), { version: 1, kind: 'paired-development-environment', root: environment, environment_id: environment });
+      for (const role of ['cli', 'broker']) {
+        await mkdir(join(build, 'source', role), { recursive: true });
+        await writeFile(join(build, 'source', role, 'bun.lock'), role + (build === target && role === 'broker' ? '-new-lock\n' : '-same-lock\n'));
+      }
+    }
+    const cache = join(source, 'build-state/cache', kind), destination = join(target, 'build-state/cache', kind);
+    await mkdir(join(cache, 'package@1@@@1/node_modules/nested'), { recursive: true });
+    await mkdir(join(cache, 'package'));
+    await writeFile(join(cache, 'package@1@@@1/index.js'), 'local cache bytes\n', { mode: 0o700 });
+    await writeFile(join(cache, 'package@1@@@1/node_modules/nested/index.js'), 'nested dependency\n');
+    await symlink(join(cache, 'package@1@@@1'), join(cache, 'package/1.0.0'));
+    const started = new Date().toISOString();
+    const child = spawn(process.execPath, ['-e', live ? 'setInterval(() => {}, 1000)' : ''], { detached: true, stdio: 'ignore' });
+    const closed = new Promise((done, reject) => { child.once('error', reject); child.once('close', done); });
+    await writeJson(join(source, 'logs/install-source-cli.process.json'), { pid: child.pid, process_group: child.pid, started_at: started, command: process.execPath });
+    if (!live) await closed;
+    await writeJson(join(source, 'failure.json'), { status: 'failed', error: 'Retained failure after dependency work' });
+    return { source, target, cache, destination, selected: await inventory(cache), child, closed };
+  }
+
+  await t.test('absolute internal aliases relocate; nested node_modules and executable bytes remain independent', async () => {
+    const f = await fixture('copy');
+    const ref = await seed(f.source, f.target, f.selected.sha256), receipt = await readJson(ref.path);
+    const copied = await inventory(f.destination);
+    assert.equal(receipt.kind, 'paired-' + kind + '-cache-seed');
+    assert.equal(receipt.source.inventory_sha256, f.selected.sha256);
+    assert.equal(receipt.target.inventory_sha256, copied.sha256);
+    assert.equal(receipt.normalized_source_sha256, copied.sha256);
+    assert.notEqual(copied.sha256, f.selected.sha256, 'Absolute source links change spelling when relocated');
+    assert.deepEqual(await inventory(f.cache), f.selected);
+    assert.equal(receipt.source.terminal.status, 'failed');
+    assert.equal(receipt.source.processes[0].state, 'exited');
+    assert.equal(receipt.locks.cli.identical, true); assert.equal(receipt.locks.broker.identical, false);
+    assert.match(receipt.validation_scope, /not archive SRI/);
+    assert.deepEqual(receipt.symlink_mappings, [{ path: 'package/1.0.0', source_target: join(f.cache, 'package@1@@@1'), target: '../package@1@@@1' }]);
+    assert.equal(await readlink(join(f.destination, 'package/1.0.0')), '../package@1@@@1');
+    assert.equal(await realpath(join(f.destination, 'package/1.0.0')), join(f.destination, 'package@1@@@1'));
+    assert.equal(await readFile(join(f.destination, 'package@1@@@1/node_modules/nested/index.js'), 'utf8'), 'nested dependency\n');
+    const original = join(f.cache, 'package@1@@@1/index.js'), duplicate = join(f.destination, 'package@1@@@1/index.js');
+    assert.notEqual((await stat(original)).ino, (await stat(duplicate)).ino);
+    assert.equal((await stat(duplicate)).mode & 0o111, 0o100);
+    await assert.rejects(seed(f.source, f.target, f.selected.sha256), /EEXIST/);
+    await writeFile(duplicate, 'private changed bytes\n'); await chmod(duplicate, 0o600);
+    assert.equal(await readFile(original, 'utf8'), 'local cache bytes\n');
+    assert.deepEqual(await inventory(f.cache), f.selected);
+  });
+
+  await t.test('an incorrect pinned hash fails before reserving the target cache', async () => {
+    const f = await fixture('wrong-hash');
+    await assert.rejects(seed(f.source, f.target, '0'.repeat(64)), /selected SHA-256/);
+    await assert.rejects(stat(f.destination), { code: 'ENOENT' });
+  });
+
+  await t.test('cache links outside the selected cache are refused', async () => {
+    const f = await fixture('external-link');
+    await symlink(join(f.source, 'source/cli/bun.lock'), join(f.cache, 'outside'));
+    await assert.rejects(seed(f.source, f.target, f.selected.sha256), /External symlink/);
+    await assert.rejects(stat(f.destination), { code: 'ENOENT' });
+  });
+
+  await t.test('a terminal marker cannot hide a still-running recorded writer', async () => {
+    const f = await fixture('active-writer', true);
+    try {
+      await assert.rejects(seed(f.source, f.target, f.selected.sha256), /active recorded process group/);
+      await assert.rejects(stat(f.destination), { code: 'ENOENT' });
+    } finally {
+      try { process.kill(-f.child.pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+      await f.closed;
+    }
+  });
+
+  await t.test('unfinished sources, unrelated directories and terminal targets are refused', async () => {
+    const f = await fixture('boundaries');
+    await rename(join(f.source, 'failure.json'), join(f.source, 'retained-failure.json'));
+    await assert.rejects(seed(f.source, f.target, f.selected.sha256), /terminal build/);
+    await assert.rejects(seed(f.cache, f.target, f.selected.sha256), /paired build/);
+    await writeJson(join(f.target, 'failure.json'), { status: 'failed' });
+    await assert.rejects(seed(f.source, f.target, f.selected.sha256), /terminal build/);
+    await assert.rejects(stat(f.destination), { code: 'ENOENT' });
   });
 });

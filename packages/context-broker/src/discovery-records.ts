@@ -1,3 +1,4 @@
+import { parseNativeReference, formatNativeReference } from "./native-reference";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -334,8 +335,9 @@ export function parseCatalogMember(value: unknown): RawCatalogMember {
   const identity = typeof locator.library_id === "string" && typeof locator.skill_id === "string"
     ? sharedSkillId(locator.library_id, locator.skill_id) : undefined;
   if (identity === undefined) throw new Error("Invalid shared member identity");
-  const prefix = `skill://${encodeURIComponent(identity)}/`;
-  if (value.id !== identity || typeof value.ref !== "string" || !value.ref.startsWith(prefix) || !/^(SKILL|ROUTER|PROMPT)\.md(?:\?snapshot=s_[0-9a-f]{64})?$/.test(value.ref.slice(prefix.length))) throw new Error("Remote member ref/identity mismatch");
+  if (value.id !== identity || typeof value.ref !== "string") throw new Error("Remote member ref/identity mismatch");
+  const ref = parseNativeReference(value.ref);
+  if (ref.selector !== identity || !["SKILL.md", "ROUTER.md", "PROMPT.md"].includes(ref.path)) throw new Error("Remote member ref/identity mismatch");
   return value as CatalogRemoteReference;
 }
 
@@ -354,7 +356,8 @@ export function resolveCatalogReference(reference: CatalogRemoteReference, conte
   if (!record) fail(observedCandidates.length ? "SOURCE_IDENTITY_MISMATCH" : "CATALOG_MEMBER_UNAVAILABLE", `Record ${reference.id} with the declared locator absent from current credential-scoped catalog for ${reference.source.namespace}`);
   const observed = record!;
   const locator = observed.locator;
-  const exactEntry = observed.ref === reference.ref.split("?")[0];
+  const parsed = parseNativeReference(reference.ref);
+  const exactEntry = observed.ref === formatNativeReference({ selector: parsed.selector, path: parsed.path });
   if (!observed.sourceScope || !/^[0-9a-f]{64}$/.test(observed.sourceScope) || !locator || observed.kind !== kind || !exactEntry) fail("SOURCE_IDENTITY_MISMATCH", `Reference does not match current ${kind} record ${reference.id}`);
   return observed;
 }
@@ -415,7 +418,7 @@ function routerFromRaw(name: string | undefined, value: unknown, catalogPath: st
     const parsed = parseCatalogMember(reference);
     if (parsed.type !== "remote") throw new Error("Remote catalog Router requires remote reference");
     const record = resolveCatalogReference(parsed, context, "router");
-    if (parsed.ref.includes("?")) throw new CatalogReferenceError("SOURCE_IDENTITY_MISMATCH", "Direct remote Router catalog records require the canonical unpinned entry ref");
+    if (parseNativeReference(parsed.ref).snapshot !== undefined) throw new CatalogReferenceError("SOURCE_IDENTITY_MISMATCH", "Direct remote Router catalog records require the canonical unpinned entry ref");
     return record;
   }
   const catalogDir = dirname(catalogPath);

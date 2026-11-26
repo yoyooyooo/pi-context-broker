@@ -1,3 +1,4 @@
+import { parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
@@ -24,9 +25,8 @@ function verifyPublicDirectory(projected, canonical) {
     if (relation?.kind !== 'file' || relation.availability !== 'available') return -1;
     let fixed = false;
     try {
-      const ref = new URL(relation.ref);
-      fixed = ref.protocol === 'skill:' && ref.searchParams.getAll('snapshot').length === 1
-        && /^s_[a-f0-9]{64}$/u.test(ref.searchParams.get('snapshot'));
+      const ref = parseNativeReference(relation.ref);
+      fixed = ref.snapshot !== undefined;
     } catch {}
     if (!fixed) return -1;
     const matches = canonical.files.flatMap((file, index) => file.ref === relation.ref && file.path === relation.name ? [index] : []);
@@ -284,7 +284,8 @@ export function generatedCatalogCards(message) {
         assert.equal(typeof original.id, 'string');
         // A selected/fixed relation is not a current discovery card, even for the
         // same owner. The exact current handle and canonical owner are both kept.
-        if (!/^sr:C[A-Za-z0-9_-]{22}$/u.test(card.ref) || original.ref.includes('?')) continue;
+        const current = parseNativeReference(original.ref);
+        if (!/^sr:C[A-Za-z0-9_-]{22}$/u.test(card.ref) || current.snapshot !== undefined || current.selector !== original.id) continue;
         result.push({ ...card, id: original.id, canonical_ref: original.ref, source: identity[0], scope: binding.scope,
           binding, body_sha256: hash(body), body_bytes: Buffer.byteLength(body), tool_call_id: message.toolCallId,
           tool_name: message.toolName, tool_content_sha256: hash(content) });
@@ -358,13 +359,10 @@ export function injectedDescriptionEvidence(messages, expected, resolveSource, i
         assert.equal(proof.bodySha256, main.sha256); assert.equal(proof.bytes, main.bytes); assert.equal(binding.body_sha256, main.sha256);
         assert.equal(proof.contentIdentity, JSON.stringify([binding.scope, binding.record.id]));
         assert.equal(proof.identity, JSON.stringify([expected.source, binding.scope, binding.record.kind, binding.record.locator.type, binding.record.id]));
-        const ref = new URL(binding.ref), current = new URL(snapshot.record.ref);
-        assert.equal(ref.protocol, 'skill:'); assert.equal(ref.host, current.host); assert.equal(ref.pathname, current.pathname);
-        assert.equal(ref.username, ''); assert.equal(ref.password, ''); assert.equal(ref.hash, '');
-        assert.equal(ref.searchParams.get('snapshot'), snapshot.snapshot_id);
-        assert.ok([...ref.searchParams.keys()].every(key => ['snapshot', 'file_id'].includes(key)));
-        assert.equal(ref.searchParams.getAll('snapshot').length, 1); assert.ok(ref.searchParams.getAll('file_id').length <= 1);
-        if (ref.searchParams.has('file_id')) assert.equal(ref.searchParams.get('file_id'), snapshot.file_bindings?.find(file => file.path === main.path)?.file_id);
+        const ref = parseNativeReference(binding.ref), current = parseNativeReference(snapshot.record.ref);
+        assert.equal(ref.selector, current.selector); assert.equal(ref.selector, binding.record.id);
+        assert.equal(ref.path, current.path); assert.equal(ref.path, main.path);
+        assert.equal(ref.snapshot, snapshot.snapshot_id);
         const { start, end, encoding } = proof.delivery;
         assert.ok(Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && end > start && end <= content.length);
         assert.ok(['raw', 'xml', 'json'].includes(encoding));

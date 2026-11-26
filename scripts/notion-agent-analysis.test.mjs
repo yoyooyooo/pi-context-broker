@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { inspectNotionAgentSession, captureNotionAgentSelection, analyzeNotionAgentTurn } from './notion-agent-analysis.mjs';
+import { inspectNotionAgentSession, captureNotionAgentSelection, analyzeNotionAgentTurn, verifyNotionAgentUnavailableReference, verifyNotionAgentNestedResourceRead } from './notion-agent-analysis.mjs';
+import { inspectedPiToolRuntime, reviewedPiToolRuntimeProfile } from './notion-agent-tool-lineage.mjs';
 import { candidatePayloadBodies } from './verify-pi-daily-candidate.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -16,6 +17,234 @@ const user = message('u', 'm', 'user', '请计算这次费用。');
 const answer = (id = 'a', parent = 'u', text = '合计：100 元') => message(id, parent, 'assistant', [{ type: 'text', text }]);
 const jsonl = (entries, suppliedHeader = header) => [suppliedHeader, ...entries].map(row => JSON.stringify(row)).join('\n') + '\n';
 const inspect = (entries, options = {}) => inspectNotionAgentSession(jsonl(entries), options);
+
+test('unavailable original reference requires its own online failed tool read, not repeated prompt text or another library request', async () => {
+  const rootA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', rootB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const owner = 'skill://same-policy?library=' + rootA, content = [{ type: 'text', text: 'SKILL_NOT_FOUND: original current owner is absent' }];
+  const files = new Map();
+  const artifact = (path, value) => { const bytes = Buffer.from(JSON.stringify(value)); files.set(path, bytes); return { path, bytes: bytes.length, sha256: hash(bytes) }; };
+  const failed = artifact('/owned/failed-read.json', content), payload = artifact('/owned/provider.json', { messages: [{ role: 'tool', tool_call_id: 'read-a', content }] });
+  const bindings = { private: { objects: { original: { kind: 'notion', owner } } } };
+  const observed = { visibility: { source: { sourceId: 'notion-a', library: rootA, additionalLibrary: { sourceId: 'notion-b', library: rootB } } },
+    tasks: [{ phase: 'provider_payload', sha256: payload.sha256, payloadFile: payload.path }],
+    session: { branchEntries: [{ id: 'result-a', message: { role: 'toolResult', toolCallId: 'read-a', isError: true, content } }] } };
+  const attempts = [{ id: 'read-a', name: 'read', arguments: { path: owner }, event: { pid: 123, monotonicNs: '100' },
+    native: { resultEntryId: 'result-a' }, result: { isError: true, monotonicNs: '200', contentArtifact: failed }, deliveryToolCallId: 'read-a' }];
+  const source = [{ phase: 'started', kind: 'sdk', requestId: 'r-a', pid: 123, source_id: 'notion-a', library: rootA, operation: 'read', monotonicNs: '110' },
+    { phase: 'attempt', requestId: 'r-a', monotonicNs: '120' },
+    { phase: 'completed', requestId: 'r-a', status: 'failed', errorCode: 'SKILL_NOT_FOUND', monotonicNs: '190' }];
+  const options = { attempts, source, delivery: { requests: [payload] }, readArtifact: async path => files.get(path) };
+  const expected = { kind: 'unavailable-reference', object: 'original', path: 'SKILL.md' };
+  const proof = await verifyNotionAgentUnavailableReference(expected, observed, bindings, options);
+  assert.equal(proof.proofs[0].library, rootA); assert.equal(proof.proofs[0].httpAttempts, 1);
+  await assert.rejects(verifyNotionAgentUnavailableReference(expected, observed, bindings, { ...options, attempts: [] }), /actually try/u);
+  for (const change of [rows => { rows[0].library = rootB; }, rows => { rows[0].source_id = 'notion-b'; },
+    rows => { rows[0].operation = 'list'; }, rows => { rows[0].pid = 456; }, rows => { rows[2].status = 'cancelled'; },
+    rows => { rows[2].errorCode = 'AUTHENTICATION_FAILED'; }, rows => { rows[2].monotonicNs = '201'; }, rows => rows.splice(1, 1)]) {
+    const altered = structuredClone(source); change(altered);
+    await assert.rejects(verifyNotionAgentUnavailableReference(expected, observed, bindings, { ...options, source: altered }), /online failure/u);
+  }
+  const wrong = structuredClone(attempts); wrong[0].arguments.path = 'skill://same-policy?library=' + rootB;
+  await assert.rejects(verifyNotionAgentUnavailableReference(expected, observed, bindings, { ...options, attempts: wrong }), /actually try/u);
+  await assert.rejects(verifyNotionAgentUnavailableReference(expected, observed, bindings, { ...options, delivery: { requests: [] } }), /online failure/u);
+  const changedPayload = artifact('/owned/changed-provider.json', { messages: [{ role: 'tool', tool_call_id: 'read-a', content: 'SKILL_NOT_FOUND: another owner failed; original A was not checked' }] });
+  const changedObserved = { ...observed, tasks: [{ phase: 'provider_payload', sha256: changedPayload.sha256, payloadFile: changedPayload.path }] };
+  await assert.rejects(verifyNotionAgentUnavailableReference(expected, changedObserved, bindings,
+    { ...options, delivery: { requests: [changedPayload] } }), /online failure/u);
+});
+
+function unavailableCatalogFixture(tool = 'read') {
+  // Synthetic identities with the real list -> pure resolver -> native error
+  // shape. The catalog response was captured before the tool result, not read
+  // from a Store or reconstructed from the expected missing object.
+  const library = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', otherLibrary = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const database = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', dataSource = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const owner = 'skill://original-policy?library=' + library, scope = 'a'.repeat(64), pid = 123;
+  const requestId = '11111111-1111-4111-8111-111111111111', sourceRequestId = 'sdk:' + pid + ':' + requestId;
+  const files = new Map(), put = (path, value, raw = false) => {
+    const bytes = Buffer.from(raw ? value : JSON.stringify(value)); files.set(path, bytes);
+    return { path, bytes: bytes.length, sha256: hash(bytes) };
+  };
+  const error = { error: 'context-broker source notion-a unavailable (SKILL_NOT_FOUND).',
+    effects: { version: 1, remote_writes: 'unknown', author_content: 'unknown' },
+    admission: { version: 1, phase: 'execute', stage: 'reference', code: 'SKILL_NOT_FOUND',
+      generation_started: 3, generation_current: 3, signal_aborted: false } };
+  const content = [{ type: 'text', text: tool === 'notion_use'
+    ? 'context-broker source operation failed (SKILL_NOT_FOUND)' : JSON.stringify(error) }];
+  const failed = put('/owned/segment/tool-results/read-a.json', content);
+  const call = { id: 'read-a|fc_fixture', name: tool, arguments: tool === 'notion_use' ? { ref: owner } : { path: owner },
+    event: { pid, monotonicNs: '100' }, native: { resultEntryId: 'result-a' },
+    result: { pid, isError: true, monotonicNs: '200', contentArtifact: failed }, deliveryToolCallId: 'read-a|fc_fixture' };
+  const payload = { input: [{ type: 'function_call', call_id: 'read-a', id: 'fc_fixture', name: tool, arguments: JSON.stringify(call.arguments) },
+    { type: 'function_call_output', call_id: 'read-a', output: content[0].text }] };
+  const bindings = { private: { objects: { original: { kind: 'notion', owner, scope,
+    pageId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' } } } };
+  const sourceRows = [
+    { phase: 'source_observer_start', kind: 'observer', pid, monotonicNs: '1' },
+    { phase: 'started', kind: 'sdk', requestId: sourceRequestId, pid, operation: 'list',
+      library, source_id: 'notion-a', sourceMonotonicNs: '110', monotonicNs: '111' },
+    { phase: 'attempt', event: 'attempt', kind: 'http', requestId: sourceRequestId, monotonicNs: '181',
+      attempt: 1, request_kind: 'notion_metadata', method: 'POST', target: { data_source_id: dataSource }, http_status: 200, outcome: 'success' },
+    { phase: 'metrics', kind: 'metrics', requestId: sourceRequestId, observed: true, complete: true,
+      total_requests: 1, trace_dropped: 0, monotonicNs: '182' },
+    { phase: 'completed', kind: 'sdk', requestId: sourceRequestId, pid, operation: 'list',
+      library, source_id: 'notion-a', status: 'completed', sdkStarted: true, errorCode: null,
+      sourceMonotonicNs: '180', monotonicNs: '183' },
+    { phase: 'source_observer_end', kind: 'observer', operations: 1, sdkStarts: 1, cliStarts: 0,
+      unmatchedChildren: 0, errors: 0, complete: true, pendingRequestIds: [], monotonicNs: '300' },
+  ];
+  const sdk = [{ phase: 'sdk-observer-start', pid },
+    { phase: 'sdk-start', operation: 'list', requestId, pid, monotonic_ns: '110', at: stamp },
+    { phase: 'sdk-end', operation: 'list', requestId, pid, monotonic_ns: '180', at: '2026-11-21T14:00:00.100Z',
+      status: 'completed', resultObserved: true, metricsComplete: true, responseFile: requestId + '.json' },
+    { phase: 'sdk-observer-end', pid, pending: 0 }];
+  const receipt = { version: 2, transport: 'sdk', requestId, operation: 'list', status: 'completed',
+    resultObserved: true, sdk_started: true, metrics_observed: true,
+    metrics: { complete: true, total_requests: 1, trace_dropped: 0, trace: [{ event: 'attempt', attempt: 1,
+      request_kind: 'notion_metadata', method: 'POST', target: { data_source_id: dataSource }, http_status: 200, outcome: 'success' }] },
+    value: { scope, library_id: library, fetched_at: Date.parse('2026-11-21T14:00:00.090Z'), source: 'notion',
+      freshness: { policy: 'max_age', validated_at: '2026-11-21T14:00:00.090Z', age_ms: 0, max_age_ms: 300000, stale: false },
+      databases: [{ database_id: database, data_source_ids: [dataSource], role: 'content', shared_library: {
+        version: 2, library_id: library, skills: { database_id: database, data_source_id: dataSource } } }],
+      coverage: { method: 'explicit_library', exhaustive: true, queried_data_sources: [dataSource],
+        failed_sources: [], search_index_limited: false },
+      count: 1, records: [{ id: 'skill://another-policy?library=' + library, kind: 'skill',
+        locator: { type: 'shared_skill', page_id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          library_id: library, database_id: database, data_source_id: dataSource, skill_id: 'another-policy' } }] } };
+  const observed = { visibility: { source: { sourceId: 'notion-a', library,
+    additionalLibrary: { sourceId: 'notion-b', library: otherLibrary } } },
+    sourceObservationWindow: { startedNs: '1', endedNs: '250', includesStartup: true },
+    session: { branchEntries: [{ id: 'call-a', message: { role: 'assistant', api: 'openai-responses' } },
+      { id: 'result-a', message: { role: 'toolResult', toolCallId: call.id, toolName: tool, isError: true, content, details: {} } }],
+      attempts: [{ id: call.id, name: tool, arguments: call.arguments, active: true, assistantEntryId: 'call-a', resultEntryId: 'result-a', callLine: 2, resultLine: 3 }],
+      contributions: [{ entryId: 'call-a', role: 'assistant' }, { entryId: 'result-a', role: 'toolResult' }],
+      assistantMessages: [{ active: true, entryId: 'answer', api: 'openai-responses', line: 4 }] },
+    toolHistory: { version: 1, sdkSegments: [] } };
+  const options = { attempts: [call], source: [], delivery: { requests: [] }, readArtifact: async path => files.get(path) };
+  const seal = () => {
+    let previous = null;
+    const rows = sourceRows.map((row, index) => {
+      const value = { version: 1, sequence: index + 1, previousSha256: previous, clockId: 'fixture-segment', ...row };
+      previous = hash(JSON.stringify(value)); return { ...value, eventSha256: previous };
+    });
+    options.source = rows.slice(1, -1); observed.source = options.source;
+    const segment = { sdk: put('/owned/segment/sdk.jsonl', sdk.map(row => JSON.stringify(row)).join('\n') + '\n', true),
+      source: put('/owned/segment/source.jsonl', rows.map(row => JSON.stringify(row)).join('\n') + '\n', true),
+      responses: [{ requestId, artifact: put('/owned/segment/sdk-responses/' + requestId + '.json', receipt) }] };
+    observed.toolHistory.sdkSegments = [segment];
+    const wire = put('/owned/segment/payload.json', payload);
+    options.delivery.requests = [{ ...wire, api: 'openai-responses', nativeResponseEntryId: 'answer' }];
+    observed.tasks = [{ phase: 'provider_payload', sha256: wire.sha256, payloadFile: wire.path, monotonicNs: '210' }];
+  };
+  seal();
+  return { observed, options, receipt, sdk, sourceRows, bindings, payload, call, seal, files, otherLibrary,
+    run: () => verifyNotionAgentUnavailableReference({ kind: 'unavailable-reference', object: 'original', path: 'SKILL.md' }, observed, bindings, options) };
+}
+
+test('unavailable original reference accepts a fresh exhaustive exact-library catalog with the same native and wire not-found', async () => {
+  const f = unavailableCatalogFixture(), result = await f.run();
+  assert.equal(result.proofs.length, 1);
+  assert.equal(result.proofs[0].evidence, 'fresh-exhaustive-catalog');
+  assert.equal(result.proofs[0].owner, f.bindings.private.objects.original.owner);
+  assert.equal(result.proofs[0].httpAttempts, 1);
+  assert.equal(result.proofs[0].responseArtifact.sha256, f.observed.toolHistory.sdkSegments[0].responses[0].artifact.sha256);
+});
+
+test('unavailable catalog proof accepts a completely observed retry ending in a successful exact-data-source query', async () => {
+  const f = unavailableCatalogFixture(), success = f.sourceRows[2];
+  const failed = { ...success, outcome: 'failure', http_status: 429 };
+  success.attempt = 2;
+  f.sourceRows.splice(2, 0, failed);
+  f.sourceRows[4].total_requests = 2;
+  const trace = f.receipt.metrics.trace[0];
+  f.receipt.metrics.trace = [{ ...trace, outcome: 'failure', http_status: 429 }, { ...trace, attempt: 2 }];
+  f.receipt.metrics.total_requests = 2;
+  f.seal();
+  const proof = await f.run();
+  assert.equal(proof.proofs[0].httpAttempts, 2);
+  assert.equal(proof.proofs[0].evidence, 'fresh-exhaustive-catalog');
+});
+
+test('unavailable catalog proof accepts the source-derived Pi notion_use error shape without inventing a read admission', async () => {
+  // SourceError.message is passed through Pi's createErrorToolResult; unlike
+  // read, an early use resolver failure has no Broker admission envelope.
+  const f = unavailableCatalogFixture('notion_use'), proof = await f.run();
+  assert.equal(proof.proofs[0].evidence, 'fresh-exhaustive-catalog');
+  assert.deepEqual(proof.proofs[0].nativeFailure, { kind: 'pi-error-message', generationObserved: false });
+});
+
+test('unavailable notion_use catalog proof rejects other native error shapes, calls and outputs', async t => {
+  const replaceContent = (f, content) => {
+    const bytes = Buffer.from(JSON.stringify(content)), path = f.call.result.contentArtifact.path;
+    f.files.set(path, bytes); f.call.result.contentArtifact = { path, sha256: hash(bytes), bytes: bytes.length };
+    f.observed.session.branchEntries[1].message.content = content;
+    f.payload.input[1].output = content.map(row => row.text ?? '').join('\n');
+  };
+  const exact = 'context-broker source operation failed (SKILL_NOT_FOUND)';
+  const cases = [
+    ['Error prefix', f => replaceContent(f, [{ type: 'text', text: 'Error: ' + exact }])],
+    ['stack suffix', f => replaceContent(f, [{ type: 'text', text: exact + '\n    at resolver' }])],
+    ['another error code', f => replaceContent(f, [{ type: 'text', text: 'context-broker source operation failed (SOURCE_REFERENCE_MISSING)' }])],
+    ['read envelope substituted for native use error', f => replaceContent(f, [{ type: 'text', text: JSON.stringify({ error: exact, admission: { code: 'SKILL_NOT_FOUND' } }) }])],
+    ['multiple text blocks', f => replaceContent(f, [{ type: 'text', text: exact }, { type: 'text', text: '' }])],
+    ['extra text block field', f => replaceContent(f, [{ type: 'text', text: exact, extra: true }])],
+    ['nonempty native details', f => { f.observed.session.branchEntries[1].message.details = { code: 'SKILL_NOT_FOUND' }; }],
+    ['missing native details', f => { delete f.observed.session.branchEntries[1].message.details; }],
+    ['wrong native tool name', f => { f.observed.session.branchEntries[1].message.toolName = 'read'; }],
+    ['inactive native call', f => { f.observed.session.attempts[0].active = false; }],
+    ['different native arguments', f => { f.observed.session.attempts[0].arguments = { ref: 'skill://another-policy?library=' + f.otherLibrary }; }],
+    ['different native result entry', f => { f.observed.session.attempts[0].resultEntryId = 'another-result'; }],
+    ['multiple requested refs', f => { f.call.arguments.ref = [f.bindings.private.objects.original.owner, 'skill://another-policy?library=' + f.otherLibrary]; }],
+    ['ownerless requested ref', f => { f.call.arguments.ref = 'skill://original-policy'; }],
+    ['different provider output', f => { f.payload.input[1].output = 'SKILL_NOT_FOUND'; }],
+    ['wrong catalog owner', f => { f.receipt.value.library_id = f.otherLibrary; }],
+    ['non-exhaustive catalog', f => { f.receipt.value.coverage.exhaustive = false; }],
+  ];
+  for (const [name, change] of cases) await t.test(name, async () => {
+    const f = unavailableCatalogFixture('notion_use'); change(f); f.seal();
+    await assert.rejects(f.run(), error => error.code?.startsWith('UNAVAILABLE_'));
+  });
+});
+
+test('unavailable catalog proof rejects incomplete, stale, wrong-owner and mismatched invocation evidence', async t => {
+  const cases = [
+    ['wrong credential scope', f => { f.receipt.value.scope = 'b'.repeat(64); }],
+    ['wrong Library', f => { f.receipt.value.library_id = f.otherLibrary; }],
+    ['wrong configured Source', f => { for (const row of f.sourceRows.filter(row => row.source_id)) row.source_id = 'notion-b'; }],
+    ['stale catalog', f => { f.receipt.value.freshness.stale = true; }],
+    ['cached catalog', f => { f.receipt.value.source = 'cache'; }],
+    ['old validation time', f => { f.receipt.value.freshness.validated_at = '2026-11-20T14:00:00.090Z'; }],
+    ['filtered View', f => { f.receipt.value.view = 'an-active-view'; }],
+    ['limited page', f => { f.receipt.value.has_more = true; }],
+    ['non-exhaustive directory', f => { f.receipt.value.coverage.exhaustive = false; }],
+    ['failed data source', f => { f.receipt.value.coverage.failed_sources = ['unavailable-source']; }],
+    ['count mismatch', f => { f.receipt.value.count++; }],
+    ['wrong queried data source', f => { f.receipt.value.coverage.queried_data_sources = ['another-source']; }],
+    ['original ID still present', f => { f.receipt.value.records[0].id = f.bindings.private.objects.original.owner; f.receipt.value.records[0].locator.skill_id = 'original-policy'; }],
+    ['original page still present under another ID', f => { f.receipt.value.records[0].locator.page_id = f.bindings.private.objects.original.pageId; }],
+    ['row belongs to another Library', f => { f.receipt.value.records[0].locator.library_id = f.otherLibrary; }],
+    ['partial HTTP metrics', f => { f.receipt.metrics.trace_dropped = 1; }],
+    ['failed HTTP attempt', f => { f.receipt.metrics.trace[0].outcome = 'failure'; f.sourceRows[2].outcome = 'failure'; }],
+    ['SDK completion after tool result', f => { f.sdk[2].monotonic_ns = '201'; f.sourceRows[4].sourceMonotonicNs = '201'; }],
+    ['SDK response from another invocation', f => { f.receipt.requestId = '22222222-2222-4222-8222-222222222222'; }],
+    ['missing actual SDK result', f => { f.receipt.resultObserved = false; }],
+    ['native and wire error differ', f => { f.payload.input[1].output = 'SKILL_NOT_FOUND: different failure'; }],
+  ];
+  for (const [name, change] of cases) await t.test(name, async () => {
+    const f = unavailableCatalogFixture(); change(f); f.seal();
+    await assert.rejects(f.run(), error => error.code?.startsWith('UNAVAILABLE_'));
+  });
+  for (const [name, change] of [
+    ['missing observation window', f => { delete f.observed.sourceObservationWindow; }],
+    ['tool outside observation window', f => { f.observed.sourceObservationWindow.endedNs = '199'; }],
+    ['wire output before native result', f => { f.observed.tasks[0].monotonicNs = '199'; }],
+    ['unsealed catalog response', f => { f.observed.toolHistory.sdkSegments[0].responses = []; }],
+    ['changed response bytes', f => { const a = f.observed.toolHistory.sdkSegments[0].responses[0].artifact; f.files.set(a.path, Buffer.from('{}')); }],
+  ]) await t.test(name, async () => {
+    const f = unavailableCatalogFixture(); change(f);
+    await assert.rejects(f.run(), error => error.code?.startsWith('UNAVAILABLE_') || error.code === 'ARTIFACT_CHANGED');
+  });
+});
 
 test('native session keeps real tool attempts, failures and final identity', () => {
   const call = message('c', 'u', 'assistant', [{ type: 'toolCall', id: 't1', name: 'read', arguments: { path: '/owned/skill/SKILL.md' } }], { stopReason: 'toolUse' });
@@ -545,6 +774,16 @@ test('ordinary relative package source resolves from frozen user settings and ke
     '../../candidate/packages/context-broker');
 });
 
+test('ordinary relative package ownership retains the existing default package slot', async () => {
+  const f = ordinaryPackageFixture();
+  f.save(f.observed.implementation.configArtifact, { brokerRoot: '/owned/candidate/packages/context-broker' });
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  const proof = result.assertions.find(row => row.kind === 'no-semantic-writes').details.implementations[0];
+  assert.equal(proof.ordinaryInstallation.packageIndex, 1);
+  assert.equal(JSON.parse(f.files.get(f.observed.implementation.configArtifact.path)).packageIndex, undefined);
+});
+
 test('ordinary relative source cannot borrow another directory, slot, source, package or settings identity', async () => {
   for (const mutate of [
     f => { delete f.observed.implementation.ordinaryInstallationArtifact; },
@@ -615,6 +854,52 @@ test('a familiar read name without actual implementation provenance cannot prove
   }
 });
 
+function claimedCompactReaderFixture() {
+  const baseDir = '/installed/pi-compact-ui';
+  const f = fixture({ calls: [{ name: 'read', arguments: { path: '/owned/SKILL.md' },
+    toolSource: { path: baseDir + '/index.ts', baseDir, source: 'npm:pi-compact-ui', scope: 'user', origin: 'package' } }] });
+  const event = f.observed.tasks.find(row => row.phase === 'tool_call');
+  event.reviewedReadTool = true;
+  // Claimed metadata is intentionally not the reviewed source bytes. These
+  // negatives must exercise the analyzer's actual artifact verification.
+  event.toolImplementation = { version: 1, runtimeMode: 'rpc', files: [
+    ['package.json', 567, 'a5f319f04fcc0ddeb47c0da5bdd08240598404f96b38dc1fe1baaaab14428f98'],
+    ['index.ts', 66369, 'bac76ae9ed99a3790d8a728cc6e9b5463927ac427a1462ffe59c6adf9e4d4509'],
+  ].map(([relativePath, bytes, sha256]) => ({ relativePath, path: baseDir + '/' + relativePath,
+    artifact: { path: '/owned/evidence/claimed-' + relativePath, bytes, sha256 } })) };
+  return { ...f, event };
+}
+
+test('local read effects cannot borrow a reviewed flag or a partial or foreign implementation', async () => {
+  for (const change of [
+    event => { delete event.toolImplementation; },
+    event => { event.toolImplementation.files.pop(); },
+    event => { event.toolSource.source = 'npm:another-read'; },
+    event => { event.toolImplementation.files[1].artifact.sha256 = '0'.repeat(64); },
+  ]) {
+    const f = claimedCompactReaderFixture(); change(f.event);
+    const result = await f.run([{ kind: 'no-semantic-writes' }]);
+    assert.equal(result.status, 'blocked', JSON.stringify(result.assertions));
+    assert.ok(result.assertions.some(row => row.code === 'TOOL_IMPLEMENTATION_UNKNOWN'));
+  }
+});
+
+test('an exact reviewed reader hash claim must still match the retained implementation bytes', async () => {
+  const f = claimedCompactReaderFixture();
+  for (const file of f.event.toolImplementation.files)
+    f.files.set(file.artifact.path, Buffer.alloc(file.artifact.bytes, 'x'));
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'failed', JSON.stringify(result.assertions));
+  assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_CHANGED'));
+});
+
+test('missing original implementation bytes leave the local read unproved', async () => {
+  const f = claimedCompactReaderFixture();
+  const result = await f.run([{ kind: 'no-semantic-writes' }]);
+  assert.equal(result.status, 'blocked', JSON.stringify(result.assertions));
+  assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_UNREADABLE'));
+});
+
 test('tool discovery binds the real hyphenated Pi builtin path and rejects same-name replacements', async () => {
   const f = fixture({ calls: [{ name: 'tool_search', arguments: { query: 'notion_ctl' } }] });
   const result = await f.run([{ kind: 'no-semantic-writes' }]);
@@ -630,6 +915,71 @@ test('tool discovery binds the real hyphenated Pi builtin path and rejects same-
     const rejected = await f.run([{ kind: 'no-semantic-writes' }]);
     assert.equal(rejected.status, 'blocked');
     assert.ok(rejected.assertions.some(row => row.code === 'TOOL_EFFECTS_UNKNOWN'));
+  }
+});
+
+test('the basic maintenance how-to requires both routes and preservation of an existing body', async () => {
+  const corpus = JSON.parse(readFileSync(new URL('./notion-agent-scenarios.json', import.meta.url), 'utf8'));
+  const scenario = corpus.scenarios.find(row => row.id === 'cold-maintenance-consultation');
+  const expected = scenario.turns[0].expect.find(row => row.kind === 'output');
+  const facts = corpus.fixtures[scenario.fixture].facts;
+  for (const [text, status] of [
+    ['从本地 SKILL.md 用 skill create 新建；已有 Notion 页面用 skill register 登记，不改写正文。', 'passed'],
+    ['可以创建一个 Skill，也可以登记已有 Notion 页面并保留原正文。', 'passed'],
+    ['用 skill create 新建，已有页面用 skill register 注册。注册不会替换页面正文。', 'passed'],
+    ['用 skill create 新建，已有页面用 skill register 注册，页面正文保持不变。', 'passed'],
+    ['用 skill create 新建，已有页面用 skill register 注册，页面正文保持原样。', 'passed'],
+    ['用 skill create 新建，已有页面用 skill register 注册，保留页面正文。', 'passed'],
+    ['用 skill create 新建；已有页面用 skill register 登记。如果页面已经在当前库的 **Skills 表**里，直接注册，不会覆盖正文：', 'passed'],
+    ['用 skill create 或 skill register，不覆盖正文。', 'passed'],
+    ['用 skill create 或 skill register，不会覆盖页面正文。', 'passed'],
+    ['用 skill create 或 skill register，不覆盖原正文。', 'passed'],
+    ['用 skill create 或 skill register，不会覆盖原文。', 'passed'],
+    ['用 skill create 或 skill register，不覆盖页面原文。', 'passed'],
+    ['用 skill create 或 skill register，保留原文。', 'passed'],
+    ['用 skill create 或 skill register，保留页面原文。', 'passed'],
+    ['用 skill create 或 skill register，正文保持不变。', 'passed'],
+    ['用 skill create 或 skill register，原文保持原样。', 'passed'],
+    ['用 skill create 或 skill register，页面原文保持不变。', 'passed'],
+    ['用 skill create 或 skill register，不会改原文。', 'passed'],
+    ['用 skill create 或 skill register，不改写原文。', 'passed'],
+    ['用 skill create 或 skill register，不会修改原文。', 'passed'],
+    ['用 skill create 或 skill register，不替换原文。', 'passed'],
+    ['用 skill create 或 skill register，不会重写原文。', 'passed'],
+    ['用 skill create 或 skill register，不是不会覆盖正文。', 'failed'],
+    ['用 skill create 或 skill register，并非不覆盖页面正文。', 'failed'],
+    ['用 skill create 或 skill register，不是不会覆盖原文。', 'failed'],
+    ['用 skill create 或 skill register，并非保留页面原文。', 'failed'],
+    ['用 skill create 或 skill register，不保留原文。', 'failed'],
+    ['用 skill create 或 skill register，不会保留页面原文。', 'failed'],
+    ['用 skill create 或 skill register，不能保留原文。', 'failed'],
+    ['用 skill create 或 skill register，无法保留页面原文。', 'failed'],
+    ['用 skill create 或 skill register，并非原文保持不变。', 'failed'],
+    ['用 skill create 或 skill register，不是不会修改原文。', 'failed'],
+    ['用 skill create 或 skill register，不会覆盖正文，但注册会覆盖正文。', 'failed'],
+    ['用 skill create 或 skill register，不会覆盖页面正文，但页面正文会被覆盖。', 'failed'],
+    ['用 skill create 或 skill register，不覆盖原正文，随后覆盖原正文。', 'failed'],
+    ['用 skill create 或 skill register，保留原文，但注册会覆盖原文。', 'failed'],
+    ['用 skill create 或 skill register，原文保持不变，但原文会被覆盖。', 'failed'],
+    ['用 skill create 或 skill register，页面原文保持原样，但随后覆盖页面原文。', 'failed'],
+    ['用 skill create 或 skill register，不会修改原文，但不能保留原文。', 'failed'],
+    ['用 skill create 或 skill register，页面原文保持不变，但页面原文不会保持不变。', 'failed'],
+    ['可以用 skill create 创建 Skill。', 'failed'],
+    ['已有页面用 skill register 登记，保留原正文。', 'failed'],
+    ['用 skill create 或 skill register，随后覆盖页面正文。', 'failed'],
+    ['给我文件路径、Notion 链接和目标库就行。', 'failed'],
+    ['用 skill create 或 skill register，但不保留页面正文。', 'failed'],
+    ['用 skill create 或 skill register，但不会保留原正文。', 'failed'],
+    ['用 skill create 或 skill register，但不是保留页面正文。', 'failed'],
+    ['用 skill create 或 skill register，并非页面正文保持不变。', 'failed'],
+    ['用 skill create 或 skill register，不是不会替换页面正文。', 'failed'],
+    ...facts['existing-body-preserved'].anyOf.map(value => ['用 skill create 新建，用 skill register 注册：' + value, 'passed']),
+    ...facts['body-preservation-denied'].anyOf.map(value => ['用 skill create 新建，用 skill register 注册：' + value, 'failed']),
+  ]) {
+    const f = fixture({ answerText: text });
+    f.binding.private.facts = facts;
+    const result = await f.run([expected]);
+    assert.equal(result.status, status, JSON.stringify({ text, assertions: result.assertions }));
   }
 });
 
@@ -983,19 +1333,19 @@ function pendingSourceFixture() {
   f.binding.private.objects.remote.name = 'Remote rates';
   const task = addMetadata(f, '<ntn-skills-discovery status="pending">pending</ntn-skills-discovery><ntn-skills-guidance>notion_list</ntn-skills-guidance>');
   task.monotonicNs = '200';
-  const sourceId = 'notion-target', database = '01234567-89ab-cdef-0123-456789abcdef';
-  const bytes = Buffer.from(JSON.stringify({ sources: [{ type: 'notion', id: sourceId, database }] })), path = '/owned/private/source-config.json';
+  const sourceId = 'notion-target', library = '01234567-89ab-cdef-0123-456789abcdef';
+  const bytes = Buffer.from(JSON.stringify({ sources: [{ type: 'notion', id: sourceId, library }] })), path = '/owned/private/source-config.json';
   f.files.set(path, bytes);
-  f.binding.private.fixture = { entry: database };
-  f.observed.visibility = { source: { sourceId, database, configArtifact: { path, sha256: hash(bytes), bytes: bytes.length } } };
-  f.observed.source = [{ phase: 'started', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '100', source_id: sourceId, database },
-    { phase: 'completed', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '300', source_id: sourceId, database }];
+  f.binding.private.fixture = { libraryId: library };
+  f.observed.visibility = { source: { sourceId, library, configArtifact: { path, sha256: hash(bytes), bytes: bytes.length } } };
+  f.observed.source = [{ phase: 'started', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '100', source_id: sourceId, library },
+    { phase: 'completed', kind: 'sdk', operation: 'list', requestId: 'catalog', monotonicNs: '300', source_id: sourceId, library }];
   return f;
 }
 
 test('a pending view needs actual target-source timing, not just an old pending label', async () => {
   const f = pendingSourceFixture();
-  f.observed.visibility.source.database = f.observed.visibility.source.database.replaceAll('-', '').toUpperCase();
+  f.observed.visibility.source.library = f.observed.visibility.source.library.replaceAll('-', '').toUpperCase();
   const result = await f.run([{ kind: 'visibility', object: 'remote', stage: 'source-pending' }]);
   assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
   f.observed.source[1].monotonicNs = '150';
@@ -1005,11 +1355,11 @@ test('a pending view needs actual target-source timing, not just an old pending 
 test('pending visibility cannot borrow another Source list or fabricate attribution for old diagnostics', async () => {
   for (const mutate of [
     f => { f.observed.source[0].source_id = f.observed.source[1].source_id = 'other-source'; },
-    f => { f.observed.source[0].database = f.observed.source[1].database = 'another-library'; },
-    f => { for (const row of f.observed.source) { delete row.source_id; delete row.database; } },
+    f => { f.observed.source[0].library = f.observed.source[1].library = 'another-library'; },
+    f => { for (const row of f.observed.source) { delete row.source_id; delete row.library; } },
     f => { f.observed.source[0].monotonicNs = '250'; },
     f => { f.observed.source[1].source_id = 'other-source'; },
-    f => { f.binding.private.fixture.entry = 'other-library'; },
+    f => { f.binding.private.fixture.libraryId = 'other-library'; },
   ]) {
     const f = pendingSourceFixture(); mutate(f);
     assert.notEqual((await f.run([{ kind: 'visibility', object: 'remote', stage: 'source-pending' }])).status, 'passed');
@@ -1142,6 +1492,20 @@ test('offline source assertion measures zero actual source attempts through comp
   const result = await f.run([{ kind: 'source-network-attempts', max: 0 }]);
   assert.equal(result.status, 'passed');
   assert.equal(result.assertions.find(item => item.kind === 'source-network-attempts').details.actual, 0);
+});
+
+test('content SDK call counts do not claim a known HTTP total or silently prove zero MCP calls', async () => {
+  const f = fixture();
+  f.observed.source = sourceOperation().map(row => row.phase === 'metrics'
+    ? { ...row, observed: false, complete: false, total_requests: null }
+    : { ...row, operation: 'content-search' });
+  const count = await f.run([{ kind: 'source-operation-attempts', operation: 'content-search', min: 1, max: 1 }]);
+  assert.equal(count.status, 'passed');
+  assert.equal(count.assertions.find(row => row.kind === 'source-operation-attempts').details.actual, 1);
+  assert.equal((await f.run([{ kind: 'source-operation-attempts', operation: 'content-search', max: 0 }])).status, 'failed');
+  const network = await f.run([{ kind: 'source-network-attempts', max: 0 }]);
+  assert.equal(network.status, 'blocked');
+  assert.ok(network.assertions.some(row => row.code === 'SOURCE_MCP_METRICS_UNKNOWN'));
 });
 
 test('an authorization-failed HTTP attempt is still network access', async () => {
@@ -1323,11 +1687,18 @@ test('historical composition still requires its independently retained child bod
   assert.ok(result.assertions.some(row => row.code === 'HISTORICAL_READ_RESULT_MISSING'));
 });
 
-test('complete code-mode reads prove their own bytes and the parent wire delivery', async () => {
+test('complete code-mode body delivery cannot certify readonly effects without sealed runtime evidence', async () => {
   const f = composedLocalFixture();
   const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }, { kind: 'no-semantic-writes' },
     { kind: 'source-network-attempts', max: 0 }, { kind: 'tool-attempts', tool: 'read', min: 1, max: 1 }]);
-  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  assert.equal(result.status, 'blocked', JSON.stringify(result.assertions));
+  for (const kind of ['body', 'tool-attempts'])
+    assert.equal(result.assertions.find(row => row.kind === kind)?.status, 'passed', kind);
+  for (const kind of ['no-semantic-writes', 'source-network-attempts']) {
+    const claim = result.assertions.find(row => row.kind === kind);
+    assert.equal(claim?.status, 'blocked', kind);
+    assert.equal(claim.code, 'TOOL_EFFECTS_UNKNOWN', kind);
+  }
   const proof = result.assertions.find(row => row.kind === 'actual-provider-delivery').details.last.nativeReadBodies[0];
   assert.deepEqual(proof.toolCallIds, ['opaque-child-without-parent-prefix']);
   assert.deepEqual(proof.deliveryToolCallIds, ['t0']);
@@ -1512,7 +1883,7 @@ test('a real-shaped paired CLI identity is checked against the frozen candidate 
 
 test('the restore assertion consumes sealed process arguments rather than a claimed command count', async () => {
   const f = fixture();
-  attachCandidateCli(f, { argv: ['ctl', 'library', 'projection', 'target', '--restore', '--entry', 'library'] });
+  attachCandidateCli(f, { argv: ['ctl', 'library', 'projection', 'target', '--restore', '--library', 'library'] });
   const result = await f.run([{ kind: 'single-projection-restore' }]);
   assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
   assert.equal(result.assertions.find(row => row.kind === 'single-projection-restore').details.restoreInvocations, 1);
@@ -1539,4 +1910,245 @@ test('CLI process or parent artifact tampering cannot retain an earlier candidat
     assert.equal(result.status, 'failed');
     assert.ok(result.assertions.some(row => row.code === 'ARTIFACT_CHANGED'));
   }
+});
+
+function asResponses(f) {
+  const originalSession = f.observed.session;
+  const activeReplies = originalSession.assistantMessages.filter(row => row.active && row.userEntryId === originalSession.currentUserId);
+  const ids = new Map();
+  for (const row of f.entries) for (const part of row.message?.content ?? []) {
+    if (part?.type === 'toolCall') { ids.set(part.id, part.id + '|fc_' + part.id); part.id = ids.get(part.id); }
+  }
+  for (const row of f.entries) {
+    if (row.message?.role === 'toolResult') row.message.toolCallId = ids.get(row.message.toolCallId) ?? row.message.toolCallId;
+    if (row.message?.role === 'assistant') Object.assign(row.message, {
+      api: 'openai-responses', responseId: 'resp_' + row.id, rawStopReason: 'completed',
+      usage: { input: 10, output: 5, cacheRead: 1, cacheWrite: 0, totalTokens: 16, reasoning: 2 },
+    });
+  }
+  for (const row of [...f.observed.tasks, ...(f.historyRows ?? [])]) {
+    if (ids.has(row.toolCallId)) row.toolCallId = ids.get(row.toolCallId);
+    for (const proof of Object.values(row.proofs ?? {}))
+      if (proof && typeof proof === 'object' && ids.has(proof.toolCallId)) proof.toolCallId = ids.get(proof.toolCallId);
+  }
+  if (f.historyRows) f.sealHistory();
+  f.observed.session = inspect(f.entries);
+  Object.assign(f.observed.selection, { leafId: f.observed.session.leafId, branchSha256: f.observed.session.branchSha256 });
+  const calls = new Map(f.observed.session.attempts.map(call => [call.id, call]));
+  rewritePayloads(f, payload => {
+    const input = [];
+    for (const message of payload.messages) {
+      if (message.role === 'tool') {
+        const nativeId = ids.get(message.tool_call_id) ?? message.tool_call_id, call = calls.get(nativeId);
+        assert.ok(call, 'Controlled Responses fixture needs its actual native call');
+        const [callId, id] = nativeId.split('|');
+        input.push({ type: 'function_call', id, call_id: callId, name: call.name, arguments: JSON.stringify(call.arguments) },
+          { type: 'function_call_output', call_id: callId, output: message.content });
+      } else {
+        input.push({ type: 'message', role: message.role === 'system' ? 'developer' : message.role,
+          content: typeof message.content === 'string'
+            ? [{ type: message.role === 'assistant' ? 'output_text' : 'input_text', text: message.content }] : message.content });
+      }
+    }
+    delete payload.messages; delete payload.reasoning_effort;
+    Object.assign(payload, { input, stream: true, reasoning: { effort: 'high' } });
+  });
+  const requests = f.observed.costs.filter(row => row.phase === 'provider_request');
+  for (const [index, request] of requests.entries()) {
+    request.api = 'openai-responses';
+    const native = f.entries.find(row => row.id === activeReplies[index].entryId).message;
+    const cost = f.observed.costs.find(row => row.phase === 'message_end' && row.request === request.request).message;
+    Object.assign(cost, { api: native.api, responseId: native.responseId, rawStopReason: native.rawStopReason, usage: { ...native.usage },
+      content: { sha256: hash(JSON.stringify(native.content)), bytes: Buffer.byteLength(JSON.stringify(native.content)) } });
+    const end = f.observed.transport.find(row => row.phase === 'request_end' && row.id === index + 1);
+    Object.assign(end, { modelApi: 'openai-responses', contentType: 'text/event-stream', contentEncoding: 'identity',
+      sseCompletion: { method: 'bounded-openai-responses-sse-v1', complete: true, terminalEvents: 1, doneEvents: 0,
+        response: { id: native.responseId, model: 'actual-worker', status: 'completed',
+          usage: { input_tokens: 11, output_tokens: 5, total_tokens: 16,
+            input_tokens_details: { cached_tokens: 1, cache_write_tokens: null },
+            output_tokens_details: { reasoning_tokens: 2 }, optional_fields_valid: true } } } });
+  }
+  return f;
+}
+
+test('Responses analysis binds native response ID and usage to the exact wire completion and nested effort', async () => {
+  const f = asResponses(fixture());
+  const result = await f.run([{ kind: 'completed' }, { kind: 'output', all: ['total'] }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  assert.equal(result.delivery.requests.at(-1).api, 'openai-responses');
+  assert.equal(result.delivery.requests.at(-1).completion, 'responses-completed');
+});
+
+test('Responses analysis preserves remote source spans and input_text body identity', async () => {
+  const f = fixture({ bodies: { 'remote@A/SKILL.md': '完整规则\r\n必须保留全部正文。' } });
+  f.bindRemote('remote', 'A', 'remote@A/SKILL.md');
+  asResponses(f);
+  const result = await f.run([{ kind: 'body', body: 'remote@A/SKILL.md', occurrences: 1 },
+    { kind: 'selection', object: 'remote', version: 'A' }]);
+  assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+  assert.equal(result.delivery.requests.at(-1).notionDeliveries[0].owner, 'skill-remote');
+});
+
+test('Responses analysis maps complete function-call identity to a local body and retained history', async () => {
+  for (const historical of [false, true]) {
+    const f = asResponses(historical ? reusedLocalFixture() : nativeLocalFixture());
+    const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 },
+      { kind: 'tool-attempts', tool: 'read', max: historical ? 0 : 1 }]);
+    assert.equal(result.status, 'passed', JSON.stringify(result.assertions));
+    assert.deepEqual(result.delivery.requests.at(-1).nativeReadBodies[0].deliveryToolCallIds, ['t0|fc_t0']);
+    assert.equal(result.efficiency.actualToolAttempts, historical ? 0 : 1);
+  }
+});
+
+test('Responses analysis rejects unmatched native identity, usage, effort and body call ownership', async () => {
+  for (const [name, change] of [
+    ['terminal absent', f => { delete f.observed.transport.find(row => row.phase === 'request_end').sseCompletion; }],
+    ['native ID', f => { f.observed.session.assistantMessages[0].responseId = 'resp_elsewhere'; }],
+    ['native usage', f => { f.observed.session.assistantMessages[0].usage.output++; }],
+    ['wrong effort', f => rewritePayloads(f, payload => { payload.reasoning.effort = 'low'; })],
+  ]) {
+    const f = asResponses(fixture()); change(f);
+    const result = await f.run([{ kind: 'completed' }]);
+    assert.notEqual(result.status, 'passed', name);
+  }
+  for (const [name, change] of [
+    ['different full item identity', item => { item.id = 'fc_other'; }],
+    ['same prefix with different name', item => { item.name = 'write'; }],
+    ['changed original arguments', item => { item.arguments = '{"path":"/different/SKILL.md"}'; }],
+  ]) {
+    const f = asResponses(nativeLocalFixture());
+    rewritePayloads(f, payload => { for (const item of payload.input.filter(row => row.type === 'function_call')) change(item); });
+    const result = await f.run([{ kind: 'body', body: 'local@A/SKILL.md', occurrences: 1 }]);
+    assert.notEqual(result.status, 'passed', name);
+    assert.ok(result.assertions.some(row => row.code === 'RESPONSES_TOOL_IDENTITY_UNPROVEN'), JSON.stringify(result.assertions));
+  }
+});
+
+test('Responses analysis cannot borrow a native call that happened after this request', async () => {
+  const f = asResponses(nativeLocalFixture());
+  let replay;
+  for (const row of f.observed.tasks.filter(row => row.phase === 'provider_payload')) {
+    const payload = JSON.parse(f.files.get(row.payloadFile));
+    if (payload.input.some(item => item.type === 'function_call')) replay = payload.input.filter(item => item.type.startsWith('function_call'));
+  }
+  rewritePayloads(f, (payload, index) => { if (index === 0) payload.input.push(...replay); });
+  const result = await f.run([{ kind: 'completed' }]);
+  assert.notEqual(result.status, 'passed');
+  assert.ok(result.assertions.some(row => row.code === 'RESPONSES_TOOL_IDENTITY_UNPROVEN'), JSON.stringify(result.assertions));
+});
+
+function nestedResourceProofFixture() {
+  const files = new Map(), pid = 20, library = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const owner = 'skill://synthetic-travel?library=' + library, snapshot = 's_' + 'b'.repeat(64);
+  const body = 'Lodging is capped at 70.\n', resourceRef = 'sr:R' + 'B'.repeat(22), selectedRef = 'sr:S' + 'A'.repeat(22);
+  const fileRef = owner.replace('?library=', '/rates.md?library=') + '&snapshot=' + snapshot;
+  const put = (path, value, json = true) => {
+    const bytes = Buffer.from(json ? JSON.stringify(value) : value); files.set(path, bytes);
+    return { path, sha256: hash(bytes), bytes: bytes.length };
+  };
+  const brokerOwner = { source: { path: '/owned/broker/src/index.ts', source: '/owned/broker',
+    baseDir: '/owned/broker', origin: 'package', scope: 'project' }, commit: 'c'.repeat(40), entrySha256: 'd'.repeat(64) };
+  const selected = { kind: 'selected', identity: { source: 'notion', kind: 'skill', id: owner, scope: 'a'.repeat(64),
+    locator: { type: 'shared_skill', library_id: library, page_id: 'fixture-page', database_id: 'fixture-db', data_source_id: 'fixture-ds' } },
+    snapshot_id: snapshot, version_id: 'c'.repeat(64), body_sha256: hash('main'), entrypoint: 'SKILL.md',
+    ref: owner.replace('?library=', '/SKILL.md?library=') + '&snapshot=' + snapshot };
+  const resource = { kind: 'resource', owner: selectedRef, path: 'rates.md', ref: fileRef,
+    file_id: 'file-' + hash('fixture-file'), sha256: hash(body), bytes: Buffer.byteLength(body) };
+  const childContent = [{ type: 'text', text: body }], parentContent = [{ type: 'text', text: 'Actual child output:\n' + body }];
+  const makeCall = (id, name, args, from, to, content) => {
+    const artifact = put('/owned/segment/tool-results/' + id + '.json', content);
+    return { id, name, arguments: args, native: { isError: false, assistantEntryId: 'native-call', resultEntryId: 'native-result' },
+      event: { toolCallId: id, toolName: name, inputSha256: hash(JSON.stringify(args)), pid, monotonicNs: from },
+      result: { pid, monotonicNs: to, isError: false, contentArtifact: artifact, content: { sha256: artifact.sha256, bytes: artifact.bytes } } };
+  };
+  const parent = makeCall('outer', 'codemode', { code: 'text(await tools.read({path:"' + resourceRef + '"}))' }, '50', '250', parentContent);
+  parent.container = { complete: true };
+  const call = makeCall('child', 'read', { path: resourceRef }, '100', '200', childContent);
+  Object.assign(call, { parentToolCallId: parent.id, rootToolCallId: parent.id, provenance: { kind: 'native-nested-summary' } });
+  call.event.toolSource = { ...brokerOwner.source };
+  // As in the pure lineage tests, runtimeEvidence represents the output of the
+  // separately tested sealed-byte verifier; these are synthetic observations.
+  const runtimeEvidence = new Map();
+  for (const item of [call, parent]) {
+    const packageRoot = '/maintained/pi';
+    item.event.toolRuntime = { version: 1, packageRoot, entry: packageRoot + '/dist/bundle/cli.js',
+      files: Object.entries(reviewedPiToolRuntimeProfile.files).map(([relativePath, file]) => ({
+        relativePath, path: packageRoot + '/' + relativePath, artifact: { path: '/sealed/' + file.sha256, ...file } })) };
+    runtimeEvidence.set(item.id, { implementation: inspectedPiToolRuntime(item.event.toolRuntime),
+      toolCallId: item.id, toolName: item.name, inputSha256: item.event.inputSha256, pid });
+  }
+  const branch = [
+    entry('selected', null, 'custom', { customType: 'context-broker-short-ref', data: { version: 1, ref: selectedRef, target: selected } }),
+    entry('resource', 'selected', 'custom', { customType: 'context-broker-short-ref', data: { version: 1, ref: resourceRef, target: resource } }),
+    message('native-call', 'resource', 'assistant', []),
+    message('native-result', 'native-call', 'toolResult', parentContent, { toolCallId: parent.id }),
+  ];
+  const sdk = [{ phase: 'sdk-observer-start', pid },
+    { phase: 'sdk-start', operation: 'read', requestId: 'read-1', pid, monotonic_ns: '120' },
+    { phase: 'sdk-end', operation: 'read', requestId: 'read-1', pid, monotonic_ns: '140',
+      status: 'completed', resultObserved: true, responseFile: 'read-1.json' },
+    { phase: 'sdk-observer-end', pid, pending: 0 }];
+  const sourceRows = [{ phase: 'source_observer_start', kind: 'observer', pid, monotonicNs: '1' },
+    { phase: 'started', kind: 'sdk', requestId: 'sdk:20:read-1', pid, operation: 'read',
+      library, source_id: 'notion-fixture', sourceMonotonicNs: '120', monotonicNs: '121' },
+    { phase: 'metrics', kind: 'metrics', requestId: 'sdk:20:read-1', observed: true, complete: true,
+      total_requests: 0, trace_dropped: 0, monotonicNs: '141' },
+    { phase: 'completed', kind: 'sdk', requestId: 'sdk:20:read-1', pid, operation: 'read', status: 'completed',
+      library, source_id: 'notion-fixture', sourceMonotonicNs: '140', monotonicNs: '142' },
+    { phase: 'source_observer_end', kind: 'observer', operations: 1, sdkStarts: 1, cliStarts: 0,
+      unmatchedChildren: 0, errors: 0, complete: true, pendingRequestIds: [], monotonicNs: '300' }];
+  const receipt = { version: 2, transport: 'sdk', operation: 'read', requestId: 'read-1', status: 'completed', resultObserved: true,
+    value: { record: { id: owner, locator: selected.identity.locator }, scope: selected.identity.scope,
+      snapshot_id: snapshot, version_id: selected.version_id, entrypoint_sha256: selected.body_sha256,
+      entrypoint: selected.entrypoint, path: resource.path, ref: fileRef, sha256: resource.sha256, bytes: resource.bytes,
+      freshness: { policy: 'pinned' }, file_bindings: [{ path: resource.path, file_id: resource.file_id, page_id: 'fixture-file-page' }],
+      output: '/owned/cache/observed-output' },
+    outputEvidence: { path: '/owned/cache/observed-output', sha256: resource.sha256, bytes: resource.bytes, content: body } };
+  const taskArtifact = put('/owned/segment/tasks.jsonl', 'sealed synthetic task observations\n', false);
+  const sdkSegment = { tasks: taskArtifact };
+  const seal = () => {
+    sdkSegment.sdk = put('/owned/segment/sdk.jsonl', sdk.map(row => JSON.stringify(row)).join('\n') + '\n', false);
+    let previous = null;
+    const rows = sourceRows.map((row, index) => {
+      const value = { version: 1, sequence: index + 1, previousSha256: previous, clockId: 'fixture-segment', ...row };
+      previous = hash(JSON.stringify(value)); return { ...value, eventSha256: previous };
+    });
+    sdkSegment.source = put('/owned/segment/source.jsonl', rows.map(row => JSON.stringify(row)).join('\n') + '\n', false);
+    sdkSegment.responses = [{ requestId: 'read-1', artifact: put('/owned/segment/sdk-responses/read-1.json', receipt) }];
+  };
+  seal();
+  const value = { call, parent, brokerOwner, runtimeEvidence, branch, branchArtifact: put('/owned/branch.json', branch),
+    taskArtifact, sdkSegment, payload: { messages: [{ role: 'tool', tool_call_id: parent.id, content: parentContent }] },
+    frozenBodies: new Map([[resource.sha256, { text: body, bytes: resource.bytes, sha256: resource.sha256 }]]),
+    readArtifact: async path => { if (!files.has(path)) throw new Error('Missing fixture artifact'); return files.get(path); } };
+  return { value, files, sdk, sourceRows, receipt, seal, resource, selected };
+}
+
+test('nested resource proof links the pre-call owner, original SDK read, child result and exact outer message', async () => {
+  const f = nestedResourceProofFixture(), proof = await verifyNotionAgentNestedResourceRead(f.value);
+  assert.equal(proof.owner, f.selected.identity.id);
+  assert.equal(proof.version_id, f.selected.version_id);
+  assert.equal(proof.native.toolCallId, 'child'); assert.equal(proof.toolCallId, 'outer');
+  assert.equal(proof.native.requestId, 'read-1');
+  assert.equal(proof.native.kind, 'nested-sdk-resource');
+  assert.deepEqual(proof.native.taskArtifact, f.value.taskArtifact);
+  assert.deepEqual(proof.native.responseArtifact, f.value.sdkSegment.responses[0].artifact);
+});
+
+for (const [reason, change] of [
+  ['wrong owner', f => { f.receipt.value.record.id = 'skill://another?library=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'; f.seal(); }],
+  ['wrong scope', f => { f.receipt.value.scope = 'e'.repeat(64); f.seal(); }],
+  ['wrong version', f => { f.receipt.value.version_id = 'e'.repeat(64); f.seal(); }],
+  ['ambiguous SDK reads', f => { f.sdk.splice(2, 0, { ...f.sdk[1], requestId: 'other-read' }); f.seal(); }],
+  ['missing SDK receipt', f => { f.value.sdkSegment.responses = []; }],
+  ['missing child result', f => { delete f.value.call.result.contentArtifact; }],
+  ['different original segment', f => { f.value.sdkSegment.tasks = { ...f.value.taskArtifact, sha256: 'e'.repeat(64) }; }],
+  ['different source clock', f => { f.sourceRows[1].sourceMonotonicNs = '119'; f.seal(); }],
+  ['owner appended after the call', f => { const row = f.value.branch.shift(); f.value.branch.push(row); }],
+  ['altered SDK output bytes', f => { f.receipt.outputEvidence.content = 'another body'; f.seal(); }],
+  ['altered outer provider message', f => { f.value.payload.messages[0].content = 'Invented output with the same body:\n' + f.receipt.outputEvidence.content; }],
+  ['unverified runtime', f => { f.value.runtimeEvidence.clear(); }],
+]) test('nested resource proof rejects ' + reason, async () => {
+  const f = nestedResourceProofFixture(); change(f);
+  await assert.rejects(verifyNotionAgentNestedResourceRead(f.value));
 });

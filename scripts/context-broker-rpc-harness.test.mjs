@@ -4,6 +4,30 @@ import { mkdtemp, writeFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
+import { isolatedEnv, runCommand } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
+
+test('isolated host children keep the scheduler private when the caller has no root or a shared root', async () => {
+  const base = join(tmpdir(), 'broker-owned-environment'), agentDir = join(base, 'agent');
+  const directories = { NTN_SKILLS_HOME: 'state', NTN_SKILLS_CONFIG_HOME: 'config', NTN_SKILLS_CACHE_HOME: 'cache',
+    NTN_SKILLS_DATA_HOME: 'data', NTN_SKILLS_SCHEDULER_ROOT: 'scheduler' };
+  const source = 'process.stdout.write(JSON.stringify(Object.fromEntries(' + JSON.stringify([...Object.keys(directories), 'HOME'])
+    + '.map(key=>[key,process.env[key]]))))';
+  const previous = process.env.NTN_SKILLS_SCHEDULER_ROOT;
+  try {
+    for (const scheduler of [undefined, '/shared/request-engine']) {
+      if (scheduler === undefined) delete process.env.NTN_SKILLS_SCHEDULER_ROOT;
+      else process.env.NTN_SKILLS_SCHEDULER_ROOT = scheduler;
+      const result = await runCommand(process.execPath, ['-e', source], { cwd: process.cwd(), env: isolatedEnv({ base, agentDir }) });
+      const observed = JSON.parse(result.stdout);
+      for (const [key, directory] of Object.entries(directories)) assert.equal(observed[key], join(base, 'ntn', directory));
+      assert.equal(observed.HOME, base);
+      assert.equal(process.env.NTN_SKILLS_SCHEDULER_ROOT, scheduler);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.NTN_SKILLS_SCHEDULER_ROOT;
+    else process.env.NTN_SKILLS_SCHEDULER_ROOT = previous;
+  }
+});
 
 // A protocol fixture, not a model substitute. It exercises the subprocess and
 // JSONL ordering at the harness boundary, including native Pi's deferred

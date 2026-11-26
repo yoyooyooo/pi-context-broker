@@ -53,6 +53,7 @@ export type InputEvent = {
   source?: "interactive" | "rpc" | "extension";
   text?: string;
   images?: ImageContent[];
+  streamingBehavior?: "steer" | "followUp";
 };
 export type InputResult =
   | { handled: true }
@@ -85,18 +86,21 @@ export type NativeReadDefinition = NativeReadMetadata & {
   defaultInactive: boolean;
   execute(id: string, input: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: NativeReadUpdate | undefined, ctx: ExtensionContext): Promise<NativeReadResult>;
 };
+export type NativeToolRenderers = {
+  renderShell?: "default" | "self";
+  renderCall?: (args: Record<string, unknown>, theme: unknown, context: unknown) => unknown;
+  renderResult?: (result: NativeReadResult, options: unknown, theme: unknown, context: unknown) => unknown;
+};
 /** Pi exposes its built-in definition through createReadToolDefinition. Keep its
  * renderers, output schema and native executor when extending the read surface. */
-export type PiReadDefinition = {
+export type PiReadDefinition = NativeToolRenderers & {
   name: "read"; label: string; description: string; parameters: Record<string, unknown>;
   outputSchema?: unknown; promptSnippet?: string; promptGuidelines?: string[];
   defaultActive?: boolean; constrainedSampling?: unknown;
   execute(id: string, input: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: NativeReadUpdate | undefined, ctx: ExtensionContext): Promise<NativeReadResult>;
-  renderCall?: (args: Record<string, unknown>, theme: unknown, context: unknown) => unknown;
-  renderResult?: (result: NativeReadResult, options: unknown, theme: unknown, context: unknown) => unknown;
 };
-export type NativeSkillSearchDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_search" | "notion_list" };
-export type NativeSkillPrepareDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_prepare" | "notion_use" };
+export type NativeSkillSearchDefinition = Omit<NativeReadDefinition, "name"> & NativeToolRenderers & { name: "skill_search" | "notion_list" };
+export type NativeSkillPrepareDefinition = Omit<NativeReadDefinition, "name"> & NativeToolRenderers & { name: "skill_prepare" | "notion_use" };
 export type NativeSkillGraphDefinition = Omit<NativeReadDefinition, "name"> & { name: "skill_graph" | "notion_ctl" };
 type SessionBoundary = "session_before_switch" | "session_before_branch" | "session_before_tree"
   | "session_switch" | "session_tree" | "session_branch" | "session_shutdown" | "agent_start" | "agent_end";
@@ -105,7 +109,7 @@ type ExtensionEvents = {
   context: { event: ContextEvent; result: ContextResult };
   context_with_system: { event: ContextEvent; result: ContextResult };
   before_agent_start: { event: BeforeAgentStartEvent; result: BeforeAgentStartResult };
-  before_provider_request: { event: { type: "before_provider_request"; payload: unknown }; result: void };
+  before_provider_request: { event: { type: "before_provider_request"; payload: unknown }; result: unknown };
   after_provider_response: { event: { type: "after_provider_response"; status: number; headers: Record<string, string> }; result: void };
   turn_end: { event: TurnEndEvent; result: SessionBoundaryResult };
   input: { event: InputEvent; result: InputResult };
@@ -136,6 +140,7 @@ export type AutocompleteSuggestions = {
 };
 
 export type AutocompleteProvider = {
+  triggerCharacters?: string[];
   getSuggestions(
     lines: string[],
     cursorLine: number,
@@ -181,6 +186,7 @@ export type ExtensionWidgetNode = {
 export type ExtensionWidgetComponent = {
   render(width: number): string[];
   invalidate(): void;
+  handleInput?(data: string): void;
   describe?(context: { supports(kind: string): boolean }): ExtensionWidgetNode | null;
   handleNativeEvent?(event: { type: string; collapsed?: boolean }): void;
   dispose?(): void;
@@ -193,7 +199,7 @@ export type ExtensionContext = {
   ui?: {
     notify?(message: string, type?: "info" | "warning" | "error"): void;
     setWidget?(key: string, content: string[] | ExtensionWidgetFactory | undefined): void;
-    custom?<T>(factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => { render(width: number): string[]; invalidate(): void }, options?: { overlay?: boolean; overlayOptions?: { visible?: (width: number, height: number) => boolean } }): Promise<T>;
+    custom?<T>(factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => ExtensionWidgetComponent, options?: { overlay?: boolean; overlayOptions?: { visible?: (width: number, height: number) => boolean } }): Promise<T>;
     addAutocompleteProvider?(factory: (current: AutocompleteProvider) => AutocompleteProvider): void;
     setEditorText?(text: string): void;
     getEditorComponent?(): EditorFactory | undefined;
@@ -258,7 +264,8 @@ export type ExtensionAPI = {
   getActiveTools?(): string[];
   getSettings?(): { images?: { autoResize?: boolean } };
   registerTool?(tool: NativeReadDefinition | PiReadDefinition | NativeSkillSearchDefinition | NativeSkillPrepareDefinition | NativeSkillGraphDefinition): void;
-  registerMessageRenderer?(customType: string, renderer: (message: AgentMessage, options: { expanded: boolean }, theme: unknown) => ExtensionWidgetComponent | undefined): void;
+  registerToolRenderer?(resolver: (toolName: string, next: () => NativeToolRenderers | undefined) => NativeToolRenderers | undefined): void;
+  registerMessageRenderer?(customType: string, renderer: (message: AgentMessage, options: { expanded: boolean; outputPad?: number; keyText?(action: string): string }, theme: unknown) => ExtensionWidgetComponent | undefined): void;
   sendMessage?(message: { customType: string; content: MessageContent; details: unknown; display: boolean }, options: { triggerTurn: boolean }): void;
   appendEntry?(customType: string, data?: unknown): void;
   registerCommand?(name: string, command: {
@@ -304,7 +311,7 @@ export type SourceConfig = {
   | { type: "filesystem"; roots: string[]; scan?: ScanConfig; requireAutoload?: boolean }
   | {
       type: "notion";
-      database?: string;
+      library?: string;
       default_view_id?: string;
       profile_id?: string;
       cacheDir?: string;

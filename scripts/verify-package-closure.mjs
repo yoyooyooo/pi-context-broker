@@ -1,34 +1,91 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const official = ["effect", "@effect/platform-node", "@effect/platform-node-shared", "@effect/sql-sqlite-node"];
-export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, expectedVersion }) {
+
+/** The same archive-to-installed byte check is used by daily and isolated candidates. */
+export async function verifyArchiveInstallation(root, archive, expectedHash) {
+  const hash = value => createHash('sha256').update(value).digest('hex');
+  const inside = (base, path) => { const local = relative(base, path); return local === '' || local !== '..' && !local.startsWith('..' + sep) && !isAbsolute(local); };
+  const identity = async path => { const bytes = await readFile(path); return { path, realpath: await realpath(path), bytes: bytes.length, sha256: hash(bytes) }; };
+  assert.ok(isAbsolute(root) && isAbsolute(archive));
+  const canonicalRoot = await realpath(root), archiveIdentity = await identity(archive);
+  assert.equal(archiveIdentity.sha256, expectedHash, 'Final package archive SHA mismatch');
+  const entries = execFileSync('tar', ['-tf', archive], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }).split('\n').filter(value => value && !value.endsWith('/'));
+  assert.ok(entries.length > 0, 'A package archive must contain files');
+  const files = [];
+  for (const entry of entries) {
+    assert.ok(entry.startsWith('package/'));
+    const local = entry.slice('package/'.length), path = resolve(root, local);
+    assert.ok(inside(root, path), 'Unsafe package member');
+    assert.ok(inside(canonicalRoot, await realpath(path)), 'A package member escapes the installed package');
+    const packed = execFileSync('tar', ['-xOf', archive, entry], { maxBuffer: 32 * 1024 * 1024 });
+    const actual = await identity(path);
+    assert.equal(actual.sha256, hash(packed), `Installed package differs: ${local}`);
+    files.push({ path: local, sha256: actual.sha256, bytes: actual.bytes, runtime: /^(?:src|dist)\//u.test(local) || local === 'package.json' });
+  }
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  return { root, archive: archiveIdentity, file_count: files.length, files, sha256: hash(JSON.stringify(files)) };
+}
+export function verifyBundledNotices({ selectedNoticesBytes, bundledNoticesBytes, expectedSha256 }) {
+  assert.ok(selectedNoticesBytes instanceof Uint8Array && selectedNoticesBytes.length > 0, 'Selected CLI THIRD_PARTY_NOTICES.md must contain complete nonempty bytes');
+  assert.ok(bundledNoticesBytes instanceof Uint8Array, 'Bundled NOTICES.txt bytes are required');
+  assert.match(expectedSha256, /^[a-f0-9]{64}$/u);
+  const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+  const selected = Buffer.from(selectedNoticesBytes), bundled = Buffer.from(bundledNoticesBytes);
+  assert.equal(hash(selected), expectedSha256, 'Selected CLI third-party notices changed');
+  assert.ok(bundled.indexOf(selected) >= 0, 'Bundled NOTICES.txt must contain the complete selected CLI THIRD_PARTY_NOTICES.md unchanged');
+  return { source_sha256: expectedSha256, source_bytes: selected.length, bundled_sha256: hash(bundled), bundled_bytes: bundled.length };
+}
+export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, refBytes, expectedVersion }) {
   assert.equal(manifest.version, 1, "Unknown bundled runtime manifest");
   assert.equal(manifest.package, "ntn-skills", "Unexpected bundled package identity");
   assert.equal(manifest.package_version, expectedVersion, "Bundled runtime must match its frozen build input version");
-  assert.equal(manifest.sdk_version, 2, "Only the current SDK v2 is supported");
-  for (const capability of ["consumer_contract_version", "consumption_effects_version", "catalog_directory_contract_version", "read_output_proof_version", "resource_read_contract_version", "resource_read_effects_version"])
+  assert.equal(manifest.sdk_version, 3, "Only the current SDK v3 is supported");
+  assert.equal(manifest.skill_ref_version, 2, "Only the current Skill reference protocol is supported");
+  assert.ok(refBytes instanceof Uint8Array && refBytes.length > 0, "The selected pure reference artifact is required");
+  for (const capability of ["consumer_contract_version", "consumption_effects_version", "catalog_directory_contract_version", "read_output_proof_version", "resource_read_contract_version", "resource_read_effects_version", "content_search_contract_version"])
     assert.equal(manifest[capability], 1, `Current runtime capability is required: ${capability}`);
-  const hashes = { cli: createHash("sha256").update(cliBytes).digest("hex"), sdk: createHash("sha256").update(sdkBytes).digest("hex") };
+  const hashes = { cli: createHash("sha256").update(cliBytes).digest("hex"), sdk: createHash("sha256").update(sdkBytes).digest("hex"), ref: createHash("sha256").update(refBytes).digest("hex") };
   assert.equal(manifest.cli_sha256, hashes.cli, "Bundled CLI bytes do not match its frozen runtime manifest");
   assert.equal(manifest.sdk_sha256, hashes.sdk, "Bundled SDK bytes do not match its frozen runtime manifest");
+  assert.equal(manifest.ref_sha256, hashes.ref, "Bundled reference bytes do not match the frozen runtime manifest");
   return hashes;
 }
-export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest, base }) {
+export function packageInstallationEnvironment({ home, base, cache, proxy }) {
+  const env = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: home, TMPDIR: base, LANG: "en_US.UTF-8" };
+  if (cache !== undefined) {
+    assert.ok(isAbsolute(cache), "An installation download cache must be an absolute path");
+    env.npm_config_cache = cache;
+    env.npm_config_prefer_offline = "true";
+  }
+  if (proxy) {
+    const url = new URL(proxy);
+    assert.ok(["http:", "https:"].includes(url.protocol) && !url.username && !url.password
+      && url.pathname === "/" && !url.search && !url.hash, "The installation proxy must be a credential-free HTTP(S) origin");
+    env.npm_config_proxy = url.origin;
+    env.npm_config_https_proxy = url.origin;
+  }
+  return env;
+}
+export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest, base, downloads = {} }) {
   base ??= await mkdtemp(join(tmpdir(), "broker-strict-closure-"));
   await mkdir(base, { recursive: true });
   const home = join(base, "home");
   await mkdir(home, { recursive: true });
   // No user npm config, NODE_PATH, NODE_OPTIONS, alternate CLI or host helper.
   const env = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: home, TMPDIR: base, LANG: "en_US.UTF-8" };
+  // Only npm gets the selected public download cache/transport. Runtime checks
+  // retain the empty HOME and do not inherit either these settings or the host.
+  const installEnv = packageInstallationEnvironment({ home, base, ...downloads });
   const receipts = [];
   async function run(argv, cwd, expectedExit = 0) {
-    const result = spawnSync(argv[0], argv.slice(1), { cwd, env, encoding: "utf8", timeout: 360_000, maxBuffer: 32 * 1024 * 1024 });
+    const result = spawnSync(argv[0], argv.slice(1), { cwd, env: argv[0] === "npm" ? installEnv : env, encoding: "utf8", timeout: 360_000, maxBuffer: 32 * 1024 * 1024 });
     const receipt = { argv, cwd, status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "", error: result.error?.message };
     receipts.push(receipt);
     await writeFile(join(base, "commands.json"), JSON.stringify(receipts, null, 2) + "\n");
@@ -100,7 +157,7 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
   }
   await writeFile(join(base, "official-inventory.json"), JSON.stringify(inventories, null, 2) + "\n");
   if (query) {
-    for (const file of ["ntn-skills.mjs", "ntn-skills-sdk.mjs", "ntn-skills-runtime.json"]) {
+    for (const file of ["ntn-skills.mjs", "ntn-skills-sdk.mjs", "ntn-skills-ref.cjs", "ntn-skills-runtime.json"]) {
       assert.deepEqual(await readFile(join(installed, "dist", file)), await readFile(join(query, file)),
         `${file}: Broker and Tern must ship the same complete consumption runtime`);
     }
@@ -134,7 +191,7 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
     assert.deepEqual(currentImport.command, ["ctl", "library", "import"]);
     for (const [name, kind, type, required] of [
       ["input", "argument", "string", true],
-      ["entry", "flag", "string", true],
+      ["library", "flag", "string", true],
       ["skill-id", "flag", "string", true],
       ["operation", "flag", "string", false],
       ["resume", "flag", "boolean", false],
@@ -147,6 +204,7 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
       assert.deepEqual(parameter && { kind: parameter.kind, type: parameter.type, required: parameter.required },
         { kind, type, required }, `${label}: current Skill import parameter ${name} has an invalid schema`);
     }
+    assert.ok(!currentImport.schema.parameters.some(parameter => parameter.name === "entry"), `${label}: retired table-entry selection must not remain available`);
     // These public fallbacks must resolve package resources with an empty HOME,
     // outside the checkout and without a global CLI or installed central Skills.
     const catalog = await cli(["ctl", "builtin", "list"]);
@@ -179,5 +237,6 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [brokerArchive, ternArchive, brokerManifest] = process.argv.slice(2);
   assert.ok(brokerArchive, "Usage: node scripts/verify-package-closure.mjs BROKER.tgz [TERN.tar.gz] [dependency-only-package.json]");
-  await verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest });
+  await verifyPackageClosure({ brokerArchive, ternArchive, brokerManifest,
+    downloads: { cache: process.env.npm_config_cache, proxy: process.env.HTTPS_PROXY || process.env.HTTP_PROXY } });
 }

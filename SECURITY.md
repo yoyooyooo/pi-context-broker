@@ -2,7 +2,11 @@
 
 ## Supported versions
 
-Security fixes target the latest released version.
+Security fixes target the latest patch in the current 0.x minor series. Earlier
+patches and previous minor series are not maintained security branches. Runtime
+support is Node.js 24.22.3+ in 24.x and 26.13.1+ in 26.x.
+Keep a maintained patch within one of these lines. Current real-host verification
+uses Pi 1.6.0; the optional peer ranges are not a universal host-support promise.
 
 ## Trust boundary
 
@@ -30,3 +34,8 @@ See the [source configuration and activation contract](./packages/context-broker
 ## Reporting vulnerabilities
 
 Report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/yoyooyooo/pi-context-broker/security/advisories/new). Include affected versions, a sanitized reproduction and the impact. Do not include private keys, API tokens, or private Skill contents in public issues.
+
+Reports are handled on a best-effort basis, with no guaranteed response or fix
+time. Impact, reproducibility and maintainer availability determine the next step.
+Use [GitHub issues](https://github.com/yoyooyooo/pi-context-broker/issues) for ordinary
+bugs and usage questions.

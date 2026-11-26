@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { createConsumerObservations, currentEvidence } from "../src/consumer-observation";
@@ -14,7 +15,7 @@ const canonical = (value: unknown): string => value === null || typeof value !==
   : Array.isArray(value) ? "[" + value.map(canonical).join(",") + "]"
   : "{" + Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 const record: SkillRecord = {
-  id: "shared_skill:bounded:root", source: "notion", sourceId: "bounded", sourceScope: "a".repeat(64),
+  id: "skill://root?library=6db6717c-b285-55ec-8920-48a53e8e065a", source: "notion", sourceId: "bounded", sourceScope: "a".repeat(64),
   name: "root", description: "root", enabled: true, path: "/immutable/root/SKILL.md", aliases: [],
   normalizedName: "root", normalizedDescription: "root", normalizedAliases: [], autoloadEnabled: true,
 };
@@ -63,17 +64,17 @@ test("FV04 an unrecognized source cannot turn a permission unknown into availabl
 function graph(rootVersion: string, requiredVersion: string): PreparedHostGraph {
   const scope = "a".repeat(64);
   const records = [["root", rootVersion], ["required", requiredVersion]].map(([name, version]): SkillRecord => {
-    const id = "shared_skill:bounded:" + name;
+    const id = nativeSkillId("6db6717c-b285-55ec-8920-48a53e8e065a", String(name));
     const metadata: ContentRecord = {
       id, kind: "skill", name: name!, alias: name!, description: name!, enabled: true, default_context: false,
-      entrypoint: "SKILL.md", ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
-      locator: { type: "shared_skill", library_id: "bounded", skill_id: name!,
+      entrypoint: "SKILL.md", ref: nativeFileRef(id, "SKILL.md"),
+      locator: { type: "shared_skill", library_id: "6db6717c-b285-55ec-8920-48a53e8e065a", skill_id: name!,
         page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000002", data_source_id: "00000000-0000-4000-8000-000000000003" },
     };
     const body = "Complete " + name + " instructions " + version + ".\n", snapshotId = "s_" + hash(name + ":" + version);
     return { ...metadata, source: "notion", sourceId: "bounded", sourceScope: scope, body, snapshotId, versionId: hash(body),
       path: "/immutable/" + name + "/SKILL.md", aliases: [], normalizedName: name!, normalizedAliases: [], normalizedDescription: name!, autoloadEnabled: false,
-      preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId } };
+      preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(metadata.ref, snapshotId) } };
   });
   const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose: "use" as const, scope,
     roots: [records[0]!.id!], required: [{ from: records[0]!.id!, to: records[1]!.id!, ref: records[1]!.preparationBinding!.ref }],
@@ -157,9 +158,16 @@ test("FV05 a late provider callback cannot confirm a different session identity"
   const f = await pendingProvider();
   try {
     f.state.sessionId = "replacement";
-    await expect(f.emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} })).rejects.toThrow(/cancel/i);
-    expect(f.controller.signal.aborted).toBe(true);
+    await f.emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} });
+    expect(f.controller.signal.aborted).toBe(false);
     expect(f.entries).toHaveLength(1);
+    const assistant: AgentMessage = { role: "assistant", content: "new session response" };
+    f.entries.push({ sourceEntry: { type: "message", id: "replacement-assistant", message: assistant }, messages: [assistant] });
+    const boundary = await f.emit("turn_end", { type: "turn_end", turnIndex: 0, outcome: "completed", entries: [], continue: false,
+      message: assistant, messageEntryId: "replacement-assistant", toolResults: [], toolResultEntryIds: [],
+      context: { contextEntries: f.entries, contextMessages: f.entries.flatMap(entry => entry.messages) } });
+    expect(boundary).toEqual([undefined]);
+    expect(f.entries).toHaveLength(2);
   } finally {
     await f.emit("agent_end");
     await f.emit("session_shutdown");

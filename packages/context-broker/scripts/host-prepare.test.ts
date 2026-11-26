@@ -1,4 +1,5 @@
-import { expect, test, setSystemTime } from "bun:test";
+import { nativeFileRef, nativeSkillId, parseNativeReference, withNativeSnapshot } from "../src/native-reference";
+import { expect, test, setSystemTime, spyOn } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,6 +7,8 @@ import { join } from "node:path";
 import { installHostSkills, type HostSkills, type HostSkillOptions } from "../src/host-skills";
 import { SourceError, sourceFailureMessage } from "../src/notion-source";
 import { createActivationFeedback } from "../src/activation-feedback";
+import { createLibrarySelection } from "../src/library-selection";
+import { CONTENT_SEARCH_TIMEOUT_MS } from "../src/content-search";
 import { buildCliGuidance, buildInjectedContextMessage, installSkillGuidance } from "../src/index";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
@@ -31,7 +34,8 @@ function preparationDetails(result: { details?: unknown }): Record<string, unkno
   if (!preparation || typeof preparation !== "object" || Array.isArray(preparation)) throw new Error("Expected preparation proof");
   return Object.fromEntries(Object.entries(preparation));
 }
-async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKind: "pi" | "omp" = "pi", identityScope = scope, withBodyCard = false) {
+async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKind: "pi" | "omp" = "pi", identityScope = scope, withBodyCard = false,
+  owner = { libraryId: "1031b73d-3a2f-589c-9bdb-ebb50a7eb063", sourceId: "controlled" }) {
   const owned = await mkdtemp(join(tmpdir(), "broker-host-prepare-"));
   const directory = withDirectoryAlias ? join(owned, "alias") : owned;
   if (withDirectoryAlias) {
@@ -42,31 +46,31 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   const resourceText = new Map<string, string>(), resourceReads: string[] = [];
   const ensure = async (path: string) => { await mkdir(path, { recursive: true }); };
   for (const [index, name] of ["root", "required", "member"].entries()) {
-    const id = "shared_skill:controlled:" + name;
+    const id = nativeSkillId(owner.libraryId, String(name));
     const metadata: ContentRecord = {
       id, kind: "skill", name, alias: name, description: withBodyCard && name === "member" ? 'Controlled member <metadata> & "原文".' : "Controlled " + name, enabled: true, default_context: index === 0,
-      entrypoint: "SKILL.md", ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
-      locator: { type: "shared_skill", library_id: "controlled", skill_id: name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
+      entrypoint: "SKILL.md", ref: nativeFileRef(id, "SKILL.md"),
+      locator: { type: "shared_skill", library_id: owner.libraryId, skill_id: name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0"),
         database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" },
     };
-    const body = "\ufeff---\r\nname: " + name + "\r\n---\r\nExact " + name + " <instructions>.\r\n"
-      + (withBodyCard && name === "root" ? '\r\n## Members\r\n\r\n- [member](skill://shared_skill%3Acontrolled%3Amember/SKILL.md) — Controlled member <metadata> & "原文".\r\n' : "");
+    const body = "\ufeff---\r\nname: " + name + "\r\n---\r\nExact " + name + " <instructions>.\r\n" + (owner.sourceId === "controlled" ? "" : owner.sourceId + " owner bytes.\r\n")
+      + (withBodyCard && name === "root" ? '\r\n## Members\r\n\r\n- [member](skill://member/SKILL.md?library=1031b73d-3a2f-589c-9bdb-ebb50a7eb063) — Controlled member <metadata> & "原文".\r\n' : "");
     const snapshotId = "s_" + hash(name), path = join(directory, name, "SKILL.md");
     await mkdir(join(directory, name), { recursive: true });
     await writeFile(path, body);
     let selected: SkillRecord = {
-      ...metadata, source: "notion", sourceId: "controlled", sourceScope: identityScope, body, path, snapshotId, versionId: hash(body),
+      ...metadata, source: "notion", sourceId: owner.sourceId, sourceScope: identityScope, body, path, snapshotId, versionId: hash(body),
+      ...(owner.sourceId === "controlled" ? {} : { token: owner.sourceId + "/" + name }),
       aliases: [], normalizedAliases: [], normalizedName: name, normalizedDescription: metadata.description, autoloadEnabled: true, defaultDiscovery: false,
-      preparationBinding: { record: metadata, scope: identityScope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId },
+      preparationBinding: { record: metadata, scope: identityScope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(metadata.ref, snapshotId) },
       preparationDirectory: { files: [], required: [], candidates: [], references: [] },
     };
     if (withShortRefs) {
       const resource = "Exact " + name + " resource bytes.\r\n";
       resourceText.set(id, resource);
-      selected.preparationBinding = { ...selected.preparationBinding!, ref: selected.preparationBinding!.ref + "&file_id=main-" + name };
       const files = [{ path: "SKILL.md", bytes: Buffer.byteLength(body), sha256: hash(body), ref: selected.preparationBinding.ref },
         { path: "resources/guide.md", bytes: Buffer.byteLength(resource), sha256: hash(resource),
-          ref: metadata.ref.replace("SKILL.md", "resources/guide.md") + "?snapshot=" + snapshotId + "&file_id=guide-" + name }];
+          ref: withNativeSnapshot(metadata.ref.replace("SKILL.md", "resources/guide.md"), snapshotId) }];
       selected.fileBindings = [
         { file_id: "main-" + name, path: "SKILL.md", page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0") },
         { file_id: "guide-" + name, path: "resources/guide.md", page_id: "00000000-0000-4000-8000-" + String(index + 100).padStart(12, "0") },
@@ -84,7 +88,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
   } } : {}) };
   const calls: PreparationPurpose[] = [];
   const persisted: SelectionMode[] = [];
-  const sources: Array<{ id: string; type: "notion"; prefetch: false }> = [{ id: "controlled", type: "notion", prefetch: false }];
+  const sources: Array<{ id: string; type: "notion"; prefetch: false; library?: string }> = [{ id: owner.sourceId, type: "notion", prefetch: false }];
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   let search: NativeSkillSearchDefinition | undefined, tool: NativeSkillPrepareDefinition | undefined, graphTool: NativeSkillGraphDefinition | undefined;
   const api: ExtensionAPI = { ...(hostKind === "omp" ? { pi: {} } : {}), on(name, listener) { events.set(name, [...events.get(name) ?? [], listener]); },
@@ -97,11 +101,11 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
     const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope: identityScope, roots: [root!.id!],
       required: purpose === "use" ? [{ from: root!.id!, to: required!.id!, ref: required!.preparationBinding!.ref }] : [],
       bindings: selected.map(record => record.preparationBinding!) };
-    return { purpose, sourceId: "controlled", scope: identityScope, roots: [root!.id!], records: selected, bindings: selected.map(record => record.preparationBinding!), lock: { ...vector, sha256: hash(canonical(vector)) },
+    return { purpose, sourceId: owner.sourceId, scope: identityScope, roots: [root!.id!], records: selected, bindings: selected.map(record => record.preparationBinding!), lock: { ...vector, sha256: hash(canonical(vector)) },
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
-  const install = async (prepareGraph: (purpose: PreparationPurpose, signal?: AbortSignal, policy?: ConsumptionPolicy) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs">> = {}, adapter?: HostCapabilities) => {
+  const install = async (prepareGraph: (purpose: PreparationPurpose, signal: AbortSignal | undefined, policy: ConsumptionPolicy | undefined, requested: readonly SkillRecord[], pins: ReadonlyMap<string, string> | undefined) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs" | "resolveRelativeReference" | "resolveSkillReference" | "sessionBinding" | "librarySelection" | "restoreActive" | "confirmDelivery">> = {}, adapter?: HostCapabilities) => {
     let host: HostSkills;
     host = await installHostSkills(api, {
       config: { sources },
@@ -115,7 +119,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
         await writeFile(output, text);
       }, signal),
       resolveCurrentRoot: async record => ({ record, ref: record.ref! }),
-      prepareGraph: async (_records, _ctx, signal, purpose, _pins, _bindings, _mode, policy) => { calls.push(purpose); return prepareGraph(purpose, signal, policy); },
+      prepareGraph: async (requested, _ctx, signal, purpose, pins, _bindings, _mode, policy) => { calls.push(purpose); return prepareGraph(purpose, signal, policy, requested, pins); },
       persistGraphs: discovery.persistGraphs ?? ((_graphs, _ctx, mode) => { persisted.push(mode); }),
       ...(withShortRefs ? { sessionGraph: () => ({ kind: "controlled-selected-graph", scope: identityScope }) } : {}),
       needsPreflightPrompt: text => text.includes("$root"),
@@ -233,11 +237,12 @@ test("dollar preflight failure keeps earlier source effects and the original den
     await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
     await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "base" }, f.ctx);
     await f.emit("agent_start", {}, f.ctx);
-    const error = await f.emit("context", { messages: [user] }, f.ctx).then(() => undefined, error => error);
+    const result = await f.emit("context", { messages: [user] }, f.ctx);
     const effects = { ...observed, remote_writes: "unknown", author_content: secondEffects ? "unchanged" : "unknown" };
-    expect(error).toBeInstanceOf(SourceError);
-    expect(error).toMatchObject({ code: "ACCESS_DENIED", sourceId: "second-source", cause: original, details: { effects } });
-    expect(JSON.parse(error.message).effects).toEqual(effects);
+    expect(result).toContainEqual(expect.objectContaining({ messages: expect.arrayContaining([user,
+      expect.objectContaining({ customType: "context-broker-preparation-warning",
+        content: expect.stringContaining("ACCESS_DENIED"), details: { effects } })]) }));
+    expect(JSON.stringify(result)).not.toContain(f.root.body!.trim());
     expect(original.details?.effects).toBe(secondEffects);
     expect(f.persisted).toEqual([]);
   }
@@ -435,12 +440,12 @@ test("Pi keeps ordinary pending requests immediate and refreshes only its direct
   expect(f.resourceReads).toEqual([]);
 });
 
-test("cold maintenance guidance uses scoped Notion discovery before its default directory arrives", async () => {
+test("explicit Notion workflow discovery stays scoped while its default directory is pending", async () => {
   const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
   f.api.getActiveTools = () => ["read", "notion_list", "notion_use", "bash"];
   const { search } = await f.install(undefined, { getRecords: () => metadata.promise });
   installSkillGuidance(f.api, { sources: f.sources }, { host: "pi" });
-  const user = { role: "user", content: "Add a Skill to this Notion library." };
+  const user = { role: "user", content: "Inspect the team's ntn-skills-maintain workflow in this Notion library." };
   const before = await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "Native instructions" }, f.ctx);
   const expected = buildCliGuidance({ sources: f.sources }, f.api.getActiveTools());
   expect(before).toContainEqual({ message: expected });
@@ -448,8 +453,9 @@ test("cold maintenance guidance uses scoped Notion discovery before its default 
   const messages = [{ role: "system", content: "Native instructions" }, user, guidance];
   const pending = await catalogProjection(f, messages);
   expect(pending.catalog).toContain("Notion metadata is pending");
-  expect(sourceMessageText(guidance.content)).toContain("absent/pending: notion_list there");
-  expect(sourceMessageText(guidance.content)).toContain("task's source/library");
+  expect(sourceMessageText(guidance.content)).toContain("Explicit Notion workflow: read exact ref in chosen source; notion_list there if needed.");
+  expect(sourceMessageText(guidance.content)).toContain("Pending/failed: no builtin fallback.");
+  expect(sourceMessageText(guidance.content)).toContain("Default product maintenance/sync:");
   expect(sourceMessageText(guidance.content)).not.toContain("ctl builtin read");
   metadata.resolve({ records: [{ ...f.root, name: "ntn-skills-maintain", alias: "ntn-skills-maintain",
     normalizedName: "ntn-skills-maintain", body: undefined, preparationBinding: undefined, defaultDiscovery: true }], failures: [] });
@@ -532,12 +538,12 @@ test("Pi dollar injection reuses an exact canonical card while retaining every s
 test("Pi dollar injection uses the current logical selector without confusing it with the physical page UUID", async () => {
   const f = await dollarCatalogFixture(), original = f.root.preparationBinding!;
   const record = original.record, ref = record.ref;
-  const selected: SkillRecord = { ...f.root, ...record, preparationBinding: { ...original, record, ref: ref + "?snapshot=" + original.snapshot_id } };
+  const selected: SkillRecord = { ...f.root, ...record, preparationBinding: { ...original, record, ref: withNativeSnapshot(ref, original.snapshot_id) } };
   const injected = buildInjectedContextMessage(selected, selected.name), before = JSON.stringify(injected);
   expect((await catalogProjection(f, [f.head, injected])).catalog).not.toContain('Controlled member &lt;metadata&gt;');
   expect(JSON.stringify(injected)).toBe(before);
   expect(sourceBodyLoaded([injected], selected)).toBe(true);
-  const wrongMain = { ...selected, preparationBinding: { ...selected.preparationBinding!, ref: selected.preparationBinding!.ref.replace(encodeURIComponent(record.id), "00000000-0000-4000-8000-000000000001") } };
+  const wrongMain = { ...selected, preparationBinding: { ...selected.preparationBinding!, ref: nativeFileRef(nativeSkillId(record.locator.library_id, "00000000-0000-4000-8000-000000000001"), "SKILL.md", selected.snapshotId) } };
   expect((await catalogProjection(f, [f.head, buildInjectedContextMessage(wrongMain, wrongMain.name)])).catalog).toContain('Controlled member &lt;metadata&gt;');
   expect(f.calls).toEqual(["use"]);
 });
@@ -619,8 +625,8 @@ test("Pi dollar catalog reuse rejects foreign identities, fixed relations and ch
     record => { record.sourceScope = "b".repeat(64); },
     record => { record.preparationBinding!.version_id = "another-version"; },
     record => { record.preparationBinding!.snapshot_id = "s_" + "b".repeat(64); },
-    record => { record.preparationBinding!.record.id = "shared_skill:controlled:other-root"; },
-    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, id: "shared_skill:controlled:other-member" }]; },
+    record => { record.preparationBinding!.record.id = "skill://other-root?library=1031b73d-3a2f-589c-9bdb-ebb50a7eb063"; },
+    record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, id: "skill://other-member?library=1031b73d-3a2f-589c-9bdb-ebb50a7eb063" }]; },
     record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, ref: f.member.preparationBinding!.ref }]; },
     record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, kind: "router" }]; },
     record => { record.preparationDirectory!.candidates = [{ ...record.preparationDirectory!.candidates[0]!, name: "another-member" }]; },
@@ -656,8 +662,8 @@ function catalogCards(catalog: string) {
 test("Pi dollar catalog reuse preserves same-name sources, owners and newly observed descriptions", async () => {
   const f = await fixture(true, false, "pi", scope, true), head: AgentMessage = { role: "system", content: "Native rules" };
   f.sources.push({ id: "other-source", type: "notion", prefetch: false });
-  const id = "shared_skill:controlled:other-member";
-  const otherOwner = { ...f.member, id, token: "other-owner-member", ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
+  const id = "skill://other-member?library=1031b73d-3a2f-589c-9bdb-ebb50a7eb063";
+  const otherOwner = { ...f.member, id, token: "other-owner-member", ref: nativeFileRef(id, "SKILL.md"),
     locator: { ...f.member.locator!, skill_id: "other-member", page_id: "00000000-0000-4000-8000-000000000004" } };
   const otherSource = { ...f.member, sourceId: "other-source", token: "other-source-member" };
   const { search, host } = await f.install(undefined, { getRecords: async () => ({ records: [...f.records, otherOwner, otherSource].map(record => ({
@@ -743,7 +749,7 @@ test("Pi native inspect reuses only its verified generated footer without changi
     { ...read, details: {} },
     { ...read, details: { ...details, contextBrokerRead: { ...proof, identity: JSON.stringify(["another-source", ...identity.slice(1)]) } } },
     { ...read, details: { ...details, contextBrokerRead: { ...proof, binding: { ...binding,
-      record: { ...record, locator: { ...locator, library_id: "another-library" } } } } } },
+      record: { ...record, locator: { ...locator, library_id: "8b308dab-2daf-5330-922f-812244ff16f9" } } } } } },
   ]) {
     expect((await catalogProjection(f, [head, candidate])).catalog).toContain('>Controlled member</card>');
   }
@@ -826,7 +832,7 @@ test("Pi keeps descriptions for incomplete, foreign, fixed and stale generated c
   expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "metadata-changed",
     content: changed.content, details: changed.details, isError: false }])).catalog).toContain('>Controlled member</card>');
   f.root.preparationDirectory!.candidates[0]!.description = f.member.description;
-  f.root.preparationDirectory!.candidates[0]!.ref = f.member.ref + "?snapshot=s_" + hash("historical-member");
+  f.root.preparationDirectory!.candidates[0]!.ref = withNativeSnapshot(f.member.ref, "s_" + hash("historical-member"));
   const fixed = await tool.execute("fixed-candidate", { ref: f.root.ref }, undefined, undefined, f.ctx);
   expect((await catalogProjection(f, [head, { role: "toolResult", toolName: "notion_use", toolCallId: "fixed-candidate",
     content: fixed.content, details: fixed.details, isError: false }])).catalog).toContain('>Controlled member</card>');
@@ -870,7 +876,7 @@ test("Pi discovery description reuse requires exact visible metadata and restore
   expect(f.resourceReads).toEqual([]);
 });
 
-test("Pi preparation shows its budget immediately without queueing a session message", async () => {
+test("Pi preparation shows a compact loading row without queueing a session message", async () => {
   const f = await fixture();
   const widgets = new Map<string, string[]>(), messages: unknown[] = [], entries: unknown[] = [];
   const api: ExtensionAPI = { on() {}, sendMessage(message) { messages.push(message); }, appendEntry(_type, data) { entries.push(data); } };
@@ -888,7 +894,9 @@ test("Pi preparation shows its budget immediately without queueing a session mes
   const source = { type: "notion" as const, id: "controlled", preparation: { maxNodes: 8, maxDepth: 4, maxInstructionBytes: 8192, maxContextBytes: 131072 } };
   const finish = feedback.begin(f.root, context, "use", source);
   expect(finish).toBeDefined(); expect(widgets.size).toBe(1);
-  expect([...widgets.values()][0]!.join("\n")).toContain("Preparing use: up to 8 nodes, depth 4, 8192 instruction bytes, 131072 context bytes. Stop cancels preparation.");
+  expect([...widgets.values()][0]!.join("\n")).toContain("[skill@notion]");
+  expect([...widgets.values()][0]!.join("\n")).toContain("loading…");
+  expect([...widgets.values()][0]!.join("\n")).not.toContain("bytes");
   expect(messages).toEqual([]);
   finish!({ error: "Cancelled." });
   expect(widgets.size).toBe(0); expect(entries).toHaveLength(1);
@@ -900,6 +908,164 @@ test("Pi preparation shows its budget immediately without queueing a session mes
   expect(widgets.size).toBe(0);
   late!({ value: f.root }); expect(entries).toHaveLength(1);
   expect(messages).toEqual([]);
+});
+
+for (const boundary of ["metadata", "use", "scalar preparation", "source native read"] as const)
+for (const stop of ["deadline", "abort"] as const)
+test(`public Broker ${boundary} settles on ${stop} without waiting for a non-cooperative producer`, async () => {
+  const f = await fixture(true), operation = new AbortController();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  let hold = false, sourceSignal: AbortSignal | undefined, nativeCalls = 0, aborts = 0;
+  f.ctx.abort = () => { aborts++; operation.abort(); };
+  const adapter = createPiHostAdapter(f.api);
+  let executeRead: NativeReadExecutor | undefined;
+  adapter.registerReadExecutor = execute => { executeRead = execute; return () => true; };
+  const h = await f.install(async (purpose, signal, policy) => {
+    policy?.observeEffects?.(noConsumptionWrites());
+    if (hold && boundary !== "metadata" && boundary !== "source native read") {
+      sourceSignal = signal; entered.resolve(); await release.promise;
+    }
+    return [{ ...f.graph(purpose), effects: noConsumptionWrites() }];
+  }, { getRecords: async () => {
+    if (hold && boundary === "metadata") { entered.resolve(); await release.promise; }
+    return { records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined })), failures: [] };
+  } }, adapter);
+  await h.host.refresh(f.ctx);
+  const history = JSON.stringify(f.session.entries);
+  hold = true;
+  const refresh = boundary === "metadata" ? h.host.refresh(f.ctx) : undefined;
+  const nativeTimeout = globalThis.setTimeout;
+  const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) =>
+    nativeTimeout(callback, delay === 60_000 && stop === "deadline" ? 15 : delay, ...args));
+  let pending: Promise<{ error: unknown } | { value: unknown }> | undefined;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    if (!executeRead) throw new Error("Expected native read boundary");
+    const call = boundary === "metadata" ? h.search.execute("bounded-tool", {}, operation.signal, undefined, f.ctx)
+      : boundary === "use" ? h.tool.execute("bounded-tool", { ref: f.root.ref }, operation.signal, undefined, f.ctx)
+      : executeRead({ path: f.root.ref }, f.ctx, operation.signal, async (_input, signal) => {
+        nativeCalls++;
+        if (boundary === "source native read") { sourceSignal = signal; entered.resolve(); await release.promise; }
+        return { content: [{ type: "text", text: f.root.body! }] };
+      }, "bounded-tool");
+    pending = call.then(value => ({ value }), error => ({ error }));
+    await entered.promise;
+    // Source inspection can admit its fixed selection before the native reader
+    // runs. Timeout must preserve that prior fact and add no later delivery.
+    const admitted = f.persisted.slice();
+    expect(admitted).toEqual(boundary === "source native read" ? ["extend"] : []);
+    if (stop === "abort") operation.abort();
+    const result = await Promise.race([pending, new Promise<undefined>(resolve => { watchdog = nativeTimeout(() => resolve(undefined), 100); })]);
+    expect(result).toBeDefined();
+    if (!result || !("error" in result)) throw new Error("Broker acquisition must settle before its producer is released");
+    expect(result.error).toMatchObject({ code: stop === "abort" ? "SOURCE_ACTIVATION_CANCELLED" : "SOURCE_PREPARATION_TIMEOUT" });
+    if (boundary !== "metadata") expect(sourceSignal?.aborted).toBe(true);
+    expect(operation.signal.aborted).toBe(stop === "abort"); expect(aborts).toBe(0);
+    expect(nativeCalls).toBe(boundary === "source native read" ? 1 : 0);
+    expect(f.persisted).toEqual(admitted); expect(JSON.stringify(f.session.entries)).toBe(history);
+    release.resolve(); await refresh;
+    await new Promise(resolve => nativeTimeout(resolve, 0));
+    expect(f.persisted).toEqual(admitted); expect(JSON.stringify(f.session.entries)).toBe(history);
+    const late = await f.emit("tool_result", { toolName: "read", toolCallId: "bounded-tool", input: { path: f.root.ref },
+      content: [{ type: "text", text: f.root.body! }], isError: false }, f.ctx);
+    expect(late.every(value => value === undefined)).toBe(true);
+    hold = false;
+    expect((await h.search.execute("after-bounded-tool", { query: "root" }, undefined, undefined, f.ctx)).content).toBeDefined();
+  } finally {
+    if (watchdog) clearTimeout(watchdog);
+    release.resolve(); await pending; await refresh;
+    timeout.mockRestore(); await f.emit("session_shutdown", {}, f.ctx);
+  }
+});
+
+for (const mode of ["metadata", "content", "cli source"] as const)
+for (const stop of ["deadline", "abort"] as const)
+test(`public Broker ${mode} bounds Library selection on ${stop} before remote dispatch`, async () => {
+  const f = await fixture(true), operation = new AbortController();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const library = createLibrarySelection({ sources: [] });
+  f.sources[0]!.library = "1031b73d-3a2f-589c-9bdb-ebb50a7eb063";
+  f.api.getActiveTools = () => ["read", "bash", "notion_ctl"];
+  const h = await f.install(undefined, { librarySelection: library });
+  await h.host.refresh(f.ctx);
+  const selected = spyOn(library, "selected").mockImplementation(async () => { entered.resolve(); await release.promise; return undefined; });
+  const nativeTimeout = globalThis.setTimeout, budgets: number[] = [];
+  const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
+    if (delay === 60_000 || delay === CONTENT_SEARCH_TIMEOUT_MS) budgets.push(delay);
+    return nativeTimeout(callback, stop === "deadline" && (delay === 60_000 || delay === CONTENT_SEARCH_TIMEOUT_MS) ? 15 : delay, ...args);
+  });
+  let pending: Promise<{ error: unknown } | { value: unknown }> | undefined;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const call = mode === "cli source" ? h.graphTool!.execute("held-library", { cli_source: null }, operation.signal, undefined, f.ctx)
+      : h.search.execute("held-library", mode === "content" ? { search_in: "content", query: "needle" } : {}, operation.signal, undefined, f.ctx);
+    pending = call.then(value => ({ value }), error => ({ error }));
+    await entered.promise;
+    if (stop === "abort") operation.abort();
+    const result = await Promise.race([pending, new Promise<undefined>(resolve => { watchdog = nativeTimeout(() => resolve(undefined), 100); })]);
+    expect(result).toBeDefined();
+    if (!result || !("error" in result)) throw new Error("Library selection must settle before its producer is released");
+    expect(result.error).toMatchObject({ code: mode === "content" ? stop === "abort" ? "SOURCE_CANCELLED" : "CONTENT_SEARCH_TIMEOUT"
+      : stop === "abort" ? "SOURCE_ACTIVATION_CANCELLED" : "SOURCE_PREPARATION_TIMEOUT" });
+    expect(budgets).toContain(mode === "content" ? CONTENT_SEARCH_TIMEOUT_MS : 60_000);
+    expect(f.calls).toEqual([]); expect(f.persisted).toEqual([]); expect(operation.signal.aborted).toBe(stop === "abort");
+    release.resolve(); await new Promise(resolve => nativeTimeout(resolve, 0));
+    expect(f.calls).toEqual([]); expect(f.persisted).toEqual([]); expect(f.session.entries).toEqual([]);
+  } finally {
+    if (watchdog) clearTimeout(watchdog);
+    release.resolve(); await pending;
+    selected.mockRestore(); timeout.mockRestore(); await f.emit("session_shutdown", {}, f.ctx);
+  }
+});
+
+test("public Broker read leaves an ordinary native reader's arguments, result and execution budget intact", async () => {
+  const f = await fixture(true), adapter = createPiHostAdapter(f.api);
+  let executeRead: NativeReadExecutor | undefined;
+  adapter.registerReadExecutor = execute => { executeRead = execute; return () => true; };
+  await f.install(undefined, {}, adapter);
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const input = { path: join(f.ctx.cwd!, "ordinary.txt"), offset: 2, limit: 7, nativeOption: true };
+  const output = { content: [{ type: "text" as const, text: "Native-owned output" }], details: { original: true } };
+  const nativeTimeout = globalThis.setTimeout;
+  const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => nativeTimeout(callback, delay === 60_000 ? 10 : delay, ...args));
+  let pending: Promise<unknown> | undefined, settled = false;
+  try {
+    if (!executeRead) throw new Error("Expected native read boundary");
+    pending = executeRead(input, f.ctx, undefined, async actual => { expect(actual).toBe(input); entered.resolve(); await release.promise; return output; }, "ordinary-read")
+      .finally(() => { settled = true; });
+    await entered.promise; await new Promise(resolve => nativeTimeout(resolve, 25));
+    expect(settled).toBe(false);
+    release.resolve(); expect(await pending).toBe(output);
+    expect(f.calls).toEqual([]); expect(f.persisted).toEqual([]);
+  } finally { release.resolve(); await pending; timeout.mockRestore(); await f.emit("session_shutdown", {}, f.ctx); }
+});
+
+for (const stop of ["deadline", "abort"] as const)
+test(`public Broker fallback read hook settles on ${stop} if native executor ownership is unavailable`, async () => {
+  const f = await fixture(true), operation = new AbortController();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  f.ctx.signal = operation.signal;
+  const h = await f.install(async purpose => { entered.resolve(); await release.promise; return [f.graph(purpose)]; });
+  await h.host.refresh(f.ctx);
+  const nativeTimeout = globalThis.setTimeout;
+  const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) =>
+    nativeTimeout(callback, delay === 60_000 && stop === "deadline" ? 15 : delay, ...args));
+  const input = { path: f.root.ref! }, original = { ...input };
+  const pending = f.emit("tool_call", { toolName: "read", toolCallId: "fallback-read", input }, f.ctx);
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await entered.promise;
+    if (stop === "abort") operation.abort();
+    const result = await Promise.race([pending, new Promise<undefined>(resolve => { watchdog = nativeTimeout(() => resolve(undefined), 100); })]);
+    expect(result).toContainEqual(expect.objectContaining({ block: true, admission: expect.objectContaining({
+      code: stop === "abort" ? "SOURCE_ACTIVATION_CANCELLED" : "SOURCE_PREPARATION_TIMEOUT", signal_aborted: true,
+    }) }));
+    expect(input).toEqual(original); expect(f.persisted).toEqual([]);
+    release.resolve(); await new Promise(resolve => nativeTimeout(resolve, 0));
+    expect(f.persisted).toEqual([]);
+    expect(await f.emit("tool_result", { toolName: "read", toolCallId: "fallback-read", input,
+      content: [{ type: "text", text: f.root.body! }], isError: false }, f.ctx)).toEqual([undefined]);
+  } finally { if (watchdog) clearTimeout(watchdog); release.resolve(); await pending; timeout.mockRestore(); await f.emit("session_shutdown", {}, f.ctx); }
 });
 
 test("exact use survives unrelated discovery errors while discovery remains failed", async () => {
@@ -978,7 +1144,7 @@ test("one cancelled native preparation cannot cancel another waiter or return la
 
 test("failed exact-file validation and output budget do not commit an explicit refreshed selection", async () => {
   const f = await fixture(), { tool } = await f.install();
-  await expect(tool.execute("invalid", { ref: f.root.ref + "?file_id=foreign", refresh: true }, undefined, undefined, f.ctx)).rejects.toThrow();
+  await expect(tool.execute("invalid", { ref: f.root.ref + "&file_id=foreign", refresh: true }, undefined, undefined, f.ctx)).rejects.toThrow();
   expect(f.persisted).toEqual([]);
   const g = await fixture(), tiny = await g.install(async purpose => [{ ...g.graph(purpose), budget: { ...g.graph(purpose).budget, maxContextBytes: 1 } }]);
   await expect(tiny.tool.execute("budget", { ref: g.root.ref, refresh: true }, undefined, undefined, g.ctx)).rejects.toThrow("PREPARE_CONTEXT_BUDGET");
@@ -1013,7 +1179,7 @@ test("session replacement settles a pending Pi input without touching the revoke
   await f.emit("session_switch", { type: "session_switch" }, next);
   expect(sourceSignal?.aborted).toBe(true);
   pending.resolve();
-  expect(await cancelled).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+  expect(await cancelled).toBeUndefined();
   expect(staleReads).toBe(0);
   expect(f.persisted).toEqual([]);
   expect(await f.emit("input", { source: "rpc", text: "$root retry" }, next)).toEqual([{ action: "continue" }]);
@@ -1043,8 +1209,8 @@ test("repeated native prepare bodies deduplicate only the provider projection an
   expect(second.content[0]!.text).toContain("Exact root");
 });
 
-async function nativeRead(f: Awaited<ReturnType<typeof fixture>>, reference: string, toolCallId: string): Promise<AgentMessage> {
-  const input = { path: reference };
+async function nativeRead(f: Awaited<ReturnType<typeof fixture>>, reference: string, toolCallId: string, from?: string): Promise<AgentMessage> {
+  const input = { path: reference, ...(from === undefined ? {} : { from }) };
   const admission = await f.emit("tool_call", { toolName: "read", toolCallId, input }, f.ctx);
   expect(admission.some(value => value && typeof value === "object" && "block" in value)).toBe(false);
   const content = [{ type: "text" as const, text: await readFile(input.path, "utf8") }];
@@ -1054,14 +1220,292 @@ async function nativeRead(f: Awaited<ReturnType<typeof fixture>>, reference: str
   return { role: "toolResult", toolName: "read", toolCallId, content: annotated.content ?? content, details: annotated.details, isError: false };
 }
 
+function oneRecordGraph(f: Awaited<ReturnType<typeof fixture>>, record: SkillRecord, purpose: PreparationPurpose): PreparedHostGraph {
+  const binding = record.preparationBinding!;
+  const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope: binding.scope,
+    roots: [record.id!], required: [], bindings: [binding] };
+  const validatedAt = Date.now();
+  return { ...f.graph(purpose), purpose, roots: vector.roots, bindings: vector.bindings,
+    records: [{ ...record, currentObservation: { origin: "remote", validatedAt, validUntil: validatedAt + 60_000 } }],
+    lock: { ...vector, sha256: hash(canonical(vector)) }, effects: noConsumptionWrites(),
+    usage: { prepared_nodes: 1, instruction_bytes: Buffer.byteLength(record.body!), context_bytes: 4000, max_depth: 0 } };
+}
+
+test("an explicit B list returns a usable scoped candidate without changing the current Library A", async () => {
+  const a = await fixture(true), b = await fixture(true, false, "pi", "b".repeat(64), false,
+    { libraryId: "00000000-0000-4000-8000-000000000099", sourceId: "library-b" });
+  const rootA = a.root.locator, rootB = b.root.locator;
+  if (rootA?.type !== "shared_skill" || rootB?.type !== "shared_skill") throw new Error("Expected complete owners");
+  a.sources[0]!.library = rootA.library_id; b.sources[0]!.library = rootB.library_id; a.sources.push(...b.sources);
+  const table = { database_id: rootA.database_id, data_source_id: rootA.data_source_id, property_ids: {} };
+  const selection = createLibrarySelection({ sources: a.sources }, async options => ({ version: 2,
+    library_id: options.library ?? rootA.library_id, operation_id: "fixture-init", skills: table, files: table, records: table, sources: table }),
+  async options => options.library ?? rootA.library_id);
+  const metadata = (records: SkillRecord[]) => ({ records: records.map(record => ({ ...record, body: undefined, preparationBinding: undefined })), failures: [] });
+  const requests: Array<string | undefined> = [], entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  let delay = false;
+  const { search, tool, host } = await a.install(async (purpose, _signal, _policy, requested) => {
+    expect(requested.map(record => [record.id, record.sourceId, record.sourceScope])).toEqual([[b.root.id, "library-b", b.root.sourceScope]]);
+    return [oneRecordGraph(b, b.root, purpose)];
+  }, { librarySelection: selection, getRecords: async (_ctx, _signal, _refresh, source) => {
+    requests.push(source);
+    if (source === "library-b" && delay) { entered.resolve(); await release.promise; }
+    return metadata(source === "library-b" ? b.records : a.records);
+  }, lookupReference: async () => metadata(a.records), persistGraphs: (graphs, ctx, mode) => persistSessionSelection(a.api, ctx, graphs, mode) });
+  await host.refresh(a.ctx);
+  const before = sessionSelection(a.ctx);
+  const listed = JSON.parse(sourceMessageText((await search.execute("explicit-b", { source: "library-b", query: "root", refresh: true }, undefined, undefined, a.ctx)).content));
+  expect(listed.records).toHaveLength(1); expect(listed.records[0].ref).toMatch(/^sr:/);
+  expect(requests.at(-1)).toBe("library-b"); expect(a.calls).toEqual([]); expect(a.resourceReads).toEqual([]);
+  expect(JSON.stringify(listed)).not.toContain(b.root.body!); expect(sessionSelection(a.ctx)).toEqual(before);
+  expect((await selection.selected(a.ctx))?.source.id).toBe("controlled");
+  const used = await tool.execute("use-listed-b", { ref: listed.records[0].ref }, undefined, undefined, a.ctx);
+  expect(preparationDetails(used)).toMatchObject({ records: [{ binding: { scope: b.root.sourceScope, record: { id: b.root.id, locator: rootB } } }] });
+  expect(JSON.parse(sourceMessageText(used.content)).records.map((record: { content: string }) => record.content)).toEqual([b.root.body]);
+  expect(sessionSelection(a.ctx).scopes.get(b.root.sourceScope!)?.bindings.get(b.root.id!)).toEqual(b.root.preparationBinding);
+  expect((await selection.selected(a.ctx))?.source.id).toBe("controlled");
+  const defaults = JSON.parse(sourceMessageText((await search.execute("still-a", { query: "root" }, undefined, undefined, a.ctx)).content));
+  expect(defaults.records.map((record: { source: string }) => record.source)).toEqual(["controlled"]);
+  delay = true;
+  const retired = search.execute("retired-b", { source: "library-b", query: "member", refresh: true }, undefined, undefined, a.ctx).catch(error => error);
+  await entered.promise; host.invalidate(); release.resolve();
+  expect(await retired).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+  await expect(tool.execute("unpublished-b", { ref: b.member.ref }, undefined, undefined, a.ctx)).rejects.toMatchObject({ code: "SOURCE_REFERENCE_MISSING" });
+  expect(a.calls).toEqual(["use"]);
+});
+
+for (const spelling of ["canonical", "transport-alias"] as const) for (const discovered of [false, true])
+test("full-owner use routes A from active B with " + spelling + " and A directory " + discovered, async () => {
+  const b = await fixture(true), a = await fixture(true, false, "pi", "b".repeat(64), false,
+    { libraryId: "00000000-0000-4000-8000-000000000099", sourceId: "library-a" });
+  b.sources.push(...a.sources);
+  const resolutions: string[] = [], targets: string[] = [];
+  const { tool, host } = await b.install(async (purpose, _signal, _policy, requested) => {
+    expect(requested).toHaveLength(1);
+    const owner = requested[0]?.sourceId === a.root.sourceId ? a : b;
+    expect(requested[0]?.id).toBe(owner.root.id);
+    targets.push(owner.root.id!);
+    return [oneRecordGraph(owner, owner.root, purpose)];
+  }, {
+    getRecords: async () => ({ records: discovered ? [...b.records, ...a.records] : b.records, failures: [] }),
+    lookupReference: async () => ({ records: b.records, failures: [] }),
+    resolveSkillReference: async ref => { resolutions.push(ref); return { ref: a.root.ref!, record: a.root }; },
+  });
+  await b.emit("input", { source: "rpc", text: "$root task in B" }, b.ctx);
+  await host.prepareMany([b.root], b.ctx);
+  const ref = spelling === "canonical" ? a.root.id! : a.root.id!.replace("?", "/entrypoint.md/..?");
+  const result = await tool.execute("cross-owner-use", { ref }, undefined, undefined, b.ctx);
+  expect(targets).toEqual([b.root.id!, a.root.id!]);
+  expect(resolutions).toEqual(discovered ? [] : [ref]);
+  const body = JSON.parse(sourceMessageText(result.content));
+  expect(body.records.map((record: { content: string }) => record.content)).toEqual([a.root.body]);
+  expect(preparationDetails(result)).toMatchObject({ records: [
+    { binding: { record: { id: a.root.id, locator: a.root.locator }, scope: a.root.sourceScope } },
+  ] });
+});
+
+test("full-owner lookup rejects a foreign owner or changed established scope before preparation", async () => {
+  for (const mismatch of ["owner", "scope"] as const) {
+    const b = await fixture(true), a = await fixture(true, false, "pi", "b".repeat(64), false,
+      { libraryId: "00000000-0000-4000-8000-000000000099", sourceId: "library-a" });
+    b.sources.push(...a.sources);
+    const { tool, host } = await b.install(async purpose => [oneRecordGraph(b, b.root, purpose)], {
+      getRecords: async () => ({ records: [...b.records, a.member], failures: [] }),
+      resolveSkillReference: async () => ({ ref: mismatch === "owner" ? b.root.ref! : a.root.ref!,
+        record: mismatch === "owner" ? b.root : { ...a.root, sourceScope: "c".repeat(64) } }),
+    });
+    await b.emit("input", { source: "rpc", text: "$root task in B" }, b.ctx);
+    await host.prepareMany([b.root], b.ctx);
+    const entries = structuredClone(b.session.entries);
+    await expect(tool.execute("wrong-" + mismatch, { ref: a.root.id! }, undefined, undefined, b.ctx))
+      .rejects.toMatchObject({ code: "SOURCE_IDENTITY_MISMATCH" });
+    expect(b.calls).toEqual(["use"]);
+    expect(b.session.entries).toEqual(entries);
+  }
+});
+
+test("full-owner lookup cannot publish after cancellation, session replacement or a retired generation", async () => {
+  for (const change of ["cancel", "session", "generation"] as const) {
+    const b = await fixture(true), a = await fixture(true, false, "pi", "b".repeat(64), false,
+      { libraryId: "00000000-0000-4000-8000-000000000099", sourceId: "library-a" });
+    b.sources.push(...a.sources);
+    const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<{ ref: string; record: SkillRecord }>();
+    const controller = new AbortController();
+    const { tool, host } = await b.install(undefined, {
+      resolveSkillReference: async () => { started.resolve(); return finish.promise; },
+    });
+    const pending = tool.execute("late-owner", { ref: a.root.id! }, controller.signal, undefined, b.ctx)
+      .then(value => ({ value }), error => ({ error }));
+    expect(await Promise.race([started.promise.then(() => "started"), pending])).toBe("started");
+    if (change === "cancel") controller.abort();
+    else if (change === "session") b.session.id = "another-session";
+    else host.invalidate();
+    finish.resolve({ ref: a.root.ref!, record: a.root });
+    expect(await pending).toMatchObject({ error: { code: "SOURCE_ACTIVATION_CANCELLED" } });
+    expect(b.calls).toEqual([]); expect(b.persisted).toEqual([]);
+  }
+});
+
+test("full-owner adoption keeps its authored short target and that target's old pin while B is active", async () => {
+  const b = await fixture(true), a = await fixture(true, false, "pi", "b".repeat(64), false,
+    { libraryId: "00000000-0000-4000-8000-000000000099", sourceId: "library-a" });
+  b.sources.push(...a.sources);
+  const old = a.required, current = { ...old, snapshotId: "s_" + hash("new A required"), body: "New A required bytes.\n" };
+  persistSessionSelection(b.api, b.ctx, [oneRecordGraph(a, old, "use")], "extend");
+  const selected = sessionSelection(b.ctx).scopes.get(a.root.sourceScope!)!.bindings.get(old.id!)!;
+  const targets: string[] = [], relative: unknown[] = [];
+  const { tool, host } = await b.install(async (purpose, _signal, _policy, requested, pins) => {
+    const record = requested[0]!;
+    const owner = record.sourceId === a.root.sourceId ? a : b;
+    const original = owner.records.find(value => value.id === record.id)!;
+    if (record.id === old.id) expect(pins?.get(old.id!)).toBe(old.snapshotId);
+    targets.push(record.id!);
+    return [oneRecordGraph(owner, original, purpose)];
+  }, {
+    resolveSkillReference: async (ref, _ctx, _signal, _refresh, sourceId) => {
+      const selector = parseNativeReference(ref).selector;
+      if (selector === a.root.id) return { ref: a.root.ref!, record: a.root };
+      expect(selector).toBe(old.id); expect(sourceId).toBe(a.root.sourceId);
+      return { ref, record: current };
+    },
+    resolveRelativeReference: async (record, from, path) => {
+      relative.push({ id: record.id, sourceId: record.sourceId, from, path }); return current.ref!;
+    },
+    sessionBinding: (record, ctx) => sessionSelection(ctx).scopes.get(record.sourceScope!)?.bindings.get(record.id!),
+    persistGraphs: (graphs, ctx, mode) => persistSessionSelection(b.api, ctx, graphs, mode),
+  });
+  await b.emit("input", { source: "rpc", text: "$root task in B" }, b.ctx);
+  await host.prepareMany([b.root], b.ctx);
+  await tool.execute("full-A", { ref: a.root.id! }, undefined, undefined, b.ctx);
+  const path = "skill://required/SKILL.md";
+  const read = await nativeRead(b, path, "authored-short-A", a.root.preparationBinding!.ref);
+  expect(relative).toEqual([{ id: a.root.id, sourceId: a.root.sourceId, from: a.root.preparationBinding!.ref, path }]);
+  expect(targets).toEqual([b.root.id!, a.root.id!, old.id!]);
+  expect(sourceMessageText(read.content)).toStartWith(old.body!);
+  expect(sourceMessageText(read.content)).not.toContain(current.body);
+  expect(read.details).toMatchObject({ contextBrokerRead: { binding: { record: { id: old.id } }, snapshotId: old.snapshotId } });
+  expect(sessionSelection(b.ctx).scopes.get(a.root.sourceScope!)!.bindings.get(old.id!)).toEqual(selected);
+});
+
+test("relative read uses the actual fixed containing file and inspects the independently resolved member", async () => {
+  const f = await fixture(true), resolved: Array<{ id: string | undefined; from: string; path: string }> = [];
+  const h = await f.install(async (purpose, _signal, _policy, requested) => {
+    expect(purpose).toBe("inspect");
+    const selected = f.records.find(record => record.id === requested[0]?.id);
+    if (!selected) throw new Error("Unknown requested owner");
+    return [oneRecordGraph(f, selected, purpose)];
+  }, { resolveRelativeReference: async (record, from, path, _ctx, _signal, policy) => {
+    resolved.push({ id: record.id, from, path }); policy.observeEffects?.(noConsumptionWrites()); return f.member.ref!;
+  }, persistGraphs: (graphs, ctx, mode) => persistSessionSelection(f.api, ctx, graphs, mode) });
+  await nativeRead(f, f.root.ref!, "containing-main");
+  const main = h.host.selectedModelReference(f.root, f.ctx)!;
+  const resource = h.host.selectedModelFiles(f.root, f.ctx)!.find(file => file.path === "resources/guide.md")!;
+  const originalDirectory = JSON.stringify(f.root.entryManifest);
+  const fromMain = await nativeRead(f, "../member/SKILL.md", "from-main", main);
+  const fromResource = await nativeRead(f, "../../member/SKILL.md", "from-resource", resource.ref);
+  expect(resolved).toEqual([
+    { id: f.root.id, from: f.root.preparationBinding!.ref, path: "../member/SKILL.md" },
+    { id: f.root.id, from: f.root.entryManifest!.files.find(file => file.path === resource.path)!.ref, path: "../../member/SKILL.md" },
+  ]);
+  for (const result of [fromMain, fromResource]) {
+    expect(sourceMessageText(result.content)).toStartWith(f.member.body!);
+    expect(sourceMessageText(result.content)).not.toContain(f.required.body!);
+    expect(result.details).toMatchObject({ contextBrokerRead: { binding: { record: { id: f.member.id } }, snapshotId: f.member.snapshotId,
+      readStatus: { purpose: "inspect", activation_effect: "unchanged", requires_acquisition: "not_performed" } } });
+  }
+  expect(f.calls.every(purpose => purpose === "inspect")).toBe(true);
+  const inspected = sessionSelection(f.ctx).scopes.get(scope)!;
+  expect([...inspected.bindings.keys()].sort()).toEqual([f.root.id!, f.member.id!].sort());
+  expect(inspected.graphs.every(graph => graph.purpose === "inspect" && graph.required.length === 0)).toBe(true);
+  expect(inspected.bindings.get(f.root.id!)!.snapshot_id).toBe(f.root.snapshotId);
+  expect(inspected.bindings.get(f.member.id!)!.snapshot_id).toBe(f.member.snapshotId);
+  expect(JSON.stringify(f.root.entryManifest)).toBe(originalDirectory);
+});
+
+test("relative read preserves a target's already selected snapshot when its current version changes", async () => {
+  for (const discovered of [true, false]) {
+    const f = await fixture(true), old = f.member;
+    const current = { ...old, snapshotId: "s_" + hash("member current"), versionId: hash("new member bytes"), body: "New member bytes must not be acquired.\n" };
+    f.records.splice(f.records.indexOf(old), 1, current);
+    persistSessionSelection(f.api, f.ctx, [oneRecordGraph(f, old, "use")], "extend");
+    const selectedBefore = sessionSelection(f.ctx).scopes.get(scope)!.bindings.get(old.id!)!;
+    const usedBefore = sessionSelection(f.ctx).scopes.get(scope)!.graphs.filter(graph => graph.purpose === "use");
+    await f.install(async (purpose, _signal, _policy, requested, pins) => {
+      expect(purpose).toBe("inspect"); expect(requested[0]?.id).toBe(old.id);
+      expect(pins?.get(old.id!)).toBe(old.snapshotId);
+      return [oneRecordGraph(f, old, purpose)];
+    }, { resolveRelativeReference: async () => current.ref!,
+      ...(!discovered ? { getRecords: async () => ({ records: [f.root], failures: [] }),
+        resolveSkillReference: async (ref: string) => ({ ref, record: current }) } : {}),
+      sessionBinding: (record, ctx) => sessionSelection(ctx).scopes.get(scope)?.bindings.get(record.id!),
+      persistGraphs: (graphs, ctx, mode) => persistSessionSelection(f.api, ctx, graphs, mode) });
+    const read = await nativeRead(f, "../member/SKILL.md", "kept-target-version", f.root.preparationBinding!.ref);
+    expect(sourceMessageText(read.content)).toStartWith(old.body!);
+    expect(sourceMessageText(read.content)).not.toContain(current.body);
+    expect(read.details).toMatchObject({ contextBrokerRead: { binding: { record: { id: old.id } }, snapshotId: old.snapshotId } });
+    expect(sessionSelection(f.ctx).scopes.get(scope)!.bindings.get(old.id!)).toEqual(selectedBefore);
+    expect([...sessionSelection(f.ctx).scopes.get(scope)!.roots]).toEqual([old.id!]);
+    expect(sessionSelection(f.ctx).scopes.get(scope)!.graphs.filter(graph => graph.purpose === "use")).toEqual(usedBefore);
+  }
+});
+
+test("relative lookup stays in its containing configured source and rejects foreign target metadata", async () => {
+  for (const foreign of [false, true]) {
+    const f = await fixture(true), lookups: unknown[] = [];
+    await f.install(async purpose => [oneRecordGraph(f, f.member, purpose)], {
+      getRecords: async () => ({ records: [f.root], failures: [] }),
+      resolveRelativeReference: async () => f.member.ref!,
+      resolveSkillReference: async (ref, _ctx, _signal, refresh, sourceId) => {
+        lookups.push({ ref, refresh, sourceId });
+        return { ref, record: foreign ? { ...f.member, sourceId: "other-source" } : f.member };
+      },
+    });
+    const input = { path: "../member/SKILL.md", from: f.root.preparationBinding!.ref };
+    const result = await f.emit("tool_call", { toolName: "read", toolCallId: "scoped-target", input }, f.ctx);
+    expect(lookups).toEqual([{ ref: f.member.ref, refresh: false, sourceId: "controlled" }]);
+    if (foreign) { expect(JSON.stringify(result)).toContain("SOURCE_IDENTITY_MISMATCH"); expect(f.calls).toEqual([]); }
+    else { expect(input.path).toBe(f.member.path); expect(input).not.toHaveProperty("from"); expect(f.calls).toEqual(["inspect"]); }
+  }
+});
+
+test("relative Source failures do not guess filesystem paths or prepare another owner", async () => {
+  for (const code of ["CURRENT_SOURCE_CHANGED", "CURRENT_SOURCE_REFERENCE_AMBIGUOUS", "CURRENT_SOURCE_EXTERNAL_REFERENCE", "CURRENT_SOURCE_REQUIRED"]) {
+    const f = await fixture(true);
+    await f.install(undefined, { resolveRelativeReference: async () => { throw new SourceError(code, "controlled"); } });
+    const input = { path: "../member/SKILL.md", from: f.root.preparationBinding!.ref }, original = { ...input };
+    const results = await f.emit("tool_call", { toolName: "read", toolCallId: code, input }, f.ctx);
+    expect(JSON.stringify(results)).toContain(code); expect(input).toEqual(original);
+    expect(f.calls).toEqual([]); expect(f.resourceReads).toEqual([]); expect(f.persisted).toEqual([]);
+  }
+});
+
+test("relative resolution cannot publish a target after cancellation, a session change or a retired generation", async () => {
+  for (const change of ["cancel", "session", "generation"] as const) {
+    const f = await fixture(true), started = Promise.withResolvers<void>(), finish = Promise.withResolvers<string>();
+    const controller = new AbortController(); f.ctx.signal = controller.signal;
+    await f.install(undefined, { resolveRelativeReference: async () => { started.resolve(); return finish.promise; } });
+    const input = { path: "../member/SKILL.md", from: f.root.preparationBinding!.ref }, original = { ...input };
+    const reading = f.emit("tool_call", { toolName: "read", toolCallId: "late-relative", input }, f.ctx);
+    await started.promise;
+    if (change === "cancel") controller.abort();
+    else if (change === "session") f.session.id = "another-session";
+    else await f.emit("session_switch", { reason: "new" }, f.ctx);
+    finish.resolve(f.member.ref!);
+    const results = await reading;
+    expect(JSON.stringify(results)).toContain("SOURCE_ACTIVATION_CANCELLED"); expect(input).toEqual(original);
+    expect(f.calls).toEqual([]); expect(f.persisted).toEqual([]);
+    expect(sessionSelection(f.ctx).scopes.size).toBe(0);
+  }
+});
+
 test("short-ref directory projection preserves older pins, non-main references and canonical graph locks", async () => {
   const f = await fixture(true), oldPin = "s_" + hash("older root version");
   const relation = (name: string, ref: string) => ({ id: f.root.id!, ref, kind: "skill", name, description: name, availability: "available" });
   const main = f.root.preparationBinding!.ref, resource = f.root.entryManifest!.files.find(file => file.path !== "SKILL.md")!.ref;
   const unchanged = [
-    relation("old-pin", f.root.ref + "?snapshot=" + oldPin),
+    relation("old-pin", withNativeSnapshot(f.root.ref, oldPin)),
     relation("unfixed-resource", f.root.ref!.replace("SKILL.md", "resources/guide.md")),
-    relation("unfixed-file-id", f.root.ref + "?file_id=main-root"),
+    relation("unfixed-file-id", f.root.ref + "&file_id=main-root"),
     relation("other-selector", f.member.ref!),
   ];
   f.root.preparationDirectory!.references = [...unchanged, relation("fixed-main", main), relation("fixed-resource", resource)];
@@ -1540,7 +1984,7 @@ test(code + " does not taint tracked inspection content in another " + boundary,
     if (deny) {
       if (code === "AUTH_REQUIRED") throw new SourceError(code, "controlled");
       if (f.root.locator?.type !== "shared_skill") throw new Error("Expected physical shared owner");
-      throw exactDenial({ ...f.root, ref: "skill://" + f.root.locator.page_id + "/SKILL.md" }, code);
+      throw exactDenial({ ...f.root, ref: "https://www.notion.so/" + f.root.locator.page_id.replaceAll("-", "") }, code);
     }
     return [{ ...(showingOther ? other : f).graph(purpose), sourceId: showingOther ? sourceId : "controlled" }];
   }, { getRecords: async () => ({ records: (showingOther ? other : f).records.map(record => ({
@@ -1559,4 +2003,91 @@ test(code + " does not taint tracked inspection content in another " + boundary,
   // Metadata contains no new currentObservation. This checks the original
   // scoped denial, without a successful body acquisition clearing it first.
   expect(() => host.assertCanRestore(other.root)).not.toThrow();
+});
+
+for (const suspended of ["print metadata", "active restoration"] as const)
+test(`the whole Pi context deadline bounds a suspended ${suspended} producer without cancelling the user`, async () => {
+  const f = await fixture(true), operation = new AbortController();
+  const entered = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>(), completed = Promise.withResolvers<void>();
+  const notices: Array<{ text: string; level?: string }> = [];
+  let aborts = 0, confirmations = 0, restorationSignal: AbortSignal | undefined;
+  const image = { type: "image" as const, mimeType: "image/png", data: "aW1hZ2UtYnl0ZXM=" };
+  const text = "$root explain my question and this attached image.";
+  const user: AgentMessage = { role: "user", content: [{ type: "text", text }, image] };
+  const messages = [user], original = JSON.stringify(messages);
+  f.ctx.mode = suspended === "print metadata" ? "print" : "rpc";
+  f.ctx.signal = operation.signal;
+  f.ctx.model = { api: "openai-completions", baseUrl: "http://127.0.0.1:8989/v1" };
+  f.ctx.abort = () => { aborts++; operation.abort(); };
+  f.ctx.ui = { notify(text, level) { notices.push({ text, level }); } };
+  const h = await f.install(undefined, {
+    ...(suspended === "print metadata" ? { getRecords: async () => {
+      entered.resolve();
+      // This producer deliberately ignores cancellation and remains unresolved
+      // until after the host deadline has already allowed the user to continue.
+      await finish.promise; completed.resolve();
+      return { records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined })), failures: [] };
+    } } : { restoreActive: async (current: AgentMessage[], _ctx: ExtensionContext, signal: AbortSignal) => {
+      restorationSignal = signal; entered.resolve();
+      await finish.promise; completed.resolve();
+      return { messages: current, restored: [{ customType: "context-broker", content: f.root.body!, display: false,
+        details: { records: [sourceDeliveryReceipt(f.root, f.root.body!)] } }], notices: [] };
+    } }),
+    buildPreparedPrompt: async (_text, _ctx, _signal, records = []) => {
+      const content = records.map(record => record.body!).join("\n\n");
+      return { customType: "context-broker", content, display: false,
+        details: { records: records.map(record => sourceDeliveryReceipt(record, content)) } };
+    },
+    confirmDelivery() { confirmations++; },
+  });
+  if (suspended === "active restoration") await h.host.refresh(f.ctx);
+  const nativeTimeout = globalThis.setTimeout, deadlines: number[] = [];
+  const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
+    if (delay === 60_000) deadlines.push(delay);
+    return nativeTimeout(callback, delay === 60_000 ? 20 : delay, ...args);
+  });
+  let pending: Promise<unknown[]> | undefined;
+  try {
+    expect(await f.emit("input", { source: "rpc", text, images: [image] }, f.ctx)).toEqual([{ action: "continue" }]);
+    await f.emit("before_agent_start", { prompt: text, systemPrompt: "base" }, f.ctx);
+    await f.emit("agent_start", {}, f.ctx);
+    pending = f.emit("context", { messages }, f.ctx);
+    await entered.promise;
+    const [output] = await pending;
+    if (!output || typeof output !== "object" || !("messages" in output) || !Array.isArray(output.messages))
+      throw new Error("Expected a nonblocking context result");
+    expect(deadlines).toEqual([60_000]);
+    expect(output.messages).toContainEqual(user);
+    expect(JSON.stringify(output)).toContain("SOURCE_PREPARATION_TIMEOUT");
+    expect(JSON.stringify(output)).not.toContain("Exact root"); expect(JSON.stringify(output)).not.toContain("Exact required");
+    expect(notices.some(notice => notice.level === "warning" && notice.text.includes("SOURCE_PREPARATION_TIMEOUT"))).toBe(true);
+    expect(operation.signal.aborted).toBe(false); expect(aborts).toBe(0);
+    expect(f.calls).toEqual(suspended === "print metadata" ? [] : ["use"]);
+    if (suspended === "active restoration") expect(restorationSignal?.aborted).toBe(true);
+    const providerUser = { role: "user", content: [{ type: "text", text },
+      { type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.data}` } }] };
+    const payload = { messages: [providerUser, ...output.messages.filter(message => message.role !== "user")
+      .map(message => ({ role: "user", content: sourceMessageText(message.content) }))] };
+    const [sent] = await f.emit("before_provider_request", { type: "before_provider_request", payload }, f.ctx);
+    if (!sent || typeof sent !== "object" || !("messages" in sent) || !Array.isArray(sent.messages))
+      throw new Error("Expected a nonblocking provider payload");
+    expect(sent.messages.filter(message => JSON.stringify(message) === JSON.stringify(providerUser))).toHaveLength(1);
+    expect(JSON.stringify(sent)).toContain("SOURCE_PREPARATION_TIMEOUT");
+    expect(JSON.stringify(sent)).not.toContain("Exact root"); expect(JSON.stringify(sent)).not.toContain("Exact required");
+    await f.emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} }, f.ctx);
+    expect(f.persisted).toEqual([]); expect(confirmations).toBe(0);
+    const frozen = JSON.stringify(output);
+    finish.resolve(); await completed.promise;
+    await new Promise(resolve => nativeTimeout(resolve, 0));
+    const [later] = await f.emit("context", { messages }, f.ctx);
+    expect(JSON.stringify(later)).not.toContain("Exact root"); expect(JSON.stringify(later)).not.toContain("Exact required");
+    expect(JSON.stringify(output)).toBe(frozen); expect(JSON.stringify(messages)).toBe(original);
+    expect(f.persisted).toEqual([]); expect(confirmations).toBe(0); expect(aborts).toBe(0);
+    expect(f.session.entries.some(entry => entry.type === "custom"
+      && ["context-broker-selected-graph", "context-broker-active-sources"].includes(entry.customType))).toBe(false);
+  } finally {
+    finish.resolve(); await pending?.catch(() => undefined);
+    timeout.mockRestore();
+    await f.emit("agent_end", {}, f.ctx); await f.emit("session_shutdown", {}, f.ctx);
+  }
 });

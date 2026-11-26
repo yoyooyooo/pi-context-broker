@@ -7,11 +7,12 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { fileInventory } from './next-build-identity.mjs';
+import { fileInventory, selectedCliInputs } from './next-build-identity.mjs';
 import { verifyCurrentBuild, verifyNextWorktreePair } from './verify-next-worktrees.mjs';
-import { aggregateDailyDeliveries, validateDailyReceipt } from './verify-pi-daily-installation.mjs';
+import { aggregateDailyDeliveries, validateDailyDoctorCli, validateDailyLibraryRequests, validateDailyReceipt } from './verify-pi-daily-installation.mjs';
 
 const save = (path, value) => writeFile(path, JSON.stringify(value) + '\n');
+const selectedRefBytes = await readFile(new URL('../packages/context-broker/dist/ntn-skills-ref.cjs', import.meta.url));
 const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
 test('help is read-only and needs no config, checkout or PATH tools', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'next-worktree-help-'));
@@ -49,15 +50,17 @@ async function fixture() {
   await writeFile(join(cliRoot, 'skills/SKILL.md'), 'current skill\n');
   await writeFile(join(cliRoot, 'dist/ntn-skills.js'), 'current CLI\n');
   await writeFile(join(cliRoot, 'dist/sdk.js'), 'current SDK\n');
+  await writeFile(join(cliRoot, 'dist/ref.cjs'), selectedRefBytes);
+  await writeFile(join(cliRoot, 'THIRD_PARTY_NOTICES.md'), 'current complete third-party notices\n');
   await writeFile(join(brokerRoot, 'dist/ntn-skills-sdk.mjs'), 'embedded current SDK\n');
   async function cliBuild() {
     await save(join(cliRoot, 'dist/next-build.json'), { version: 1, kind: 'cli-build', input_roots: ['src'],
-      source: await fileInventory(cli, ['src']), artifacts: await fileInventory(cliRoot, ['dist/ntn-skills.js', 'dist/sdk.js', 'skills']) });
+      source: await fileInventory(cli, ['src']), artifacts: await fileInventory(cliRoot, ['dist/ntn-skills.js', 'dist/sdk.js', 'dist/ref.cjs', 'skills']) });
   }
   await cliBuild();
   await save(join(brokerRoot, 'dist/next-build.json'), { version: 1, kind: 'broker-build', input_roots: ['src'],
     source: await fileInventory(broker, ['src']), artifacts: await fileInventory(brokerRoot, ['dist/ntn-skills-sdk.mjs']),
-    selected_cli: await fileInventory(cliRoot, ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills']) });
+    selected_cli: await fileInventory(cliRoot, selectedCliInputs) });
   function commit(root) {
     git(root, 'add', '.');
     git(root, '-c', 'user.name=Next gate fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture');
@@ -122,6 +125,12 @@ test('a newly built CLI cannot pass with the previous embedded SDK', async () =>
   await f.cliBuild(); f.config.worktrees.cli.commit = f.commit(f.cli);
   await assert.rejects(verifyNextWorktreePair(f.config), /Source or artifact differs.*dist\/sdk/);
 });
+test('a newly built pure reference module cannot pass with the previous selected CLI binding', async () => {
+  const f = await fixture();
+  await writeFile(join(f.cliRoot, 'dist/ref.cjs'), Buffer.concat([selectedRefBytes, Buffer.from('\n// New selected reference artifact\n')]));
+  await f.cliBuild(); f.config.worktrees.cli.commit = f.commit(f.cli);
+  await assert.rejects(verifyNextWorktreePair(f.config), /Source or artifact differs.*dist\/ref\.cjs/);
+});
 test('next branch, exact target commit and actual package path are mandatory', async () => {
   const f = await fixture();
   await assert.rejects(verifyNextWorktreePair({ ...f.config, cliRoot: f.brokerRoot }), /outside the target/);
@@ -152,6 +161,8 @@ async function dailyFixture() {
   const started = Date.now() - 5000;
   f.config.version = 1;
   f.config.delivery = { id: randomUUID(), startedAt: new Date(started).toISOString() };
+  f.config.library = '11111111-1111-4111-8111-111111111111';
+  f.config.embeddedCliSha256 = 'a'.repeat(64);
   const harnessSha = createHash('sha256').update(await readFile(new URL('./verify-pi-daily-installation.mjs', import.meta.url))).digest('hex');
   function receipt(machineSha) {
     const bound = structuredClone(pair); bound.machine.sha256 = machineSha;
@@ -160,9 +171,53 @@ async function dailyFixture() {
     const file = path => ({ path, realpath: path, bytes: 1, sha256: 'f'.repeat(64) });
     const host = { file: '/controlled/node', prefix: ['/controlled/bin/pi'], path: '/controlled/bin/pi', identity: entry, parent_pid: 100,
       launcher: { ...file('/controlled/bin/pi'), realpath: entry } };
+    const library = f.config.library, database = '22222222-2222-4222-8222-222222222222', dataSource = '33333333-3333-4333-8333-333333333333';
+    const active = { in_trash: false, archived: false }, attribute = { kind: 'sdk', operation: 'list', library, requestId: 'controlled-list', request_kind: 'notion_metadata' };
+    const http = [
+      { origin: 'https://api.notion.com', method: 'GET', path: '/v1/blocks/' + library + '/children', cursor_sha256: null,
+        attribution: { ...attribute, request_kind: 'notion_body', target: { block_id: library } },
+        structure: { kind: 'root-children', root: library, has_more: false, next_cursor_sha256: null,
+          children: [{ id: database, type: 'child_database', parent: { type: 'page_id', page_id: library }, ...active }] } },
+      { origin: 'https://api.notion.com', method: 'GET', path: '/v1/databases/' + database, attribution: { ...attribute },
+        structure: { kind: 'database', id: database, parent: { type: 'page_id', page_id: library }, data_source_ids: [dataSource], ...active } },
+      { origin: 'https://api.notion.com', method: 'GET', path: '/v1/data_sources/' + dataSource, attribution: { ...attribute },
+        structure: { kind: 'data_source', id: dataSource, parent: { type: 'database_id', database_id: database }, ...active } },
+    ];
+    const doctorEntry = join(bound.broker.package_root, 'dist/ntn-skills.mjs');
+    const doctorPhase = { command: '/context-broker doctor', disposition: 'handled',
+      startedAt: new Date(started + 1200).toISOString(), finishedAt: new Date(started + 1800).toISOString() };
+    const doctorArgs = ['ctl', 'doctor', '--library', library], doctorPid = 102;
+    const meta = { pid: 101, child_pid: doctorPid, executable: '/controlled/node', script: doctorEntry,
+      real_script: doctorEntry, bundled_cli: true, script_sha256: f.config.embeddedCliSha256 };
+    const observations = [
+      { ...meta, event: 'spawn', at: new Date(started + 1250).toISOString(), cli_args: [...doctorArgs] },
+      { event: 'process_start', pid: doctorPid, ppid: 101, at: new Date(started + 1251).toISOString(),
+        executable: '/controlled/node', real_entry: doctorEntry, entry_sha256: f.config.embeddedCliSha256,
+        args_sha256: createHash('sha256').update(JSON.stringify(doctorArgs)).digest('hex') },
+    ];
+    const doctorHttp = [
+      { origin: 'https://api.notion.com', method: 'GET', path: '/v1/pages/' + library,
+        structure: { kind: 'page', id: library, ...active } },
+      ...http, { origin: 'https://api.notion.com', method: 'POST', path: '/v1/data_sources/' + dataSource + '/query' },
+    ];
+    for (const [index, request] of doctorHttp.entries()) {
+      const { structure, attribution, ...metadata } = request;
+      const sent = { ...metadata, event: 'http_start', pid: doctorPid, id: doctorPid + ':' + (index + 1),
+        at: new Date(started + 1300 + index * 10).toISOString() };
+      observations.push({ ...sent, event: 'http_created' }, sent,
+        { event: 'http_end', pid: doctorPid, id: sent.id, at: new Date(started + 1301 + index * 10).toISOString(),
+          status: 200, ...(structure ? { library_structure: structure } : {}) });
+    }
+    observations.push({ event: 'process_exit', pid: doctorPid, at: new Date(started + 1750).toISOString(), code: 0 },
+      { event: 'http_observer_end', pid: doctorPid, at: new Date(started + 1750).toISOString(), complete: true, errors: 0, pending: [] },
+      { ...meta, event: 'child_close', at: new Date(started + 1751).toISOString(), cli_args: [...doctorArgs], code: 0, signal: null,
+        stdout_bytes: 100, stdout_sha256: 'b'.repeat(64), receipt: { ok: true, transport: 'direct_http',
+          notion_api_version: '2026-03-11', authentication: 'available', skill_read: { checked: false } } });
+    const doctor = validateDailyDoctorCli(observations, { library, hostPid: 101, entry: doctorEntry,
+      sha256: f.config.embeddedCliSha256, executable: '/controlled/node', phase: doctorPhase });
     return {
       version: 2, kind: 'actual-daily-pi-autoload-and-diagnostics', scope: 'ordinary-pi-startup-and-metadata', status: 'passed',
-      evidence: 'controlled-receipt-fixture', delivery: { ...f.config.delivery },
+      evidence: 'controlled-receipt-fixture', delivery: { ...f.config.delivery }, library,
       started_at: new Date(started + 1000).toISOString(), finished_at: new Date(started + 2000).toISOString(),
       machine: { ...bound.machine }, worktrees_before: bound, worktrees_after: structuredClone(bound),
       worktrees_unchanged: true, configuration_unchanged: true, broker_files_unchanged: true, cli_shim_unchanged: true, host_files_unchanged: true,
@@ -177,9 +232,10 @@ async function dailyFixture() {
       initial_session: { sessionId: 'controlled-session', isStreaming: false, isCompacting: false },
       final_session: { sessionId: 'controlled-session', isStreaming: false, isCompacting: false },
       owned_pi: [{ pid: 101, file: host.file, args: [...host.prefix, ...args], observed_close: true, exit_code: 0, signal: null }],
-      actual_default_sdk: { source_observation_complete: true, source_command_overridden: false, owner_pid: 101, operations: [{ operation: 'list', pid: 101 }], http: [{}] },
-      explicit_doctor_cli: { doctor: { ok: true, transport: 'direct_http' } }, metadata_http_requests: 1,
-      provider_invocations: 0, tool_invocations: 0, remote_mutations: 0, current_body_reads: 0, harness: { sha256: harnessSha },
+      actual_default_sdk: { source_observation_complete: true, source_command_overridden: false, owner_pid: 101, operations: [{ operation: 'list', pid: 101, library }], http },
+      library_structure: validateDailyLibraryRequests(http, library), notion_body_requests: 2,
+      explicit_doctor_cli: doctor, phases: [doctorPhase], metadata_http_requests: 6,
+      provider_invocations: 0, tool_invocations: 0, remote_mutations: 0, skill_body_reads: 0, harness: { sha256: harnessSha },
     };
   }
   const pro = receipt(pair.machine.sha256), mini = receipt(pair.machine.sha256 === 'a'.repeat(64) ? 'b'.repeat(64) : 'a'.repeat(64));
@@ -210,6 +266,20 @@ test('old delivery, changed builds, incomplete Pi proof and failed states cannot
   assert.doesNotThrow(() => validateDailyReceipt(f.mini, f.config, f.pair));
   for (const change of [
     d => { d.delivery.id = randomUUID(); },
+    d => { d.library = randomUUID(); },
+    d => { d.notion_body_requests = 0; },
+    d => { d.notion_body_requests = 1; },
+    d => { d.metadata_http_requests++; },
+    d => { delete d.explicit_doctor_cli.observations; },
+    d => { d.explicit_doctor_cli.processes[0].pid++; },
+    d => { d.explicit_doctor_cli.http[0].pid++; },
+    d => { d.explicit_doctor_cli.library_structure.operations[0].databases = []; },
+    d => { d.explicit_doctor_cli.observations.find(row => row.event === 'spawn').cli_args[3] = randomUUID(); },
+    d => { d.explicit_doctor_cli.observations.find(row => row.event === 'http_end' && row.library_structure?.kind === 'root-children').library_structure = null; },
+    d => { d.phases[0].command = '/context-broker find'; },
+    d => { delete d.phases[0].finishedAt; },
+    d => { d.actual_default_sdk.operations[0].library = randomUUID(); },
+    d => { d.library_structure.operations[0].databases = []; },
     d => { d.started_at = new Date(Date.parse(f.config.delivery.startedAt) - 1).toISOString(); },
     d => { d.worktrees_before.cli.commit = '0'.repeat(40); },
     d => { d.worktrees_after.broker.artifacts_sha256 = '0'.repeat(64); },
@@ -235,6 +305,33 @@ test('old delivery, changed builds, incomplete Pi proof and failed states cannot
   assert.throws(() => validateDailyReceipt(f.pair, f.config, f.pair));
   assert.throws(() => validateDailyReceipt({ version: 1, kind: 'project-scoped-candidate-precheck', status: 'passed' }, f.config, f.pair));
 });
+test('a successful doctor summary cannot replace independent process and root HTTP proof', async () => {
+  const f = await dailyFixture();
+  const receipt = structuredClone(f.mini);
+  receipt.explicit_doctor_cli = { doctor: { ok: true, transport: 'direct_http', skill_read: { checked: false } } };
+  assert.throws(() => validateDailyReceipt(receipt, f.config, f.pair));
+});
+
+test('internally valid doctor evidence outside this run or a repeated doctor phase cannot close delivery', async () => {
+  const f = await dailyFixture();
+  for (const offset of [-60000, 60000]) {
+    const receipt = structuredClone(f.mini), phase = receipt.phases[0];
+    const shift = value => new Date(Date.parse(value) + offset).toISOString();
+    phase.startedAt = shift(phase.startedAt); phase.finishedAt = shift(phase.finishedAt);
+    const observations = receipt.explicit_doctor_cli.observations.map(row => ({ ...row, at: shift(row.at) }));
+    // Rebuild a fully consistent proof: only its binding to this run is invalid.
+    receipt.explicit_doctor_cli = validateDailyDoctorCli(observations, {
+      library: receipt.library, hostPid: receipt.host_process.pid,
+      entry: join(receipt.worktrees_before.broker.package_root, 'dist/ntn-skills.mjs'),
+      sha256: f.config.embeddedCliSha256, executable: receipt.host_process.node.path, phase,
+    });
+    assert.throws(() => validateDailyReceipt(receipt, f.config, f.pair), /doctor phase must belong to this daily execution/u);
+  }
+  const duplicate = structuredClone(f.mini);
+  duplicate.phases.push(structuredClone(duplicate.phases[0]));
+  assert.throws(() => validateDailyReceipt(duplicate, f.config, f.pair), /One explicit doctor phase/u);
+});
+
 test('aggregate rechecks both the current verifier and the real origin instead of trusting two passed receipts', async () => {
   const f = await dailyFixture();
   await save(f.config.receipts.mini, { ...f.mini, harness: { sha256: '0'.repeat(64) } });

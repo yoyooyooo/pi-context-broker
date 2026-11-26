@@ -47,13 +47,18 @@ function ancestor(path, head, target) {
 }
 function integration(path, expected, head, branches) {
   keys(expected, ['target_ref', 'target_commit', 'merged_commit', 'method']);
-  assert.match(expected.target_ref, /^refs\/remotes\/origin\/[A-Za-z0-9][A-Za-z0-9._/-]*$/);
+  assert.ok(typeof expected.target_ref === 'string' && expected.target_ref.startsWith('refs/remotes/'), 'Use an explicit remote-tracking ref');
+  try { git(path, 'check-ref-format', expected.target_ref); }
+  catch { assert.fail('Invalid integration target ref'); }
+  const remotes = git(path, 'remote').split('\n').filter(name => name && expected.target_ref.startsWith('refs/remotes/' + name + '/'));
+  assert.equal(remotes.length, 1, 'Integration target must name exactly one configured remote');
+  text(git(path, 'remote', 'get-url', remotes[0]), 'Integration remote URL');
   commit(expected.target_commit); commit(expected.merged_commit);
   assert.equal(git(path, 'rev-parse', '--verify', expected.target_ref + '^{commit}'), expected.target_commit, 'Local target ref changed');
   assert.ok(ancestor(path, expected.merged_commit, expected.target_commit), 'Merge commit is outside the declared target');
   const mergedTree = git(path, 'rev-parse', expected.merged_commit + '^{tree}');
   if (expected.method === 'ancestor') assert.ok(ancestor(path, head, expected.merged_commit), 'Source HEAD is not integrated');
-  else { assert.equal(expected.method, 'tree_equal', 'Unsupported integration proof'); assert.equal(git(path, 'rev-parse', head + '^{tree}'), mergedTree, 'Squash merge tree differs'); }
+  else { assert.equal(expected.method, 'tree_equal', 'Unsupported integration proof'); assert.equal(git(path, 'rev-parse', head + '^{tree}'), mergedTree, 'Source and integrated commit trees differ'); }
   return { ...expected, verified: true, unmerged_local_branches: branches.filter(branch =>
     !ancestor(path, branch.head, expected.target_commit) && git(path, 'rev-parse', branch.head + '^{tree}') !== mergedTree) };
 }

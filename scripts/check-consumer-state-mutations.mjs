@@ -7,6 +7,158 @@ import { createHash } from "node:crypto";
 
 const cases = [
   {
+    "name": "library-each-input-default",
+    "file": "src/library-selection.ts",
+    "old": "accept: (ctx: ExtensionContext) => capture(ctx, true),",
+    "replacement": "accept: (ctx: ExtensionContext) => capture(ctx, false),",
+    "test": "library-selection.test.ts",
+    "pattern": "every input rereads local default",
+    "properties": [
+      "NextTurnUsesSelectedLibrary"
+    ]
+  },
+  {
+    "name": "library-blocked-request",
+    "file": "src/library-selection.ts",
+    "old": "if (selection.status === \"blocked\") throw failure(selection.code);",
+    "replacement": "void selection.status;",
+    "test": "library-selection.test.ts",
+    "pattern": "requested B is visible before verification and failure blocks defaults",
+    "properties": [
+      "FailedSwitchStopsRequestedFlow"
+    ]
+  },
+  {
+    "name": "library-directory-ticket",
+    "file": "src/library-selection.ts",
+    "old": "return captured === undefined || captured.key === libraryContext(capture({ ...ctx, [contextKey]: undefined }))!.key;",
+    "replacement": "return true;",
+    "test": "library-selection.test.ts",
+    "pattern": "accepted A context and publication identity survive",
+    "properties": [
+      "DirectoryPublicationUsesTicket"
+    ]
+  },
+  {
+    "name": "library-command-session",
+    "file": "src/library-selection.ts",
+    "old": "const current = () => requested === generation && session === ctx.sessionManager?.getSessionId?.();",
+    "replacement": "const current = () => true;",
+    "test": "library-selection.test.ts",
+    "pattern": "late B verification cannot append or publish into a different session",
+    "properties": [
+      "BranchSelectionIsRestored",
+      "DirectoryPublicationUsesTicket"
+    ]
+  },
+  {
+    "name": "library-latest-branch-entry",
+    "file": "src/library-selection.ts",
+    "old": "filter(entry => entry.customType === LIBRARY_SELECTION_ENTRY).at(-1);",
+    "replacement": "filter(entry => entry.customType === LIBRARY_SELECTION_ENTRY).at(0);",
+    "test": "library-selection.test.ts",
+    "pattern": "fork, rewind, resume and reset follow only active branch Library entries",
+    "properties": [
+      "BranchSelectionIsRestored",
+      "NextTurnUsesSelectedLibrary"
+    ]
+  },
+  {
+    "name": "library-running-turn-context",
+    "file": "src/host-skills.ts",
+    "old": "inheritLibraryContext(ctx, runningContext ?? gate.active?.ctx ?? acceptedContext);",
+    "replacement": "inheritLibraryContext(ctx, gate.active?.ctx ?? acceptedContext);",
+    "test": "skill-guidance.test.ts",
+    "pattern": "ordinary accepted turns freeze CLI Library scope across a later successful or failed switch",
+    "properties": [
+      "AdmittedTurnKeepsLibrary",
+      "SelectionDoesNotCancelTurn"
+    ]
+  },
+  {
+    "name": "fixed-resource-path-binding",
+    "file": "src/session-short-ref.ts",
+    "old": "return JSON.stringify([\"resource\", value.owner, value.path]);",
+    "replacement": "return JSON.stringify([\"resource\", value.owner, value.path, value.file_id ?? null]);",
+    "test": "session-short-ref.test.ts",
+    "pattern": "fixed paths never repair an old spelling through a stable File ID",
+    "properties": [],
+    "concrete_obligations": ["One fixed owner and path cannot acquire a different native File binding. This path-to-File mapping is outside the finite TLA variables."]
+  },
+  {
+    "name": "fixed-resource-native-binding",
+    "file": "src/session-short-ref.ts",
+    "old": "&& previous.path !== value.path) fail(\"SHORT_REF_CONFLICT\");",
+    "replacement": "&& false) fail(\"SHORT_REF_CONFLICT\");",
+    "test": "session-short-ref.test.ts",
+    "pattern": "fixed paths never repair an old spelling through a stable File ID",
+    "properties": [],
+    "concrete_obligations": ["One native File binding cannot move to another path within one fixed owner. This native binding uniqueness is outside the finite TLA variables."]
+  },
+  {
+    "name": "content-qualification-publication",
+    "file": "src/consumer-observation.ts",
+    "old": "    revision++;\n    for (const changed of changes) changed();",
+    "replacement": "    void changes;",
+    "test": "host-content-search.test.ts",
+    "pattern": "a later accepted REST denial retires an in-flight empty content result",
+    "properties": ["NoRetiredPublication", "NewerEvidenceSurvives"]
+  },
+  {
+    "name": "content-source-publication",
+    "file": "src/content-publication.ts",
+    "old": "started.source === undefined || started.source !== current.source",
+    "replacement": "false",
+    "test": "host-content-search.test.ts",
+    "pattern": "source changes and an elapsed deadline reject late results",
+    "properties": ["ScopeIsExact", "NoRetiredPublication"]
+  },
+  {
+    "name": "content-session-publication",
+    "file": "src/content-publication.ts",
+    "old": "sessionId !== input.ctx.sessionManager?.getSessionId?.() || sessionFile !== input.ctx.sessionManager?.getSessionFile?.()",
+    "replacement": "false",
+    "test": "host-content-search.test.ts",
+    "pattern": "source changes and an elapsed deadline reject late results",
+    "properties": ["NoRetiredPublication"]
+  },
+  {
+    "name": "content-branch-publication",
+    "file": "src/content-publication.ts",
+    "old": "ancestry.length > currentBranch.length || ancestry.some((entry, index) => entry !== currentBranch[index])",
+    "replacement": "false",
+    "test": "host-content-search.test.ts",
+    "pattern": "source changes and an elapsed deadline reject late results",
+    "properties": ["NoRetiredPublication"]
+  },
+  {
+    "name": "content-deadline-publication",
+    "file": "src/content-publication.ts",
+    "old": "if (Date.now() >= input.deadline) throw timeout();",
+    "replacement": "void input.deadline;",
+    "test": "host-content-search.test.ts",
+    "pattern": "source changes and an elapsed deadline reject late results",
+    "properties": ["NoRetiredPublication"]
+  },
+  {
+    "name": "content-cancelled-publication",
+    "file": "src/content-publication.ts",
+    "old": "closed || signal.aborted || started.task !== current.task",
+    "replacement": "closed || started.task !== current.task",
+    "test": "host-content-search.test.ts",
+    "pattern": "a cancelled content waiter cannot cancel another valid waiter",
+    "properties": ["NoCancelledPublication"]
+  },
+  {
+    "name": "content-error-publication",
+    "file": "src/host-skills.ts",
+    "old": "      publication.assertCurrent();\n      const output = contentSearchFailure(error);",
+    "replacement": "      const output = contentSearchFailure(error);",
+    "test": "host-content-search.test.ts",
+    "pattern": "source and branch changes retire remote failures before any error publication",
+    "properties": ["NoRetiredPublication", "ScopeIsExact"]
+  },
+  {
     "name": "original-validation-time",
     "file": "src/consumer-observation.ts",
     "old": "validatedAt, validUntil: validatedAt + duration",
@@ -318,12 +470,15 @@ try {
     const directory = path.join(out, item.name);
     fs.mkdirSync(directory);
     for (const name of ["src", "scripts"]) fs.cpSync(path.join(pkg, name), path.join(directory, name), { recursive: true, errorOnExist: true, force: false });
+    fs.mkdirSync(path.join(directory, "dist"));
+    for (const name of ["ntn-skills-ref.cjs", "ntn-skills-runtime.json"])
+      fs.copyFileSync(path.join(pkg, "dist", name), path.join(directory, "dist", name));
     fs.copyFileSync(path.join(pkg, "package.json"), path.join(directory, "package.json"));
     fs.symlinkSync(path.join(pkg, "node_modules"), path.join(directory, "node_modules"), "dir");
     const originalFile = path.join(pkg, item.file), file = path.join(directory, item.file);
     const original = fs.readFileSync(file, "utf8"), originalHash = hash(Buffer.from(original));
     assert.equal(original.split(item.old).length, 2, item.name + ": guard changed; review the mutation");
-    const entry = { name: item.name, properties: item.properties, source: path.relative(repository, originalFile),
+    const entry = { name: item.name, properties: item.properties, ...(item.concrete_obligations ? { concrete_obligations: item.concrete_obligations } : {}), source: path.relative(repository, originalFile),
       sourceSha256: originalHash, test: item.test, pattern: item.pattern,
       testSha256: hash(fs.readFileSync(path.join(pkg, "scripts", item.test))), phases: [], restored: false, originalWorkspaceUnchanged: false };
     summary.cases.push(entry); save();

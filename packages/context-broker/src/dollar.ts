@@ -241,6 +241,7 @@ export function createDollarSkillAutocompleteProvider(
     for (const record of records) candidates.set(recordIdentity(record), record);
   };
   return {
+    triggerCharacters: [...new Set([...(current.triggerCharacters ?? []), "$"])],
     getInlineHint: current.getInlineHint?.bind(current),
     trySyncSlashCompletion: current.trySyncSlashCompletion?.bind(current),
     trySyncInlineReplace: current.trySyncInlineReplace?.bind(current),

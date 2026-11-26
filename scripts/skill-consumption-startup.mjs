@@ -6,7 +6,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createNotionFixture, database, canary, resourceCanary } from './notion-integration-fixture.mjs';
+import { createNotionFixture, libraryId, canary, resourceCanary } from './notion-integration-fixture.mjs';
 import { isolatedEnv, resolveHost, runCommand, writeFakeProvider } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { consumptionCostExtensionSource, consumptionMetricStats, readConsumptionCostEvents } from './skill-consumption-cost.mjs';
@@ -345,13 +345,16 @@ async function collectSample({ evidence, scenario, sharedSource, options, clockI
   const cacheBefore = await tree(source.cacheDir);
   const agentDir = join(base, 'agent'); await mkdir(join(agentDir, 'context-broker'), { recursive: true, mode: 0o700 });
   await save(join(agentDir, 'context-broker', 'config.yml'), { sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: source.command,
-    database, cacheDir: source.cacheDir, requestTimeoutMs: Math.max(15000, options.listDelayMs * 3), prefetch: false }] });
+    library: libraryId, cacheDir: source.cacheDir, requestTimeoutMs: Math.max(15000, options.listDelayMs * 3), prefetch: false }] });
   const controlledProvider = await provider(base), providerFile = join(base, 'provider.jsonl'), observerFile = join(base, 'observer.jsonl');
   await writeFile(providerFile, '', { mode: 0o600 });
   const observer = join(base, 'observer-extension.mjs');
   await writeFile(observer, consumptionCostExtensionSource({ output: observerFile, checkoutRoot: root, runId: clockId, sampleId: scenario.id, clockId }), { mode: 0o600 });
   const env = isolatedEnv({ base, agentDir, CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_E2E_PROVIDER_CONTEXT_FILE: providerFile,
     CONTEXT_BROKER_LOG_FILE: join(base, 'decisions.jsonl'), SKILL_STARTUP_SAMPLE_ID: scenario.id });
+  env.NTN_SKILLS_CONFIG_HOME = join(base, 'cli-config');
+  await mkdir(env.NTN_SKILLS_CONFIG_HOME, { recursive: true, mode: 0o700 });
+  await save(join(env.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: libraryId });
   const args = ['--no-extensions', '-e', controlledProvider.entry, '-e', options.extension, '-e', observer,
     '--model', 'context-broker-e2e/fake', '--session-dir', join(base, 'sessions')];
   const driver = [{ event: 'before-startRpc', monotonicNs: now(), waitForState: false }];

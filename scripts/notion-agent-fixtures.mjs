@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { access, appendFile, chmod, lstat, mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
@@ -6,6 +7,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { validateAgentFixtureRecipe } from './notion-agent-scenarios.mjs';
+import { isAgentSourceHandoff } from './notion-agent-source-handoff.mjs';
 import { NATIVE_MAIN_EXACT_RESOURCES, agentFixtureCreateArgs, assertAgentFixtureImportCreation,
   agentFixtureRelationArgs as relationArgs, agentFixtureUsesNativeMarkdown } from './notion-agent-authoring.mjs';
 
@@ -24,6 +26,26 @@ const propertiesText = (row, name) => (row.properties?.[name]?.rich_text ?? row.
 const pick = (row, ids, name) => Object.values(row.properties ?? {}).find(value => value.id === ids[name]) ?? row.properties?.[name];
 const propertyText = (row, ids, name) => { const value = pick(row, ids, name); return value?.select?.name ?? value?.status?.name ?? (value?.rich_text ?? value?.title ?? []).map(part => part.plain_text ?? part.text?.content ?? '').join(''); };
 const withoutFrontmatter = value => value.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/u, '').replace(/\r\n/g, '\n').trimEnd();
+
+/** Resolve only a declared object's root; never change the fixture's default root. */
+export function agentFixtureObjectContext(context, alias) {
+  if (!context.libraries) return context;
+  const owned = context.objects[alias], library = context.libraries[owned?.library];
+  assert.ok(owned && library, 'Object has no reviewed Library binding');
+  return { ...context, libraryId: library.library_id, library };
+}
+
+function fixtureReferenceProtocol(context) {
+  const protocol = createRequire(context.cli)(join(dirname(context.cli), 'ref.cjs'));
+  assert.equal(protocol.SKILL_REF_VERSION, 2, 'Use the actual selected CLI reference protocol');
+  return protocol;
+}
+
+const fixtureSkillId = (runId, object) => 'agent-workflow-' + runId + '-' + (object.identityKey ?? object.id);
+const protectedShape = value => ({ pageId: value.row.id, properties: value.row.properties,
+  files: value.files.map(row => ({ id: row.id, properties: row.properties })).sort((a, b) => a.id.localeCompare(b.id)),
+  records: value.records.map(row => ({ id: row.id, properties: row.properties })).sort((a, b) => a.id.localeCompare(b.id)),
+  body: blockShape(value.body), bytes: value.observedFiles.map(file => ({ path: file.path, bytes: file.bytes, sha256: file.sha256 })) });
 
 function fail(code, message, details) {
   return Object.assign(new Error(message), { code, ...(details === undefined ? {} : { details }) });
@@ -233,7 +255,7 @@ async function nativeMarkdownComparator(context) {
   const binding = { cli: await artifact(entry), manifest: await artifact(manifestPath), sdk: await artifact(sdkPath) };
   if (context.nativeMarkdownSdk) assert.deepEqual(binding, context.nativeMarkdownSdk, 'Selected fixture CLI/SDK build identity changed');
   const sdk = await import(pathToFileURL(sdkPath).href);
-  if (sdk.SDK_VERSION !== 2 || sdk.PACKAGE_VERSION !== manifest.version || typeof sdk.compareNativeMarkdown !== 'function')
+  if (sdk.SDK_VERSION !== 3 || sdk.PACKAGE_VERSION !== manifest.version || typeof sdk.compareNativeMarkdown !== 'function')
     throw fail('AGENT_FIXTURE_NATIVE_COMPARISON_UNAVAILABLE', 'The selected CLI SDK must export its current Native Markdown comparator.', { sdk: binding.sdk });
   context.nativeMarkdownSdk ??= binding;
   return sdk.compareNativeMarkdown;
@@ -259,7 +281,14 @@ async function prepareVersionInputs(context, object, name) {
       const path = resolve(directory, file.path); assert.ok(inside(directory, path));
       const expanded = file.encoding === 'base64' ? file : { ...file, content: file.content.replaceAll(/\{\{([A-Za-z0-9_.-]+)\}\}/gu, (_match, key) => {
         const names = new Map(context.recipe.objects.map(item => [item.id + '.name', item.placement === 'builtin' ? item.name : item.name + '-' + sha(context.runId).slice(0, 8)]));
-        const value = names.get(key) ?? context.recipe.public?.[key];
+        const reference = context.libraries && /\.ref$/u.test(key) ? context.recipe.objects.find(item => item.id + '.ref' === key) : undefined;
+        const value = reference ? fixtureReferenceProtocol(context).formatSkillIdentity({
+          libraryId: context.libraries[reference.library].library_id, skillId: fixtureSkillId(context.runId, reference) })
+          : context.libraries && /\.shortRef$/u.test(key) ? (() => {
+            const item = context.recipe.objects.find(item => item.id + '.shortRef' === key);
+            assert.ok(item, 'Unknown authored short reference');
+            return fixtureReferenceProtocol(context).formatSkillRef({ skillId: fixtureSkillId(context.runId, item), scope: { kind: 'context' }, path: '', selection: { kind: 'current' } });
+          })() : names.get(key) ?? context.recipe.public?.[key];
         assert.equal(typeof value, 'string', 'Unknown public content substitution ' + key); return value;
       }) };
       const bytes = object.placement === 'source' ? fileBytes(expanded) : effectiveFile(expanded, object, name);
@@ -307,8 +336,8 @@ async function actualSkill(context, owned) {
   return rows[0];
 }
 
-async function captureReadback(bindings, alias, { version, key = alias, state = 'present', properties, projection, expected = state === 'absent' ? 'absent' : 'live' } = {}) {
-  const context = bindings.private.fixture; await assertOwnership(context);
+async function captureReadback(bindings, alias, { version, key = alias, state = 'present', properties, projection, unchanged, expected = state === 'absent' ? 'absent' : 'live' } = {}) {
+  const context = agentFixtureObjectContext(bindings.private.fixture, alias); await assertOwnership(context);
   const owned = context.objects[alias]; assert.ok(owned, 'Unknown owned object: ' + alias);
   const identity = bindings.private.objects[alias], label = version ?? owned.currentVersion;
   const receiptPath = join(context.root, 'readbacks', alias + '-' + randomUUID() + '.json');
@@ -374,11 +403,12 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
     return sealReadback(context, key, result);
   }
   const body = await tree(context, row.id);
-  const main = await cli(context, ['read', row.id, '--database', context.entry, '--refresh', '--json'], 'read-main');
+  const main = await cli(context, ['read', row.id, '--library', context.libraryId, '--refresh', '--json'], 'read-main');
   assert.equal(main.value.ok, true); assert.equal(main.value.has_more, false); assert.equal(typeof main.value.content, 'string');
   assert.equal(main.value.effects?.remote_writes, 'none', 'A consumption read reported semantic writes');
   assert.equal(main.value.record?.locator?.page_id, owned.pageId, 'Reader returned a different physical owner');
   assert.equal(main.value.record?.locator?.skill_id, owned.skillId, 'Reader returned a different stable owner');
+  if (context.libraries) assert.equal(main.value.record?.locator?.library_id, context.libraryId, 'Reader returned a different Library');
   identity.owner = main.value.record.id; identity.scope = main.value.scope;
   if (owned.placement === 'source') { identity.name = main.value.record.name; bindings.public[alias + '.name'] = main.value.record.name; }
   const expectedVersion = owned.versionInputs[label];
@@ -454,6 +484,13 @@ async function captureReadback(bindings, alias, { version, key = alias, state = 
   }
   const captured = await capture(context, receiptPath, { row, files, records, body, main: main.value, directory: fileList.value, observedFiles, observedProjection,
     commandArtifacts: [main.artifact, fileList.artifact], observedAt: clock() });
+  if (unchanged) {
+    assert.ok(owned.protectedBaseline, 'Protected objects require an independent preparation baseline');
+    assert.deepEqual(await artifact(owned.protectedBaseline.path), owned.protectedBaseline, 'Protected baseline changed');
+    assert.deepEqual(protectedShape(await json(captured.path)), protectedShape(await json(owned.protectedBaseline.path)),
+      'Another Library changed the protected object or its complete children');
+  }
+  if (context.libraries && !owned.protectedBaseline) owned.protectedBaseline = captured;
   const result = { status: 'passed', object: { owner: identity.owner, scope: main.value.scope, snapshot_id: main.value.snapshot_id, version_id: main.value.version_id },
     artifact: captured, observed: { state: 'present', ready: true, operationEmpty: true, files: observedFiles, ...(observedProjection ? { projection: observedProjection } : {}), ...(properties ? { properties } : {}) },
     assertions: [{ id: 'independent-live-ready-state', status: 'passed' }, { id: 'complete-current-consumption', status: 'passed' }, { id: 'normal-consumption-zero-writes', status: 'passed' }],
@@ -492,10 +529,10 @@ export async function prepareAgentFilteredView(bindings) {
   assert.ok(pageId(created.id)); context.viewId = created.id; context.view.id = created.id;
   await persist(bindings);
   const actual = await request(context, 'v1/views/' + created.id), after = await listViews(context);
-  assert.equal(actual.parent?.database_id?.replaceAll('-', ''), context.entry.replaceAll('-', ''));
+  assert.equal(actual.parent?.database_id?.replaceAll('-', ''), context.library.skills.database_id.replaceAll('-', ''));
   assert.equal(actual.name, name);
   assert.deepEqual(after.filter(view => context.view.originalViewIds.includes(view.id)).map(view => view.id), context.view.originalViewIds, 'Creating the owned View changed existing view order');
-  const listed = await cli(context, ['list', '--database', context.entry, '--view', created.id, '--refresh', '--limit', '500', '--json'], 'verify-filtered-view');
+  const listed = await cli(context, ['list', '--library', context.libraryId, '--view', created.id, '--refresh', '--limit', '500', '--json'], 'verify-filtered-view');
   assert.equal(listed.value.has_more, false, 'This bounded filtered fixture must be complete');
   assert.equal(listed.value.coverage?.exhaustive, true); assert.deepEqual(listed.value.coverage?.failed_sources, []);
   assert.deepEqual(listed.value.records.map(record => record.locator.page_id).sort(), context.view.expectedPageIds.slice().sort(), 'The owned filtered View has unexpected members');
@@ -515,7 +552,7 @@ async function cleanupFilteredView(context) {
   }
   assert.ok(!context.view.originalViewIds.includes(context.viewId), 'Never delete a pre-existing View');
   const actual = await request(context, 'v1/views/' + context.viewId);
-  assert.equal(actual.name, context.view.name); assert.equal(actual.parent?.database_id?.replaceAll('-', ''), context.entry.replaceAll('-', ''));
+  assert.equal(actual.name, context.view.name); assert.equal(actual.parent?.database_id?.replaceAll('-', ''), context.library.skills.database_id.replaceAll('-', ''));
   // Independent fixtures may finish between preparation and teardown. Protect the inventory present at this deletion.
   const otherViewIds = before.filter(view => view.id !== context.viewId).map(view => view.id);
   const removed = await request(context, 'v1/views/' + context.viewId, { method: 'DELETE', fixtureMutation: true });
@@ -541,7 +578,7 @@ async function prepareSourceDeclaration(context, object, owned) {
 
 /** Freeze fixed upstream bytes in private control storage; never seed the subject Store. */
 async function prepareAbsentSourceOracle(bindings, object, declaration) {
-  const context = bindings.private.fixture, owned = context.objects[object.id], identity = bindings.private.objects[object.id];
+  const context = agentFixtureObjectContext(bindings.private.fixture, object.id), owned = context.objects[object.id], identity = bindings.private.objects[object.id];
   const adapter = declaration.definition.adapter, url = new URL(adapter.url), member = object.source.memberKey;
   assert.equal(adapter.type, 'git'); assert.equal(url.protocol, 'https:'); assert.equal(url.username + url.password, '');
   assert.match(adapter.ref, /^[a-f0-9]{40}$/u, 'An absent Source oracle requires one exact pinned commit');
@@ -624,24 +661,36 @@ export function planAgentFixturePreparation(recipe) {
 }
 
 /** Prepare one owned real fixture. The library is never replaced and global configuration is never edited. */
-export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cliPath, node = process.execPath, globalSkillsRoot = join(homedir(), '.agents/skills'), apiVersion = '2026-03-11' }) {
+export async function prepareAgentFixtures({ recipe, runId, root, libraryId, libraries, cli: cliPath, node = process.execPath, globalSkillsRoot = join(homedir(), '.agents/skills'), apiVersion = '2026-03-11' }) {
   const preparationPlan = planAgentFixturePreparation(recipe);
+  if (recipe.kind === 'library-journey') {
+    assert.deepEqual(Object.keys(libraries ?? {}).sort(), ['A', 'B'], 'Declare exactly two reviewed Library roots');
+    assert.equal(libraries.A, libraryId, 'The initial default must be Library A');
+    assert.ok(pageId(libraries.B) && libraries.A.replaceAll('-', '') !== libraries.B.replaceAll('-', ''), 'Libraries must be distinct');
+  } else assert.equal(libraries, undefined, 'Additional roots are reserved for Library journeys');
   for (const object of recipe.objects) if (['global', 'project'].includes(object.placement))
     assert.ok(/^[a-z0-9][a-z0-9-]*$/u.test(object.name), 'Native fixture names must be safe lowercase invocation names');
   assert.ok(isAbsolute(globalSkillsRoot), 'Use an absolute native global Skill root');
-  assert.ok(id(runId) && pageId(entry) && isAbsolute(root) && isAbsolute(cliPath) && isAbsolute(node));
+  assert.ok(id(runId) && pageId(libraryId) && isAbsolute(root) && isAbsolute(cliPath) && isAbsolute(node));
   assert.ok(!(await exists(root)), 'Use a fresh fixture root; resume from its bindings instead');
   await mkdir(root, { recursive: true, mode: 0o700 }); root = await realpath(root);
-  const context = { version: 1, runId, root, entry, cli: await realpath(cliPath), node: await realpath(node), apiVersion, recipe, preparationPlan,
+  const context = { version: 1, runId, root, libraryId, cli: await realpath(cliPath), node: await realpath(node), apiVersion, recipe, preparationPlan,
     env: { NTN_SKILLS_HOME: join(root, 'state'), NTN_SKILLS_CONFIG_HOME: join(root, 'config'),
       NTN_SKILLS_CACHE_HOME: join(root, 'cache'), NTN_SKILLS_DATA_HOME: join(root, 'data'), NTN_SKILLS_SCHEDULER_ROOT: join(root, 'scheduler') },
     objects: {}, projectRoot: join(root, 'project'), observedReadbacks: {}, ownership: { runId, root, token: randomUUID(), createdAt: new Date().toISOString(), globalDirectories: [], temporaryRoot: join(root, 'temporary') } };
   await save(join(root, 'ownership.json'), context.ownership);
   for (const path of ['commands', 'readbacks', 'inputs', 'quarantine', 'temporary', 'project/.agents/skills']) await mkdir(join(root, path), { recursive: true, mode: 0o700 });
   if (recipe.objects.some(object => object.placement === 'notion')) await nativeMarkdownComparator(context);
-  const inspect = await cli(context, ['ctl', 'library', 'inspect', entry], 'inspect-library'); context.library = inspect.value.library;
-  assert.equal(context.library.skills.database_id.replaceAll('-', ''), entry.replaceAll('-', ''));
+  const inspect = await cli(context, ['ctl', 'library', 'inspect', '--library', libraryId], 'inspect-library'); context.library = inspect.value.library;
+  assert.equal(context.library.library_id.replaceAll('-', ''), libraryId.replaceAll('-', ''));
+  if (libraries) {
+    const other = await cli(context, ['ctl', 'library', 'inspect', '--library', libraries.B], 'inspect-library-b');
+    assert.equal(other.value.library.library_id.replaceAll('-', ''), libraries.B.replaceAll('-', ''));
+    context.libraries = { A: context.library, B: other.value.library };
+  }
   const bindings = { version: 1, public: { ...(recipe.public ?? {}) }, private: { fixture: context, objects: {}, bodies: {}, facts: recipe.facts ?? {}, readbacks: structuredClone(recipe.readbacks ?? {}) } };
+  for (const [key, library] of Object.entries(context.libraries ?? {}))
+    bindings.public['library' + key + '.url'] = 'https://www.notion.so/' + library.library_id.replaceAll('-', '');
   const captureInitialReadback = async (alias, version) => {
     const owned = context.objects[alias], input = owned.versionInputs[version];
     const options = owned.placement === 'notion' && input?.enabled === false
@@ -653,7 +702,8 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
     for (const object of recipe.objects) {
       const suffix = sha(runId).slice(0, 8), name = object.placement === 'builtin' ? object.name : object.name + '-' + suffix;
       assert.ok(name.length <= 64, 'Fixture native names must remain bounded');
-      const owned = { id: object.id, name, placement: object.placement, skillId: 'agent-workflow-' + runId + '-' + object.id,
+      const owned = { id: object.id, name, placement: object.placement, skillId: fixtureSkillId(runId, object),
+        ...(object.library ? { library: object.library } : {}),
         currentVersion: object.initial, pendingIdentity: ['absent', 'unmanaged'].includes(object.initial), wasUnmanaged: object.initial === 'unmanaged', versionInputs: await prepareVersionInputs(context, object, name), knownChildren: [] };
       context.objects[object.id] = owned;
       bindings.public[object.id + '.name'] = name;
@@ -673,6 +723,7 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
     for (const alias of preparationPlan.order) {
       const object = recipe.objects.find(object => object.id === alias);
       const owned = context.objects[object.id], identity = bindings.private.objects[object.id];
+      const selectedContext = agentFixtureObjectContext(context, object.id), selectedLibrary = selectedContext.libraryId;
       if (['global', 'project'].includes(object.placement)) {
         assert.ok(owned.versionInputs[object.initial], 'Local fixture requires a concrete initial version');
         const directory = object.placement === 'global' ? join(globalSkillsRoot, owned.name) : join(root, 'project/.agents/skills', owned.name);
@@ -692,7 +743,7 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
       if (object.placement === 'builtin') {
         const found = []; let cursor;
         do {
-          const listed = await cli(context, ['list', '--database', entry, '--query', object.name, '--refresh', '--limit', '500', '--json', ...(cursor ? ['--cursor', cursor] : [])], 'find-builtin');
+          const listed = await cli(context, ['list', '--library', libraryId, '--query', object.name, '--refresh', '--limit', '500', '--json', ...(cursor ? ['--cursor', cursor] : [])], 'find-builtin');
           assert.equal(listed.value.coverage?.exhaustive, true, 'Builtin binding requires a complete explicit-library observation');
           assert.deepEqual(listed.value.coverage?.failed_sources, [], 'Builtin binding cannot hide partial discovery');
           const records = listed.value.records;
@@ -712,11 +763,16 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
         continue;
       }
       if (object.placement === 'source') {
-        const declaration = await prepareSourceDeclaration(context, object, owned); identity.sourceId = owned.sourceId;
+        const declaration = await prepareSourceDeclaration(selectedContext, object, owned); identity.sourceId = owned.sourceId;
+        if (context.libraries) {
+          assert.equal(bindings.public['business.sourceDeclaration'], undefined, 'A finite recovery journey has one original Source');
+          bindings.public['business.sourceDeclaration'] = owned.declarationPath;
+          bindings.public['business.failedSync'] = join(context.projectRoot, object.id + '-failed-sync.json');
+        }
         if (object.initial === 'absent') await prepareAbsentSourceOracle(bindings, object, declaration);
       }
       if (object.initial === 'absent') {
-        const matches = await pages(context, 'skills', { property: context.library.skills.property_ids.Name, title: { equals: owned.name } });
+        const matches = await pages(selectedContext, 'skills', { property: selectedContext.library.skills.property_ids.Name, title: { equals: owned.name } });
         assert.equal(matches.length, 0, 'The creation fixture name already exists');
         continue;
       }
@@ -756,16 +812,16 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
       }
       if (object.placement === 'source') {
         const path = owned.declarationPath;
-        const applied = await cli(context, ['ctl', 'library', 'source', 'apply', path, '--entry', entry], 'source-apply');
+        const applied = await cli(selectedContext, ['ctl', 'library', 'source', 'apply', path, '--library', selectedLibrary], 'source-apply');
         const selected = applied.value.targets?.filter(target => target.skill_id === owned.skillId);
         assert.equal(selected?.length, 1); assert.equal(applied.value.targets.length, 1, 'Source discovery exceeded owned scope');
         owned.pageId = selected[0].page_id; owned.sourcePageId = applied.value.source_page_id;
         owned.declarationPath = path; identity.sourceId = owned.sourceId;
-        await cli(context, ['ctl', 'library', 'projection', owned.pageId, '--entry', entry], 'projection'); owned.projectionRequired = true;
+        await cli(selectedContext, ['ctl', 'library', 'projection', owned.pageId, '--library', selectedLibrary], 'projection'); owned.projectionRequired = true;
       } else {
         const input = owned.versionInputs[object.initial]; assert.ok(input);
         const selected = deferredMembers.has(object.id) ? { ...input, members: [] } : input;
-        const creation = { entry, object, owned, input: selected, objects: context.objects };
+        const creation = { libraryId: selectedLibrary, object, owned, input: selected, objects: context.objects };
         const args = agentFixtureCreateArgs(creation);
         if (object.authoring === NATIVE_MAIN_EXACT_RESOURCES) {
           const preflight = await cli(context, [...args, '--dry-run'], 'create-preflight');
@@ -780,7 +836,8 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
     }
     for (const alias of preparationPlan.deferredMembers) {
       const owned = context.objects[alias], input = owned.versionInputs[owned.currentVersion];
-      await cli(context, ['ctl', 'library', 'skill', 'update', owned.pageId, '--entry', entry,
+      const selectedContext = agentFixtureObjectContext(context, alias);
+      await cli(selectedContext, ['ctl', 'library', 'skill', 'update', owned.pageId, '--library', selectedContext.libraryId,
         ...relationArgs(context, { requires: [], members: input.members })], 'bind-initial-members');
       await persist(bindings);
     }
@@ -797,13 +854,13 @@ export async function prepareAgentFixtures({ recipe, runId, root, entry, cli: cl
 }
 
 async function publishVersion(bindings, event) {
-  const context = bindings.private.fixture, owned = context.objects[event.object], input = owned?.versionInputs[event.version];
+  const context = agentFixtureObjectContext(bindings.private.fixture, event.object), owned = context.objects[event.object], input = owned?.versionInputs[event.version];
   assert.ok(owned && input, 'Unknown owned version');
   assert.equal(context.recipe?.objects.find(object => object.id === event.object)?.authoring, undefined,
     'Exact-resource authoring does not support version publication');
   assert.equal(owned.placement, 'notion', 'Version publication uses the native public update command');
   const beforeFiles = owned.versionInputs[owned.currentVersion]?.files ?? [];
-  const args = ['ctl', 'library', 'skill', 'update', owned.pageId ?? owned.skillId, '--entry', context.entry];
+  const args = ['ctl', 'library', 'skill', 'update', owned.pageId ?? owned.skillId, '--library', context.libraryId];
   for (const file of input.files) args.push('--file', file.path + '=' + file.input);
   for (const file of beforeFiles) if (!input.files.some(next => next.path === file.path)) args.push('--remove-file', file.path);
   for (const field of ['requires', 'members']) {
@@ -822,7 +879,7 @@ async function publishVersion(bindings, event) {
 
 
 async function observeSourceCheckpoint(bindings, alias) {
-  const context = bindings.private.fixture, owned = context.objects[alias], identity = bindings.private.objects[alias];
+  const context = agentFixtureObjectContext(bindings.private.fixture, alias), owned = context.objects[alias], identity = bindings.private.objects[alias];
   const matches = await pages(context, 'sources', { property: context.library.sources.property_ids['Source ID'], rich_text: { equals: owned.sourceId } });
   assert.ok(matches.length <= 1, 'Owned Source identity became ambiguous');
   const source = matches[0];
@@ -835,14 +892,14 @@ async function observeSourceCheckpoint(bindings, alias) {
   if (skill) {
     assert.equal(propertyText(skill, context.library.skills.property_ids, 'Skill ID'), owned.skillId);
     identity.pageId = skill.id; identity.name = propertyText(skill, context.library.skills.property_ids, 'Name');
-    identity.owner = 'shared_skill:' + context.library.library_id + ':' + owned.skillId;
+    identity.owner = fixtureReferenceProtocol(context).formatSkillIdentity({ libraryId: context.library.library_id, skillId: owned.skillId });
     identity.url = skill.url; bindings.public[alias + '.url'] = skill.url; bindings.public[alias + '.name'] = identity.name;
   }
   return { source, skill };
 }
 
-async function interruptSourceWrite(bindings, event) {
-  const context = bindings.private.fixture, owned = context.objects[event.object], maxRequests = event.maxRequests ?? 40;
+async function interruptSourceWrite(bindings, event, writer) {
+  const context = agentFixtureObjectContext(bindings.private.fixture, event.object), owned = context.objects[event.object], maxRequests = event.maxRequests ?? 40;
   assert.equal(owned.placement, 'source'); assert.equal(owned.currentVersion, 'absent');
   assert.ok(owned.declarationPath && owned.upstreamOracle, 'A cold Source interruption needs frozen provider evidence');
   assert.ok(Number.isSafeInteger(maxRequests) && maxRequests > 0 && maxRequests <= 1000, 'Use a bounded positive request budget');
@@ -851,7 +908,7 @@ async function interruptSourceWrite(bindings, event) {
   assert.equal(before.source, undefined, 'Do not interrupt a pre-existing Source'); assert.equal(before.skill, null, 'Do not replace an existing Skill');
   owned.sourceOperation = { id: randomUUID(), input: await artifact(owned.declarationPath), maxRequests, phase: 'planned' };
   await persist(bindings);
-  const interrupted = await cli(context, ['ctl', 'library', 'source', 'apply', owned.declarationPath, '--entry', context.entry,
+  const interrupted = await cli(writer ?? context, ['ctl', 'library', 'source', 'apply', owned.declarationPath, '--library', context.libraryId,
     '--operation', owned.sourceOperation.id, '--max-requests', String(maxRequests)], 'source-interrupt', { allowedFailure: 'REQUEST_BUDGET_EXHAUSTED' });
   owned.sourceOperation.command = interrupted.artifact;
   const after = await observeSourceCheckpoint(bindings, event.object);
@@ -866,17 +923,90 @@ async function interruptSourceWrite(bindings, event) {
   assert.equal(interrupted.value.error?.code, 'REQUEST_BUDGET_EXHAUSTED');
   assert.equal(observed.state, 'applying', 'The request limit did not leave the actual Source applying');
   assert.equal(observed.operationId, owned.sourceOperation.id, 'The applying Source belongs to another intent');
-  assert.equal(observed.skillState, 'ready', 'Reach a ready child before testing the Source readiness gate');
-  assert.equal(observed.skillOperation, '', 'The child must not fail through its own pending operation');
+  if (!writer) {
+    assert.equal(observed.skillState, 'ready', 'Reach a ready child before testing the Source readiness gate');
+    assert.equal(observed.skillOperation, '', 'The child must not fail through its own pending operation');
+  }
   owned.sourceOperation.phase = 'interrupted';
   return { status: 'passed', observed, sourcePageId: owned.sourcePageId, command: interrupted.artifact, artifact: owned.sourceOperation.observation };
 }
 
+async function agentSourceWriter(bindings, alias, { ownedStateRoot, runtimeEnv, runtimeCli }) {
+  const context = agentFixtureObjectContext(bindings.private.fixture, alias);
+  assert.ok(context.libraries, 'Agent recovery is restricted to the dual-Library journey');
+  assert.equal(runtimeEnv?.NTN_SKILLS_HOME, ownedStateRoot, 'The interrupted writer must use the actual subject Store');
+  const marker = await json(join(ownedStateRoot, 'agent-workflow-owner.json'));
+  assert.deepEqual(marker, { runId: context.runId, fixtureRoot: context.root, token: context.ownership.token });
+  const roots = {};
+  for (const name of [...runtimeStoreRoots, 'NTN_SKILLS_SCHEDULER_ROOT']) {
+    assert.ok(isAbsolute(runtimeEnv[name] ?? '') && inside(dirname(ownedStateRoot), runtimeEnv[name]), 'Use only this subject runtime root');
+    roots[name] = runtimeEnv[name];
+  }
+  assert.ok(isAbsolute(runtimeCli) && (await lstat(runtimeCli)).isFile(), 'Use the actual installed Broker CLI');
+  return { ...context, cli: await realpath(runtimeCli), env: roots };
+}
+
+async function interruptAgentSourceWrite(bindings, event, runtime) {
+  const writer = await agentSourceWriter(bindings, event.object, runtime), owned = writer.objects[event.object];
+  const interrupted = await interruptSourceWrite(bindings, event, writer);
+  const operation = await cli(writer, ['ctl', 'library', 'operation', owned.sourceId, '--kind', 'source', '--library', writer.libraryId], 'agent-source-before');
+  const intent = operation.value.operation;
+  const readback = await json(owned.sourceOperation.observation.path);
+  assert.deepEqual(await artifact(owned.sourceOperation.observation.path), owned.sourceOperation.observation);
+  assert.deepEqual(readback.command, interrupted.command);
+  assert.ok(isAgentSourceHandoff({ inspection: operation.value, operationId: owned.sourceOperation.id, library: writer.library,
+    sourceId: owned.sourceId, sourcePageId: owned.sourcePageId, inputSha256: readback.cli.error.details.input_sha256, interrupted: readback }),
+    'The interrupted Source must be eligible for its original operation');
+  const storePath = join(writer.env.NTN_SKILLS_HOME, 'state.sqlite'), store = await lstat(storePath);
+  assert.ok(store.isFile() && !store.isSymbolicLink());
+  Object.assign(owned.sourceOperation, { actor: 'agent', libraryId: writer.libraryId, roots: writer.env,
+    cli: await artifact(writer.cli), node: await artifact(writer.node), inspection: operation.artifact, intent: intent.intent,
+    recordPageId: intent.record_page_id, store: { path: storePath, dev: store.dev, ino: store.ino } });
+  const publicFailure = join(writer.projectRoot, event.object + '-failed-sync.json');
+  await writeFile(publicFailure, (await json(interrupted.command.path)).stdout, { flag: 'wx', mode: 0o600 });
+  bindings.public['business.failedSync'] = publicFailure;
+  bindings.public['business.sourceDeclaration'] = owned.declarationPath;
+  return { ...interrupted, actor: 'fixture-controller-interruption-only', operation: operation.artifact,
+    store: owned.sourceOperation.store, cli: owned.sourceOperation.cli, publicFailure: await artifact(publicFailure) };
+}
+
+/** Observe the Agent's result. This function cannot apply or resume a writer. */
+async function verifyAgentSourceResume(bindings, event, runtime) {
+  const writer = await agentSourceWriter(bindings, event.object, runtime), owned = writer.objects[event.object], original = owned.sourceOperation;
+  assert.equal(original?.actor, 'agent'); assert.equal(original.phase, 'interrupted');
+  assert.equal(original.libraryId, writer.libraryId); assert.deepEqual(original.roots, writer.env);
+  assert.deepEqual(await artifact(writer.cli), original.cli); assert.deepEqual(await artifact(writer.node), original.node);
+  assert.deepEqual(await artifact(owned.declarationPath), original.input, 'Original Source input changed');
+  const store = await lstat(original.store.path);
+  assert.ok(store.isFile() && !store.isSymbolicLink());
+  assert.deepEqual({ path: original.store.path, dev: store.dev, ino: store.ino }, original.store, 'The original Store was replaced');
+  const before = await json(original.inspection.path);
+  assert.deepEqual(await artifact(original.inspection.path), original.inspection);
+  assert.deepEqual(JSON.parse(before.stdout).operation.intent, original.intent);
+  const operation = await cli(writer, ['ctl', 'library', 'operation', owned.sourceId, '--kind', 'source', '--library', writer.libraryId], 'agent-source-after');
+  assert.equal(operation.value.library.library_id, writer.libraryId); assert.equal(operation.value.status, 'not_found');
+  assert.equal(operation.value.operation, null, 'The exact Store still has an unfinished operation');
+  const retired = await request(writer, 'v1/pages/' + original.recordPageId);
+  assert.ok(retired.in_trash === true || retired.archived === true, 'The original intent Record was not retired');
+  const after = await observeSourceCheckpoint(bindings, event.object);
+  assert.equal(propertyText(after.source, writer.library.sources.property_ids, 'Status'), 'ready');
+  assert.equal(propertyText(after.source, writer.library.sources.property_ids, 'Operation'), '');
+  const version = Object.keys(owned.versionInputs)[0];
+  const readback = await captureReadback(bindings, event.object, { version, key: event.object + '-agent-resumed' });
+  const result = { version: 1, status: 'passed', actor: 'independent-readback', libraryId: writer.libraryId,
+    sourceId: owned.sourceId, operationId: original.id, declaration: original.input, cli: original.cli, node: original.node,
+    roots: original.roots, store: original.store, intent: original.intent, before: original.inspection, after: operation.artifact, interrupted: original.observation,
+    retired, readback, controllerResumeCommands: 0 };
+  const path = join(writer.root, 'readbacks', event.object + '-agent-resume-' + randomUUID() + '.json'); await save(path, result);
+  original.phase = 'agent-resumed'; original.resumeObservation = await artifact(path);
+  return { ...result, artifact: original.resumeObservation };
+}
+
 async function resumeSourceWrite(bindings, event) {
-  const context = bindings.private.fixture, owned = context.objects[event.object];
+  const context = agentFixtureObjectContext(bindings.private.fixture, event.object), owned = context.objects[event.object];
   assert.equal(owned.placement, 'source'); assert.equal(owned.sourceOperation?.phase, 'interrupted', 'Resume requires a verified real interruption');
   assert.deepEqual(await artifact(owned.declarationPath), owned.sourceOperation.input, 'Frozen Source intent input changed');
-  const resumed = await cli(context, ['ctl', 'library', 'source', 'apply', owned.declarationPath, '--entry', context.entry,
+  const resumed = await cli(context, ['ctl', 'library', 'source', 'apply', owned.declarationPath, '--library', context.libraryId,
     '--operation', owned.sourceOperation.id, '--resume'], 'source-resume');
   assert.equal(resumed.value.operation_id, owned.sourceOperation.id);
   const selected = resumed.value.targets?.filter(target => target.skill_id === owned.skillId);
@@ -981,12 +1111,14 @@ async function injectFault(bindings, event, ownedStateRoot, runtimeEnv) {
 }
 
 /** Finite control-plane events. RPC lifecycle events belong to the existing Pi runner. */
-export async function runAgentFixtureEvent(event, { bindings, bindingsPath, ownedStateRoot, runtimeEnv }) {
-  const context = bindings.private.fixture; await assertOwnership(context);
+export async function runAgentFixtureEvent(event, { bindings, bindingsPath, ownedStateRoot, runtimeEnv, runtimeCli }) {
+  const context = agentFixtureObjectContext(bindings.private.fixture, event?.object); await assertOwnership(context);
   assert.ok(event && typeof event === 'object' && !Array.isArray(event));
   const allowed = {
     'publish-version': ['kind', 'object', 'version'],
     'interrupt-source-write': ['kind', 'object', 'maxRequests'],
+    'interrupt-agent-source-write': ['kind', 'object', 'maxRequests'],
+    'verify-agent-source-resume': ['kind', 'object'],
     'resume-source-write': ['kind', 'object'],
     'set-enabled': ['kind', 'object', 'enabled', 'defaultContext'],
     'remove-owned': ['kind', 'object'],
@@ -1004,6 +1136,8 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
   try {
     if (event.kind === 'publish-version') record.result = await publishVersion(bindings, event);
     if (event.kind === 'interrupt-source-write') record.result = await interruptSourceWrite(bindings, event);
+    if (event.kind === 'interrupt-agent-source-write') record.result = await interruptAgentSourceWrite(bindings, event, { ownedStateRoot, runtimeEnv, runtimeCli });
+    if (event.kind === 'verify-agent-source-resume') record.result = await verifyAgentSourceResume(bindings, event, { ownedStateRoot, runtimeEnv, runtimeCli });
     if (event.kind === 'resume-source-write') record.result = await resumeSourceWrite(bindings, event);
     if (event.kind === 'readback') {
       const declaration = bindings.private.readbacks[event.receipt];
@@ -1013,7 +1147,7 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
     if (event.kind === 'set-enabled') {
       assert.equal(typeof event.enabled, 'boolean');
       assert.ok(event.defaultContext === undefined || typeof event.defaultContext === 'boolean');
-      const args = ['ctl', 'library', 'skill', 'update', owned.pageId, '--entry', context.entry, '--enabled', String(event.enabled)];
+      const args = ['ctl', 'library', 'skill', 'update', owned.pageId, '--library', context.libraryId, '--enabled', String(event.enabled)];
       if (event.defaultContext !== undefined) args.push('--default-context', String(event.defaultContext));
       const result = await cli(context, args, 'set-enabled');
       const row = await request(context, 'v1/pages/' + owned.pageId);
@@ -1028,7 +1162,7 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
     }
     if (event.kind === 'remove-owned') {
       assert.equal(owned.placement, 'notion');
-      const result = await cli(context, ['ctl', 'library', 'skill', 'remove', owned.pageId ?? owned.skillId, '--entry', context.entry], 'remove');
+      const result = await cli(context, ['ctl', 'library', 'skill', 'remove', owned.pageId ?? owned.skillId, '--library', context.libraryId], 'remove');
       if (result.value.status === 'removed') assert.equal(result.value.cleanup_verified, true);
       assert.ok(['removed', 'already_trashed', 'not_found'].includes(result.value.status));
       record.result = { command: result.artifact, receipt: result.value, readback: await captureReadback(bindings, event.object, { key: event.object + '-removed', expected: 'absent' }) };
@@ -1060,7 +1194,7 @@ export async function runAgentFixtureEvent(event, { bindings, bindingsPath, owne
     }
     if (event.kind === 'restore-projection') {
       assert.equal(owned.placement, 'source'); assert.ok(owned.projectionBeforeTrash, 'Restoration needs the before-trash comparison');
-      const result = await cli(context, ['ctl', 'library', 'projection', owned.pageId, '--restore', '--entry', context.entry], 'restore-projection');
+      const result = await cli(context, ['ctl', 'library', 'projection', owned.pageId, '--restore', '--library', context.libraryId], 'restore-projection');
       const readback = await captureReadback(bindings, event.object, { key: event.object + '-restored', projection: 'same-as-baseline' });
       assert.deepEqual(readback.observed.files.map(file => [file.path, file.sha256, file.mode]), owned.projectionBeforeTrash.observed.files.map(file => [file.path, file.sha256, file.mode]));
       record.result = { command: result.artifact, readback };
@@ -1121,6 +1255,7 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
     await persistCleanup();
   }
   for (const owned of Object.values(context.objects).reverse()) {
+    const selectedContext = agentFixtureObjectContext(context, owned.id);
     if (owned.external) { assert.equal(owned.readOnly, true); results.push({ object: owned.id, action: 'external-read-only-preserved', status: 'passed' }); continue; }
     if (owned.placement === 'global' || owned.placement === 'project') {
       if (!owned.directory || !(await exists(owned.directory))) continue;
@@ -1131,7 +1266,7 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
       results.push({ object: owned.id, action: 'local-trash', status: 'passed' }); continue;
     }
     if (!owned.pageId) {
-      const row = await actualSkill(context, owned);
+      const row = await actualSkill(selectedContext, owned);
       if (!row && owned.placement !== 'source') continue;
     }
     if (owned.placement === 'source') {
@@ -1140,13 +1275,13 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
         if (!observed.source && !owned.sourceOperation) continue;
         assert.ok(observed.source, 'An interrupted Source intent needs reconciliation before teardown');
       }
-      const sourceBefore = await request(context, 'v1/pages/' + owned.sourcePageId);
-      assert.equal(propertyText(sourceBefore, context.library.sources.property_ids, 'Source ID'), owned.sourceId);
+      const sourceBefore = await request(selectedContext, 'v1/pages/' + owned.sourcePageId);
+      assert.equal(propertyText(sourceBefore, selectedContext.library.sources.property_ids, 'Source ID'), owned.sourceId);
       if (!(sourceBefore.in_trash || sourceBefore.archived)) {
-        assert.equal(propertyText(sourceBefore, context.library.sources.property_ids, 'Status'), 'ready', 'Resume the exact unfinished Source before teardown');
-        assert.equal(propertyText(sourceBefore, context.library.sources.property_ids, 'Operation'), '', 'Preserve unfinished Source evidence');
+        assert.equal(propertyText(sourceBefore, selectedContext.library.sources.property_ids, 'Status'), 'ready', 'Resume the exact unfinished Source before teardown');
+        assert.equal(propertyText(sourceBefore, selectedContext.library.sources.property_ids, 'Operation'), '', 'Preserve unfinished Source evidence');
       }
-      const sourceRecords = await pages(context, 'records', { property: context.library.records.property_ids.Origin, relation: { contains: owned.sourcePageId } });
+      const sourceRecords = await pages(selectedContext, 'records', { property: selectedContext.library.records.property_ids.Origin, relation: { contains: owned.sourcePageId } });
       owned.sourceRecordIds = [...new Set([...(owned.sourceRecordIds ?? []), ...sourceRecords.map(record => record.id)])];
       await persistCleanup(); // Preserve exact retired identities before the first writer may trash them.
       const commands = [];
@@ -1155,8 +1290,8 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
         // An empty selected set still needs its original valid discovery root.
         declaration.definition.selection = { ...declaration.definition.selection, include: [], exclude: ['**'], mapping: {} }; declaration.contributions = [];
         const path = join(context.root, 'inputs', owned.id + '-retire-source-' + randomUUID() + '.json'); await save(path, declaration);
-        const empty = await cli(context, ['ctl', 'library', 'source', 'apply', path, '--entry', context.entry], 'retire-source-members');
-        const removed = await cli(context, ['ctl', 'library', 'source', 'remove', owned.sourceId, '--entry', context.entry], 'remove-source');
+        const empty = await cli(selectedContext, ['ctl', 'library', 'source', 'apply', path, '--library', selectedContext.libraryId], 'retire-source-members');
+        const removed = await cli(selectedContext, ['ctl', 'library', 'source', 'remove', owned.sourceId, '--library', selectedContext.libraryId], 'remove-source');
         commands.push(empty.artifact, removed.artifact);
       }
       const retired = [];
@@ -1182,7 +1317,7 @@ export async function cleanupAgentFixtures(bindings, { subjectExited, trash = '/
         continue;
       }
       if (row.in_trash || row.archived) { const readback = await captureReadback(bindings, owned.id, { key: owned.id + '-cleanup', expected: 'absent' }); results.push({ object: owned.id, action: 'already-trashed', status: 'passed', readback }); continue; }
-      const removed = await cli(context, ['ctl', 'library', 'skill', 'remove', owned.pageId, '--entry', context.entry], 'cleanup-owned');
+      const removed = await cli(selectedContext, ['ctl', 'library', 'skill', 'remove', owned.pageId, '--library', selectedContext.libraryId], 'cleanup-owned');
       assert.equal(removed.value.cleanup_verified, true);
       const readback = await captureReadback(bindings, owned.id, { key: owned.id + '-cleanup', expected: 'absent' });
       results.push({ object: owned.id, action: 'native-cleanup', status: 'passed', command: removed.artifact, readback });

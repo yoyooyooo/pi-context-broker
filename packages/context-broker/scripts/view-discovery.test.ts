@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createNotionFixture, database, firstViewId, secondViewId } from "../../../scripts/notion-integration-fixture.mjs";
+import { createNotionFixture, database, libraryId, firstViewId, secondViewId } from "../../../scripts/notion-integration-fixture.mjs";
 import { currentNotionFixture } from "./fixtures/current-notion-source";
 import { notionDirectorySelections, resolveViewDiscovery, sessionViews, VIEW_SELECTION_ENTRY } from "../src/view-discovery";
 import { viewSystemPrompt } from "../src/view-prompt";
@@ -16,9 +16,9 @@ const record = (name: string, path: string): SkillRecord => ({ name, path, alias
 function pairedView() {
   const page = "11111111-1111-4111-8111-111111111111", dataSource = "22222222-2222-4222-8222-222222222222";
   const source: Extract<SourceConfig, { type: "notion" }> = { id: "paired", type: "notion" };
-  const selected: SkillRecord = { ...record("Paired member", "/owned/paired/SKILL.md"), id: "shared_skill:paired:member", enabled: true,
-    source: "notion", sourceId: source.id, sourceScope: "a".repeat(64), kind: "skill", ref: "skill://shared_skill%3Apaired%3Amember/SKILL.md",
-    locator: { type: "shared_skill", library_id: "paired", skill_id: "member", page_id: page, database_id: database, data_source_id: dataSource } };
+  const selected: SkillRecord = { ...record("Paired member", "/owned/paired/SKILL.md"), id: "skill://member?library=00000000-0000-4000-8000-000000000099", enabled: true,
+    source: "notion", sourceId: source.id, sourceScope: "a".repeat(64), kind: "skill", ref: "skill://member/SKILL.md?library=00000000-0000-4000-8000-000000000099",
+    locator: { type: "shared_skill", library_id: "00000000-0000-4000-8000-000000000099", skill_id: "member", page_id: page, database_id: database, data_source_id: dataSource } };
   const directory: NotionDirectory = Object.assign([selected], { list: { sourceId: source.id, policy: "default" as const, exhaustive: true }, failures: [],
     view: { id: firstViewId, name: "Paired view", type: "table", database_id: database, data_source_id: dataSource, url: `https://notion.so/${database}?v=${firstViewId}` } });
   const paired = new Map<string, NotionDirectoryObservation>([[source.id, { selection: {}, outcome: { ok: true, value: directory } }]]);
@@ -35,7 +35,7 @@ test("paired complete View survives an unrelated full-catalog failure without an
 });
 
 test("paired selection preserves session View precedence and exact Profile matching", () => {
-  const f = pairedView(), source = { ...f.source, default_view_id: firstViewId, profile_id: "work", database };
+  const f = pairedView(), source = { ...f.source, default_view_id: firstViewId, profile_id: "work", library: "00000000-0000-4000-8000-000000000099" };
   expect(notionDirectorySelections({ sources: [source] }).get(source.id)).toEqual({ view: firstViewId });
   expect(notionDirectorySelections({ sources: [{ ...source, default_view_id: undefined }] }).get(source.id)).toEqual({ profile: "work" });
   expect(notionDirectorySelections({ sources: [source] }, context([choice(source.id, secondViewId)])).get(source.id)).toEqual({ view: secondViewId });
@@ -77,11 +77,11 @@ test("source View listing calls the public ctl route with its exact scope and po
     "import { spawnSync } from 'node:child_process';\n" +
     "const command = " + JSON.stringify(fixture.command) + ";\n" +
     "const result = spawnSync(command[0], [...command.slice(1), ...process.argv.slice(2)], { stdio: 'inherit' }); process.exitCode = result.status ?? 1;\n");
-  const views = await runtime.boundary.listNotionViews({ id: "controlled", type: "notion", database, discovery: { offline: true } }, root);
+  const views = await runtime.boundary.listNotionViews({ id: "controlled", type: "notion", library: libraryId, discovery: { offline: true } }, root);
   expect(views.map(view => view.id)).toEqual([firstViewId, secondViewId]);
   const calls = (await readFile(fixture.callsPath, "utf8")).trim().split("\n").map(JSON.parse);
   expect(calls).toHaveLength(1);
-  expect(calls[0]).toMatchObject({ command: "ctl", args: ["views", "--database", database, "--offline"], operation: "views" });
+  expect(calls[0]).toMatchObject({ command: "ctl", args: ["views", "--library", libraryId, "--offline"], operation: "views" });
 });
 
 test("session choices inherit only the active branch, reset independently and do not leak to another session", () => {
@@ -115,11 +115,11 @@ test("metadata is escaped and cannot close the owned catalog wrapper", () => {
 });
 
 test("default Notion metadata retains both the advertised native path and exact public reference", () => {
-  const ref = "skill://shared_skill%3Alibrary%3Aowner/SKILL.md?snapshot=selected&file_id=main";
+  const ref = "skill://owner/SKILL.md?library=d81f4f38-325d-5797-995e-a48a903c6ae3&snapshot=selected";
   const selected = { ...record("shared", "/cache/selected/SKILL.md"), metadataIndexPath: "/native/shared/SKILL.md", ref };
   const prompt = viewSystemPrompt("", [selected, record("local", "/local/SKILL.md")], [], new Set(), []);
   expect(prompt).toContain("<location>/native/shared/SKILL.md</location>");
-  expect(prompt).toContain("<ref>skill://shared_skill%3Alibrary%3Aowner/SKILL.md?snapshot=selected&amp;file_id=main</ref>");
+  expect(prompt).toContain("<ref>skill://owner/SKILL.md?library=d81f4f38-325d-5797-995e-a48a903c6ae3&amp;snapshot=selected</ref>");
   expect(prompt).not.toContain("<location>/cache/selected/SKILL.md</location>");
   expect(prompt.match(/<ref>/g)).toHaveLength(1);
   expect(prompt).toContain("<location>/local/SKILL.md</location></skill>");
@@ -127,7 +127,7 @@ test("default Notion metadata retains both the advertised native path and exact 
 
 test("short Notion references occur once and replace only broker-owned native metadata paths", () => {
   const remote: SkillRecord = { ...record("remote", "/private/long-cache/SKILL.md"), source: "notion", metadataIndexPath: "/private/metadata/SKILL.md",
-    ref: "skill://shared_skill%3Alibrary%3Aremote/SKILL.md", body: "SOURCE BODY MUST STAY OUT OF THE CATALOG" };
+    ref: "skill://remote/SKILL.md?library=d81f4f38-325d-5797-995e-a48a903c6ae3", body: "SOURCE BODY MUST STAY OUT OF THE CATALOG" };
   const router: SkillRecord = { ...record("router", "/private/router/ROUTER.md"), source: "notion", kind: "router", ref: "skill://long-router/ROUTER.md" };
   const local = { ...record("local", "/local/SKILL.md"), source: "local" as const };
   const native = '<available_skills><skill><name>other-extension</name><location>/other-extension/SKILL.md</location></skill><skill><name>remote-native</name><location>/private/metadata/SKILL.md</location></skill></available_skills>';

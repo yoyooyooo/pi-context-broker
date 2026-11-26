@@ -8,7 +8,7 @@
 
 Availability/ReadRace 留在 verification/models/consumer-observations，完整配置及故意保留的缺陷反例不改写。它们约束资格一致性、有效分页 cursor、请求顺序和两代会话；F1–F7 与原两项真实守卫 mutation 继续执行。
 
-verification/models/consumer-state/coverage.json 是当前四个模型的唯一 cases 清单，绑定真实源码和受控回归。不得在 Skill 或 CI 复制另一份配置列表。这些模型覆盖有限时间、来源、精确身份/失败目标，以及 fixed graph 和 provider/boundary 交接。
+verification/models/consumer-state/coverage.json 是当前五个模型的唯一 cases 清单，绑定真实源码和受控回归。不得在 Skill 或 CI 复制另一份配置列表。这些模型覆盖有限时间、来源、精确身份/失败目标、Library 选择，以及 fixed graph 和 provider/boundary 交接。
 
 ## FreshnessPublication
 
@@ -31,6 +31,20 @@ verification/models/consumer-state/coverage.json 是当前四个模型的唯一 
 `notion_list refresh:true` 复用 index 的目录 owner 和同包 SDK，仅推进目录请求与发布；它保持 host 任务 `generation`、selected/active 图、固定引用与交付状态，并取消旧 metadata signal。`metadataGeneration` 新加入分页 cursor，即使目录字节和有效资格没变，旧 cursor 也不能跨一次成功刷新继续。它是具体实现的额外发布守卫；Availability 仅建模单条候选与有效资格，ReadRace 只有请求顺序和两个 session epochs，不能把 metadata epoch 等同于其中的会话 epoch。
 
 `FreshnessPublication.Receive` 仍对应异步获取完成后的同步证据准入；它不建模 SDK 请求、写后失效、View 交接或 Promise 等待。`host-refresh.test.ts` 经 production index/adapter 验证 TTL 内新条目、失败/partial、自动写入在途失效、固定选择及随后普通回合；`host-prepare.test.ts` 验证不配合取消的旧 producer、等待者取消、重叠来源合并和 session fence。`catalog-cache.test.ts` 检查精确来源强刷和 offline 策略，`catalog-menu.test.ts` 检查公开 age 随原始验证时刻前进、缺失观察不变成新验证。native CRUD 回执与 literal argv 由 `cli-write-invalidation.test.ts` 检查。这些是实现义务，不扩张现有有限模型的证明范围；保留全部原规则、负例和真实 guard mutations。
+
+### 内容搜索的整份结果发布
+
+`notion_list search_in:content` 以显式、非空 query 和唯一配置来源启动。metadata 模式、禁用来源和无来源不会进入 MCP；headless/RPC/print/JSON 不提供授权展示回调，所以缺少已有凭据时 SDK 在 OAuth flight 前终结。Broker 只持有展示 URL、该 waiter 的 signal 与 deadline；transport、凭据和授权回调由 core/SDK 持有。
+
+`consumer-observation.accept` 在原有 generation、signal、证据时间及请求顺序守卫通过之后，原子地更新 observation、推进 qualification revision 并通知订阅者。拒绝的旧证据不推进 revision；deny 后又 allow 仍是新代次。原 metadata 资格判定和 cursor 合同不变。
+
+`content-publication.createContentPublication` 从这个 revision 和当前 task、metadata、source 配置、session ID/file、branch ancestry 建立一次发布 ticket。成功、空结果、notice、授权拒绝和其他错误共享此 ticket；它在 SDK 等待、授权展示前后及最终输出处检查。已接受资格变化或取消可终止不合作的 producer 等待；原 branch 追加可继续，回退、换支或重写已捕获前缀会退役。授权完成只恢复原参数，不能改来源、另起 query 或改写 selected/active/Requires/pins。
+
+首版没有 content 缓存或远程分页，所有 content cursor 都在 dispatch 前拒绝；返回 `next_cursor:null`、`pagination:not_supported`、`coverage:remote_non_exhaustive` 和 `exhaustive:false`。metadata refresh 仍只刷新目录。SDK 负责显式 entry 的 fresh REST 预检、授权后复核、MCP 同一 physical 来源绑定及 Skill/File owner、Enabled、稳定 ID 的最终准入；这些网络义务不由消费者模型证明。
+
+`host-content-search.test.ts` 经真实 host 工具入口回放整份结果 fence、空结果、远程错误、资格变化、配置变化、deadline、单 waiter 取消、模式和 cursor 拒绝、无 pin/active 写入。`consumer-observation.test.ts` 核资格 revision 的唯一接受点与 ABA；`content-search.test.ts` 核动态 SDK 返回的有界闭合结构与错误白名单；`pi-authorization.test.ts` 核展示/关闭/取消和无交互能力零浏览器副作用。现有 mutation runner 另在隔离副本破坏资格推进、source/session/branch/deadline/cancellation 和错误发布守卫，要求 baseline、行为反例、原字节恢复三个阶段。
+
+这些是 `FreshnessPublication`、`ReadRace` 的具体实现扩展义务。现有有限模型没有 OAuth、空远程列表、metadata epoch、配置指纹或 branch ancestry 变量；不得从旧模型通过推导这些新行为已穷尽验证。保留模型、有限域、完整 cases/expected_rules 和旧负例；源码 hash 只绑定已审查的 owner 字节。真实 Notion/OAuth、安装身份和自然 Pi 任务继续由 integration、agent-workflows 负责。
 
 ## SelectionGraph
 
@@ -68,6 +82,24 @@ SelectionGraph 包含 retained + new closure 的有限字节预算前提及 `Rel
 
 真实回放使用 session-active.test.ts 的 selected/partial、discarded drafts、failed/aborted/late/rewound 场景；新回归补不同 session identity 的迟到 headers 和原 user 已离开 branch、另一个 user 仍存在的情况。后者避免“找到了任意 user”冒充原请求身份。native-read-session 和 skill-context-session 保留全正文、精确 snapshot/scope/hash、独立 pins、原生历史不被修改的检查。
 
+### Pi 的失败退化与交付证明
+
+Broker 准备、授权、完整闭包或最终投影检查失败时，原用户请求继续；失败的 Skill 指令不能因此获得交付、激活或持久化证明。`host-skills.warnAndRetire` 撤下本次未确认的 entry、pending graphs、candidate、投影和待确认 drafts，释放自己的准备状态，并给出一次 warning。原有 source/scope、观察顺序、session/generation、取消、完整正文及 provider/turn/projection 守卫仍决定能否发布。用户 Stop 和会话替换由宿主拥有，旧异步结果不能触碰新会话或重新发布正文。
+
+`nonblocking-context.withoutBrokerInstructions` 先保留并校验 receipt，再剥离其证明的正文片段；普通用户引文和图片不凭相似文本删除。最终 provider hook 的安全替换按原逻辑消息、工具调用 ID、原生文本和图片绑定识别已知消息槽，保留普通工具调用及输出、图片和 provider 字段。OpenAI completions、Responses、Anthropic、Google、Bedrock 与 Pi message 形态由具体回归检查；这不是通用 serializer，也不证明未知 provider 形态已被修复。未知形态只依赖序列化前的安全逻辑上下文，不获得额外 wire 确认。实际请求字节的完整 ledger 证明仍限于现有 OpenAI completions 和 Undici 路径。
+
+`skill-preparation.withPreparationDeadline` 将每次模型请求前 context 阶段的 Library 身份、print/JSON metadata、显式准备、任务 prompt 和 active restoration 纳入同一个 60 秒期限；不是整段含多次模型和工具往返的 agent turn 共用此期限。生产者不配合取消也必须让等待结束。超时只终止 Broker 获取；原操作 signal 保持可用，随后迟到结果还必须通过原取消和当前 owner 检查。Pi preparation gate 不禁用编辑器；一次 input 接纳的排队文本和图片由原生队列送到后续 context 后再准备。期限、Promise 退出、输入顺序和图片保留是实现义务，有限模型没有这些墙钟、队列或原生内容变量。
+
+`index` 的 shutdown 先推进目录代次、取消 catalog owner 并清空目录引用，不再等待所有目录 producer 退出。`ownCatalog` 保留获取前后的 signal 检查及拒绝观察；`publishCatalog` 仍检查 owner 和原 cache entry。`host-refresh.test.ts` 通过真实 index 入口暂停一个忽略取消的 SDK catalog，验证 shutdown 在 producer 返回前完成、迟到结果不能作为工具结果发布，也不新增 branch entry 或通知。此 Promise 退出义务不属于 ReadRace 的有限网络调度证明。
+
+`host-skills` 的公开 metadata list、use、`notion_ctl cli_source` 验证和 Broker 自有单项 read 复用 `withPreparationDeadline`，每次操作默认 60 秒。内容搜索保持 360 秒和 `CONTENT_SEARCH_TIMEOUT`，并将最初的 Library 解析纳入总预算；batch 按原 `timeBudgetMs` 做实际 Promise race，保持 `RESOURCE_TIME_BUDGET`。原生 read 接管失败时，tool_call hook 的来源获取同样有界。普通 native read 在识别后原参数直通，其执行不纳入 Broker 的期限。Stop 也通过 race 结束等待，不依赖 producer 自行响应 signal。
+
+外层取消会清理该 toolCall 的 pending read receipts；原 graph commit、qualification、scope、generation、完整文件和公开 ref 守卫继续接收子 signal。超时后的迟到结果不能 commit 或返回正文；已经在原生读取前合法完成的 fixed inspection selection 是先前事实，不回写成从未发生，也不据此伪造成功 read receipt 或 active。`host-prepare.test.ts` 与 `resource-read-host.test.ts` 分别暂停 metadata、Library、graph、原生来源读取和 batch producer，要求未释放 producer 前 timeout/Stop 已返回，再检查迟到回执、状态、下一次工具操作及普通 read 直通。Pi 1.6 的实际 tool runner 直接 await execute，且 Stop 等待 idle；因此只传 AbortSignal 不足以保证退出。以上 Promise 和宿主行为属于具体实现义务，有限模型不宣称证明这些运行时等待。
+
+收到 2xx 后才发生的 session 写入失败不能撤回已送达正文，也不能冒称正文从未加载。此时警告说明持久化未完成，响应继续，失败路径不制造新的确认或 boundary drafts。`activation-feedback` 的 `ready` 只表示准备完成，`loaded` 由 provider 接受路径确认；显示消息始终是 `content: []`，不会成为模型指令或另一套 selected/active 状态。
+
+`nonblocking-context.test.ts`、`host-prepare.test.ts`、`input-guard.test.ts`、`session-recovery.test.ts`、`final-request.test.ts` 和 `activation-feedback.test.ts` 分别检查这些具体边界。FV05 的不同 session 迟到 headers 回归还继续执行 `turn_end`，要求不返回旧来源 drafts；`provider-session-identity` mutation 仍须破坏真实守卫并触发行为断言失败。保留所有原有限域、cases、独立 expected_rules、负配置和 mutation；新增 owner/hash 只是经源码审查的对应，不扩张形式化证明范围。
+
 ## RecoveryClosure
 
 该切片覆盖三个连续 prompt，A、C 共用必须依赖 B，并保留独立根 D。原始字节完整或 B 缺失、远端 current 版本 1/2、业务 Enabled 关闭、一次明确权限拒绝和一次恢复 ticket 失效分别建模。恢复开始、外部返回、完整闭包/权限投影和继续提问是不同动作；不把异步读与最终发布当成原子事务。
@@ -95,6 +127,48 @@ ConversationCanContinue 使用局部动作的弱公平，并假定用户继续�
 `host-refresh.test.ts` 另核公开 use/read 的精确关系诊断：SDK 明确观察到
 Requires disabled 才显示 Enabled=false；缺失、不可访问或库外仍保持未知，
 不得转成授权拒绝。公开诊断不携带原始响应或凭据，也不改变原固定任务。
+
+## LibrarySession
+
+Library 身份抽象 canonical root UUID。branch 的默认选择、已接纳 turn 的 Library、
+完整 ref 的调用目标、目录 producer 的 ticket、固定 pin 的原 owner 是不同状态。
+设置 B 先验证成功，再保存到当前 branch；当前 A turn 仍取 A，后续 turn 才捕获 B。
+失败切换保留原选择，但请求 B 的后续流程必须 blocked，不能拿 A 继续完成。
+
+完整 B ref 可以从 A turn 发出，不修改默认选择；只有独立显式 call scope 与它冲突时拒绝。
+模型不将 ambient default 当作显式约束。相同 Skill ID/路径的具体对象与字节由实际
+SDK/CLI 回归核对，不能只观察名称或工具成功退出。
+
+| 独立事实 | 要检查的退化 |
+| --- | --- |
+| turn 接纳时 Library A | 切 B 后旧 turn 或短引用改发 B |
+| A 目录 payload 与原 selection/epoch ticket | A 迟到结果当 B 发布，或取消后旧结果仍发布 |
+| parent branch 已存 A | fork/rewind/resume 借用后来 child 的 B |
+| A 的固定 pin owner | 切库重绑 pin 或把旧 A Source 视为 disabled |
+| 新 turn 接纳时当前选择 | 明明已切 B，后续 turn 仍使用旧 A |
+
+切库只改变 selection ticket；lifecycle epoch 仍用于独立取消/会话失效。
+已有合法发布记录的是其原发布时刻，后来的切换不倒算历史错误。
+一个不再适用的目录结果可以被丢弃，而原 A turn 的固定目标仍有效。
+
+有限域包括两个 Library、两个 branch、两轮、一个目录 producer、一次切换和一次取消。
+`SessionFlowEventuallyExplained` 依赖局部动作弱公平与外部观察最终返回，终点包括显式
+拒绝/blocked；它不证明 API 可用、provider 完成或模型任务质量。
+源码对应 `library-selection.ts` 的 `sessionLibrary`、`accept/capture`、`select`、
+`isCurrent` 和 command `current()`，以及 `host-skills.ts` 的 `turnContext`。
+六项 `library-*` mutation 分别破坏每次 input 取默认、blocked、目录 ticket、command
+session、最新 active-branch entry 和 running turn 优先级。失败 B 后的 oracle 会先
+恢复远端，再新接纳一次 input；仍须 blocked 且不得发新 resolver 请求，避免旧的
+rejected Promise 掩盖删守卫缺陷。普通 A turn 与排队 B 分别保留独立上下文；普通
+输入的 preparation gate 在 `agent_start` 释放。Pi 不用此 gate 锁定原生队列，排队
+input 保留接纳时的 Library、session 和 generation，在其实际消息进入 context 后
+再采用；队列交接不改变既有 graph 提交协议，其顺序与图片保留由具体宿主回归验证。
+
+有限模型只建模默认主 Library 和一个显式跨库调用，不穷尽同轮多 Source 的语法。
+`$name@source` 仍是明确 Source 覆盖，按配置绑定实际 root/full ref；无 `@source`
+名称只在当前默认库解析。多库同名、混合 Prompt/Skill、显式多 Source 与 CLI 写后
+失效归具体宿主回归，不能从这个模型通过推出。
+根创建、descriptor v2、实际 DB/DS parent、同 root 换表与原 pending key 属于 CLI 的 LibraryLifecycle。
 
 ## 守卫破坏与诊断
 

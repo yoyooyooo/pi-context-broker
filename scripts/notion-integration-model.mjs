@@ -4,7 +4,9 @@ export function observe(api, settings) {
   const { appendFileSync, readFileSync, readdirSync, realpathSync, statSync } = settings.fs;
   const { createHash } = settings.crypto;
   const { isAbsolute, join, relative, resolve, sep } = settings.path;
-  const { model, provider, id, marker, alias, selected, cache, output } = settings;
+  const { model, provider, id, marker, alias, selected, cache, output, parseNativeReference, nativeFileRef, bindNativeReference, nativeReferenceLibrary } = settings;
+  for (const name of ["parseNativeReference", "nativeFileRef", "bindNativeReference", "nativeReferenceLibrary"])
+    if (typeof settings[name] !== "function") throw new Error("Integration observation requires the selected reference protocol");
   const allowedTools = () => {
     if (!settings.publicGraph) return ['read'];
     const surface = settings.surfaceFile ? JSON.parse(readFileSync(settings.surfaceFile, 'utf8')).surface : 'public-tools';
@@ -92,8 +94,6 @@ export function observe(api, settings) {
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   const portable = path => typeof path === 'string' && path.length > 0 && !path.includes('\0') && !path.includes('\\') && !isAbsolute(path) && !/^[A-Za-z]:/.test(path) && path.split('/').every(part => part && part !== '.' && part !== '..');
   const keys = (value, expected) => object(value) && Object.keys(value).sort().join('|') === expected.split(' ').sort().join('|');
-  const allowedNames = new Set([alias, ('notion/' + alias).replace(/[^a-z0-9-]/g, '-'), ('notion/' + alias + '@' + selected.physicalSelector.replaceAll('-', '')).replace(/[^a-z0-9-]/g, '-'), selected.selector]);
-  if (selected.locator?.type === 'shared_skill') allowedNames.add(selected.physicalSelector);
   let activeSnapshot;
   let activeScope;
   const sourceCache = cache;
@@ -119,7 +119,7 @@ export function observe(api, settings) {
         for (const item of raw.files) {
           if (!keys(item, 'path bytes sha256 ref') || !portable(item.path) || declaredFiles.has(item.path) || !Number.isSafeInteger(item.bytes) || item.bytes < 0 || !digest.test(item.sha256)) return;
           const binding = bindings.find(file => file.path === item.path);
-          const ref = `skill://${encodeURIComponent(raw.id)}/${item.path.split('/').map(encodeURIComponent).join('/')}?snapshot=${raw.snapshot_id}${binding ? '&file_id=' + encodeURIComponent(binding.file_id) : ''}`;
+          const ref = nativeFileRef(raw.id, item.path, raw.snapshot_id);
           if (item.ref !== ref) return;
           const path = join(tree, item.path);
           declaredFiles.set(item.path, { ...item, path, fileId: binding?.file_id });
@@ -164,10 +164,10 @@ export function observe(api, settings) {
     }
     const target = bindings.get(input), owner = target?.kind === 'resource' ? bindings.get(target.owner) : target;
     const identity = owner?.identity;
-    const currentRef = selected.ref ?? `skill://${encodeURIComponent(selected.selector)}/${selected.entry}`;
+    const currentRef = selected.ref ?? nativeFileRef(selected.id, selected.entry);
     if (!target || !identity || identity.source !== 'notion' || identity.id !== selected.id || !digest.test(identity.scope)
       || input[3] !== ({ candidate: 'C', selected: 'S', resource: 'R' })[target.kind]
-      || identity.ref + '/' + selected.entry !== currentRef
+      || nativeFileRef(identity.ref, selected.entry) !== currentRef
       || selected.locator && Object.entries(selected.locator).some(([key, value]) => identity.locator?.[key] !== value)) return undefined;
     if (target.kind === 'candidate') return { ref: currentRef, scope: identity.scope };
     if (owner.kind !== 'selected' || owner.entrypoint !== selected.entry) return undefined;
@@ -175,7 +175,7 @@ export function observe(api, settings) {
     if (candidates.length !== 1) return undefined;
     const declared = candidates[0].declaredFiles;
     const main = declared?.get(owner.entrypoint);
-    if (!main || main.ref !== owner.ref || main.sha256 !== owner.body_sha256 || main.fileId !== owner.file_id) return undefined;
+    if (!main || main.ref !== owner.ref || main.sha256 !== owner.body_sha256) return undefined;
     if (target.kind === 'resource') {
       const file = declared.get(target.path);
       if (!file || target.path === owner.entrypoint || file.ref !== target.ref || file.bytes !== target.bytes || file.sha256 !== target.sha256 || file.fileId !== target.file_id) return undefined;
@@ -192,36 +192,17 @@ export function observe(api, settings) {
     }
     const path = input.replace(/:(?:raw(?::.*)?|img|\d.*|-[0-9].*)$/, '');
     if (/^skill:\/\//.test(path)) {
-      const match = /^skill:\/\/([^/?#:]+)(.*)$/.exec(path);
-      if (!match || path.includes('#')) return undefined;
-      let target;
       let reference;
       try {
-        target = decodeURIComponent(match[1]);
-        if (match[2] && !/^[/?]/.test(match[2])) return undefined;
-        reference = match[2].replace(/^\//, '').split('?');
-        if (reference.length > 2) return undefined;
-        reference[0] = decodeURIComponent(reference[0]);
-        if (reference[1] !== undefined) decodeURIComponent(reference[1]);
+        reference = bindNativeReference(parseNativeReference(path), nativeReferenceLibrary(parseNativeReference(selected.id)));
       } catch { return undefined; }
-      if (!allowedNames.has(target)) return undefined;
-      if (target === selected.selector) {
-        if (match[1] !== encodeURIComponent(target)) return undefined;
-      } else if (/[/?#:]/.test(target.replace(/^upstream:/, ''))) return undefined;
-      const entry = reference[0] || selected.entry;
-      if (!portable(entry) || /[:?#]/.test(entry)) return undefined;
-      const query = new URLSearchParams(reference[1]);
-      if ([...query.keys()].some(key => !['snapshot', 'file_id'].includes(key)) || query.getAll('snapshot').length > 1 || query.getAll('file_id').length > 1) return undefined;
-      const snapshot = query.get('snapshot');
-      const fileId = query.get('file_id');
-      if (fileId !== null && !sharedId.test(fileId)) return undefined;
-      if (snapshot !== null && (!snapshotId.test(snapshot) || (activeSnapshot && snapshot !== activeSnapshot))) return undefined;
-      const candidates = exportedFiles().filter(item => (!snapshot || item.receipt.snapshot === snapshot) && (!activeSnapshot || item.receipt.snapshot === activeSnapshot) && (!activeScope || item.receipt.scope === activeScope));
-      if (candidates.length === 1) {
-        const actualEntry = fileId ? [...(candidates[0].declaredFiles?.entries() ?? [])].find(([, file]) => file.fileId === fileId)?.[0] : entry;
-        return actualEntry ? targetFor(candidates[0], actualEntry) : undefined;
-      }
-      return !snapshot && !fileId && entry === selected.entry && candidates.length === 0 ? { kind: 'skill-uri', path } : undefined;
+      if (reference.selector !== selected.id) return undefined;
+      const snapshot = reference.snapshot;
+      if (snapshot !== undefined && activeSnapshot && snapshot !== activeSnapshot) return undefined;
+      const candidates = exportedFiles().filter(item => (!snapshot || item.receipt.snapshot === snapshot)
+        && (!activeSnapshot || item.receipt.snapshot === activeSnapshot) && (!activeScope || item.receipt.scope === activeScope));
+      if (candidates.length === 1) return targetFor(candidates[0], reference.path || candidates[0].receipt.entry);
+      return !snapshot && (!reference.path || reference.path === selected.entry) && candidates.length === 0 ? { kind: 'skill-uri', path } : undefined;
     }
     if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return undefined;
     const absolute = canonicalReadPath(path);
@@ -346,11 +327,9 @@ export function observe(api, settings) {
           value = shortReference(value)?.ref;
           if (!value) return false;
         }
-        const match = /^skill:\/\/([^/?#]+)\/([^?#]+)(?:\?([^#]*))?$/.exec(value);
         try {
-          if (!match || decodeURIComponent(match[1]) !== selected.id || match[1] !== encodeURIComponent(selected.id) || decodeURIComponent(match[2]) !== selected.entry) return false;
-          const query = new URLSearchParams(match[3]);
-          return [...query.keys()].every(key => ['snapshot', 'file_id'].includes(key)) && query.getAll('snapshot').length <= 1 && query.getAll('file_id').length <= 1;
+          const reference = bindNativeReference(parseNativeReference(value), nativeReferenceLibrary(parseNativeReference(selected.id)));
+          return reference.selector === selected.id && (!reference.path || reference.path === selected.entry);
         } catch { return false; }
       });
       record({ phase: 'tool_call', tool: event.toolName, allowed, kind: 'preparation' });

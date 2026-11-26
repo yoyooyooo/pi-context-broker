@@ -14,10 +14,10 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/c
 
 | 动作 | required_inputs 与结果边界 |
 | --- | --- |
-| plan/run | version:1；同一新 delivery:{id:UUID,startedAt:UTC_ISO}；实际日用包注册、source 配置、配对 roots/archive/hash、embedded CLI/SDK 和 entry hash、自有 evidenceRoot。run 还核正常 PATH、expectedFindRecord 和适用的 namespace review；plan 只输出准备信息。 |
-| aggregate | version:1；同一 delivery、worktrees、cliRoot/brokerRoot；receipts.pro/mini 为两份本次日用 result.json 的绝对路径。重验真实 origin/next、当前构建、不同机器与完整 version:2 日用回执；单机、旧回执、候选、source-only 或缺项不通过。 |
+| plan/run | version:1；同一新 delivery:{id:UUID,startedAt:UTC_ISO}、预期 library 根 UUID；实际日用包注册、source 配置、配对 roots/archive/hash、embedded CLI/SDK 和 entry hash、自有 evidenceRoot。run 还核正常 PATH、expectedFindRecord 和适用的 namespace review；plan 只输出准备信息。 |
+| aggregate | version:1；同一 delivery、library、worktrees、cliRoot/brokerRoot；receipts.pro/mini 为两份本次日用 result.json 的绝对路径。重验真实 origin/next、当前构建、不同机器与完整 version:2 日用回执；单机、旧回执、候选、source-only 或缺项不通过。 |
 | candidate-plan | version:1；自然旅程使用 scope:notion-agent-workflow 及 scenarioFile/scenarioId/profile/bindingsFile；原项目预检 scope 保留其 turns/expectedBodies。输出 prepared_not_executed。 |
-| candidate-run --live | 自然旅程按 [工作流 Skill](../../verify-notion-agent-workflows/SKILL.md) 绑定实际 fixture、配对包、source/database、注册位置与 evidenceRoot；原项目预检按其现有包/归档/所有权输入。正式模型为 magpie/group/worker、thinkingLevel:high。 |
+| candidate-run --live | 自然旅程按 [工作流 Skill](../../verify-notion-agent-workflows/SKILL.md) 绑定实际 fixture、配对包、source/library、注册位置与 evidenceRoot；原项目预检按其现有包/归档/所有权输入。正式模型为 magpie/group/worker、thinkingLevel:high。 |
 
 ## 准备普通日用配置
 
@@ -29,6 +29,7 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/c
 ```json
 {
 	"version": 1,
+	"library": "REPLACE_WITH_EXPECTED_LIBRARY_ROOT_UUID",
 	"delivery": {
 		"id": "REPLACE_WITH_NEW_SHARED_UUID",
 		"startedAt": "REPLACE_WITH_CURRENT_CANONICAL_UTC_ISO"
@@ -62,6 +63,10 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/c
 
 按这些来源逐项填值：
 
+- `library` 是本次预期消费的根 UUID。它不配置或覆盖产品默认库；实际普通 SDK 的
+  `library-selection` 必须零 HTTP，`library` 和 `list` 必须归属于该根。
+  source 名称或 Skill 名称相同不能代替 Library 身份。Source 省略 `library` 时，
+  普通 CLI 全局配置仍须有正确的 `default_library`。
 - 从真实 package 注册读回包总数和目标 slot。`configurationSnapshot` 读取正常
   `~/.pi/agent/settings.json` 及正常 Broker source 配置，校验 slot 指向 `brokerRoot`。
   它不接受 source override；本次 metadata 检查要求启用的 Notion source 不配置 `command`，且 prefetch 关闭。
@@ -86,6 +91,15 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/c
 
 上述读取受现有访问权限约束。若执行环境不允许读取日用配置，按交付合同记 `blocked`，不要换路径绕读。
 配置本身不含 token。`plan` 展示准备信息，不验证所有原件，也不证明 `run` 已成功。
+
+SDK 3 验证根结构会读取该根的直属 children。HTTP observer 仅保全 ID、parent 和分页
+状态，独立建立 root→直属 Database→Data Source 的绑定，不保存正文或字段内容。
+`library` 操作只可读取认证、该根和这些结构描述；未完成分页、外根 child、孤立
+Data Source、任意 Skill/File blocks 或 markdown 都会失败。`list` 的数据源查询也须
+位于已验证的根内；View 列表须指定该根内的 Database，View 自身的独立响应还须证明
+其 Database 和 Data Source 归属，再允许该 View 的查询。其他页面、properties、外库
+View 和全局搜索不符合此日用检查。回执分别记录 `notion_body_requests` 中真实的根结构请求、
+`metadata_http_requests` 与 `skill_body_reads:0`，不把根请求改报成 metadata 或隐藏计数。
 
 ### 只为已审阅的外部目录诊断提供例外
 

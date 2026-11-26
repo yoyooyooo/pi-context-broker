@@ -1,6 +1,6 @@
 # 当前 Source、目录与消费
 
-先读 [integration Skill](../../verify-notion-skills-integration/SKILL.md) 和 [source 配置地图](../../verify-notion-skills-integration/features/source-configuration-discovery.md)。当前 remote 只通过同包 SDK v2 消费，接受 `shared_skill` 身份；`source.command`、旧 locator 与 prepare CLI 协议在边界拒绝。
+先读 [integration Skill](../../verify-notion-skills-integration/SKILL.md) 和 [source 配置地图](../../verify-notion-skills-integration/features/source-configuration-discovery.md)。当前 remote 只通过同包 SDK v3 消费，以 `skill://` 表达完整身份，`shared_skill` 仅为 adapter 类型；`source.command`、旧 locator 与 prepare CLI 协议在边界拒绝。
 
 ## 按行为选择已有检查
 

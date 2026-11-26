@@ -38,8 +38,8 @@ Start at the [Broker verification Skill](https://github.com/yoyooyooo/pi-context
 - SDK pairing and independent installation use the [integration Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/SKILL.md).
 - Eligibility, request order, fixed selection and delivery state use the [consumer-state Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-consumer-state/SKILL.md) and its existing model/guard mapping.
 - Actual Pi SDK/provider/serializer scenarios use `scripts/notion-sdk-pi.mjs` with its explicit installed-package inputs.
-- Real Notion and the effective daily Pi installation use the public `scripts/verify-pi-daily-installation.mjs` actions under AH-1197/AH-637; `scripts/verify-pi-daily-candidate.mjs` is its internal implementation.
-- Natural user journeys, mixed local/Notion selection and management use the [workflow verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-agent-workflows/SKILL.md) under AH-1196/AH-1198. Both applicable profiles run real `magpie/group/worker`; the corpus, private bindings and raw results stay separate.
+- Real Notion and the effective daily Pi installation use the public `scripts/verify-pi-daily-installation.mjs` actions; `scripts/verify-pi-daily-candidate.mjs` is its internal implementation.
+- Natural user journeys, mixed local/Notion selection and management use the [workflow verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-agent-workflows/SKILL.md). Daily and no-native-skills retain their normal-environment requirements. First use from an empty parent uses the separate `native-onboarding` profile through the same candidate entry, with a packed paired build and a fresh explicit-entry grader. See the [onboarding configuration](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-agent-workflows/references/running.md#空父页首次使用). All profiles run real `magpie/group/worker`; public tasks, private criteria and raw results stay separate.
 
 The old default dual-host controller, CLI-consumption fixtures and UI/PTY/model wrappers are retired. Do not restore `source.command`, old locators, `readOnly` or export fallback to make a test run. The controlled `ctl views` stub is only a management boundary; it cannot stand in for SDK consumption.
 
@@ -77,15 +77,33 @@ Build a new private generation when the selected CLI/SDK or Skill files change d
 
 Use owned temporary roots when a check needs empty state. Preserve unknown operations, failures and original input bytes. Never reset a user's cache or session to manufacture success. Stop only processes owned by that run, then move reviewed scratch to system Trash using an absolute path; do not use permanent deletion or bulk process-name cleanup.
 
+## Compatibility and documentation
+
+During 0.x, minor releases may change configuration, commands or host integration.
+Patch releases are intended to preserve those public contracts. Security fixes may
+narrow unsafe behavior; describe the affected behavior and upgrade steps in the
+changelog and current guides. There is no fixed deprecation grace period or
+commitment to maintain every previous minor. The optional `*` host peers avoid
+forcing another host installation; compatibility still needs actual host evidence.
+
+Keep public setup in README and current package references, implementation and
+verification constraints in the existing repository guides, and run status in the
+issue or PR. Before retiring a document, move unique current rules to their owner
+and update inbound links. Keep model inputs, tool locks, coverage maps and active
+fixtures. Generated charts use the existing runner with a fresh external output
+directory. Retain original failure inputs and useful run evidence; ordinary
+superseded documents remain available at their exact Git commit. Package docs are
+an explicit current-reference allowlist, not a copy of the repository history.
+
 ## Release
 
-Broker npm publication remains tag/version driven and uses the existing approval/provenance workflow. Current CI and publish run the Broker checks and current installed-package verifier. They do not inherit deferred dual-host, UI or model requirements.
+Broker publication uses an immutable stable tag, one pinned CLI/SDK source and one checked archive. Read the [release and recovery contract](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/releasing.md) before preparing a release or repairing a partial attempt. The existing npm-publish environment approval and provenance boundary remains in place.
 
 ```sh
 bun run release:check patch --no-push
 bun run release patch
 ```
 
-The release script runs its declared check before creating release commits, tags or pushes. Planning commands do not prove those checks passed and can still fetch/prune tags or query npm. Use the release-policy tests in an owned temporary repository when verifying that behavior. A published npm version cannot be replaced; read back the actual registry result before claiming publication.
+The planning command reads remote tags and registry versions but does not run the checks or create a tag. After separate release authorization, the release command starts from clean, current origin/main and runs its declared check before committing or tagging. Use `node --test scripts/release.test.mjs scripts/skill-consumption-contract.test.mjs` to test this mechanism in owned fixtures without publication. Failed unpublished tags remain immutable and require a higher new version; already published versions can resume verification and metadata repair only when their bytes match.
 
 Tern distribution, when explicitly resumed, uses its own package version and extracted self-contained archive. Do not claim a Tern release from current Broker-only packaging.

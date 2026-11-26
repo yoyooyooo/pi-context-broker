@@ -218,16 +218,16 @@ export function verifyNotionAgentSingleProjectionRestore(proof) {
   const words = ['ctl', 'library', 'projection', 'operation', 'read', 'files', 'list', 'use', 'export', 'schema'];
   const literals = new Map(words.map(word => [hash(word), word]));
   const content = {
-    list: { count: 0, bool: ['refresh', 'offline', 'metrics', 'json', 'default-view'], value: ['database', 'view', 'profile', 'query', 'limit', 'cursor', 'max-age'] },
-    read: { count: 1, bool: ['refresh', 'offline', 'metrics', 'json', 'raw'], value: ['database', 'path', 'from', 'lines', 'output', 'max-age'] },
-    files: { count: 1, bool: ['refresh', 'offline', 'metrics'], value: ['database', 'path', 'max-age'] },
-    use: { count: 1, bool: ['refresh', 'offline', 'json', 'metrics'], value: ['database', 'max-age'] },
-    export: { count: 1, bool: ['refresh', 'offline'], value: ['output', 'format', 'database', 'max-age'], required: ['output'] },
+    list: { count: 0, bool: ['refresh', 'offline', 'metrics', 'json', 'default-view'], value: ['library', 'view', 'profile', 'query', 'limit', 'cursor', 'max-age'] },
+    read: { count: 1, bool: ['refresh', 'offline', 'metrics', 'json', 'raw'], value: ['library', 'path', 'from', 'lines', 'output', 'max-age'] },
+    files: { count: 1, bool: ['refresh', 'offline', 'metrics'], value: ['library', 'path', 'max-age'] },
+    use: { count: 1, bool: ['refresh', 'offline', 'json', 'metrics'], value: ['library', 'max-age'] },
+    export: { count: 1, bool: ['refresh', 'offline'], value: ['output', 'format', 'library', 'max-age'], required: ['output'] },
   };
   const projection = { bool: ['restore', 'dry-run', 'resume', 'cancel', 'daily'],
-    value: ['entry', 'include', 'exclude', 'operation', 'max-requests', 'max-bytes', 'timeout'], required: ['entry'], repeat: ['include', 'exclude'] };
-  const operation = { bool: [], value: ['kind', 'entry', 'max-requests', 'max-bytes', 'timeout'], required: ['kind', 'entry'] };
-  const libraryFiles = { bool: [], value: ['entry'], required: ['entry'] };
+    value: ['library', 'include', 'exclude', 'operation', 'max-requests', 'max-bytes', 'timeout'], required: ['library'], repeat: ['include', 'exclude'] };
+  const operation = { bool: [], value: ['kind', 'library', 'max-requests', 'max-bytes', 'timeout'], required: ['kind', 'library'] };
+  const libraryFiles = { bool: [], value: ['library'], required: ['library'] };
   const definitions = [...Object.values(content), projection, operation, libraryFiles];
   const valueFlags = new Map([...new Set(definitions.flatMap(command => command.value))].map(name => [hash('--' + name), name]));
   const boolFlags = new Map([...new Set(['help', 'version', ...definitions.flatMap(command => command.bool)])].map(name => [hash('--' + name), name]));
@@ -286,6 +286,60 @@ export function verifyNotionAgentSingleProjectionRestore(proof) {
   if (writers.length === 1 && writers[0].exitCode !== 0)
     report('RESTORE_INVOCATION_FAILED', 'failed', { processId: writers[0].processId, exitCode: writers[0].exitCode });
   return finish();
+}
+
+/** Exact original intent, proved from inherited process argument fingerprints. */
+export function verifyNotionAgentOriginalSourceResume(proof, original) {
+  const diagnostics = [], commands = [];
+  const report = (code, severity = 'failed') => diagnostics.push({ code, severity });
+  if (proof?.status !== 'passed' || !Array.isArray(proof.processes) || !original?.declaration?.path
+    || !original.libraryId || !original.operationId || !original.cli?.sha256) report('SOURCE_RESUME_INPUT_UNPROVEN', 'blocked');
+  const valueFlags = ['library', 'operation', 'max-requests', 'max-bytes', 'timeout', 'kind', 'query', 'limit', 'cursor', 'path', 'from', 'output', 'format', 'view', 'profile', 'max-age', 'lines'];
+  const boolFlags = ['resume', 'json', 'metrics', 'refresh', 'offline', 'raw', 'help', 'version'];
+  const decode = invocation => {
+    if (!Array.isArray(invocation?.arguments)) return undefined;
+    const positional = [], flags = new Map();
+    for (let index = 0; index < invocation.arguments.length; index++) {
+      const arg = invocation.arguments[index];
+      if (!arg.option) { positional.push(arg.sha256); continue; }
+      const name = valueFlags.find(name => hash('--' + name) === (arg.inline?.nameSha256 ?? arg.sha256));
+      if (name) {
+        const value = arg.inline?.valueSha256 ?? invocation.arguments[++index]?.sha256;
+        if (!digest(value) || flags.has(name)) return undefined;
+        flags.set(name, value); continue;
+      }
+      const boolean = boolFlags.find(name => hash('--' + name) === arg.sha256) ?? (arg.sha256 === hash('-h') ? 'help' : undefined);
+      if (!boolean || arg.inline !== null || flags.has(boolean)) return undefined;
+      flags.set(boolean, true);
+    }
+    return { positional, flags };
+  };
+  for (const process of proof?.processes?.filter(row => row.cli) ?? []) {
+    const parsed = decode(process.invocation);
+    let kind = 'unknown';
+    if (parsed) {
+      const { positional, flags } = parsed, matches = words => words.every((word, index) => positional[index] === hash(word));
+      if (flags.has('help') || flags.has('version')) kind = 'help';
+      else if (matches(['ctl', 'library', 'source', 'apply'])) {
+        kind = 'other-source-write';
+        const roots = [original?.libraryId, 'https://www.notion.so/' + original?.libraryId?.replaceAll('-', '')].filter(Boolean);
+        if (positional.length === 5 && positional[4] === hash(original?.declaration?.path ?? '')
+          && roots.some(root => flags.get('library') === hash(root)) && flags.get('operation') === hash(original?.operationId ?? '')
+          && flags.get('resume') === true && [...flags.keys()].every(name => ['library', 'operation', 'resume', 'max-requests', 'max-bytes', 'timeout', 'json', 'metrics'].includes(name))) kind = 'original-source-resume';
+      } else if (['list', 'read', 'use', 'files', 'export', 'schema'].some(word => matches([word]))
+        || matches(['ctl', 'library', 'operation']) || matches(['ctl', 'library', 'inspect']) || matches(['ctl', 'library', 'files'])
+        || matches(['ctl', 'builtin', 'read'])) kind = 'read-only';
+    }
+    commands.push({ processId: process.processId, kind, exitCode: process.exitCode, artifact: process.artifact, argvSha256: process.invocation?.argvSha256 });
+    if (kind === 'unknown') report('SOURCE_RESUME_COMMAND_UNKNOWN', 'blocked');
+    if (kind === 'other-source-write') report('SOURCE_RESUME_REPLACED_INTENT');
+    if (kind === 'original-source-resume' && (process.entry?.sha256 !== original.cli.sha256 || process.entry?.bytes !== original.cli.bytes
+      || process.exitCode !== 0)) report('SOURCE_RESUME_PROCESS_MISMATCH');
+  }
+  const resumed = commands.filter(command => command.kind === 'original-source-resume');
+  if (resumed.length !== 1) report('SOURCE_RESUME_INVOCATION_COUNT');
+  return { version: 1, status: diagnostics.some(row => row.severity === 'failed') ? 'failed' : diagnostics.length ? 'blocked' : 'passed', diagnostics, commands,
+    coverage: 'Exact successful original Source resume among observed actual candidate CLI processes; independent Notion and Store readback is required.' };
 }
 
 /** I/O adapter for the runtime. Save artifacts in observed; the analyzer reads

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fileInventory, verifyInventory } from './next-build-identity.mjs';
+import { fileInventory, selectedCliInputs, verifyInventory } from './next-build-identity.mjs';
 
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
@@ -97,7 +97,7 @@ export async function verifyNextWorktreePair(config) {
   const cliBuild = await verifyCurrentBuild(cli.root, cli.package_root, 'cli-build');
   const brokerBuild = await verifyCurrentBuild(broker.root, broker.package_root, 'broker-build');
   await verifyInventory(cli.package_root, brokerBuild.selected_cli);
-  assert.deepEqual(await fileInventory(cli.package_root, ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills']), brokerBuild.selected_cli,
+  assert.deepEqual(await fileInventory(cli.package_root, selectedCliInputs), brokerBuild.selected_cli,
     'The Broker was not rebuilt against the current raw CLI/SDK');
   return { version: 2, scope: 'next-worktree-source-and-build', status: 'passed', machine,
     cli: { ...cli, source_sha256: cliBuild.source.sha256, artifacts_sha256: cliBuild.artifacts.sha256 },

@@ -7,11 +7,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { constants } from 'node:fs';
 import { access, chmod, copyFile, cp, lstat, mkdir, readFile, readdir, readlink, realpath, stat, symlink, writeFile } from 'node:fs/promises';
-import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { captureRuntimeIdentity, compareRuntimeIdentity } from './paired-runtime-identity.mjs';
 import { closeoutEnvironment } from './paired-closeout.mjs';
+import { verifyArchiveInstallation, verifyBundledNotices } from './verify-package-closure.mjs';
 
 const DEFAULTS = {
   cli: 'https://github.com/yoyooyooo/notion-skills-cli.git',
@@ -32,13 +33,16 @@ export const HELP = `Usage:
   node scripts/paired-environment.mjs create --root ABSOLUTE_NEW_DIRECTORY
     [--cli-repository URL --broker-repository URL --cli-ref next --broker-ref next]
     [--pi-entry ABSOLUTE_PI_JS]
-  node scripts/paired-environment.mjs build --root ROOT [--id BUILD_ID] [--pass-env ENV_NAME ...]
+  node scripts/paired-environment.mjs build --root ROOT [--id BUILD_ID]
+    [--install-mode directory|packed] [--pass-env ENV_NAME ...]
+    [--bun-cache-from ABSOLUTE_PRIOR_BUILD --bun-cache-sha256 SHA256]
+    [--npm-cache-from ABSOLUTE_PRIOR_BUILD --npm-cache-sha256 SHA256]
   node scripts/paired-environment.mjs check --root ROOT --build BUILD_ID
   node scripts/paired-environment.mjs closeout --root ROOT
     [--manifest ABSOLUTE_SOURCE_DISPOSITIONS_JSON] [--receipt ABSOLUTE_NEW_JSON]
   node scripts/paired-environment.mjs run --root ROOT --build BUILD_ID
     --target cli|pi|command [--id RUN_ID] [--cwd workspace|cli|broker]
-    [--entry TEST_SKILLS_DATABASE_UUID | --parent TEST_PARENT_UUID]
+    [--library TEST_LIBRARY_ROOT_UUID | --parent TEST_PARENT_UUID]
     [--skills ABSOLUTE_DIRECTORY] [--models ABSOLUTE_MODELS_JSON]
     [--pi-mode broker|native] [--native-skills ABSOLUTE_DIRECTORY]
     [--pi-extension ABSOLUTE_ENTRY ...]
@@ -49,6 +53,14 @@ create freezes both refs in independent clones with a task branch. build copies
 current source into its own source/cli and source/broker snapshots, installs
 private dependencies, and seals complete CLI/Broker packages. No implicit latest
 build, global install, automatic pull, cleanup, or release is performed.
+An explicit Bun or npm cache seed copies a pinned, idle prior build's local cache into
+the new private cache. It does not replace normal locked installation or verify
+archive SRI; missing packages still use the normal installation path. npm uses
+--prefer-offline while retaining its normal dependency resolution and integrity checks.
+The optional packed install mode packs both packages, installs each archive in
+a new private npm consumer, verifies installed bytes against the archive, and
+freezes the archives, installed dependency trees and public runtime entries.
+Every run of that build selects those installed entries through the usual wrapper.
 
 run starts with private CLI/Broker config, cache, state, scheduler, Pi agent/session,
 skill, working and temporary directories. HOME is unchanged. Pi uses a single
@@ -60,11 +72,11 @@ with repeatable --pi-extension; resource and session overrides after -- are reje
 Credentials are
 absent unless named by --pass-env. --models accepts environment variable references
 for credentials, never literal keys or shell commands. --skills copies a selected
-corpus for Broker discovery; local originals remain untouched. --entry records
-PAIRED_NOTION_ENTRY and adds that Broker source; --parent records
+corpus for Broker discovery; local originals remain untouched. --library records
+PAIRED_NOTION_LIBRARY, sets the private CLI default_library, and adds that Broker source; --parent records
 PAIRED_NOTION_PARENT for explicit initialization. CLI arguments are unchanged:
-pass --database ENTRY after a consumption command; follow each management command's
-help, such as ctl library init --entry ENTRY. Neither launcher option restricts a
+pass --library ROOT after a consumption command; follow each management command's
+help, such as ctl library init --parent PARENT. Neither launcher option restricts a
 token's remote permissions.
 A default run has no remote source.
 
@@ -94,9 +106,9 @@ export function parseArgs(args) {
   const [command, ...rest] = args;
   const allowed = {
     create: ['root', 'cli-repository', 'broker-repository', 'cli-ref', 'broker-ref', 'pi-entry'],
-    build: ['root', 'id', 'pass-env'], check: ['root', 'build'],
+    build: ['root', 'id', 'pass-env', 'install-mode', 'bun-cache-from', 'bun-cache-sha256', 'npm-cache-from', 'npm-cache-sha256'], check: ['root', 'build'],
     closeout: ['root', 'manifest', 'receipt'],
-    run: ['root', 'build', 'target', 'id', 'cwd', 'entry', 'parent', 'skills', 'models', 'pass-env', 'timeout-ms', 'stdin',
+    run: ['root', 'build', 'target', 'id', 'cwd', 'library', 'parent', 'skills', 'models', 'pass-env', 'timeout-ms', 'stdin',
       'pi-mode', 'native-skills', 'pi-extension'],
   };
   assert.ok(allowed[command], 'Choose create, build, check, run, or closeout; see --help');
@@ -114,7 +126,17 @@ export function parseArgs(args) {
   assert.ok(options.root && isAbsolute(options.root), '--root must be an absolute path');
   options.root = resolve(options.root);
   if (command !== 'run') assert.equal(options.args.length, 0, 'Only run accepts command arguments');
+  if (command === 'build') for (const kind of ['bun', 'npm']) validateCacheOptions(options, kind);
   return options;
+}
+
+function validateCacheOptions(options, kind) {
+  const source = options[kind + '-cache-from'], expected = options[kind + '-cache-sha256'];
+  assert.equal(source !== undefined, expected !== undefined, `Use --${kind}-cache-from and --${kind}-cache-sha256 together`);
+  if (source !== undefined) {
+    assert.ok(isAbsolute(source) && resolve(source) === source, `--${kind}-cache-from must be a canonical absolute build path`);
+    assert.match(expected, /^[a-f0-9]{64}$/, `--${kind}-cache-sha256 must be a lowercase SHA-256`);
+  }
 }
 
 async function executable(name) {
@@ -132,8 +154,9 @@ async function toolIdentity(path) {
 
 function supportedNode() {
   const [major, minor, patch] = process.versions.node.split('.').map(Number);
-  assert.ok((major === 22 && (minor > 22 || (minor === 22 && patch >= 3))) ||
-    (major === 24 && minor >= 20) || major > 24, 'Use Node ^22.22.3 or >=24.20.0');
+  assert.ok((major === 24 && (minor > 22 || (minor === 22 && patch >= 3))) ||
+    (major === 26 && (minor > 13 || (minor === 13 && patch >= 1))),
+  'Use Node ^24.22.3 or ^26.13.1');
 }
 
 async function findPi(explicit, npm) {
@@ -242,11 +265,123 @@ async function copyTree(source, destination, entries) {
     await flush();
     for (const { original, target } of files) await chmod(target, (await stat(original)).mode);
   }
-  assert.deepEqual((await inventory(destination)).files, expected, 'Copied source or dependency bytes changed');
+  const copied = await inventory(destination);
+  assert.deepEqual(copied.files, expected, 'Copied source or dependency bytes changed');
+  return copied;
+}
+
+async function ownedBuildRoot(root) {
+  assert.ok(isAbsolute(root) && resolve(root) === root, 'Cache seed requires a canonical absolute build path');
+  const buildId = validId(basename(root)), environmentRoot = dirname(dirname(root));
+  assert.equal(root, join(environmentRoot, 'builds', buildId), 'Cache seed must belong to a paired build');
+  assert.equal(await realpath(root), root, 'Cache seed build path must not be a symlink');
+  if (process.getuid) assert.equal((await stat(root)).uid, process.getuid(), 'Cache seed build must be owned by the current user');
+  return { root, build_id: buildId, environment: await readEnvironment(environmentRoot) };
+}
+
+async function fileReference(path) {
+  assert.equal(await realpath(path), path, 'Cache evidence file must not be a symlink');
+  return { path, sha256: hash(await readFile(path)) };
+}
+
+async function cacheSourceState(source) {
+  const markers = [];
+  for (const name of ['build.json', 'failure.json']) {
+    try { await lstat(join(source.root, name)); markers.push(name); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  assert.equal(markers.length, 1, 'Cache source must have exactly one terminal build or failure receipt');
+  const marker = await fileReference(join(source.root, markers[0])), value = await json(marker.path);
+  if (markers[0] === 'build.json') {
+    assert.equal(value.kind, 'paired-build'); assert.equal(value.version, VERSION);
+    assert.equal(value.root, source.root); assert.equal(value.build_id, source.build_id);
+    assert.equal(value.environment_id, source.environment.environment_id);
+  } else assert.equal(value.status, 'failed', 'Cache source failure receipt is not terminal');
+  const logs = join(source.root, 'logs');
+  assert.equal(await realpath(logs), logs, 'Cache source logs must not be a symlink');
+  const names = (await readdir(logs)).filter(name => name.endsWith('.process.json')).sort();
+  assert.ok(names.length, 'Cache source has no recorded build processes');
+  const processes = [];
+  for (const name of names) {
+    const ref = await fileReference(join(logs, name)), record = await json(ref.path);
+    const group = record.process_group, started = Date.parse(record.started_at);
+    assert.ok(Number.isInteger(group) && group > 0 && group <= 0x7fffffff && record.pid === group && Number.isFinite(started),
+      'Invalid cache source process receipt');
+    let state = 'exited';
+    try {
+      process.kill(-group, 0);
+      // A reused PID is not an old writer. Inspect only that leader's start time,
+      // never argv or environment; a live orphaned group remains a blocker.
+      const { stdout } = await execFileAsync('/bin/ps', ['-p', String(group), '-o', 'lstart='],
+        { encoding: 'utf8', timeout: 5000, env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', TZ: 'UTC' } });
+      const currentStarted = Date.parse(stdout.trim() + ' UTC');
+      assert.ok(Number.isFinite(currentStarted) && currentStarted > started + 2000,
+        'Cache source still has an active recorded process group: ' + group);
+      state = 'pid_reused_after_recorded_process';
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error;
+    }
+    processes.push({ ...ref, pid: record.pid, process_group: group, started_at: record.started_at, state });
+  }
+  return { terminal: { ...marker, status: markers[0] === 'failure.json' ? 'failed' : 'build_receipt_present' }, processes };
+}
+
+/** Copy a pinned local cache input; normal frozen-lock installation remains required. */
+export async function seedBunCache(sourceBuildRoot, targetBuildRoot, expectedSha256) {
+  return seedPackageCache('bun', sourceBuildRoot, targetBuildRoot, expectedSha256);
+}
+export async function seedNpmCache(sourceBuildRoot, targetBuildRoot, expectedSha256) {
+  return seedPackageCache('npm', sourceBuildRoot, targetBuildRoot, expectedSha256);
+}
+async function seedPackageCache(kind, sourceBuildRoot, targetBuildRoot, expectedSha256) {
+  validateCacheOptions({ [kind + '-cache-from']: sourceBuildRoot, [kind + '-cache-sha256']: expectedSha256 }, kind);
+  const source = await ownedBuildRoot(sourceBuildRoot), target = await ownedBuildRoot(targetBuildRoot);
+  assert.notEqual(source.root, target.root, 'Cache seed source and target must be different builds');
+  for (const name of ['build.json', 'failure.json']) {
+    try { await lstat(join(target.root, name)); assert.fail('Cannot seed a terminal build'); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  const before = await cacheSourceState(source);
+  const sourceCache = join(source.root, 'build-state/cache', kind), destination = join(target.root, 'build-state/cache', kind);
+  const selected = await inventory(sourceCache);
+  assert.ok(selected.files.length, 'Cache seed is empty');
+  assert.equal(selected.sha256, expectedSha256, 'Cache seed differs from the selected SHA-256');
+  const locks = {};
+  for (const name of ['cli', 'broker']) {
+    const sourceLock = await fileReference(join(source.root, 'source', name, 'bun.lock'));
+    const targetLock = await fileReference(join(target.root, 'source', name, 'bun.lock'));
+    locks[name] = { source: sourceLock, target: targetLock, identical: sourceLock.sha256 === targetLock.sha256 };
+  }
+  const mappings = [], normalized = [];
+  for (const file of selected.files) {
+    if (file.link === undefined) { normalized.push(file); continue; }
+    const actual = await realpath(join(sourceCache, file.path));
+    assert.ok(own(sourceCache, actual), 'Cache source symlink escaped before copying');
+    const relocated = relative(dirname(join(destination, file.path)), join(destination, relative(sourceCache, actual)));
+    mappings.push({ path: file.path, source_target: file.link, target: relocated });
+    normalized.push({ ...file, link: relocated });
+  }
+  const copied = await copyTree(sourceCache, destination, selected);
+  assert.deepEqual(copied.files, normalized, 'Relocated cache differs from the selected local input');
+  assert.deepEqual(await inventory(sourceCache), selected, 'Cache source changed while copying');
+  assert.deepEqual(await cacheSourceState(source), before, 'Cache source process or terminal evidence changed while copying');
+  for (const lock of Object.values(locks)) for (const ref of [lock.source, lock.target]) {
+    assert.deepEqual(await fileReference(ref.path), ref, 'Cache seed lock evidence changed while copying');
+  }
+  const receiptPath = join(target.root, kind + '-cache-seed.json');
+  await save(receiptPath, { version: VERSION, kind: 'paired-' + kind + '-cache-seed', created_at: new Date().toISOString(),
+    source: { build_root: source.root, environment_id: source.environment.environment_id, cache_root: sourceCache,
+      inventory_sha256: selected.sha256, ...before },
+    target: { build_root: target.root, cache_root: destination, inventory_sha256: copied.sha256 },
+    normalized_source_sha256: hash(JSON.stringify(normalized)), entry_count: selected.files.length,
+    symlink_mappings: mappings, locks,
+    validation_scope: 'Pinned local file bytes, executable bits, relocated internal links and recorded process quiescence; not archive SRI authentication',
+    installation: kind === 'bun' ? 'Normal frozen-lockfile installation remains required; differing locks and missing cache packages are allowed'
+      : 'Normal npm install with prefer-offline, dependency resolution and integrity checks remains required; missing cache packages are fetched normally' });
+  return fileReference(receiptPath);
 }
 
 /** Child-local allowlist; never inherit NODE_OPTIONS, BASH_ENV, config, or credentials. */
-export function runtimeEnvironment(runRoot, buildRoot, inherited, passNames = [], node = process.execPath) {
+export function runtimeEnvironment(runRoot, buildRoot, inherited, passNames = [], node = process.execPath, selected = {}) {
   const env = {};
   for (const name of ['HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'TERM', 'SHELL', 'SystemRoot']) {
     if (inherited[name] !== undefined) env[name] = inherited[name];
@@ -274,8 +409,8 @@ export function runtimeEnvironment(runRoot, buildRoot, inherited, passNames = []
     npm_config_userconfig: join(runRoot, 'config/npmrc'),
     PAIRED_RUN_ROOT: runRoot, PAIRED_BUILD_ROOT: buildRoot,
     PAIRED_CLI_SOURCE: join(buildRoot, 'source/cli'), PAIRED_BROKER_SOURCE: join(buildRoot, 'source/broker'),
-    PAIRED_CLI_ENTRY: join(buildRoot, 'cli/dist/ntn-skills.js'),
-    PAIRED_BROKER_ENTRY: join(buildRoot, 'broker/src/index.ts'),
+    PAIRED_CLI_ENTRY: selected.cli ?? join(buildRoot, 'cli/dist/ntn-skills.js'),
+    PAIRED_BROKER_ENTRY: selected.broker ?? join(buildRoot, 'broker/src/index.ts'),
   });
   return env;
 }
@@ -379,6 +514,44 @@ async function snapshot(source, destination) {
   return { commit, branch: git(source, 'branch', '--show-current'), files, sha256: hash(JSON.stringify(files)) };
 }
 
+/** Standard npm archives and fresh consumers; no wrapper or frozen-file substitution. */
+export async function installPackedPair(root, tools, env) {
+  const installRoot = join(root, 'installed'), archives = join(root, 'archives'), packages = {};
+  await mkdir(installRoot); await mkdir(archives);
+  for (const [role, name] of [['cli', 'ntn-skills'], ['broker', 'pi-context-broker']]) {
+    const built = join(root, role), manifest = await json(join(built, 'package.json'));
+    assert.equal(manifest.name, name);
+    await step(tools.node.path, [tools.npm, 'pack', '--ignore-scripts', '--json', '--pack-destination', archives],
+      { cwd: built, env, log: join(root, 'logs/pack-' + role) });
+    const packed = JSON.parse(await readFile(join(root, 'logs/pack-' + role + '.stdout.log'), 'utf8'));
+    assert.equal(packed.length, 1); assert.equal(packed[0].name, name); assert.equal(packed[0].version, manifest.version);
+    assert.ok(packed[0].filename && !packed[0].filename.includes('/') && packed[0].filename.endsWith('.tgz'));
+    const archive = join(archives, packed[0].filename), consumer = join(installRoot, role);
+    await mkdir(consumer);
+    await save(join(consumer, 'package.json'), { private: true, dependencies: { [name]: 'file:' + archive } });
+    await step(tools.node.path, [tools.npm, 'install', '--prefer-offline', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
+      { cwd: consumer, env, log: join(root, 'logs/install-packed-' + role) });
+    const installed = join(consumer, 'node_modules', name);
+    const closure = await verifyArchiveInstallation(installed, archive, hash(await readFile(archive)));
+    for (const member of closure.files) assert.equal(hash(await readFile(join(built, member.path))), member.sha256,
+      'Packed member differs from the selected build: ' + role + '/' + member.path);
+    const actual = await json(join(installed, 'package.json'));
+    assert.equal(actual.name, name); assert.equal(actual.version, manifest.version);
+    const relativeEntry = role === 'cli' ? actual.bin?.['ntn-skills'] : actual.pi?.extensions?.[0];
+    assert.ok(typeof relativeEntry === 'string', 'The installed package must declare its public entry');
+    const entry = resolve(installed, relativeEntry);
+    assert.ok(own(installed, entry)); await toolIdentity(entry);
+    const sdkExport = actual.exports?.['./sdk'];
+    const sdk = role === 'cli' ? resolve(installed, typeof sdkExport === 'string' ? sdkExport : sdkExport?.import ?? '') : join(installed, 'dist/ntn-skills-sdk.mjs');
+    assert.ok(own(installed, sdk) && sdk !== installed, 'The installed CLI must export its SDK'); await toolIdentity(sdk);
+    packages[role] = { name, version: actual.version, root: installed, entry, sdk, closure };
+  }
+  const notices = verifyBundledNotices({ selectedNoticesBytes: await readFile(join(packages.cli.root, 'THIRD_PARTY_NOTICES.md')),
+    bundledNoticesBytes: await readFile(join(packages.broker.root, 'dist/NOTICES.txt')),
+    expectedSha256: packages.cli.closure.files.find(file => file.path === 'THIRD_PARTY_NOTICES.md')?.sha256 });
+  return { mode: 'packed', root: installRoot, packages, notices, tree: await inventory(installRoot), archives: await inventory(archives) };
+}
+
 async function currentTools(environment) {
   supportedNode();
   const node = { ...await toolIdentity(process.execPath), version: process.version };
@@ -388,7 +561,22 @@ async function currentTools(environment) {
   return { node, bun, git: await toolIdentity(await executable('git')), npm, pi: await findPi(environment.tools.pi.path, npm) };
 }
 
+/** Use the frozen Broker's contract; older snapshots declared these four inputs inline. */
+export async function verifySelectedCliPair(root, brokerReceipt) {
+  const { fileInventory, selectedCliInputs } = await import(pathToFileURL(join(root, 'source/broker/scripts/next-build-identity.mjs')));
+  const legacy = ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills'];
+  const names = selectedCliInputs === undefined ? legacy : selectedCliInputs;
+  assert.ok(Array.isArray(names) && names.every(name => typeof name === 'string' && name && !isAbsolute(name) && !name.split('/').includes('..'))
+    && new Set(names).size === names.length, 'Invalid selected CLI input declaration');
+  assert.ok(legacy.every(name => names.includes(name)), 'Selected CLI input declaration omits a required CLI/SDK input');
+  assert.deepEqual(await fileInventory(join(root, 'cli'), names), brokerReceipt.selected_cli,
+    'The built Broker does not contain this generation\'s complete selected CLI/SDK');
+}
+
 export async function buildEnvironment(options) {
+  for (const kind of ['bun', 'npm']) validateCacheOptions(options, kind);
+  const installMode = options['install-mode'] ?? 'directory';
+  assert.ok(['directory', 'packed'].includes(installMode), '--install-mode must be directory or packed');
   const environment = await readEnvironment(options.root);
   environment.tools = await currentTools(environment);
   const buildId = validId(options.id ?? id('build')), root = join(options.root, 'builds', buildId);
@@ -403,13 +591,17 @@ export async function buildEnvironment(options) {
     await symlink(environment.tools.git.path, join(root, 'build-state/bin/git'));
     await writeFile(env.npm_config_userconfig, '', { flag: 'wx', mode: 0o600 });
     env.PATH = [join(root, 'build-state/bin'), dirname(environment.tools.node.path), dirname(environment.tools.bun.path), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(delimiter);
+    const cacheSeed = options['bun-cache-from'] === undefined ? undefined
+      : await seedBunCache(options['bun-cache-from'], root, options['bun-cache-sha256']);
+    const npmCacheSeed = options['npm-cache-from'] === undefined ? undefined
+      : await seedNpmCache(options['npm-cache-from'], root, options['npm-cache-sha256']);
     for (const name of ['cli', 'broker']) {
       await step(environment.tools.bun.path, ['install', '--frozen-lockfile', '--ignore-scripts', '--backend', 'copyfile', '--cache-dir', join(root, 'cache', name)],
         { cwd: join(root, 'source', name), env, log: join(root, 'logs/install-source-' + name) });
     }
     await step(environment.tools.bun.path, ['packages/cli/build.ts', '--outdir', join(root, 'cli')],
       { cwd: join(root, 'source/cli'), env, log: join(root, 'logs/build-cli') });
-    const install = async name => step(environment.tools.node.path, [environment.tools.npm, 'install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
+    const install = async name => step(environment.tools.node.path, [environment.tools.npm, 'install', '--prefer-offline', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
       { cwd: join(root, name), env, log: join(root, 'logs/install-runtime-' + name) });
     await install('cli');
     await step(environment.tools.bun.path, ['run', '--cwd', 'packages/context-broker', 'typecheck'],
@@ -418,17 +610,18 @@ export async function buildEnvironment(options) {
       { cwd: join(root, 'source/broker'), env: { ...env, NTN_SKILLS_BUILD_ENTRY: join(root, 'cli/dist/ntn-skills.js') }, log: join(root, 'logs/build-broker') });
     await install('broker');
     const { verifyCurrentBuild } = await import(pathToFileURL(join(root, 'source/broker/scripts/verify-next-worktrees.mjs')));
-    const { fileInventory } = await import(pathToFileURL(join(root, 'source/broker/scripts/next-build-identity.mjs')));
     await verifyCurrentBuild(join(root, 'source/cli'), join(root, 'cli'), 'cli-build');
     const brokerReceipt = await verifyCurrentBuild(join(root, 'source/broker'), join(root, 'broker'), 'broker-build');
-    assert.deepEqual(await fileInventory(join(root, 'cli'), ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'skills']), brokerReceipt.selected_cli,
-      'The built Broker does not contain this generation\'s CLI/SDK');
+    await verifySelectedCliPair(root, brokerReceipt);
+    const candidate = installMode === 'packed' ? await installPackedPair(root, environment.tools, env) : { mode: 'directory' };
     const packages = {};
     for (const name of ['cli', 'broker']) packages[name] = await inventory(join(root, name));
     const sourceTree = await inventory(join(root, 'source'));
     await save(join(root, 'build.json'), { version: VERSION, kind: 'paired-build', environment_id: environment.environment_id,
       build_id: buildId, root, created_at: new Date().toISOString(), sources, packages,
-      source_tree: sourceTree, selected_cli_sha256: brokerReceipt.selected_cli.sha256, tools: environment.tools,
+       source_tree: sourceTree, selected_cli_sha256: brokerReceipt.selected_cli.sha256, tools: environment.tools, candidate,
+       ...(cacheSeed ? { bun_cache_seed: cacheSeed } : {}),
+       ...(npmCacheSeed ? { npm_cache_seed: npmCacheSeed } : {}),
       passed_environment_names: options['pass-env'] ?? [],
       launcher: await toolIdentity(fileURLToPath(import.meta.url)) });
     return { status: 'built', root, build_id: buildId, selected_cli_sha256: brokerReceipt.selected_cli.sha256 };
@@ -446,19 +639,37 @@ export async function checkEnvironment(options) {
   assert.equal(build.environment_id, environment.environment_id); assert.equal(build.root, root); assert.equal(build.build_id, buildId);
   for (const name of ['cli', 'broker']) assert.equal((await inventory(join(root, name))).sha256, build.packages[name].sha256, 'Frozen package changed: ' + name);
   assert.equal((await inventory(join(root, 'source'))).sha256, build.source_tree.sha256, 'Frozen source/dependency snapshot changed');
+  for (const kind of ['bun', 'npm']) {
+    const seed = build[kind + '_cache_seed'];
+    if (seed === undefined) continue;
+    assert.equal(seed.path, join(root, kind + '-cache-seed.json'));
+    assert.equal((await fileReference(seed.path)).sha256, seed.sha256, 'Cache seed receipt changed');
+  }
+  const selected = { cli: join(root, 'cli/dist/ntn-skills.js'), broker: join(root, 'broker/src/index.ts') };
+  if (build.candidate?.mode === 'packed') {
+    assert.equal(build.candidate.root, join(root, 'installed'));
+    assert.equal((await inventory(build.candidate.root)).sha256, build.candidate.tree.sha256, 'Frozen installed candidate changed');
+    assert.equal((await inventory(join(root, 'archives'))).sha256, build.candidate.archives.sha256, 'Frozen candidate archive changed');
+    for (const [role, name] of [['cli', 'ntn-skills'], ['broker', 'pi-context-broker']]) {
+      const candidate = build.candidate.packages[role], installed = join(root, 'installed', role, 'node_modules', name);
+      assert.equal(candidate.root, installed); assert.equal(candidate.name, name);
+      const manifest = await json(join(installed, 'package.json'));
+      assert.equal(candidate.version, manifest.version);
+      assert.equal(candidate.entry, resolve(installed, role === 'cli' ? manifest.bin['ntn-skills'] : manifest.pi.extensions[0]));
+      assert.ok(own(installed, candidate.entry)); selected[role] = candidate.entry;
+      for (const file of candidate.closure.files) assert.equal(hash(await readFile(join(installed, file.path))), file.sha256, 'Installed archive member changed: ' + file.path);
+    }
+  } else assert.ok(build.candidate === undefined || build.candidate.mode === 'directory', 'Unknown candidate installation mode');
   // Check pairing independently of the mutable checkout, using the sealed build receipt.
   const brokerReceipt = await json(join(root, 'broker/dist/next-build.json'));
   assert.equal(brokerReceipt.selected_cli.sha256, build.selected_cli_sha256);
-  for (const file of brokerReceipt.selected_cli.files) {
-    assert.ok(!isAbsolute(file.path) && !file.path.split('/').includes('..'));
-    assert.equal(hash(await readFile(join(root, 'cli', file.path))), file.sha256, 'CLI/SDK pair was swapped: ' + file.path);
-  }
+  await verifySelectedCliPair(root, brokerReceipt);
   const currentHeads = {};
   for (const name of ['cli', 'broker']) currentHeads[name] = git(join(options.root, name), 'rev-parse', 'HEAD');
   return { status: 'passed', scope: 'isolated-development-artifacts', root, build_id: buildId,
     source_heads_at_build: Object.fromEntries(Object.entries(build.sources).map(([name, source]) => [name, source.commit])),
     current_source_heads: currentHeads, source_changes_invalidate_frozen_build: false,
-    selected_cli_sha256: build.selected_cli_sha256, actual_pi_process: 'not_run' };
+    selected_cli_sha256: build.selected_cli_sha256, candidate_mode: build.candidate?.mode ?? 'directory', selected_entries: selected, actual_pi_process: 'not_run' };
 }
 
 function validUuid(value) { assert.match(value, /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i, 'Use a canonical Notion UUID'); return value; }
@@ -493,7 +704,7 @@ export function validatePiArguments(args) {
   }
 }
 
-async function piLaunchDefinition(options, root, buildRoot, pi) {
+async function piLaunchDefinition(options, root, buildRoot, pi, selectedBroker = join(buildRoot, 'broker/src/index.ts')) {
   const mode = options['pi-mode'] ?? 'broker';
   assert.ok(['broker', 'native'].includes(mode), '--pi-mode must be broker or native');
   assert.ok(mode !== 'native' || options['native-skills'], 'Native Pi requires --native-skills');
@@ -516,12 +727,11 @@ async function piLaunchDefinition(options, root, buildRoot, pi) {
     nativeCorpus = { source, source_sha256: before.sha256, root: destination, copied_sha256: copied.sha256 };
   }
   const extensions = [];
-  const selectedBroker = join(buildRoot, 'broker/src/index.ts');
   if (mode === 'broker') extensions.push({ ...await toolIdentity(selectedBroker), role: 'broker' });
   for (const selected of options['pi-extension'] ?? []) {
     assert.ok(isAbsolute(selected), '--pi-extension must be an absolute file or directory');
     const path = await realpath(selected);
-    assert.ok(mode !== 'native' || !own(join(buildRoot, 'broker'), path), 'Native Pi cannot select the paired Broker as a common extension');
+    assert.ok(mode !== 'native' || path !== selectedBroker && !own(join(buildRoot, 'broker'), path) && !own(join(buildRoot, 'installed/broker'), path), 'Native Pi cannot select the paired Broker as a common extension');
     assert.ok(!extensions.some(extension => extension.path === path), 'Repeated Pi extension: ' + path);
     const info = await stat(path);
     assert.ok(info.isFile() || info.isDirectory(), 'Pi extension must be an ordinary file or directory');
@@ -553,8 +763,8 @@ export async function runEnvironment(options) {
   environment.tools = await currentTools(environment);
   const checked = await checkEnvironment(options), buildRoot = checked.root;
   assert.ok(['cli', 'pi', 'command'].includes(options.target), '--target must be cli, pi, or command');
-  assert.ok(!options.entry || !options.parent, 'Select --entry or --parent, not both');
-  if (options.entry) validUuid(options.entry); if (options.parent) validUuid(options.parent);
+  assert.ok(!options.library || !options.parent, 'Select --library or --parent, not both');
+  if (options.library) validUuid(options.library); if (options.parent) validUuid(options.parent);
   const cwdChoice = options.cwd ?? 'workspace';
   assert.ok(['workspace', 'cli', 'broker'].includes(cwdChoice), '--cwd must be workspace, cli, or broker');
   assert.ok(options.target === 'command' || cwdChoice === 'workspace', '--cwd is only for command tests');
@@ -569,11 +779,11 @@ export async function runEnvironment(options) {
   assert.ok(['inherit', 'ignore'].includes(stdin), '--stdin must be inherit or ignore');
   const runId = validId(options.id ?? id('run')), root = join(options.root, 'runs', runId);
   await fresh(root);
-  const env = runtimeEnvironment(root, buildRoot, process.env, options['pass-env'], environment.tools.node.path);
+  const env = runtimeEnvironment(root, buildRoot, process.env, options['pass-env'], environment.tools.node.path, checked.selected_entries);
   for (const path of ['bin', 'tmp', 'config/cli', 'state/cli', 'cache/cli', 'data/cli', 'state/scheduler', 'cache/broker',
     'xdg/config', 'xdg/state', 'xdg/cache', 'xdg/data', 'pi-agent', 'sessions', 'skills', 'workspace']) await mkdir(join(root, path), { recursive: true });
   await writeFile(env.npm_config_userconfig, '', { mode: 0o600, flag: 'wx' });
-  await save(join(root, 'config/cli/config.json'), { sources: [] });
+  await save(join(root, 'config/cli/config.json'), options.library ? { default_library: options.library } : {});
   const skillRoots = [];
   if (options.skills) {
     assert.ok(isAbsolute(options.skills), '--skills must be absolute');
@@ -582,15 +792,15 @@ export async function runEnvironment(options) {
     await cp(options.skills, destination, { recursive: true, dereference: true, errorOnExist: true, force: false });
     skillRoots.push(destination);
   }
-  const sources = options.entry ? [{ id: 'notion', type: 'notion', namespace: 'notion', database: options.entry,
+  const sources = options.library ? [{ id: 'notion', type: 'notion', namespace: 'notion', library: options.library,
     cacheDir: join(root, 'cache/broker'), prefetch: false }] : [];
   const pi = environment.tools.pi;
-  const piLaunch = await piLaunchDefinition(options, root, buildRoot, pi);
+  const piLaunch = await piLaunchDefinition(options, root, buildRoot, pi, env.PAIRED_BROKER_ENTRY);
   await save(env.CONTEXT_BROKER_CONFIG, { sources, skillRoots, extraSkillRoots: [], ruleRoots: [], discoveryCatalogs: [], extraDiscoveryCatalogs: [], requireAutoload: false });
   await save(join(root, 'pi-agent/settings.json'), piLaunch.settings);
   await save(join(root, 'pi-launch.json'), piLaunch);
   if (options.models) await copyModels(options.models, join(root, 'pi-agent/models.json'), options['pass-env']);
-  if (options.entry) env.PAIRED_NOTION_ENTRY = options.entry;
+  if (options.library) env.PAIRED_NOTION_LIBRARY = options.library;
   if (options.parent) env.PAIRED_NOTION_PARENT = options.parent;
   await symlink(environment.tools.bun.path, join(root, 'bin/bun'));
   await symlink(environment.tools.git.path, join(root, 'bin/git'));
@@ -623,10 +833,10 @@ export async function runEnvironment(options) {
   const runtime = await captureRuntimeIdentity(runtimeSelection);
   await save(join(root, 'run.json'), { version: VERSION, kind: 'isolated-development-run', environment_id: environment.environment_id,
     run_id: runId, root, build_id: options.build, build_root: buildRoot, target: options.target, cwd,
-    runtime, pi_launch: piLaunch, launcher: await toolIdentity(fileURLToPath(import.meta.url)),
+    runtime, pi_launch: piLaunch, candidate: { mode: checked.candidate_mode, entries: checked.selected_entries }, launcher: await toolIdentity(fileURLToPath(import.meta.url)),
     runtime_observer: await toolIdentity(fileURLToPath(new URL('./paired-runtime-identity.mjs', import.meta.url))), stdin, timeout_ms: timeout,
     argument_sha256: hash(JSON.stringify(args)), passed_environment_names: options['pass-env'],
-    remote: { entry: options.entry ?? null, parent: options.parent ?? null },
+    remote: { library: options.library ?? null, parent: options.parent ?? null },
     paths: Object.fromEntries(Object.entries(env).filter(([name, value]) => name !== 'PATH' && typeof value === 'string' && own(root, value))) });
   const result = await child(command, args, { cwd, env, log: join(root, 'command'), timeout, stdin: stdin === 'inherit' });
   const runtimeAfter = await captureRuntimeIdentity(runtimeSelection);

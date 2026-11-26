@@ -13,7 +13,7 @@ const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value
 const unique = values => [...new Set(values)];
 const sum = values => values.every(finite) ? values.reduce((a, b) => a + b, 0) : null;
 
-/** Pi 1.4 observer. This function and the existing receipt collector are emitted
+/** Passive Pi hook observer. This function and the existing receipt collector are emitted
  * together so an owned Pi process needs no runtime dependency on this repository.
  *
  * The driver supplies Node fs/crypto/path, an existing external output directory,
@@ -73,7 +73,8 @@ export function observeConsumptionCost(api, settings) {
       text: textMeasure(text), nonWhitespaceText: text.trim().length > 0,
       permissionOnly: text.length < 1200 && /(?:please\s+(?:approve|authorize|confirm)|(?:need|require|await)\w*\s+(?:your\s+)?(?:approval|permission)|(?:请|需要|等待).{0,15}(?:授权|批准|确认))/iu.test(text),
       stopReason: ['stop', 'length', 'toolUse', 'error', 'aborted'].includes(message?.stopReason) ? message.stopReason : null,
-      provider: modelField(message?.provider), model: modelField(message?.model), responseModel,
+      provider: modelField(message?.provider), model: modelField(message?.model), api: modelField(message?.api),
+      responseId: modelField(message?.responseId), rawStopReason: modelField(message?.rawStopReason), responseModel,
       responseModelStatus: message?.responseModel == null ? 'unreported' : responseModel === null ? 'invalid' : 'reported',
       thinkingLevel: modelField(message?.thinkingLevel), providerThinkingLevel: modelField(message?.providerThinkingLevel),
       usage: usage(message?.usage) };
@@ -286,8 +287,9 @@ export function observeConsumptionCost(api, settings) {
         content: jsonMeasure(message.content) })), method: phase === 'context_with_system' ? 'post-context-hooks-with-system' : 'at-observer-context-hook-position' });
   });
   on('before_provider_request', (event, context) => append('provider_request', { turn, request: ++request,
-    provider: modelField(context?.model?.provider), model: modelField(context?.model?.id),
-    requestModel: modelField(event.payload?.model), reasoningEffort: modelField(event.payload?.reasoning_effort), payload: payload(event.payload) }));
+    provider: modelField(context?.model?.provider), model: modelField(context?.model?.id), api: modelField(context?.model?.api),
+    requestModel: modelField(event.payload?.model), reasoningEffort: modelField(context?.model?.api === 'openai-responses'
+      ? event.payload?.reasoning?.effort : event.payload?.reasoning_effort), payload: payload(event.payload) }));
   on('after_provider_response', event => append('provider_response', { turn, request, status: Number.isInteger(event.status) ? event.status : null }));
   on('tool_call', event => append('tool_call', { turn, request, toolCallIdSha256: sha(String(event.toolCallId ?? '')),
     toolNameSha256: sha(String(event.toolName ?? '')), input: jsonMeasure(event.input) }));

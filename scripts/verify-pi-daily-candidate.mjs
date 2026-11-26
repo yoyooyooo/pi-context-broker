@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { parseNativeReference, hasExactNativeOwner, notionPageId } from '../packages/context-broker/src/native-reference.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
@@ -6,7 +7,7 @@ import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { consumptionCostExtensionSource, readConsumptionCostEvents } from './skill-consumption-cost.mjs';
@@ -15,6 +16,7 @@ import { sourceObserverPreloadSource, readSourceObservation } from './skill-cons
 import { observeGraphSdk } from './notion-skill-graph-model-evidence.mjs';
 import { observeOwnedObjectReads } from './notion-sdk-observers.mjs';
 import { safeRequestMetrics } from './notion-default-context.mjs';
+import { reviewedPiToolRuntimeProfile } from './notion-agent-tool-lineage.mjs';
 import { createOwnedGraphProject, retainGeneratedPlan } from './notion-skill-graph-project.mjs';
 import { verifyPreparationEvidence, verifyConsumptionEffects } from './skill-preparation-evidence.mjs';
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
@@ -125,7 +127,7 @@ export function candidatePlan(config) {
   }
   return {
     version: 1, scope: config.scope, status: 'prepared_not_executed',
-    sourceId: config.sourceId, database: config.database, turns: config.turns.map(({ id, prompt, cancel }) => ({ id, promptSha256: hash(prompt), cancel: cancel ?? null })),
+    sourceId: config.sourceId, library: config.library, turns: config.turns.map(({ id, prompt, cancel }) => ({ id, promptSha256: hash(prompt), cancel: cancel ?? null })),
     projectPackages: 'The old exact local Broker source is filtered; the immutable installed candidate autoloads from the owned project.',
     preserved: ['normal HOME and agentDir', 'all other packages', 'local Skill roots, rules and catalogs', 'normal MCP, context files, provider configuration and tools'],
     changes: ['owned project settings', 'owned source config with reviewed Notion entry and empty cache', 'owned sessions and source state'],
@@ -174,8 +176,8 @@ export async function inspectCandidatePackageRegistration(packages, { packageInd
   return { source, oldSource, packageIndex, reusesRegisteredBroker, registeredEntry, projectSettings: {} };
 }
 
-export function candidateSourceConfig(original, { sourceId, database, cacheDir, viewId, noNotion = false }) {
-  assert.ok(identifier(sourceId) && /^[a-f0-9-]{32,36}$/iu.test(database) && isAbsolute(cacheDir));
+export function candidateSourceConfig(original, { sourceId, library, cacheDir, viewId, noNotion = false }) {
+  assert.ok(identifier(sourceId) && /^[a-f0-9-]{32,36}$/iu.test(library) && isAbsolute(cacheDir));
   assert.ok(viewId === undefined || typeof viewId === 'string' && /^[a-f0-9-]{32,36}$/iu.test(viewId), 'Use an explicit reviewed View ID');
   const config = structuredClone(original);
   const matches = (config.sources ?? []).filter(source => source.id === sourceId && source.type === 'notion');
@@ -184,12 +186,19 @@ export function candidateSourceConfig(original, { sourceId, database, cacheDir, 
     'Another enabled Notion source needs an explicit reviewed scope');
   assert.equal(matches[0].command, undefined, 'The candidate must use its bundled SDK');
   assert.ok(matches[0].prefetch === undefined || matches[0].prefetch === false, 'Do not silently alter daily prefetch');
-  if (matches[0].database !== database && viewId === undefined)
+  if (matches[0].library !== library && viewId === undefined)
     assert.equal(matches[0].default_view_id, undefined, 'A daily View cannot be carried into a different test library');
   for (const key of ['skillRoots', 'extraSkillRoots', 'ruleRoots', 'discoveryCatalogs', 'extraDiscoveryCatalogs'])
     for (const path of config[key] ?? []) assert.ok(isAbsolute(path) || path.startsWith('~/'), 'Relative config paths need explicit scope review');
-  Object.assign(matches[0], { database, cacheDir, ...(viewId === undefined ? {} : { default_view_id: viewId }), ...(noNotion ? { enabled: false } : {}) });
+  Object.assign(matches[0], { library, cacheDir, ...(viewId === undefined ? {} : { default_view_id: viewId }), ...(noNotion ? { enabled: false } : {}) });
   return config;
+}
+
+export function candidateOwnedStateEnvironment(stateRoot, inherited = {}) {
+  assert.ok(isAbsolute(stateRoot));
+  return { ...inherited, NTN_SKILLS_HOME: join(stateRoot, 'ntn/state'), NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'ntn/config'),
+    NTN_SKILLS_CACHE_HOME: join(stateRoot, 'ntn/cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data'),
+    NTN_SKILLS_SCHEDULER_ROOT: join(stateRoot, 'ntn/scheduler') };
 }
 
 /** Reuse normal management state explicitly, without copying or inspecting private Store files. */
@@ -197,9 +206,7 @@ export async function prepareCandidatePrintState(config, { stateRoot, previous, 
   assert.ok(isAbsolute(stateRoot));
   assert.ok(previous?.sourceState?.ownership !== 'existing-user' && previous?.sourceState?.mode !== 'normal-management',
     'An external management Store cannot become an owned resume origin');
-  const env = { NTN_SKILLS_HOME: join(stateRoot, 'ntn/state'), NTN_SKILLS_CONFIG_HOME: join(stateRoot, 'ntn/config'),
-    NTN_SKILLS_CACHE_HOME: join(stateRoot, 'ntn/cache'), NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data') };
-  if (config.existingState === undefined) return { stateRoot, ownedPaths: [stateRoot], env };
+  if (config.existingState === undefined) return { stateRoot, ownedPaths: [stateRoot], env: candidateOwnedStateEnvironment(stateRoot) };
   const policy = config.existingState;
   assert.equal(policy.mode, 'normal-management');
   assert.equal(config.resumeFrom, undefined); assert.equal(previous, undefined); assert.equal(config.publicCli, undefined);
@@ -221,26 +228,24 @@ export async function prepareCandidatePrintState(config, { stateRoot, previous, 
     const bytes = await readFile(expected.path); assert.equal(hash(bytes), expected.sha256, 'The public management receipt changed');
     const value = JSON.parse(bytes.toString('utf8'));
     assert.equal(value.ok, true); assert.equal(value.source, 'local_snapshot'); assert.equal(value.freshness?.policy, 'pinned');
-    assert.equal(value.record?.locator?.database_id, config.database);
+    assert.equal(value.record?.locator?.library_id, config.library);
     assert.ok(digest(value.scope) && /^s_[a-f0-9]{64}$/u.test(value.snapshot_id) && digest(value.version_id));
     assert.equal(typeof value.content, 'string'); assert.equal(value.has_more, false);
     assert.deepEqual(value.range, { start: 1, end: value.content.split('\n').length, total_lines: value.content.split('\n').length });
     assert.deepEqual(value.effects, { version: 1, remote_writes: 'none', author_content: 'unchanged' });
-    const url = new URL(value.ref), binding = value.file_bindings?.filter(file => file.path === value.path);
-    assert.equal(url.protocol, 'skill:'); assert.equal(decodeURIComponent(url.hostname), value.record.id);
-    assert.equal(decodeURIComponent(url.pathname.slice(1)), value.path); assert.equal(url.hash, '');
-    assert.equal(url.searchParams.get('snapshot'), value.snapshot_id); assert.equal([...url.searchParams].length, 2);
-    assert.equal(binding?.length, 1); assert.equal(url.searchParams.get('file_id'), binding[0].file_id);
-    assert.match(binding[0].file_id, /^file-[a-f0-9]{64}$/u);
+    const ref = parseNativeReference(value.ref), binding = value.file_bindings?.filter(file => file.path === value.path) ?? [];
+    assert.equal(ref.selector, value.record.id); assert.equal(ref.path, value.path); assert.equal(ref.snapshot, value.snapshot_id);
+    assert.ok(binding.length <= 1);
+    if (binding.length) assert.match(binding[0].file_id, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/u);
     const body = { bytes: Buffer.byteLength(value.content), sha256: hash(value.content) };
     assert.ok(config.expectedBodies?.some(expected => expected.sha256 === body.sha256 && expected.bytes === body.bytes), 'Bind the existing complete public body expectation');
     reads.push({ receipt: { path: expected.path, bytes: bytes.length, sha256: expected.sha256 }, ref: value.ref,
       id: value.record.id, scope: value.scope, snapshot_id: value.snapshot_id, version_id: value.version_id,
-      path: value.path, file_id: binding[0].file_id, ...body, characters: value.content.length });
+      path: value.path, file_id: binding[0]?.file_id, ...body, characters: value.content.length });
   }
   assert.equal(new Set(reads.map(read => read.ref)).size, 2);
   for (const key of ['id', 'scope', 'path', 'file_id']) assert.equal(reads[0][key], reads[1][key], 'Read the two versions of the same original reference');
-  return { stateRoot, ownedPaths: [stateRoot], env: { ...env, ...roots },
+  return { stateRoot, ownedPaths: [stateRoot], env: { ...roots, NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data') },
     sourceState: { mode: policy.mode, ownership: 'existing-user', roots, reads } };
 }
 
@@ -297,6 +302,10 @@ export function inspectCandidateExistingReads(sourceState, nativeAudit, text, gu
 export function reviewCandidateCliCommand(command, policy, observedAudits = []) {
   const check = (value, message) => { if (!value) throw new Error(message); };
   check(['original-create-recovery', 'owned-description-update', 'owned-maintenance-readonly'].includes(policy?.mode), 'Unknown public CLI task scope');
+  const ownsLibrary = value => {
+    const root = typeof value === 'string' ? notionPageId(value) : undefined;
+    return root !== undefined && root === policy.library;
+  };
   const maintenance = policy.mode === 'owned-maintenance-readonly';
   check(typeof command === 'string' && !/[\r\n\0\\]/u.test(command), 'Use one plain public CLI command');
   const text = command.trim(), words = [], token = /\s*(?:'([^']*)'|"([^"$`\\]*)"|([^\s'"\\;&|`<>$()*?\[\]{}!~]+))/uy;
@@ -335,16 +344,17 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
     return { kind: 'builtin-read', argv: words };
   }
   if (maintenance && args.slice(0, 3).join(' ') === 'ctl library init') {
-    check(args.length === 5 && args[3] === '--entry' && args[4] === policy.database,
+    check(args.length === 5 && args[3] === '--library' && ownsLibrary(args[4]),
       'Validate only the existing owned library; parent initialization and schema changes are outside this task');
     return { kind: 'library-attach-readonly', argv: words };
   }
   if (maintenance && args.slice(0, 3).join(' ') === 'ctl library inspect') {
-    check(args.length === 4 && args[3] === policy.database, 'Read only the owned library descriptor');
+    check(args.length === 5 && args[3] === '--library' && ownsLibrary(args[4]),
+      'Read only the owned library descriptor through the public root selector');
     return { kind: 'library-inspect', argv: words };
   }
   if (maintenance && args.slice(0, 4).join(' ') === 'ctl library sources list') {
-    check(args.length === 6 && args[4] === '--entry' && args[5] === policy.database, 'List only the owned library sources');
+    check(args.length === 6 && args[4] === '--library' && ownsLibrary(args[5]), 'List only the owned library sources');
     return { kind: 'source-list', argv: words };
   }
   if (maintenance && args[0] === 'list') {
@@ -353,18 +363,18 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
       const flag = args[index]; check(!flags.has(flag), 'Duplicate catalog option');
       if (['--json', '--metrics', '--refresh'].includes(flag)) flags.set(flag, true);
       else {
-        check(['--database', '--query', '--limit'].includes(flag) && typeof args[index + 1] === 'string', 'Use only public bounded catalog options');
+        check(['--library', '--query', '--limit'].includes(flag) && typeof args[index + 1] === 'string', 'Use only public bounded catalog options');
         flags.set(flag, args[++index]);
       }
     }
-    check(flags.get('--database') === policy.database && flags.get('--json'), 'Keep the exact owned library and structured catalog');
+    check(ownsLibrary(flags.get('--library')) && flags.get('--json'), 'Keep the exact owned library and structured catalog');
     if (flags.has('--limit')) check(/^[1-9][0-9]*$/u.test(flags.get('--limit')) && Number(flags.get('--limit')) <= 100, 'Keep the metadata query bounded');
     if (flags.has('--query')) check(flags.get('--query').length <= 512, 'Keep the task query bounded');
     return { kind: 'catalog-list', argv: words };
   }
   if (maintenance && ['ctl audit report', 'ctl audit resume'].includes(args.slice(0, 3).join(' '))) {
     const binding = observedAudits.findLast(row => row?.runId === args[3]
-      && row.target === policy.target && row.database === policy.database);
+      && row.target === policy.target && row.library === policy.library);
     check(binding, 'Use a run observed through this session authorized target audit');
     if (args[2] === 'report') {
       check(args.length === 4, 'Read the exact retained report without flags');
@@ -377,7 +387,7 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
       const flag = args[index], value = args[index + 1];
       check(!seen.has(flag) && typeof value === 'string', 'Use one value for each public resume option');
       seen.add(flag);
-      if (flag === '--entry') check(value === policy.database, 'The original library assertion cannot change');
+      if (flag === '--library') check(ownsLibrary(value), 'The original library assertion cannot change');
       else check(Object.hasOwn(caps, flag) && /^[1-9][0-9]*$/u.test(value) && Number(value) <= caps[flag],
         'Keep the public per-invocation audit budget bounded');
     }
@@ -388,14 +398,14 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
     const operation = args.slice(0, 2).join(' ') === 'ctl operation' && ['show', 'reconcile'].includes(args[2]);
     check(audit || operation, 'Only a targeted audit or the exact original operation observation is authorized');
     const flags = new Map(), positional = [];
-    const valued = new Set(['--entry', '--target', ...(audit ? ['--depth', '--max-requests', '--max-bytes', '--duration-ms'] : [])]);
+    const valued = new Set(['--library', '--target', ...(audit ? ['--depth', '--max-requests', '--max-bytes', '--duration-ms'] : [])]);
     for (let index = 3; index < args.length; index++) {
       const value = args[index];
       if (!value.startsWith('-')) { positional.push(value); continue; }
       check(valued.has(value) && !flags.has(value) && typeof args[index + 1] === 'string' && !args[index + 1].startsWith('-'), 'Unknown or repeated maintenance option');
       flags.set(value, args[++index]);
     }
-    check(flags.get('--entry') === policy.database && flags.get('--target') === policy.target, 'Keep the exact reviewed owner and library');
+    check(ownsLibrary(flags.get('--library')) && flags.get('--target') === policy.target, 'Keep the exact reviewed owner and library');
     check(audit ? positional.length === 0 : positional.length === 1 && positional[0] === policy.operationId, 'Observe only the original operation');
     if (flags.has('--depth')) check(['metadata', 'content', 'history'].includes(flags.get('--depth')), 'Use a public audit depth');
     for (const [flag, maximum] of [['--max-requests', 500], ['--max-bytes', 67108864], ['--duration-ms', 120000]])
@@ -416,7 +426,7 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
   }
   const kind = consumer || update ? args[0] : args[4], flags = new Map(), positional = [];
   const boolean = new Set(read ? ['--json', '--metrics', '--read-only', '--refresh', '--offline', ...(maintenance ? ['--authoring'] : [])] : files ? ['--metrics', '--offline'] : update || kind === 'apply' ? ['--dry-run'] : []);
-  const valued = new Set(read ? ['--database', '--output', '--path', '--from'] : files ? ['--database', '--path'] : update ? ['--database', '--description'] : ['--entry', '--max-requests', '--max-bytes', '--duration-ms',
+  const valued = new Set(read ? ['--library', '--output', '--path', '--from'] : files ? ['--library', '--path'] : update ? ['--library', '--description'] : ['--library', '--max-requests', '--max-bytes', '--duration-ms',
     ...(kind === 'apply' ? ['--review', '--review-id'] : ['--target']), ...(kind === 'review' ? ['--output'] : [])]);
   for (let index = consumer || update ? 1 : 5; index < args.length; index++) {
     const flag = args[index];
@@ -426,21 +436,22 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
     else { check(valued.has(flag) && typeof args[index + 1] === 'string' && !args[index + 1].startsWith('--'), 'Unknown public CLI option'); flags.set(flag, args[++index]); }
   }
   check(positional.length === 1, 'Use the single public target argument');
-  check(flags.get(consumer || update ? '--database' : '--entry') === policy.database, 'Keep the exact reviewed library');
+  check(ownsLibrary(flags.get('--library')), 'Keep the exact reviewed library');
   if (update) {
     check(positional[0] === policy.target && typeof policy.description === 'string' && flags.get('--description') === policy.description,
       'Update only the original page to the exact authorized Description');
   } else if (consumer) {
-    const owner = value => value === policy.target || value?.startsWith(policy.refPrefix);
+    const canonical = value => { try { return parseNativeReference(value).selector === policy.ownerRef; } catch { return false; } };
+    const owner = value => value === policy.target || canonical(value);
     const relativeFile = value => typeof value === 'string' && value.length > 0 && !value.startsWith('/') && !value.includes(':')
       && !value.split('/').some(part => part === '' || part === '.' || part === '..');
-    check(owner(positional[0]) || relativeFile(positional[0]) && flags.get('--from')?.startsWith(policy.refPrefix), 'Read only the original owner');
-    if (flags.has('--from')) check(flags.get('--from').startsWith(policy.refPrefix) && relativeFile(positional[0]) && !flags.has('--path'), 'Resolve only an original owner relative file');
+    check(owner(positional[0]) || relativeFile(positional[0]) && canonical(flags.get('--from')), 'Read only the original owner');
+    if (flags.has('--from')) check(canonical(flags.get('--from')) && relativeFile(positional[0]) && !flags.has('--path'), 'Resolve only an original owner relative file');
     if (flags.has('--path')) check(relativeFile(flags.get('--path')), 'Use an original owner relative file path');
     if (read) {
       check(flags.get('--json'), 'Read output needs public JSON; optional metrics never grant authorization');
       check(flags.get('--read-only'), 'Post-recovery inspection must prohibit remote writes');
-    } else check(positional[0].startsWith(policy.refPrefix) && /[?&]snapshot=s_[a-f0-9]{64}(?:&|$)/u.test(positional[0]),
+    } else check(canonical(positional[0]) && parseNativeReference(positional[0]).snapshot !== undefined,
       'List only the original immutable owner pin');
     check(!(flags.has('--refresh') && flags.has('--offline')), 'Use one public freshness policy');
   } else {
@@ -476,13 +487,13 @@ export function candidateAuditReportBinding(result, policy, { registeredPath, re
     }
     const report = JSON.parse(raw), id = report.run_id;
     if (report.ok !== true || report.report_version !== 1 || !['completed', 'paused', 'execution_failed'].includes(report.execution) || report.remote_writes !== 0
-      || report.entry_id !== policy.database || report.selector?.kind !== 'skill' || report.selector.page_id !== policy.target
+      || report.library_id !== policy.library || report.selector?.kind !== 'skill' || report.selector.page_id !== policy.target
       || report.inspection_scope !== 'reachable_target' || typeof id !== 'string' || !/^audit-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(id)
       || report.next?.read_only !== true || JSON.stringify(report.next.argv) !== JSON.stringify(['ntn-skills', 'ctl', 'audit', report.execution === 'paused' ? 'resume' : 'report', id])) return undefined;
     const totals = report.request_totals;
     if (totals !== undefined && (!totals || !['attempts', 'request_bytes', 'response_bytes', 'elapsed_ms', 'invocations']
       .every(key => Number.isFinite(totals[key]) && totals[key] >= 0))) return undefined;
-    return { runId: id, sourceToolCallId: result.toolCallId, target: policy.target, database: policy.database,
+    return { runId: id, sourceToolCallId: result.toolCallId, target: policy.target, library: policy.library,
       execution: report.execution, nextArgv: report.next.argv,
       ...(totals === undefined ? {} : { requestTotals: totals }),
       resultSha256: sha(JSON.stringify(content)), reportSha256: sha(raw), reportBytes: Buffer.byteLength(raw),
@@ -526,16 +537,10 @@ export function reviewCandidateMaintenanceTool(tool, input, policy, branch = [])
   check(!Object.hasOwn(input, 'readOnly'), 'readOnly is not a current public tool option; omit it. Notion consumption does not write remotely.');
   const fields = allowed => check(Object.keys(input).every(key => allowed.includes(key)), 'Unknown maintenance tool option');
   const canonical = value => {
-    if (typeof value !== 'string' || !value.startsWith(policy.refPrefix)) return false;
-    try {
-      const url = new URL(value), path = decodeURIComponent(url.pathname).slice(1);
-      return url.protocol === 'skill:' && !url.username && !url.password && !url.port && !url.hash
-        && path.length > 0 && !path.includes('\\') && !path.split('/').some(part => !part || part === '.' || part === '..')
-        && [...url.searchParams.keys()].every(key => ['snapshot', 'file_id'].includes(key));
-    } catch { return false; }
+    try { return parseNativeReference(value).selector === policy.ownerRef; } catch { return false; }
   };
-  const ownerIdentity = identity => identity?.source === 'notion' && identity.id === decodeURIComponent(new URL(policy.refPrefix).hostname)
-    && identity.ref === policy.refPrefix.slice(0, -1) && identity.locator?.page_id === policy.target && identity.locator?.database_id === policy.database;
+  const ownerIdentity = identity => identity?.source === 'notion' && identity.id === policy.ownerRef
+    && identity.ref === policy.ownerRef && identity.locator?.page_id === policy.target && identity.locator?.library_id === policy.library;
   const reference = (value, selectedOnly = false) => {
     if (!selectedOnly && canonical(value)) return true;
     if (typeof value !== 'string' || !/^sr:[CSR][A-Za-z0-9_-]{22}$/u.test(value)) return false;
@@ -652,6 +657,14 @@ export function candidateCliGuard(api, { fs, output, policy, review, maintenance
   api.on('session_shutdown', () => { if (fd !== undefined) { fs.writeSync(fd, JSON.stringify({ complete: !failure }) + '\n'); fs.closeSync(fd); } });
 }
 
+export function candidateCliGuardSource({ referenceParser, output, policy }) {
+  return "import {parseNativeReference,notionPageId} from " + JSON.stringify(pathToFileURL(referenceParser).href) + ";import fs from 'node:fs';import crypto from 'node:crypto';const sha=value=>crypto.createHash('sha256').update(value).digest('hex');const review=" + reviewCandidateCliCommand.toString()
+    + ';const maintenanceReview=' + reviewCandidateMaintenanceTool.toString()
+    + ';const auditReportBinding=' + candidateAuditReportBinding.toString()
+    + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,maintenanceReview,auditReportBinding,sha,output:' + JSON.stringify(output)
+    + ',policy:' + JSON.stringify(policy) + '});\n';
+}
+
 // This is a finite inventory vocabulary for the fixed owned application, not a
 // shell parser. No content search, executable, substitution or outside path is admitted.
 export function candidateProjectInspection(input, cwd, projectRoot) {
@@ -717,7 +730,7 @@ export function candidatePayloadBodies(value, expectedBodies) {
   });
 }
 
-export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspectPayload, payloadDirectory, branchDirectory, toolResultDirectory, hostOutput, projectRoot, inspectProject }) {
+export function observeCandidateTask(api, { fs, crypto, path, createRequire, runtimeFiles, output, bodyFiles, inspectPayload, payloadDirectory, branchDirectory, toolResultDirectory, hostOutput, projectRoot, inspectProject, parseNativeReference }) {
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const oracleStarted = process.hrtime.bigint();
   const nonTextBodies = [];
@@ -750,6 +763,49 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     if (!fs.existsSync(path)) fs.writeFileSync(path, bytes, { flag: 'wx', mode: 0o600 });
     return { path, bytes: Buffer.byteLength(bytes), sha256 };
   };
+  let capturedToolRuntime;
+  const toolRuntime = () => {
+    if (!toolResultDirectory || !path || !createRequire) return undefined;
+    if (capturedToolRuntime !== undefined) return capturedToolRuntime;
+    try {
+      const entry = fs.realpathSync(process.argv[1]), packageRoot = path.resolve(path.dirname(entry), '../..');
+      const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+      if (manifest.name !== '@earendil-works/pi-coding-agent'
+        || entry !== path.join(packageRoot, 'dist/bundle/cli.js')
+        || typeof manifest.bin?.pi !== 'string'
+        || fs.realpathSync(path.resolve(packageRoot, manifest.bin.pi)) !== entry)
+        throw new Error('TOOL_RUNTIME_OWNER_UNPROVEN');
+      const wasm = createRequire(path.join(packageRoot, 'dist/bundle/chunks/chunk-36QC74V4.js')).resolve('quickjs-wasi/quickjs.wasm');
+      const wasmRelative = path.relative(packageRoot, fs.realpathSync(wasm));
+      if (wasmRelative !== 'node_modules/quickjs-wasi/quickjs.wasm') throw new Error('TOOL_RUNTIME_DEPENDENCY_OUTSIDE_OWNER');
+      if (!Array.isArray(runtimeFiles) || !runtimeFiles.includes('package.json')
+        || !runtimeFiles.includes('dist/bundle/cli.js') || !runtimeFiles.includes(wasmRelative))
+        throw new Error('TOOL_RUNTIME_PROFILE_MISSING');
+      const files = runtimeFiles.map(relativePath => {
+        if (typeof relativePath !== 'string' || path.isAbsolute(relativePath)
+          || relativePath.split('/').some(part => !part || part === '.' || part === '..'))
+          throw new Error('TOOL_RUNTIME_PROFILE_PATH_INVALID');
+        const file = path.join(packageRoot, relativePath);
+        if (fs.realpathSync(file) !== file || !fs.lstatSync(file).isFile()) throw new Error('TOOL_RUNTIME_FILE_UNPROVEN');
+        return { relativePath, path: file, artifact: retain('tool-runtime', fs.readFileSync(file)) };
+      });
+      capturedToolRuntime = { version: 1, packageRoot, entry, files };
+    } catch (error) {
+      capturedToolRuntime = { version: 1, error: { name: error.name, message: error.message } };
+    }
+    return capturedToolRuntime;
+  };
+  const verifyToolRuntimeUnchanged = () => {
+    if (!capturedToolRuntime?.files) return null;
+    for (const file of capturedToolRuntime.files) {
+      if (fs.realpathSync(file.path) !== file.path || !fs.lstatSync(file.path).isFile())
+        throw new Error('TOOL_RUNTIME_CHANGED');
+      const bytes = fs.readFileSync(file.path);
+      if (bytes.length !== file.artifact.bytes || sha(bytes) !== file.artifact.sha256)
+        throw new Error('TOOL_RUNTIME_CHANGED');
+    }
+    return true;
+  };
   const preparedRead = (message, proofs, receiptSequence) => {
     const pending = pendingPreparedReads.get(message.toolCallId);
     if (!pending || pending.turn !== turn || !pending.result || message.toolName !== 'read') return;
@@ -758,36 +814,31 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     const scope = resource ? proof?.scope : binding?.scope, owner = resource ? proof?.id : binding?.record?.id;
     const snapshot = resource ? proof?.snapshot_id : binding?.snapshot_id, version = resource ? proof?.version_id : binding?.version_id;
     const relative = resource ? proof?.path : 'SKILL.md', bodyHash = resource ? proof?.sha256 : proof?.bodySha256;
-    const fixed = (ref, expectedPath, expectedSnapshot, fileId) => {
-      const match = /^skill:\/\/([^/?#]+)\/([^?#]+)\?([^#]+)$/u.exec(ref ?? '');
-      if (!match) return false;
+    const fixed = (ref, expectedPath, expectedSnapshot) => {
       try {
-        const query = new URLSearchParams(match[3]);
-        return decodeURIComponent(match[1]) === owner && decodeURIComponent(match[2]) === expectedPath
-          && [...query.keys()].length === 2 && query.getAll('snapshot').length === 1 && query.getAll('file_id').length === 1
-          && query.get('snapshot') === expectedSnapshot && query.get('file_id') === fileId;
+        const parsed = parseNativeReference(ref);
+        return parsed.selector === owner && parsed.path === expectedPath && parsed.snapshot === expectedSnapshot;
       } catch { return false; }
     };
     if (proof?.version !== (resource ? 2 : 3) || proof.toolCallId !== message.toolCallId
       || !/^[a-f0-9]{64}$/u.test(scope ?? '') || !/^s_[a-f0-9]{64}$/u.test(snapshot ?? '') || !/^[a-f0-9]{64}$/u.test(version ?? '')
       || !/^[a-f0-9]{64}$/u.test(bodyHash ?? '') || !Number.isSafeInteger(proof.bytes) || proof.bytes < (resource ? 0 : 1)
       || identity?.source !== 'notion' || identity.scope !== scope || identity.id !== owner || identity.kind !== 'skill'
-      || identity.ref !== 'skill://' + encodeURIComponent(owner) || !identity.locator
+      || identity.ref !== owner || !identity.locator
       || typeof relative !== 'string' || !relative || /[\\:\p{Cc}\p{Cf}\p{Cs}]/u.test(relative)
       || relative.split('/').some(part => !part || part === '.' || part === '..')) return;
     if (ownerTarget.kind === 'selected' && (!/^s_[a-f0-9]{64}$/u.test(ownerTarget.snapshot_id ?? '')
-      || !/^[a-f0-9]{64}$/u.test(ownerTarget.version_id ?? '') || !/^file-[a-f0-9]{64}$/u.test(ownerTarget.file_id ?? '')
+      || !/^[a-f0-9]{64}$/u.test(ownerTarget.version_id ?? '')
       || !/^[a-f0-9]{64}$/u.test(ownerTarget.body_sha256 ?? '') || ownerTarget.entrypoint !== 'SKILL.md'
-      || !fixed(ownerTarget.ref, 'SKILL.md', ownerTarget.snapshot_id, ownerTarget.file_id))) return;
+      || !fixed(ownerTarget.ref, 'SKILL.md', ownerTarget.snapshot_id))) return;
     if (pending.originalInput.path.startsWith('skill://') && (pending.target.ref !== pending.originalInput.path
-      || !fixed(pending.originalInput.path, resource ? pending.target.path : 'SKILL.md', ownerTarget.snapshot_id,
-        resource ? pending.target.file_id : ownerTarget.file_id))) return;
+      || !fixed(pending.originalInput.path, resource ? pending.target.path : 'SKILL.md', ownerTarget.snapshot_id))) return;
     if (resource) {
       const target = pending.target;
       if (ownerTarget.kind !== 'selected' || ownerTarget.snapshot_id !== snapshot || ownerTarget.version_id !== version
         || relative === 'SKILL.md' || target.path !== relative || target.ref !== proof.ref || target.file_id !== proof.file_id
-        || target.bytes !== proof.bytes || target.sha256 !== bodyHash || !/^file-[a-f0-9]{64}$/u.test(proof.file_id ?? '')
-        || !fixed(proof.ref, relative, snapshot, proof.file_id) || proof.loaded !== false || proof.delivered_complete_text !== true
+        || target.bytes !== proof.bytes || target.sha256 !== bodyHash || proof.file_id !== undefined && (typeof proof.file_id !== 'string' || !proof.file_id)
+        || !fixed(proof.ref, relative, snapshot) || proof.loaded !== false || proof.delivered_complete_text !== true
         || 'files' in proof || proof.purpose !== undefined && proof.purpose !== 'inspect') return;
     } else {
       if (binding.record?.entrypoint !== 'SKILL.md' || binding.snapshot_id !== proof.snapshotId
@@ -886,19 +937,32 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
     const inspection = event.toolName === 'bash' && projectRoot && inspectProject?.(input, ctx?.cwd, projectRoot)
       ? { root: projectRoot, cwd: ctx.cwd, input } : undefined;
     const selectors = Object.fromEntries(['path', 'paths', 'ref', 'refs', 'query', 'id', 'ids', 'refresh'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
-    const toolSource = typeof api.getAllTools === 'function' ? api.getAllTools().find(tool => tool.name === event.toolName)?.sourceInfo : undefined;
+    const tool = typeof api.getAllTools === 'function' ? api.getAllTools().find(tool => tool.name === event.toolName) : undefined;
+    const toolSource = tool?.sourceInfo;
+    const toolParametersArtifact = toolResultDirectory && tool?.parameters !== undefined
+      ? retain('tool-parameters', JSON.stringify(tool.parameters)) : undefined;
+    const runtime = toolRuntime();
     let toolImplementation;
+    if (event.toolName === 'read' && toolResultDirectory
+      && toolSource?.origin === 'package' && toolSource.scope === 'user' && toolSource.source === 'npm:pi-compact-ui'
+      && typeof toolSource.baseDir === 'string' && toolSource.path === toolSource.baseDir + '/index.ts') {
+      try {
+        const files = ['package.json', 'index.ts'].map(relativePath => {
+          const path = toolSource.baseDir + '/' + relativePath;
+          return { relativePath, path, artifact: retain('implementation', fs.readFileSync(path)) };
+        });
+        toolImplementation = { version: 1, runtimeMode: ctx?.mode, files };
+      } catch (error) {
+        toolImplementation = { version: 1, error: { name: error.name, message: error.message } };
+      }
+    }
     if (event.toolName === 'read' && toolResultDirectory && typeof input.path === 'string'
       && Object.keys(input).every(key => ['path', 'refresh'].includes(key))
       && (input.refresh === undefined || typeof input.refresh === 'boolean')
       && (/^sr:[CSR][A-Za-z0-9_-]{22}$/u.test(input.path) || input.path.startsWith('skill://')) && event.parentToolCallId === undefined
       && toolSource?.origin === 'package' && toolSource.source === 'npm:pi-compact-ui'
-      && typeof toolSource.baseDir === 'string' && toolSource.path === toolSource.baseDir + '/index.ts') {
-      const files = ['package.json', 'index.ts'].map(relativePath => {
-        const path = toolSource.baseDir + '/' + relativePath;
-        return { relativePath, path, artifact: retain('implementation', fs.readFileSync(path)) };
-      });
-      toolImplementation = { version: 1, runtimeMode: ctx?.mode, files };
+      && typeof toolSource.baseDir === 'string' && toolSource.path === toolSource.baseDir + '/index.ts'
+      && toolImplementation?.files) {
       const registrations = api.getCommands().filter(command => command.name === 'context-broker');
       const branch = ctx.sessionManager.getBranch(), targetFor = ref => {
         const refs = branch.filter(entry => entry.type === 'custom' && entry.customType === 'context-broker-short-ref' && entry.data?.ref === ref);
@@ -940,6 +1004,8 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
       ...(event.parentToolCallId === undefined ? {} : { parentToolCallId: event.parentToolCallId }),
       ...(toolSource === undefined ? {} : { toolSource }),
       ...(toolImplementation === undefined ? {} : { toolImplementation }),
+      ...(toolParametersArtifact === undefined ? {} : { toolParametersArtifact }),
+      ...(runtime === undefined ? {} : { toolRuntime: runtime }),
       inputSha256: sha(JSON.stringify(input)), selectors,
       executionTool: ['bash', 'powershell', 'codemode', 'execute', 'eval'].includes(event.toolName),
       reviewedReadTool: Boolean(inspection) || ['read', 'grep', 'find', 'ls', 'notion_list', 'notion_use'].includes(event.toolName),
@@ -975,7 +1041,11 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
   });
   on('session_shutdown', event => {
     if (event?.reason === 'fork') { pendingPreparedReads.clear(); record('task_observer_fork'); awaitingRebind = true; return; }
-    record('task_observer_end', { errors, complete: errors === 0 && !awaitingRebind, observerWorkMs: Number(observerWorkNs) / 1e6 }); closed = true; fs.closeSync(fd);
+    let toolRuntimeUnchanged = null;
+    try { toolRuntimeUnchanged = verifyToolRuntimeUnchanged(); }
+    catch { errors++; toolRuntimeUnchanged = false; record('observer_error', { event: 'tool_runtime_changed' }); }
+    record('task_observer_end', { errors, complete: errors === 0 && !awaitingRebind, toolRuntimeUnchanged,
+      observerWorkMs: Number(observerWorkNs) / 1e6 }); closed = true; fs.closeSync(fd);
   });
   return { bind(next) {
     if (closed) throw new Error('TASK_OBSERVER_ALREADY_CLOSED');
@@ -990,13 +1060,14 @@ export function observeCandidateTask(api, { fs, crypto, output, bodyFiles, inspe
 /** Pi forks replace the extension API inside one process. Keep one exclusive
  * ledger and payload counter, and rebind only after that real lifecycle event. */
 export function candidateTaskExtensionSource(settings) {
-  return "import fs from 'node:fs';import crypto from 'node:crypto';const inspectPayload=" + candidatePayloadBodies.toString()
+  assert.ok(isAbsolute(settings.referenceParser ?? ''), 'The task observer requires its selected installed reference parser');
+  return "import {parseNativeReference} from " + JSON.stringify(pathToFileURL(settings.referenceParser).href) + ";import fs from 'node:fs';import crypto from 'node:crypto';import path from 'node:path';import {createRequire} from 'node:module';const inspectPayload=" + candidatePayloadBodies.toString()
     + ';const inspectProject=' + candidateProjectInspection.toString()
     + ';const settings=' + JSON.stringify(settings)
     + ';const key=Symbol.for("context-broker/verification-task-observers/v1");'
     + 'export default api=>{const registry=globalThis[key]??=new Map();const prior=registry.get(settings.output);'
     + 'if(prior){if(prior.settings!==JSON.stringify(settings))throw new Error("TASK_OBSERVER_SETTINGS_CHANGED");prior.observer.bind(api);return;}const observer=(' + observeCandidateTask.toString()
-    + ')(api,{fs,crypto,inspectPayload,inspectProject,...settings});registry.set(settings.output,{observer,settings:JSON.stringify(settings)});};\n';
+    + ' )(api,{fs,crypto,path,createRequire,inspectPayload,inspectProject,parseNativeReference,...settings,runtimeFiles:' + JSON.stringify(Object.keys(reviewedPiToolRuntimeProfile.files)) + '});registry.set(settings.output,{observer,settings:JSON.stringify(settings)});};\n';
 }
 
 export function containsProof(value, expected) {
@@ -1017,18 +1088,16 @@ export function candidateMaintenanceBodyContract(config) {
     const expected = config.bodies.find(item => item.sha256 === body.sha256), binding = body.binding;
     assert.ok(expected && digest(body.sha256) && Number.isSafeInteger(body.bytes) && body.bytes > 0);
     assert.equal(expected.occurrences, 1); assert.notEqual(expected.receiptRequired, false);
-    assert.equal(binding?.owner, decodeURIComponent(new URL(policy.refPrefix).hostname));
+    assert.equal(binding?.owner, policy.ownerRef);
     assert.ok(digest(binding.scope) && /^s_[a-f0-9]{64}$/u.test(binding.snapshot_id) && digest(binding.version_id));
-    assert.ok(/^file-[a-f0-9]{64}$/u.test(binding.file_id));
-    const ref = new URL(binding.ref);
-    assert.equal(ref.protocol, 'skill:'); assert.equal(decodeURIComponent(ref.hostname), binding.owner);
-    assert.equal(ref.username, ''); assert.equal(ref.password, ''); assert.equal(ref.port, '');
-    assert.equal(decodeURIComponent(ref.pathname.slice(1)), binding.path);
-    assert.equal(ref.searchParams.get('snapshot'), binding.snapshot_id); assert.equal(ref.searchParams.get('file_id'), binding.file_id);
-    assert.equal([...ref.searchParams].length, 2); assert.equal(ref.hash, '');
+    if (binding.file_id !== undefined) assert.match(binding.file_id, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/u);
+    const ref = parseNativeReference(binding.ref);
+    assert.equal(ref.selector, binding.owner); assert.equal(ref.path, binding.path); assert.equal(ref.snapshot, binding.snapshot_id);
   }
   assert.equal(config.expectedBodies.filter(body => body.binding.path === 'SKILL.md').length, 1);
-  for (const key of ['path', 'file_id', 'ref']) assert.equal(new Set(config.expectedBodies.map(body => body.binding[key])).size, 3);
+  for (const key of ['path', 'ref']) assert.equal(new Set(config.expectedBodies.map(body => body.binding[key])).size, 3);
+  const nativeIds = config.expectedBodies.map(body => body.binding.file_id).filter(id => id !== undefined);
+  assert.equal(new Set(nativeIds).size, nativeIds.length);
   for (const key of ['owner', 'scope', 'snapshot_id', 'version_id']) assert.equal(new Set(config.expectedBodies.map(body => body.binding[key])).size, 1);
   return config.expectedBodies;
 }
@@ -1102,7 +1171,7 @@ export function inspectCandidateMaintenancePayload(config, { payload, nativeAudi
     };
     const main = (value, receipt) => {
       const body = full(value, receipt.bodySha256, receipt.bytes), binding = receipt.binding;
-      assert.equal(body.binding.path, 'SKILL.md'); assert.equal(binding.record.locator.page_id, policy.target); assert.equal(binding.record.locator.database_id, policy.database);
+      assert.equal(body.binding.path, 'SKILL.md'); assert.equal(binding.record.locator.page_id, policy.target); assert.equal(binding.record.locator.library_id, policy.library);
       bind(body, { owner: binding.record.id, scope: binding.scope, snapshot_id: binding.snapshot_id, version_id: binding.version_id, ref: binding.ref });
       assert.equal(binding.body_sha256, body.sha256);
     };
@@ -1306,12 +1375,13 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   }
   assert.ok(isAbsolute(config.evidenceRoot) && !inside(root, config.evidenceRoot));
   const ownership = await fileIdentity(config.ownershipReceipt.path); assert.equal(ownership.sha256, config.ownershipReceipt.sha256);
-  assert.ok(JSON.stringify(await json(ownership.path)).includes(config.database), 'Bind the owned fixture receipt to this exact database');
+  assert.ok(JSON.stringify(await json(ownership.path)).includes(config.library), 'Bind the owned fixture receipt to this exact library');
   const before = await normalSnapshot(config, fileIdentity);
   const broker = await packageClosure(config.brokerRoot, config.brokerArchive, config.brokerArchiveSha256);
   const cli = await packageClosure(config.cliRoot, config.cliArchive, config.cliArchiveSha256);
   const embedded = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills.mjs'));
   const sdk = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills-sdk.mjs'));
+  const ref = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills-ref.cjs'));
   const standalone = await fileIdentity(join(config.cliRoot, 'dist/ntn-skills.js'));
   const runtime = await json(join(config.brokerRoot, 'dist/ntn-skills-runtime.json'));
   assert.equal(embedded.sha256, config.embeddedCliSha256); assert.equal(sdk.sha256, config.embeddedSdkSha256);
@@ -1323,14 +1393,20 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   assert.ok(typeof sdkImport === 'string' && sdkImport.startsWith('./'));
   const inputSdk = await fileIdentity(resolve(config.cliRoot, sdkImport)); assert.ok(inside(await realpath(config.cliRoot), inputSdk.realpath));
   assert.equal(cliManifest.name, 'ntn-skills');
+  const refEntry = cliManifest.exports?.['./ref']?.require;
+  assert.ok(typeof refEntry === 'string' && refEntry.startsWith('./'));
+  const inputRef = await fileIdentity(resolve(config.cliRoot, refEntry));
+  assert.ok(inside(await realpath(config.cliRoot), inputRef.realpath));
+  assert.equal(ref.sha256, inputRef.sha256, 'Bundled and selected pure protocol bytes must match');
   const brokerManifest = await json(join(config.brokerRoot, 'package.json'));
   assert.equal(brokerManifest.name, 'pi-context-broker');
   const receiptIdentity = file => ({ path: file.realpath, bytes: file.bytes, sha256: file.sha256 });
   const hashes = verifyBundledRuntime({ manifest: runtime, expectedVersion: cliManifest.version,
-    cliBytes: await readFile(embedded.path), sdkBytes: await readFile(sdk.path) });
+    cliBytes: await readFile(embedded.path), sdkBytes: await readFile(sdk.path), refBytes: await readFile(ref.path) });
   validateCandidateArtifactReceipt(artifact, {
     buildInput: { package: cliManifest.name, version: cliManifest.version, manifest: receiptIdentity(await fileIdentity(cliManifestPath)),
-      cli: receiptIdentity(standalone), sdk: receiptIdentity(inputSdk) },
+      cli: receiptIdentity(standalone), sdk: receiptIdentity(inputSdk), ref: receiptIdentity(inputRef),
+      notices: receiptIdentity(await fileIdentity(join(config.cliRoot, "THIRD_PARTY_NOTICES.md"))) },
     package: { name: brokerManifest.name, version: brokerManifest.version, installed: await realpath(config.brokerRoot), archive: receiptIdentity(broker.archive) },
     runtime: { ...runtime, hashes },
   });
@@ -1347,15 +1423,16 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
     const receipt = await fileIdentity(config.resumeFrom.path); assert.equal(receipt.sha256, config.resumeFrom.sha256);
     assert.ok(inside(await realpath(config.evidenceRoot), receipt.realpath), 'Only an owned prior candidate run may be resumed');
     previous = await json(receipt.path);
-    assert.equal(previous.scope, config.scope); assert.equal(previous.status, 'passed'); assert.equal(previous.plan.database, config.database);
+    assert.equal(previous.scope, config.scope); assert.equal(previous.status, 'passed'); assert.equal(previous.plan.library, config.library);
     assert.equal(previous.artifacts.embedded.sha256, embedded.sha256); assert.equal(previous.artifacts.sdk.sha256, sdk.sha256);
+    assert.equal(previous.artifacts.ref.sha256, ref.sha256);
     assert.ok(inside(previous.evidence, previous.session.artifact.path));
     const session = await fileIdentity(previous.session.artifact.path); assert.equal(session.sha256, previous.session.artifact.sha256);
   }
   const cwd = previous?.launch.cwd ?? join(evidence, 'workspace'), control = join(evidence, 'observation'), sessions = join(evidence, 'sessions'), responses = join(evidence, 'sdk-responses');
   for (const path of [cwd, join(cwd, '.pi'), control, sessions, responses]) await mkdir(path, { recursive: true, mode: 0o700 });
   const sourcePath = join(control, 'source.json'), sourceCache = join(cwd, 'broker-cache');
-  const source = candidateSourceConfig(before.source, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache, noNotion: config.noNotion === true });
+  const source = candidateSourceConfig(before.source, { sourceId: config.sourceId, library: config.library, cacheDir: sourceCache, noNotion: config.noNotion === true });
   const projectSettings = candidateProjectSettings(before.oldSource, config.brokerRoot);
   if (previous) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings, 'The original owned project package mapping changed');
   else await save(join(cwd, '.pi/settings.json'), projectSettings);
@@ -1366,7 +1443,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   const costExtension = join(control, 'cost.mjs'), transportExtension = join(control, 'transport.mjs'), taskExtension = join(control, 'tasks.mjs'), sourcePreload = join(control, 'source.mjs'), sdkPreload = join(control, 'sdk.mjs');
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: 'daily-candidate', clockId }), { mode: 0o600, flag: 'wx' });
   await writeFile(transportExtension, providerTransportExtensionSource({ output: transport, checkoutRoot: root, clockId }), { mode: 0o600, flag: 'wx' });
-  await writeFile(taskExtension, candidateTaskExtensionSource({ output: tasks, bodyFiles: config.expectedBodies ?? [] }), { mode: 0o600, flag: 'wx' });
+  await writeFile(taskExtension, candidateTaskExtensionSource({ referenceParser: join(config.brokerRoot, "src/native-reference.ts"), output: tasks, bodyFiles: config.expectedBodies ?? [] }), { mode: 0o600, flag: 'wx' });
   await writeFile(sourcePreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: root, clockId, cliPath: embedded.realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { mode: 0o600, flag: 'wx' });
   const state = join(cwd, 'ntn/state');
   await writeFile(sdkPreload, "import fs from 'node:fs'; import fsPromises from 'node:fs/promises'; import {channel} from 'node:diagnostics_channel'; import {createHash} from 'node:crypto'; import {syncBuiltinESMExports} from 'node:module'; import {isMainThread} from 'node:worker_threads';\n"
@@ -1374,8 +1451,10 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
     + 'if(isMainThread&&process.ppid===' + process.pid + '){const sdk=(' + observeGraphSdk.toString() + ')({channel,fs,safeMetrics:safeRequestMetrics,paths:' + JSON.stringify({ ledger: sdkLedger, responses, outputRoot: sourceCache }) + '});\n'
     + 'const objects=(' + observeOwnedObjectReads.toString() + ')({fs,fsPromises,hash,objects:' + JSON.stringify(join(state, 'objects'))
     + ',record:row=>fs.appendFileSync(' + JSON.stringify(objects) + ',JSON.stringify({monotonicNs:process.hrtime.bigint().toString(),...row})+"\\n",{mode:0o600})});syncBuiltinESMExports();let done=false;const finish=()=>{if(!done){done=true;objects.finish();sdk.close();}};process.once("beforeExit",finish);process.once("exit",finish);}\n', { mode: 0o600, flag: 'wx' });
-  const env = { ...process.env, CONTEXT_BROKER_CONFIG: sourcePath, NTN_SKILLS_HOME: state, NTN_SKILLS_CONFIG_HOME: join(cwd, 'ntn/config'), NTN_SKILLS_CACHE_HOME: join(cwd, 'ntn/cache'), NTN_SKILLS_DATA_HOME: join(cwd, 'ntn/data'), NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000',
+  const env = { ...candidateOwnedStateEnvironment(cwd, process.env), CONTEXT_BROKER_CONFIG: sourcePath, NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000',
     BROKER_E2E_PROCESS_LEDGER: join(evidence, 'owned-processes.jsonl'), NODE_OPTIONS: [process.env.NODE_OPTIONS, '--import=' + JSON.stringify(sourcePreload), '--import=' + JSON.stringify(sdkPreload)].filter(Boolean).join(' ') };
+  await mkdir(env.NTN_SKILLS_CONFIG_HOME, { recursive: true, mode: 0o700 });
+  await save(join(env.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: config.library });
   const args = ['--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel, '-e', costExtension, '-e', transportExtension, '-e', taskExtension];
   let resumedSession;
   if (previous) {
@@ -1384,7 +1463,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
     args.push('--session', resumedSession);
   }
   const result = { version: 1, scope: config.scope, status: 'running', evidence, plan, ownership, host, hostArtifact: await fileIdentity(host.identity), harness, before: before.safe,
-    artifacts: { brokerArchive: broker.archive, brokerFilesSha256: broker.sha256, cliArchive: cli.archive, embedded, sdk, standalone, inputSdk, runtime, artifactReceipt, buildInput: artifact.buildInput },
+    artifacts: { brokerArchive: broker.archive, brokerFilesSha256: broker.sha256, cliArchive: cli.archive, embedded, sdk, ref, standalone, inputSdk, inputRef, runtime, artifactReceipt, buildInput: artifact.buildInput },
     launch: { cwd, args, normalHome: true, normalAgentDir: true, targetExtensionArgument: false, sourceCommandConfigured: false, normalTools: true, normalMcpAndContext: true, sourceStateStartsEmpty: !previous,
       resume: previous ? { source: previous.session.artifact, copiedOwnedSessionOnly: true, originalSessionPreserved: true, sourceCache: 'original-owned-warm-state' } : null },
     turns: config.turns.map(turn => ({ id: turn.id, status: 'not_run' })), semanticReview: 'required', globalDailyActivation: 'not_tested', modifications: { globalSettings: 0, dailySourceConfig: 0, credentialCopies: 0 } };
@@ -1627,7 +1706,7 @@ export async function runCandidatePrint(config) {
     assert.ok(!config.prompt.trimStart().startsWith('/'), 'The introduction fork requires its fixed non-slash prompt');
   }
   assert.ok(isAbsolute(config.evidenceRoot) && !inside(root, config.evidenceRoot));
-  assert.ok(isAbsolute(config.brokerRoot) && config.sourceId && config.database);
+  assert.ok(isAbsolute(config.brokerRoot) && config.sourceId && config.library);
   assert.ok(process.env.NOTION_API_TOKEN?.trim(), 'Use the already authorized Notion identity');
   assert.ok(!process.env.NOTION_API_BASE_URL || process.env.NOTION_API_BASE_URL.replace(/\/$/u, '') === 'https://api.notion.com');
   assert.ok(!process.env.PI_CODING_AGENT_DIR && !process.env.CONTEXT_BROKER_CONFIG, 'Keep normal HOME and agent configuration');
@@ -1641,7 +1720,7 @@ export async function runCandidatePrint(config) {
   assert.ok(!secretKeys(originalSource), 'Do not persist source configuration containing credentials');
   const ownership = await identity(config.ownershipReceipt.path);
   assert.equal(ownership.sha256, config.ownershipReceipt.sha256);
-  assert.ok((await readFile(ownership.path, 'utf8')).includes(config.database), 'Bind the owned database receipt');
+  assert.ok((await readFile(ownership.path, 'utf8')).includes(config.library), 'Bind the owned library receipt');
   const cliPolicy = config.publicCli ? structuredClone(config.publicCli) : undefined;
   const cliProtected = [];
   if (cliPolicy) {
@@ -1665,8 +1744,10 @@ export async function runCandidatePrint(config) {
       assert.ok(Object.values(cliPolicy.stateRoots).every(isAbsolute));
       for (const path of Object.values(cliPolicy.stateRoots)) assert.equal(await exists(path), false, 'The cold author task needs its own initially empty state roots');
     }
-    assert.equal(cliPolicy.database, config.database); assert.ok(isAbsolute(cliPolicy.outputRoot) && inside(config.evidenceRoot, cliPolicy.outputRoot));
-    assert.ok(cliPolicy.refPrefix.startsWith('skill://') && cliPolicy.refPrefix.endsWith('/'));
+    assert.equal(cliPolicy.library, config.library); assert.ok(isAbsolute(cliPolicy.outputRoot) && inside(config.evidenceRoot, cliPolicy.outputRoot));
+    assert.ok(hasExactNativeOwner(parseNativeReference(cliPolicy.ownerRef)));
+    assert.equal(parseNativeReference(cliPolicy.ownerRef).path, '');
+    assert.equal(parseNativeReference(cliPolicy.ownerRef).snapshot, undefined);
     assert.deepEqual(Object.keys(cliPolicy.stateRoots).sort(), ['NTN_SKILLS_HOME', 'NTN_SKILLS_CONFIG_HOME', 'NTN_SKILLS_CACHE_HOME', 'NTN_SKILLS_DATA_HOME'].sort());
     assert.ok(Object.values(cliPolicy.stateRoots).every(isAbsolute));
     const intent = cliPolicy.mode === 'original-create-recovery' ? cliPolicy.originalPlan : cliPolicy.managementIntent;
@@ -1677,7 +1758,7 @@ export async function runCandidatePrint(config) {
     assert.ok(cliPolicy.inputFiles.every(file => cliProtected.some(protectedFile => protectedFile.path === file)));
     if (cliPolicy.mode === 'owned-maintenance-readonly') {
       const text = await readFile(intent.path, 'utf8');
-      for (const value of [cliPolicy.target, cliPolicy.database, cliPolicy.operationId]) assert.ok(text.includes(value), 'Freeze the exact read-only maintenance scope');
+      for (const value of [cliPolicy.target, cliPolicy.library, cliPolicy.operationId]) assert.ok(text.includes(value), 'Freeze the exact read-only maintenance scope');
       for (const path of cliPolicy.builtinFiles) cliProtected.push(await identity(path));
       cliProtected.push(await identity(cliPolicy.nodeExecutable));
     }
@@ -1687,7 +1768,7 @@ export async function runCandidatePrint(config) {
     const actual = await identity(body.path);
     assert.equal(actual.sha256, body.sha256); assert.equal(actual.bytes, body.bytes); assert.ok(body.bytes > 0);
   }
-  const baselineFiles = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json'].map(path => identity(join(config.brokerRoot, path))));
+  const baselineFiles = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json', 'dist/ntn-skills-ref.cjs'].map(path => identity(join(config.brokerRoot, path))));
   const runtime = await json(join(config.brokerRoot, 'dist/ntn-skills-runtime.json'));
   assert.equal(runtime.cli_sha256, baselineFiles[2].sha256); assert.equal(runtime.sdk_sha256, baselineFiles[3].sha256);
   if (cliPolicy?.mode === 'owned-maintenance-readonly') assert.deepEqual(cliProtected[0], baselineFiles[2], 'The discovered maintenance CLI must be this candidate bundled runtime');
@@ -1702,7 +1783,7 @@ export async function runCandidatePrint(config) {
     assert.ok(inside(await realpath(config.evidenceRoot), artifact.realpath));
     previous = await json(artifact.path);
     assert.equal(previous.scope, config.scope); assert.equal(previous.status, 'passed'); assert.equal(previous.arm, config.arm);
-    assert.equal(previous.database, config.database); assert.equal(previous.runtime.sdk_sha256, runtime.sdk_sha256);
+    assert.equal(previous.library, config.library); assert.equal(previous.runtime.sdk_sha256, runtime.sdk_sha256);
   }
   const stateRoot = previous?.stateRoot ?? join(evidence, 'owned-state');
   const stateBinding = await prepareCandidatePrintState(config, { stateRoot, previous });
@@ -1719,7 +1800,7 @@ export async function runCandidatePrint(config) {
   if (previous && !introductionFork) assert.deepEqual(await json(join(cwd, '.pi/settings.json')), projectSettings);
   else await save(join(cwd, '.pi/settings.json'), projectSettings);
   const sourceCache = join(stateRoot, 'broker-cache');
-  const source = candidateSourceConfig(originalSource, { sourceId: config.sourceId, database: config.database, cacheDir: sourceCache, viewId: config.viewId });
+  const source = candidateSourceConfig(originalSource, { sourceId: config.sourceId, library: config.library, cacheDir: sourceCache, viewId: config.viewId });
   const observedSource = source.sources.find(source => source.id === config.sourceId);
   assert.equal(observedSource.discovery?.maxAge, '5m'); assert.equal(observedSource.activation?.maxAge, '5m');
   assert.equal(observedSource.prefetch, false);
@@ -1742,15 +1823,13 @@ export async function runCandidatePrint(config) {
     + guardCandidateInputIdentity.toString() + ')(api,{fs,crypto,output:' + JSON.stringify(inputGuardLedger) + ',expected:'
     + JSON.stringify({ entry: baselineFiles[1], cwd: forkBinding.cwd, provider: 'magpie', model: 'group/worker', thinkingLevel: 'high',
       nativeSkillCount: 69, promptSha256: hash(config.prompt) }) + '});\n', { flag: 'wx', mode: 0o600 });
-  if (cliPolicy) await writeFile(cliGuard, "import fs from 'node:fs';import crypto from 'node:crypto';const sha=value=>crypto.createHash('sha256').update(value).digest('hex');const review=" + reviewCandidateCliCommand.toString()
-    + ';const maintenanceReview=' + reviewCandidateMaintenanceTool.toString()
-    + ';const auditReportBinding=' + candidateAuditReportBinding.toString()
-    + ';export default api=>(' + candidateCliGuard.toString() + ')(api,{fs,review,maintenanceReview,auditReportBinding,sha,output:' + JSON.stringify(cliGuardLedger)
-    + ',policy:' + JSON.stringify(cliPolicy) + '});\n', { flag: 'wx', mode: 0o600 });
+  if (cliPolicy) await writeFile(cliGuard, candidateCliGuardSource({
+    referenceParser: join(config.brokerRoot, 'src/native-reference.ts'), output: cliGuardLedger, policy: cliPolicy,
+  }), { flag: 'wx', mode: 0o600 });
   if (completionBudgetSource) await writeFile(completionBudgetExtension, completionBudgetSource, { flag: 'wx', mode: 0o600 });
   await writeFile(costExtension, consumptionCostExtensionSource({ output: costs, checkoutRoot: root, runId: clockId, sampleId: config.id, clockId }), { flag: 'wx', mode: 0o600 });
   await writeFile(transportExtension, providerTransportExtensionSource({ output: transport, checkoutRoot: root, clockId }), { flag: 'wx', mode: 0o600 });
-  await writeFile(taskExtension, candidateTaskExtensionSource({ output: tasks, bodyFiles: config.expectedBodies ?? [],
+  await writeFile(taskExtension, candidateTaskExtensionSource({ referenceParser: join(config.brokerRoot, "src/native-reference.ts"), output: tasks, bodyFiles: config.expectedBodies ?? [],
     payloadDirectory: payloads, hostOutput, projectRoot: project?.root ?? null }), { flag: 'wx', mode: 0o600 });
   await writeFile(sourcePreload, sourceObserverPreloadSource({ output: sourceLedger, checkoutRoot: root, clockId, cliPath: baselineFiles[2].realpath, ownerParentPid: process.pid, ownerEntry: host.path }), { flag: 'wx', mode: 0o600 });
   await writeFile(sdkPreload, "import fs from 'node:fs';import {channel} from 'node:diagnostics_channel';import {createHash} from 'node:crypto';import {isMainThread} from 'node:worker_threads';const hash=value=>createHash('sha256').update(value).digest('hex');\n"
@@ -1760,6 +1839,10 @@ export async function runCandidatePrint(config) {
   const env = { ...process.env, CONTEXT_BROKER_CONFIG: join(control, 'source-config.json'), ...stateBinding.env,
     NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000', NODE_OPTIONS: [process.env.NODE_OPTIONS, '--import=' + JSON.stringify(sourcePreload), '--import=' + JSON.stringify(sdkPreload)].filter(Boolean).join(' ') };
   if (cliPolicy) Object.assign(env, cliPolicy.stateRoots);
+  if (!cliPolicy && !stateBinding.sourceState) {
+    await mkdir(env.NTN_SKILLS_CONFIG_HOME, { recursive: true, mode: 0o700 });
+    await save(join(env.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: config.library });
+  }
   delete env.NTN_SKILLS_DEV_ROOT;
   const args = ['-p', ...(config.arm === 'no-native-skills' ? ['-ns'] : []), '--approve', '--session-dir', sessions, '--model', config.model, '--thinking', config.thinkingLevel,
     ...(introductionFork ? ['-e', inputGuard] : []), ...(completionBudgetSource ? ['-e', completionBudgetExtension] : []),
@@ -1782,7 +1865,7 @@ export async function runCandidatePrint(config) {
   args.push('--', config.prompt);
   const before = { settings: await identity(settingsPath), source: await identity(sourcePath), packages: settings.packages,
     otherPackagesSha256: hash(JSON.stringify(settings.packages.filter((_, index) => index !== (config.packageIndex ?? 1)))) };
-  const result = { version: 1, scope: config.scope, status: 'running', arm: config.arm, id: config.id, database: config.database,
+  const result = { version: 1, scope: config.scope, status: 'running', arm: config.arm, id: config.id, library: config.library,
     evidence, stateRoot, project, baselineFiles, runtime, ownership, before, host, hostArtifact: await identity(host.identity), expectedUserMessages: (previous?.expectedUserMessages ?? 0) + 1,
     ...(stateBinding.sourceState ? { sourceState: stateBinding.sourceState, ownedPaths: stateBinding.ownedPaths } : {}),
     launch: { cwd, executable: host.file, args: [...host.prefix, ...args], normalHome: true, normalAgentDir: true, normalMcpAndExtensions: true,

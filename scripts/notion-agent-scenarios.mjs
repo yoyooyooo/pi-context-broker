@@ -3,8 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { validateAgentFixtureAuthoring } from './notion-agent-authoring.mjs';
 
-export const AGENT_PROFILES = Object.freeze(['daily', 'no-native-skills']);
-export const AGENT_FIXTURE_KINDS = Object.freeze(['mixed-rules', 'native-management', 'versioned-graph', 'upstream-projection']);
+export const AGENT_PROFILES = Object.freeze(['daily', 'no-native-skills', 'native-onboarding']);
+export const AGENT_FIXTURE_KINDS = Object.freeze(['mixed-rules', 'native-management', 'versioned-graph', 'upstream-projection', 'empty-parent', 'library-journey']);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const identifier = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,119}$/u.test(value);
 const logicalVersion = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/u.test(value);
@@ -49,13 +49,26 @@ export function validateAgentFixtureRecipe(recipe) {
   keys(recipe, ['kind', 'objects', 'public', 'facts', 'readbacks', 'environment'], ['kind', 'objects'], 'fixture');
   assert.ok(AGENT_FIXTURE_KINDS.includes(recipe.kind), 'fixture: unsupported kind ' + recipe.kind);
   assert.ok(Array.isArray(recipe.objects), 'fixture.objects must be an array');
+  if (recipe.kind === 'empty-parent') {
+    assert.equal(recipe.objects.length, 0, 'Empty-parent onboarding cannot pre-create objects');
+    assert.equal(recipe.environment, undefined, 'Empty-parent onboarding has no daily source configuration');
+  }
   const aliases = new Set();
   for (const item of recipe.objects) {
-    keys(item, ['id', 'name', 'description', 'placement', 'initial', 'versions', 'source', 'authoring'],
+    keys(item, ['id', 'name', 'description', 'placement', 'initial', 'versions', 'source', 'authoring', 'library', 'identityKey'],
       ['id', 'name', 'description', 'placement', 'initial', 'versions'], 'fixture.object');
     id(item.id, 'fixture.object.id'); assert.ok(!aliases.has(item.id), 'fixture: duplicate object ' + item.id); aliases.add(item.id);
     string(item.name, item.id + '.name'); string(item.description, item.id + '.description');
     assert.ok(['notion', 'global', 'project', 'source', 'builtin'].includes(item.placement), item.id + ': unsupported placement');
+    if (recipe.kind === 'library-journey') {
+      assert.ok(['A', 'B'].includes(item.library), item.id + ': declare exactly Library A or B');
+      assert.ok(['notion', 'source'].includes(item.placement), 'Library journeys use owned Notion objects');
+      assert.notEqual(item.initial, 'unmanaged', 'Library journeys use registered owners');
+      if (item.identityKey !== undefined) id(item.identityKey, item.id + '.identityKey');
+    } else {
+      assert.equal(item.library, undefined, 'Only Library journeys accept per-object roots');
+      assert.equal(item.identityKey, undefined, 'Only Library journeys accept shared stable identities');
+    }
     object(item.versions, item.id + '.versions');
     assert.ok(Object.keys(item.versions).length > 0, item.id + ': missing versions');
     assert.ok(['absent', 'unmanaged'].includes(item.initial) || own(item.versions, item.initial), item.id + ': unknown initial version');
@@ -88,12 +101,25 @@ export function validateAgentFixtureRecipe(recipe) {
     validateAgentFixtureAuthoring(item);
   }
   for (const item of recipe.objects) for (const value of Object.values(item.versions))
-    for (const alias of [...(value.requires ?? []), ...(value.members ?? [])])
+    for (const alias of [...(value.requires ?? []), ...(value.members ?? [])]) {
       assert.ok(aliases.has(alias), item.id + ': missing dependency object ' + alias);
+      assert.equal(recipe.objects.find(target => target.id === alias).library, item.library,
+        'Physical Members/Requires relations cannot cross Libraries');
+    }
+  if (recipe.kind === 'library-journey') {
+    assert.deepEqual([...new Set(recipe.objects.map(item => item.library))].sort(), ['A', 'B'], 'Both Libraries need owned evidence');
+    const identities = recipe.objects.map(item => item.library + ':' + (item.identityKey ?? item.id));
+    assert.equal(new Set(identities).size, identities.length, 'Stable identities must be unique within each Library');
+  }
   if (recipe.environment !== undefined) {
-    keys(recipe.environment, ['catalog', 'offline'], ['catalog'], 'fixture.environment');
+    keys(recipe.environment, ['catalog', 'offline', 'mcpAuthorization'], ['catalog'], 'fixture.environment');
     assert.ok(['normal', 'pending', 'unauthorized', 'filtered-view'].includes(recipe.environment.catalog), 'Unsupported catalog precondition');
     if (recipe.environment.offline !== undefined) assert.equal(typeof recipe.environment.offline, 'boolean');
+    if (recipe.environment.mcpAuthorization !== undefined) {
+      assert.equal(recipe.environment.mcpAuthorization, 'cli-login', 'MCP setup must use the public CLI login');
+      assert.equal(recipe.environment.catalog, 'normal', 'MCP login requires an online source');
+      assert.notEqual(recipe.environment.offline, true, 'Offline fixtures cannot authorize MCP');
+    }
   }
   if (recipe.public !== undefined) validatePublic(recipe.public, 'fixture.public');
   if (recipe.facts !== undefined) validateFacts(recipe.facts, 'fixture.facts');
@@ -101,9 +127,13 @@ export function validateAgentFixtureRecipe(recipe) {
     object(recipe.readbacks, 'fixture.readbacks');
     for (const [key, declaration] of Object.entries(recipe.readbacks)) {
       string(key, 'fixture.readbacks key');
-      keys(declaration, ['object', 'version', 'state', 'properties', 'projection'], ['object', 'state'], 'fixture.readbacks.' + key);
+      keys(declaration, ['object', 'version', 'state', 'properties', 'projection', 'unchanged'], ['object', 'state'], 'fixture.readbacks.' + key);
       assert.ok(aliases.has(declaration.object), 'Unknown readback object ' + declaration.object);
       assert.ok(['present', 'absent'].includes(declaration.state), 'Readback state must be present or absent');
+      if (declaration.unchanged !== undefined) {
+        assert.equal(declaration.unchanged, true); assert.equal(declaration.state, 'present');
+        assert.equal(recipe.kind, 'library-journey', 'Protected cross-Library readback requires explicit roots');
+      }
       if (declaration.projection !== undefined) {
         assert.ok(['same-as-baseline', 'absent'].includes(declaration.projection), 'Unsupported projection readback');
         assert.equal(recipe.objects.find(item => item.id === declaration.object).placement, 'source', 'Projection readback requires a Source object');
@@ -133,13 +163,18 @@ export function validateAgentAssertion(assertion) {
     completed: [[], []],
     'candidate-cli': [['min'], ['min']],
     'single-projection-restore': [[], []],
+    'original-source-resume': [['object'], ['object']],
+    'unavailable-reference': [['object', 'path'], ['object', 'path']],
     'tool-attempts': [['tool', 'min', 'max'], ['tool']],
     'forbidden-tool-input': [['tool', 'facts'], ['tool', 'facts']],
     'source-network-attempts': [['min', 'max'], []],
+    'source-operation-attempts': [['operation', 'min', 'max'], ['operation']],
     body: [['body', 'occurrences', 'receiptRequired', 'scope'], ['body', 'occurrences']],
     selection: [['object', 'version'], ['object']],
     'selection-any': [['objects'], ['objects']],
     visibility: [['object', 'stage'], ['object', 'stage']],
+    'metadata-lookup': [['object', 'state', 'outsideDefaultView', 'afterTurn'], ['object', 'state']],
+    'content-search': [['object', 'query', 'body'], ['object', 'query', 'body']],
     resource: [['object', 'path', 'version'], ['object', 'path']],
     output: [['all', 'none', 'any'], []],
     'no-semantic-writes': [[], []],
@@ -154,8 +189,10 @@ export function validateAgentAssertion(assertion) {
     string(assertion.tool, 'forbidden-tool-input.tool');
     strings(assertion.facts, 'forbidden-tool-input.facts');
   }
-  if (assertion.kind === 'tool-attempts' || assertion.kind === 'source-network-attempts') {
+  if (['tool-attempts', 'source-network-attempts', 'source-operation-attempts'].includes(assertion.kind)) {
     if (assertion.kind === 'tool-attempts') string(assertion.tool, 'expect.tool');
+    if (assertion.kind === 'source-operation-attempts')
+      assert.ok(['library-selection', 'library', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search'].includes(assertion.operation), 'Unknown source SDK operation');
     assert.ok(assertion.min !== undefined || assertion.max !== undefined, 'tool-attempts requires a boundary');
     for (const key of ['min', 'max']) if (assertion[key] !== undefined)
       assert.ok(Number.isSafeInteger(assertion[key]) && assertion[key] >= 0, 'tool-attempts.' + key + ' must be a nonnegative integer');
@@ -171,6 +208,20 @@ export function validateAgentAssertion(assertion) {
     id(assertion.object, 'visibility.object');
     assert.ok(['native-discovery', 'model-catalog', 'source-pending'].includes(assertion.stage), 'Unsupported visibility stage');
   }
+  if (assertion.kind === 'metadata-lookup') {
+    id(assertion.object, 'metadata-lookup.object');
+    assert.ok(['present', 'absent'].includes(assertion.state), 'metadata-lookup.state must be present or absent');
+    if (assertion.outsideDefaultView !== undefined) assert.equal(typeof assertion.outsideDefaultView, 'boolean');
+    if (assertion.afterTurn !== undefined) {
+      id(assertion.afterTurn, 'metadata-lookup.afterTurn');
+      assert.equal(assertion.state, 'present', 'A metadata continuation must discover the externally enabled target');
+    }
+  }
+  if (assertion.kind === 'content-search') {
+    id(assertion.object, 'content-search.object');
+    assert.ok(typeof assertion.query === 'string' && /^business\.[A-Za-z0-9][A-Za-z0-9_.-]*$/u.test(assertion.query), 'Content query must name public business input');
+    string(assertion.body, 'content-search.body');
+  }
   if (assertion.kind === 'selection-any') {
     assert.ok(Array.isArray(assertion.objects) && assertion.objects.length > 0, 'selection-any requires allowed identities');
     const choices = new Set();
@@ -181,11 +232,11 @@ export function validateAgentAssertion(assertion) {
       assert.ok(!choices.has(key), 'selection-any contains duplicate identities'); choices.add(key);
     }
   }
-  if (['selection', 'resource'].includes(assertion.kind)) {
+  if (['selection', 'resource', 'original-source-resume', 'unavailable-reference'].includes(assertion.kind)) {
     id(assertion.object, 'expect.object');
     if (assertion.version !== undefined) version(assertion.version, 'expect.version');
   }
-  if (assertion.kind === 'resource') relativePath(assertion.path, 'expect.path');
+  if (['resource', 'unavailable-reference'].includes(assertion.kind)) relativePath(assertion.path, 'expect.path');
   if (assertion.kind === 'output') {
     assert.ok(['all', 'none', 'any'].some(key => assertion[key]?.length), 'output requires necessary facts');
     for (const key of ['all', 'none', 'any']) if (assertion[key] !== undefined) strings(assertion[key], 'output.' + key);
@@ -206,6 +257,8 @@ export function validateAgentEvent(event) {
     'trash-projection': [['object'], ['object']],
     'interrupt-source-write': [['object', 'maxRequests'], ['object']],
     'resume-source-write': [['object'], ['object']],
+    'interrupt-agent-source-write': [['object', 'maxRequests'], ['object']],
+    'library-select': [['library'], ['library']],
     readback: [['object', 'receipt'], ['object', 'receipt']],
     restart: [['mode'], ['mode']],
     fork: [['turn'], ['turn']],
@@ -216,8 +269,9 @@ export function validateAgentEvent(event) {
   keys(event, ['kind', ...shape[0]], ['kind', ...shape[1]], 'before.' + event.kind);
   if (event.kind === 'compact' && event.keepRecentTokens !== undefined)
     assert.ok(Number.isSafeInteger(event.keepRecentTokens) && event.keepRecentTokens > 0, 'Compaction retention must be a positive token budget');
-  if (event.kind === 'interrupt-source-write' && event.maxRequests !== undefined)
+  if (['interrupt-source-write', 'interrupt-agent-source-write'].includes(event.kind) && event.maxRequests !== undefined)
     assert.ok(Number.isSafeInteger(event.maxRequests) && event.maxRequests > 0, 'Source interruption requires a positive request budget');
+  if (event.kind === 'library-select') assert.ok(['A', 'B'].includes(event.library), 'Select one reviewed fixture Library');
   if (event.object !== undefined) id(event.object, 'before.object');
   if (event.version !== undefined) version(event.version, 'before.version');
   if (event.kind === 'set-enabled') {
@@ -259,29 +313,54 @@ export function validateAgentCorpus(corpus) {
     keys(scenario, ['id', 'contract_ids', 'profiles', 'fixture', 'turns'], ['id', 'contract_ids', 'profiles', 'fixture', 'turns'], 'scenario');
     id(scenario.id, 'scenario.id'); assert.ok(!seen.has(scenario.id), 'Duplicate scenario ' + scenario.id); seen.add(scenario.id);
     strings(scenario.contract_ids, scenario.id + '.contract_ids', { check: value =>
-      assert.ok(/^(?:C0[1-9]|C07[abc]|C1[01]|T(?:0[1-9]|1[0-9]|2[0-3]))$/u.test(value), 'Unknown C/T identity ' + value) });
+      assert.ok(/^(?:C0[1-9]|C07[abc]|C1[01]|T(?:0[1-9]|1[0-9]|2[0-4]))$/u.test(value), 'Unknown C/T identity ' + value) });
     strings(scenario.profiles, scenario.id + '.profiles', { check: value => assert.ok(AGENT_PROFILES.includes(value), 'Unsupported profile ' + value) });
     string(scenario.fixture, scenario.id + '.fixture');
     assert.ok(own(corpus.fixtures, scenario.fixture), scenario.id + ': unknown fixture ' + scenario.fixture);
     assert.ok(Array.isArray(scenario.turns) && scenario.turns.length > 0, scenario.id + ': missing turns');
     const recipe = corpus.fixtures[scenario.fixture], aliases = new Map(recipe.objects.map(item => [item.id, item])), turns = new Set();
+    if (recipe.environment?.mcpAuthorization !== undefined)
+      assert.ok(scenario.turns.some(turn => turn.expect.some(expected => expected.kind === 'content-search')),
+        'Only an explicit content-search scenario may authorize MCP');
+    if (scenario.profiles.includes('native-onboarding') || recipe.kind === 'empty-parent') {
+      assert.deepEqual(scenario.profiles, ['native-onboarding'], 'Empty-parent onboarding is separate from daily');
+      assert.equal(recipe.kind, 'empty-parent', 'Native onboarding requires an empty parent');
+      assert.ok(scenario.turns.every(turn => turn.before === undefined), 'One onboarding episode cannot pre-seed, restart or repair subject state');
+      assert.ok(scenario.turns.every(turn => turn.expect.every(expected => ['completed', 'candidate-cli', 'business-readback'].includes(expected.kind))),
+        'Onboarding uses native completion/CLI and independent readback assertions');
+    }
     for (const turn of scenario.turns) {
       validateTurn(turn, scenario.id + '.turn');
       assert.ok(!turns.has(turn.id), scenario.id + ': duplicate turn ' + turn.id);
       for (const event of turn.before ?? []) {
+        if (['library-select', 'interrupt-agent-source-write'].includes(event.kind))
+          assert.equal(recipe.kind, 'library-journey', 'This finite control event requires a dual-Library journey');
         if (event.kind === 'fork') assert.ok(turns.has(event.turn), scenario.id + ': fork must name an earlier completed turn');
         if (event.kind === 'interrupt-source-write' && event.maxRequests !== undefined)
     assert.ok(Number.isSafeInteger(event.maxRequests) && event.maxRequests > 0, 'Source interruption requires a positive request budget');
   if (event.object !== undefined) {
           assert.ok(aliases.has(event.object), scenario.id + ': unknown event object ' + event.object);
-          if (['interrupt-source-write', 'resume-source-write', 'trash-projection', 'restore-projection'].includes(event.kind))
+          if (['interrupt-source-write', 'interrupt-agent-source-write', 'resume-source-write', 'trash-projection', 'restore-projection'].includes(event.kind))
             assert.equal(aliases.get(event.object).placement, 'source', scenario.id + ': Source events require a Source object');
           if (event.version !== undefined) assert.ok(own(aliases.get(event.object).versions, event.version), scenario.id + ': unknown event version');
         }
       }
       for (const assertion of turn.expect.flatMap(expected => expected.kind === 'selection-any' ? expected.objects : [expected])) if (assertion.object !== undefined) {
         assert.ok(aliases.has(assertion.object), scenario.id + ': unknown expected object ' + assertion.object);
+        if (assertion.kind === 'original-source-resume') {
+          assert.equal(recipe.kind, 'library-journey'); assert.equal(aliases.get(assertion.object).placement, 'source');
+          assert.ok(turn.before?.some(event => event.kind === 'interrupt-agent-source-write' && event.object === assertion.object),
+            'Agent resume must own its original interruption in this turn');
+          assert.ok(!turn.before?.some(event => event.kind === 'resume-source-write'), 'The controller cannot resume the Agent intent');
+        }
         if (assertion.version !== undefined) assert.ok(own(aliases.get(assertion.object).versions, assertion.version), scenario.id + ': unknown expected version');
+      }
+      for (const assertion of turn.expect.filter(item => item.kind === 'metadata-lookup' && item.afterTurn))
+        assert.ok(turns.has(assertion.afterTurn), scenario.id + ': metadata lookup must name an earlier turn');
+      for (const assertion of turn.expect.filter(item => item.kind === 'content-search')) {
+        assert.ok(own(recipe.public ?? {}, assertion.query), scenario.id + ': missing public content query');
+        assert.ok(turn.prompt.includes('{{' + assertion.query + '}}'), scenario.id + ': the user must supply the content query');
+        assert.equal(aliases.get(assertion.object)?.placement, 'notion', 'Content fixtures require independently created native Notion content');
       }
       turns.add(turn.id);
     }
@@ -342,6 +421,7 @@ export function bindAgentTurn(turn, bindings) {
   });
   for (const expected of turn.expect.flatMap(expected => expected.kind === 'selection-any' ? expected.objects : [expected])) {
     if (expected.body !== undefined) assert.ok(own(bindings.private.bodies, expected.body), 'Missing private body ' + expected.body);
+    if (expected.kind === 'content-search') assert.ok(own(bindings.public, expected.query), 'Missing public content query ' + expected.query);
     if (expected.object !== undefined) {
       const identity = bindings.private.objects[expected.object];
       assert.ok(identity, 'Missing private identity ' + expected.object);

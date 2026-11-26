@@ -10,7 +10,7 @@ activate a new instruction graph.
 
 The installed package, actual Pi, controlled service, natural model and ordinary
 daily entry each require their own evidence. The current Pi driver uses an
-installed SDK v2, current Notion service facts and the installed Pi
+installed SDK v3, current Notion service facts and the installed Pi
 OpenAI-completions serializer over loopback HTTP. It records exact versions and
 hashes rather than inferring them from a checkout or a prior successful run.
 
@@ -250,8 +250,11 @@ The field definitions above come from `plan`, `configurationSnapshot`,
 ## Maintenance
 
 The [context verification map](../.agents/skills/verify-context-broker/features/context-once.md)
-owns the invariants and routes. The [source review](context-once-source-review.md)
-separates finite state models from byte, role and entity checks. The
+owns the invariants and routes. The [presentation contract](../packages/context-broker/docs/skill-consumption-runtime.md#presentation-and-proof)
+separates complete authored content from generated model text and machine receipts.
+Finite state models do not encode directory layout, text spans, message roles or
+HTTP entity bytes. Actual-content regressions and the installed serializer check
+those boundaries; updating a source hash is not a proof. The
 [next worktree delivery contract](next-worktree-delivery.md) owns the paired
 commits, build provenance and ordinary-process readback on Pro and Mini.
 

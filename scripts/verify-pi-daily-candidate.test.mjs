@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tmpdir } from 'node:os';
+import { notionPageId } from '../packages/context-broker/src/native-reference.ts';
+import { skillFileRef, pinSkillRef, nativeReferenceSettings } from './skill-ref-fixture.mjs';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as candidate from './verify-pi-daily-candidate.mjs';
@@ -92,22 +97,22 @@ test('candidate package override changes only the reviewed local package slot', 
 });
 
 test('candidate source preserves local discovery and refuses ambiguous daily source changes', () => {
-  const original = { skillRoots: ['/real/skills'], ruleRoots: ['/real/rules'], discoveryCatalogs: ['/real/catalog.yaml'], sources: [{ id: 'local', type: 'filesystem', roots: ['/real/other'] }, { id: 'notion', type: 'notion', database: 'old', prefetch: false }] };
-  const input = { sourceId: 'notion', database: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', cacheDir: '/owned/cache' };
+  const original = { skillRoots: ['/real/skills'], ruleRoots: ['/real/rules'], discoveryCatalogs: ['/real/catalog.yaml'], sources: [{ id: 'local', type: 'filesystem', roots: ['/real/other'] }, { id: 'notion', type: 'notion', library: 'old', prefetch: false }] };
+  const input = { sourceId: 'notion', library: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', cacheDir: '/owned/cache' };
   const candidate = candidateSourceConfig(original, input);
   assert.deepEqual(candidate.skillRoots, original.skillRoots); assert.deepEqual(candidate.sources[0], original.sources[0]);
-  assert.equal(original.sources[1].database, 'old'); assert.equal(candidate.sources[1].database, input.database);
+  assert.equal(original.sources[1].library, 'old'); assert.equal(candidate.sources[1].library, input.library);
   assert.equal(candidateSourceConfig(original, { ...input, noNotion: true }).sources[1].enabled, false);
   assert.throws(() => candidateSourceConfig({ ...original, ruleRoots: ['./relative'] }, input));
   assert.throws(() => candidateSourceConfig({ ...original, sources: [...original.sources, { id: 'extra', type: 'notion' }] }, input));
   assert.throws(() => candidateSourceConfig({ ...original, sources: [{ ...original.sources[1], command: ['fake'] }] }, input));
 });
 
-const publicCli = { mode: 'original-create-recovery', operationId: 'original-operation', entry: { path: '/frozen/ntn-skills.js' }, database: 'owned-library', target: 'original-page',
-  originalPlan: { path: '/evidence/original-plan.json' }, refPrefix: 'skill://original-owner/', outputRoot: '/evidence/agent-output',
+const publicCli = { mode: 'original-create-recovery', operationId: 'original-operation', entry: { path: '/frozen/ntn-skills.js' }, library: '76ecd927-8be5-5526-b4d7-18906713e206', target: 'original-page',
+  originalPlan: { path: '/evidence/original-plan.json' }, ownerRef: 'skill://original-owner?library=76ecd927-8be5-5526-b4d7-18906713e206', outputRoot: '/evidence/agent-output',
   inputFiles: ['/evidence/original-plan.json', '/evidence/original-error.json'] };
 const cliCommand = 'node /frozen/ntn-skills.js';
-const reviewCommand = cliCommand + ' ctl library create recovery review /evidence/original-plan.json --entry owned-library --target original-page --output /evidence/agent-output/review.json';
+const reviewCommand = cliCommand + ' ctl library create recovery review /evidence/original-plan.json --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page --output /evidence/agent-output/review.json';
 
 test('public CLI task permits help and only the bound original recovery and strict reads', () => {
   assert.equal(reviewCandidateCliCommand(cliCommand + ' --help', publicCli).kind, 'help');
@@ -116,17 +121,19 @@ test('public CLI task permits help and only the bound original recovery and stri
   assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl operation show original-operation', publicCli).kind, 'operation-show');
   assert.equal(reviewCandidateCliCommand(reviewCommand, publicCli).kind, 'review');
   assert.equal(reviewCandidateCliCommand(reviewCommand.replace(' /evidence/original-plan.json', '') + ' /evidence/original-plan.json', publicCli).kind, 'review');
-  const apply = cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --entry owned-library --review /evidence/agent-output/review.json --review-id create-restore-' + 'a'.repeat(64);
+  const apply = cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --library 76ecd927-8be5-5526-b4d7-18906713e206 --review /evidence/agent-output/review.json --review-id create-restore-' + 'a'.repeat(64);
   assert.equal(reviewCandidateCliCommand(apply + ' --dry-run', publicCli).dryRun, true);
   assert.equal(reviewCandidateCliCommand(apply, publicCli).dryRun, false);
-  assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl library create recovery reconcile --entry owned-library --target original-page /evidence/original-plan.json', publicCli).kind, 'reconcile');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' ctl library create recovery reconcile --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page /evidence/original-plan.json', publicCli).kind, 'reconcile');
   assert.equal(reviewCandidateCliCommand(reviewCommand + ' --max-requests 100 --duration-ms 60000', publicCli).kind, 'review');
-  const read = cliCommand + " read 'skill://original-owner/references/policy.md?snapshot=fixed&file_id=original-file' --database owned-library --read-only --json --metrics";
+  const fixed = skillFileRef(publicCli.ownerRef, 'references/policy.md', 's_' + 'a'.repeat(64));
+  const main = skillFileRef(publicCli.ownerRef, 'SKILL.md', 's_' + 'a'.repeat(64));
+  const read = cliCommand + " read '" + fixed + "' --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics";
   assert.equal(reviewCandidateCliCommand(read, publicCli).kind, 'read');
-  assert.equal(reviewCandidateCliCommand(read, publicCli).argv[3], 'skill://original-owner/references/policy.md?snapshot=fixed&file_id=original-file');
-  assert.equal(reviewCandidateCliCommand(cliCommand + ' read --json --metrics --read-only --database owned-library --path references/policy.md original-page', publicCli).kind, 'read');
-  assert.equal(reviewCandidateCliCommand(cliCommand + " read references/policy.md --from 'skill://original-owner/SKILL.md?snapshot=fixed&file_id=original-file' --database owned-library --read-only --json --metrics", publicCli).kind, 'read');
-  assert.equal(reviewCandidateCliCommand(cliCommand + " files 'skill://original-owner/SKILL.md?snapshot=s_" + 'a'.repeat(64) + "&file_id=original-file' --database owned-library --metrics", publicCli).kind, 'files');
+  assert.equal(reviewCandidateCliCommand(read, publicCli).argv[3], fixed);
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' read --json --metrics --read-only --library 76ecd927-8be5-5526-b4d7-18906713e206 --path references/policy.md original-page', publicCli).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + " read references/policy.md --from '" + main + "' --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics", publicCli).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + " files '" + main + "' --library 76ecd927-8be5-5526-b4d7-18906713e206 --metrics", publicCli).kind, 'files');
 });
 
 test('public CLI scope rejects shell composition, replacement plans, owners and unbounded output', () => {
@@ -135,34 +142,34 @@ test('public CLI scope rejects shell composition, replacement plans, owners and 
     'python private-store.py', reviewCommand.replace('/frozen/ntn-skills.js', '/other/cli.js'),
     reviewCommand.replace('create recovery review /evidence/original-plan.json', 'create /replacement'),
     reviewCommand.replace('/evidence/original-plan.json', '/evidence/replacement-plan.json'),
-    reviewCommand.replace('--entry owned-library', '--entry another-library'),
+    reviewCommand.replace('--library 76ecd927-8be5-5526-b4d7-18906713e206', '--library 8b308dab-2daf-5330-922f-812244ff16f9'),
     reviewCommand.replace('--target original-page', '--target replacement-page'),
     reviewCommand.replace('/evidence/agent-output/review.json', '/evidence/original-plan.json'),
     reviewCommand.replace('/evidence/agent-output/review.json', '/evidence/agent-output/../outside.json'),
     cliCommand + ' --help > /tmp/overwrite', cliCommand + ' --help$(id)',
     cliCommand + ' ctl operation show another-operation', cliCommand + ' ctl operation resume original-operation',
     reviewCommand + ' --json --metrics', reviewCommand + ' --dry-run', reviewCommand + ' --max-requests 2001',
-    cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --entry owned-library',
-    cliCommand + ' ctl library create recovery reconcile /evidence/original-plan.json --entry owned-library --target original-page --output /evidence/agent-output/unsupported.json',
-    cliCommand + ' read original-page --database owned-library --json --metrics',
-    cliCommand + ' read another-page --database owned-library --read-only --json --metrics',
-    cliCommand + " read references/policy.md --from skill://another-owner/SKILL.md --database owned-library --read-only --json --metrics",
-    cliCommand + ' read original-page --path ../outside --database owned-library --read-only --json --metrics',
-    cliCommand + ' files original-page --database owned-library --metrics',
-    cliCommand + " files 'skill://another-owner/SKILL.md?snapshot=s_" + 'a'.repeat(64) + "' --database owned-library --metrics",
+    cliCommand + ' ctl library create recovery apply /evidence/original-plan.json --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' ctl library create recovery reconcile /evidence/original-plan.json --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page --output /evidence/agent-output/unsupported.json',
+    cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --json --metrics',
+    cliCommand + ' read another-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics',
+    cliCommand + " read references/policy.md --from skill://another-owner/SKILL.md --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics",
+    cliCommand + ' read original-page --path ../outside --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics',
+    cliCommand + ' files original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --metrics',
+    cliCommand + " files 'skill://another-owner/SKILL.md?snapshot=s_" + 'a'.repeat(64) + "' --library 76ecd927-8be5-5526-b4d7-18906713e206 --metrics",
   ]) assert.throws(() => reviewCandidateCliCommand(command, publicCli), command);
 });
 
 test('public author update permits one exact Description and rejects every extra mutation', () => {
   const policy = { ...publicCli, mode: 'owned-description-update', description: 'Verified shared author workflow.' };
-  const command = cliCommand + ' update original-page --database owned-library --description "Verified shared author workflow."';
+  const command = cliCommand + ' update original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --description "Verified shared author workflow."';
   assert.equal(reviewCandidateCliCommand(command + ' --dry-run', policy).dryRun, true);
   assert.equal(reviewCandidateCliCommand(command, policy).kind, 'update');
   assert.equal(reviewCandidateCliCommand(command.replace(' original-page', '') + ' original-page', policy).kind, 'update');
   assert.equal(reviewCandidateCliCommand(cliCommand + ' schema update', policy).kind, 'schema');
-  assert.equal(reviewCandidateCliCommand(cliCommand + ' read original-page --database owned-library --json --metrics --read-only', policy).kind, 'read');
+  assert.equal(reviewCandidateCliCommand(cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --json --metrics --read-only', policy).kind, 'read');
   for (const value of [command.replace('original-page', 'another-page'), command.replace('Verified shared', 'Unreviewed'),
-    command.replace('owned-library', 'another-library'), command + ' --enabled true', command + ' --default-context', command + ' --clear-requires',
+    command.replace('76ecd927-8be5-5526-b4d7-18906713e206', '8b308dab-2daf-5330-922f-812244ff16f9'), command + ' --enabled true', command + ' --default-context', command + ' --clear-requires',
     command + ' --name replacement', command + ' --json --metrics', command + '; node private.js', reviewCommand,
     cliCommand + ' ctl operation show original-operation']) assert.throws(() => reviewCandidateCliCommand(value, policy), value);
   assert.throws(() => reviewCandidateCliCommand(command, publicCli));
@@ -202,26 +209,111 @@ test('public CLI guard admits only the exact host spill from an approved Bash re
 
 const maintenanceCli = { ...publicCli, mode: 'owned-maintenance-readonly', sourceId: 'notion', nodeExecutable: '/frozen/node',
   builtinFiles: ['/frozen/builtin-skills/ntn-skills-maintain/SKILL.md', '/frozen/builtin-skills/ntn-skills-maintain/references/operations.md'] };
+
+for (const policy of [maintenanceCli, publicCli, { ...publicCli, mode: 'owned-description-update', description: 'Authorized description' }]) {
+  test('generated public CLI guard normalizes only the owned Library selector: ' + policy.mode, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'candidate-cli-library-'));
+    const extension = join(directory, 'guard.mjs'), output = join(directory, 'guard.jsonl');
+    await writeFile(extension, candidate.candidateCliGuardSource({
+      referenceParser: fileURLToPath(new URL('../packages/context-broker/src/native-reference.ts', import.meta.url)), output, policy,
+    }), { flag: 'wx' });
+    const handlers = new Map(), loaded = await import(pathToFileURL(extension).href);
+    loaded.default({ on(name, handler) { handlers.set(name, handler); } });
+    let calls = 0;
+    const call = command => {
+      const event = { toolName: 'bash', toolCallId: 'selector-' + ++calls, input: { command } };
+      return { event, result: handlers.get('tool_call')(event) };
+    };
+    const compact = policy.library.replaceAll('-', ''), foreign = '8b308dab-2daf-5330-922f-812244ff16f9';
+    const selectors = [policy.library, compact, policy.library.toUpperCase(),
+      'https://www.notion.so/' + compact,
+      'https://app.notion.com/p/team/Library-' + compact + '?v=' + foreign.replaceAll('-', ''),
+      'https://team.notion.site/Library-' + policy.library.toUpperCase() + '/?source=copy_link#block'];
+    const denied = [foreign, '33333333-3333-4333-8333-333333333333', 'library-' + compact, 'owned-alias',
+      'https://www.notion.so/' + foreign.replaceAll('-', ''), 'https://evil.example/' + compact,
+      'https://notion.so.evil.example/' + compact, 'https://notion.so/?p=' + compact];
+    const commands = selector => {
+      const selected = '--library ' + JSON.stringify(selector);
+      const common = ['read original-page ' + selected + ' --read-only --json',
+        "files '" + pinSkillRef(policy.ownerRef, 's_' + 'a'.repeat(64)) + "' " + selected];
+      if (policy.mode === 'owned-maintenance-readonly') return [...common,
+        'ctl library init ' + selected, 'ctl library inspect ' + selected, 'ctl library sources list ' + selected,
+        'list ' + selected + ' --json', 'ctl audit run ' + selected + ' --target original-page',
+        'ctl operation show original-operation ' + selected + ' --target original-page'];
+      if (policy.mode === 'owned-description-update') return [...common,
+        'update original-page ' + selected + ' --description "Authorized description"'];
+      return [...common,
+        'ctl library create recovery review /evidence/original-plan.json ' + selected + ' --target original-page --output /evidence/agent-output/review.json',
+        'ctl library create recovery apply /evidence/original-plan.json ' + selected + ' --review /evidence/agent-output/review.json --review-id create-restore-' + 'a'.repeat(64) + ' --dry-run',
+        'ctl library create recovery reconcile /evidence/original-plan.json ' + selected + ' --target original-page'];
+    };
+    try {
+      for (const selector of selectors) for (const suffix of commands(selector)) {
+        const command = cliCommand + ' ' + suffix;
+        assert.equal(call(command).result, undefined, command);
+        const inspected = reviewCandidateCliCommand(command, policy);
+        assert.equal(inspected.argv[inspected.argv.indexOf('--library') + 1], selector, 'Preserve the original public argv');
+      }
+      for (const selector of denied) for (const suffix of commands(selector)) {
+        const command = cliCommand + ' ' + suffix;
+        assert.throws(() => reviewCandidateCliCommand(command, policy), command);
+        assert.equal(call(command).result?.block, true, command);
+      }
+      const owned = JSON.stringify(selectors[3]);
+      const blocked = policy.mode === 'owned-maintenance-readonly' ? [
+        'ctl library inspect ' + owned, 'ctl library inspect --database ' + owned, 'ctl library inspect --entry ' + owned,
+        'ctl library inspect --library ' + owned + ' extra', 'ctl library inspect --library ' + owned + ' --offline',
+        'ctl library inspect --library ' + owned + ' --library ' + owned,
+        'ctl library init --library ' + owned + ' --parent another-page',
+        'ctl audit run --library ' + owned + ' --target another-page',
+      ] : policy.mode === 'owned-description-update' ? [
+        'update another-page --library ' + owned + ' --description "Authorized description"',
+        'update original-page --library ' + owned + ' --description "Unauthorized description"',
+      ] : [
+        'ctl library create recovery review /evidence/other-plan.json --library ' + owned + ' --target original-page --output /evidence/agent-output/review.json',
+        'ctl library create recovery review /evidence/original-plan.json --library ' + owned + ' --target another-page --output /evidence/agent-output/review.json',
+      ];
+      for (const suffix of blocked) assert.equal(call(cliCommand + ' ' + suffix).result?.block, true, suffix);
+      if (policy.mode === 'owned-maintenance-readonly') {
+        const started = call(auditCommand); assert.equal(started.result, undefined);
+        const report = { ...auditReportFixture(), execution: 'paused',
+          next: { read_only: true, argv: ['ntn-skills', 'ctl', 'audit', 'resume', auditRunId] } };
+        const complete = event => handlers.get('tool_result')({ toolName: 'bash', toolCallId: event.toolCallId,
+          content: [{ type: 'text', text: JSON.stringify(report) }] });
+        complete(started.event);
+        for (const selector of [...selectors, ...denied]) {
+          const resumed = call(cliCommand + ' ctl audit resume ' + auditRunId + ' --library ' + JSON.stringify(selector));
+          if (selectors.includes(selector)) { assert.equal(resumed.result, undefined); complete(resumed.event); }
+          else assert.equal(resumed.result?.block, true);
+        }
+      }
+    } finally { handlers.get('session_shutdown')({}); }
+    const rows = (await readFile(output, 'utf8')).trimEnd().split('\n').map(JSON.parse);
+    assert.equal(rows.filter(row => row.phase === undefined && row.toolCallId).length, calls);
+    assert.equal(rows.at(-1).complete, true, 'The emitted guard must load every runtime dependency');
+  });
+}
+
 const maintenanceBranch = () => {
-  const identity = { source: 'notion', id: 'original-owner', ref: 'skill://original-owner',
-    locator: { type: 'shared_skill', page_id: 'original-page', database_id: 'owned-library' } };
+  const identity = { source: 'notion', id: publicCli.ownerRef, ref: publicCli.ownerRef,
+    locator: { type: 'shared_skill', page_id: 'original-page', library_id: '76ecd927-8be5-5526-b4d7-18906713e206', database_id: '33333333-3333-4333-8333-333333333333' } };
   return [
     { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: 'sr:C' + 'A'.repeat(22), target: { kind: 'candidate', identity } } },
     { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: 'sr:S' + 'A'.repeat(22), target: { kind: 'selected', identity,
-      snapshot_id: 's_' + 'a'.repeat(64), ref: 'skill://original-owner/SKILL.md?snapshot=s_' + 'a'.repeat(64) } } },
+      snapshot_id: 's_' + 'a'.repeat(64), ref: skillFileRef(publicCli.ownerRef, 'SKILL.md', 's_' + 'a'.repeat(64)) } } },
     { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: 'sr:R' + 'A'.repeat(22), target: { kind: 'resource',
-      owner: 'sr:S' + 'A'.repeat(22), ref: 'skill://original-owner/references/one.md?snapshot=s_' + 'a'.repeat(64) } } },
+      owner: 'sr:S' + 'A'.repeat(22), ref: skillFileRef(publicCli.ownerRef, 'references/one.md', 's_' + 'a'.repeat(64)) } } },
   ];
 };
 
 test('read-only maintenance uses the scoped public audit, original operation and authoring read', () => {
   for (const command of [
     cliCommand + ' --help', cliCommand + ' schema ctl audit run',
-    cliCommand + ' ctl audit run --entry owned-library --target original-page --depth history --max-requests 80 --duration-ms 60000 --max-bytes 8388608',
-    cliCommand + ' ctl operation show original-operation --target original-page --entry owned-library',
-    cliCommand + ' ctl operation reconcile original-operation --entry owned-library --target original-page',
-    cliCommand + ' read original-page --database owned-library --authoring --read-only --json --metrics',
-    cliCommand + " read 'skill://original-owner/references/one.md?snapshot=s_" + 'a'.repeat(64) + "' --database owned-library --read-only --json --metrics",
+    cliCommand + ' ctl audit run --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page --depth history --max-requests 80 --duration-ms 60000 --max-bytes 8388608',
+    cliCommand + ' ctl operation show original-operation --target original-page --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' ctl operation reconcile original-operation --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page',
+    cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --authoring --read-only --json --metrics',
+    cliCommand + " read '" + skillFileRef(publicCli.ownerRef, 'references/one.md', 's_' + 'a'.repeat(64)) + "' --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics",
   ]) assert.ok(reviewCandidateCliCommand(command, maintenanceCli).kind, command);
   assert.equal(reviewCandidateCliCommand('/frozen/node /frozen/ntn-skills.js --help', maintenanceCli).kind, 'help');
   assert.throws(() => reviewCandidateCliCommand('/other/node /frozen/ntn-skills.js --help', maintenanceCli));
@@ -230,18 +322,18 @@ test('read-only maintenance uses the scoped public audit, original operation and
 
 test('read-only maintenance rejects another owner, library, operation, mutations and unscoped audits', () => {
   for (const command of [
-    cliCommand + ' ctl audit run --entry another-library --target original-page',
-    cliCommand + ' ctl audit run --entry owned-library --target another-page',
-    cliCommand + ' ctl audit run --entry owned-library --all',
-    cliCommand + ' ctl audit run --entry owned-library --target original-page --max-requests 501',
-    cliCommand + ' ctl operation show another-operation --target original-page --entry owned-library',
-    cliCommand + ' ctl operation reconcile original-operation --target another-page --entry owned-library',
-    cliCommand + ' ctl operation resume original-operation --target original-page --entry owned-library',
-    cliCommand + ' read original-page --database owned-library --authoring --json --metrics',
-    cliCommand + ' read another-page --database owned-library --read-only --json --metrics',
-    cliCommand + ' update original-page --database owned-library --enabled true',
-    cliCommand + ' adopt original-page --database owned-library',
-    cliCommand + ' apply original-page --database owned-library --input /tmp/tree',
+    cliCommand + ' ctl audit run --library 8b308dab-2daf-5330-922f-812244ff16f9 --target original-page',
+    cliCommand + ' ctl audit run --library 76ecd927-8be5-5526-b4d7-18906713e206 --target another-page',
+    cliCommand + ' ctl audit run --library 76ecd927-8be5-5526-b4d7-18906713e206 --all',
+    cliCommand + ' ctl audit run --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page --max-requests 501',
+    cliCommand + ' ctl operation show another-operation --target original-page --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' ctl operation reconcile original-operation --target another-page --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' ctl operation resume original-operation --target original-page --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --authoring --json --metrics',
+    cliCommand + ' read another-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics',
+    cliCommand + ' update original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --enabled true',
+    cliCommand + ' adopt original-page --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    cliCommand + ' apply original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --input /tmp/tree',
     cliCommand + ' --help; node /private/store.js',
   ]) assert.throws(() => reviewCandidateCliCommand(command, maintenanceCli), command);
 });
@@ -269,29 +361,33 @@ test('maintenance public builtin discovery admits the installed local interface 
 test('an onboarding inspection reads the setup reference and validates only its existing library', () => {
   for (const suffix of [
     'ctl builtin read notion/ntn-skills-maintain --path references/setup.md',
-    'ctl library init --entry owned-library',
-    'ctl library inspect owned-library',
-    'ctl library sources list --entry owned-library',
-    'list --database owned-library --refresh --json',
-    'list --database owned-library --query original --limit 10 --json',
+    'ctl library init --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library inspect --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library sources list --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    'list --library 76ecd927-8be5-5526-b4d7-18906713e206 --refresh --json',
+    'list --library 76ecd927-8be5-5526-b4d7-18906713e206 --query original --limit 10 --json',
   ]) assert.ok(reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli).kind, suffix);
   for (const suffix of [
-    'ctl library init --parent owned-page', 'ctl library init --entry another-library',
-    'ctl library init --entry owned-library --parent owned-page',
-    'ctl library sources init --entry owned-library',
-    'ctl library sources list --entry another-library',
-    'ctl library inspect another-library', 'list --json',
-    'list --database another-library --json', 'list --database owned-library --limit 1000 --json',
-    'ctl database register skills --database owned-library',
+    'ctl library init --parent owned-page', 'ctl library init --library 8b308dab-2daf-5330-922f-812244ff16f9',
+    'ctl library init --library 76ecd927-8be5-5526-b4d7-18906713e206 --parent owned-page',
+    'ctl library sources init --library 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library sources list --library 8b308dab-2daf-5330-922f-812244ff16f9',
+    'ctl library inspect --library 8b308dab-2daf-5330-922f-812244ff16f9',
+    'ctl library inspect 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library inspect --entry 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library inspect --database 76ecd927-8be5-5526-b4d7-18906713e206',
+    'ctl library inspect --library 76ecd927-8be5-5526-b4d7-18906713e206 --offline', 'list --json',
+    'list --library 8b308dab-2daf-5330-922f-812244ff16f9 --json', 'list --library 76ecd927-8be5-5526-b4d7-18906713e206 --limit 1000 --json',
+    'ctl library register skills --library 76ecd927-8be5-5526-b4d7-18906713e206',
   ]) assert.throws(() => reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli), suffix);
 });
 
 test('read-only onboarding uses public JSON without turning optional metrics into an authorization rule', () => {
-  const command = cliCommand + ' read original-page --database owned-library --read-only --json';
+  const command = cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json';
   for (const policy of [maintenanceCli, publicCli]) {
     assert.equal(reviewCandidateCliCommand(command, policy).kind, 'read');
     assert.equal(reviewCandidateCliCommand(command + ' --metrics', policy).kind, 'read');
-    const files = cliCommand + " files '" + policy.refPrefix + '?snapshot=s_' + 'a'.repeat(64) + "' --database owned-library";
+    const files = cliCommand + " files '" + pinSkillRef(policy.ownerRef, 's_' + 'a'.repeat(64)) + "' --library 76ecd927-8be5-5526-b4d7-18906713e206";
     assert.equal(reviewCandidateCliCommand(files, policy).kind, 'files');
     assert.equal(reviewCandidateCliCommand(files + ' --metrics', policy).kind, 'files');
   }
@@ -301,9 +397,9 @@ test('read-only onboarding uses public JSON without turning optional metrics int
 });
 
 const auditRunId = 'audit-33a07e13-071b-4071-a6b4-d76c92834a5a';
-const auditCommand = cliCommand + ' ctl audit run --entry owned-library --target original-page --depth history';
+const auditCommand = cliCommand + ' ctl audit run --library 76ecd927-8be5-5526-b4d7-18906713e206 --target original-page --depth history';
 const auditReportFixture = () => ({ ok: true, report_version: 1, rules_version: 'resource-audit-v3', run_id: auditRunId,
-  entry_id: 'owned-library', selector: { kind: 'skill', page_id: 'original-page' }, inspection_scope: 'reachable_target',
+  library_id: '76ecd927-8be5-5526-b4d7-18906713e206', selector: { kind: 'skill', page_id: 'original-page' }, inspection_scope: 'reachable_target',
   execution: 'completed', coverage: 'partial', severity: { error: 0, warning: 1, info: 0 }, remote_writes: 0,
   next: { state: 'inspect_retained_report', argv: ['ntn-skills', 'ctl', 'audit', 'report', auditRunId], read_only: true } });
 const auditGuard = () => {
@@ -313,7 +409,7 @@ const auditGuard = () => {
     writeSync: (_fd, value) => records.push(JSON.parse(value)), closeSync() {},
     readFileSync(path) { reads.push(path); if (!files.has(path)) throw new Error('missing original'); return files.get(path); } },
   output: '/evidence/guard.jsonl', policy: maintenanceCli, sha,
-  review: new Function('return (' + reviewCandidateCliCommand.toString() + ')')(),
+  review: new Function('parseNativeReference', 'notionPageId', 'return (' + reviewCandidateCliCommand.toString() + ')')(nativeReferenceSettings.parseNativeReference, notionPageId),
   auditReportBinding: new Function('return (' + candidate.candidateAuditReportBinding.toString() + ')')() });
   return { handlers, records, files, reads,
     call(command, id) { return handlers.get('tool_call')({ toolName: 'bash', toolCallId: id, input: { command } }); } };
@@ -358,7 +454,7 @@ test('reports cannot be preseeded or escape the actual session audit and no repo
     content: [{ type: 'text', text: JSON.stringify(auditReportFixture()) + '\n\nCommand exited with code 4' }] });
   assert.equal(value.call(command, 'bound-report'), undefined);
   assert.deepEqual(value.reads, []);
-  for (const suffix of [' --entry owned-library', ' --output /owned/report.json', ' --json', ' extra'])
+  for (const suffix of [' --library 76ecd927-8be5-5526-b4d7-18906713e206', ' --output /owned/report.json', ' --json', ' extra'])
     assert.equal(value.call(command + suffix, 'flag-' + suffix).block, true);
   assert.equal(value.call(cliCommand + ' ctl audit report audit-00000000-0000-0000-0000-000000000000', 'foreign-run').block, true);
   assert.equal(value.call(cliCommand + ' ctl audit resume ' + auditRunId, 'resume').block, true);
@@ -371,7 +467,7 @@ test('incomplete, unregistered, foreign or mutating audit evidence never grants 
   { registeredPath: spill, readFile() { throw new Error('Must not read an unrelated spill'); }, sha }), undefined);
   for (const mutate of [
     report => { report.ok = false; }, report => { report.execution = 'paused'; }, report => { report.remote_writes = 1; },
-    report => { report.entry_id = 'another-library'; }, report => { report.selector.page_id = 'another-page'; },
+    report => { report.library_id = '8b308dab-2daf-5330-922f-812244ff16f9'; }, report => { report.selector.page_id = 'another-page'; },
     report => { report.selector.kind = 'all'; }, report => { report.next.read_only = false; },
     report => { report.next.argv.push('--output', '/owned/file'); }, report => { delete report.run_id; },
   ]) {
@@ -407,7 +503,7 @@ test('maintenance guard admits builtin discovery, exact CLI metadata and current
     ['notion_use', { ref: branch[0].data.ref }],
     ['read', { path: branch[2].data.ref }],
     ['read', { paths: [branch[2].data.ref] }],
-    ['read', { path: 'skill://original-owner/references/one.md' }],
+    ['read', { path: skillFileRef(publicCli.ownerRef, 'references/one.md') }],
   ];
   for (const [toolName, input] of calls) assert.equal(handlers.get('tool_call')({ toolName, toolCallId: 'call-' + records.length, input }, ctx), undefined);
   handlers.get('session_shutdown')({});
@@ -422,6 +518,8 @@ test('maintenance guard fails before I/O for foreign handles, conflicting paths,
   for (const [toolName, input] of [
     ['read', { path: '/unrelated/secret' }],
     ['read', { path: 'skill://another-owner/SKILL.md' }],
+    ['read', { path: 'skill://original-owner/SKILL.md?library=b73b2ea3-0253-5e81-a1e5-c0b91aa3e2e5' }],
+    ['read', { path: skillFileRef(publicCli.ownerRef, 'SKILL.md') + '&file_id=main' }],
     ['read', { path: branch[2].data.ref, paths: [branch[2].data.ref] }],
     ['read', { paths: [branch[2].data.ref], limit: 1 }],
     ['notion_use', { ref: 'sr:C' + 'B'.repeat(22) }],
@@ -436,20 +534,20 @@ test('maintenance guard fails before I/O for foreign handles, conflicting paths,
     ['tool_search', { query: 'ntn skills maintain', limit: 9 }],
     ['write', { path: '/evidence/new-file', content: 'not authorized' }],
   ]) assert.equal(handlers.get('tool_call')({ toolName, toolCallId: 'blocked-' + records.length, input }, ctx)?.block, true);
-  branch[1].data.target.identity = { ...branch[1].data.target.identity, locator: { page_id: 'another-page', database_id: 'owned-library' } };
+  branch[1].data.target.identity = { ...branch[1].data.target.identity, locator: { page_id: 'another-page', library_id: '76ecd927-8be5-5526-b4d7-18906713e206', database_id: '33333333-3333-4333-8333-333333333333' } };
   assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'foreign-resource', input: { path: branch[2].data.ref } }, ctx)?.block, true);
   handlers.get('session_shutdown')({});
 });
 
 test('maintenance policy survives serialization without product-module or private Store access', () => {
-  const review = new Function('return (' + candidate.reviewCandidateMaintenanceTool.toString() + ')')();
+  const review = new Function('parseNativeReference', 'return (' + candidate.reviewCandidateMaintenanceTool.toString() + ')')(nativeReferenceSettings.parseNativeReference);
   assert.ok(review('notion_use', { ref: maintenanceBranch()[0].data.ref }, maintenanceCli, maintenanceBranch()));
   assert.throws(() => review('notion_use', { ref: maintenanceBranch()[0].data.ref }, maintenanceCli, []));
 });
 
 test('maintenance rejects the retired readOnly key for owner tools and otherwise allowed local files', () => {
   const handlers = new Map(), rows = [], branch = maintenanceBranch();
-  const review = new Function('return (' + candidate.reviewCandidateMaintenanceTool.toString() + ')')();
+  const review = new Function('parseNativeReference', 'return (' + candidate.reviewCandidateMaintenanceTool.toString() + ')')(nativeReferenceSettings.parseNativeReference);
   const guard = new Function('return (' + candidateCliGuard.toString() + ')')();
   guard({ on(name, fn) { handlers.set(name, fn); } }, {
     fs: { openSync: () => 1, writeSync: (_fd, text) => rows.push(JSON.parse(text)), closeSync() {} },
@@ -509,14 +607,14 @@ test('maintenance starts only with the actual candidate native read executor and
 });
 
 function maintenancePayloadFixture() {
-  const owner = 'shared_skill:owned-library:owned-skill', scope = 'a'.repeat(64), snapshot = 's_' + 'b'.repeat(64), version = 'c'.repeat(64);
+  const owner = 'skill://owned-skill?library=76ecd927-8be5-5526-b4d7-18906713e206', scope = 'a'.repeat(64), snapshot = 's_' + 'b'.repeat(64), version = 'c'.repeat(64);
   const expectedBodies = ['Main complete authored body.', 'First complete reference.', 'Second complete reference.'].map((text, index) => {
     const path = ['SKILL.md', 'guides/one.md', 'references/two.md'][index], file_id = 'file-' + String(index + 1).repeat(64);
     return { path: '/oracle/' + path, text, sha256: sha(text), bytes: Buffer.byteLength(text), binding: { owner, scope,
-      snapshot_id: snapshot, version_id: version, path, file_id, ref: 'skill://' + encodeURIComponent(owner) + '/' + path + '?snapshot=' + snapshot + '&file_id=' + file_id } };
+      snapshot_id: snapshot, version_id: version, path, file_id, ref: skillFileRef(owner, path, snapshot) } };
   });
   const config = { requireUse: true, expectedBodies, bodies: expectedBodies.map(body => ({ sha256: body.sha256, occurrences: 1 })),
-    publicCli: { ...maintenanceCli, refPrefix: 'skill://' + encodeURIComponent(owner) + '/', bodyCountScope: 'broker-plus-unchanged-cli' },
+    publicCli: { ...maintenanceCli, ownerRef: owner, bodyCountScope: 'broker-plus-unchanged-cli' },
     proofs: [{ binding: { record: { id: owner }, snapshot_id: snapshot } }, ...expectedBodies.slice(1).map(body => ({ scope, snapshot_id: snapshot, file_id: body.binding.file_id, sha256: body.sha256 }))] };
   const nativeMessages = [], calls = [], tasks = [], guard = [], messages = [];
   const add = (id, name, args, content, details = {}) => {
@@ -533,7 +631,7 @@ function maintenancePayloadFixture() {
     guard.push({ toolCallId: id, toolName: name, allowed: true });
   };
   const body = expectedBodies[0], ref = 'sr:S' + 'A'.repeat(22);
-  const record = { id: owner, kind: 'skill', locator: { type: 'shared_skill', page_id: config.publicCli.target, database_id: config.publicCli.database } };
+  const record = { id: owner, kind: 'skill', locator: { type: 'shared_skill', page_id: config.publicCli.target, library_id: config.publicCli.library, database_id: '33333333-3333-4333-8333-333333333333' } };
   const binding = { record, scope, snapshot_id: snapshot, version_id: version, body_sha256: body.sha256, ref: body.binding.ref };
   const content = JSON.stringify({ ok: true, status: 'ready', purpose: 'use', roots: [ref], records: [{ name: 'Owned', kind: 'skill', ref, content: body.text }] });
   const encoded = JSON.stringify(body.text).slice(1, -1), start = content.indexOf('"content":' + JSON.stringify(body.text)) + '"content":"'.length;
@@ -550,7 +648,7 @@ function maintenancePayloadFixture() {
         ref: b.ref, path: b.path, file_id: b.file_id, sha256: body.sha256, bytes: body.bytes, loaded: false, delivered_complete_text: true,
         delivery: { start: 0, end: body.text.length, encoding: 'raw' } } });
   }
-  add('cli-read', 'bash', { command: cliCommand + ' read original-page --database owned-library --read-only --json --metrics' },
+  add('cli-read', 'bash', { command: cliCommand + ' read original-page --library 76ecd927-8be5-5526-b4d7-18906713e206 --read-only --json --metrics' },
     JSON.stringify({ main: expectedBodies[0].text, reference: expectedBodies[1].text }));
   return { config, payload: { model: 'group/worker', messages }, nativeAudit: { calls }, nativeMessages, tasks, guard,
     approvedCliCalls: ['cli-read'], add,
@@ -634,16 +732,16 @@ test('exact body counts exclude tool definitions, details, and call arguments, r
 });
 
 test('candidate View is explicit, remains in the same source, and cannot leak from a different library', () => {
-  const database = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const library = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const viewId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-  const original = { sources: [{ id: 'notion', type: 'notion', database, default_view_id: viewId, prefetch: false }] };
-  const input = { sourceId: 'notion', database, cacheDir: '/owned/cache' };
+  const original = { sources: [{ id: 'notion', type: 'notion', library, default_view_id: viewId, prefetch: false }] };
+  const input = { sourceId: 'notion', library, cacheDir: '/owned/cache' };
   assert.equal(candidateSourceConfig(original, input).sources[0].default_view_id, viewId);
   const selected = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
   assert.equal(candidateSourceConfig(original, { ...input, viewId: selected }).sources[0].default_view_id, selected);
   assert.equal(original.sources[0].default_view_id, viewId);
-  assert.throws(() => candidateSourceConfig(original, { ...input, database: selected }));
-  assert.equal(candidateSourceConfig(original, { ...input, database: selected, viewId }).sources[0].default_view_id, viewId);
+  assert.throws(() => candidateSourceConfig(original, { ...input, library: selected }));
+  assert.equal(candidateSourceConfig(original, { ...input, library: selected, viewId }).sources[0].default_view_id, viewId);
   for (const invalid of ['', 'first', null, true]) assert.throws(() => candidateSourceConfig(original, { ...input, viewId: invalid }));
 });
 
@@ -728,20 +826,23 @@ test('candidate plan is nonexecuting and rejects unfrozen body claims', () => {
 function currentArtifactReceiptFixture() {
   const identity = (path, bytes) => ({ path, bytes: Buffer.byteLength(bytes), sha256: sha(bytes) });
   const rawCli = identity('/owned/cli/dist/ntn-skills.js', 'raw CLI'), rawSdk = identity('/owned/cli/dist/sdk.js', 'raw SDK');
+  const rawRef = identity('/owned/cli/dist/skill-ref.cjs', 'selected pure protocol');
+  const notices = identity('/owned/cli/THIRD_PARTY_NOTICES.md', 'Selected third-party notices');
   const embeddedCli = identity('/owned/installed/dist/ntn-skills.mjs', 'embedded CLI');
   const embeddedSdk = identity('/owned/installed/dist/ntn-skills-sdk.mjs', 'embedded SDK');
-  const runtime = { version: 1, package: 'ntn-skills', package_version: '0.1.0', sdk_version: 2,
+  const runtime = { version: 1, package: 'ntn-skills', package_version: '0.1.0', sdk_version: 3,
     consumer_contract_version: 1, resource_read_contract_version: 1, read_output_proof_version: 1,
     catalog_directory_contract_version: 1, command_output_proof_version: 1, consumption_effects_version: 1,
-    resource_read_effects_version: 1, cli_sha256: embeddedCli.sha256, sdk_sha256: embeddedSdk.sha256 };
+    content_search_contract_version: 1, skill_ref_version: 2,
+    resource_read_effects_version: 1, cli_sha256: embeddedCli.sha256, sdk_sha256: embeddedSdk.sha256, ref_sha256: rawRef.sha256 };
   const actual = {
-    buildInput: { package: 'ntn-skills', version: '0.1.0', manifest: identity('/owned/cli/package.json', '{"name":"ntn-skills"}'), cli: rawCli, sdk: rawSdk },
+    buildInput: { package: 'ntn-skills', version: '0.1.0', manifest: identity('/owned/cli/package.json', '{"name":"ntn-skills"}'), cli: rawCli, sdk: rawSdk, ref: rawRef, notices },
     package: { name: 'pi-context-broker', version: '0.1.0', installed: '/owned/installed', archive: identity('/owned/broker.tgz', 'archive bytes') },
-    runtime: { ...runtime, hashes: { cli: embeddedCli.sha256, sdk: embeddedSdk.sha256 } },
+    runtime: { ...runtime, hashes: { cli: embeddedCli.sha256, sdk: embeddedSdk.sha256, ref: rawRef.sha256 } },
   };
   const notRun = ['Pi session', 'provider/model', 'live Notion', 'OMP', 'Tern'];
   const artifact = { version: 2, status: 'passed', startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z',
-    boundary: 'Independently installed Broker and SDK v2 with controlled current Notion HTTP.', ...structuredClone(actual), notRun,
+    boundary: 'Independently installed Broker and SDK v3 with controlled current Notion HTTP.', ...structuredClone(actual), notRun,
     currentSdk: { status: 'passed', node: process.version, cases: [{ name: 'controlled-current-case', status: 'passed' }],
       sdk_calls: 3, child_starts: 0, runtime, package_unchanged: true, http_requests: 5, semantic_writes: 0,
       fixture: '/owned/fixture.json', not_run: [...notRun] } };
@@ -775,6 +876,8 @@ test('candidate rejects incomplete or altered current source, archive, runtime a
     ['manifest hash', value => { value.buildInput.manifest.sha256 = '0'.repeat(64); }],
     ['raw CLI hash', value => { value.buildInput.cli.sha256 = '0'.repeat(64); }],
     ['raw SDK hash', value => { value.buildInput.sdk.sha256 = '0'.repeat(64); }],
+    ['raw protocol hash', value => { value.buildInput.ref.sha256 = '0'.repeat(64); }],
+    ['notices hash', value => { value.buildInput.notices.sha256 = '0'.repeat(64); }],
     ['raw CLI bytes', value => { value.buildInput.cli.bytes++; }],
     ['source path', value => { value.buildInput.manifest.path = '/another/package.json'; }],
     ['archive hash', value => { value.package.archive.sha256 = '0'.repeat(64); }],
@@ -782,6 +885,8 @@ test('candidate rejects incomplete or altered current source, archive, runtime a
     ['runtime hash', value => { value.runtime.sdk_sha256 = '0'.repeat(64); }],
     ['runtime verified hash', value => { value.runtime.hashes.cli = '0'.repeat(64); }],
     ['runtime capability', value => { delete value.runtime.consumer_contract_version; }],
+    ['protocol version', value => { value.runtime.skill_ref_version = 1; }],
+    ['protocol runtime hash', value => { value.runtime.ref_sha256 = '0'.repeat(64); }],
     ['missing SDK proof', value => { delete value.currentSdk; }],
     ['failed SDK', value => { value.currentSdk.status = 'failed'; }],
     ['altered installed package', value => { value.currentSdk.package_unchanged = false; }],
@@ -806,7 +911,7 @@ test('owned project inspection admits only its finite inventory vocabulary and e
   const root = '/private/tmp/notion-candidate-print-abc123';
   for (const command of ['pwd', 'ls -la', 'ls -la ' + root, "ls -la '" + root + "'", 'find . -maxdepth 3 -type f', 'ls -la && pwd && find . -maxdepth 3 -type d -o -type f | head -200'])
     assert.equal(candidateProjectInspection({ command }, root, root), true, command);
-  for (const command of ['ls /Users/yoyo/.agents/skills', 'find .. -maxdepth 3 -type f', 'ls -la; pwd', 'pwd || ls', 'ls $(pwd)', 'ls `pwd`', 'ls . > output', 'ls -R', 'find . -maxdepth 5 -type f', 'find . -maxdepth 3 -type f -exec node {} \\;', 'find . -maxdepth 3 -type f | head -301', 'node src/server.mjs', 'npm test', 'ntn-skills read target', 'cat README.md', 'pwd\nls', 'ls -la && pwd && pwd && pwd',
+  for (const command of ['ls /outside-owned-project/skills', 'find .. -maxdepth 3 -type f', 'ls -la; pwd', 'pwd || ls', 'ls $(pwd)', 'ls `pwd`', 'ls . > output', 'ls -R', 'find . -maxdepth 5 -type f', 'find . -maxdepth 3 -type f -exec node {} \\;', 'find . -maxdepth 3 -type f | head -301', 'node src/server.mjs', 'npm test', 'ntn-skills read target', 'cat README.md', 'pwd\nls', 'ls -la && pwd && pwd && pwd',
     'ls -L src', 'ls -la src ../..', 'ls -la src test .pi .', 'find . -maxdepth 3 -type f -delete',
     "find . -maxdepth 3 -type f -not -path '../*'", "echo '---FILES---'", "echo '$(id)' && ls", "echo '`id`' && ls",
     "echo 'first' && echo 'second' && ls", "echo '" + 'x'.repeat(41) + "' && ls"])
@@ -847,7 +952,7 @@ test('only the owned project task can classify a hash-bound inventory call separ
 test('task observer does not transform provider input or register tools/providers', () => {
   const handlers = new Map(), writes = [];
   const fs = { openSync: () => 1, readFileSync: () => Buffer.from(body), writeSync: (_fd, line) => writes.push(JSON.parse(line)), closeSync: () => {} };
-  observeCandidateTask({ on(name, fn) { handlers.set(name, fn); } }, { fs, crypto: { createHash }, output: '/owned/task.jsonl', bodyFiles: [file], inspectPayload: candidatePayloadBodies });
+  observeCandidateTask({ on(name, fn) { handlers.set(name, fn); } }, { fs, crypto: { createHash }, ...nativeReferenceSettings, output: '/owned/task.jsonl', bodyFiles: [file], inspectPayload: candidatePayloadBodies });
   const payload = { messages: [{ content: body }] }, before = structuredClone(payload);
   assert.equal(handlers.get('before_provider_request')({ payload }), undefined); assert.deepEqual(payload, before);
   assert.equal(writes.at(-1).bodies[0].occurrences, 1);
@@ -857,7 +962,7 @@ test('task observer does not transform provider input or register tools/provider
 test('task extension reload after a real fork boundary keeps one exclusive ledger and unique payload files', async () => {
   const root = await mkdtemp('/tmp/candidate-task-fork-'), output = join(root, 'tasks.jsonl'), payloadDirectory = join(root, 'payloads');
   await mkdir(payloadDirectory);
-  const source = candidate.candidateTaskExtensionSource({ output, payloadDirectory, bodyFiles: [] });
+  const source = candidate.candidateTaskExtensionSource({ referenceParser: fileURLToPath(new URL('../packages/context-broker/src/native-reference.ts', import.meta.url)), output, payloadDirectory, bodyFiles: [] });
   const extension = number => import('data:text/javascript;base64,' + Buffer.from(source).toString('base64') + '#' + number);
   const host = () => { const handlers = new Map(); return { handlers, on: (name, fn) => handlers.set(name, fn) }; };
   const first = host(), second = host();
@@ -889,7 +994,7 @@ test('task extension reload after a real fork boundary keeps one exclusive ledge
 test('a fork without successful observer rebinding cannot seal as complete', () => {
   const handlers = new Map(), writes = [];
   const fs = { openSync: () => 1, writeSync: (_fd, line) => writes.push(JSON.parse(line)), closeSync: () => {} };
-  observeCandidateTask({ on: (name, fn) => handlers.set(name, fn) }, { fs, crypto: { createHash }, output: '/owned/incomplete.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies });
+  observeCandidateTask({ on: (name, fn) => handlers.set(name, fn) }, { fs, crypto: { createHash }, ...nativeReferenceSettings, output: '/owned/incomplete.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies });
   handlers.get('session_shutdown')({ reason: 'fork' }); handlers.get('session_shutdown')({ reason: 'quit' });
   assert.equal(writes.at(-1).complete, false);
 });
@@ -900,7 +1005,7 @@ test('binary resources keep exact identity without becoming UTF-8 model text or 
   const fs = { openSync: () => 1, readFileSync: path => path === binary.path ? png : Buffer.from(body),
     writeSync: (_fd, line) => writes.push(JSON.parse(line)), closeSync: () => {} };
   const api = { on(name, fn) { handlers.set(name, fn); } };
-  const options = { fs, crypto: { createHash }, output: '/owned/task.jsonl', bodyFiles: [file, binary], inspectPayload: candidatePayloadBodies };
+  const options = { fs, crypto: { createHash }, ...nativeReferenceSettings, output: '/owned/task.jsonl', bodyFiles: [file, binary], inspectPayload: candidatePayloadBodies };
   observeCandidateTask(api, options);
   assert.deepEqual(writes[0].nonTextBodies, [{ sha256: binary.sha256, bytes: binary.bytes }]);
   const payload = { messages: [{ content: body }] }, before = structuredClone(payload);
@@ -921,7 +1026,7 @@ test('interaction provenance snapshots actual registered files without altering 
     writeFileSync: (path, bytes) => { assert.ok(path.startsWith('/owned/tool-results/')); saved.set(path, bytes); },
     writeSync: (_fd, line) => writes.push(JSON.parse(line)), closeSync: () => {} };
   observeCandidateTask({ on: (name, fn) => handlers.set(name, fn), getAllTools: () => [{ name: 'ask_user', sourceInfo: source }] },
-    { fs, crypto: { createHash }, output: '/owned/tasks.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies, toolResultDirectory: '/owned/tool-results' });
+    { fs, crypto: { createHash }, ...nativeReferenceSettings, output: '/owned/tasks.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies, toolResultDirectory: '/owned/tool-results' });
   const event = { toolName: 'ask_user', toolCallId: 'actual-call', input: { question: 'Which source?' } }, before = structuredClone(event);
   handlers.get('tool_call')(event, { mode: 'rpc' });
   assert.deepEqual(event, before);
@@ -939,17 +1044,17 @@ test('interaction provenance snapshots actual registered files without altering 
 
 function preparedObservationFixture({ kind = 'candidate', storage = 'entry', refresh = false, canonical = false } = {}) {
     const handlers = new Map(), rows = [], saved = new Map(), reads = [], baseDir = '/installed/pi-compact-ui';
-    const probes = [], id = 'read-call', scope = 'a'.repeat(64), owner = 'shared_skill:library-test:skill-test', snapshot = 's_' + 'b'.repeat(64);
+    const probes = [], id = 'read-call', scope = 'a'.repeat(64), owner = 'skill://skill-test?library=8368ca66-006e-5da4-82e0-744dfa23c8e8', snapshot = 's_' + 'b'.repeat(64);
     const resource = kind === 'resource', relative = resource ? 'references/rates.md' : 'SKILL.md';
     const mainBody = Buffer.from('完整正文\n'), resourceBody = Buffer.from('精确资源\n'), body = resource ? resourceBody : mainBody;
     const path = '/cache/notion/scopes/' + scope + '/records/' + sha(owner) + '/' +
       (storage === 'resource' ? 'resources' : 'entries') + '/' + snapshot + '/tree/' + relative;
-    const manifestPath = path.slice(0, -('/tree/' + relative).length) + '/.broker-entry.json', ref = 'skill://' + encodeURIComponent(owner);
+    const manifestPath = path.slice(0, -('/tree/' + relative).length) + '/.broker-entry.json', ref = owner;
     const mainId = 'file-' + 'd'.repeat(64), resourceId = 'file-' + 'f'.repeat(64);
-    const mainRef = ref + '/SKILL.md?snapshot=' + snapshot + '&file_id=' + mainId;
-    const resourceRef = ref + '/references/rates.md?snapshot=' + snapshot + '&file_id=' + resourceId;
-    const locator = { type: 'shared_skill', page_id: 'page', database_id: 'db' };
-    const binding = { record: { id: owner, kind: 'skill', locator, entrypoint: 'SKILL.md', ref: ref + '/SKILL.md' },
+    const mainRef = skillFileRef(owner, 'SKILL.md', snapshot);
+    const resourceRef = skillFileRef(owner, 'references/rates.md', snapshot);
+    const locator = { type: 'shared_skill', library_id: '8368ca66-006e-5da4-82e0-744dfa23c8e8', page_id: 'page', database_id: 'db' };
+    const binding = { record: { id: owner, kind: 'skill', locator, entrypoint: 'SKILL.md', ref: skillFileRef(owner, 'SKILL.md') },
       scope, snapshot_id: snapshot, version_id: 'c'.repeat(64), body_sha256: sha(mainBody), ref: mainRef };
     const manifest = { version: 1, projection: 'entry', manifest_complete: true, scope, id: owner, snapshot_id: snapshot,
       version_id: binding.version_id, ref: binding.ref, entrypoint: 'SKILL.md',
@@ -967,7 +1072,7 @@ function preparedObservationFixture({ kind = 'candidate', storage = 'entry', ref
     const source = { origin: 'package', scope: 'user', source: 'npm:pi-compact-ui', baseDir, path: baseDir + '/index.ts' };
     const api = { on: (name, fn) => handlers.set(name, fn), getAllTools: () => [{ name: 'read', sourceInfo: source }],
       getCommands: () => [{ name: 'context-broker', sourceInfo: { origin: 'package', baseDir: '/broker', path: '/broker/src/index.ts' } }] };
-    observeCandidateTask(api, { fs, crypto: { createHash }, output: '/owned/task.jsonl', bodyFiles: [],
+    observeCandidateTask(api, { fs, crypto: { createHash }, ...nativeReferenceSettings, output: '/owned/task.jsonl', bodyFiles: [],
       inspectPayload: candidatePayloadBodies, toolResultDirectory: '/owned/results' });
     const selectedRef = 'sr:S' + 'o'.repeat(22), shortResource = 'sr:R' + 'r'.repeat(22);
     const identity = { source: 'notion', scope, id: owner, kind: 'skill', locator, ref };
@@ -1002,6 +1107,45 @@ function preparedObservationFixture({ kind = 'candidate', storage = 'entry', ref
       details: { [resource ? 'contextBrokerResource' : 'contextBrokerRead']: proof } };
     return { handlers, rows, reads, probes, originals, message, saved, path, manifestPath, input, original, proof, branch, fs, call, result, body };
 }
+
+test('ordinary local and nested reads retain implementation bytes without probing or rewriting their targets', () => {
+  for (const nested of [false, true]) for (const input of [
+    { path: '/owned/SKILL.md' }, { path: '/owned/reference.md', offset: 138, limit: 117 },
+  ]) {
+    const value = preparedObservationFixture(), ctx = { mode: 'rpc' };
+    const event = { toolName: 'read', toolCallId: 'local-read', input: structuredClone(input),
+      ...(nested ? { parentToolCallId: 'actual-codemode-parent' } : {}) };
+    const original = structuredClone(event);
+    value.handlers.get('tool_call')(event, ctx);
+    assert.deepEqual(event, original, 'the observer cannot change the actual invocation');
+    value.handlers.get('tool_result')({ ...event, isError: false, content: [{ type: 'text', text: 'actual local result' }] });
+    const call = value.rows.find(row => row.phase === 'tool_call');
+    const result = value.rows.find(row => row.phase === 'tool_result');
+    assert.equal(call.toolImplementation.files.length, 2);
+    for (const file of call.toolImplementation.files)
+      assert.deepEqual(value.saved.get(file.artifact.path), value.originals.get(file.path));
+    assert.equal(call.inputSha256, sha(JSON.stringify(input)));
+    assert.equal(result.inputSha256, call.inputSha256);
+    assert.equal(call.parentToolCallId, event.parentToolCallId);
+    assert.equal(result.parentToolCallId, event.parentToolCallId);
+    assert.deepEqual(JSON.parse(value.saved.get(result.contentArtifact.path)), [{ type: 'text', text: 'actual local result' }]);
+    assert.deepEqual(value.probes, []);
+    assert.equal(value.reads.length, 2, 'only the two implementation files are read by the observer');
+    assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false);
+  }
+});
+
+test('unavailable reader evidence records an observation gap without changing the local tool call', () => {
+  const value = preparedObservationFixture(), event = { toolName: 'read', toolCallId: 'local-read', input: { path: '/owned/SKILL.md' } };
+  value.originals.delete('/installed/pi-compact-ui/index.ts');
+  const before = structuredClone(event);
+  assert.doesNotThrow(() => value.handlers.get('tool_call')(event, { mode: 'rpc' }));
+  assert.deepEqual(event, before);
+  const call = value.rows.find(row => row.phase === 'tool_call');
+  assert.ok(call.toolImplementation.error);
+  assert.equal(call.toolImplementation.files, undefined);
+  assert.equal(value.rows.some(row => row.phase === 'prepared_read'), false);
+});
 
 test('canonical fixed File observation uses its prior registration for main and scalar resources', () => {
   for (const options of [
@@ -1209,23 +1353,44 @@ test('resource observation seals neither a symlink nor mismatched or partial imm
   }
 });
 
+test('owned candidate children keep all five roots private with no scheduler or an inherited shared scheduler', async () => {
+  const stateRoot = join(process.cwd(), 'owned-candidate-state');
+  const directories = { NTN_SKILLS_HOME: 'state', NTN_SKILLS_CONFIG_HOME: 'config', NTN_SKILLS_CACHE_HOME: 'cache',
+    NTN_SKILLS_DATA_HOME: 'data', NTN_SKILLS_SCHEDULER_ROOT: 'scheduler' };
+  const keys = [...Object.keys(directories), 'HOME'];
+  const source = 'process.stdout.write(JSON.stringify(Object.fromEntries(' + JSON.stringify(keys) + '.map(key=>[key,process.env[key]]))))';
+  for (const scheduler of [undefined, '/shared/request-engine']) {
+    const inherited = { ...process.env, HOME: '/normal/home', ...Object.fromEntries(Object.keys(directories).map(key => [key, '/shared/' + key])) };
+    if (scheduler === undefined) delete inherited.NTN_SKILLS_SCHEDULER_ROOT;
+    else inherited.NTN_SKILLS_SCHEDULER_ROOT = scheduler;
+    const before = { ...inherited };
+    const print = await candidate.prepareCandidatePrintState({}, { stateRoot, environment: inherited });
+    for (const env of [candidate.candidateOwnedStateEnvironment(stateRoot, inherited), { ...inherited, ...print.env }]) {
+      const observed = JSON.parse(execFileSync(process.execPath, ['-e', source], { env, encoding: 'utf8' }));
+      for (const [key, directory] of Object.entries(directories)) assert.equal(observed[key], join(stateRoot, 'ntn', directory));
+      assert.equal(observed.HOME, inherited.HOME);
+    }
+    assert.deepEqual(inherited, before);
+  }
+});
+
 test('normal-management state reuses only the existing process roots and never transfers cleanup or resume ownership', async t => {
   const scratch = await mkdtemp('/tmp/notion-existing-state-proof-');
   t.diagnostic(JSON.stringify({ ownedScratch: [scratch], cleanup: 'Retained for evidence-first system Trash cleanup.' }));
   const roots = { NTN_SKILLS_HOME: '/normal/state/ntn-skills', NTN_SKILLS_CONFIG_HOME: '/normal/config/ntn-skills', NTN_SKILLS_CACHE_HOME: '/normal/cache/ntn-skills' };
-  const environment = { XDG_STATE_HOME: '/normal/state', XDG_CONFIG_HOME: '/normal/config', XDG_CACHE_HOME: '/normal/cache' };
+  const environment = { XDG_STATE_HOME: '/normal/state', XDG_CONFIG_HOME: '/normal/config', XDG_CACHE_HOME: '/normal/cache', NTN_SKILLS_SCHEDULER_ROOT: '/normal/shared-scheduler' };
   const stateRoot = join(scratch, 'run-owned'), selected = [];
   for (const [index, content] of ['before\n', 'edited\n'].entries()) {
     const snapshot_id = 's_' + sha('snapshot-' + index), file_id = 'file-' + sha('reference');
-    const ref = 'skill://owner/references/render.md?snapshot=' + snapshot_id + '&file_id=' + file_id;
-    const value = { ok: true, record: { id: 'owner', locator: { database_id: 'owned-database' } }, scope: sha('scope'), snapshot_id,
+    const owner = 'skill://owner?library=76ecd927-8be5-5526-b4d7-18906713e206', ref = skillFileRef(owner, 'references/render.md', snapshot_id);
+    const value = { ok: true, record: { id: owner, locator: { library_id: '76ecd927-8be5-5526-b4d7-18906713e206', database_id: '33333333-3333-4333-8333-333333333333' } }, scope: sha('scope'), snapshot_id,
       version_id: sha('version-' + index), path: 'references/render.md', ref, source: 'local_snapshot', freshness: { policy: 'pinned' },
       content, range: { start: 1, end: 2, total_lines: 2 }, has_more: false,
       file_bindings: [{ path: 'references/render.md', file_id }], effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' } };
     const path = join(scratch, 'public-read-' + index + '.json'), bytes = JSON.stringify(value);
     await writeFile(path, bytes, { flag: 'wx' }); selected.push({ path, sha256: sha(bytes), body: { bytes: Buffer.byteLength(content), sha256: sha(content) } });
   }
-  const config = { database: 'owned-database', toolCallCount: 2, expectedBodies: selected.map(value => value.body),
+  const config = { library: '76ecd927-8be5-5526-b4d7-18906713e206', toolCallCount: 2, expectedBodies: selected.map(value => value.body),
     existingState: { mode: 'normal-management', roots, managementReads: selected.map(({ path, sha256 }) => ({ path, sha256 })) } };
   const options = { stateRoot, environment, home: '/normal/home' };
   const before = await Promise.all(selected.map(value => readFile(value.path)));
@@ -1235,6 +1400,9 @@ test('normal-management state reuses only the existing process roots and never t
   assert.equal(normal.sourceState.ownership, 'existing-user'); assert.equal(normal.sourceState.mode, 'normal-management');
   assert.equal(normal.stateRoot, stateRoot); assert.deepEqual(normal.ownedPaths, [stateRoot]);
   assert.deepEqual(normal.env, { ...roots, NTN_SKILLS_DATA_HOME: join(stateRoot, 'ntn/data') });
+  const observedScheduler = execFileSync(process.execPath, ['-e', 'process.stdout.write(process.env.NTN_SKILLS_SCHEDULER_ROOT)'],
+    { env: { ...environment, ...normal.env }, encoding: 'utf8' });
+  assert.equal(observedScheduler, environment.NTN_SKILLS_SCHEDULER_ROOT);
   assert.equal(normal.sourceState.reads.length, 2);
   const fresh = await candidate.prepareCandidatePrintState({}, options);
   assert.equal(fresh.sourceState, undefined); assert.equal(fresh.env.NTN_SKILLS_HOME, join(stateRoot, 'ntn/state'));
@@ -1251,7 +1419,7 @@ test('normal-management state reuses only the existing process roots and never t
 });
 
 test('existing-state reads block unintended tools before execution and require actual complete none-effects results', () => {
-  const refs = ['skill://owner/references/render.md?snapshot=old', 'skill://owner/references/render.md?snapshot=edited'];
+  const refs = ['old', 'edited'].map(value => skillFileRef('skill://owner?library=76ecd927-8be5-5526-b4d7-18906713e206', 'references/render.md', 's_' + sha(value)));
   const handlers = new Map(), rows = [];
   let writeFails = false;
   const fs = { openSync: () => 1, writeSync: (_fd, line) => { if (writeFails) throw new Error('receipt unavailable'); rows.push(JSON.parse(line)); }, closeSync: () => {} };
@@ -1300,7 +1468,7 @@ test('paused target audit can resume its original run and report, without replac
   const paused = { ...auditReportFixture(), execution: 'paused', request_totals: { attempts: 3, request_bytes: 20, response_bytes: 30, elapsed_ms: 12, invocations: 1 },
     next: { state: 'audit_paused', read_only: true, argv: ['ntn-skills', 'ctl', 'audit', 'resume', auditRunId] } };
   submit('audit-1', auditCommand, paused, 75);
-  const resume = cliCommand + ' ctl audit resume ' + auditRunId + ' --entry owned-library --max-requests 20 --duration-ms 1000';
+  const resume = cliCommand + ' ctl audit resume ' + auditRunId + ' --library 76ecd927-8be5-5526-b4d7-18906713e206 --max-requests 20 --duration-ms 1000';
   submit('resume-1', resume, { ...auditReportFixture(), request_totals: { attempts: 5, request_bytes: 40, response_bytes: 60, elapsed_ms: 20, invocations: 2 } }, 4);
   assert.equal(value.call(cliCommand + ' ctl audit report ' + auditRunId, 'report'), undefined);
   assert.equal(value.call(cliCommand + ' ctl audit resume ' + auditRunId, 'no-longer-paused').block, true);
@@ -1316,7 +1484,7 @@ test('paused audit authorizes only its observed read-only next, not another run,
     content: [{ type: 'text', text: JSON.stringify(report) + '\n\nCommand exited with code 75' }] });
   const resume = cliCommand + ' ctl audit resume ' + auditRunId;
   for (const command of [resume.replace(auditRunId, 'audit-00000000-0000-0000-0000-000000000000'),
-    resume + ' --entry other-library', resume + ' --target another-page', resume + ' --all',
+    resume + ' --library other-library', resume + ' --target another-page', resume + ' --all',
     resume + ' --max-requests 501', resume + ' --max-bytes 67108865', resume + ' --duration-ms 120001',
     cliCommand + ' ctl operation resume ' + auditRunId])
     assert.equal(value.call(command, 'deny-' + command).block, true, command);
@@ -1349,5 +1517,50 @@ test('a resumed result cannot substitute a run or reset its cumulative accountin
     result('resume-1', next);
     assert.equal(value.call(cliCommand + ' ctl audit report ' + auditRunId, 'after-invalid').block, true);
     assert.equal(value.records.filter(row => row.phase === 'public-cli-audit-report').length, 1);
+  }
+});
+
+
+test('task observer seals each actual tool schema and the selected bundled runtime, then detects runtime drift', async () => {
+  const paths = await import('node:path');
+  const { reviewedPiToolRuntimeProfile } = await import('./notion-agent-tool-lineage.mjs');
+  for (const drift of [false, true]) {
+    const packageRoot = '/installed/actual-pi', entry = packageRoot + '/dist/bundle/cli.js';
+    const runtimeFiles = Object.keys(reviewedPiToolRuntimeProfile.files), originals = new Map(), saved = new Map(), rows = [], handlers = new Map();
+    for (const relativePath of runtimeFiles) originals.set(packageRoot + '/' + relativePath, Buffer.from('reviewed fixture bytes: ' + relativePath));
+    originals.set(packageRoot + '/package.json', Buffer.from(JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.6.0', bin: { pi: 'dist/bundle/cli.js' } })));
+    const fs = { openSync: () => 1, closeSync() {}, writeSync: (_fd, line) => rows.push(JSON.parse(line)),
+      readFileSync: (file, encoding) => { assert.ok(originals.has(file), 'Only the actual declared runtime files are read'); const bytes = originals.get(file); return encoding ? bytes.toString(encoding) : bytes; },
+      existsSync: file => saved.has(file), realpathSync: file => file === process.argv[1] ? entry : file,
+      lstatSync: () => ({ isFile: () => true }),
+      writeFileSync: (file, bytes, options) => { assert.equal(options.flag, 'wx'); assert.ok(!saved.has(file)); saved.set(file, Buffer.from(bytes)); } };
+    const parameters = { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'number' } }, required: ['path'] };
+    const api = { on: (name, fn) => handlers.set(name, fn), getAllTools: () => [{ name: 'read', parameters, sourceInfo: { source: 'builtin', path: 'builtin:read' } }] };
+    observeCandidateTask(api, { fs, crypto: { createHash }, path: paths,
+      createRequire: anchor => { assert.equal(anchor, packageRoot + '/dist/bundle/chunks/chunk-36QC74V4.js'); return { resolve: name => { assert.equal(name, 'quickjs-wasi/quickjs.wasm'); return packageRoot + '/node_modules/quickjs-wasi/quickjs.wasm'; } }; },
+      runtimeFiles, ...nativeReferenceSettings, output: '/owned/task.jsonl', bodyFiles: [], inspectPayload: candidatePayloadBodies, toolResultDirectory: '/owned/results' });
+    handlers.get('input')({});
+    const input = { path: '/local/file', offset: null }, before = structuredClone(input);
+    handlers.get('tool_call')({ toolName: 'read', toolCallId: 'first', input }, { mode: 'rpc' });
+    assert.deepEqual(input, before);
+    const first = rows.find(row => row.phase === 'tool_call');
+    assert.equal(first.toolRuntime.entry, entry); assert.equal(first.toolRuntime.packageRoot, packageRoot);
+    assert.equal(first.toolRuntime.files.length, runtimeFiles.length);
+    assert.deepEqual(JSON.parse(saved.get(first.toolParametersArtifact.path).toString()), parameters);
+    for (const file of first.toolRuntime.files) {
+      assert.equal(file.artifact.sha256, sha(originals.get(file.path)));
+      assert.deepEqual(saved.get(file.artifact.path), originals.get(file.path));
+    }
+    parameters.properties.offset.default = 4;
+    handlers.get('tool_call')({ toolName: 'read', toolCallId: 'second', input }, { mode: 'rpc' });
+    const second = rows.filter(row => row.phase === 'tool_call').at(-1);
+    assert.notEqual(second.toolParametersArtifact.sha256, first.toolParametersArtifact.sha256);
+    assert.equal(JSON.parse(saved.get(first.toolParametersArtifact.path).toString()).properties.offset.default, undefined);
+    assert.deepEqual(second.toolRuntime, first.toolRuntime);
+    if (drift) originals.set(packageRoot + '/dist/bundle/chunks/codemode-worker.js', Buffer.from('changed actual loaded implementation'));
+    handlers.get('session_shutdown')({});
+    const end = rows.at(-1);
+    assert.equal(end.complete, !drift); assert.equal(end.toolRuntimeUnchanged, !drift);
+    assert.equal(end.errors, drift ? 1 : 0);
   }
 });

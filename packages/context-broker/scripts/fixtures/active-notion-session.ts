@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot, bindNativeReference } from "../../src/native-reference";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -7,7 +8,22 @@ import { currentNotionFixture } from "./current-notion-source";
 import { noConsumptionWrites } from "../../src/consumption-effects";
 import { parseNativeReference } from "../../src/native-reference";
 import type { PreparedHostGraph } from "../../src/prepare-protocol";
-import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "../../src/types";
+import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, ImageContent, SessionEntry, SkillRecord } from "../../src/types";
+
+type ProviderPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+type ProviderPayload = { messages: Array<{ role: string; content: string | ProviderPart[]; tool_call_id?: string }> };
+const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+function providerPart(value: unknown): value is ProviderPart {
+  return object(value) && (value.type === "text" && typeof value.text === "string"
+    || value.type === "image_url" && object(value.image_url) && typeof value.image_url.url === "string");
+}
+function providerPayload(value: unknown): value is ProviderPayload {
+  if (!object(value) || !Array.isArray(value.messages)) return false;
+  const messages: unknown[] = value.messages;
+  return messages.every(message => object(message) && typeof message.role === "string"
+    && (typeof message.content === "string" || Array.isArray(message.content) && message.content.every(providerPart))
+    && (message.tool_call_id === undefined || typeof message.tool_call_id === "string"));
+}
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const canonical = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
@@ -27,14 +43,14 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   assert.equal(f.record.locator.type, "shared_skill");
   const records = new Map<string, SkillRecord>();
   for (const [index, name] of ["root", "required", "second", "independent"].entries()) {
-    const id = index === 0 ? f.record.id : "shared_skill:current-source:" + name;
+    const id = index === 0 ? f.record.id : nativeSkillId("00000000-0000-4000-8000-000000000099", String(name));
     const metadata: ContentRecord = { ...f.record, id, name, alias: name, description: name,
-      ref: "skill://" + encodeURIComponent(id) + "/SKILL.md", locator: { ...f.record.locator,
+      ref: nativeFileRef(id, "SKILL.md"), locator: { ...f.record.locator,
         skill_id: index === 0 ? "entry" : name, page_id: "00000000-0000-4000-8000-" + String(index + 1).padStart(12, "0") } };
     const body = "Complete " + name + " instructions A.\n", snapshotId = "s_" + hash(name);
     records.set(name, { ...f.selected, ...metadata, sourceScope: scope, body, snapshotId, versionId: hash(body), normalizedName: name,
       path: join(f.root, name, "SKILL.md"), fileBindings: [{ file_id: "main-" + name, page_id: metadata.locator.page_id, path: metadata.entrypoint }], preparationBinding: { record: metadata, scope, snapshot_id: snapshotId,
-        version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId + "&file_id=main-" + name } });
+        version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(metadata.ref, snapshotId) } });
   }
   const record = (name: string) => { const found = records.get(name); assert.ok(found); return found; };
   const versions = new Map([...records.values()].map(item => [item.snapshotId!, item]));
@@ -43,7 +59,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   type Input = Parameters<typeof f.result>[0];
   const ready = (input: Input) => {
     const roots = input.targets.map(target => {
-      const ref = parseNativeReference(target);
+      const ref = bindNativeReference(parseNativeReference(target), "00000000-0000-4000-8000-000000000099");
       const found = ref.snapshot ? versions.get(ref.snapshot) : [...records.values()].find(item => item.id === ref.selector);
       assert.ok(found); assert.equal(found.id, ref.selector); return found;
     });
@@ -92,17 +108,18 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
     freshness: { policy: "max_age", validated_at: new Date().toISOString(), age_ms: 0, max_age_ms: options.catalogMaxAgeMs ?? 1_000_000, stale: false } };
   f.state.directory = { ...f.state.catalog, records: [], count: 0, view: null, view_selection: "none" };
   f.state.resolve = (target, catalog) => {
-    const ref = parseNativeReference(target);
+    const ref = bindNativeReference(parseNativeReference(target), "00000000-0000-4000-8000-000000000099");
     const rows = (catalog as typeof f.state.catalog).records;
-    const row = rows.find(item => item.id === ref.selector || item.alias === ref.selector); assert.ok(row);
-    return { record: row, scope, ref: "skill://" + encodeURIComponent(row.id) + "/" + (ref.path || row.entrypoint).split("/").map(encodeURIComponent).join("/") };
+    const row = rows.find(item => item.id === ref.selector);
+    if (!row) throw Object.assign(new Error("Exact ID unavailable"), { code: "SKILL_NOT_FOUND" });
+    return { record: row, scope, ref: nativeFileRef(row.id, ref.path || row.entrypoint) };
   };
   const revise = (name: string, body: string, entrypoint = record(name).entrypoint!) => {
     const previous = record(name), metadata = { ...previous.preparationBinding!.record, entrypoint,
-      ref: "skill://" + encodeURIComponent(previous.id!) + "/" + entrypoint.split("/").map(encodeURIComponent).join("/") };
+      ref: nativeFileRef(previous.id!, entrypoint) };
     const snapshotId = "s_" + hash(name + body + entrypoint), next = { ...previous, ...metadata, body, snapshotId, versionId: hash(body),
       path: join(f.root, name, entrypoint), fileBindings: previous.fileBindings?.map(binding => ({ ...binding, path: entrypoint })), preparationBinding: { record: metadata, scope, snapshot_id: snapshotId,
-        version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId + "&file_id=main-" + name } };
+        version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(metadata.ref, snapshotId) } };
     records.set(name, next); versions.set(snapshotId, next);
     requirements.set(snapshotId, name === "root" || name === "second" ? [record("required")] : []);
     f.state.catalog = { ...f.state.catalog, records: [...records.values()].map(item => item.preparationBinding!.record) };
@@ -123,6 +140,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   const commands = new Map<string, Parameters<NonNullable<ExtensionAPI["registerCommand"]>>[1]>();
   const tools: Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0][] = [], branch: SessionEntry[] = [];
   let visible: AgentMessage[] = [], controller = new AbortController(), aborts = 0;
+  const notices: Array<{ text: string; level?: string }> = [];
   const api: ExtensionAPI = {
     on(name, handler) { handlers.set(name, [...handlers.get(name) ?? [], handler]); },
     registerTool(tool) { tools.push(tool); }, registerCommand(name, command) { commands.set(name, command); },
@@ -131,6 +149,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   };
   const ctx: ExtensionContext = { cwd: f.root, mode: "rpc", signal: controller.signal,
     model: { api: "openai-completions", baseUrl: "http://127.0.0.1:8989/v1" }, abort() { aborts++; controller.abort(); }, getSystemPrompt: () => "",
+    ui: { notify(text, level) { notices.push({ text, level }); } },
     sessionManager: { getBranch: () => branch, getSessionId: () => "recovery-session", getSessionFile: () => join(f.root, "session.jsonl"),
       buildSessionContext: () => ({ messages: visible }), buildSessionProjection: () => ({ messages: visible, entries: [] }) } };
   const emit = async (name: string, event: unknown = {}) => {
@@ -156,17 +175,18 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
     confirmActiveSources(api, ctx, [record], delivered([record]));
     return record;
   };
-  const turn = async (text: string, bodies: readonly SkillRecord[] = [], beforeProvider?: (payload: { messages: { role: string; content: string }[] }) => Promise<void> | void,
+  const turn = async (text: string, bodies: readonly SkillRecord[] = [], beforeProvider?: (payload: ProviderPayload) => Promise<void> | void,
     beforeFinalContext?: (messages: AgentMessage[]) => AgentMessage[], previousMessages: readonly AgentMessage[] = [],
-    delivery: { beforeContext?(): Promise<AgentMessage[]>; status?: number } = {}) => {
+    delivery: { beforeContext?(): Promise<AgentMessage[]>; status?: number; images?: ImageContent[] } = {}) => {
     controller = new AbortController(); ctx.signal = controller.signal;
-    const beforeAborts = aborts, beforeCalls = f.calls.length;
-    const input = await emit("input", { source: "rpc", text });
+    const beforeAborts = aborts, beforeCalls = f.calls.length, beforeNotices = notices.length;
+    const input = await emit("input", { source: "rpc", text, images: delivery.images });
     await emit("before_agent_start", { prompt: text, systemPrompt: "Current recovery test." });
     await emit("agent_start");
-    visible = [{ role: "system", content: "Current recovery test." }, { role: "user", content: text }, ...delivered(bodies), ...previousMessages];
+    visible = [{ role: "system", content: "Current recovery test." },
+      { role: "user", content: delivery.images?.length ? [{ type: "text", text }, ...delivery.images] : text }, ...delivered(bodies), ...previousMessages];
     let messages = visible, error: unknown, provider = false;
-    let payload: { messages: { role: string; content: string; tool_call_id?: string }[] } | undefined;
+    let payload: ProviderPayload | undefined;
     try {
       if (delivery.beforeContext) { visible.push(...await delivery.beforeContext()); messages = visible; }
       for (const name of ["context", "context_with_system"]) {
@@ -176,16 +196,29 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
           if (result && typeof result === "object" && "messages" in result && Array.isArray(result.messages)) messages = result.messages;
         }
       }
-      payload = { messages: messages.map(message => ({ role: message.role === "custom" ? "user" : message.role === "toolResult" ? "tool" : message.role,
-        content: sourceMessageText(message.content), ...(message.role === "toolResult" ? { tool_call_id: message.toolCallId } : {}) })) };
+      payload = { messages: messages.map(message => {
+        const content = Array.isArray(message.content) && message.content.some(part => part.type === "image")
+          ? message.content.map((part): ProviderPart => {
+            if (part.type === "text") return { type: "text", text: part.text };
+            assert.equal(typeof part.mimeType, "string"); assert.equal(typeof part.data, "string");
+            return { type: "image_url", image_url: { url: `data:${part.mimeType};base64,${part.data}` } };
+          }) : sourceMessageText(message.content);
+        return { role: message.role === "custom" ? "user" : message.role === "toolResult" ? "tool" : message.role,
+          content, ...(message.role === "toolResult" ? { tool_call_id: message.toolCallId } : {}) };
+      }) };
       await beforeProvider?.(payload);
-      await emit("before_provider_request", { payload });
+      // Pi chains each returned payload into the next handler and sends the final
+      // value. Ignoring the return would hide a broken nonblocking replacement.
+      for (const handler of handlers.get("before_provider_request") ?? []) {
+        const result = await handler({ type: "before_provider_request", payload } as never, ctx);
+        if (result !== undefined) { assert.ok(providerPayload(result), "Provider hook returned an invalid payload"); payload = result; }
+      }
       provider = !controller.signal.aborted;
       if (provider && delivery.status !== undefined) await emit("after_provider_response", { type: "after_provider_response", status: delivery.status, headers: {} });
     } catch (cause) { error = cause; }
     await emit("agent_end");
     return { input, messages, payload, error, provider, aborted: controller.signal.aborted, aborts: aborts - beforeAborts,
-      calls: f.calls.slice(beforeCalls).filter(call => call.operation === "consume"), active: activeSources(ctx) };
+      calls: f.calls.slice(beforeCalls).filter(call => call.operation === "consume"), notices: notices.slice(beforeNotices), active: activeSources(ctx) };
   };
   const close = async () => {
     try { await emit("session_shutdown"); }
@@ -193,9 +226,10 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   };
   const failed = (code: string, item = record("required"), details: Record<string, unknown> = {}) => ({ version: 1, status: "failed", effects: noConsumptionWrites(),
     error: { code, message: "Controlled SDK failure", details: { ...details, preparation: { status: "failed", scope,
-      required: [], nodes: [{ state: "failed", id: item.id, ref: item.ref, roles: ["root"], error: { code, details: { id: item.id } } }] } } } });
-  const read = async (path: string, refresh?: boolean) => {
-    const input = { path, ...(refresh === undefined ? {} : { refresh }) }, toolCallId = "read-" + branch.length;
+      required: [], nodes: [{ state: "failed", id: item.id, ref: item.ref, roles: ["root"], error: { code, details: { id: item.id,
+        ...(typeof details.page_id === "string" ? { page_id: details.page_id } : {}) } } }] } } } });
+  const read = async (path: string, refresh?: boolean, from?: string) => {
+    const input = { path, ...(refresh === undefined ? {} : { refresh }), ...(from === undefined ? {} : { from }) }, toolCallId = "read-" + branch.length;
     const admitted = await emit("tool_call", { toolName: "read", toolCallId, input });
     const blocked = admitted.find(value => value && typeof value === "object" && "block" in value);
     if (blocked) throw Object.assign(new Error(String(Reflect.get(blocked, "reason"))), { admission: Reflect.get(blocked, "admission") });
@@ -204,7 +238,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
     return { role: "toolResult", ...event, ...(result as Record<string, unknown> ?? {}) } as AgentMessage;
   };
   const command = (name: string) => { const found = commands.get(name); assert.ok(found); return found; };
-  return { f, record, ready, failed, revise, seed, seedLocal, turn, close, emit, ctx, tool, command, branch, read,
+  return { f, record, ready, failed, revise, seed, seedLocal, turn, close, emit, ctx, api, tool, command, branch, read,
     fixedRef: (record: SkillRecord) => createSessionShortRefHost(api).selected(ctx, record),
     selected: () => sessionSelection(ctx), active: () => activeSources(ctx), delivered };
 }

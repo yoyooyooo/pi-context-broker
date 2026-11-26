@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { notionPageId } from "./native-reference";
 import { normalizeSources } from "./sources";
 import type { ExtensionContext } from "./types";
 
@@ -21,11 +22,13 @@ async function readConfiguration(path: string): Promise<string | null> {
 
 /** Preview and apply share the exact selected file and content digest. This
  * changes configuration only; remote readiness and body delivery remain separate. */
-export async function connectNotionSource(input: { source: string; entry: string; configPath: string; apply?: string }) {
-  if (!/^[\p{L}\p{N}._-]+$/u.test(input.source) || !input.entry || /\s|\0/u.test(input.entry) || input.entry.length > 2048)
-    throw error("INVALID_ARGUMENT", "Choose a source ID and the single library entry returned by init/attach");
+export async function connectNotionSource(input: { source: string; library: string; configPath: string; apply?: string }) {
+  if (!/^[\p{L}\p{N}._-]+$/u.test(input.source) || !input.library || /\s|\0/u.test(input.library) || input.library.length > 2048)
+    throw error("INVALID_ARGUMENT", "Choose a source ID and the Library root returned by init");
   if (!isAbsolute(input.configPath) || ![".json", ".yaml", ".yml"].includes(extname(input.configPath)))
     throw error("SOURCE_CONNECTION_CONFIG_REQUIRED", "Choose one absolute .json/.yaml/.yml config file using --config or CONTEXT_BROKER_CONFIG");
+  const library = notionPageId(input.library);
+  if (!library) throw error("INVALID_ARGUMENT", "Choose a Library root page ID or Notion URL");
   const original = await readConfiguration(input.configPath);
   let parsed: unknown;
   try { parsed = original === null ? {} : extname(input.configPath) === ".json" ? JSON.parse(original) : parseYaml(original); }
@@ -33,12 +36,12 @@ export async function connectNotionSource(input: { source: string; entry: string
   if (!object(parsed)) throw error("SOURCE_CONFIG_INVALID", "The selected config must be an object");
   const sources = normalizeSources(parsed.sources) ?? [];
   const previous = sources.find(source => source.id === input.source);
-  if (previous && (previous.type !== "notion" || previous.database !== input.entry || previous.enabled === false))
+  if (previous && (previous.type !== "notion" || previous.library !== library || previous.enabled === false))
     throw error("SOURCE_CONNECTION_CONFLICT", "This source ID already has a different or disabled configuration. Choose a new ID or edit it explicitly.");
   const duplicate = sources.find(source => source.id !== input.source && ((source.namespace ?? source.id) === input.source
-    || source.type === "notion" && source.database === input.entry));
-  if (duplicate) throw error("SOURCE_CONNECTION_CONFLICT", `The entry or namespace is already configured as ${duplicate.id}; reuse that source.`);
-  const proposed = { id: input.source, type: "notion", database: input.entry, prefetch: false };
+    || source.type === "notion" && source.library === library));
+  if (duplicate) throw error("SOURCE_CONNECTION_CONFLICT", `The library or namespace is already configured as ${duplicate.id}; reuse that source.`);
+  const proposed = { id: input.source, type: "notion", library, prefetch: false };
   const digest = hash(JSON.stringify([input.configPath, original, proposed]));
   const changed = previous === undefined;
   let backupPath: string | undefined;
@@ -62,13 +65,13 @@ export async function connectNotionSource(input: { source: string; entry: string
   }
   const applied = input.apply !== undefined;
   return { version: 1, kind: "source_connection", status: applied ? changed ? "configuration_saved" : "already_configured" : "preview",
-    source: { id: input.source, type: "notion", database: input.entry, prefetch: previous?.prefetch ?? false },
+    source: { id: input.source, type: "notion", library, prefetch: previous?.prefetch ?? false },
     config_path: input.configPath, preview_sha256: digest, changed: applied && changed, ...(backupPath ? { backup_path: backupPath } : {}),
     remote_library: "not_verified", local_registration: applied || previous !== undefined ? "configured" : "not_configured",
     pi_connection: "reload_required", body_read: "not_observed", remote_writes: "none",
     concurrent_edit_precondition: original === null ? "exclusive_create" : "digest_recheck_not_atomic",
     next: applied ? ["Restart Pi with CONTEXT_BROKER_CONFIG set to config_path, or /reload when it already names this file.", "/context-broker doctor", "Use notion_list to discover metadata; read an exact returned ref for an introduction, or notion_use to apply its instructions."]
-      : [`/context-broker connect ${input.source} ${input.entry} --config ${JSON.stringify(input.configPath)} --apply ${digest}`, "Run the apply command only after accepting this selected config and source."] };
+      : [`/context-broker connect ${input.source} ${input.library} --config ${JSON.stringify(input.configPath)} --apply ${digest}`, "Run the apply command only after accepting this selected config and source."] };
 }
 
 export async function handleSourceConnection(args: string, ctx: ExtensionContext): Promise<boolean> {
@@ -83,18 +86,18 @@ export async function handleSourceConnection(args: string, ctx: ExtensionContext
       end = match.index! + token.length;
     }
     if (args.slice(end).trim()) throw error("INVALID_ARGUMENT", "Unclosed command argument; quote paths with JSON double quotes");
-    const [, source, entry, ...flags] = tokens;
+    const [, source, library, ...flags] = tokens;
     let configPath = process.env.CONTEXT_BROKER_CONFIG, apply: string | undefined;
     const used = new Set<string>();
     for (let index = 0; index < flags.length; index += 2) {
       const key = flags[index], value = flags[index + 1];
-      if (!key || used.has(key) || !value || !["--config", "--apply"].includes(key)) throw error("INVALID_ARGUMENT", "Usage: /context-broker connect SOURCE ENTRY [--config ABSOLUTE_FILE] [--apply PREVIEW_SHA256]");
+      if (!key || used.has(key) || !value || !["--config", "--apply"].includes(key)) throw error("INVALID_ARGUMENT", "Usage: /context-broker connect SOURCE LIBRARY_ROOT [--config ABSOLUTE_FILE] [--apply PREVIEW_SHA256]");
       used.add(key);
       if (key === "--config") configPath = value;
       else apply = value;
     }
-    if (!source || !entry || !configPath) throw error("SOURCE_CONNECTION_CONFIG_REQUIRED", "Usage: /context-broker connect SOURCE ENTRY --config /absolute/config.json. Preview first; no default or global config is selected implicitly.");
-    const result = await connectNotionSource({ source, entry, configPath, apply });
+    if (!source || !library || !configPath) throw error("SOURCE_CONNECTION_CONFIG_REQUIRED", "Usage: /context-broker connect SOURCE LIBRARY_ROOT --config /absolute/config.json. Preview first; no default or global config is selected implicitly.");
+    const result = await connectNotionSource({ source, library, configPath, apply });
     ctx.ui?.notify?.(JSON.stringify(result, null, 2), "info");
   } catch (failure) {
     ctx.ui?.notify?.(failure instanceof Error ? failure.message : "Source configuration failed", "error");

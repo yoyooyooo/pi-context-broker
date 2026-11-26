@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { setImmediate } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { currentNotionFixture } from "./fixtures/current-notion-source";
 import type { AutocompleteProvider, ExtensionAPI, ExtensionContext, NativeSkillSearchDefinition } from "../src/types";
@@ -79,9 +78,8 @@ try {
   closeSession = () => within(emit("session_shutdown", next), "session cleanup");
   await contextBroker(api);
   assert.ok(metadataTool);
-  // The public tool awaits initial metadata readiness without inventing a session.
-  const bootstrap = await metadataTool.execute("bootstrap-observation", {}, undefined, undefined, { cwd: root });
-  assert.equal(JSON.parse(bootstrap.content[0]!.text).count, 0);
+  // Registration alone performs no selection or directory I/O. An explicit tool
+  // invocation now selects the current Library, so start the real session first.
   assert.deepEqual(fixture.calls, [], "Pi registration must not query a directory before its first session context");
   await emit("session_start", first);
   await within(refreshEntered.promise, "SDK catalogue refresh");
@@ -121,6 +119,7 @@ try {
   await writeFile(config, JSON.stringify({ skillRoots: [], sources: [{ ...fixture.source, cacheDir: join(root, "shutdown-cache") }] }));
   listeners.clear();
   let sdkSettled = false;
+  const sdkSettlement = Promise.withResolvers<void>();
   fixture.state.list = async options => {
     assert.ok(options.signal, "Pending SDK operations must remain owned by the session");
     const signal = options.signal;
@@ -130,13 +129,15 @@ try {
     shutdownEntered.resolve(signal);
     try {
       await shutdownAborted.promise;
-      // The signal is observed before SDK cleanup completes. Shutdown owns both.
+      // The signal is observed before SDK cleanup completes. Cleanup may stall,
+      // so it cannot own the user's session shutdown.
       await releaseShutdownSettlement.promise;
       signal.throwIfAborted();
       return list(options);
     } finally {
       signal.removeEventListener("abort", observeAbort);
       sdkSettled = true;
+      sdkSettlement.resolve();
     }
   };
   await contextBroker(api);
@@ -147,18 +148,18 @@ try {
   let shutdownReturned = false;
   const closing = emit("session_shutdown", next).then(() => { shutdownReturned = true; });
   await within(shutdownAborted.promise, "SDK cancellation");
-  await setImmediate();
+  await within(closing, "nonblocking session shutdown");
   assert.equal(shutdownSignal.aborted, true);
-  assert.equal(shutdownReturned, false, "Shutdown must await SDK cleanup after aborting its pending catalogue operation");
+  assert.equal(shutdownReturned, true, "Shutdown cannot wait for SDK cleanup after cancelling its catalogue operation");
   assert.equal(sdkSettled, false);
   releaseShutdownSettlement.resolve();
-  await within(closing, "pending SDK settlement");
-  assert.equal(sdkSettled, true, "Shutdown returns only after the owned SDK operation settles");
+  await within(sdkSettlement.promise, "cancelled SDK settlement");
+  assert.equal(sdkSettled, true, "Owned SDK cleanup still settles independently after shutdown");
   assert.deepEqual(notices, [], "A cancelled catalogue must not notify a retired session");
   const callsAfterShutdown = fixture.calls.length;
   assert.equal(await providers.at(-1)!.getSuggestions(["$"], 0, 1), null, "The retired menu cannot restart catalogue discovery");
   assert.equal(fixture.calls.length, callsAfterShutdown, "A retired provider must not start another SDK operation");
-  console.log("catalog session checks passed: current paired SDK metadata; delayed refresh survives context retirement; old menu stays pinned; retained provider uses the replacement session; shutdown aborts and awaits SDK settlement");
+  console.log("catalog session checks passed: current paired SDK metadata; delayed refresh survives context retirement; old menu stays pinned; retained provider uses the replacement session; shutdown cancels without joining SDK settlement");
 } finally {
   releaseRefresh.resolve();
   shutdownAborted.resolve();

@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
@@ -92,13 +93,13 @@ await json(join(directory, "plan.json"), plan);
 const checks = [], children = [], files = new Set();
 function check(name, detail = {}) { checks.push({ name, status: "passed", monotonic_ns: String(process.hrtime.bigint()), ...detail }); }
 function fixture(name = "owner", revision = "one", resourcePath = "resources/guide.md") {
-  const id = "shared_skill:state-fixture:" + name, ref = "skill://" + encodeURIComponent(id) + "/";
+  const id = nativeSkillId("f6b7ef91-7fef-5cbe-a280-aa9dcb0da91b", String(name)), ref = id;
   const record = { id, kind: "skill", name, alias: name, description: "Controlled state-only fixture", enabled: true, default_context: false,
-    entrypoint: "SKILL.md", ref: ref + "SKILL.md", locator: { type: "shared_skill", library_id: "state-fixture", skill_id: name,
+    entrypoint: "SKILL.md", ref: nativeFileRef(ref, "SKILL.md"), locator: { type: "shared_skill", library_id: "f6b7ef91-7fef-5cbe-a280-aa9dcb0da91b", skill_id: name,
       page_id: "00000000-0000-4000-8000-" + hash(name).slice(0, 12), database_id: uuid(10), data_source_id: uuid(11) } };
   const body = "Controlled instructions " + name + " " + revision + ".\n", snapshotId = "s_" + hash(name + " snapshot " + revision), versionId = hash(name + " version " + revision);
-  const files = [{ path: "SKILL.md", bytes: Buffer.byteLength(body), sha256: hash(body), ref: ref + "SKILL.md?snapshot=" + snapshotId + "&file_id=main" },
-    { path: resourcePath, bytes: 8, sha256: hash("resource"), ref: ref + resourcePath + "?snapshot=" + snapshotId + "&file_id=guide" }];
+  const files = [{ path: "SKILL.md", bytes: Buffer.byteLength(body), sha256: hash(body), ref: nativeFileRef(ref, "SKILL.md", String(snapshotId)) },
+    { path: resourcePath, bytes: 8, sha256: hash("resource"), ref: nativeFileRef(ref, String(resourcePath), String(snapshotId)) }];
   const metadata = { ...record, source: "notion", sourceId: "controlled", sourceScope: scope, path: join(directory, "not-materialized", "SKILL.md"),
     aliases: [], normalizedAliases: [], normalizedName: name, normalizedDescription: record.description, autoloadEnabled: false };
   const selected = { ...metadata, body, snapshotId, versionId,
@@ -184,7 +185,7 @@ try {
   check("compaction_preserves_reference_map");
   const finalResume = await restart("independent_resume_refreshed_and_compacted", manager, [...shared, mainB, resourceB], [leftOnly, rightOnly]);
   const portable = finalResume.mappings.filter(item => item.exported).map(item => item.exported);
-  assert.ok(portable.every(item => item.ref.includes("?snapshot=s_") && item.owner.version_id && item.owner.identity.locator));
+  assert.ok(portable.every(item => item.ref.includes("&snapshot=s_") && item.owner.version_id && item.owner.identity.locator));
   assert.equal(JSON.stringify(portable).includes("sr:"), false);
   assert.equal(JSON.stringify(portable).includes(directory), false);
   await json(join(directory, "canonical-exports.json"), portable);
