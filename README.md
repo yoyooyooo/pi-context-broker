@@ -159,7 +159,7 @@ sources:
     # Use library.library_id: the Library root page, not a table ID.
     library: 00000000-0000-0000-0000-000000000000
     discovery: {maxAge: 5m, offline: false}
-    activation: {maxAge: 5m, offline: false}
+    activation: {maxAge: 1h, offline: false}
     prefetch: false
 ```
 
