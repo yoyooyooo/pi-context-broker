@@ -11,6 +11,7 @@ import { bindReferences, candidateDifferences, createEpisodeRecorder, exists, fi
 import { codemodeExtensionOptions, createEpisodeBudget, EpisodeStop, guardedFetch, providerUsage } from './episode-policy.mjs';
 import { observeEpisodeNotion } from './episode-notion.mjs';
 import { assessReportedModel, providerReportedModel, validateRoutingPolicy } from '../reported-model.mjs';
+import { nativeFileRef } from '../../packages/context-broker/src/native-reference.ts';
 
 const ADMISSION_PROMPT = 'Benchmark candidate admission. Do not call tools. This request will be stopped before provider transmission.';
 const sourceEnvironment = ['PAIRED_CLI_SOURCE', 'PAIRED_BROKER_SOURCE', 'CONTEXT_BROKER_GRAPH_CORE', 'NTN_SKILLS_BUILD_ENTRY'];
@@ -83,7 +84,7 @@ export function finishEpisodeRequest({ request, budget, routing, captureOnly, re
 
 /** Candidate handles are random per branch. Resolve them with the actual product
  * reducer, then bind them to the independently observed complete catalog. */
-export function catalogCandidateReferences({ shortRefs, catalogs }) {
+export function catalogCandidateReferences({ shortRefs, catalogs, formatReference = nativeFileRef }) {
   assert.ok(shortRefs?.bindings instanceof Map, 'BENCHMARK_CATALOG_REFERENCE_STATE_REQUIRED');
   assert.ok(Array.isArray(catalogs?.catalogs), 'BENCHMARK_CATALOG_REFERENCE_CATALOG_REQUIRED');
   const records = catalogs.catalogs.flatMap(catalog => catalog.facets
@@ -97,7 +98,7 @@ export function catalogCandidateReferences({ shortRefs, catalogs }) {
     const matches = records.filter(({ scope, record }) => identity.source === 'notion' && identity.scope === scope
       && identity.id === record.id && identity.kind === record.kind && record.enabled === true
       && JSON.stringify(normalizeCandidate(identity.locator, {})) === JSON.stringify(normalizeCandidate(record.locator, {}))
-      && record.ref === identity.ref + '/' + record.entrypoint.split('/').map(encodeURIComponent).join('/'));
+      && record.ref === formatReference(identity.ref, record.entrypoint));
     assert.equal(matches.length, 1, 'BENCHMARK_CATALOG_REFERENCE_IDENTITY_MISMATCH');
     const binding = { identity: structuredClone(identity), record: structuredClone(matches[0].record) };
     references.push({ ref, ...binding, canonical: 'benchmark-candidate:' + sha256(JSON.stringify(normalizeCandidate(binding, {}))) });
