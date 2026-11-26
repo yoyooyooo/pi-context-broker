@@ -10,6 +10,7 @@ const options = ['--package', '/owned/installed', '--fixture', '/owned/current.j
 test('current command boundary rejects retired or ambiguous invocation before I/O', () => {
   assert.equal(parseArgs(['doctor', ...options, '--pi', '/owned/pi']).action, 'doctor');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-cache-recovery'])['--scenario'], 'http-cache-recovery');
+  assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-warm-restart'])['--scenario'], 'http-warm-restart');
   for (const args of [
     ['cleanup', '--evidence', '/owned/result'], ['run', ...options], ['run', ...options, '--out', 'relative'],
     ['run', ...options, '--out', '/owned/result', '--scenario', 'native-repeat'],

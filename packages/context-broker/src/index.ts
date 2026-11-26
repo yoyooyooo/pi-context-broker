@@ -1543,7 +1543,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const pairedCatalogGenerations = new WeakMap<DiscoveryResult, { menu: number; refresh: number; forceViewRefresh?: true }>();
   const catalogCwd = (cwd: string) => { try { return realpathSync(cwd); } catch { return resolve(cwd); } };
   const catalogKey = (cwd: string, ctx?: ExtensionContext) => JSON.stringify([catalogCwd(cwd), librarySelection.key(ctx)]);
-  const directoryConfig = async (ctx?: ExtensionContext) => { const selected = await librarySelection.selected(ctx); return { ...config, sources: selected ? [selected.source] : [] }; };
+  const directoryConfig = async (ctx?: ExtensionContext) => { const selected = await librarySelection.identity(ctx); return { ...config, sources: selected ? [selected.source] : [] }; };
   const unseenChanges = (cwd: string) => new Map([...sourceChanges].filter(([id, version]) => (observedChangesByCwd.get(cwd)?.get(id) ?? 0) < version));
   const publishCatalog = (cwd: string, promise: Promise<DiscoveryResult>, changes = new Map<string, number>()) => {
     if (catalogOwner.signal.aborted) return Promise.reject(catalogOwner.signal.reason);
@@ -1595,7 +1595,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const refreshCatalog = async (cwd: string, current: DiscoveryResult, ctx?: ExtensionContext): Promise<DiscoveryResult> => {
     ctx = librarySelection.capture(ctx ?? { cwd });
     const key = catalogKey(cwd, ctx);
-    const source = (await librarySelection.selected(ctx))?.source;
+    const source = (await librarySelection.identity(ctx))?.source;
     const sourceIds = source && !source.discovery?.offline ? [source.id] : [];
     let pending = notionRefresh.get(key);
     if (!pending) {
@@ -1636,20 +1636,20 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const currentCatalog = async (cwd = process.cwd(), ctx = menuContext): Promise<DiscoveryResult> => {
     ctx = librarySelection.capture(ctx ?? { cwd });
     const result = await getCatalog(cwd, ctx), key = catalogKey(cwd, ctx);
-    const source = (await librarySelection.selected(ctx))?.source;
+    const source = (await librarySelection.identity(ctx))?.source;
     const sourceIds = source && !source.discovery?.offline ? [source.id] : [];
     const action = notionCatalogAction({ offline: false, sourceIds, observations: result.lists ?? [],
       failedSourceIds: result.failures.map(failure => failure.sourceId), now: Date.now(), retryAt: notionRetryAt.get(key) });
     return action === "refresh" ? refreshCatalog(catalogCwd(cwd), result, ctx) : result;
   };
   const defaultRecords = async (records: DiscoveryResult["records"], ctx?: ExtensionContext) => {
-    const selected = await librarySelection.selected(ctx);
+    const selected = await librarySelection.identity(ctx);
     return records.filter(record => record.source !== "notion" || record.sourceId === selected?.source.id);
   };
   const explicitCatalogs = new WeakMap<LibraryContext, Map<string, Promise<DiscoveryResult<SkillRecord>>>>();
   const getDollarRegistry = async (cwd = process.cwd(), ctx = menuContext, text?: string, signal?: AbortSignal) => {
     ctx = librarySelection.capture(ctx ?? { cwd });
-    const selected = await librarySelection.selected(ctx);
+    const selected = await librarySelection.identity(ctx);
     const records = await defaultRecords((await currentCatalog(cwd, ctx)).records, ctx);
     if (!selected || !text) return records;
     const queries = parseInvocations(text, configuredRules(config)).filter(request => request.scope === "global" || request.scope === "catalog").map(request => request.query);
@@ -1841,16 +1841,16 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       }
     }, signal),
     lookupReference: (ctx, signal) => ownCatalog(async owned => {
-      const selected = await librarySelection.selected(ctx);
+      const selected = await librarySelection.identity(ctx);
       return discoverSourceCatalog({ ...config, sources: selected ? [selected.source] : [] }, ctx.cwd, { signal: owned,
         refreshSourceIds: selected && !selected.source.discovery?.offline ? [selected.source.id] : [] });
     }, signal),
     resolveSkillReference: (ref, ctx, signal, refresh, sourceId) => ownCatalog(async owned => {
       const parsed = parseNotionReference(ref);
       const exactLibrary = hasExactNativeOwner(parsed) ? nativeReferenceLibrary(parsed) : undefined;
-      const sources = exactLibrary === undefined ? (await librarySelection.selected(ctx))?.sources ?? []
+      const sources = exactLibrary === undefined ? (await librarySelection.identity(ctx))?.sources ?? []
         : await librarySelection.route(exactLibrary, ctx);
-      const selected = exactLibrary === undefined && sourceId === undefined ? (await librarySelection.selected(ctx))?.source.id : sourceId;
+      const selected = exactLibrary === undefined && sourceId === undefined ? (await librarySelection.identity(ctx))?.source.id : sourceId;
       return resolveNotionReference(ref, sources.filter(source => selected === undefined || source.id === selected), ctx.cwd ?? process.cwd(), { signal: owned, refresh });
     }, signal),
     resolveRelativeReference: (record, from, path, ctx, signal, policy) => sourceRuntime.foreground(async () => {
@@ -2042,7 +2042,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   });
   installSkillGuidance(pi, config, paths, ctx => {
     const captured = librarySelection.capture(host.turnContext(ctx));
-    const selected = libraryContext(captured)?.peek();
+    const selected = libraryContext(captured)?.local();
     return { ...config, sources: [...(config.sources ?? []).filter(source => source.type !== "notion"), ...selected?.sources ?? []] };
   });
   // Host metadata generations must retire before cancelled source promises
