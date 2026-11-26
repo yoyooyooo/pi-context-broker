@@ -113,6 +113,30 @@ test("Stop leaves a cancelled transcript row and retires a late result", async (
   expect(f.widgets).toEqual([]); expect(f.messages).toEqual([]);
 });
 
+for (const delivered of [false, true])
+test(`Stop preserves ${delivered ? "loaded" : "ready"} preparation and retires further updates`, async () => {
+  const f = await fixture();
+  const finish = f.feedback.begin(record, f.ctx, "use", source);
+  const row = f.component();
+  finish?.({ value: record });
+  if (delivered) f.feedback.confirmPrepared(f.ctx);
+  const expected = `[skill@notion] reframe · ${delivered ? "loaded" : "ready"} (alt+o to expand)`;
+  expect(f.visible(row)).toBe(expected);
+  const count = f.entries.length;
+  f.feedback.clearPending(f.ctx);
+  expect(f.visible(row)).toBe(expected);
+  expect(f.entries).toHaveLength(count);
+  finish?.({ error: "Cancelled." });
+  f.feedback.confirmPrepared(f.ctx);
+  expect(f.feedback.failPending(f.ctx, "Late provider failure")).toBe(false);
+  expect(f.visible(row)).toBe(expected);
+  expect(f.entries).toHaveLength(count);
+  f.feedback.restore(f.ctx);
+  expect(f.render()).toBe(expected);
+  expect(f.rows()).toHaveLength(1);
+  expect(f.widgets).toEqual([]); expect(f.messages).toEqual([]);
+});
+
 test("session replacement cannot recover another branch's result or accept its late producer", async () => {
   const f = await fixture();
   f.feedback.begin(record, f.ctx, "use", source)?.({ value: record });
