@@ -129,9 +129,16 @@ inputs may share this expectation. Each actual episode independently verifies
 its public input bytes, loaded resources and first serialized request before
 transport. An expectation mismatch stops before submitting the business task.
 
-Broker admission awaits the existing `/context-broker refresh` command before
-projecting the initial context. This waits for catalog publication; transport
-idleness alone cannot update a context already captured during discovery.
+Broker admission first joins the existing catalog owner through
+`/context-broker status`, then calls the public `notion_list({})` metadata tool
+when a Notion source is configured. That tool waits for host metadata publication;
+transport idleness alone does not establish publication. The preparation probe
+does not force a remote refresh, adopt a Skill, or deliver its result to the model.
+Its result and SDK/HTTP observations remain preparation evidence, separate from
+business tool counts and provider calls. Roots/catalogs and the initial context
+are captured after that boundary. Startup and first-payload idle waits follow
+the run's declared bounded duration or unbounded policy and cancellation; they
+have no additional five-second deadline. Cleanup keeps its bounded settlement.
 Capture and execution must use the same credential injection for their named
 environment variables so their projections undergo the same redaction. Capture still blocks
 provider transport and business tool execution. Keep older expectations and

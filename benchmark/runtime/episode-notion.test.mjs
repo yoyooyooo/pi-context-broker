@@ -109,6 +109,53 @@ test('repeated catalog lists replace one source/library projection while retaini
   assert.ok(result.operations.every(item => item.status === 'completed' && item.result_observed && item.receipt_ref));
 });
 
+test('SDK idle waits on actual settlement without an implicit startup deadline', async t => {
+  const f = await fixture(), controller = new AbortController(), reason = new Error('CONTROLLED_IDLE_CANCELLED');
+  let rows, settled = false;
+  try {
+    f.operation('list', catalog(), { sequence: value => { rows = value; return value.slice(0, 1); } });
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const pending = f.observer.waitIdle(null, { signal: controller.signal });
+    pending.then(() => { settled = true; }, () => { settled = true; });
+    t.mock.timers.tick(60000); await Promise.resolve();
+    assert.equal(settled, false, 'An active SDK owner has no implicit five-second deadline');
+    controller.abort(reason); await assert.rejects(pending, error => error === reason);
+    t.mock.timers.reset();
+    for (const [name, event] of rows.slice(1)) publish(name, event);
+    assert.equal(await f.observer.waitIdle(), true);
+  } finally { t.mock.timers.reset(); await f.close(); }
+});
+
+test('explicit idle deadline and caller cancellation preserve the active operation', async () => {
+  const f = await fixture(); let rows;
+  try {
+    f.operation('list', catalog(), { sequence: value => { rows = value; return value.slice(0, 1); } });
+    assert.equal(await f.observer.waitIdle(5), false);
+    assert.throws(() => f.observer.candidate(), /STARTUP_PENDING/);
+    const controller = new AbortController(), reason = new Error('BENCHMARK_WALL_LIMIT');
+    const pending = f.observer.waitIdle(null, { signal: controller.signal });
+    controller.abort(reason); await assert.rejects(pending, error => error === reason);
+    assert.throws(() => f.observer.candidate(), /STARTUP_PENDING/);
+    for (const [name, event] of rows.slice(1)) publish(name, event);
+    assert.equal(await f.observer.waitIdle(), true);
+    assert.equal(f.observer.candidate([{ type: 'notion', id: 'notion' }]).projection.catalogs.length, 1);
+  } finally { await f.close(); }
+});
+
+test('an invalid terminal rejects an unbounded idle waiter and preserves the observer failure', async () => {
+  const f = await fixture(); let rows, terminal;
+  try {
+    f.operation('list', catalog(), { sequence: value => { rows = value; return value.slice(0, 1); } });
+    const pending = f.observer.waitIdle();
+    const [channel, end] = rows.at(-1);
+    publish(channel, { ...end, operation: 'files' });
+    await assert.rejects(pending, /BENCHMARK_NOTION_OBSERVER_ERROR/);
+  } finally { terminal = await f.close(); }
+  assert.equal(terminal.coverage.sdk, 'partial');
+  const events = fs.readFileSync(path.join(f.controlDir, 'events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.ok(events.some(event => event.type === 'notion_observer_error' && /UNPAIRED_END/.test(event.data.message)));
+});
+
 test('both real SDK3 captures keep the full catalog when a cached single directory follows the combined response', async t => {
   for (const captured of capturedCatalogSequences) await t.test(captured.episode, async () => {
     const f = await fixture();

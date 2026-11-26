@@ -20,6 +20,38 @@ const selectedModel = model => Object.fromEntries(['id', 'name', 'provider', 'ap
 const errorData = error => ({ name: error?.name ?? 'Error', code: error?.code ?? null, message: String(error?.message ?? error), details: error?.details ?? null });
 const bounded = async (promise, milliseconds, fallback) => { let timer; try { return await Promise.race([promise, new Promise(resolve => { timer = setTimeout(() => resolve(fallback), milliseconds); })]); } finally { clearTimeout(timer); } };
 
+/** Status joins the existing catalog owner. The public metadata tool also waits
+ * for host publication, which can outlive SDK transport. Its result is evidence
+ * of preparation only: never a model message, adopted Skill or business call. */
+export async function awaitBrokerAdmission({ session, sources = [], signal, record = () => {}, save = async () => null }) {
+  signal?.throwIfAborted();
+  await session.prompt('/context-broker status');
+  signal?.throwIfAborted();
+  if (sources.some(source => source.type === 'notion' && source.enabled !== false)) {
+    const tool = session.getToolDefinition('notion_list');
+    assert.equal(typeof tool?.execute, 'function', 'BENCHMARK_NOTION_ADMISSION_TOOL_UNAVAILABLE');
+    assert.equal(typeof session.extensionRunner?.createToolContext, 'function', 'BENCHMARK_TOOL_CONTEXT_UNAVAILABLE');
+    const callId = 'benchmark-admission-notion-directory';
+    record('admission_metadata_probe_start', { tool: 'notion_list', input: {}, scope: 'prepare-only; no model delivery or Skill adoption' });
+    let result;
+    try {
+      result = await tool.execute(callId, {}, signal, undefined, session.extensionRunner.createToolContext(callId, signal));
+      signal?.throwIfAborted();
+    } catch (error) {
+      record('admission_metadata_probe_error', { tool: 'notion_list', error: errorData(error) });
+      throw error;
+    }
+    const resultRef = await save('admission-notion-directory', result);
+    record('admission_metadata_probe_end', { tool: 'notion_list', result_ref: resultRef, ok: result?.details?.ok === true && result?.isError !== true });
+    assert.ok(result?.isError !== true && result?.details?.ok === true, 'BENCHMARK_NOTION_STARTUP_UNAVAILABLE');
+  }
+  for (const command of ['roots', 'catalogs']) {
+    signal?.throwIfAborted();
+    await session.prompt('/context-broker ' + command);
+  }
+  signal?.throwIfAborted();
+}
+
 /** A blocked SDK stream call has no request identity and cannot replace the
  * previous assistant receipt. Preserve its local exception before SDK wrapping. */
 export function reserveEpisodeRequest({ budget, captureOnly, clearRequest, onStop, priorStop }) {
@@ -208,7 +240,7 @@ function assertModel(config, model, thinkingLevel) {
   if (thinkingLevel !== undefined) assert.equal(thinkingLevel, config.model.parameters.thinkingLevel, 'BENCHMARK_THINKING_LEVEL_DRIFT');
 }
 
-async function captureCandidate({ config, profile, session, installation, visibility, notifications, prefixes, scrub, notion, referenceReader }) {
+async function captureCandidate({ config, profile, session, installation, visibility, notifications, prefixes, scrub, notion, referenceReader, signal }) {
   const loaded = session.resourceLoader.getExtensions();
   assert.equal(loaded.errors.length, 0, 'BENCHMARK_EXTENSION_LOAD_ERROR');
   const extensions = await Promise.all(loaded.extensions.map(async extension => ({
@@ -220,13 +252,13 @@ async function captureCandidate({ config, profile, session, installation, visibi
   const native = session.resourceLoader.getSkills();
   const skills = await Promise.all(native.skills.map(async skill => ({ ...skill, file: await fileIdentity(skill.filePath) })));
   const roots = await Promise.all(profile.native_skill_roots.map(async root => ({ root, ...await inventory(root) })));
-  const initial = [{ role: 'system', content: session.systemPrompt, toolsAdded: session.agent.state.tools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })), timestamp: 0 }];
-  const projected = session.agent.transformContext ? await session.agent.transformContext(initial) : initial;
   const brokerConfig = process.env.CONTEXT_BROKER_CONFIG;
   assert.ok(brokerConfig && inside(config.runRoot, brokerConfig), 'BENCHMARK_BROKER_CONFIG_NOT_RUN_OWNED');
   const brokerConfiguration = await readJson(brokerConfig);
-  assert.ok(await notion.waitIdle(), 'BENCHMARK_NOTION_STARTUP_PENDING');
+  assert.ok(await notion.waitIdle(null, { signal }), 'BENCHMARK_NOTION_STARTUP_PENDING');
   const notionCatalogs = notion.candidate(brokerConfiguration.sources ?? []);
+  const initial = [{ role: 'system', content: session.systemPrompt, toolsAdded: session.agent.state.tools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })), timestamp: 0 }];
+  const projected = session.agent.transformContext ? await session.agent.transformContext(initial) : initial;
   const branch = session.sessionManager.getBranch();
   const catalogReferences = catalogCandidateReferences({ shortRefs: referenceReader ? referenceReader.reduce(branch) : { bindings: new Map() },
     catalogs: notionCatalogs.projection });
@@ -284,12 +316,14 @@ export async function runEpisode(input, hooks = {}) {
   let status = 'invalid', settled = false, cancelled = false, preflightModelAttempt = false, cleanup = { abort_settled: false, shutdown_emitted: false, dispose_called: false };
   const admission = { status: 'pending', refs: [] }, coverage = { attempts: 'unavailable', tools: 'unavailable', interventions: 'unavailable' };
   const transportPath = join(config.controlDir, 'transport.jsonl');
+  const runtimeController = new AbortController();
   let rejectStop;
   const stopping = new Promise((_, reject) => { rejectStop = reject; });
   stopping.catch(() => {});
   const stop = (code, details = {}) => {
     terminalError ??= new EpisodeStop(code, details);
     interventions.push({ kind: code, ref: recorder.record('runtime_intervention', { code, details }) });
+    runtimeController.abort(terminalError);
     rejectStop(terminalError); if (session) void session.abort().catch(() => {});
   };
   recorder.record('runtime_start', { entry_kind: 'pi-sdk', pid: process.pid, ppid: process.ppid, cwd: process.cwd(), runtime_module: fileURLToPath(import.meta.url), started_monotonic_ns: startedNs, no_automatic_model_retry: true });
@@ -364,11 +398,15 @@ export async function runEpisode(input, hooks = {}) {
     });
     await Promise.race([session.bindExtensions({ uiContext: ui, mode: 'rpc', onError: error => { extensionErrors.push(error); recorder.record('extension_error', error); }, shutdownHandler: () => stop('BENCHMARK_EXTENSION_SHUTDOWN') }), stopping]);
     if (config.mode === 'broker') {
-      for (const command of ['refresh', 'status', 'roots', 'catalogs']) await Promise.race([session.prompt('/context-broker ' + command), stopping]);
+      const brokerConfig = process.env.CONTEXT_BROKER_CONFIG;
+      assert.ok(brokerConfig && inside(config.runRoot, brokerConfig), 'BENCHMARK_BROKER_CONFIG_NOT_RUN_OWNED');
+      const brokerConfiguration = await readJson(brokerConfig);
+      await Promise.race([awaitBrokerAdmission({ session, sources: brokerConfiguration.sources ?? [], signal: runtimeController.signal,
+        record: recorder.record, save: recorder.save }), stopping]);
       assert.equal(preflightModelAttempt, false, 'BENCHMARK_DIAGNOSTIC_STARTED_MODEL');
     }
     assert.equal(extensionErrors.length, 0, 'BENCHMARK_EXTENSION_STARTUP_ERROR');
-    capture = await captureCandidate({ config, profile, session, installation, visibility, notifications: [...notifications], prefixes, scrub: recorder.scrub, notion, referenceReader });
+    capture = await captureCandidate({ config, profile, session, installation, visibility, notifications: [...notifications], prefixes, scrub: recorder.scrub, notion, referenceReader, signal: runtimeController.signal });
     admission.refs.push(await recorder.save('candidate-observed', capture));
     admission.refs.push(await recorder.save('workspace-before-task', await inventory(config.workspace)));
     if (!config.admission.captureOnly) {
@@ -407,7 +445,7 @@ export async function runEpisode(input, hooks = {}) {
             request.final_payload_ref = recorder.record('provider_payload_final', { request_id: request.id, payload_ref: request.payload_ref, serialized_sha256: request.payload_sha256 });
             const prompt = config.admission.captureOnly ? ADMISSION_PROMPT : currentTurn.prompt;
             if (sequence === 1) {
-              assert.ok(await notion.waitIdle(), 'BENCHMARK_NOTION_STARTUP_PENDING');
+              assert.ok(await notion.waitIdle(null, { signal: runtimeController.signal }), 'BENCHMARK_NOTION_STARTUP_PENDING');
               const actualCatalogs = notion.candidate(capture.snapshot.broker_config.sources ?? []);
               const catalogDifferences = candidateDifferences(capture.projection.notion_catalogs, normalizeCandidate(actualCatalogs.projection, prefixes));
               request.catalog_contract_ref = await recorder.save('first-request-catalog-comparison', { actual: actualCatalogs, differences: catalogDifferences });
@@ -498,6 +536,7 @@ export async function runEpisode(input, hooks = {}) {
     recorder.record('runtime_error', errorData(terminalError));
   } finally {
     enterStage('cleanup');
+    runtimeController.abort(terminalError ?? new EpisodeStop('BENCHMARK_RUNTIME_CLOSED'));
     clearTimeout(timer);
     if (onSigTerm) process.off('SIGTERM', onSigTerm);
     if (onSigInt) process.off('SIGINT', onSigInt);

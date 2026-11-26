@@ -43,7 +43,7 @@ await runEpisode({
 The shared launcher supplies `models.json`; the SDK resolves the exact physical
 provider/model from it. Missing models, model fallback, changed API/base URL,
 changed thinking level, auxiliary model access and unsupported parameters fail.
-Model catalog network refresh, automatic agent/provider retries, cache warming
+Model catalog network refresh, automatic agent/provider retries, provider cache warmup
 and automatic compaction are disabled. The runtime explicitly loads the public
 CodeMode and tool-search factories. The shared profile disables MCP. CodeMode
 `off` leaves its registered tool inactive and rejects attempts to call it;
@@ -51,11 +51,11 @@ CodeMode and tool-search factories. The shared profile disables MCP. CodeMode
 is an evidence/grading decision, not a fabricated tool invocation.
 
 The subject wrapper moves the shared command run's `source/` outside the subject
-run and projects only non-test `episode-*.mjs` files and five maintained observation
-helpers: `scripts/skill-consumption-provider.mjs`,
-`scripts/skill-consumption-source-observer.mjs`,
-`scripts/notion-skill-graph-model-evidence.mjs`,
-`scripts/notion-default-context.mjs`, and `scripts/notion-integration-hosts.mjs`.
+run. `projectSubjectRuntime` in [subject.mjs](../benchmark/subject.mjs) selects
+the exact public dependency inventory: non-test episode modules, turn bridge,
+reported-model binding, maintained observation helpers, native-reference adapters
+and the paired reference producer/runtime manifest. Private fixture and grading
+code remain outside that projection.
 The visibility receipt is:
 
 ```json
@@ -82,8 +82,14 @@ and their files/resources, tool schemas/guidance/exposure, active/callable tools
 commands, settings, model configuration, source configuration, paired package
 identity, explicit SDK/adapter module hashes and the visible runtime inventory.
 
-For Broker it awaits the existing local status, roots and catalogs commands.
-A deny-stream is installed before these commands; an unexpected model dispatch
+For Broker it joins initial discovery through status, awaits the public
+`notion_list({})` metadata tool's publication boundary, then reads roots and
+catalogs. This declared preparation probe is recorded separately and is never
+delivered as a model message or business tool call. It does not request a forced
+refresh. The run starts with private source caches; preparation and business
+costs keep their own stages. This admission procedure alone does not establish
+ordinary end-user cold-start performance.
+A deny-stream is installed before these operations; an unexpected model dispatch
 is a failure. The current initial system prompt and active tool declarations also
 pass through Pi's public context transform. This preview is labeled separately
 because an initially empty session has no persisted system message yet.
