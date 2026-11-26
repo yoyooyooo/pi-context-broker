@@ -181,7 +181,7 @@ test('paired environments isolate writable state and detect artifact changes', a
   const roots = [join(retained, 'pair-a'), join(retained, 'pair-b')];
   const created = await Promise.all(roots.map(root => createEnvironment(parseArgs([
     'create', '--root', root, '--cli-repository', upstreamCli, '--broker-repository', upstreamBroker,
-    '--pi-entry', piEntry,
+    '--pi-entry', piEntry, '--capacity-estimate-bytes', String(8 * 1024 * 1024),
   ]))));
   const [rootA, rootB] = roots;
   const [buildA, buildB] = await Promise.all(roots.map(root => sealedBuild(root)));
