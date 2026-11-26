@@ -11,10 +11,10 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "35603414e40e5ff3a1d03f129bbfb84ef63c42d6481fc4d7210a2939a22436d5",
+    "packages/context-broker/src/host-skills.ts": "3b6697bceccac7978a58fe7200e64e5d8222fbbb0aef7bc34624b26ac32b2ece",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
-    "packages/context-broker/scripts/host-prepare.test.ts": "5144ba70c26e153c626d016fdd7fb83cc8db2244cfc641290e4eb5468ed5bcf9",
+    "packages/context-broker/scripts/host-prepare.test.ts": "ae4a06cbd471ff23b9cd1f48a1362faa4addde0851aa898f290407af280dcf99",
     "scripts/check-consumer-observation-mutations.mjs": "3ee2b6cc2909687ad54b619eff64b5722cfae5ead0c7a12c21bd013f8157801f",
     "packages/context-broker/scripts/host-refresh.test.ts": "525ae88b2622dfe07b6f2a2c55aee04db23c4cba29fd86c083c307609ceccc6c",
     "packages/context-broker/scripts/resource-read-host.test.ts": "1411774432d57f3cfff2a514d5d9cf237ae4b84f8479b519491bbea67280317d",
@@ -36,8 +36,8 @@
     "packages/context-broker/scripts/cli-write-invalidation.test.ts": "1469fd9eb3eac1ee2760a86f617091f76d4936836e0da0e0650da6b653cb8466",
     "packages/context-broker/src/sources.ts": "6d6021a9ee590790e402813caacc6de981192c514c52d004905cb1e4575918ce",
     "packages/context-broker/scripts/shared-notion-adapter.test.ts": "9b1b4c91ed6004242f63ad76a88c6cb683715458f816e9ca287152dee2f2929e",
-    "packages/context-broker/scripts/soft-miss-regressions.test.ts": "5b54c8e60af86b759435d1a76192c0468c18fe852354b329edc98dba5172761f",
-    "packages/context-broker/scripts/input-guard.test.ts": "032ad7609b29f1e8984ecb1a8c159ed50237d765e65d1ce5c1350df015c86baf"
+    "packages/context-broker/scripts/soft-miss-regressions.test.ts": "efb72840b43a9f29d520a8880545d73d9455caa47671fceb3979db03ec4d07d6",
+    "packages/context-broker/scripts/input-guard.test.ts": "9cc9b78836a78171e5e47a9e7d60ba18476bc46473dd1f653d28cb5c5f3a4958"
   },
   "models": {
     "Availability": {
@@ -410,7 +410,8 @@
       "guard_review": "Reviewed Availability, ReadRace, FreshnessPublication, SelectionGraph, DeliveryBoundary and RecoveryClosure mappings: no change to evidence/order/epoch/cancel/authorization, fixed-root or Requires commit, full body/serializer, active/pending projection or recovery guards. Presentation is not a new state writer. Added early-replay and ownership tests preserve existing execution assertions. 74 focused regressions and real Pi list/use/read plus fresh-process resume passed on bee95e8; CI must re-run all existing formal cases and actual guard mutations.",
       "proof_limit": "No change to finite domains, model actions, rules, cases or mutation targets. These hashes bind reviewed bytes only, not a refinement proof or live UI acceptance."
     },
-    "library_root_pi_rendering_integration": "Reviewed the Library root implementation rebased onto fa758957c799e886dd25069da19c283e9ab97387. Relative to the reviewed Library host, host-skills.ts adds only the optional renderer factory and two renderer spreads before explicit tool fields. All input admission, owner, Library selection, request ordering, publication, cancellation and graph commit guards retain their exact bytes. pi-host-adapter.ts is exactly the reviewed current next implementation. pi-read-adapter.test.ts retains the Library reference fixtures and adds the upstream replay/third-party ownership tests without weakening existing assertions. The consumption command includes both Library selection and renderer suites. Retest the combined source; these hashes are correspondence only, not a refinement proof or live acceptance."
+    "library_root_pi_rendering_integration": "Reviewed the Library root implementation rebased onto fa758957c799e886dd25069da19c283e9ab97387. Relative to the reviewed Library host, host-skills.ts adds only the optional renderer factory and two renderer spreads before explicit tool fields. All input admission, owner, Library selection, request ordering, publication, cancellation and graph commit guards retain their exact bytes. pi-host-adapter.ts is exactly the reviewed current next implementation. pi-read-adapter.test.ts retains the Library reference fixtures and adds the upstream replay/third-party ownership tests without weakening existing assertions. The consumption command includes both Library selection and renderer suites. Retest the combined source; these hashes are correspondence only, not a refinement proof or live acceptance.",
+    "explicit_pi_preparation_warning": "Reviewed explicit Pi acquisition only: preflight/task prompt/complete projection remain guarded by original scope, generation, identity and cancellation checks; timeout or acquisition failure retires the unconfirmed entry and staged graph/candidate/body, checks the captured signal after each await, and projects a warning plus original user input instead of cancelling the host. No partial selected vector, activation receipt or stale publication is admitted. Existing qualification, graph commit, final provider delivery and recovery-closure rules, bounds, negative cases and mutations remain unchanged; host-prepare/input-guard/soft-miss replays assert no body, no persistence, retained input and no host abort. The 30s deadline and general host failure behavior are implementation obligations, not properties proved by the finite models."
   },
   "library_root_review": {
     "reviewed_from": "c063",

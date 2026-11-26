@@ -1412,10 +1412,13 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
             await Promise.race([deadline.promise, (async () => {
               gate.assertCurrent(entry, ctx);
               await preflight(text, ctx, signal, run.selectedNative);
+              checkPreparationSignal(signal);
               assertPiRun(run, ctx);
               const task = await options.taskPrompt?.(text, ctx, signal, entry) ?? text;
+              checkPreparationSignal(signal);
               assertPiRun(run, ctx);
               const message = needsPreparation(text) ? await options.buildPreparedPrompt?.(text, ctx, signal, [...entry.prepared.values()]) : undefined;
+              checkPreparationSignal(signal);
               assertPiRun(run, ctx);
               for (const record of entry.prepared.values()) if (record.kind !== "prompt") run.candidates.set(recordIdentity(record), record);
               run.projection = message ? [{ ...message, role: "custom", timestamp: Date.now() }] : [];
