@@ -62,6 +62,7 @@ import { selectPrefetchPlans } from "./prefetch-policy";
 import { installCliWriteInvalidation } from "./cli-write-invalidation";
 import { createOmpHostAdapter } from "./omp-host-adapter";
 import { createPiHostAdapter } from "./pi-host-adapter";
+import { preparePiDollarAutocompleteEditor } from "./pi-dollar-editor";
 import { hostCliScope } from "./host-command";
 import { bundledBuiltinRoot, configuredBundledBuiltinRecords, isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
 import { createAcceptedSelections } from "./accepted-selections";
@@ -1487,6 +1488,7 @@ async function dispatchContextBrokerCommand(args: string, ctx: ExtensionContext,
 }
 
 export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
+  if (pi.pi === undefined) await preparePiDollarAutocompleteEditor(pi);
   const adapter = pi.pi !== undefined ? createOmpHostAdapter(pi) : createPiHostAdapter(pi);
   const paths = adapter.paths;
   const config = readConfig(paths);
@@ -1741,11 +1743,13 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       warnings: new Set(), ui: ctx.ui };
     completionOwner = owner;
     notifyCompletion();
+    const bundled = configuredBundledBuiltinRecords(config);
+    owner.snapshot.local(bundled.map(localCompletionCandidate));
     let local = localMenus.get(cwd);
     if (!local) {
       const localConfig = { ...config, sources: (config.sources ?? []).filter(source => source.type !== "notion") };
       local = ownCatalog(signal => buildDiscoveryRegistry(localConfig, cwd, { paths, signal }))
-        .then(result => dedupeDiscoveryRecords([...configuredBundledBuiltinRecords(config), ...result.records]));
+        .then(result => dedupeDiscoveryRecords([...bundled, ...result.records]));
       localMenus.set(cwd, local);
       void local.catch(() => { if (localMenus.get(cwd) === local) localMenus.delete(cwd); });
     }
