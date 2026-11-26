@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { deliveredSourceBodies } from './collect.mjs';
@@ -11,17 +11,33 @@ import { projectSubjectRuntime } from './subject.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const measure = text => ({ sha256: sha(text), bytes: Buffer.byteLength(text) });
+const pairedBuildRoot = process.env.PAIRED_BUILD_ROOT;
 
-test('current collection binds the captured SDK3 parser and resolves Library-qualified prepared resources without SDK2 fallback', async t => {
-  assert.ok(process.env.NTN_SKILLS_BUILD_ENTRY, 'Select the paired build used for the subject test');
-  const buildRoot = dirname(dirname(dirname(await realpath(process.env.NTN_SKILLS_BUILD_ENTRY))));
+test('current source views reject exposed source before loading an interpreter', async () => {
+  const visibility = { source_moved_outside_run: false, projection: { files: [] } };
+  await assert.rejects(loadCurrentSourceViews({ runRoot: '/unread-run', buildRoot: '/unread-build',
+    candidate: { snapshot: { visibility }, projection: { visibility } } }), { code: 'ERR_ASSERTION' });
+});
+
+test('current source views reject a changed projection before reading its files', async () => {
+  const visibility = { source_moved_outside_run: true, projection: { files: [{ path: 'unread-file', sha256: 'a'.repeat(64) }] } };
+  await assert.rejects(loadCurrentSourceViews({ runRoot: '/unread-run', buildRoot: '/unread-build',
+    candidate: { snapshot: { visibility }, projection: { visibility: { ...visibility, projection: { files: [] } } } } }), { code: 'ERR_ASSERTION' });
+});
+
+test('current collection binds the captured SDK3 parser and resolves Library-qualified prepared resources without SDK2 fallback', {
+  skip: !pairedBuildRoot && 'Set PAIRED_BUILD_ROOT to an existing paired build; a CLI entry alone does not identify one.',
+}, async t => {
+  const buildRoot = await realpath(pairedBuildRoot), buildPath = join(buildRoot, 'build.json');
+  const buildBytes = await readFile(buildPath), build = JSON.parse(buildBytes);
+  assert.equal(build.version, 1); assert.equal(build.kind, 'paired-build');
+  assert.equal(build.root, buildRoot); assert.equal(build.build_id, basename(buildRoot));
   const runRoot = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-current-source-')));
   t.after(() => rm(runRoot, { recursive: true, force: true }));
   const projectionRoot = join(runRoot, 'subject-runtime');
   const files = await projectSubjectRuntime({ buildRoot, projectionRoot });
-  const buildPath = join(buildRoot, 'build.json');
   const visibility = { source_moved_outside_run: true, projection: { files } };
-  const candidate = { snapshot: { visibility, build: { path: buildPath, sha256: sha(await readFile(buildPath)) } }, projection: { visibility } };
+  const candidate = { snapshot: { visibility, build: { path: buildPath, sha256: sha(buildBytes) } }, projection: { visibility } };
   const views = await loadCurrentSourceViews({ runRoot, buildRoot, candidate });
   assert.equal(views.contract, CURRENT_SOURCE_CONTRACT); assert.equal(views.producer.sdk_version, 3);
   const refs = await import(pathToFileURL(join(projectionRoot, 'packages/context-broker/src/native-reference.ts')).href);
