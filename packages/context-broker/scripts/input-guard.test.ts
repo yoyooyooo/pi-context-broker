@@ -223,7 +223,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       await refreshing;
     } finally { await f.close(); }
   }
-  for (const code of ["RATE_LIMITED", "NOTION_UNAVAILABLE", "ACCESS_DENIED"]) {
+  for (const code of ["RATE_LIMITED", "NOTION_UNAVAILABLE", "ACCESS_DENIED", "CURRENT_SOURCE_NOT_READY"]) {
     const f = fixture();
     try {
       await f.installed;
@@ -235,15 +235,20 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       assert.match(await bounded(f.systemPrompt(), "Failed discovery must not block final system projection"), /status="unavailable"/);
       for (const text of ["$startup@fixture task", "/skill:fixture-startup task"]) {
         const accepted = await bounded(f.begin(text), "Failed metadata cannot block input acceptance");
-        await assert.rejects(accepted.project(), new RegExp(code));
-        assert.equal(f.ctx.signal?.aborted, true, "An accurate acquisition failure must abort before provider dispatch");
+        const projection = await accepted.project();
+        assert.match(JSON.stringify(projection), new RegExp(code));
+        assert.match(JSON.stringify(projection), /context-broker-preparation-warning/);
+        assert.ok(JSON.stringify(projection).includes(accepted.submitted.replaceAll("\n", "\\n")));
+        assert.equal(f.ctx.signal?.aborted, false, "An acquisition failure must not cancel the user's turn");
+        assert.ok(f.notices.some(notice => notice.includes(code)));
+        assert.ok(!JSON.stringify(projection).includes(body));
         await f.end();
       }
       const [read] = await f.emit("tool_call", { toolName: "read", input: { path: record.ref } });
       assert.equal(object(read).block, true);
       assert.match(String(object(read).reason), new RegExp(code));
       assert.deepEqual(f.loads, []);
-      assert.equal(f.aborts(), 2, "Both failed selected operations were stopped at context");
+      assert.equal(f.aborts(), 0, "Both failed selections continue with warnings");
     } finally { await f.close(); }
   }
   {
@@ -352,8 +357,9 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       assert.deepEqual(object(search.details).failures, [{ source: "fixture", code: "ACCESS_DENIED" }]);
       assert.deepEqual(await f.emit("input", { source: "rpc", text: "ordinary with a failed source" }), [{ action: "continue" }]);
       const accepted = await f.begin("/skill:fixture-startup forbidden");
-      await assert.rejects(accepted.project(), /ACCESS_DENIED/);
-      assert.equal(f.ctx.signal?.aborted, true);
+      const projection = await accepted.project();
+      assert.match(JSON.stringify(projection), /ACCESS_DENIED/);
+      assert.equal(f.ctx.signal?.aborted, false);
       assert.deepEqual(f.loads, [], "A known candidate cannot bypass current source permission failure");
     } finally { await f.close(); }
   }

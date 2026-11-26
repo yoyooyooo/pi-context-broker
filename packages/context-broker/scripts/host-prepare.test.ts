@@ -236,11 +236,12 @@ test("dollar preflight failure keeps earlier source effects and the original den
     await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
     await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "base" }, f.ctx);
     await f.emit("agent_start", {}, f.ctx);
-    const error = await f.emit("context", { messages: [user] }, f.ctx).then(() => undefined, error => error);
+    const result = await f.emit("context", { messages: [user] }, f.ctx);
     const effects = { ...observed, remote_writes: "unknown", author_content: secondEffects ? "unchanged" : "unknown" };
-    expect(error).toBeInstanceOf(SourceError);
-    expect(error).toMatchObject({ code: "ACCESS_DENIED", sourceId: "second-source", cause: original, details: { effects } });
-    expect(JSON.parse(error.message).effects).toEqual(effects);
+    expect(result).toContainEqual(expect.objectContaining({ messages: expect.arrayContaining([user,
+      expect.objectContaining({ customType: "context-broker-preparation-warning",
+        content: expect.stringContaining("ACCESS_DENIED"), details: { effects } })]) }));
+    expect(JSON.stringify(result)).not.toContain(f.root.body!.trim());
     expect(original.details?.effects).toBe(secondEffects);
     expect(f.persisted).toEqual([]);
   }

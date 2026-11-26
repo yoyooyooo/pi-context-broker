@@ -1400,28 +1400,67 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         }
         if (!run.prepared && run.entry) {
           const entry = run.entry, text = entry.event.text ?? "", signal = entry.controller.signal;
-          gate.assertCurrent(entry, ctx);
-          await preflight(text, ctx, signal, run.selectedNative);
-          assertPiRun(run, ctx);
-          const task = await options.taskPrompt?.(text, ctx, signal, entry) ?? text;
-          assertPiRun(run, ctx);
-          const message = needsPreparation(text) ? await options.buildPreparedPrompt?.(text, ctx, signal, [...entry.prepared.values()]) : undefined;
-          assertPiRun(run, ctx);
-          for (const record of entry.prepared.values()) if (record.kind !== "prompt") run.candidates.set(recordIdentity(record), record);
-          run.projection = message ? [{ ...message, role: "custom", timestamp: Date.now() }] : [];
-          if ([...entry.prepared.values()].some(record => record.source === "notion")) {
-            const graphs = (pendingGraphs.get(entry) ?? []).flatMap(staged => staged.graphs);
-            // Bind disclosure to this acquisition, never to a retained snapshot's
-            // historical writes. Separate text preserves every source body span.
-            const effects = graphs.length ? combineConsumptionEffects(graphs.map(graph => graph.effects)) : consumptionEffects(undefined);
-            run.projection.push({ role: "custom", customType: "context-broker-consumption-effects",
-              content: "<notion-effects>" + JSON.stringify(effects) + "</notion-effects>",
-              display: false, details: { effects }, timestamp: Date.now() });
+          const deadline = Promise.withResolvers<never>();
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            entry.controller.abort();
+            deadline.reject(hostError("SOURCE_PREPARATION_TIMEOUT"));
+          }, 30_000);
+          timer.unref?.();
+          try {
+            await Promise.race([deadline.promise, (async () => {
+              gate.assertCurrent(entry, ctx);
+              await preflight(text, ctx, signal, run.selectedNative);
+              assertPiRun(run, ctx);
+              const task = await options.taskPrompt?.(text, ctx, signal, entry) ?? text;
+              assertPiRun(run, ctx);
+              const message = needsPreparation(text) ? await options.buildPreparedPrompt?.(text, ctx, signal, [...entry.prepared.values()]) : undefined;
+              assertPiRun(run, ctx);
+              for (const record of entry.prepared.values()) if (record.kind !== "prompt") run.candidates.set(recordIdentity(record), record);
+              run.projection = message ? [{ ...message, role: "custom", timestamp: Date.now() }] : [];
+              if ([...entry.prepared.values()].some(record => record.source === "notion")) {
+                const graphs = (pendingGraphs.get(entry) ?? []).flatMap(staged => staged.graphs);
+                // Bind disclosure to this acquisition, never to a retained snapshot's
+                // historical writes. Separate text preserves every source body span.
+                const effects = graphs.length ? combineConsumptionEffects(graphs.map(graph => graph.effects)) : consumptionEffects(undefined);
+                run.projection.push({ role: "custom", customType: "context-broker-consumption-effects",
+                  content: "<notion-effects>" + JSON.stringify(effects) + "</notion-effects>",
+                  display: false, details: { effects }, timestamp: Date.now() });
+              }
+              if (task !== text) run.projection.push({ role: "custom", customType: "context-broker-task",
+                content: task.startsWith(text) ? task.slice(text.length).trimStart() : task, display: false,
+                details: { version: 1, invocation: entry.id }, timestamp: Date.now() });
+              turnPrompts = { snapshots: new Map([...entry.prepared].filter(([, record]) => record.kind === "prompt")), signal };
+            })()]);
+          } catch (error) {
+            // Admission belongs to Pi. An unavailable selected Skill must not
+            // cancel the user's turn. Retire only this unconfirmed acquisition;
+            // never publish partial graphs, stale bodies, or activation receipts.
+            if (run.signal.aborted || piRun !== run || generation !== run.generation
+              || run.sessionId !== ctx.sessionManager?.getSessionId?.() || signal.aborted && !timedOut) throw error;
+            const warning = failure(timedOut ? hostError("SOURCE_PREPARATION_TIMEOUT") : error);
+            const effects = errorConsumptionEffects(error);
+            entry.controller.abort();
+            pendingGraphs.delete(entry);
+            preparedForUse.delete(entry);
+            misses.delete(entry);
+            for (const [key, value] of loaded) if (value.owner === entry) loaded.delete(key);
+            entry.prepared.clear();
+            run.candidates.clear();
+            run.graphs.length = 0;
+            run.entry = undefined;
+            run.selectedNative = undefined;
+            if (handoff?.entry === entry) handoff = undefined;
+            gate.release(entry);
+            turnPrompts = undefined;
+            ctx.ui?.notify?.(warning + " Continuing without the unavailable Skill instructions.", "warning");
+            run.projection = [{ role: "custom", customType: "context-broker-preparation-warning",
+              content: warning + " The requested Skill instructions were not loaded. Continue the user's original request where possible; do not claim to have read or applied the unavailable instructions.",
+              display: false, details: { effects }, timestamp: Date.now() }];
+          } finally {
+            clearTimeout(timer);
           }
-          if (task !== text) run.projection.push({ role: "custom", customType: "context-broker-task",
-            content: task.startsWith(text) ? task.slice(text.length).trimStart() : task, display: false,
-            details: { version: 1, invocation: entry.id }, timestamp: Date.now() });
-          turnPrompts = { snapshots: new Map([...entry.prepared].filter(([, record]) => record.kind === "prompt")), signal };
         }
         if (run) run.prepared = true;
       }
