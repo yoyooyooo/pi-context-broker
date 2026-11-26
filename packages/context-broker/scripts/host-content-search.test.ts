@@ -207,15 +207,37 @@ test("a cancelled content waiter cannot cancel another valid waiter", async () =
   const f = await fixture(), first = new AbortController(), responses = [Promise.withResolvers<ContentSearchResult>(), Promise.withResolvers<ContentSearchResult>()];
   let calls = 0;
   const started = Promise.withResolvers<void>();
+  const lateAuthorization = Promise.withResolvers<unknown>();
+  const before = structuredClone(f.branch);
   try {
-    f.setRun(async () => { const response = responses[calls++]; if (calls === 2) started.resolve(); return response!.promise; });
+    f.ctx.hasUI = true; f.ctx.mode = "tui";
+    f.ctx.ui = { custom: async () => { throw new Error("The adapter owns the controlled presentation"); } };
+    f.setRun(async (_input, _source, _ctx, options) => {
+      const response = responses[calls++];
+      if (calls === 1) options.signal.addEventListener("abort", () => {
+        // A producer can request foreground OAuth while cancellation unwinds.
+        // The outer tool race cannot undo a presentation admitted here.
+        const shown = options.onAuthorize?.({ url: "https://mcp.notion.com/authorize",
+          signal: options.signal, deadline: options.deadline });
+        if (!shown) throw new Error("Expected interactive authorization callback");
+        shown.then(() => lateAuthorization.resolve(undefined), error => lateAuthorization.resolve(error));
+      }, { once: true });
+      if (calls === 2) started.resolve();
+      return response!.promise;
+    });
     const one = f.list(query, first.signal), rejected = one.then(() => undefined, error => error);
     const two = f.list(query);
     await started.promise;
     first.abort(); expect(await rejected).toMatchObject({ code: "SOURCE_CANCELLED" });
+    const authorizationFailure = await lateAuthorization.promise;
     responses[1]!.resolve(result());
-    expect((await two).details).toMatchObject({ ok: true });
-    responses[0]!.resolve(result([]));
+    expect((await two).details).toMatchObject({ ok: true, records: [{ name: candidate.name }] });
+    responses[0]!.resolve(result([{ ...candidate, name: "Cancelled-only candidate" }]));
+    await responses[0]!.promise;
+    expect((await f.list({ query: "Cancelled-only candidate" })).details).toMatchObject({ ok: true, count: 0 });
+    expect(f.counts()).toMatchObject({ dispatches: 2, authorizations: 0 });
+    expect(authorizationFailure).toMatchObject({ code: "SOURCE_CANCELLED" });
+    expect(f.branch).toEqual(before);
   } finally { await f.close(); }
 });
 

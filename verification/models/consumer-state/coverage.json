@@ -51,7 +51,7 @@
     "packages/context-broker/src/content-search.ts": "04587a09c4cc526851a010804e01ae200c53ecea10da5591002fadbfb071f6fa",
     "packages/context-broker/src/pi-authorization.ts": "9355d0cdf3347043c17447bc691d1a605b374bded3b60cee8a61b317eb690440",
     "packages/context-broker/src/notion-sdk.ts": "bbd1bafc8863f0ab1092c9910019e5623e89b153508ee1c3cafdbedf7dcc5bb9",
-    "packages/context-broker/scripts/host-content-search.test.ts": "5b993bedf74604cd5007070e39440846a88a5812e03313bb19de588d0c187717",
+    "packages/context-broker/scripts/host-content-search.test.ts": "eb5ec2a3c7ca57bf460b6dfb1005394acd7e3386cc4564c966fe0e02fe33f78f",
     "packages/context-broker/scripts/content-search.test.ts": "d88a3e2d8a45ecf43e495235ffc3d5e1617ca9783b437fc70e9e9fc0eff39488",
     "packages/context-broker/scripts/pi-authorization.test.ts": "3b632769f7dc12d672c46155222cbc418cd66da86ae8fe6c592e275231a2ee3d",
     "packages/context-broker/scripts/fixtures/current-notion-source.ts": "9a1609097463408c10561cad7e00e350c6155205c81c9d3e2734d023768afce8",
@@ -1248,6 +1248,14 @@
       ],
       "review_evidence": "Before the boundary change, the 17 initial controlled regressions produced 15 behavioral failures; existing ready(signal) metadata cancellation and ordinary native-read passthrough were the two passing controls. Two fallback-hook cases were then added. After implementation, the complete host-prepare, resource-read-host and host-content-search files passed 134 tests and 1291 assertions, and TypeScript passed. Actual Pi Stop/timeout runs and the final formal/mutation gates are separate execution evidence.",
       "proof_limit": "All finite model/config/view bytes, domains, case inventories, independent expected_rules, negative configurations, tool lock and real guard mutation implementations remain unchanged. No finite model gains Promise, timer, native reader or Pi idle variables. These source hashes bind reviewed ownership and concrete regressions, not implementation refinement or an assertion that unsupported native payload shapes have wire proof."
+    },
+    "pi_cancelled_content_authorization": {
+      "reviewed_from": "531ed7184325f0408f288499cf38d40b1ec1592c",
+      "scope": "Test-only strengthening of the existing cancelled content waiter replay. Reviewed createContentPublication and the public host-skills authorization callback against the new outer tool cancellation race; all production and mutation source bytes remain unchanged.",
+      "failure_discriminator": "The outer race already rejects the caller before an uncooperative producer settles, so that return alone no longer distinguishes a missing inner signal guard. The controlled producer requests foreground authorization synchronously from its abort listener, before publication.close retires the owner. The unchanged guard must prevent entry to the host authorization presenter; the real signal-guard mutant reaches it once.",
+      "replay": "The same existing test keeps two independent waiters, confirms that the valid waiter still returns its content result, releases the cancelled producer with a late hit, and checks that no authorization was presented, no late candidate appears in a later metadata query, and the session branch is unchanged. Content search currently returns raw records and does not mint candidate short refs; this review does not invent such an implementation side effect.",
+      "validation": "host-content-search.test.ts: 15 tests / 85 assertions; TypeScript typecheck passed. The unchanged complete consumer-state real-guard runner passes all 41 baseline/mutated/restored cases (0/1/0), including content-cancelled-publication and content-error-publication; the cancellation mutant fails the observable authorizations: 0 assertion with authorizations: 1. Active source checkout remains unchanged.",
+      "proof_limit": "This adds a concrete runtime authorization-cancellation replay to the existing NoCancelledPublication obligation. Finite model/config/view bytes, bounds, cases, expected_rules, owners and mutation definitions remain unchanged. Reviewed test hashes are correspondence metadata, not a new finite-model or live OAuth proof."
     }
   },
   "library_session_design": {
