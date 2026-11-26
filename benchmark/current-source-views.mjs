@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { sourceVisibility } from './runtime/episode-visibility.mjs';
 
 export const CURRENT_SOURCE_CONTRACT = 'notion-sdk-v3/library-root-v1/resource-read-v1/skill-ref-v2/preparation-evidence-v2';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -11,7 +12,7 @@ const within = (root, path) => { const rel = relative(root, path); return rel !=
 /** The current interpreter comes from the exact public observer projection,
  * with its paired reference producer. Historical evidence never enters here. */
 export async function loadCurrentSourceViews({ runRoot, buildRoot, candidate }) {
-  assert.equal(candidate.snapshot.visibility.source_moved_outside_run, true);
+  assert.deepEqual(sourceVisibility(candidate.snapshot.visibility), sourceVisibility(candidate.projection.visibility), 'Current source visibility changed');
   const files = candidate.snapshot.visibility.projection.files;
   assert.deepEqual(files, candidate.projection.visibility.projection.files);
   const root = join(runRoot, 'subject-runtime'), artifacts = [];

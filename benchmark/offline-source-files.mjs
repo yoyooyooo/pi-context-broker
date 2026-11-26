@@ -24,5 +24,5 @@ export const OFFLINE_STUDY_SOURCE_FILES = Object.freeze([
 // Relative to benchmark/. Creation-only implementation APIs are intentionally
 // replaced by refusal stubs in an isolated read-only revision verifier.
 export const OFFLINE_REVISION_VERIFIER_SOURCE_FILES = Object.freeze([
-  ...evidenceSources, 'revision.mjs', '../scripts/skill-consumption-provider.mjs',
+  ...evidenceSources, 'revision.mjs', 'runtime/episode-visibility.mjs', '../scripts/skill-consumption-provider.mjs',
 ]);

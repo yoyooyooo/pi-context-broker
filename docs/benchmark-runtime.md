@@ -50,8 +50,11 @@ CodeMode and tool-search factories. The shared profile disables MCP. CodeMode
 `free` and `required` enable it. Whether a required diagnostic actually used it
 is an evidence/grading decision, not a fabricated tool invocation.
 
-The subject wrapper moves the shared command run's `source/` outside the subject
-run. `projectSubjectRuntime` in [subject.mjs](../benchmark/subject.mjs) selects
+Subject commands explicitly use the shared launcher's `--command-source none`.
+No `run/source` tree is created, and the controller does not retain another copy
+of dependencies or historical published results for each episode. Source-editing
+verification commands still use the shared launcher's default copy mode.
+`projectSubjectRuntime` in [subject.mjs](../benchmark/subject.mjs) selects
 the exact public dependency inventory: non-test episode modules, turn bridge,
 reported-model binding, maintained observation helpers, native-reference adapters
 and the paired reference producer/runtime manifest. Private fixture and grading
@@ -61,14 +64,25 @@ The visibility receipt is:
 ```json
 {
   "version": 1,
-  "source_moved_outside_run": true,
+  "source_disposition": "not_copied",
+  "source_moved_outside_run": false,
+  "command_source": "none",
   "projection_root": "subject-runtime",
   "files": [{"path": "benchmark/runtime/episode-runner.mjs", "sha256": "...", "bytes": 123}]
 }
 ```
 
+The subject requires `run.json.command_source` to be `none` before projection.
 The runtime checks the exact projected inventory, its own module location,
-absence of `run/source`, and removal of source-directory environment variables.
+absence of `run/source` including dangling links, and absence of source-directory
+environment variables. It records the actual source disposition in the candidate
+snapshot and comparison projection. Historical `source_moved_outside_run: true`
+receipts remain readable with their old meaning; current runs never claim a move.
+Old builds are rejected before fixture preparation, credential reads or dispatch.
+Build a new candidate containing this subject contract and capture a new admission
+expectation. Do not alter frozen builds, old visibility receipts or historical scores.
+Phase 0 also uses runtime-only command mode and reads its runner from the selected
+frozen build, while retaining private command state and the existing no-request gate.
 This is an auditable declaration of visible materials. It is not an OS sandbox:
 processes running as the same user retain the filesystem permissions of that user.
 

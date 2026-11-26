@@ -17,11 +17,8 @@ const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '
 export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding, model }) {
   assert.ok(isAbsolute(environmentRoot));
   assert.ok(typeof buildId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(buildId));
-  const required = (binding.public_case?.turns?.length ?? 0) > 1 ||
-    (binding.events?.length ?? 0) > 0 || (binding.clarification?.length ?? 0) > 0 || Boolean(model?.routing);
-  const result = { version: 1, required, status: required ? 'unverified' : 'not_required', build_id: buildId,
-    scope: 'exact common Benchmark turn instrumentation; product tool implementations are outside this comparison', files: [] };
-  if (!required) return result;
+  const result = { version: 1, required: true, status: 'unverified', build_id: buildId, command_source: 'none',
+    scope: 'exact common Benchmark runtime-only subject and turn instrumentation; product tool implementations are outside this comparison', files: [] };
   const buildManifestLimit = 64 * 1024 * 1024;
   async function file(path, byteLimit = 16 * 1024 * 1024) {
     const info = await lstat(path);
@@ -54,7 +51,7 @@ export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding
     result.selected_cli_sha256 = manifest.selected_cli_sha256;
     result.packages = Object.fromEntries(['cli', 'broker'].map(name => [name, manifest.packages[name].sha256]));
     result.product_artifacts_verification = 'full package/source bytes remain subject to the shared frozen-artifact check';
-    for (const name of ['subject.mjs', 'turn-bridge.mjs', 'runtime/episode-runner.mjs', ...(model?.routing ? ['reported-model.mjs', 'runtime/episode-policy.mjs'] : [])]) {
+    for (const name of ['subject.mjs', 'turn-bridge.mjs', 'runtime/episode-runner.mjs', 'runtime/episode-visibility.mjs', ...(model?.routing ? ['reported-model.mjs', 'runtime/episode-policy.mjs'] : [])]) {
       const path = 'benchmark/' + name;
       const current = await file(fileURLToPath(new URL('./' + name, import.meta.url)));
       const selected = await file(join(buildRoot, 'source/broker', path));
@@ -69,7 +66,7 @@ export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding
     for (const item of result.files) assert.equal((await file(item.current.path)).sha256, item.current.sha256, 'TURN_RUNTIME_CONTROLLER_SOURCE_CHANGED');
     result.status = 'verified'; return result;
   } catch (error) {
-    throw Object.assign(new Error('Selected build cannot implement the current Benchmark turn contract: ' + error.message), {
+    throw Object.assign(new Error('Selected build cannot implement the current Benchmark runtime-only subject/turn contract; create a new build before dispatch: ' + error.message), {
       code: 'BENCHMARK_TURN_RUNTIME_BUILD_MISMATCH', details: { ...result, status: 'rejected', reason: error.message }, cause: error,
     });
   }
@@ -169,7 +166,7 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
           eventMs: Math.min(60000, budget.max_duration_ms), pollMs: 25 } });
   }
   const parameters = model.parameters;
-  const launch = { run_id: runId, source_retention_root: join(controlRoot, 'controller-sources'),
+  const launch = { run_id: runId,
     input_root: binding.input_root, input_inventory_sha256: binding.input_inventory_sha256,
     ...(controller ? { turn_bridge: controller.publicConfig } : {}),
     runtime_config: { version: 1, mode,
@@ -192,6 +189,7 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
     // Promise settlement is joint: a bridge failure must not hide the shared
     // process terminal or its actual request/usage artifacts.
     const subject = Promise.resolve().then(() => (apparatus.runEnvironment ?? runEnvironment)({ root: environmentRoot, build: buildId, target: 'command', id: runId,
+      'command-source': 'none',
       'pi-mode': mode, ...(mode === 'native' ? { 'native-skills': binding.skills_root }
         : notionEntry ? { library: notionEntry } : { skills: binding.skills_root }),
       models: modelsFile, 'pass-env': [credential.api_key_env, ...(notionEntry ? ['NOTION_API_TOKEN'] : [])],
