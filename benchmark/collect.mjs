@@ -13,10 +13,9 @@ export { deriveRedactedProviderBinding } from './provider-binding.mjs';
 import { verifyArtifactFiles, writeEvidenceBundle } from './evidence/store.mjs';
 import { readProviderTransport } from '../scripts/skill-consumption-provider.mjs';
 import { parseSourceObservation } from '../scripts/skill-consumption-source-observer.mjs';
-import { graphSourceViews } from '../scripts/notion-skill-graph-model-evidence.mjs';
-import { verifyPreparationEvidence } from '../scripts/skill-preparation-evidence.mjs';
+import { graphSourceViews, verifyPreparationEvidence, RETAINED_SOURCE_CONTRACT } from './retained-source-views.mjs';
 
-export const COLLECTOR_VERSION = '1.2.0';
+export const COLLECTOR_VERSION = '1.2.1';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const inside = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
@@ -234,7 +233,9 @@ function bodySpan(text, proof, defaultHashKey = 'bodySha256') {
 }
 
 function preparedResourceBodies(tool, preparations) {
-  if (tool.name !== 'read' || !/^sr:[SR][A-Za-z0-9_-]{22}$/u.test(tool.args?.path ?? '') || !tool.turn_id) return [];
+  const relativeToRecord = Object.hasOwn(tool.args ?? {}, 'from');
+  const reference = relativeToRecord ? tool.args.from : tool.args?.path;
+  if (tool.name !== 'read' || !/^sr:[SR][A-Za-z0-9_-]{22}$/u.test(reference ?? '') || !tool.turn_id) return [];
   const text = textContent(tool.result.content), matches = [];
   if (typeof text !== 'string' || tool.result.structuredContent !== undefined && tool.result.structuredContent !== text) return [];
   try {
@@ -256,7 +257,8 @@ function preparedResourceBodies(tool, preparations) {
           assert.ok(!fixed.username && !fixed.password && !fixed.port && !fixed.hash);
           assert.match(file.sha256, /^[a-f0-9]{64}$/u); assert.ok(finite(file.bytes));
           assert.ok(!paths.has(file.path) && !tokens.has(projected.ref)); paths.add(file.path); tokens.add(projected.ref);
-          if (projected.ref === tool.args.path) matches.push({ path: file.path, sha256: file.sha256, bytes: file.bytes,
+          const addressed = relativeToRecord ? model.ref === reference && file.path === tool.args.path : projected.ref === reference;
+          if (addressed) matches.push({ path: file.path, sha256: file.sha256, bytes: file.bytes,
             source_binding: { owner, scope: binding.scope, snapshot_id: binding.snapshot_id, version_id: binding.version_id },
             refs: preparation.refs, preparation_tool_call_id: preparation.id });
         }
@@ -412,7 +414,8 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
   const notionRequired = (protocol.environments ?? []).some(env => env.id === condition.environment_id &&
     (env.pi?.sources ?? []).some(source => source.kind === 'notion')) ||
     Boolean(binding.materialization_proof && run.pi_launch?.mode === 'broker');
-  const notion = { status: 'unavailable', operations: [], source_bodies: [], owned_http: { status: 'unknown', value: null },
+  const notion = { status: 'unavailable', source_contract: RETAINED_SOURCE_CONTRACT,
+    operations: [], source_bodies: [], owned_http: { status: 'unknown', value: null },
     coverage: episode?.notion?.coverage ?? null, descendant_transport: 'unobserved',
     scope: 'Owned SDK and directly observed bundled CLI only; SDK reads do not prove delivery to the agent.',
     errors: [], refs: [] };
@@ -639,6 +642,11 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     const delivered = deliveredSourceBodies(tool, tools);
     for (const item of delivered) observeSource({ ...tool, refs: uniqueRefs([...tool.refs, ...(item.refs ?? [])]) }, item.body, item.path, item.owner, null, item.kind, item.source_binding);
     if (delivered.length) continue;
+    if (tool.name === 'read' && Object.hasOwn(tool.args ?? {}, 'from')) {
+      unmatchedReads.push({ tool_call_id: tool.id, path: tool.args.path ?? null, from: tool.args.from ?? null,
+        reason: 'Source-backed read has no verified preparation mapping' });
+      continue;
+    }
     if (tool.name === 'read' && typeof tool.args?.path === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(tool.args.path)) {
       const actualPath = isAbsolute(tool.args.path) ? resolve(tool.args.path) : resolve(workspace, tool.args.path);
       const nativeText = typeof tool.result?.structuredContent === 'string' ? tool.result.structuredContent : textContent(tool.result?.content);
