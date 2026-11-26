@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "kind": "public-proof-projection-source-map",
+  "files": [
+    {
+      "file": "reviews/attempt-1-declaration-repair.json",
+      "original_sha256": "ea4b83744ecbba7d4a5c3047c6cbb7d49a0bda1ebc0443878e3ca24ab7ba1fbb",
+      "public_sha256": "315130e51ab183a473be715b2604b2c09fd730fc3d3409a2b918730e94c3176b",
+      "bytes": 2592
+    },
+    {
+      "file": "reviews/capture-review-2.json",
+      "original_sha256": "08ce9048532de10ac8d87f673aee8cddc853ffb7141033a99d5ae3798611da9e",
+      "public_sha256": "3322617a61086f72c61cfc7f20ae466137a4dbbd62f78a1c1f4855abf4014a28",
+      "bytes": 2256
+    },
+    {
+      "file": "reviews/product-runtime-correspondence.json",
+      "original_sha256": "c0cd9d7799f00ec939274cdccad3a5de6b7d1d3479e7d4de0ca2f1534ab1b722",
+      "public_sha256": "be34df0336d52b918da0bdb48ab57f7725cd75aec0b353eb06c61f5d5c6dd55a",
+      "bytes": 2391438
+    },
+    {
+      "file": "reviews/product-decision-policy.json",
+      "original_sha256": "00aa3362d3b97642feed97c698ea00771fb7e785736c90fd4595cfe331990c41",
+      "public_sha256": "36d8815c74b688b014db3066804463532dee24df60f78bc50a10ead6b920a5c8",
+      "bytes": 2196
+    },
+    {
+      "file": "reviews/independent-review.json",
+      "original_sha256": "1d6f16d9f6580bb5c6385c1fef206f074ab75c846584a11b97fe7ae9f0a6dade",
+      "public_sha256": "3e98718bb59f0f5384f74b9aa2e0266666cd2d2acc685e9f1a64b8bc714623ef",
+      "bytes": 5325
+    },
+    {
+      "file": "reviews/independent-resource-trace-review.json",
+      "original_sha256": "30c2f365036e171c0eb24a3b2002fe63658938ba232b988984540d81b1dabd4d",
+      "public_sha256": "d4a296ea9c33773bc337ba65439c3394383e6a9e6a638090d711da8f338066a8",
+      "bytes": 15565
+    }
+  ]
+}

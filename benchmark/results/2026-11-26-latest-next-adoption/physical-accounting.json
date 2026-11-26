@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "kind": "latest-next-physical-accounting",
+  "global_observations": 231,
+  "global_registrations": 30,
+  "public_unique_observations_after_this_package": 230,
+  "public_observation_ranges": [
+    [
+      1,
+      219
+    ],
+    [
+      221,
+      231
+    ]
+  ],
+  "retained_private_gap": [
+    220
+  ],
+  "new_unique_observations": 2,
+  "new_registration_sequence": 30,
+  "rows": [
+    {
+      "ordinal": 230,
+      "run_id": "latest-next-native-broker-pair-2-001",
+      "condition_id": "m0-e0",
+      "episode_sha256": "58fd66a6b1e67dfb3023a6636e4774d3a08076e815e24632c535e31c4b88dd96",
+      "formal_outcome": "pass",
+      "business_outcome": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-grants-1",
+          "status": "pass"
+        },
+        {
+          "id": "grant-chain-read",
+          "status": "pass"
+        }
+      ],
+      "model_requests": 5,
+      "input_tokens": 17347,
+      "output_tokens": 546,
+      "actual_duration_ms": 22910.417999999998,
+      "time_to_success": {
+        "status": "known",
+        "value": 22897.280167
+      }
+    },
+    {
+      "ordinal": 231,
+      "run_id": "latest-next-native-broker-pair-2-002",
+      "condition_id": "m0-e1",
+      "episode_sha256": "d3eff7f29a677a4b2eae070be08c5f82ef9017e460393abdce64d8c5a5956c0f",
+      "formal_outcome": "unknown",
+      "business_outcome": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-grants-1",
+          "status": "pass"
+        },
+        {
+          "id": "grant-chain-read",
+          "status": "pass"
+        }
+      ],
+      "model_requests": 6,
+      "input_tokens": 26699,
+      "output_tokens": 451,
+      "actual_duration_ms": 134936.38862500002,
+      "time_to_success": {
+        "status": "unknown"
+      }
+    }
+  ],
+  "totals": {
+    "model_requests": 11,
+    "input_tokens": 44046,
+    "output_tokens": 997
+  },
+  "actual_duration_policy": "Actual elapsed time comes from episode timing. The Broker analysis time of 180000 ms is the capped unknown-outcome statistic, not the observed elapsed duration.",
+  "prior_epochs_pooled": false,
+  "preflight_attempt_1": {
+    "model_requests": 0,
+    "new_reservations": 0,
+    "new_formal_observations": 0
+  }
+}

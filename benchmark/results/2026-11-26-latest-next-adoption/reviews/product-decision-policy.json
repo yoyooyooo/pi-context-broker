@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "kind": "public-proof-projection",
+  "original_receipt": {
+    "sha256": "00aa3362d3b97642feed97c698ea00771fb7e785736c90fd4595cfe331990c41",
+    "bytes": 1680
+  },
+  "transformation": {
+    "publication_version": "1.0.6",
+    "publisher_sha256": "219791be176bf722248c3a2a3d73738647f2dd97cc6aadab1877391e6858f236",
+    "scope": "Private identifiers and machine coordinates are projected; claims and source byte hashes are retained."
+  },
+  "proof": {
+    "version": 1,
+    "kind": "prospective-product-adoption-check",
+    "created_at": "2026-11-26T15:07:52.351Z",
+    "case_ids": [
+      "references-01-a"
+    ],
+    "planned_episodes": 2,
+    "conditions": [
+      "latest-native-off",
+      "latest-broker-off"
+    ],
+    "prior_results_pooled": false,
+    "positive_requirements": [
+      "Exact current CLI/SDK and Broker product runtime binding agrees with the independently installed pure next candidate.",
+      "The Broker candidate completes the requested business output and every critical selected-resource contract.",
+      "No observed wrong owner, unmatched resource read, unintended adoption, remote consumption write, or intervention is accepted as a product success.",
+      "The normal-profile compatibility repair separately preserves complete read schema, actual dispatch, third-party ownership and UI rendering.",
+      "Accepted next source and all three daily installed generations are verified before adoption is called complete."
+    ],
+    "unknown_policy": "Preserve unproved absence and arbitrary-shell visibility as unknown. Positive critical contract evidence may support the stated narrow product adoption decision; a formal unknown is never relabeled as a full pass.",
+    "comparison_limits": "The native arm supplies a same-condition descriptive control. Its success or failure is examined independently and cannot substitute for the product critical contracts. No statistical superiority, general non-inferiority or pooled effect estimate is claimed.",
+    "response_to_failure": "Retain the exact failed run and actual cost; investigate the concrete product or measurement cause before any new attempt under the same standing grant."
+  }
+}

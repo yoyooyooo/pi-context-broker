@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "kind": "public-proof-projection",
+  "original_receipt": {
+    "sha256": "ea4b83744ecbba7d4a5c3047c6cbb7d49a0bda1ebc0443878e3ca24ab7ba1fbb",
+    "bytes": 2654
+  },
+  "transformation": {
+    "publication_version": "1.0.6",
+    "publisher_sha256": "219791be176bf722248c3a2a3d73738647f2dd97cc6aadab1877391e6858f236",
+    "scope": "Private identifiers and machine coordinates are projected; claims and source byte hashes are retained."
+  },
+  "proof": {
+    "version": 1,
+    "kind": "prospective-declaration-repair",
+    "original_setup": {
+      "path": "[path:ad425d70dbd37f9dfa7c]",
+      "sha256": "821d70388bcacaa659ad4071c4798599d6c5b000de3eabe1dcb55bccfc2d0b18"
+    },
+    "original_failure": {
+      "status": "failed",
+      "error": "[{\"code\":\"undeclared_change\",\"message\":\"Environment differs in undeclared component pi_mode\",\"path\":\"[path:5d92d41f15d2aaad1f7f]\"},{\"code\":\"undeclared_change\",\"message\":\"Environment differs in undeclared component sources\",\"path\":\"[path:5d92d41f15d2aaad1f7f]\"},{\"code\":\"undeclared_change\",\"message\":\"Environment differs in undeclared component native_root\",\"path\":\"[path:5d92d41f15d2aaad1f7f]\"},{\"code\":\"undeclared_change\",\"message\":\"Environment differs in undeclared component guidance\",\"path\":\"[path:5d92d41f15d2aaad1f7f]\"}]",
+      "execution_performed": false
+    },
+    "captures": [
+      {
+        "path": "[path:93907e1299fe522cab1b]",
+        "sha256": "21f46659963d4cc1652f8160d0f4ab58ae9daad3c71485683e7542c94f17e764",
+        "status": "captured",
+        "model_requests": 0
+      },
+      {
+        "path": "[path:607e40951858f6b8d0ff]",
+        "sha256": "4ce3ac20ef9b67dcf458aee182c1f26a10b959cb8885868544849ce6b1f012c7",
+        "status": "captured",
+        "model_requests": 0
+      }
+    ],
+    "changed_declaration_components": [
+      "pi_mode",
+      "sources",
+      "native_root",
+      "guidance"
+    ],
+    "other_changes": {
+      "capture_concurrency": [
+        1,
+        2
+      ],
+      "standing_epoch": "new open epoch"
+    },
+    "product_runtime_changed": false,
+    "model_parameters_changed": false,
+    "material_changed": false,
+    "originals_preserved": true,
+    "new_setup": {
+      "path": "[path:7ac557698bced1e27cd0]",
+      "sha256": "821121e1cabd5f2a1f4544ac5e38d1be40d3e856a923cc42dc19aa7eb0130c68"
+    },
+    "new_work_plan": {
+      "path": "[path:d7a3426f30c7c9ee350d]",
+      "sha256": "cde7141501fb43677e1adea479b2d1afc3956db0c32eb38f3cf38bc63e6730a0"
+    },
+    "model_requests": 0,
+    "at": "2026-11-26T15:16:37.479Z"
+  }
+}

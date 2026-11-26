@@ -1,0 +1,235 @@
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+function __accessProp(key) {
+  return this[key];
+}
+var __toCommonJS = (from) => {
+  var entry = (__moduleCache ??= new WeakMap).get(from), desc;
+  if (entry)
+    return entry;
+  entry = __defProp({}, "__esModule", { value: true });
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (var key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(entry, key))
+        __defProp(entry, key, {
+          get: __accessProp.bind(from, key),
+          enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+        });
+  }
+  __moduleCache.set(from, entry);
+  return entry;
+};
+var __moduleCache;
+var __returnValue = (v) => v;
+function __exportSetter(name, newValue) {
+  this[name] = __returnValue.bind(null, newValue);
+}
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, {
+      get: all[name],
+      enumerable: true,
+      configurable: true,
+      set: __exportSetter.bind(all, name)
+    });
+};
+
+// packages/core/src/skill-ref.ts
+var exports_skill_ref = {};
+__export(exports_skill_ref, {
+  SKILL_REF_VERSION: () => SKILL_REF_VERSION,
+  SkillReferenceError: () => SkillReferenceError,
+  bindSkillRef: () => bindSkillRef,
+  createSkillKey: () => createSkillKey,
+  decodeSkillPath: () => decodeSkillPath,
+  formatSkillIdentity: () => formatSkillIdentity,
+  formatSkillRef: () => formatSkillRef,
+  normalizeSkillPath: () => normalizeSkillPath,
+  parseSkillIdentity: () => parseSkillIdentity,
+  parseSkillRef: () => parseSkillRef,
+  referenceSelection: () => referenceSelection,
+  sameSkillKey: () => sameSkillKey,
+  skillRefPath: () => skillRefPath,
+  skillRefSnapshot: () => skillRefSnapshot,
+  validateSkillId: () => validateSkillId
+});
+module.exports = __toCommonJS(exports_skill_ref);
+
+// packages/core/src/notion-id.ts
+function pageId(input) {
+  if (typeof input !== "string")
+    return;
+  let raw = input;
+  if (!/^(?:[a-f\d]{32}|[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12})$/iu.test(raw)) {
+    try {
+      const url = new URL(input);
+      if (!["https:", "http:"].includes(url.protocol) || !/(^|\.)notion\.(so|site|com)$/iu.test(url.hostname) || url.username || url.password || url.port)
+        return;
+      const match = /(?:^|[-/])([a-f\d]{32}|[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12})\/?$/iu.exec(url.pathname);
+      if (!match)
+        return;
+      raw = match[1];
+    } catch {
+      return;
+    }
+  }
+  const hex = raw.replaceAll("-", "").toLowerCase();
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+// packages/core/src/skill-ref.ts
+var SKILL_REF_VERSION = 2;
+
+class SkillReferenceError extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+    this.name = "SkillReferenceError";
+  }
+}
+function invalid(message) {
+  throw new SkillReferenceError("INVALID_REF", message);
+}
+function validateSkillId(value) {
+  if (typeof value !== "string" || !/^[a-z0-9][a-z0-9._-]{0,199}$/u.test(value)) {
+    return invalid("A Skill ID must be a stable lowercase ASCII identifier, not a display name or alias.");
+  }
+  return value;
+}
+function libraryId(value) {
+  const id = pageId(value);
+  if (id === undefined)
+    return invalid("A Library ID must identify its exact Notion root page.");
+  return id;
+}
+function snapshotId(value) {
+  if (typeof value !== "string" || !/^s_[a-f0-9]{64}$/u.test(value))
+    return invalid("Invalid fixed selection identity.");
+  return value;
+}
+function referenceSelection(snapshot) {
+  return snapshot === undefined ? { kind: "current" } : { kind: "fixed", snapshotId: snapshotId(snapshot) };
+}
+function createSkillKey(input) {
+  return { libraryId: libraryId(input.libraryId), skillId: validateSkillId(input.skillId) };
+}
+function sameSkillKey(left, right) {
+  return left.libraryId === right.libraryId && left.skillId === right.skillId;
+}
+function normalizeSkillPath(input, base = "") {
+  if (typeof input !== "string" || typeof base !== "string")
+    throw new SkillReferenceError("INVALID_PATH", "Skill paths must be strings.");
+  if (/[\\\p{Cc}\p{Cf}\p{Cs}]/u.test(input) || input.startsWith("/") || /^[A-Za-z]:/u.test(input)) {
+    throw new SkillReferenceError("INVALID_PATH", "A Skill file must use a relative POSIX path.");
+  }
+  const parts = base ? normalizeSkillPath(base).split("/").slice(0, -1) : [];
+  for (const part of input.split("/")) {
+    if (!part || part === ".")
+      continue;
+    if (part === "..") {
+      if (parts.length === 0) {
+        throw new SkillReferenceError("INVALID_PATH", "The path escapes the skill root.");
+      }
+      parts.pop();
+    } else {
+      parts.push(part);
+    }
+  }
+  return parts.join("/");
+}
+function decodeComponent(input) {
+  try {
+    return decodeURIComponent(input);
+  } catch {
+    return invalid("The reference contains invalid percent encoding.");
+  }
+}
+function decodeSkillPath(input) {
+  if (typeof input !== "string")
+    return invalid("A reference path must be a string.");
+  return input.split("/").map((part) => {
+    const decoded = decodeComponent(part);
+    if (decoded.includes("/"))
+      return invalid("Encoded slashes cannot change path segments.");
+    return decoded;
+  }).join("/");
+}
+function parseSkillRef(input) {
+  if (typeof input !== "string")
+    return invalid("A Skill reference must be a string.");
+  const match = /^skill:\/\/([^/?#]+)(?:\/([^?#]*))?(?:\?([^#]*))?$/u.exec(input);
+  if (!match)
+    return invalid("Expected skill://<skill-id>[/<path>][?library=<library-id>].");
+  const id = validateSkillId(decodeComponent(match[1]));
+  const path = normalizeSkillPath(decodeSkillPath(match[2] ?? ""));
+  const parameters = new Map;
+  for (const pair of (match[3] ?? "").split("&")) {
+    if (!pair) {
+      if (match[3] !== undefined)
+        return invalid("Empty reference parameters are not allowed.");
+      continue;
+    }
+    const separator = pair.indexOf("=");
+    if (separator < 0)
+      return invalid("Reference parameters require a value.");
+    const name = decodeComponent(pair.slice(0, separator).replaceAll("+", " "));
+    const value = decodeComponent(pair.slice(separator + 1).replaceAll("+", " "));
+    if (name !== "library" && name !== "snapshot" || parameters.has(name)) {
+      return invalid("Only one library and one snapshot parameter are allowed.");
+    }
+    parameters.set(name, value);
+  }
+  const library = parameters.get("library");
+  const snapshot = parameters.get("snapshot");
+  return {
+    skillId: id,
+    scope: library === undefined ? { kind: "context" } : { kind: "library", libraryId: libraryId(library) },
+    path,
+    selection: referenceSelection(snapshot)
+  };
+}
+function bindSkillRef(reference, contextLibraryId) {
+  const library = reference.scope.kind === "library" ? reference.scope.libraryId : contextLibraryId;
+  if (library === undefined) {
+    throw new SkillReferenceError("LIBRARY_CONTEXT_REQUIRED", "A contextual Skill reference needs its containing Library or an explicitly bound entry.");
+  }
+  return {
+    owner: createSkillKey({ libraryId: library, skillId: reference.skillId }),
+    path: reference.path,
+    selection: reference.selection
+  };
+}
+function skillRefPath(reference) {
+  return reference.path;
+}
+function skillRefSnapshot(reference) {
+  return reference.selection.kind === "fixed" ? reference.selection.snapshotId : undefined;
+}
+function formatSkillRef(reference) {
+  const id = "owner" in reference ? reference.owner.skillId : reference.skillId;
+  const library = "owner" in reference ? reference.owner.libraryId : reference.scope.kind === "library" ? reference.scope.libraryId : undefined;
+  const path = normalizeSkillPath(reference.path);
+  const parameters = [];
+  if (library !== undefined)
+    parameters.push(`library=${encodeURIComponent(libraryId(library))}`);
+  if (reference.selection.kind === "fixed") {
+    parameters.push(`snapshot=${snapshotId(reference.selection.snapshotId)}`);
+  }
+  return `skill://${validateSkillId(id)}${path ? `/${path.split("/").map(encodeURIComponent).join("/")}` : ""}${parameters.length ? `?${parameters.join("&")}` : ""}`;
+}
+function formatSkillIdentity(input) {
+  return formatSkillRef({ owner: createSkillKey(input), path: "", selection: { kind: "current" } });
+}
+function parseSkillIdentity(input) {
+  const reference = parseSkillRef(input);
+  if (reference.scope.kind !== "library" || reference.path || reference.selection.kind !== "current") {
+    return invalid("A complete Skill identity is a current root reference with an explicit Library.");
+  }
+  const owner = createSkillKey({ libraryId: reference.scope.libraryId, skillId: reference.skillId });
+  if (formatSkillIdentity(owner) !== input)
+    return invalid("The Skill identity must use its canonical encoding.");
+  return owner;
+}

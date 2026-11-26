@@ -1,0 +1,471 @@
+{
+  "version": 1,
+  "kind": "public-proof-projection",
+  "original_receipt": {
+    "sha256": "30c2f365036e171c0eb24a3b2002fe63658938ba232b988984540d81b1dabd4d",
+    "bytes": 26030
+  },
+  "transformation": {
+    "publication_version": "1.0.6",
+    "publisher_sha256": "219791be176bf722248c3a2a3d73738647f2dd97cc6aadab1877391e6858f236",
+    "scope": "Private identifiers and machine coordinates are projected; claims and source byte hashes are retained."
+  },
+  "proof": {
+    "schema_version": 1,
+    "kind": "independent-latest-native-broker-trace-review",
+    "status": "verified",
+    "model_requests_from_review": 0,
+    "source_edits": [],
+    "source_run": "[path:d78aeee529140f4f164f]",
+    "contracts": [
+      {
+        "critical": true,
+        "evidence_ids": [
+          "artifact-0"
+        ],
+        "id": "business-grants-1",
+        "kind": "artifact-json",
+        "reason": "Observed business values satisfy the declared output contract",
+        "status": "pass"
+      },
+      {
+        "critical": true,
+        "evidence_ids": [
+          "source-0",
+          "source-1",
+          "source-3",
+          "source-2"
+        ],
+        "id": "grant-chain-read",
+        "kind": "resources",
+        "reason": "Observed a complete legal resource path with matching content identities",
+        "status": "pass"
+      },
+      {
+        "critical": false,
+        "evidence_ids": [
+          "source-0"
+        ],
+        "id": "legal-selection",
+        "kind": "selection",
+        "reason": "Selection evidence is incomplete",
+        "status": "unknown"
+      }
+    ],
+    "metadata_runtime": "verified",
+    "opaque_tools": [
+      "call_e133007b764f412b8362a5487605e65e"
+    ],
+    "unmatched_reads": [],
+    "tool_lineage_errors": [],
+    "resources": [
+      {
+        "path": "SKILL.md",
+        "canonical_sha256": "6297c7d7e72723a529447d5fb7ecb51386ee234c639702d3d7734742b3cc13fc",
+        "delivered_sha256": "0f25893d99ed3c0832e945ad1ffcede1d0631d7ac925e97d6122335325fc05f2",
+        "bytes": 443,
+        "comparison": {
+          "method": "public-sdk-native-structural-equivalence",
+          "canonical": "normalized",
+          "prepared": "normalized"
+        }
+      },
+      {
+        "path": "references/eligibility.md",
+        "canonical_sha256": "c1c3d763f609ec032546bd99692d64394cd39a7cbde5e69bcf08c88fe86cf761",
+        "delivered_sha256": "c1c3d763f609ec032546bd99692d64394cd39a7cbde5e69bcf08c88fe86cf761",
+        "bytes": 164,
+        "comparison": "exact-bytes"
+      },
+      {
+        "path": "references/tables/caps.json",
+        "canonical_sha256": "9ecebc4363b04cb55aa7b1c5bf28c88bb11e3e8c1ceb88349f099a9e043cfc56",
+        "delivered_sha256": "9ecebc4363b04cb55aa7b1c5bf28c88bb11e3e8c1ceb88349f099a9e043cfc56",
+        "bytes": 28,
+        "comparison": "exact-bytes"
+      },
+      {
+        "path": "references/tables/regions.json",
+        "canonical_sha256": "4590578fae424280cb6b94dae595e53e842cbcf1d5f1a8e06c87a0580689a10b",
+        "delivered_sha256": "4590578fae424280cb6b94dae595e53e842cbcf1d5f1a8e06c87a0580689a10b",
+        "bytes": 12,
+        "comparison": "exact-bytes"
+      }
+    ],
+    "business": {
+      "min_age": 23,
+      "regions": [
+        "Z67"
+      ],
+      "cap_cents": 2046,
+      "derived": [
+        {
+          "id": "R582-1-1",
+          "eligible": true,
+          "grant_cents": 2046
+        },
+        {
+          "id": "R582-1-2",
+          "eligible": false,
+          "grant_cents": 0
+        },
+        {
+          "id": "R582-1-3",
+          "eligible": false,
+          "grant_cents": 0
+        }
+      ],
+      "artifact_sha256": "c1a81e69ac1d4ec606d487cdc3a3b4ca6f47eac700cfa1943f5dbe89df80d358"
+    },
+    "tool_trace": [
+      {
+        "entry": 21,
+        "id": "call_fef101e334c24155883a225a23939b8c",
+        "name": "notion_list",
+        "arguments": {
+          "query": "资助"
+        },
+        "is_error": false
+      },
+      {
+        "entry": 21,
+        "id": "call_e133007b764f412b8362a5487605e65e",
+        "name": "bash",
+        "arguments": {
+          "command": "ls -la; rg --files --hidden -g '!.git'"
+        },
+        "is_error": true
+      },
+      {
+        "entry": 21,
+        "id": "call_0765175329a24b31a5b25ee570d5eced",
+        "name": "read",
+        "arguments": {
+          "path": "input/applications-1.json"
+        },
+        "is_error": false
+      },
+      {
+        "entry": 25,
+        "id": "call_1b25c67d0f24497daab29213e6dcdebf",
+        "name": "notion_use",
+        "arguments": {
+          "ref": "sr:CUyQ4T88_xGfpHeZkwKvwuQ"
+        },
+        "is_error": false
+      },
+      {
+        "entry": 33,
+        "id": "call_fd5311a844e74f7a9480bb6abf8021cc",
+        "name": "read",
+        "arguments": {
+          "path": "references/eligibility.md",
+          "from": "sr:S_TwDPR2mQDctY_qTaOFquw"
+        },
+        "is_error": false
+      },
+      {
+        "entry": 35,
+        "id": "call_f732dc8fdc494466906b69b845ff4363",
+        "name": "read",
+        "arguments": {
+          "paths": [
+            "sr:Rw1Kb6vAJjjntDcE1J8pLkw",
+            "sr:Rgfzmt6YsHm5AJEZnFMXWnA"
+          ]
+        },
+        "is_error": false
+      },
+      {
+        "entry": 37,
+        "id": "call_7444c31ce2014a6bb7b56a276ef61bdc",
+        "name": "write",
+        "arguments": {
+          "path": "output/grants-1.json",
+          "content": "[\n  {\n    \"id\": \"R582-1-1\",\n    \"eligible\": true,\n    \"grant_cents\": 2046\n  },\n  {\n    \"id\": \"R582-1-2\",\n    \"eligible\": false,\n    \"grant_cents\": 0\n  },\n  {\n    \"id\": \"R582-1-3\",\n    \"eligible\": false,\n    \"grant_cents\": 0\n  }\n]\n"
+        },
+        "is_error": false
+      }
+    ],
+    "arms": [
+      {
+        "run_id": "latest-next-native-broker-pair-2-001",
+        "outcome": "pass",
+        "business": "pass",
+        "critical_contracts": [
+          {
+            "id": "business-grants-1",
+            "status": "pass"
+          },
+          {
+            "id": "grant-chain-read",
+            "status": "pass"
+          }
+        ],
+        "usage": {
+          "requests": 5,
+          "input": 17347,
+          "output": 546
+        },
+        "duration_ms": 22910.417999999998
+      },
+      {
+        "run_id": "latest-next-native-broker-pair-2-002",
+        "outcome": "unknown",
+        "business": "pass",
+        "critical_contracts": [
+          {
+            "id": "business-grants-1",
+            "status": "pass"
+          },
+          {
+            "id": "grant-chain-read",
+            "status": "pass"
+          }
+        ],
+        "usage": {
+          "requests": 6,
+          "input": 26699,
+          "output": 451
+        },
+        "duration_ms": 134936.38862500002
+      }
+    ],
+    "total": {
+      "requests": 11,
+      "input": 44046,
+      "output": 997
+    },
+    "limitations": [
+      "Broker full outcome remains unknown because arbitrary shell is opaque; the failed rg command is not cleared by command-text inference.",
+      "SDK byte/identity agreement is not a proof of causal association.",
+      "One latest native/Broker pair does not establish general performance or noninferiority."
+    ],
+    "originals_verified_unchanged": [
+      {
+        "path": "[path:10fb6eb7de0f10d172af]",
+        "sha256": "acf93f2d27ff1c1a91cee7e1e6c8b5e2d180e4ebb940c3392797415a0100e43c"
+      },
+      {
+        "path": "[path:d513e02500b4ee8f3b50]",
+        "sha256": "de46146cf43d24b73b2f21981fbfbda8e1193ea7bf8bb129de9e4fa69dd65513"
+      },
+      {
+        "path": "[path:b1dbfbbd2fa4182145cf]",
+        "sha256": "27cbab89acd6e2346a8683fd622f3330b9b2285d61baf3d5243f626302a97a32"
+      },
+      {
+        "path": "[path:b12f428e830f5f1d74a3]",
+        "sha256": "4423cc615a81ccf020107bc9a86c35cb091fffbbb23a8917560378db79255681"
+      },
+      {
+        "path": "[path:a09ff63b2e0d7b2da251]",
+        "sha256": "176cc22777197dfa7a2624dd4e708d5cf13dc8c93fca6813464b5b2e3ec45912"
+      },
+      {
+        "path": "[path:73c2126285cf352ac94a]",
+        "sha256": "c261311c139cd03a0d71cbd908ca0380208cb917742a2204c197642babbd17b2"
+      },
+      {
+        "path": "[path:b5c2ec02c40f8cbcb556]",
+        "sha256": "7023d3e1d337c3e5283983ca6d1fa7254933e5a15cc3d602bf24d24b376547cb"
+      },
+      {
+        "path": "[path:abb9b0caf599df6e3b4d]",
+        "sha256": "63834b3f7725298a1c86600d2c4eb3dfc4a647983b07020153a2171e43f1b4a7"
+      },
+      {
+        "path": "[path:93c60c2bfb8fd958e8d6]",
+        "sha256": "9dcca24a55363efc7755912ba1c08539e303195300939e40395c0593aaa34949"
+      },
+      {
+        "path": "[path:22fe4c36aa7dad1510ed]",
+        "sha256": "e76e3c3ac75e5c6f1ca9668e60f5addc625471ce68cb3a7cec20b02f4ea60482"
+      },
+      {
+        "path": "[path:19eab5c1660d4ff1cb63]",
+        "sha256": "eb9153cdc6e3b6665633d80e6bca804bb72df7447eccd5ab98510640798da205"
+      },
+      {
+        "path": "[path:68cdd25a2cabf86c8404]",
+        "sha256": "fae674ff8d8fb8e65953b936ce3c0097a8148f0266a64845325be46a8e793596"
+      },
+      {
+        "path": "[path:922e6b2a7333254c7588]",
+        "sha256": "6b713b14acdca7f5d8b425608bc96da87579f7ca7306b2b50f5e37ccb03c1a6b"
+      },
+      {
+        "path": "[path:25d43de394c48b7be49e]",
+        "sha256": "18aba276933dbaf05e5e310a0da666c643e25797d43b74253cba7c05525486c9"
+      },
+      {
+        "path": "[path:19cc424a7f8f4c9b005f]",
+        "sha256": "0640be00df0bce97114b6c829da9db4badb763bb06a06df82ba26191f8de6962"
+      },
+      {
+        "path": "[path:157b6105a0b3ec3ab86e]",
+        "sha256": "5f505a02af835a1cca030a0d977d279d4fdf4b03afccaec290d27d64806014de"
+      },
+      {
+        "path": "[path:c5d24414beb83c0191fd]",
+        "sha256": "208fc87e74e74813f0cd855230791850bc3cf8fc011d672968049ccecece207e"
+      },
+      {
+        "path": "[path:41ad3af33f32531af37a]",
+        "sha256": "37158660edb67b70a97bef4fb6bfdab70dfb7ef6ea4ad1c2765bd2313647207e"
+      },
+      {
+        "path": "[path:56a2c378f654090ec3da]",
+        "sha256": "189ed2d7deef8afe7d9928833ee6ed0a403f0e47f18c263cf1666531644e9dd8"
+      },
+      {
+        "path": "[path:9fbf6cd678f0b9add9e2]",
+        "sha256": "cd011ef0a06283534e12fa6ffa97d8f0b0c8537ad0442da7ed875b126c5777ac"
+      },
+      {
+        "path": "[path:9a02b3b555ad80508ae3]",
+        "sha256": "d36ff2d510db5c2d922ef3875d3d0e583d2902c3ea4a0ae6a8b6afff3f17b961"
+      },
+      {
+        "path": "[path:bcaad6d841ac8b68fa77]",
+        "sha256": "d2aeeb657113ffa617aa08de534024a649a87f6e3f1218048af82311996c6afc"
+      },
+      {
+        "path": "[path:f2a2db6072c8f9e249c4]",
+        "sha256": "86af00415f898832a13c576b703c7e23be0a32df58cafc33d1ecdcc2d9e99349"
+      },
+      {
+        "path": "[path:f84f825c7110ce9fa62b]",
+        "sha256": "40856493aca8886120d7fbb726aebb1963659df004ff1b26e7ee9b4084313378"
+      },
+      {
+        "path": "[path:5c57db0356b78829605c]",
+        "sha256": "4fb99a1820e21eedb52ec6a108ef614b19410eac226b0e90e2b67f2534d26927"
+      },
+      {
+        "path": "[path:1dbdd4cef8d3e97b4ad1]",
+        "sha256": "57941adf463148297ea3012aa9bbfd4d156627f22cfb3715e60bb46806d27c89"
+      },
+      {
+        "path": "[path:0478465d3453adaef771]",
+        "sha256": "406deb8fd08a21693f72be9f996406d17457c3b3c93de06d315c4f703ce42023"
+      },
+      {
+        "path": "[path:cb8aa5b869f8d4c50aff]",
+        "sha256": "cd66d323b0cad3ba05c9fb2e07a42d0ee83acc1e3b37d78308a603d834113a27"
+      },
+      {
+        "path": "[path:d89dfd0e1942bd92dda7]",
+        "sha256": "bdcd3f7e1adf9160d64413a35affb5bf127138518471743fb6f7dfba3aec6cf0"
+      },
+      {
+        "path": "[path:34959f74b1b5dadf5f1f]",
+        "sha256": "aa9cd6255746b29bb610944c641ecd2c42267e157d56dc8da51aa9a07faecb12"
+      },
+      {
+        "path": "[path:d3707f345f8ebbc84a3a]",
+        "sha256": "189ed2d7deef8afe7d9928833ee6ed0a403f0e47f18c263cf1666531644e9dd8"
+      },
+      {
+        "path": "[path:0124ea51e4c1501e6cc4]",
+        "sha256": "fef0e6d0f0a292d274c5c5933759cf7a30602956ad0bef01be98a1dc6e3815a1"
+      },
+      {
+        "path": "[path:f7d67ae948c8d021a9d6]",
+        "sha256": "edccd9489d05e950e25d729ae86db33cf882bd8dc54194c5c23029d6fcb09078"
+      },
+      {
+        "path": "[path:c4433cc70324edc8df77]",
+        "sha256": "920fb0ff06b149d31eb4f63f70a2d60cfc537110e594de4cc7167be13b58ea98"
+      },
+      {
+        "path": "[path:9bb41a4bf94a4864a088]",
+        "sha256": "6297c7d7e72723a529447d5fb7ecb51386ee234c639702d3d7734742b3cc13fc"
+      },
+      {
+        "path": "[path:8fe38606151cfd9114a1]",
+        "sha256": "288f752561689f97d0d253ecfc7497b330d1356f02234e873c418d5a3cf34a6a"
+      },
+      {
+        "path": "[path:98c48a6abdb1768de28e]",
+        "sha256": "0f25893d99ed3c0832e945ad1ffcede1d0631d7ac925e97d6122335325fc05f2"
+      },
+      {
+        "path": "[path:d92fd4605bebe23a09a2]",
+        "sha256": "a1e3aa4d8ec980e2b5dee9d7f2c70d4061033cc626c08c5bfc642e98736fbe33"
+      },
+      {
+        "path": "[path:65b3dac0e70d367c21d2]",
+        "sha256": "54931bf34c5d5e128f261e41badc9ba91e0910ceae97a6ec6c024068859e8e82"
+      },
+      {
+        "path": "[path:9a153b1fe40134c12d35]",
+        "sha256": "aa9cd6255746b29bb610944c641ecd2c42267e157d56dc8da51aa9a07faecb12"
+      },
+      {
+        "path": "[path:a95a344624e6c6ec6010]",
+        "sha256": "aa9cd6255746b29bb610944c641ecd2c42267e157d56dc8da51aa9a07faecb12"
+      },
+      {
+        "path": "[path:1a6bdf93a1b46e07e122]",
+        "sha256": "c1c3d763f609ec032546bd99692d64394cd39a7cbde5e69bcf08c88fe86cf761"
+      },
+      {
+        "path": "[path:6c61233e2082f5ba74ca]",
+        "sha256": "c1c3d763f609ec032546bd99692d64394cd39a7cbde5e69bcf08c88fe86cf761"
+      },
+      {
+        "path": "[path:27a3d9e022a33dca604d]",
+        "sha256": "c1c3d763f609ec032546bd99692d64394cd39a7cbde5e69bcf08c88fe86cf761"
+      },
+      {
+        "path": "[path:8febce73204c43c95583]",
+        "sha256": "9ecebc4363b04cb55aa7b1c5bf28c88bb11e3e8c1ceb88349f099a9e043cfc56"
+      },
+      {
+        "path": "[path:b2304e09f71f992ee1f5]",
+        "sha256": "9ecebc4363b04cb55aa7b1c5bf28c88bb11e3e8c1ceb88349f099a9e043cfc56"
+      },
+      {
+        "path": "[path:3088bd38626cf9000e1a]",
+        "sha256": "9ecebc4363b04cb55aa7b1c5bf28c88bb11e3e8c1ceb88349f099a9e043cfc56"
+      },
+      {
+        "path": "[path:57650bb315f105e585da]",
+        "sha256": "4590578fae424280cb6b94dae595e53e842cbcf1d5f1a8e06c87a0580689a10b"
+      },
+      {
+        "path": "[path:428ff91fc593930c5a82]",
+        "sha256": "4590578fae424280cb6b94dae595e53e842cbcf1d5f1a8e06c87a0580689a10b"
+      },
+      {
+        "path": "[path:31ec6873a832af271887]",
+        "sha256": "4590578fae424280cb6b94dae595e53e842cbcf1d5f1a8e06c87a0580689a10b"
+      },
+      {
+        "path": "[path:d6839a9c645995ca0b33]",
+        "sha256": "c1a81e69ac1d4ec606d487cdc3a3b4ca6f47eac700cfa1943f5dbe89df80d358"
+      },
+      {
+        "path": "[path:f4dc4d719af63d6727d8]",
+        "sha256": "017cabedaaf78adfb678b0339823b230a299a2f2655630b81d34a4975f4a6fdf"
+      },
+      {
+        "path": "[path:c0b768b58ebfcaaf1e33]",
+        "sha256": "0636a089f7a3ccda1483d493b684f6e124b99f9942e800024c56c87d2efbcb4a"
+      },
+      {
+        "path": "[path:7a958840105f0c651bb3]",
+        "sha256": "b8f75b354c2f337857f646e8c51eab6076f5634b16e93a707c5a70ec2dfef50b"
+      },
+      {
+        "path": "[path:0cbfd08090df9ef9c929]",
+        "sha256": "badc687e16f6855c98846e962dba2c14f0ba1f006caef6ee6eded5f16fe2abf4"
+      },
+      {
+        "path": "[path:f10d61fab581a4cf335e]",
+        "sha256": "57e0f313547f8847bb370450a94fc3ea93f10554f37794f8226ebe051d24e983"
+      }
+    ]
+  }
+}
