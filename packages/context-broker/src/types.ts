@@ -111,6 +111,7 @@ type ExtensionEvents = {
   before_agent_start: { event: BeforeAgentStartEvent; result: BeforeAgentStartResult };
   before_provider_request: { event: { type: "before_provider_request"; payload: unknown }; result: unknown };
   after_provider_response: { event: { type: "after_provider_response"; status: number; headers: Record<string, string> }; result: void };
+  message_start: { event: { type: "message_start"; message: AgentMessage }; result: void };
   turn_end: { event: TurnEndEvent; result: SessionBoundaryResult };
   input: { event: InputEvent; result: InputResult };
   tool_call: { event: ToolCallEvent; result: ToolCallResult };
@@ -132,6 +133,7 @@ export type AutocompleteItem = {
   kind?: ContentKind;
   source?: "local" | "notion";
   ref?: string;
+  candidate?: import("./completion-candidates").CompletionCandidate;
 };
 
 export type AutocompleteSuggestions = {
@@ -141,6 +143,9 @@ export type AutocompleteSuggestions = {
 
 export type AutocompleteProvider = {
   triggerCharacters?: string[];
+  /** Snapshot publication only. The Pi adapter owns whether a menu is still open. */
+  subscribe?(listener: () => void): () => void;
+  getCompletionScope?(): unknown;
   getSuggestions(
     lines: string[],
     cursorLine: number,

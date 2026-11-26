@@ -49,7 +49,7 @@ export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, refBytes, e
   assert.equal(manifest.sdk_version, 3, "Only the current SDK v3 is supported");
   assert.equal(manifest.skill_ref_version, 2, "Only the current Skill reference protocol is supported");
   assert.ok(refBytes instanceof Uint8Array && refBytes.length > 0, "The selected pure reference artifact is required");
-  for (const capability of ["consumer_contract_version", "consumption_effects_version", "catalog_directory_contract_version", "read_output_proof_version", "resource_read_contract_version", "resource_read_effects_version", "content_search_contract_version"])
+  for (const capability of ["consumer_contract_version", "consumption_effects_version", "catalog_directory_contract_version", "read_output_proof_version", "resource_read_contract_version", "resource_read_effects_version", "content_search_contract_version", "candidate_snapshot_contract_version"])
     assert.equal(manifest[capability], 1, `Current runtime capability is required: ${capability}`);
   const hashes = { cli: createHash("sha256").update(cliBytes).digest("hex"), sdk: createHash("sha256").update(sdkBytes).digest("hex"), ref: createHash("sha256").update(refBytes).digest("hex") };
   assert.equal(manifest.cli_sha256, hashes.cli, "Bundled CLI bytes do not match its frozen runtime manifest");

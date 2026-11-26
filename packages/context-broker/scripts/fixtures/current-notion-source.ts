@@ -16,7 +16,7 @@ const canonical = (value: unknown): string => value === null || typeof value !==
   : "{" + Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 const uuid = (n: number) => "00000000-0000-4000-8000-" + n.toString().padStart(12, "0");
 type Input = { version: 1; targets: string[]; purpose: "use" | "inspect"; freshness: { policy: string }; budget?: Record<string, number> };
-type Runtime = { library?: string; directory?: { view?: string; profile?: string }; defaultView?: boolean; view?: string; profile?: string; maxAge?: number; refresh?: boolean; offline?: boolean; output?: string; from?: string; signal?: AbortSignal; deadline?: number; onAuthorize?: ContentSearchOptions["onAuthorize"]; execution?: Record<string, unknown> };
+type Runtime = { library?: string; directory?: { view?: string; profile?: string }; defaultView?: boolean; view?: string; profile?: string; maxAge?: number; refresh?: boolean; offline?: boolean; output?: string; from?: string; signal?: AbortSignal; deadline?: number; onCatalogSettled?: () => void; onAuthorize?: ContentSearchOptions["onAuthorize"]; execution?: Record<string, unknown> };
 type Call = { operation: string; input?: Input; contentInput?: ContentSearchRequest; target?: string; options: Runtime };
 
 // Only the external SDK operation is controlled. The source adapter, graph
@@ -30,7 +30,7 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
   await writeFile(module, [
     "export const SKILL_REF_VERSION=2, SDK_VERSION=3, CONSUMER_CONTRACT_VERSION=1, PACKAGE_VERSION='current-source-fixture';",
     "export const CONSUMPTION_EFFECTS_VERSION=1, READ_OUTPUT_PROOF_VERSION=1, CATALOG_DIRECTORY_CONTRACT_VERSION=1;",
-    "export const CONTENT_SEARCH_CONTRACT_VERSION=1;",
+    "export const CONTENT_SEARCH_CONTRACT_VERSION=1, CANDIDATE_SNAPSHOT_CONTRACT_VERSION=1;",
     "export const calls=[]; let state; export function configure(value){state=value;}",
     "export async function selectLibrary(options){calls.push({operation:'library-selection',options});return state.selectLibrary(options);}",
     "export async function resolveLibrary(options){calls.push({operation:'library',options});return state.resolveLibrary(options);}",
@@ -41,11 +41,12 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     "export async function listSkill(target,options){calls.push({operation:'files',target,options}); return state.listFiles(target,options);}",
     "export function resolveCatalogReference(target,value){return state.resolve(target,value);}",
     "export async function resolveReference(target,options){calls.push({operation:'resolve',target,options}); return state.resolveRelative(target,options);}",
-    "export async function listCatalog(options){calls.push({operation:'list',options}); return state.list(options);}",
+    "export async function listCatalog(options){calls.push({operation:'list',options}); try { const result=await state.list(options); state.catalogFailure=undefined; return result; } catch(error) { state.catalogFailure=error?.code; throw error; }}",
+    "export async function readCandidateSnapshot(options){calls.push({operation:'candidates',options}); return state.candidates(options);}",
     "export async function contentSearch(input,options){calls.push({operation:'content-search',contentInput:input,options}); return state.contentSearch(input,options);}",
   ].join("\n"));
   await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ ...(await copyReferenceProtocol(join(root, "src"))), version: 1, package: "ntn-skills", package_version: "current-source-fixture",
-    sdk_version: 3, consumer_contract_version: 1, consumption_effects_version: 1, read_output_proof_version: 1, catalog_directory_contract_version: 1, content_search_contract_version: 1 }));
+    sdk_version: 3, consumer_contract_version: 1, consumption_effects_version: 1, read_output_proof_version: 1, catalog_directory_contract_version: 1, content_search_contract_version: 1, candidate_snapshot_contract_version: 1 }));
   const sdk = await import(pathToFileURL(module).href);
   const boundary: typeof import("../../src/notion-source") = await import(pathToFileURL(join(root, "src/notion-source.ts")).href);
   const offset = (fixture.identity ?? 0) * 100, library = uuid(offset + 99);
@@ -106,6 +107,14 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
   const table = (n: number) => ({ database_id: uuid(offset + n), data_source_id: uuid(offset + n + 1), property_ids: {} });
   const descriptor = { version: 2 as const, library_id: library, operation_id: "fixture-init", skills: table(10), files: table(20), records: table(30), sources: table(40) };
   const state = {
+    catalogFailure: undefined as string | undefined,
+    candidates(_options: Runtime): unknown {
+      if (state.catalogFailure === "ACCESS_DENIED" || state.catalogFailure === "AUTH_REQUIRED")
+        return { kind: "blocked", libraryId: library, scope, denials: [{ kind: "scope", code: state.catalogFailure }] };
+      return { kind: "snapshot", libraryId: library, scope, verifiedAt: state.catalog.fetched_at,
+        fetched_at: state.catalog.fetched_at, stale: state.catalog.freshness.stale,
+        coverage: state.catalog.coverage.exhaustive ? "complete" : "partial", records: state.catalog.records, denials: [], generation: 1 };
+    },
     selectLibrary: async (options: Runtime) => options.library ?? library,
     resolveLibrary: async (options: Runtime) => {
       if (options.library !== undefined && options.library !== library) throw Object.assign(new Error("Foreign Library"), { code: "LIBRARY_SCOPE_MISMATCH" });

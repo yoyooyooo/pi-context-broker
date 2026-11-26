@@ -16,6 +16,7 @@ description: "维护和验证 Notion 消费者的当前资格、缓存原始验�
 | 完整正文、provider 接受、turn、公开投影回执 | session-source-snapshot、session-active、host-skills hooks | DeliveryBoundary |
 | 旧会话固定恢复、缺失闭包隔离、继续提问 | session-recovery、index restoreActive、host-skills 最终交付守卫 | RecoveryClosure |
 | Library 选择、turn 固定目标、迟到目录与旧 pin | branch selection、turn admission、SDK/CLI scope、metadata publication | LibrarySession |
+| 候选快照发布、下拉关闭意图和稳定高亮 | completion-candidates、dollar、pi-dollar-editor；input receipt 是消费的独立边界 | MenuPublication |
 
 `coverage.json` 是各套件唯一 cases 与 expected_rules 清单。名为 current 的旧缺陷配置是故意保留的负例，不是当前实现结论。本地固定 pin 不承诺远端历史恢复。
 
@@ -47,7 +48,14 @@ CONSUMER_MUTATION_PARENT="$(mktemp -d /tmp/consumer-guard.XXXXXX)"
 node scripts/check-consumer-state-mutations.mjs --out "$CONSUMER_MUTATION_PARENT/mutation" --case public-projection-ack
 ```
 
-mutation 输出目录本身须不存在。按实际变化选择 `FreshnessPublication`、`SelectionGraph`、`DeliveryBoundary`、`RecoveryClosure` 或 `LibrarySession`，不复制工具内部参数。模型 runner 生成 Mermaid/report/TLC；需要展示图时依照 [图形产物复现](../../../docs/formal-verification-maintenance.md#图形产物定位与复现)，只渲染本次真实生成的图。
+mutation 输出目录本身须不存在。按实际变化选择 `FreshnessPublication`、`SelectionGraph`、`DeliveryBoundary`、`RecoveryClosure`、`LibrarySession` 或 `MenuPublication`，不复制工具内部参数。模型 runner 生成 Mermaid/report/TLC；需要展示图时依照 [图形产物复现](../../../docs/formal-verification-maintenance.md#图形产物定位与复现)，只渲染本次真实生成的图。
+
+排队输入改动还须沿宿主验证入口运行 `bun run test:pi-queued-input`，显式配置
+`PI_QUEUED_INPUT_PACKAGE` 为实际 Pi 安装根。最终包复验可另设
+`PI_QUEUED_INPUT_BROKER` 为实际 Broker package 根；默认只测试当前源码。
+此测试要求真实 AgentSession 图片归一化、SessionManager 的消息实例和
+ExtensionRunner 的 context clone。未提供宿主直接失败，不能将缺省 skip 算通过。
+受测版本由实际 package.json 报告；当前已核接口为 Pi 1.6.0。
 
 ## 判断和修复
 
@@ -58,6 +66,7 @@ mutation 输出目录本身须不存在。按实际变化选择 `FreshnessPublic
 - 多根完整并集、共享 Requires 冲突/批量刷新、同正文但 Requires 改变和精确 physical owner 由 `session-refresh.test.ts`、`session-active.test.ts` 补充；单根 SelectionGraph 不自动证明这些组合。
 - 恢复失败走 `RecoveryClosure` 与 `session-recovery.test.ts`。有限模型检查三次提问和完整闭包；真实回放另核整轮 30 秒恢复预算、失败退避和不合作的迟到 producer。它们不证明 UI 输入或模型任务完成。
 - Library 切换沿 `LibrarySession`。分开 branch default、已接纳 turn、完整 ref 的单次目标、目录 ticket 和旧 pin owner；不要把选择 B 当成取消 A 的全局 generation。实际回放必须包含失败切换、A 迟到目录、同名跨库对象、branch/rewind/resume、后续 turn 取 B 及旧 A pin 保留。CLI 根页面/四表/pending 的物理校验仍归 CLI LibraryLifecycle。
+- 菜单沿 `MenuPublication`，分别检查快照准入、实际下拉更新、接受和 Esc。模型只有固定 scope 的 A/B、一次缓存和刷新、一次用户结束意图；缺项撤下、跨库、非合作 Promise 和毫秒时延由实际 Editor 与宿主回放核对。输入归属使用 `InputReceipt`，不能从 AbortSignal 或下一草稿重建。
 
 入口指令改变后，将作者实跑与冷启动评估分开。独立 agent 只取得任务、本 Skill 和必要工具配置，按所选切片执行；未做时记录 `instruction_evaluation:not_run`，不把作者结果或结构检查当成独立使用成功。
 

@@ -5,7 +5,8 @@ import { sessionSourceSnapshot, sessionSourceBindings, sourceContentIdentity, so
 import { sessionSelection, selectedBinding, selectedTaskRole, persistSessionSelection, exportSessionSelection, type SessionSelection } from "./session-graph";
 import { activeSelection, confirmActiveSources } from "./session-active";
 import { createActiveSourceRestorer } from "./session-recovery";
-import { checkPreparationSignal, isPreparationCancelled } from "./skill-preparation";
+import { checkPreparationSignal, isPreparationCancelled, withPreparationDeadline, type InputReceipt } from "./skill-preparation";
+import { createCompletionSnapshot, localCompletionCandidate, type CompletionCandidate } from "./completion-candidates";
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
@@ -50,7 +51,7 @@ import {
   InvocationError,
 } from "./discovery-records";
 import { bindNotionSource, discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures, hasEnabledNotionSource } from "./sources";
-import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources, readFixedNotionResource, resolveNotionReference, resolveNotionReferenceInSource, resolveNotionRelativeReference } from "./notion-source";
+import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources, readFixedNotionResource, resolveNotionReference, resolveNotionReferenceInSource, resolveNotionRelativeReference, readNotionCandidateSnapshot, materializeCompletionCandidate } from "./notion-source";
 import { createFinalRequestLedger, formatFinalRequestDiagnostic } from "./final-request";
 import { installHostSkills } from "./host-skills";
 import { handleSourceConnection } from "./source-connection";
@@ -512,7 +513,8 @@ function discoverUsableSkillRoots(config: ConfigFile = readConfig(), cwd = proce
   return uniqueStrings(configuredRoots(config).map((root) => expandPath(root, cwd)));
 }
 
-async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), options: { refresh?: boolean; stale?: boolean; refreshSourceIds?: readonly string[]; paths?: HostPathOptions; signal?: AbortSignal; directorySelections?: ReturnType<typeof notionDirectorySelections> } = {}): Promise<DiscoveryResult> {
+async function buildDiscoveryRegistry(config: ConfigFile = readConfig(), cwd = process.cwd(), options: { refresh?: boolean; stale?: boolean; refreshSourceIds?: readonly string[]; paths?: HostPathOptions; signal?: AbortSignal; directorySelections?: ReturnType<typeof notionDirectorySelections>;
+  onCatalogSettled?: (source: Extract<SourceConfig, { type: "notion" }>) => void } = {}): Promise<DiscoveryResult> {
   options.signal?.throwIfAborted();
   const skills = dedupeLocalSkillPaths([
     ...configuredBundledBuiltinRecords(config),
@@ -1489,7 +1491,18 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const paths = adapter.paths;
   const config = readConfig(paths);
   const librarySelection = createLibrarySelection(config);
-  const acceptedSelections = createAcceptedSelections();
+  const acceptedSelections = createAcceptedSelections<CompletionCandidate>(candidate => candidate.token);
+  const acceptedRecords = new WeakMap<InputReceipt, Promise<ReadonlyMap<string, DiscoveryRecord>>>();
+  const submissionRecords = (receipt: InputReceipt | undefined, signal?: AbortSignal): Promise<ReadonlyMap<string, DiscoveryRecord>> => {
+    if (!receipt) return Promise.resolve(new Map());
+    let pending = acceptedRecords.get(receipt);
+    if (!pending) {
+      pending = Promise.all([...acceptedSelections.forSubmission(receipt)].map(async ([token, candidate]) =>
+        [token, await materializeCompletionCandidate(candidate, receipt.ctx.cwd ?? process.cwd(), signal)] as const)).then(entries => new Map(entries));
+      acceptedRecords.set(receipt, pending);
+    }
+    return pending;
+  };
   for (const event of ["session_shutdown", "session_before_switch", "session_before_branch", "session_before_tree"] as const) {
     pi.on(event, (_event, ctx) => acceptedSelections.clear(ctx));
   }
@@ -1508,12 +1521,12 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const catalogOwner = new AbortController();
   const ownCatalog = <T>(run: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> => {
     const owned = signal ? AbortSignal.any([catalogOwner.signal, signal]) : catalogOwner.signal;
-    const promise = (async () => {
-      owned.throwIfAborted();
-      const result = await run(owned);
+    const promise = withPreparationDeadline(owned, async bounded => {
+      bounded.throwIfAborted();
+      const result = await run(bounded);
       owned.throwIfAborted();
       return result;
-    })();
+    });
     // Cache invalidation may drop the caller before the producer settles.
     // Observe rejection without making shutdown wait for that producer.
     void promise.catch(() => undefined);
@@ -1561,7 +1574,8 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     const generation = { menu: menuGeneration, refresh: refreshGeneration };
     const selectedContext = ctx;
     const promise = ownCatalog(async signal => buildDiscoveryRegistry(await librarySelection.config(selectedContext), catalogCwd(cwd), { paths, signal, stale: true,
-      refreshSourceIds: [...changes.keys()], directorySelections: notionDirectorySelections(await directoryConfig(selectedContext), selectedContext) })).then(result => {
+      refreshSourceIds: [...changes.keys()], directorySelections: notionDirectorySelections(await directoryConfig(selectedContext), selectedContext),
+      onCatalogSettled: catalogCompletionNotification(selectedContext, generation) })).then(result => {
       pairedCatalogGenerations.set(result, generation);
       return result;
     });
@@ -1590,7 +1604,8 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       const changes = unseenChanges(key);
       pending = ownCatalog(async signal => {
         try {
-          const next = await buildDiscoveryRegistry(await librarySelection.config(selectedContext), cwd, { paths, signal, refreshSourceIds: [...changes.keys()], directorySelections: notionDirectorySelections(await directoryConfig(selectedContext), selectedContext) });
+          const next = await buildDiscoveryRegistry(await librarySelection.config(selectedContext), cwd, { paths, signal, refreshSourceIds: [...changes.keys()], directorySelections: notionDirectorySelections(await directoryConfig(selectedContext), selectedContext),
+            onCatalogSettled: catalogCompletionNotification(selectedContext, { menu: ownerMenu, refresh: generation }) });
           if (generation !== refreshGeneration) return await getCatalog(cwd, selectedContext);
           pairedCatalogGenerations.set(next, { menu: ownerMenu, refresh: generation });
           const failed = next.failures.some((failure) => failure.blocking !== false && sourceIds.includes(failure.sourceId));
@@ -1659,72 +1674,109 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     // publish into the default menu, Profile or native metadata.
     return [...records, ...results.flatMap(result => result.records)];
   };
+  const submissionRegistry = (ctx: ExtensionContext, text: string, accepted: ReadonlyMap<string, DiscoveryRecord>, signal?: AbortSignal) =>
+    parseInvocations(text, configuredRules(config)).some(request => request.scope !== "configured" && !accepted.has(request.query))
+      ? getDollarRegistry(ctx.cwd, ctx, text, signal) : Promise.resolve([]);
   const notionSources = () => (config.sources ?? []).filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false);
   const catalogError = (error: unknown) => error instanceof Error ? error.message : "context-broker source discovery failed";
-  const dollarMenu = async (ctx: ExtensionContext): Promise<DollarMenu> => {
-    const systemPrompt = ctx.getSystemPrompt?.() ?? "";
-    const registryContext: ExtensionContext = { getSystemPrompt: () => systemPrompt };
-    const cwd = catalogCwd(ctx.cwd ?? process.cwd());
-    ctx = librarySelection.capture(ctx);
-    await librarySelection.identity(ctx);
-    const key = catalogKey(cwd, ctx);
-    const pendingCatalog = getCatalog(cwd, ctx);
-    const state = dollarRegistryByCwd.get(key)!;
-    if (state.status === "failed") return { records: [], notice: catalogError(state.error) };
-    if (state.status === "pending") return {
-      // Source collisions can change local selection tokens; do not offer an unqualified guess.
-      records: config.sources?.some(source => source.enabled !== false) ? [] : await buildDollarRegistryForContext(registryContext, registryPromise),
-      notice: notionSources().length ? "Reading Notion catalog" : "Reading source catalog",
-      followUp: pendingCatalog.then(async result => ({
-        records: await buildDollarRegistryForContext(registryContext, defaultRecords(result.records, ctx)),
-        notice: formatSourceFailures(result.failures).join("\n") || undefined,
-      })).catch(error => ({ records: [], notice: catalogError(error) })),
-    };
-    const current = state.result;
-    const records = await buildDollarRegistryForContext(registryContext, defaultRecords(current.records, ctx));
-    const selected = await librarySelection.selected(ctx);
-    const sources = selected ? [selected.source] : [];
-    const sourceIds = sources.map((source) => source.id);
-    const offline = sources.length > 0 && sources.every((source) => source.discovery?.offline);
-    const action = notionCatalogAction({
-      offline,
-      sourceIds,
-      observations: current.lists ?? [],
-      failedSourceIds: current.failures.map((failure) => failure.sourceId),
-      now: Date.now(),
-      retryAt: notionRetryAt.get(key),
-    });
-    const failureNotice = formatSourceFailures(current.failures.filter((failure) => sourceIds.includes(failure.sourceId))).join("\n");
-    if (action !== "refresh") return { records, notice: action === "wait" && failureNotice ? failureNotice : undefined };
-    const pending = refreshCatalog(cwd, current, ctx);
-    const hasNotion = current.records.some((record) => record.source === "notion");
-    return {
-      records,
-      notice: hasNotion ? "Updating Notion catalog" : failureNotice || "Reading Notion catalog",
-      followUp: pending.then(async (next) => ({
-        records: await buildDollarRegistryForContext(registryContext, defaultRecords(next.records, ctx)),
-        notice: formatSourceFailures(next.failures.filter((failure) => sourceIds.includes(failure.sourceId))).join("\n") || undefined,
-      })).catch(error => ({ records, notice: catalogError(error) })),
-    };
+  const completionListeners = new Set<() => void>();
+  const notifyCompletion = () => { for (const listener of completionListeners) { try { listener(); } catch { /* An editor cannot own directory publication. */ } } };
+  type MenuOwner = { generation: number; ctx: ExtensionContext; cwd: string; prompt: string | string[];
+    snapshot: ReturnType<typeof createCompletionSnapshot>; warnings: Set<string>; ui: ExtensionContext["ui"] };
+  let completionOwner: MenuOwner | undefined;
+  const emptyMenu: DollarMenu = { candidates: [], revision: 0 };
+  const menuIsCurrent = (owner: MenuOwner) => completionOwner === owner && owner.generation === menuGeneration && !catalogOwner.signal.aborted;
+  const menuWarning = (owner: MenuOwner, error: unknown) => {
+    if (!menuIsCurrent(owner)) return;
+    const message = catalogError(error);
+    owner.snapshot.warn(message);
+    if (!owner.warnings.has(message)) {
+      owner.warnings.add(message);
+      try { owner.ui?.notify?.(message, "warning"); } catch { /* A warning cannot own background work. */ }
+    }
   };
-  const retireMenuContext = () => { menuGeneration++; menuContext = undefined; };
-  pi.on("session_shutdown", retireMenuContext);
-  for (const event of ["session_switch", "session_branch", "session_tree"] as const) pi.on(event, (_event, ctx) => { menuGeneration++; menuContext = librarySelection.capture(ctx); });
-  pi.on("session_start", (_event, ctx) => {
-    const generation = ++menuGeneration;
+  const readMenuCache = async (owner: MenuOwner, phase: "cache" | "refresh", source?: Extract<SourceConfig, { type: "notion" }>) => {
+    const ticket = owner.snapshot.begin(phase);
+    try {
+      await ownCatalog(async signal => {
+        await librarySelection.identity(owner.ctx);
+        if (!menuIsCurrent(owner)) return;
+        const selected = source ?? libraryContext(owner.ctx)?.local()?.source;
+        if (!selected || selected.library !== libraryContext(owner.ctx)?.local()?.root) return;
+        const value = await readNotionCandidateSnapshot(selected, owner.cwd, signal);
+        if (!menuIsCurrent(owner)) return;
+        if (value.kind === "miss") return;
+        owner.snapshot.accept(ticket, value.candidates, value.kind === "blocked" ? "Notion catalog access is unavailable" : undefined);
+      });
+    } catch (error) { menuWarning(owner, error); }
+  };
+  const catalogCompletionNotification = (ctx: ExtensionContext, generation: { menu: number; refresh: number }) =>
+    (source: Extract<SourceConfig, { type: "notion" }>) => {
+      const owner = completionOwner;
+      if (!owner || !menuIsCurrent(owner) || generation.menu !== menuGeneration || generation.refresh !== refreshGeneration
+        || libraryContext(ctx) !== libraryContext(owner.ctx)) return;
+      // This fires before host stub/View projections. Cache publication is its own
+      // local operation and never borrows the full metadata consumer's authority.
+      void readMenuCache(owner, "refresh", source);
+    };
+  const localMenus = new Map<string, Promise<DiscoveryRecord[]>>();
+  const refreshMenu = (owner: MenuOwner) => {
+    if (!menuIsCurrent(owner)) return;
+    void currentCatalog(owner.cwd, owner.ctx).then(async result => {
+      if (!menuIsCurrent(owner)) return;
+      const records = await buildDollarRegistryForContext({ getSystemPrompt: () => owner.prompt },
+        Promise.resolve(result.records.filter(record => record.source !== "notion")));
+      if (!menuIsCurrent(owner)) return;
+      owner.snapshot.local(records.map(localCompletionCandidate));
+      await readMenuCache(owner, "refresh");
+      for (const message of formatSourceFailures(result.failures)) menuWarning(owner, new Error(message));
+    }).catch(error => menuWarning(owner, error));
+  };
+  const activateMenu = (ctx: ExtensionContext, online = true) => {
+    completionOwner?.snapshot.retire();
     menuContext = librarySelection.capture(ctx);
+    const captured = menuContext, cwd = catalogCwd(ctx.cwd ?? process.cwd());
+    const owner: MenuOwner = { generation: menuGeneration, ctx: captured, cwd,
+      prompt: ctx.getSystemPrompt?.() ?? "", snapshot: createCompletionSnapshot(notifyCompletion),
+      warnings: new Set(), ui: ctx.ui };
+    completionOwner = owner;
+    notifyCompletion();
+    let local = localMenus.get(cwd);
+    if (!local) {
+      const localConfig = { ...config, sources: (config.sources ?? []).filter(source => source.type !== "notion") };
+      local = ownCatalog(signal => buildDiscoveryRegistry(localConfig, cwd, { paths, signal }))
+        .then(result => dedupeDiscoveryRecords([...configuredBundledBuiltinRecords(config), ...result.records]));
+      localMenus.set(cwd, local);
+      void local.catch(() => { if (localMenus.get(cwd) === local) localMenus.delete(cwd); });
+    }
+    void buildDollarRegistryForContext({ getSystemPrompt: () => owner.prompt }, local).then(records => {
+      if (menuIsCurrent(owner)) owner.snapshot.local(records.map(localCompletionCandidate));
+    }).catch(error => menuWarning(owner, error));
+    void readMenuCache(owner, "cache");
+    // Background discovery retains the existing combined Catalog/Default View
+    // query. No completion request waits for root validation or projections.
+    if (online) refreshMenu(owner);
+  };
+  const retireMenuContext = () => {
+    menuGeneration++; menuContext = undefined;
+    completionOwner?.snapshot.retire(); completionOwner = undefined; notifyCompletion();
+  };
+  pi.on("session_shutdown", retireMenuContext);
+  for (const event of ["session_switch", "session_branch", "session_tree"] as const) pi.on(event, (_event, ctx) => {
+    menuGeneration++; activateMenu(ctx);
+  });
+  pi.on("session_start", (_event, ctx) => {
+    menuGeneration++;
     const ui = ctx.ui;
     if (ui?.addAutocompleteProvider && !autocompleteUis.has(ui)) {
-      ui.addAutocompleteProvider((current) => createDollarSkillAutocompleteProvider(current, () => menuContext ? dollarMenu(menuContext) : Promise.resolve({ records: [] }), record => { if (menuContext) acceptedSelections.remember(menuContext, record); }));
+      ui.addAutocompleteProvider(current => createDollarSkillAutocompleteProvider(current, {
+        read: () => completionOwner?.snapshot.read() ?? emptyMenu,
+        scope: () => completionOwner,
+        subscribe(listener) { completionListeners.add(listener); return () => { completionListeners.delete(listener); }; },
+      }, candidate => { if (menuContext) acceptedSelections.remember(menuContext, candidate); }));
       autocompleteUis.add(ui);
     }
-    // The editor and provider become usable while the owned catalog request continues.
-    void getCatalog(ctx.cwd, ctx).then(async ({ failures }) => {
-      if (generation !== menuGeneration) return;
-      for (const message of formatSourceFailures(failures)) ui?.notify?.(message, "warning");
-      const menu = await dollarMenu(ctx);
-      await menu.followUp;
-    }).catch(error => { if (generation === menuGeneration) ui?.notify?.(catalogError(error), "error"); });
+    activateMenu(ctx);
   });
   const injectionPresentation = (ctx: ExtensionContext, mode: "selected" | "restored" = "selected", restoredSelection?: SessionSelection): SkillInjectionPresentation => ({
     ...adapter,
@@ -1915,15 +1967,17 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     },
     onMetadata: records => sourceRuntime.prefetch(selectPrefetchPlans(records, normalizeSources(config.sources))),
     needsPreflightPrompt: text => parseInvocations(text, configuredRules(config)).length > 0,
-    onPreparation: entry => {
-      menuContext = entry.ctx;
-      sourceRuntime.pausePrefetch("foreground");
-      acceptedSelections.capture(entry.ctx, entry.controller.signal,
-        parseInvocations(entry.event.text ?? "", configuredRules(config)).filter(request => request.scope === "global").map(request => request.query));
+    onInputReceipt: receipt => {
+      acceptedSelections.capture(receipt,
+        parseInvocations(receipt.event.text ?? "", configuredRules(config)).filter(request => request.scope === "global").map(request => request.query));
     },
-    buildPreparedPrompt: async (text, ctx, signal, prepared) => {
+    onPreparation: () => {
+      sourceRuntime.pausePrefetch("foreground");
+    },
+    buildPreparedPrompt: async (text, ctx, signal, prepared, receipt) => {
+      const accepted = await submissionRecords(receipt, signal);
       const result = await invokeBeforeAgentStart(
-        { prompt: text }, ctx, registryPromise, config, getDollarRegistry(ctx.cwd, ctx, text, signal),
+        { prompt: text }, ctx, registryPromise, config, submissionRegistry(ctx, text, accepted, signal),
         async record => {
           if (!record.sourceId) return loadSourceSkill(record, config, ctx.cwd, { signal });
           const value = await host.prepare(record, ctx, signal);
@@ -1931,14 +1985,15 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
           return value.record;
         },
         (messages, record) => hasLoadedRecord(projectSelectedSourceMessages(messages, sessionSelection(ctx)), record),
-        injectionPresentation(ctx), acceptedSelections.forSubmission(signal), prepared,
+        injectionPresentation(ctx), accepted, prepared,
       );
       return result?.message;
     },
     taskPrompt: async (text, ctx, signal, invocation) => {
       const requests = parseInvocations(text, configuredRules(config));
       if (!requests.length) return text;
-      const { injections } = resolveSkillRequests(requests, await registryPromise, {}, await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd, ctx, text, signal)), config, acceptedSelections.forSubmission(signal), libraryContext(ctx)?.local()?.source.id);
+      const accepted = await submissionRecords(invocation?.receipt, signal);
+      const { injections } = resolveSkillRequests(requests, await registryPromise, {}, await buildDollarRegistryForContext(ctx, submissionRegistry(ctx, text, accepted, signal)), config, accepted, libraryContext(ctx)?.local()?.source.id);
       const tasks: string[] = [];
       for (const injection of injections) {
         if (recordKind(injection.record) !== "prompt") continue;
@@ -1953,13 +2008,14 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       }
       return tasks.length ? text + "\n\n" + tasks.join("\n\n") : text;
     },
-    preflightPrompt: async (text, ctx, signal) => {
+    preflightPrompt: async (text, ctx, signal, receipt) => {
       const requests = parseInvocations(text, configuredRules(config));
       if (requests.length === 0) return;
+      const accepted = await submissionRecords(receipt, signal);
       const registry = await registryPromise;
       const dollarRegistry = requests.some(request => request.scope === "global" || request.scope === "catalog")
-        ? await buildDollarRegistryForContext(ctx, getDollarRegistry(ctx.cwd, ctx, text, signal)) : [];
-      const { injections } = resolveSkillRequests(requests, registry, { phase: "input" }, dollarRegistry, config, acceptedSelections.forSubmission(signal), libraryContext(ctx)?.local()?.source.id);
+        ? await buildDollarRegistryForContext(ctx, submissionRegistry(ctx, text, accepted, signal)) : [];
+      const { injections } = resolveSkillRequests(requests, registry, { phase: "input" }, dollarRegistry, config, accepted, libraryContext(ctx)?.local()?.source.id);
       await host.prepareMany(injections.map(injection => injection.record).filter(record => record.sourceId), ctx, signal);
     },
   }, adapter);
@@ -1978,6 +2034,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     changed(sourceIds, ctx) {
       invalidateCatalogSources(sourceIds, ctx);
       sourceRuntime.forgetSources(sourceIds);
+      if (completionOwner) refreshMenu(completionOwner);
     },
   });
   installSkillGuidance(pi, config, paths, ctx => {
@@ -1998,14 +2055,17 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   });
   const refresh = async (ctx: ExtensionContext) => {
     const selectedGeneration = ++refreshGeneration;
-    const ownerMenu = menuGeneration;
+    const ownerMenu = ++menuGeneration;
     host.invalidate();
     sourceRuntime.invalidate();
     registryPromise = buildRegistry(config, paths);
+    localMenus.clear();
     librarySelection.invalidate();
     ctx = librarySelection.capture(ctx);
+    activateMenu(ctx, false);
     const result = await ownCatalog(async signal => buildDiscoveryRegistry(await librarySelection.config(ctx), ctx.cwd, { refresh: true, paths, signal,
-      directorySelections: notionDirectorySelections(await directoryConfig(ctx), ctx) }));
+      directorySelections: notionDirectorySelections(await directoryConfig(ctx), ctx),
+      onCatalogSettled: catalogCompletionNotification(ctx, { menu: menuGeneration, refresh: selectedGeneration }) }));
     if (selectedGeneration !== refreshGeneration) return;
     pairedCatalogGenerations.set(result, { menu: ownerMenu, refresh: selectedGeneration, forceViewRefresh: true });
     dollarRegistryByCwd.clear();
@@ -2017,11 +2077,12 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     if (paths.host === "pi" && adapter.metadataDiscovery === "deferred") return undefined;
     ctx = host.turnContext(ctx);
     try {
-      const result = await host.withPreparedPrompt(event.prompt, ctx, async (signal, native, original, prepared) => {
+      const result = await host.withPreparedPrompt(event.prompt, ctx, async (signal, native, original, prepared, receipt) => {
         if (original === undefined) return undefined;
         const submission = { ...event, prompt: original ?? event.prompt };
+        const accepted = await submissionRecords(receipt, signal);
         return invokeBeforeAgentStart(
-          submission, ctx, registryPromise, config, getDollarRegistry(ctx.cwd, ctx, submission.prompt, signal),
+          submission, ctx, registryPromise, config, submissionRegistry(ctx, submission.prompt, accepted, signal),
           async record => {
             if (!record.sourceId) return loadSourceSkill(record, config, ctx.cwd, { signal });
             const prepared = await host.prepare(record, ctx, signal);
@@ -2032,7 +2093,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
             (native !== undefined && recordIdentity(native) === recordIdentity(record)) || host.isNativeLoaded(messages, record as SkillRecord)
           )),
           adapter,
-          acceptedSelections.forSubmission(signal),
+          accepted,
           prepared,
         );
       });
@@ -2045,8 +2106,8 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   });
   const refreshSelection = async (ctx: ExtensionContext) => {
     menuGeneration++;
-    menuContext = librarySelection.capture(ctx);
     invalidateCatalogSources(notionSources().map(source => source.id), ctx);
+    activateMenu(ctx);
     await host.refresh(ctx, { preserveTurn: true });
   };
   const libraryCommand = createLibraryCommand(pi, librarySelection, refreshSelection);

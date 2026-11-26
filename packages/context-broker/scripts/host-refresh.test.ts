@@ -121,7 +121,7 @@ test("metadata refresh discovers a newly created Skill before TTL without replac
     expect(refreshed.freshness.sources).toEqual([expect.objectContaining({ source: "notion",
       validated_at: h.f.state.catalog.freshness.validated_at, max_age_ms: h.f.state.catalog.freshness.max_age_ms, stale: false })]);
     const calls = h.f.calls.slice(start);
-    expect(calls.map(call => call.operation)).toEqual(["list"]);
+    expect(calls.map(call => call.operation)).toEqual(["list", "candidates"]);
     expect(calls[0]?.options).toMatchObject({ library: h.f.source.library, refresh: true, directory: {} });
     expect(h.selected().scopes.get(root.sourceScope!)!.bindings).toEqual(selected);
     expect(h.active().selection.scopes.get(root.sourceScope!)!.bindings).toEqual(active);
@@ -171,8 +171,8 @@ test("a named metadata refresh discovers a just-enabled Skill outside the View b
     expect(current).toMatchObject({ count: 1, coverage: { exhaustive: true }, failures: [],
       records: [{ name: target.name, source: "notion", in_default_view: false, availability: "available" }] });
     expect(current.freshness.sources[0]).toMatchObject({ validated_at: h.f.state.catalog.freshness.validated_at, age_ms: 0, stale: false });
-    expect(h.f.calls.slice(before).map(call => call.operation)).toEqual(["list"]);
-    expect(h.f.calls.at(-1)?.options).toMatchObject({ refresh: true, library: h.f.source.library, directory: {} });
+    expect(h.f.calls.slice(before).map(call => call.operation)).toEqual(["list", "candidates"]);
+    expect(h.f.calls.findLast(call => call.operation === "list")?.options).toMatchObject({ refresh: true, library: h.f.source.library, directory: {} });
     expect(h.selected()).toEqual(selected); expect(h.active()).toEqual(active);
     expect(h.branch.filter(entry => entry.customType === "context-broker-selected-graph")).toEqual(entries);
     expect(h.fixedRef(root)).toBe(ref);
@@ -213,7 +213,7 @@ test("a verified native create during a pending catalog read makes its first ord
     release.resolve();
     for (const result of await Promise.all([pending, ordinary])) expect(result).toMatchObject({ count: 1, records: [{ name: "shopping" }] });
     expect(h.f.calls.filter(call => call.operation === "list" && call.options.refresh)).toHaveLength(2);
-    expect(h.f.calls.every(call => ["library-selection", "library", "list"].includes(call.operation))).toBe(true);
+    expect(h.f.calls.every(call => ["library-selection", "library", "list", "candidates"].includes(call.operation))).toBe(true);
   } finally { release.resolve(); await h.close(); }
 });
 
@@ -235,7 +235,7 @@ test("failed or partial metadata refresh cannot report a fresh complete empty di
     expect(partial).toMatchObject({ count: 1, coverage: { exhaustive: false }, records: [{ name: "shopping" }] });
     expect(partial.failures).toContainEqual({ source: "notion", code: "CATALOG_INCOMPLETE" });
     expect(partial.freshness.sources[0].validated_at).toBe(h.f.state.catalog.freshness.validated_at);
-    expect(h.f.calls.every(call => ["library-selection", "library", "list"].includes(call.operation))).toBe(true);
+    expect(h.f.calls.every(call => ["library-selection", "library", "list", "candidates"].includes(call.operation))).toBe(true);
   } finally { await h.close(); }
 });
 

@@ -317,6 +317,6 @@ test("production index content search preserves existing active roots, Requires 
     }
     const operations = f.f.calls.slice(calls).map(call => call.operation);
     expect(operations.filter(operation => operation === "content-search")).toHaveLength(3);
-    expect(operations.every(operation => operation === "list" || operation === "content-search")).toBe(true);
+    expect(operations.every(operation => operation === "list" || operation === "content-search" || operation === "candidates")).toBe(true);
   } finally { await f.close(); }
 });
