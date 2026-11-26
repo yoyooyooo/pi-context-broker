@@ -5,12 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import diagnostics from 'node:diagnostics_channel';
 import { randomUUID } from 'node:crypto';
-import { createEpisodeRecorder, sha256 } from './episode-evidence.mjs';
+import { candidateDifferences, createEpisodeRecorder, sha256 } from './episode-evidence.mjs';
 import { observeEpisodeNotion, stableNotionCatalog } from './episode-notion.mjs';
 import { graphSourceAccounting } from '../../scripts/notion-skill-graph-model-evidence.mjs';
 
 const publish = (name, value) => diagnostics.channel(name).publish(value);
 const metricChannel = 'context-broker.notion-sdk', resultChannel = 'context-broker.notion-sdk-result';
+const capturedCatalogSequences = JSON.parse(fs.readFileSync(new URL('./fixtures/sdk3-catalog-directory-sequence.json', import.meta.url), 'utf8')).cases;
 const catalog = () => ({ scope: 'scope-actual', fetched_at: '2026-11-22T12:00:00Z',
   records: [{ id: 'stable-skill', name: 'Refund', description: 'Resolve a refund', body_sha256: 'a'.repeat(64) }], databases: [], count: 1,
   freshness: { policy: 'default', validated_at: '2026-11-22T12:00:00Z', age_ms: 0, stale: false, max_age_ms: 300000 },
@@ -106,6 +107,95 @@ test('repeated catalog lists replace one source/library projection while retaini
   } finally { result = await f.close(); }
   assert.deepEqual(result.operations.map(item => item.operation_id), ids);
   assert.ok(result.operations.every(item => item.status === 'completed' && item.result_observed && item.receipt_ref));
+});
+
+test('both real SDK3 captures keep the full catalog when a cached single directory follows the combined response', async t => {
+  for (const captured of capturedCatalogSequences) await t.test(captured.episode, async () => {
+    const f = await fixture();
+    const identity = { library: captured.directory.library_id };
+    const original = structuredClone(captured);
+    let result;
+    try {
+      f.operation('list', captured.combined, identity);
+      const before = f.observer.candidate([{ type: 'notion', id: 'notion' }]);
+      f.stage('admission');
+      f.operation('list', captured.directory, identity);
+      const after = f.observer.candidate([{ type: 'notion', id: 'notion' }]);
+      assert.deepEqual(after.projection.catalogs[0].facets.map(facet => facet.facet), ['catalog', 'directory']);
+      assert.deepEqual(candidateDifferences(before.projection, after.projection), []);
+      assert.equal(after.evidence.length, 2);
+      assert.equal(after.projection.catalogs[0].facets[0].value.records.length, 16);
+      assert.equal(after.projection.catalogs[0].facets[1].value.records.length, 16);
+      assert.deepEqual(captured, original);
+    } finally { result = await f.close(); }
+    assert.equal(result.coverage.sdk, 'complete');
+    const receipts = fs.readdirSync(result.paths.responses).map(name => JSON.parse(fs.readFileSync(path.join(result.paths.responses, name), 'utf8')));
+    const combined = receipts.find(receipt => receipt.value.catalog)?.value;
+    const directory = receipts.find(receipt => receipt.value.capability_directory)?.value;
+    assert.deepEqual(combined, captured.combined);
+    assert.deepEqual(directory, captured.directory);
+    assert.equal(combined.directory.value.source, 'notion');
+    assert.equal(directory.source, 'local_cache');
+    assert.equal(combined.directory.value.freshness.policy, 'refresh');
+    assert.equal(directory.freshness.policy, 'default');
+  });
+});
+
+test('current directory merging still rejects content, Library, scope, query, coverage and freshness drift', async t => {
+  const captured = capturedCatalogSequences[0], changedId = 'ffffffff-ffff-4fff-bfff-ffffffffffff';
+  const mutations = [
+    ['description', value => value.records[0].description = 'Changed skill instructions'],
+    ['record identity', value => value.records[0].id += '-changed'],
+    ['physical owner', value => value.records[0].locator.page_id = changedId],
+    ['version', value => value.records[0].version_id = 'changed-version'],
+    ['body hash', value => value.records[0].body_sha256 = 'b'.repeat(64)],
+    ['record order', value => value.records.reverse()],
+    ['Library identity', value => value.library_id = changedId],
+    ['credential scope', value => value.scope = 'c'.repeat(64)],
+    ['View identity', value => value.view.id = changedId],
+    ['View selection', value => value.view_selection = 'named'],
+    ['query filter', value => value.view_query.filter = { enabled: false }],
+    ['query count', value => value.view_query.total_count++],
+    ['query pagination', value => value.view_query.next_cursor = 'next-page'],
+    ['coverage', value => value.coverage.exhaustive = false],
+    ['source failure', value => value.coverage.failed_sources.push({ id: changedId, code: 'ACCESS_DENIED' })],
+    ['stale cache', value => value.freshness.stale = true],
+    ['freshness bound', value => value.freshness.max_age_ms++],
+    ...['offline', 'max_age', 'pinned'].map(policy => [policy + ' policy', value => value.freshness.policy = policy]),
+    ['unknown delivery source', value => value.source = 'unrecognized_source'],
+  ];
+  for (const [name, mutate] of mutations) await t.test(name, async () => {
+    const f = await fixture(), identity = { library: captured.directory.library_id };
+    try {
+      f.operation('list', captured.combined, identity);
+      const before = f.observer.candidate([{ type: 'notion', id: 'notion' }]);
+      const changed = structuredClone(captured.directory); mutate(changed);
+      f.operation('list', changed, identity);
+      const after = f.observer.candidate([{ type: 'notion', id: 'notion' }]);
+      assert.ok(candidateDifferences(before.projection, after.projection).length > 0);
+    } finally { await f.close(); }
+  });
+  await t.test('diagnostic Library binding', async () => {
+    const f = await fixture();
+    try {
+      f.operation('list', captured.combined, { library: captured.directory.library_id });
+      const before = f.observer.candidate([{ type: 'notion', id: 'notion' }]);
+      f.operation('list', captured.directory, { library: changedId });
+      assert.ok(candidateDifferences(before.projection, f.observer.candidate().projection).length > 0);
+    } finally { await f.close(); }
+  });
+});
+
+test('a successful single directory cannot erase a failed catalog facet', async () => {
+  const f = await fixture(), captured = capturedCatalogSequences[0];
+  const combined = structuredClone(captured.combined);
+  combined.catalog = { ok: false, error: { code: 'ACCESS_DENIED', message: 'Controlled failure' } };
+  try {
+    f.operation('list', combined, { library: captured.directory.library_id });
+    f.operation('list', captured.directory, { library: captured.directory.library_id });
+    assert.deepEqual(f.observer.candidate().projection.catalogs[0].facets.map(facet => [facet.facet, facet.ok]), [['catalog', false], ['directory', true]]);
+    assert.throws(() => f.observer.candidate([{ type: 'notion', id: 'notion' }]), /CATALOG_UNAVAILABLE/);
+  } finally { await f.close(); }
 });
 
 test('catalog projection retains distinct source/library pairs and sorts independently of observation order', async () => {
