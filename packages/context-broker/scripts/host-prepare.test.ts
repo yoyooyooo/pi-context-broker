@@ -920,13 +920,15 @@ test("Pi preparation uses a transcript entry and fences cancelled or revoked fee
   expect(messages).toEqual([]); expect(widgets).toBe(0);
 });
 
-test("Pi dollar context appends its loading entry before preparation and confirms loaded only after provider acceptance", async () => {
+for (const accepted of [false, true])
+test(`Pi dollar context keeps its ${accepted ? "loaded" : "ready"} transcript entry when the model request is stopped`, async () => {
   const f = await fixture(true), entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const operation = new AbortController();
   let renderer: PreparationEntryRenderer | undefined, widgets = 0, messages = 0, confirmations = 0;
   f.api.pi = { Text: PreparationText };
   f.api.registerEntryRenderer = (type, value) => { expect(type).toBe(ACTIVATION_MESSAGE); renderer = value; };
   f.api.sendMessage = () => { messages++; };
-  f.ctx.hasUI = true; f.ctx.mode = "tui";
+  f.ctx.hasUI = true; f.ctx.mode = "tui"; f.ctx.signal = operation.signal;
   f.ctx.ui = { setWidget() { widgets++; } };
   await f.install(async purpose => { entered.resolve(); await release.promise; return [f.graph(purpose)]; }, {
     buildPreparedPrompt: async (_text, _ctx, _signal, records = []) => {
@@ -966,11 +968,22 @@ test("Pi dollar context appends its loading entry before preparation and confirm
     await f.emit("after_provider_response", { status: 503 }, f.ctx);
     expect(rendered()).toBe("[skill@notion] root · ready"); expect(confirmations).toBe(0);
     await f.emit("before_provider_request", {}, f.ctx);
-    await f.emit("after_provider_response", { status: 200 }, f.ctx);
-    expect(rendered()).toBe("[skill@notion] root · loaded");
-    expect(rows()).toHaveLength(1); expect(confirmations).toBe(1); expect(f.persisted).toEqual(["extend"]);
+    if (accepted) await f.emit("after_provider_response", { status: 200 }, f.ctx);
+    const expected = `[skill@notion] root · ${accepted ? "loaded" : "ready"}`;
+    expect(rendered()).toBe(expected);
+    expect(rows()).toHaveLength(1); expect(confirmations).toBe(accepted ? 1 : 0);
+    expect(f.persisted).toEqual(accepted ? ["extend"] : []);
     expect(messages).toBe(0); expect(widgets).toBe(0);
     expect(output.messages.some(message => message.customType === ACTIVATION_MESSAGE)).toBe(false);
+    const count = f.session.entries.length;
+    operation.abort();
+    await f.emit("agent_end", {}, f.ctx);
+    expect(rendered()).toBe(expected);
+    await f.emit("after_provider_response", { status: 200 }, f.ctx);
+    expect(rendered()).toBe(expected);
+    expect(f.session.entries).toHaveLength(count);
+    expect(confirmations).toBe(accepted ? 1 : 0);
+    expect(f.persisted).toEqual(accepted ? ["extend"] : []);
   } finally {
     release.resolve(); await pending?.catch(() => undefined);
     await f.emit("agent_end", {}, f.ctx); await f.emit("session_shutdown", {}, f.ctx);

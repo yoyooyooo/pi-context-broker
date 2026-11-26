@@ -174,7 +174,8 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
     clearPending(ctx: ExtensionContext) {
       const session = ctx.sessionManager?.getSessionId?.();
       for (const entry of live.values()) if (entry.session === session) {
-        if (entry.state.status !== "error") {
+        // Stop cancels unfinished preparation, not an already prepared request.
+        if (entry.state.status === "running") {
           entry.state.status = "error"; entry.state.note = "Cancelled.";
           entry.state.took = Date.now() - entry.state.started;
           publish(entry);
