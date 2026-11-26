@@ -8,8 +8,8 @@ type Selection = { library: string | null; status: "requested" | "ready" }
   | { library: string | null; status: "blocked"; code: string };
 export type ResolvedLibrarySelection = { library: SharedLibrary; source: NotionSource; sources: NotionSource[] };
 type LibraryIdentity = { root: string; source: NotionSource; sources: NotionSource[] };
-export type LibraryContext = { readonly key: string; readonly identity: Promise<void>; readonly selected: Promise<ResolvedLibrarySelection | undefined>;
-  local(): LibraryIdentity | null | undefined; peek(): ResolvedLibrarySelection | undefined };
+export type LibraryContext = { readonly key: string; readonly identity: Promise<LibraryIdentity | undefined>; readonly selected: Promise<ResolvedLibrarySelection | undefined>;
+  local(): LibraryIdentity | null | undefined };
 const contextKey = Symbol("context-broker.library");
 type ScopedContext = ExtensionContext & { [contextKey]?: LibraryContext };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -87,39 +87,42 @@ export function createLibrarySelection(config: ConfigFile, resolveLibrary = reso
     if (!captured) {
       let key = JSON.stringify([base, "pending", ++admission]);
       let local: LibraryIdentity | null | undefined;
-      let resolved: ResolvedLibrarySelection | undefined;
+      let selected: Promise<ResolvedLibrarySelection | undefined> | undefined;
       const identity = select(selection, ctx).then(value => {
         key = JSON.stringify([base, value?.root ?? null, value?.defaultRoot ?? null]);
         local = value ?? null;
         return value;
       });
-      const selected = identity.then(async value => {
-        if (!value) return undefined;
-        const library = await verifyRoot(value.root, ctx);
-        resolved = { library, source: value.source, sources: value.sources };
-        return resolved;
-      });
-      captured = { get key() { return key; }, identity: identity.then(() => undefined), selected, local: () => local, peek: () => resolved };
-      // Input acceptance starts the read even when Pi has not entered agent_start.
-      // Keep rejection observable by its consumer without an unhandled-rejection side effect.
-      void captured.selected.catch(() => undefined);
+      captured = { get key() { return key; }, identity, local: () => local,
+        get selected() {
+          if (!selected) {
+            // Routing needs only local configuration. SDK consumption owns the
+            // freshness check; explicit Library inspection still verifies it.
+            selected = identity.then(async value => value ? {
+              library: await verifyRoot(value.root, ctx), source: value.source, sources: value.sources,
+            } : undefined);
+            void selected.catch(() => undefined);
+          }
+          return selected;
+        } };
+      // Input acceptance precedes its consumer; observe local-selection errors.
       void captured.identity.catch(() => undefined);
       contexts.set(base, captured);
     }
     return { ...ctx, [contextKey]: captured };
   }
   const selected = (ctx: ExtensionContext = {}) => libraryContext(capture(ctx))!.selected;
+  const identity = (ctx: ExtensionContext = {}) => libraryContext(capture(ctx))!.identity;
   return {
-    capture: (ctx?: ExtensionContext) => capture(ctx), selected,
+    capture: (ctx?: ExtensionContext) => capture(ctx), selected, identity,
     accept: (ctx: ExtensionContext) => capture(ctx, true),
-    identity: (ctx?: ExtensionContext) => libraryContext(capture(ctx))!.identity,
     key: (ctx?: ExtensionContext) => libraryContext(capture(ctx))!.key,
     isCurrent(ctx: ExtensionContext) {
       const captured = libraryContext(ctx);
       return captured === undefined || captured.key === libraryContext(capture({ ...ctx, [contextKey]: undefined }))!.key;
     },
     invalidate() { revision++; contexts.clear(); verified.clear(); },
-    async sources(ctx?: ExtensionContext) { return (await selected(ctx))?.sources ?? []; },
+    async sources(ctx?: ExtensionContext) { return (await identity(ctx))?.sources ?? []; },
     async verify(source: NotionSource, ctx: ExtensionContext) {
       const library = await resolveLibrary({ library: source.library, cwd: ctx.cwd ?? process.cwd(), env: { ...process.env }, signal: ctx.signal });
       if (source.library !== undefined && library.library_id !== notionPageId(source.library)) throw failure("LIBRARY_SCOPE_MISMATCH");
@@ -148,7 +151,7 @@ export function createLibrarySelection(config: ConfigFile, resolveLibrary = reso
       return matches;
     },
     async config(ctx?: ExtensionContext): Promise<ConfigFile> {
-      const current = await selected(ctx);
+      const current = await identity(ctx);
       return { ...config, sources: [...(config.sources ?? []).filter(source => source.type !== "notion"), ...(current ? [current.source] : [])] };
     },
   };

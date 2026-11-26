@@ -1141,7 +1141,8 @@ test(`public Broker ${mode} bounds Library selection on ${stop} before remote di
   f.api.getActiveTools = () => ["read", "bash", "notion_ctl"];
   const h = await f.install(undefined, { librarySelection: library });
   await h.host.refresh(f.ctx);
-  const selected = spyOn(library, "selected").mockImplementation(async () => { entered.resolve(); await release.promise; return undefined; });
+  const selected = spyOn(library, mode === "cli source" ? "selected" : "identity")
+    .mockImplementation(async () => { entered.resolve(); await release.promise; return undefined; });
   const nativeTimeout = globalThis.setTimeout, budgets: number[] = [];
   const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
     if (delay === 60_000 || delay === CONTENT_SEARCH_TIMEOUT_MS) budgets.push(delay);
@@ -1153,7 +1154,11 @@ test(`public Broker ${mode} bounds Library selection on ${stop} before remote di
     const call = mode === "cli source" ? h.graphTool!.execute("held-library", { cli_source: null }, operation.signal, undefined, f.ctx)
       : h.search.execute("held-library", mode === "content" ? { search_in: "content", query: "needle" } : {}, operation.signal, undefined, f.ctx);
     pending = call.then(value => ({ value }), error => ({ error }));
-    await entered.promise;
+    await Promise.race([entered.promise, new Promise<never>((_resolve, reject) => {
+      watchdog = nativeTimeout(() => reject(new Error("Expected Library selection boundary was not entered")), 100);
+    })]);
+    if (watchdog) clearTimeout(watchdog);
+    watchdog = undefined;
     if (stop === "abort") operation.abort();
     const result = await Promise.race([pending, new Promise<undefined>(resolve => { watchdog = nativeTimeout(() => resolve(undefined), 100); })]);
     expect(result).toBeDefined();
@@ -1166,8 +1171,9 @@ test(`public Broker ${mode} bounds Library selection on ${stop} before remote di
     expect(f.calls).toEqual([]); expect(f.persisted).toEqual([]); expect(f.session.entries).toEqual([]);
   } finally {
     if (watchdog) clearTimeout(watchdog);
+    selected.mockRestore(); timeout.mockRestore();
     release.resolve(); await pending;
-    selected.mockRestore(); timeout.mockRestore(); await f.emit("session_shutdown", {}, f.ctx);
+    await f.emit("session_shutdown", {}, f.ctx);
   }
 });
 

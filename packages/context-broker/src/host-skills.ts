@@ -591,7 +591,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (typeof input.query !== "string" || !input.query.trim()
       || input.cursor !== undefined || Number(input.limit ?? 20) > CONTENT_SEARCH_MAX_RESULTS) throw hostError("INVALID_ARGUMENT");
     const enabledSources = () => (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
-    const selectedLibrary = await options.librarySelection?.selected(ctx);
+    const selectedLibrary = await options.librarySelection?.identity(ctx);
     checkPreparationSignal(readSignal);
     const sources = selectedLibrary?.sources ?? enabledSources();
     if (input.source === undefined && !selectedLibrary && sources.length !== 1)
@@ -600,7 +600,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const source = sources.find(value => value.id === sourceId);
     if (!source || source.type !== "notion") throw hostError("SOURCE_UNAVAILABLE");
     if (!source.library?.trim())
-      throw Object.assign(new Error("Content search requires a verified Library root for the selected Source."), { code: "CONTENT_SOURCE_REQUIRED" });
+      throw Object.assign(new Error("Content search requires a selected Library root for the selected Source."), { code: "CONTENT_SOURCE_REQUIRED" });
     if (source.discovery?.offline) throw hostError("CONTENT_SEARCH_OFFLINE");
     const requestedConfiguration = JSON.stringify(source);
     const deadline = Date.now() + CONTENT_SEARCH_TIMEOUT_MS;
@@ -686,7 +686,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const query = String(input.query ?? "").trim().toLocaleLowerCase();
       const sourceIds = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => source.id);
       if (piConsumption && input.source !== undefined && !sourceIds.includes(String(input.source))) throw hostError("SOURCE_UNAVAILABLE");
-      const selectedLibrary = options.librarySelection ? await options.librarySelection.selected(ctx) : undefined;
+      const selectedLibrary = options.librarySelection ? await options.librarySelection.identity(ctx) : undefined;
       checkPreparationSignal(readSignal);
       const selectedSources = input.source === undefined ? selectedLibrary ? [selectedLibrary.source.id] : sourceIds : [String(input.source)];
       const listGeneration = generation, listMetadataGeneration = metadataGeneration;
@@ -1877,10 +1877,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
   function catalogSystemPrompt(input: string | string[] | undefined, ctx: ExtensionContext,
     candidateRefs = modelCandidateReferences([...records, ...defaultRouters].filter(record => available(record) && visibleInLibrary(record, ctx)), ctx), omitDescription?: (record: SkillRecord) => boolean): string {
-    let systemPrompt = viewSystemPrompt(input, records.filter(record => available(record) && visibleInLibrary(record, ctx)), defaultRouters.filter(record => available(record) && visibleInLibrary(record, ctx)), new Set(readRecords.keys()), views.filter(view => !options.librarySelection || view.sourceId === libraryContext(ctx)?.peek()?.source.id), ctx.cwd,
+    let systemPrompt = viewSystemPrompt(input, records.filter(record => available(record) && visibleInLibrary(record, ctx)), defaultRouters.filter(record => available(record) && visibleInLibrary(record, ctx)), new Set(readRecords.keys()), views.filter(view => !options.librarySelection || view.sourceId === libraryContext(ctx)?.local()?.source.id), ctx.cwd,
       record => candidateRefs.get(record), listToolName, piConsumption, omitDescription);
     if (deferredPiDiscovery) {
-      if (metadataPending || discoveryError || options.librarySelection && !libraryContext(ctx)?.peek() || sourceFailures.some(failure => failure.blocking !== false)) {
+      if (metadataPending || discoveryError || options.librarySelection && !libraryContext(ctx)?.local() || sourceFailures.some(failure => failure.blocking !== false)) {
         const state = metadataPending ? "pending" : "unavailable";
         systemPrompt += `\n\n<ntn-skills-discovery status="${state}">Notion metadata is ${state}; this does not mean the directory is empty. Use ${listToolName} when the task needs discovery. It reports source failures. Visible entries may come from a previous observation. Previously loaded instructions keep their selected versions.</ntn-skills-discovery>`;
       }

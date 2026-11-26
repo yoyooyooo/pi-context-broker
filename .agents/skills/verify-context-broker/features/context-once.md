@@ -69,10 +69,11 @@ HTTP helper 与嵌入 SDK 来自同一 CLI revision。Pi entry、Node、包和�
 | --- | --- |
 | default-view | 激活前 Default Context off/on 零正文；激活后 Default/Enabled 变化、刷新拒绝与 ordinary/compact 保留原闭包 |
 | http-cache-recovery | 来源编辑、过期 metadata、同会话旧 pin、明确 inspect/adopt、cache clear、固定对象丢失及 compaction 后连续输入 |
+| http-warm-restart | 两个新 Pi 进程共享磁盘缓存，保持 5m TTL；重复 `$` 加载完整 root/Requires，原验证时间不变，含后台操作在内零 Notion HTTP |
 | http-interruption | 实际 Notion body hold、取消、同会话继续、明确重试 |
 | working-set | 共享 Requires、释放一个 root、compaction、完整工作集预算拒绝且不驱逐旧选择 |
 
-`all` 仅指这四项。SDK v1 快照预置、旧场景和旧 backend flags 已移除，
+`all` 仅指这五项。SDK v1 快照预置、旧场景和旧 backend flags 已移除，
 没有兼容入口。受控 provider 只替换决策；工具、Broker、SDK、Pi Session 和
 serializer 真实执行。引用只从模型实际可见目录或结果取得。证据和失败原件
 全部保留；本 driver 没有 cleanup action。

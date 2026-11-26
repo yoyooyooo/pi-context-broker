@@ -90,7 +90,7 @@ export function createViewCommands(api: ExtensionAPI, config: ConfigFile, refres
   const invalidate = () => { generation++; controller.abort(); controller = new AbortController(); };
   for (const event of ["session_before_switch", "session_before_tree", "session_before_branch", "session_shutdown"] as const) api.on(event, invalidate);
   const sourceFor = async (ctx: ExtensionContext, id?: string) => {
-    const selected = await libraries?.selected(ctx);
+    const selected = await libraries?.identity(ctx);
     const sources = selected?.sources ?? enabledSources(config);
     const source = id === undefined ? selected?.source ?? (sources.length === 1 ? sources[0] : undefined) : sources.find(source => source.id === id);
     if (!source) throw new Error(`Select one Notion source: ${sources.map(source => source.id).join(", ") || "none configured"}`);
