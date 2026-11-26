@@ -11,14 +11,14 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "3b6697bceccac7978a58fe7200e64e5d8222fbbb0aef7bc34624b26ac32b2ece",
+    "packages/context-broker/src/host-skills.ts": "6a4dc110b85f3c5584c2ab3bbb6ae21b4acc1abe352a08e7f3fc4c15d2317519",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
-    "packages/context-broker/scripts/host-prepare.test.ts": "ae4a06cbd471ff23b9cd1f48a1362faa4addde0851aa898f290407af280dcf99",
+    "packages/context-broker/scripts/host-prepare.test.ts": "b8e7c7bd31145f59419a3b0dab11018becf7194261b5f67852b4d38e763697fa",
     "scripts/check-consumer-observation-mutations.mjs": "3ee2b6cc2909687ad54b619eff64b5722cfae5ead0c7a12c21bd013f8157801f",
-    "packages/context-broker/scripts/host-refresh.test.ts": "525ae88b2622dfe07b6f2a2c55aee04db23c4cba29fd86c083c307609ceccc6c",
+    "packages/context-broker/scripts/host-refresh.test.ts": "92a34ff905b50f1586133c1e0863ca4750e64d67dfad9fbb64b23ef373711fc5",
     "packages/context-broker/scripts/resource-read-host.test.ts": "1411774432d57f3cfff2a514d5d9cf237ae4b84f8479b519491bbea67280317d",
-    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "492c6db358cbb983c3fb6fa61051d26eec6210049eafad99e33fffad35c825be",
+    "packages/context-broker/scripts/fixtures/active-notion-session.ts": "26132aa2f28fbb21a8586bb102abbd41907922e1eb9ced6da659369346c25f8e",
     "packages/context-broker/src/content-publication.ts": "0dbb3fb6e12798474d08856649ebb4282483b7241e9830ac3f55daef81ddd4f8",
     "packages/context-broker/src/content-search.ts": "04587a09c4cc526851a010804e01ae200c53ecea10da5591002fadbfb071f6fa",
     "packages/context-broker/src/pi-authorization.ts": "9355d0cdf3347043c17447bc691d1a605b374bded3b60cee8a61b317eb690440",
@@ -36,8 +36,17 @@
     "packages/context-broker/scripts/cli-write-invalidation.test.ts": "1469fd9eb3eac1ee2760a86f617091f76d4936836e0da0e0650da6b653cb8466",
     "packages/context-broker/src/sources.ts": "6d6021a9ee590790e402813caacc6de981192c514c52d004905cb1e4575918ce",
     "packages/context-broker/scripts/shared-notion-adapter.test.ts": "9b1b4c91ed6004242f63ad76a88c6cb683715458f816e9ca287152dee2f2929e",
-    "packages/context-broker/scripts/soft-miss-regressions.test.ts": "efb72840b43a9f29d520a8880545d73d9455caa47671fceb3979db03ec4d07d6",
-    "packages/context-broker/scripts/input-guard.test.ts": "9cc9b78836a78171e5e47a9e7d60ba18476bc46473dd1f653d28cb5c5f3a4958"
+    "packages/context-broker/scripts/soft-miss-regressions.test.ts": "a656fdb4f55ed59ba894537f7d023ca472a7cd5c4ca16c0f05d981ee3f71020f",
+    "packages/context-broker/scripts/input-guard.test.ts": "d02f124ced351a8eb33015884a9a76555b8d93e50b1a6a9ad3f09c2b24614976",
+    "packages/context-broker/src/skill-preparation.ts": "7df435552f987159a4810d60256f264148816b493ee0de0a098a70ea77ad1785",
+    "packages/context-broker/src/nonblocking-context.ts": "eb4b70618333384415ba03c62d4aa9d738cd61044ffd8864f75e6a63bacd84e7",
+    "packages/context-broker/src/activation-feedback.ts": "2551dce358edafb2f39648799fed11ab4b43dc4d392d7db1d9493bac66692469",
+    "packages/context-broker/src/host-text.ts": "89d0c4d1591667ab71ee0b8b41e8dba7d9f7aae12f778590149ef49425a3b77c",
+    "packages/context-broker/src/types.ts": "303b455599ee195d10f21e3602081922eaaed1f5ff9a9b4417ba0636465a5d62",
+    "packages/context-broker/scripts/nonblocking-context.test.ts": "96888a84d5e132f0c4ebac4956c4559ec737ca64c52538635695da62b6abaf39",
+    "packages/context-broker/scripts/activation-feedback.test.ts": "3ea125a3bf1dc4729842fc568990900b7e2751f8e6beb73d10dd030c5b83a4b0",
+    "packages/context-broker/src/index.ts": "292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d63",
+    "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "84d3fb8a58b0fd203cffe45a29442b5363666ecfd0997f55c001d8d8197c1959"
   },
   "models": {
     "Availability": {
@@ -77,13 +86,17 @@
       "owners": [
         "createConsumerObservations.begin/current/accept",
         "graphPreparation publication and commit checks",
-        "host lifecycle generation and cancellation"
+        "host lifecycle generation and cancellation",
+        "host-skills.ts warnAndRetire and skill-preparation.ts withPreparationDeadline retire an unconfirmed producer while original publication guards remain; concrete timeout behavior outside finite actions",
+        "index.ts ownCatalog/session_shutdown/publishCatalog retain signal and exact-entry publication fences while shutdown no longer joins uncooperative producers; concrete lifecycle obligation"
       ],
       "replays": [
         "F7",
         "older current success after a newer denial",
         "retired session/cancelled operation",
-        "host-content-search.test.ts: whole-result publication and independent waiters are concrete extension obligations; existing finite state variables are not expanded"
+        "host-content-search.test.ts: whole-result publication and independent waiters are concrete extension obligations; existing finite state variables are not expanded",
+        "host-prepare.test.ts and nonblocking-context.test.ts: non-cooperative context producers time out, late results cannot publish, and the original user request is not aborted",
+        "host-refresh.test.ts: production index shutdown completes with a suspended catalog; its late result is rejected without branch or notification publication"
       ],
       "negative": "ReadRace.generation-negative.cfg"
     }
@@ -178,7 +191,8 @@
     "scope": "The exact TLA/config/view bytes, model bounds, cases and expected rules are unchanged. Build/pin, user guidance, historical driver scores and unrelated producer files are not formal premises.",
     "identity_contract": "Current Skill reference v2: canonical complete root URI identifies logical Library plus stable Skill ID, while source configuration, credential scope and physical locator remain independently checked. Portable URI parsing has no display-name, alias or physical-page fallback; explicit Notion page addresses require current qualification. See current_review.skill_reference_v2 for the reviewed concrete identity and denial boundaries.",
     "current_effects_contract": "The current SDK and host effects contract now has exactly version, remote_writes and author_content. Retained-history outcomes and retention arrays are rejected. Existing cancellation, partial-source failure, source-span retirement, exact-body and receipt-preservation cases use current none/unknown observations; unknown remains dominant and absent observations are unknown. Final-request validation rejects explicit malformed effects before payload acceptance and combines top-level/preparation observations conservatively. Actual HTTP entity and delivery guards remain in place. The effects field schema and diagnostic aggregation are concrete regression obligations outside the finite models; no model, bound, case inventory, expected rule or mutation target changed.",
-    "cli_host_wait_guidance": "Reviewed 2e5b052: the successful cli_source response now states the public CLI default budget, timeout units, host wait margin and waiting on the same persistent process. The exact input exclusivity, available tool capabilities, one enabled Source, cancellation, selection, recovery, epoch, graph commit and delivery guards are unchanged. This response-only guidance does not change finite states, transitions, cases, expected rules or mutation targets. Natural model adherence remains a separate real-run obligation."
+    "cli_host_wait_guidance": "Reviewed 2e5b052: the successful cli_source response now states the public CLI default budget, timeout units, host wait margin and waiting on the same persistent process. The exact input exclusivity, available tool capabilities, one enabled Source, cancellation, selection, recovery, epoch, graph commit and delivery guards are unchanged. This response-only guidance does not change finite states, transitions, cases, expected rules or mutation targets. Natural model adherence remains a separate real-run obligation.",
+    "pi_failure_boundary": "Current Pi Broker failures retire unconfirmed source instructions and continue the original conversation with a warning. Existing qualification, graph, authorization and delivery guards still reject source publication and confirmation. See current_review.pi_nonblocking_context for reviewed ownership, native payload repair, queued input, deadline and presentation obligations; none adds a finite model action or wire-verification capability."
   },
   "outside_finite_models": [
     {
@@ -234,6 +248,20 @@
         "resource-read-host.test.ts"
       ],
       "contract": "Use exact current-branch selected plus confirmed bytes without acquiring new current authority. Current source/scope failure gates loaded and restored continuations. Physical/stable alias matching and batch manifest identity are concrete obligations beyond the single-record and two-read model bounds."
+    },
+    {
+      "name": "Pi failure continuation, native queue and display feedback",
+      "tests": [
+        "host-prepare.test.ts",
+        "input-guard.test.ts",
+        "nonblocking-context.test.ts",
+        "session-recovery.test.ts",
+        "final-request.test.ts",
+        "activation-feedback.test.ts",
+        "host-refresh.test.ts",
+        "scalar-resource-read-host.test.ts"
+      ],
+      "contract": "Broker failures retire unconfirmed instructions and continue original user input with a warning while keeping qualification, cancellation, exact identity, closure and provider-persistence guards. The context stage before each model request has one shared production 60-second deadline; native queue messages retain their accepted scope and images. Known payload slots and receipt spans are repaired without rewriting arbitrary user text or provider fields. Unknown schemas receive no native repair or wire proof; exact entity confirmation remains OpenAI-completions/Undici only. Compact ready/loaded/read feedback is display-only. These are concrete obligations, not new Availability/ReadRace variables or actions. Index shutdown retires catalog ownership without joining non-cooperative producers; original signal and publication guards remain in force."
     }
   ],
   "current_review": {
@@ -411,7 +439,29 @@
       "proof_limit": "No change to finite domains, model actions, rules, cases or mutation targets. These hashes bind reviewed bytes only, not a refinement proof or live UI acceptance."
     },
     "library_root_pi_rendering_integration": "Reviewed the Library root implementation rebased onto fa758957c799e886dd25069da19c283e9ab97387. Relative to the reviewed Library host, host-skills.ts adds only the optional renderer factory and two renderer spreads before explicit tool fields. All input admission, owner, Library selection, request ordering, publication, cancellation and graph commit guards retain their exact bytes. pi-host-adapter.ts is exactly the reviewed current next implementation. pi-read-adapter.test.ts retains the Library reference fixtures and adds the upstream replay/third-party ownership tests without weakening existing assertions. The consumption command includes both Library selection and renderer suites. Retest the combined source; these hashes are correspondence only, not a refinement proof or live acceptance.",
-    "explicit_pi_preparation_warning": "Reviewed explicit Pi acquisition only: preflight/task prompt/complete projection remain guarded by original scope, generation, identity and cancellation checks; timeout or acquisition failure retires the unconfirmed entry and staged graph/candidate/body, checks the captured signal after each await, and projects a warning plus original user input instead of cancelling the host. No partial selected vector, activation receipt or stale publication is admitted. Existing qualification, graph commit, final provider delivery and recovery-closure rules, bounds, negative cases and mutations remain unchanged; host-prepare/input-guard/soft-miss replays assert no body, no persistence, retained input and no host abort. The 30s deadline and general host failure behavior are implementation obligations, not properties proved by the finite models."
+    "explicit_pi_preparation_warning": "Reviewed explicit Pi acquisition only: preflight/task prompt/complete projection remain guarded by original scope, generation, identity and cancellation checks; timeout or acquisition failure retires the unconfirmed entry and staged graph/candidate/body, checks the captured signal after each await, and projects a warning plus original user input instead of cancelling the host. No partial selected vector, activation receipt or stale publication is admitted. Existing qualification, graph commit, final provider delivery and recovery-closure rules, bounds, negative cases and mutations remain unchanged; host-prepare/input-guard/soft-miss replays assert no body, no persistence, retained input and no host abort. The 30s deadline and general host failure behavior are implementation obligations, not properties proved by the finite models.",
+    "pi_nonblocking_context": {
+      "reviewed_from": "45166146b45e8b9b17b24fc3cb7972b93c3b3e2b",
+      "scope": "Reviewed the final Pi context, context_with_system, before_provider_request, after_provider_response and turn_end control flow, the new instruction-retirement helper, deadline/gate, native queue admission, display state and actual changed regression assertions. This extends the earlier explicit_pi_preparation_warning review to restoration and final-provider failures; it does not change the qualification or source identity contract.",
+      "admission_and_deadline": "Pi preserves native editor and queue ownership. Each accepted queued input retains its Library context, session, generation, text and images; preparation is adopted when the native user message reaches a later context, without a second input hook. The context stage before each model request has one shared 60-second deadline covering Library identity, print/JSON metadata, explicit preflight/task prompt and active restoration. Timeout retires Broker acquisition without aborting the operation; each asynchronous source continuation still checks its captured cancellation and current run before publication. User Stop and session replacement keep their original authority. This is a per-context-stage budget, not one budget for an agent turn containing multiple model/tool round trips; the existing internal fixed-restoration 30-second read budget is unchanged.",
+      "retirement": "warnAndRetire releases only the unconfirmed preparation, removes its owned loaded records, pending graphs, candidates, source projections and pending persistence, and records one warning. It does not manufacture a new selected vector, authorization observation, activation receipt or boundary draft. Existing confirmed history is not rewritten. assertPiRun, precise source access, complete closure/body checks, graph validation and public projection acknowledgement remain enforced.",
+      "payload_ownership": "withoutBrokerInstructions retains inline receipts until verified owned body spans are removed, including when public projection cannot be read; raw native input restoration binds timestamp and complete content. continueWithoutBrokerPayload changes known native message slots using original logical ownership, exact text/images and tool-call IDs. Replays preserve ordinary quotations, user/tool images, tool pairs, native reasoning/signatures and schemas; same-count swaps, changed source roles, mixed tool/text blocks and repeated warnings are covered. It never recursively replaces matching strings across an opaque payload.",
+      "provider_and_persistence": "A failed final guard continues the original user request with unverified Skill instructions withheld and no new confirmation/persistence eligibility. A later 2xx cannot revive a degraded run. A session write failure after accepted delivery warns without cancelling the response or claiming already-sent instructions were never loaded. Original complete delivery, current session/generation, completed turn, original branch user and actual applied-projection checks still decide active and persistent state.",
+      "presentation": "activation-feedback records display-only content:[] rows. Explicit preparation is compact while loading, ready after acquisition, loaded only on the provider-acceptance path, read for inspection and unavailable on failure. Expanded limits and source details do not enter model input. Optional UI errors cannot turn a source warning into a failed user turn. The existing list/use/read tool renderers remain separate unchanged execution paths.",
+      "replays": [
+        "host-prepare.test.ts: suspended print metadata and active restoration share the production 60000ms context deadline; original user/image and warning survive the actual returned provider payload; late producer cannot publish body, selected/active entries or delivery confirmation",
+        "input-guard.test.ts and soft-miss-regressions.test.ts: native queued text/images reach later context with one input admission; Stop/session replacement suppress late source bytes without aborting another operation",
+        "nonblocking-context.test.ts: receipt-only source stripping, same-text distinct images, OpenAI/Responses/Anthropic/Google/Bedrock/Pi native slots, source image retirement, ordinary quotes/tool pairs, swapped slots, mixed tool/text, repeat warnings, unknown-schema boundary, uncooperative timeout/cancel/late completion",
+        "session-recovery.test.ts and active-notion-session fixture: chained before_provider_request return is actually sent; late ACCESS_DENIED, changed serialized body and missing Required retain the original user/image exactly once, emit a warning and preserve existing pins/active/branch state without abort; post-provider selection persistence failure does not fabricate activation",
+        "final-request.test.ts: lost source results and mutated/deleted/role-changed restored source messages keep the ledger failure and forbid confirmation while returning a safe original-user payload",
+        "consumer-state.test.ts FV05: different-session late headers are followed by turn_end and must return no old-source drafts; provider-session-identity still targets the actual unique assertPiRun guard",
+        "activation-feedback.test.ts: ready versus loaded, provider confirmation, expanded limits, resumed display, one unavailable row, late result retirement, Stop/session clearing and optional UI failure",
+        "host-refresh.test.ts: production index shutdown completes before an uncooperative catalog producer; its signal is aborted, late output is rejected and branch/notifications remain unchanged",
+        "scalar-resource-read-host.test.ts: AUTH_REQUIRED still rejects the resource read and withholds exact inspected bytes at final request; the original request continues, a subsequent 2xx does not persist selection, and the original snapshot remains unchanged"
+      ],
+      "proof_limit": "Finite model/config/view bytes, bounds, cases, independent expected_rules, negative configurations, tool lock and all mutation targets are unchanged. Native queue order, image preservation, wall-clock deadlines, display rendering and known-provider payload repair are concrete implementation obligations outside the finite variables. Unknown provider shapes receive no guessed native repair or wire proof and rely on the earlier safe logical context. Exact entity confirmation remains limited to the existing OpenAI-completions/Undici ledger. Reviewed hashes bind these bytes, not implementation refinement, live Notion, actual Pi rendering or model task success; execute the existing formal, actual-guard and runtime gates separately.",
+      "shutdown": "Reviewed index ownCatalog and session_shutdown: shutdown advances refreshGeneration, aborts the catalog owner and clears catalog references without joining uncooperative producers. The unused pendingCatalogs Set is removed; the returned original promise still has a rejection observer, checks its combined signal before/after acquisition, and publishCatalog retains owner plus exact-entry fences. Production-index host-refresh replay holds the SDK list operation past shutdown, requires bounded shutdown while the producer is unfinished, then verifies late tool rejection and no new branch entry or notification."
+    }
   },
   "library_root_review": {
     "reviewed_from": "c063",

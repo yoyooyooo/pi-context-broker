@@ -258,7 +258,9 @@ MCP transport、OAuth 和凭据只由同包 CLI/core 持有。REST 与 MCP 凭�
 
 `Default Context` 明确保留为可选的作者组织／View 筛选属性，不作为第二个可用开关或全文注入开关。保留现有值、稳定 schema 和作者读写入口，因为真实 View 与其他集成可以使用它。没有筛选它的 View 中，切换该字段没有独立效果；明确筛选它的 View 则按正常目录新鲜度改变成员。`Enabled=false` 不能被它解禁。本批不重命名、删除字段，也不强制隐藏用户管理视图中的列。
 
-Pi 在 input 边界锁定选中提交，待 `agent_start` 提供本次操作的 signal 后，在 `context` hook 内获取目录、图与正文。待提交记录保留原文、图片和已接受的身份。**Stop**、Escape、RPC `abort` 及切换会话都会取消这项获取。Pi 显式准备最多等待 30 秒。准备出错只撤销本轮未确认的 Skill 获取，发出非阻塞 warning，原始用户请求继续，不交付部分图或未确认正文。用户主动 Stop 与会话切换仍取消旧获取。
+Pi 在 input 边界保留本次选中的原文、图片和身份，待 `agent_start` 提供操作 signal 后，在 `context` hook 内获取目录、图与正文。每次模型请求前的 context 阶段共用最多 60 秒预算，包含 print/JSON 的 metadata 等待、正文准备和固定上下文恢复；source 忽略取消时也按期返回。Broker 失败时撤销未确认的指令，发出非阻塞 warning，继续原始用户请求。权限、完整性、投影、最终 payload 和持久化检查仍拒绝无效 Skill 内容或激活回执，但不再中止用户对话。Pi 原生编辑器及后续消息队列保持可用。**Stop**、Escape、RPC `abort` 和切换会话仍取消所属获取，迟到的结果不能变成新的选择或投递。
+
+序列化之前，降级会按经过验证的回执范围或归属明确的工具结果移除 Broker 指令，保留用户原文与图片。最终 payload 降级仅修改能识别的原生消息位置和 tool-call ID，保留其他工具声明、图片及 provider 签名。目前只有 OpenAI-completions 配合已有 Undici 观察能证明实际请求字节；其他 serializer 不会被标为 wire-confirmed。未知 payload 形状依赖前面的安全上下文投影，不递归猜测并替换任意字段。请求已发送后的失败不能撤回已发字节，也不能据此产生新的 active 确认或持久化回执。
 
 Pi 仅在当前请求未取消，且 `after_provider_response` 返回 2xx 状态时记录 active 指令。写入 `context-broker-active-sources` 前，会核对本次请求中的完整正文；Notion 记录还须匹配固定的 `use` 图。该事件发生在收到响应头时，早于响应流结束；它只确认逻辑上的请求接受，不代表模型完成，也不是最终 wire 投递。`before_provider_request` 不是最后一次载荷修改：更晚的 handler 仍可替换 payload，响应事件也不含 body。普通 `openai-completions` HTTP 路由会先核对序列化后的工具结果和 Broker 拥有的 user/custom 投递，绑定实体摘要，并且只有 Node Undici 在该 run 的模型端点上观察到同一摘要时才记录 wire 回执。已知不一致不会确认 active、selected 或 persisted。已经发出的 body 保持 dispatched，不会被改写成 provider 状态 0。其他 API、mock provider 和非 Undici 传输明确不是 wire 证明。`/context-broker request` 最多打印 32 条内存记录，只含哈希、计数、固定 snapshot pin、copied/reused/retired、净化后的 `remote_writes`/`author_content` 和错误，不含源正文、path、ref 或密钥，也不新增模型工具。标量和批量 `contextBrokerResource` 与主文、preparation 一起核对。同一模型端点上无法归属到单一 run 的并发发送记为 unknown，不能变成 wire 成功。进程内 mock payload 即使 2xx 也只是 logical-only。缓存文件、`ready` 结果、选中图、摘要和仅展示的 loaded 日志都不能单独证明 active。[Skill 消费运行时](skill-consumption-runtime.md) 说明这些独立的当前状态。
 
@@ -287,7 +289,7 @@ Source id 与 namespace 内部的点保留为选择器的一部分，例如 `$ui
 
 名字冲突时，自动补全显示来源限定的候选。已接受选择的精确 read 返回目标 not-found 时，用户收到提示，模型收到 `context-broker-unavailable` 和 `state: not-loaded`。完整身份 token 不在当前目录时报告 `catalog-unavailable`，不虚构 Notion 查询结果或 metadata。这些记录绝不算 loaded；同一提交重复组装 context 时不重读、不重复追加缺失说明，下一次用户提交仍可重试。
 
-未知裸名 `$name`、简单 `$name@namespace`、金额、`$bunfs/root/chunks/cli-nxfh2cp0.js` 等路径、转义与 Markdown 示例继续按普通文字处理。缺失选择旁的其他有效引用、原文与图片仍只派发一次。歧义以及实际已选记录的权限、网络、source、目录或完整性错误仍阻断派发，不悄然改选其他来源。
+未知裸名 `$name`、简单 `$name@namespace`、金额、`$bunfs/root/chunks/cli-nxfh2cp0.js` 等路径、转义与 Markdown 示例继续按普通文字处理。缺失选择旁的原文与图片仍只派发一次。Pi 遇到歧义或已选记录的权限、网络、source、目录、完整性错误时，扣留未确认的指令并提示 warning，用户请求继续，不悄然改选其他来源。
 
 ### Pi 会话短引用
 
@@ -408,17 +410,17 @@ Pi 与 OMP 的选中 Skill payload 在完整正文旁提供经过转义的 `skil
 
 默认激活策略下，Notion 修改或缓存过期都不替换当前分支已选的确切 Skill 快照。新会话（包括在另一进程中新建的会话）重新检查引擎缓存资格：可用快照直接复用，命中不推进 `validated_at`；当前观察过期后，先重新校验再选择版本。选中图绑定可跨重启和压缩保留，与正文投递状态分别管理。相对资源始终跟随选中快照。
 
-Pi 在下一次 provider 请求前恢复有效上下文中缺失的已确认 active 指令，包括压缩或进程 resume 后的普通续接。恢复读取当前分支已确认的快照向量，核对完整字节与 hash，并保留原图；不会沿新变化的 Requires 边扩展，也不会替换为当前内容。固定内容缺失或无效时阻断请求。回退或切换分支只使用该分支的确认记录；仅选中的绑定和未确认的准备不能激活指令。真实终端与原生编辑器的验收入口见 [NS-SESSION-09～12](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/session-cache-recovery.md) 与[依赖图验证地图](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/skill-dependency-graph.md)。
+Pi 在下一次 provider 请求前恢复有效上下文中缺失的已确认 active 指令，包括压缩或进程 resume 后的普通续接。恢复读取当前分支已确认的快照向量，核对完整字节与 hash，并保留原图；不会沿新变化的 Requires 边扩展，也不会替换为当前内容。固定内容缺失、无效或恢复超时时，扣留对应内容并提示 warning，用户请求继续。回退或切换分支只使用该分支的确认记录；仅选中的绑定和未确认的准备不能激活指令。真实终端与原生编辑器的验收入口见 [NS-SESSION-09～12](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/session-cache-recovery.md) 与[依赖图验证地图](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/skill-dependency-graph.md)。
 
 当前完整、稳定的 Notion 页面在缓存校验后可直接读取人工编辑，显式刷新使用 `read CURRENT_REF_OR_PAGE --refresh`，不再要求先 inspect/accept-edit。旧 pinned snapshot 保持不可变。读取不推进 upstream 版本，不改变归属。Tracked 内容可读，但通过 CLI 修改其正文、资源、Name/Description 须修改源或显式 fork；Default Context 等组织属性可独立编辑。Publication 尚未完成、读取时图发生变化、资源权限/缺失和完整性错误仍明确失败；同步继续将本地手改视作冲突。
 
-扩展根据当前宿主 API 选择 Adapter。Adapter 负责原生目录注册、提示词呈现、编辑器装配、输入返回值及提交协议。OMP 使用命令提交与 handoff 回执；Pi 保留已接受的输入，在可取消的 context 阶段准备，并在 provider 响应边界确认投递。共享 preparation gate 持有取消状态，直到待处理消费者确认取消后才允许下一次提交。`CONTEXT_BROKER_HOST` 只选择配置和独立补全的备用默认路径，不切换当前宿主的提示词、编辑器或提交协议；显式 agentDir 优先。
+扩展根据当前宿主 API 选择 Adapter。Adapter 负责原生目录注册、提示词呈现、编辑器装配、输入返回值及提交协议。OMP 使用命令提交与 handoff 回执；Pi 保留已接受的输入，在可取消的 context 阶段准备，并在 provider 响应边界确认投递。共享 preparation gate 管理取消归属；Pi 的提交与队列仍由宿主管理。`CONTEXT_BROKER_HOST` 只选择配置和独立补全的备用默认路径，不切换当前宿主的提示词、编辑器或提交协议；显式 agentDir 优先。
 
 OMP 的 print/json 模式执行原生 source `/skill:` 命令时，命令等待触发的 agent turn 结束后返回，确保进程不会在 provider 请求开始前退出。交互与 RPC 模式仍由宿主管理 turn。
 
-交互激活在会话中追加持久、可折叠的 `Read ntn-skills://<alias>` 记录，显示来源、耗时及 `running`、`done` 或 `error` 状态。展示目标省略 namespace 前缀，重名时保留页面后缀。展开详情包含选中的版本与快照（如有）。终态记录保留，不按计时器清除。resume 恢复终态记录，并将旧 `running` 记录标为中断。自定义消息的 `content` 为空，展示元数据放在 `details`。记录及展开详情仅用于展示，不进入 provider 消息、上下文、压缩或 branch 摘要。`ntn-skills://` 是展示标识，不是可解析 URI 或模型工具调用。真实读取仍使用 `skill://`；模型原生 `read` 是真实工具调用。目录始终只有元数据；后台预取不会在选择前把正文加入目录或会话。其他终端使用文字渲染。同一实例已选中的快照直接复用，不新增激活记录。
+Pi 的显式 `$` 和原生 Skill 准备采用与工具一致的紧凑 Notion 标签。等待时立即显示一行 `[skill@notion] reframe, sharpen · loading…`，不铺开原始预算数字。结束后保留可展开的会话记录，沿用 Pi 主题和用户配置的展开快捷键。内容获取完成为 `ready`，只有确认已投递给 provider 后才改成 `loaded`；检查读取显示 `read`，获取失败显示带 warning 的 `unavailable`。展开详情包含原因、来源、准备预算及选中的版本和快照。终态记录可在 resume 后恢复，未完成的历史记录显示中断；用户 Stop 仅清除待处理 widget，不再追加 warning。展示消息的 `content` 为空，元数据放在 `details`，不进入 provider 消息、上下文、压缩或 branch 摘要。实际引用仍为 `skill://` 或会话 handle，展示记录不是模型工具调用。目录发现不会在选择前注入正文，复用已选快照也不追加重复准备记录。
 
-按 Enter 同步锁定本次准备与提交，草稿仍可编辑。原生编辑器显示 running 与 **Stop**。期间再按 Enter 不会提交第二条 prompt；点击 **Stop** 或按 Escape 可取消准备。Pi 在可取消的 `context` 阶段获取选中内容，OMP 保留通过命令执行的 preflight。准备成功后，首个 provider 请求包含原提示词、图片附件及完整选中正文。Pi 准备失败或超时仅扣留失败的 Skill 获取，提示 warning 并继续原始用户请求；主动取消仍停止操作。OMP 保留命令 preflight 行为。取消或切换会话会使待完成的准备失效，迟到的 source 结果不会派发。
+Pi 在可取消的 `context` 阶段获取选中内容，原生编辑器和后续消息队列保持可用。Broker 不禁用 Enter，也不吞掉后来排队的 prompt 或图片。**Stop** 和 Escape 取消当前操作。准备成功后，首个 provider 请求包含原提示词、图片附件及完整选中正文；Broker 失败或超时时扣留失败的获取、提示 warning 并继续原请求。用户取消和切换会话会使待完成的准备失效，迟到结果不能派发。OMP 保留通过命令执行的 preflight 及提交 gate。
 
 OMP 在每轮系统提示中说明：宿主或 broker 提供、且仍在有效上下文中的完整 Skill 正文已满足“使用前读取”要求。Broker Skill payload 标明调用引用、source 的 qualified 原生宿主名、完整入口已加载状态与入口资源目录。模型应直接使用正文，无需仅为重新加载或确认身份再次读取入口、列缓存目录或检查包清单。任务需要的参考资源仍可读取；相对路径从该目录解析，`~` 展开为用户目录。`pathMode: hash|basename` 继续隐藏目录；source 资源仍可使用 qualified `skill://` URI。目录描述与 Router 索引不代表成员正文已加载，压缩或回退移除正文后仍须重新读取。Tern 自动胶囊和手动搜索沿用这条 OMP 提交合同。该提示规则仅用于 OMP。Pi 保留宿主原有提示；真实 Notion 发现、入口与资源消费独立使用联动 Skill 的 `--mode model --host pi` 路径验收，终端选择使用[Pi 独立终端规程](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/dollar-completion-selection.md#pi-独立终端)。
 

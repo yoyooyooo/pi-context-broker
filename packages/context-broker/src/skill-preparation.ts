@@ -25,17 +25,33 @@ export function isPreparationCancelled(error: unknown): boolean {
   return error !== null && typeof error === "object" && "code" in error && error.code === "SOURCE_ACTIVATION_CANCELLED";
 }
 
-export function createPreparationGate() {
+/** Bound the whole host preparation, including producers that ignore AbortSignal. */
+export async function withPreparationDeadline<T>(parent: AbortSignal, work: (signal: AbortSignal) => Promise<T>, timeoutMs = 60_000): Promise<T> {
+  checkPreparationSignal(parent);
+  const controller = new AbortController();
+  const signal = AbortSignal.any([parent, controller.signal]);
+  const stopped = Promise.withResolvers<never>();
+  const cancel = () => stopped.reject(preparationCancelled());
+  parent.addEventListener("abort", cancel, { once: true });
+  const timer = setTimeout(() => {
+    stopped.reject(Object.assign(new Error("Skill preparation timed out"), { code: "SOURCE_PREPARATION_TIMEOUT" }));
+    controller.abort();
+  }, timeoutMs);
+  try { return await Promise.race([stopped.promise, work(signal)]); }
+  finally { clearTimeout(timer); parent.removeEventListener("abort", cancel); }
+}
+
+export function createPreparationGate(lockSubmission = true) {
   let active: ActivePreparation | undefined;
   let generation = 0;
   let editor: EditorLike | undefined;
   let priorDisabled = false;
   const wrapped = new WeakSet<EditorLike>();
-  const repaint = () => editor?.tui?.requestRender();
+  const repaint = () => { try { editor?.tui?.requestRender(); } catch { /* Optional UI does not own preparation. */ } };
   const release = (entry: ActivePreparation) => {
     if (active !== entry) return;
     active = undefined;
-    if (editor) editor.disableSubmit = priorDisabled;
+    if (editor && lockSubmission) editor.disableSubmit = priorDisabled;
     repaint();
   };
   const cancel = (abortHost = true) => {
@@ -51,6 +67,9 @@ export function createPreparationGate() {
     } else release(entry);
   };
   const bind = (next: EditorLike) => {
+    // Pi owns streaming input, its queue, and Stop. A Broker read must never
+    // disable that editor or consume a second submission (including images).
+    if (!lockSubmission) return next;
     if (editor !== next) {
       editor = next;
       if (!active) priorDisabled = next.disableSubmit ?? false;
@@ -96,7 +115,7 @@ export function createPreparationGate() {
       generation++;
       const entry: ActivePreparation = { id: randomUUID(), generation, prepared: new Map(), event: { ...event, images: event.images?.slice() }, ctx, sessionId: ctx.sessionManager?.getSessionId?.(), controller: new AbortController(), phase: "preparing", forwarded: false };
       active = entry;
-      if (editor) { priorDisabled = editor.disableSubmit ?? false; editor.disableSubmit = true; }
+      if (editor && lockSubmission) { priorDisabled = editor.disableSubmit ?? false; editor.disableSubmit = true; }
       repaint();
       return entry;
     },

@@ -22,7 +22,8 @@ C01–C11/T01–T24、单一 owner 与实际入口由 CLI `verification/skill-do
 不被下一次 build 覆盖。不得在日用 CLI/Pi 指向的 checkout 重建以验证开发改动。
 
 环境创建、构建与进程隔离由 integration 负责；它不判定自然业务场景或替代其他领域
-测试。原有 candidate/daily 的正常环境要求、formal 守卫与严格 next 交付条件保持不变。
+测试。原有 candidate/daily 的正常环境要求、formal 守卫与专项 next 检查条件保持不变；
+日用来源使用[独立 next 安装包](next-worktree-delivery.md)。
 独立运行成功只计入实际观测的范围。远端库选择与本地隔离不能充当 API 权限沙箱。
 公共入口的 Broker/原生 Pi 声明、direct/private wrapper 一致性和单 run 运行时前后
 检查归 integration。Benchmark AH-1220 负责候选实际装载握手、同 episode 编排、
@@ -64,15 +65,17 @@ node /absolute/current/notion-skills-cli/verification/run-receipt.mjs /absolute/
 
 空集合不通过，关键项 failed/blocked/not_run 不可收口。普通续聊、主动最新、查看不采用、compact/manifest 失败后三轮、开关切换、多根共享依赖和两机下一次同步分别有场景 owner；不能由单次安装 smoke 代替。
 
-## next worktree 日用链
+## next 日用安装与工作树专项
 
-先在两仓目标 next worktree 分别 build，再将精确 commits 和实际 worktree roots 写入本轮日用 config 的 `worktrees.cli` / `worktrees.broker`。CLI/Broker build 的 `dist/next-build.json` 记录真实 source 与产物身份；Broker 还核 raw CLI/SDK 及 embedded 对应。
+Pro、Mini、imile-win 的日用入口使用从已合入 `next` 的精确 CLI/Broker 配对构建的独立安装包，不能指向开发 worktree。每次安装核对归档、实际入口和新普通 Pi 进程，并验证本次修改的行为，按 [next 日用安装](next-worktree-delivery.md) 执行。临时候选用 `pi -ne -e /absolute/task/extension.ts` 或现有隔离运行入口，不改全局注册。
+
+以下命令只用于声明了工作树输入的专项检查。先在两仓目标 next worktree 分别 build，再将精确 commits 和实际 worktree roots 写入专项 config 的 `worktrees.cli` / `worktrees.broker`。CLI/Broker build 的 `dist/next-build.json` 记录真实 source 与产物身份；Broker 还核 raw CLI/SDK 及 embedded 对应。
 
 ```sh
 node scripts/verify-next-worktrees.mjs --config /absolute/owned/current-pair.json
 ```
 
-config 的 cliRoot/brokerRoot 必须是这些 worktree 的实际 packages 路径。检查还核实际机器指纹和有界真实 origin/next；旧本地 tracking ref 不能证明当前远端。检查通过后使用原有 daily installation/candidate 入口，运行前后都核对同一配对。源码 dirty、HEAD 不符、旧 build/SDK 或一机落后不能 passed。这里不执行常驻自更新，也不保留旧包兼容模式。独立 package 安装继续单独验，不因 worktree smoke 通过而省略；两机日用完成必须由原 daily 入口的 `aggregate` 联合检查不同机器、同一新 delivery 的完整 version:2 日用回执，按 [next 工作树交付](next-worktree-delivery.md) 执行。
+专项 config 的 cliRoot/brokerRoot 必须是这些 worktree 的实际 packages 路径。检查还核实际机器指纹和有界真实 origin/next；旧本地 tracking ref 不能证明当前远端。源码 dirty、HEAD 不符、旧 build/SDK 或一机落后不能 passed。双机专项仍由原 daily 入口的 `aggregate` 联合检查不同机器、同一新 delivery 的完整 version:2 回执，不能放宽守卫来接受独立安装目录。它不作为每次日用更新的必做流程；工作树检查也不能代替安装包和真实行为验证。
 
 C10/T21 的 entrypoints.required_inputs 列出各动作必需配置。`/absolute/owned/` 是占位路径，不能直接当成已运行命令。daily-installation 的 plan/candidate-plan 只生成准备信息；run 检查当前日用装载，aggregate 只收口两机装载与 metadata，candidate-run --live 是项目级候选运行。各自范围见 [日用地图](../.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md)。帮助输出和 import 模块退出 0 都不能记为场景通过。
 
@@ -92,4 +95,4 @@ C10/T21 的 entrypoints.required_inputs 列出各动作必需配置。`/absolute
 
 每个自然 case 是所声明 C/T 的明确切片。checkAgentContractCoverage 从配对 CLI 单一索引检查映射；一个真实运行可被多个 T 薄回执引用，详细 scope 放原始证据，不能重复计成本或将局部通过扩成整个 T。必选组合、留出输入、首败、复验与独立 Skill 使用评价分别保留。
 
-每次逐场景结果保留在对应 Issue/PR 的运行证据中，绑定实际候选并保留首失败与修订解释。日用双机安装仍按 [交付合同](next-worktree-delivery.md) 单独验收。
+每次逐场景结果保留在对应 Issue/PR 的运行证据中，绑定实际候选并保留首失败与修订解释。多机日用安装按 [安装合同](next-worktree-delivery.md) 核对；声明双机工作树专项时单独保留其原始结果。

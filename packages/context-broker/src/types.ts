@@ -53,6 +53,7 @@ export type InputEvent = {
   source?: "interactive" | "rpc" | "extension";
   text?: string;
   images?: ImageContent[];
+  streamingBehavior?: "steer" | "followUp";
 };
 export type InputResult =
   | { handled: true }
@@ -108,7 +109,7 @@ type ExtensionEvents = {
   context: { event: ContextEvent; result: ContextResult };
   context_with_system: { event: ContextEvent; result: ContextResult };
   before_agent_start: { event: BeforeAgentStartEvent; result: BeforeAgentStartResult };
-  before_provider_request: { event: { type: "before_provider_request"; payload: unknown }; result: void };
+  before_provider_request: { event: { type: "before_provider_request"; payload: unknown }; result: unknown };
   after_provider_response: { event: { type: "after_provider_response"; status: number; headers: Record<string, string> }; result: void };
   turn_end: { event: TurnEndEvent; result: SessionBoundaryResult };
   input: { event: InputEvent; result: InputResult };
@@ -264,7 +265,7 @@ export type ExtensionAPI = {
   getSettings?(): { images?: { autoResize?: boolean } };
   registerTool?(tool: NativeReadDefinition | PiReadDefinition | NativeSkillSearchDefinition | NativeSkillPrepareDefinition | NativeSkillGraphDefinition): void;
   registerToolRenderer?(resolver: (toolName: string, next: () => NativeToolRenderers | undefined) => NativeToolRenderers | undefined): void;
-  registerMessageRenderer?(customType: string, renderer: (message: AgentMessage, options: { expanded: boolean }, theme: unknown) => ExtensionWidgetComponent | undefined): void;
+  registerMessageRenderer?(customType: string, renderer: (message: AgentMessage, options: { expanded: boolean; outputPad?: number; keyText?(action: string): string }, theme: unknown) => ExtensionWidgetComponent | undefined): void;
   sendMessage?(message: { customType: string; content: MessageContent; details: unknown; display: boolean }, options: { triggerTurn: boolean }): void;
   appendEntry?(customType: string, data?: unknown): void;
   registerCommand?(name: string, command: {

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { hostTextComponent } from "./host-text";
+import { hostTextComponent, type HostTextConstructor } from "./host-text";
+import { singleLine } from "./pi-display";
 import type { ExtensionAPI, ExtensionContext, ExtensionWidgetNode, SkillRecord, SourceConfig } from "./types";
 
 export const ACTIVATION_MESSAGE = "context-broker-source-read";
@@ -10,38 +11,107 @@ type ReadState = {
   source: string;
   status: "running" | "done" | "error";
   started: number;
+  name?: string;
+  namespace?: "notion" | "local";
+  purpose?: "use" | "inspect";
+  delivered?: boolean;
+  limits?: string;
   took?: number;
   version?: string;
   snapshot?: string;
   note: string;
 };
+type Result = { value: SkillRecord } | { error: string } | { skipped: true };
+type LiveRead = { state: ReadState; ctx: ExtensionContext; session: string | undefined; announced: boolean };
+type Theme = { fg(color: string, value: string): string; bg?(color: string, value: string): string };
+const plainTheme: Theme = { fg: (_color, value) => value };
+const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+const isTheme = (value: unknown): value is Theme => object(value) && typeof value.fg === "function" && (value.bg === undefined || typeof value.bg === "function");
 function isReadState(value: unknown): value is ReadState {
-  return !!value && typeof value === "object" && "id" in value && typeof value.id === "string" && "target" in value && typeof value.target === "string" && "status" in value;
+  return object(value) && typeof value.id === "string" && typeof value.target === "string"
+    && typeof value.source === "string" && typeof value.started === "number" && Number.isFinite(value.started)
+    && (value.status === "running" || value.status === "done" || value.status === "error") && typeof value.note === "string"
+    && (value.name === undefined || typeof value.name === "string")
+    && (value.namespace === undefined || value.namespace === "notion" || value.namespace === "local")
+    && (value.purpose === undefined || value.purpose === "use" || value.purpose === "inspect")
+    && (value.delivered === undefined || typeof value.delivered === "boolean")
+    && (value.took === undefined || typeof value.took === "number" && Number.isFinite(value.took))
+    && [value.limits, value.version, value.snapshot].every(item => item === undefined || typeof item === "string");
+}
+function status(state: ReadState): string {
+  if (state.status === "running") return "loading…";
+  if (state.status === "error") return state.note === "Cancelled." ? "cancelled" : "unavailable";
+  return state.purpose === "use" ? state.delivered ? "loaded" : "ready" : "read";
+}
+function heading(state: ReadState, theme: Theme, expandKey?: string): string {
+  return theme.fg("customMessageLabel", `\x1b[1m[skill${state.namespace === "local" ? "" : "@notion"}]\x1b[22m `)
+    + theme.fg("customMessageText", singleLine(state.name ?? state.target.replace(/^ntn-skills:\/\//, "")))
+    + theme.fg(state.status === "error" && state.note !== "Cancelled." ? "warning" : "dim", ` · ${status(state)}`)
+    + (expandKey ? theme.fg("dim", ` (${singleLine(expandKey)} to expand)`) : "");
+}
+function detail(state: ReadState): string {
+  return [state.note, `Source: ${state.source}`, state.limits, state.version && `Version: ${state.version}`,
+    state.snapshot && `Snapshot: ${state.snapshot}`].filter(Boolean).join("\n");
 }
 
 export async function createActivationFeedback(api: ExtensionAPI, repaint: () => void, presentation: "message" | "widget" = "message") {
-  const states = new Map<string, ReadState>();
+  const states = new Map<string, ReadState>(), live = new Map<string, LiveRead>();
   const widgetKey = (id: string) => `${ACTIVATION_MESSAGE}:${id}`;
-  const Text = api.registerMessageRenderer ? await hostTextComponent(api) : undefined;
-  api.registerMessageRenderer?.(ACTIVATION_MESSAGE, message => {
+  let Text: HostTextConstructor | undefined;
+  if (api.registerMessageRenderer) {
+    try { Text = await hostTextComponent(api); } catch { /* Optional UI cannot prevent a user turn. */ }
+  }
+  // Display delivery is best effort. It must never turn a successful acquisition
+  // or an ordinary source warning into a failed user submission.
+  const display = (operation: () => unknown) => { try { void Promise.resolve(operation()).catch(() => {}); } catch { /* Host UI unavailable. */ } };
+  const repaintDisplay = () => display(repaint);
+  const isCurrent = (entry: LiveRead) => live.get(entry.state.id) === entry
+    && entry.session === entry.ctx.sessionManager?.getSessionId?.();
+  const publish = (entry: LiveRead, announce = true) => {
+    const { state, ctx } = entry;
+    if (presentation === "widget") display(() => ctx.ui?.setWidget?.(widgetKey(state.id), undefined));
+    if (announce && presentation === "widget" && Text && !entry.announced && api.registerMessageRenderer) {
+      entry.announced = true;
+      display(() => api.sendMessage?.({ customType: ACTIVATION_MESSAGE, content: [], details: { ...state }, display: true }, { triggerTurn: false }));
+    }
+    display(() => api.appendEntry?.(ACTIVATION_RESULT, { ...state }));
+    repaintDisplay();
+  };
+  const finish = (entry: LiveRead, result: Result) => {
+    if (entry.state.status !== "running" || !isCurrent(entry)) return;
+    const state = entry.state;
+    state.status = "value" in result ? "done" : "error";
+    state.took = Date.now() - state.started;
+    state.note = "value" in result ? "Skill and resources ready." : "error" in result ? result.error : "Reference unavailable; original message retained.";
+    if ("value" in result) { state.version = result.value.versionId; state.snapshot = result.value.snapshotId; }
+    publish(entry);
+    if (state.status === "done" && state.purpose !== "use") live.delete(state.id);
+  };
+  api.registerMessageRenderer?.(ACTIVATION_MESSAGE, (message, options, themeValue) => {
     if (!Text || !isReadState(message.details)) return undefined;
-    const original = message.details;
-    let collapsed = true;
-    const current = () => states.get(original.id) ?? (original.status === "running" ? { ...original, status: "error" as const, note: "Interrupted before Skill preparation completed." } : original);
-    const detail = (state: ReadState) => [`Source: ${state.source}`, state.version && `Version: ${state.version}`, state.snapshot && `Snapshot: ${state.snapshot}`, state.note].filter(Boolean).join("\n");
+    const RenderText = Text, original = message.details;
+    const theme = isTheme(themeValue) ? themeValue : plainTheme;
+    let collapsed = !options.expanded;
+    const current = () => states.get(original.id) ?? (original.status === "running"
+      ? { ...original, status: "error" as const, note: "Interrupted before Skill preparation completed." } : original);
     return {
       render(width) {
         const state = current();
-        return new Text([`Read ${state.target} · ${state.status}`, ...(collapsed ? state.status === "running" ? [state.note] : [] : [detail(state)])].join("\n"), 0, 0).render(width);
+        const background = theme.bg?.bind(theme);
+        return new RenderText([heading(state, theme, collapsed ? options.keyText?.("app.tools.expand") : undefined),
+          ...(collapsed ? [] : [detail(state)])].join("\n"), options.outputPad ?? 1, 1,
+          background ? value => background(state.status === "done" ? "toolSuccessBg" : "toolPendingBg", value) : undefined).render(width);
       },
       invalidate() {},
       describe(surface) {
         if (!surface.supports("tool")) return null;
         const state = current();
-        const terminalText = [`Read ${state.target} · ${state.status}`, detail(state)].join("\n");
         const node: ExtensionWidgetNode = {
           k: "tool",
-          p: { name: "read", title: "Read", target: state.target, targetKind: "path", status: state.status, frame: "inline", collapsible: true, collapsed, preview: "none", note: state.note, terminalText, ...(state.status === "running" ? { age: Date.now() - state.started } : { took: state.took }) },
+          p: { name: "read", title: "[skill@notion]", target: state.name ?? state.target, targetKind: "path", status: state.status,
+            frame: "inline", collapsible: true, collapsed, preview: "none", note: state.note,
+            terminalText: [heading(state, plainTheme), detail(state)].join("\n"),
+            ...(state.status === "running" ? { age: Date.now() - state.started } : { took: state.took }) },
           c: [{ k: "text", p: { text: detail(state) } }],
         };
         return node;
@@ -49,46 +119,76 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
       handleNativeEvent(event) {
         if (event.type !== "toggle" || typeof event.collapsed !== "boolean") return;
         collapsed = event.collapsed;
-        repaint();
+        repaintDisplay();
       },
     };
   });
   return {
     restore(ctx: ExtensionContext) {
-      if (presentation === "widget") for (const id of states.keys()) ctx.ui?.setWidget?.(widgetKey(id), undefined);
-      states.clear();
+      if (presentation === "widget") for (const id of live.keys()) display(() => ctx.ui?.setWidget?.(widgetKey(id), undefined));
+      live.clear(); states.clear();
       // Only the selected leaf's entries may supply final states for restored running rows.
       for (const entry of ctx.sessionManager?.getBranch?.() ?? []) {
         if (entry.type === "custom" && entry.customType === ACTIVATION_RESULT && isReadState(entry.data)) states.set(entry.data.id, entry.data);
       }
-      repaint();
+      repaintDisplay();
     },
-    begin(record: SkillRecord, ctx?: ExtensionContext, purpose?: "use" | "inspect", source?: SourceConfig): ((result: { value: SkillRecord } | { error: string } | { skipped: true }) => void) | undefined {
+    begin(selected: SkillRecord | readonly SkillRecord[], ctx?: ExtensionContext, purpose?: "use" | "inspect", source?: SourceConfig): ((result: Result) => void) | undefined {
       if (!ctx?.hasUI) return undefined;
       if (presentation === "widget" ? !ctx.ui?.setWidget : !api.sendMessage || !api.registerMessageRenderer) return undefined;
+      const records: readonly SkillRecord[] = "name" in selected ? [selected] : selected;
+      const record = records[0];
+      if (!record) return undefined;
       const session = ctx.sessionManager?.getSessionId?.();
+      for (const [id, previous] of live) if (previous.session === session && previous.state.status === "error") live.delete(id);
       const token = record.token ?? record.name;
       const budget = source?.type === "notion" ? source.preparation : undefined;
-      const note = purpose ? `Preparing ${purpose}: up to ${budget?.maxNodes ?? 64} nodes, depth ${budget?.maxDepth ?? 16}, ${budget?.maxInstructionBytes ?? 1048576} instruction bytes, ${budget?.maxContextBytes ?? 262144} context bytes. Stop cancels preparation.` : "Fetching the selected Skill and its resources.";
-      const state: ReadState = { id: randomUUID(), target: `ntn-skills://${token.slice(token.indexOf("/") + 1)}`, source: record.sourceId ?? "source", status: "running", started: Date.now(), note };
-      states.set(state.id, state);
-      // Pi defers non-triggering messages until the turn ends. Its context-bound
-      // acquisition needs a transient widget so the budget is visible while waiting.
-      if (presentation === "widget") ctx.ui?.setWidget?.(widgetKey(state.id), [`Read ${state.target}`, state.note]);
-      else api.sendMessage?.({ customType: ACTIVATION_MESSAGE, content: [], details: { ...state }, display: true }, { triggerTurn: false });
-      repaint();
-      return result => {
-        if (state.status !== "running") return;
-        state.status = "error" in result ? "error" : "done";
-        state.took = Date.now() - state.started;
-        state.note = "value" in result ? "Skill and resources ready." : "error" in result ? result.error : "Reference unavailable; original message retained.";
-        if ("value" in result) { state.version = result.value.versionId; state.snapshot = result.value.snapshotId; }
-        if (states.get(state.id) === state && session === ctx.sessionManager?.getSessionId?.()) {
-          if (presentation === "widget") ctx.ui?.setWidget?.(widgetKey(state.id), undefined);
-          api.appendEntry?.(ACTIVATION_RESULT, { ...state });
-          repaint();
+      const limits = purpose ? `Limits: up to ${budget?.maxNodes ?? 64} nodes, depth ${budget?.maxDepth ?? 16}, ${budget?.maxInstructionBytes ?? 1048576} instruction bytes, ${budget?.maxContextBytes ?? 262144} context bytes.` : undefined;
+      const state: ReadState = { id: randomUUID(), target: `ntn-skills://${token.slice(token.indexOf("/") + 1)}`,
+        name: [...new Set(records.map(item => item.name))].join(", "), namespace: record.source === "notion" || source?.type === "notion" ? "notion" : "local", source: record.sourceId ?? "source",
+        status: "running", started: Date.now(), purpose, limits, note: "Loading selected Skill instructions. Stop cancels preparation." };
+      const entry: LiveRead = { state, ctx, session, announced: presentation === "message" };
+      states.set(state.id, state); live.set(state.id, entry);
+      // Pi queues non-triggering messages until the turn ends. Show an immediate
+      // compact widget while waiting, then retain a normal expandable result row.
+      if (presentation === "widget") {
+        const RenderText = Text;
+        display(() => ctx.ui?.setWidget?.(widgetKey(state.id), RenderText
+          ? (_tui, themeValue) => ({ render: width => new RenderText(heading(state,
+            isTheme(themeValue) ? themeValue : plainTheme), 0, 0).render(width), invalidate() {} })
+          : [heading(state, plainTheme)]));
+      } else display(() => api.sendMessage?.({ customType: ACTIVATION_MESSAGE, content: [], details: { ...state }, display: true }, { triggerTurn: false }));
+      repaintDisplay();
+      return result => finish(entry, result);
+    },
+    confirmPrepared(ctx: ExtensionContext) {
+      const session = ctx.sessionManager?.getSessionId?.();
+      for (const entry of live.values()) if (entry.session === session && entry.state.status === "done" && entry.state.purpose === "use") {
+        entry.state.delivered = true;
+        entry.state.note = "Skill instructions loaded for this request.";
+        publish(entry); live.delete(entry.state.id);
+      }
+    },
+    failPending(ctx: ExtensionContext, message: string): boolean {
+      const session = ctx.sessionManager?.getSessionId?.();
+      let found = false;
+      for (const entry of live.values()) if (entry.session === session) {
+        found = true;
+        entry.state.status = "error"; entry.state.note = message; entry.state.took = Date.now() - entry.state.started;
+        publish(entry); live.delete(entry.state.id);
+      }
+      return found;
+    },
+    clearPending(ctx: ExtensionContext) {
+      const session = ctx.sessionManager?.getSessionId?.();
+      for (const entry of live.values()) if (entry.session === session) {
+        if (entry.state.status !== "error") {
+          entry.state.status = "error"; entry.state.note = "Cancelled.";
+          entry.state.took = Date.now() - entry.state.started;
+          publish(entry, false);
         }
-      };
+        live.delete(entry.state.id);
+      }
     },
   };
 }

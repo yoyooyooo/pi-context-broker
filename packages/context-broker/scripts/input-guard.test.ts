@@ -183,7 +183,8 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       } else {
         await f.emit("session_before_switch");
         f.move();
-        await assert.rejects(bounded(context, "The old print operation must settle at session replacement"), /cancelled/i);
+        const retired = await bounded(context, "The old print operation must settle at session replacement without an extension error");
+        assert.ok(!JSON.stringify(retired).includes(body));
         assert.equal(f.aborts(), 0, "The replaced operation cannot abort the new session");
       }
       assert.deepEqual(f.loads, []);
@@ -199,7 +200,10 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       await turn();
       assert.equal(finished, false, "Explicit acquisition waits inside the cancellable context boundary");
       assert.deepEqual(f.loads, []);
-      assert.deepEqual(await f.emit("input", { source: "rpc", text }), [{ action: "handled" }], "A quick second Enter cannot acquire a second submission");
+      const images = [{ type: "image" as const, mimeType: "image/png", data: "queued-image" }];
+      const queued = await f.emit("input", { source: "rpc", text, images, streamingBehavior: "followUp" });
+      assert.deepEqual(queued, text.startsWith("/skill:") ? [{ action: "transform", text: "\n" + text, images }] : [{ action: "continue" }],
+        "A second submission and its images remain owned by Pi's native queue");
       f.resolve();
       const [projection] = await bounded(context, "Selected context must finish after metadata");
       assert.equal(f.loads.length, 1);
@@ -211,6 +215,13 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
         assert.equal(original, text);
         assert.deepEqual(prepared?.map(value => [value.id, value.snapshotId]), [[record.id, "startup-v1"]]);
       });
+      const queuedContent = [{ type: "text", text: submitted }, ...images];
+      const [queuedContext] = await f.emit("context", { messages: [{ role: "user", content: queuedContent }] });
+      assert.equal(f.loads.length, 2, "A queued selection is prepared when its message reaches context, without another input hook");
+      const queuedMessages = object(queuedContext).messages;
+      assert.ok(Array.isArray(queuedMessages));
+      assert.deepEqual(queuedMessages.find(message => object(message).role === "user")?.content, queuedContent);
+      assert.equal(f.aborts(), 0);
       await f.end();
       f.setLoaded();
       const refreshing = f.host().refresh(f.ctx);
@@ -218,7 +229,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       await bounded(f.emit("before_agent_start", { prompt: "continue with the active rules", systemPrompt: "base" }), "Active ordinary provider setup stays nonblocking");
       const messages = [{ role: "user" as const, content: body }];
       assert.deepEqual(await f.emit("context", { messages }), [{ messages }], "Ordinary input preserves already active conversation bodies");
-      assert.equal(f.loads.length, 1);
+      assert.equal(f.loads.length, 2);
       f.resolve();
       await refreshing;
     } finally { await f.close(); }
@@ -307,7 +318,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const context = accepted.project();
       const settled = boundary === "cancel"
         ? context.then(result => { assert.deepEqual(result, [undefined], "An already aborted Pi operation must not produce an extension error"); })
-        : assert.rejects(context, /cancelled/i);
+        : context.then(result => { assert.ok(!JSON.stringify(result).includes(body), "A retired session cannot publish its late source body"); });
       await turn();
       if (boundary === "cancel") { f.stop(); assert.equal(f.ctx.signal?.aborted, true); }
       else { f.move(); await f.emit(boundary); }

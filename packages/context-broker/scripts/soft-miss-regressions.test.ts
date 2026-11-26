@@ -339,7 +339,7 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
         await emit("before_agent_start", { prompt: "$ui-alpha@skill delayed material", systemPrompt: "base" });
         await projectPi("$ui-alpha@skill delayed material");
       });
-      const settled = host === "pi" ? assert.rejects(pending, /cancelled/i) : pending;
+      const settled = pending;
       await delayed.promise;
       await emit("session_before_switch", {});
       await settled;
