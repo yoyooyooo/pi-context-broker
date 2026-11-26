@@ -749,6 +749,7 @@ try {
   assert.equal(dollarAmbiguous, undefined, "ambiguous dollar skill must fail closed");
 
   const baseAutocompleteProvider = {
+    triggerCharacters: ["#", "@", "$"],
     async getSuggestions() {
       return {
         items: [{ value: "fallback", label: "fallback" }],
@@ -766,6 +767,16 @@ try {
     baseAutocompleteProvider,
     Promise.resolve(dollarRegistry),
   );
+  assert.deepEqual(autocompleteProvider.triggerCharacters, ["#", "@", "$"]);
+  assert.notEqual(autocompleteProvider.triggerCharacters, baseAutocompleteProvider.triggerCharacters);
+  assert.deepEqual(mod.createDollarSkillAutocompleteProvider(
+    { ...baseAutocompleteProvider, triggerCharacters: undefined },
+    Promise.resolve(dollarRegistry),
+  ).triggerCharacters, ["$"], "Pi must receive an explicit dollar trigger even without upstream triggers");
+  assert.deepEqual(mod.createDollarSkillAutocompleteProvider(
+    { ...baseAutocompleteProvider, triggerCharacters: ["#", "@"] },
+    Promise.resolve(dollarRegistry),
+  ).triggerCharacters, ["#", "@", "$"], "Preserve existing provider triggers");
   const autocompleteSignal = new AbortController().signal;
   const dollarSuggestions = await autocompleteProvider.getSuggestions(["use $pl"], 0, "use $pl".length, {
     signal: autocompleteSignal,

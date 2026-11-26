@@ -139,6 +139,7 @@ export type AutocompleteSuggestions = {
 };
 
 export type AutocompleteProvider = {
+  triggerCharacters?: string[];
   getSuggestions(
     lines: string[],
     cursorLine: number,
