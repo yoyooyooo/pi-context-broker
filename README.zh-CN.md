@@ -217,13 +217,15 @@ CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/d
 
 ## 维护与同步
 
-普通产品维护与 Source 同步默认使用实际配对 CLI 随包提供的 `ntn-skills-maintain`、`ntn-skills-sync` Builtin。Broker 提供安装路径，供普通原生 `read` 读取；只有 shell 的宿主使用配对 CLI 的 `ctl builtin read`。本任务已经完整加载的指引直接复用。新库无需在 Notion 中保存官方 Skill 副本，也无需先搜索 Notion 才能找到这些产品说明。
+普通产品维护与 Source 同步默认使用实际配对 CLI 随包提供的 `ntn-skills-maintain`、`ntn-skills-sync`。Broker 提供包内路径，供普通原生 `read` 读取；只有 shell 的宿主使用配对 CLI 的 `skills get NAME`，默认输出 Markdown。本任务已经完整加载的指引直接复用。这些产品说明可离线获取，无需 Notion 库或独立的 Skill 安装。
+
+通过随包 CLI 的 `skills` 或 `skills list` 发现目录，`skills get NAME --full` 获取完整正文与参考文件，`skills path NAME` 返回匹配当前包版本的实际目录。`--json` 提供结构化元数据与内容。CLI 升级同时更新随包 Skill；Broker 升级同时更新其配对的 CLI 和 Skill。
 
 工作流来源和写入目标分别选择。随包指引不会选定 Notion source 或 Library；数据操作使用用户明确选择的来源对应的 CLI command，消费和管理都传 `--library ROOT`，不能隐式取第一个来源。普通业务 Skill 的发现与同名歧义规则保持不变。同名 Notion 页面是用户维护的独立工作流，不能凭名称冒充官方 Builtin。
 
 用户明确选择 Notion 团队流程时，在所选来源中读取精确 ref；需要发现时只查询该来源，也可读取默认 View 之外的授权条目。真正采用时调用 `notion_use(ref)` 加载完整 Requires，本任务已准备完整闭包时可复用；被编辑目标仍只 inspect，不激活其工作流。没有原生 use 时可用同来源 CLI 的 `use EXACT_REF --library ROOT_UUID --json`。CLI 使用规范引用，不能消费会话 `sr:` 句柄；没有可用路线就报告无法采用。pending、partial 或访问失败都不能把已选择的流程换成 Builtin。已有任务保留选中版本，只有明确刷新才采用新内容。本地和随包流程继续使用原生消费路线。
 
-只有配置了至少一个未禁用的 `type: notion` source，才在 `$` 候选中显示 `$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin`；尚未连通 Notion 或完成认证也能读取它们。在 Pi 中，零已启用 Notion source 的普通本地会话不暴露 Notion 候选、工具或系统指引。明确需要初始化时，遵循 [CLI 快速开始](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.zh-CN.md)，或通过随包 CLI 的 `ctl builtin read notion/ntn-skills-maintain --path references/setup.md` 读取离线入口。
+只有配置了至少一个未禁用的 `type: notion` source，才在 `$` 候选中显示 `$ntn-skills@builtin`、`$ntn-skills-maintain@builtin` 和 `$ntn-skills-sync@builtin`；尚未连通 Notion 或完成认证也能读取它们。在 Pi 中，零已启用 Notion source 的普通本地会话不暴露 Notion 候选、工具或系统指引。明确需要初始化时，遵循 [CLI 快速开始](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.zh-CN.md)，或通过随包 CLI 的 `skills get ntn-skills-maintain --path references/setup.md` 读取离线入口。
 
 ```text
 把这段对话中可复用的方法整理为 Skill，保存到已连接的 Notion 库。
@@ -238,7 +240,7 @@ CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/d
 
 ## 更新随包 Skill
 
-随包 Skill 跟随已安装的 Broker/配套插件版本更新。升级这两个包后重启宿主，OMP 使用 `/restart`，即可采用新版工作流与参考文件。同名 Notion 页面或本地 Skill 保持独立身份；`@builtin` 始终指向随包工作流。可选的 Notion 团队副本是用户管理的 native Skill，升级不会自动覆盖或删除它们，也不会静默替换当前任务已选中的指引。
+随包 Skill 跟随已安装的 Broker/配套插件版本更新。升级这两个包后重启宿主，OMP 使用 `/restart`，即可采用新版工作流与参考文件。`@builtin` 指向随包工作流。Notion 和本地业务 Skill 保持各自的身份与生命周期；当前任务保留已选指引，直到明确刷新。
 
 Notion 数据和已连接来源目录继续由 CLI 管理，相应任务通过维护或同步 Skill 完成。升级 Broker 才会更新其中配对的 CLI/SDK 与工作流；单独升级全局 CLI 不会替换 Broker 已打包的运行时。详见[随包 Skills](./packages/context-broker/docs/reference.zh-CN.md#随包-skills)与[构建输入](./CONTRIBUTING.md#bundling-cli-and-skills)。
 

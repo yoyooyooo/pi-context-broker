@@ -1405,8 +1405,8 @@ test('a batch resource read preserves logical owner and complete source bytes', 
 });
 
 test('forbidden package inputs count failed actual attempts and leave other operations allowed', async () => {
-  const f = fixture({ calls: [{ name: 'bash', arguments: { command: 'ntn-skills ctl builtin show packaged-maintain' }, isError: true }] });
-  f.binding.private.facts.package = { anyOf: ['ctl builtin show'] };
+  const f = fixture({ calls: [{ name: 'bash', arguments: { command: 'ntn-skills skills get ntn-skills-maintain' }, isError: true }] });
+  f.binding.private.facts.package = { anyOf: ['skills get ntn-skills-maintain'] };
   const result = await f.run([{ kind: 'forbidden-tool-input', tool: 'bash', facts: ['package'] }]);
   assert.equal(result.status, 'failed');
   assert.ok(result.assertions.some(item => item.code === 'FORBIDDEN_TOOL_INPUT'));
@@ -1522,7 +1522,7 @@ test('missing request metrics cannot prove offline even with an empty visible tr
 });
 
 test('zero observed SDK traffic cannot stand in for a CLI child of a bash tool', async () => {
-  const f = fixture({ calls: [{ name: 'bash', arguments: { command: 'node /owned/cli.mjs ctl builtin read maintain' } }] });
+  const f = fixture({ calls: [{ name: 'bash', arguments: { command: 'node /owned/cli.mjs skills get ntn-skills-maintain' } }] });
   f.observed.source = sourceOperation();
   const result = await f.run([{ kind: 'source-network-attempts', max: 0 }]);
   assert.equal(result.status, 'blocked');
@@ -1530,7 +1530,7 @@ test('zero observed SDK traffic cannot stand in for a CLI child of a bash tool',
 });
 
 test('complete child effects need an explicit measured network metric as well as zero semantic writes', async () => {
-  const f = fixture({ calls: [{ name: 'bash', arguments: { command: 'node /owned/cli.mjs ctl builtin read maintain' } }] });
+  const f = fixture({ calls: [{ name: 'bash', arguments: { command: 'node /owned/cli.mjs skills get ntn-skills-maintain' } }] });
   const bind = value => {
     const bytes = Buffer.from(JSON.stringify(value)), path = '/owned/private/effects.json';
     f.files.set(path, bytes); f.observed.effects = { ...value, artifact: { path, sha256: hash(bytes), bytes: bytes.length } };

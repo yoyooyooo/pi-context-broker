@@ -149,7 +149,7 @@ test("all host branches default maintenance and sync to the paired package indep
   const native = text(["read", "notion_list", "notion_use", "bash"]);
   expect(native).toContain("To apply: notion_use(ref), same ref + Requires");
   expect(native).toContain("Business Skills: equal same-name local/Notion fits: clarify");
-  expect(native).not.toContain("ctl builtin read");
+  expect(native).not.toContain('"skills","get"');
 });
 
 test("explicit Notion workflow adoption advertises only an available closure-loading route", () => {
@@ -181,7 +181,7 @@ test("workflow guidance preserves native capability limits and the explicit no-s
     const routed = text(tools);
     expect(routed).toContain("exact ref in chosen source");
     for (const name of ["ntn-skills-maintain", "ntn-skills-sync"])
-      expect(routed).toContain(JSON.stringify([...hostCliScope().command, "ctl", "builtin", "read", `notion/${name}`, "--json"]));
+      expect(routed).toContain(JSON.stringify([...hostCliScope().command, "skills", "get", name]));
     expect(routed).not.toContain(packageEntry);
     expect(routed).not.toContain(syncEntry);
   }
@@ -189,8 +189,8 @@ test("workflow guidance preserves native capability limits and the explicit no-s
     const bootstrap = String(buildCliGuidance({ sources: [] }, tools).content);
     expect(bootstrap).toContain("bootstrap");
     expect(bootstrap).toContain("offline");
-    expect(bootstrap).toContain("ctl builtin read notion/ntn-skills-maintain");
-    expect(bootstrap).toContain("ctl builtin read notion/ntn-skills-sync");
+    expect(bootstrap).toContain("skills get ntn-skills-maintain");
+    expect(bootstrap).toContain("skills get ntn-skills-sync");
     expect(bootstrap).not.toContain("ntn-skills-maintain's exact ref");
   }
 });
@@ -318,7 +318,7 @@ test("cold and offline Pi guidance exposes both paired package entries without p
     expect(message).toContain("exact ref in chosen source");
     expect(message).not.toContain(privatePackageBody.trim());
     expect(message).not.toContain(privateSyncBody.trim());
-    expect(message).not.toContain("ctl builtin read");
+    expect(message).not.toContain('"skills","get"');
     expect(message).not.toContain("00000000-0000-4000-8000-000000000103");
     const history = [{ role: "user", content: "Explain packaged maintenance instructions offline." }];
     const projected = await h.project("context_with_system", history);
@@ -342,8 +342,8 @@ test("paired package guidance respects the active read capability", async () => 
   h.tools(["notion_list", "notion_use", "bash"]);
   const cli = await h.project("context_with_system", unavailable);
   expect(guidanceText(cli)).toContain("ntn-skills.mjs");
-  expect(guidanceText(cli)).toContain('"ctl","builtin","read","notion/ntn-skills-maintain","--json"');
-  expect(guidanceText(cli)).toContain('"ctl","builtin","read","notion/ntn-skills-sync","--json"');
+  expect(guidanceText(cli)).toContain('"skills","get","ntn-skills-maintain"');
+  expect(guidanceText(cli)).toContain('"skills","get","ntn-skills-sync"');
   expect(guidanceText(cli)).toContain("Default product maintenance/sync");
   expect(guidanceText(cli)).not.toContain(packageEntry);
   expect(guidanceText(cli)).not.toContain(privatePackageBody.trim());

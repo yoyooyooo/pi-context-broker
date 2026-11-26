@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Read the paired CLI's bundled Skills through `skills list/get/path`. Shell guidance uses Markdown by default; `--full`, `--path` and `--json` support complete or selected references and structured consumers. Remove the separate Skill installation lifecycle from guidance and package checks, and verify embedded CLI paths against the actual installed files.
 - Gate the three packaged `ntn-skills*@builtin` completion candidates on at least one enabled Notion source. Keep bundled bodies and references offline-available for initial setup even when that source cannot connect; leave ordinary local/filesystem discovery unchanged.
 - Bundle the published `ntn-skills@0.3.0` CLI and its complete `ntn-skills`, `ntn-skills-maintain` and `ntn-skills-sync` Skills. Select them through ordinary `$...@builtin` discovery on Pi/OMP/Tern, without a Notion connection or a separate shared Skill installation.
 - Retire the experimental `/ntn-skills` command mirror, save bridge and duplicate Tern management palette. Keep `/context-broker` for session, View, status and refresh controls; use the selected builtin Skill and public CLI for content maintenance and synchronization.
