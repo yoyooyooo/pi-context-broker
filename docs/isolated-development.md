@@ -95,8 +95,42 @@ edits remain available in the task's source trees.
 ## Build and select a generation
 
 Private source, build and run directories still share the host's disk capacity.
-Before a large build or a command run that copies dependencies, check free space
-on the destination volume, for example `df -h /absolute/owned/feature-env`.
+`create`, `build` and `run` check available bytes on the destination volume before
+creating their new root. Missing parents use the nearest existing ancestor;
+builds and runs probe their own destination, which may be a different mount.
+Source and explicitly seeded cache copies use actual logical file lengths. Clone
+growth, dependency downloads, caches and build outputs remain an unknown total.
+The check does not infer physical allocation from APFS `du` or promise a quota.
+
+Put a host policy in `capacity-policy.json` in the environment or an ancestor,
+or add one with `--capacity-policy ABSOLUTE_JSON`. All discovered policies combine
+using the stricter limits. A nested environment or explicit file can tighten,
+but cannot lower an ancestor's limits. The receipt includes each policy's path
+and hash. For example, Mini's reviewed policy
+keeps 20 GiB free and requires an explicit growth estimate below 40 GiB:
+
+```json
+{"version":1,"min_free_bytes":21474836480,"review_below_bytes":42949672960}
+```
+
+These are local development limits, not fixed product-runtime defaults. Without
+a policy the checker still refuses a known copy larger than current free space,
+but reserves no host-specific buffer. Invalid policies fail closed. An unknown
+clone/build estimate below the review line refuses before cloning or installing.
+After reviewing the intended work, use `--capacity-estimate-bytes BYTES` for a
+conservative total incremental budget; it cannot be smaller than known copies.
+This does not verify the budget or reserve capacity against concurrent writers.
+Review active work before adding another build. Do not lower the policy to make
+a check pass. Check free space again when changing machines.
+
+Successful preparation retains `capacity.json`; refusals return the observed
+capacity and reason without creating the new operation root. Install stages and
+command dispatch recheck the current buffer, so a previous pass does not waive
+a later shortage. Preparation failures retain their phase, original error and
+root in `failure.json` when the filesystem can still write it. A failure to
+write that receipt is reported without hiding the original error. Preserve
+partial output and use a new ID for a reviewed retry.
+
 If space is insufficient, stop starting new writes and preserve source, run state
 and first-failure evidence. Continue on another machine in a new owned pair,
 transferring only reviewed commits or patches and checking their commit, tree
@@ -249,7 +283,7 @@ node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
   --build BUILD_ID --target command -- node --version
 ```
 
-Each `--target command` run first copies both frozen source snapshots and their
+By default each `--target command` run copies both frozen source snapshots and their
 installed dependencies into its own `runs/RUN_ID/source/` directory.
 `--cwd workspace|cli|broker` selects its working directory. The default
 `workspace` is a run-owned workspace; `cli` and `broker` select that run's source
@@ -257,6 +291,25 @@ copies. For command runs, `PAIRED_CLI_SOURCE` and `PAIRED_BROKER_SOURCE` also po
 to these copies. Checks can change their own source or dependencies without
 changing the selected build or another run. CLI and Pi targets use the selected
 runtime packages without copying source trees.
+
+For a controller that needs the selected runtime packages and private state,
+choose `--command-source none` explicitly:
+
+```sh
+node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
+  --build BUILD_ID --target command --command-source none -- pi --version
+```
+
+This mode does not create `run/source` or expose `PAIRED_CLI_SOURCE`,
+`PAIRED_BROKER_SOURCE`, `CONTEXT_BROKER_GRAPH_CORE` or `NTN_SKILLS_BUILD_ENTRY`.
+It requires `--cwd workspace`. The CLI/Pi wrappers, selected frozen packages,
+runtime checks, native/Broker launch modes and private state stay the same.
+`run.json.command_source` records the choice. Use the default `copy` mode for
+source edits, builds and dependency tests. A controller can read declared frozen
+inputs from `PAIRED_BUILD_ROOT`, but must not modify them; this remains process
+configuration, not an OS filesystem sandbox. Runtime-only Benchmark controllers
+should project only required runtime files, rather than create and retain an
+unused full source/dependency copy for each episode.
 
 The copy reserves a new destination directory and rejects an existing one. On
 macOS, regular files use the system copy command's copy-on-write support, with
@@ -266,14 +319,15 @@ another run. Internal symlinks point into the new copy. The completed inventory
 must match the selected bytes, executable modes and remapped links. A failed
 partial copy remains available for inspection and is never retried in place.
 Other platforms keep exclusive ordinary file copies. These choices also apply
-to explicitly copied native Skill roots.
+to explicitly copied Broker and native Skill roots; internal links stay within
+the new root instead of duplicating their target files again.
 
 Copy-on-write saves physical blocks until a copy changes them. Logical sizes
 and `du` totals can count shared blocks repeatedly, so check available space on
 the destination volume before a large batch and allow for later writes. Source
 retention, build identities and the complete byte inventories are unchanged.
 
-Command runs also bind the existing `CONTEXT_BROKER_GRAPH_CORE` to the private
+Command runs with source copies also bind the existing `CONTEXT_BROKER_GRAPH_CORE` to the private
 CLI source and `NTN_SKILLS_BUILD_ENTRY` to the selected private CLI package.
 For example, run the existing verification suite without borrowing another
 checkout's dependencies or skipping its cross-repository route:
