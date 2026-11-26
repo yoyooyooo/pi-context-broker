@@ -59,7 +59,7 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
   };
   fs.mkdirSync(paths.responses, { recursive: true, mode: 0o700 });
   fs.writeFileSync(paths.ledger, '', { flag: 'wx', mode: 0o600 });
-  const operations = new Map(), callbacks = new Map();
+  const operations = new Map(), callbacks = new Map(), idleWaiters = new Set();
   let errors = 0, closed = false, lastActivity = performance.now(), source, graph, finished;
   const fail = (channel, error) => {
     errors++;
@@ -70,6 +70,7 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
       if (closed) return;
       try { callback(name === metricChannel || name === resultChannel ? recorder.scrub(event) : event); }
       catch (error) { fail(name, error); }
+      finally { for (const check of idleWaiters) check(); }
     };
     callbacks.set(callback, wrapped); return wrapped;
   };
@@ -136,13 +137,31 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
   const pending = () => [...operations.values()].filter(operation => operation.status === 'pending');
   return {
     paths,
-    async waitIdle(timeoutMs = 5000) {
-      const started = performance.now();
-      while (pending().length || performance.now() - lastActivity < 25) {
-        if (performance.now() - started >= timeoutMs) return false;
-        await new Promise(resolve => setTimeout(resolve, 10));
-      }
-      return true;
+    waitIdle(timeoutMs = null, { signal } = {}) {
+      assert.ok(timeoutMs === null || Number.isFinite(timeoutMs) && timeoutMs >= 0, 'BENCHMARK_NOTION_IDLE_TIMEOUT_INVALID');
+      signal?.throwIfAborted();
+      return new Promise((resolve, reject) => {
+        let timeout, quiet;
+        const finish = (value, error) => {
+          clearTimeout(timeout); clearTimeout(quiet); idleWaiters.delete(check);
+          signal?.removeEventListener('abort', abort);
+          if (error) reject(error); else resolve(value);
+        };
+        const abort = () => finish(false, signal.reason ?? new Error('BENCHMARK_NOTION_IDLE_CANCELLED'));
+        const check = () => {
+          clearTimeout(quiet);
+          if (errors) return finish(false, new Error('BENCHMARK_NOTION_OBSERVER_ERROR'));
+          if (closed) return finish(pending().length === 0);
+          if (pending().length) return;
+          // Retain the short diagnostic quiet window, not a startup deadline.
+          const remaining = 25 - (performance.now() - lastActivity);
+          if (remaining > 0) quiet = setTimeout(check, remaining);
+          else finish(true);
+        };
+        if (timeoutMs !== null) timeout = setTimeout(() => finish(false), timeoutMs);
+        signal?.addEventListener('abort', abort, { once: true });
+        idleWaiters.add(check); check();
+      });
     },
     candidate(sources = []) {
       const selected = new Map(), evidence = [];
@@ -177,6 +196,7 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
       for (const name of [metricChannel, resultChannel, 'tracing:child_process.spawn:start', 'tracing:child_process.spawn:error'])
         for (const wrapped of callbacks.values()) diagnostics.unsubscribe(name, wrapped);
       callbacks.clear(); closed = true;
+      for (const check of idleWaiters) check();
       const observed = await readSourceObservation(paths.source);
       await recorder.addArtifact('notion-source', paths.source, 'jsonl');
       await recorder.addArtifact('notion-sdk', paths.ledger, 'jsonl');
