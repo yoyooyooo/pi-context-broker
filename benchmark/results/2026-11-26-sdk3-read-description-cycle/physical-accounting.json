@@ -1,0 +1,302 @@
+{
+  "version": 1,
+  "kind": "benchmark-physical-accounting-readback",
+  "created_at": "2026-11-26T14:13:26.086Z",
+  "historical_observations": 104,
+  "standing_reservations": 125,
+  "total_observations": 229,
+  "historical_registrations": 13,
+  "standing_registrations": 16,
+  "total_registrations": 29,
+  "active_campaign_leases": 0,
+  "new_unique_observations": 9,
+  "new_registrations": 3,
+  "prior_public_observations": 219,
+  "prior_public_registrations": 25,
+  "public_original_observation_set": "1-219,221-229",
+  "public_original_observations_after_this_release": 228,
+  "public_registration_scopes_after_this_release": 28,
+  "excluded_from_this_release": [
+    {
+      "ordinal": 220,
+      "reason": "Earlier Store invalid retained in its private source scope; not exported by this product cycle."
+    }
+  ],
+  "report_only_reanalysis_new_observations": 0,
+  "model_requests_for_publication": 0,
+  "accounting_sum_only_not_pooled_scientific_estimates": {
+    "model_requests": 51,
+    "input_tokens": 228177,
+    "output_tokens": 3609,
+    "observed_episode_duration_ms": 1152495.353958
+  },
+  "source_inventory_sha256": "d7a29aaa15f58b4e72b1e2fa8be56259372c954b907d45776c12439ecea620cd",
+  "new_reservations": [
+    {
+      "ordinal": 221,
+      "run_id": "sdk3-read-description-6-attempt-3-001",
+      "experiment_id": "sdk3-read-description-6-attempt-3",
+      "condition_epoch_id": "sdk3-product-loop-epoch-3",
+      "source_plan_file_sha256": "0f620cb8ed8127927c4d9f6d0976f15acbe0594327306f98a32246c62ff79e08",
+      "reservation_sha256": "6879da41b8e500e1812994e2e5beb23f3cf09ed9f120019d7d5faefed44489aa"
+    },
+    {
+      "ordinal": 222,
+      "run_id": "sdk3-read-description-6-attempt-4-001",
+      "experiment_id": "sdk3-read-description-6-attempt-4",
+      "condition_epoch_id": "sdk3-product-loop-epoch-4",
+      "source_plan_file_sha256": "af0aeda76cc88eefa3b4282cfaadd250bf966640f8d3aa15b3628de681dc680d",
+      "reservation_sha256": "dcef050d4172547447461a66bdc079730df7780540384a0c5850ea42ee42b30c"
+    },
+    {
+      "ordinal": 223,
+      "run_id": "sdk3-read-description-6-attempt-4-002",
+      "experiment_id": "sdk3-read-description-6-attempt-4",
+      "condition_epoch_id": "sdk3-product-loop-epoch-4",
+      "source_plan_file_sha256": "af0aeda76cc88eefa3b4282cfaadd250bf966640f8d3aa15b3628de681dc680d",
+      "reservation_sha256": "30101d1253b4fd58d5b62c7e1a7720215123c0e0a52367a412aa81853df4f512"
+    },
+    {
+      "ordinal": 224,
+      "run_id": "sdk3-read-description-6-attempt-4-003",
+      "experiment_id": "sdk3-read-description-6-attempt-4",
+      "condition_epoch_id": "sdk3-product-loop-epoch-4",
+      "source_plan_file_sha256": "af0aeda76cc88eefa3b4282cfaadd250bf966640f8d3aa15b3628de681dc680d",
+      "reservation_sha256": "f3491531b0e4eadef670dcb50b2c661da3fd817f377bc749758a03c90a076e64"
+    },
+    {
+      "ordinal": 225,
+      "run_id": "sdk3-read-description-6-attempt-4-004",
+      "experiment_id": "sdk3-read-description-6-attempt-4",
+      "condition_epoch_id": "sdk3-product-loop-epoch-4",
+      "source_plan_file_sha256": "af0aeda76cc88eefa3b4282cfaadd250bf966640f8d3aa15b3628de681dc680d",
+      "reservation_sha256": "8daa97a6fb8bb38a38a1b68d854548c8d66ba83f6e50e426cea610341d62625a"
+    },
+    {
+      "ordinal": 226,
+      "run_id": "sdk3-read-description-6-attempt-4-005",
+      "experiment_id": "sdk3-read-description-6-attempt-4",
+      "condition_epoch_id": "sdk3-product-loop-epoch-4",
+      "source_plan_file_sha256": "af0aeda76cc88eefa3b4282cfaadd250bf966640f8d3aa15b3628de681dc680d",
+      "reservation_sha256": "dfa73492ad70f7bd9b20bd448309a65f2dd236e68c75cbc6d026c0f7d3f94840"
+    },
+    {
+      "ordinal": 227,
+      "run_id": "sdk3-read-description-6-attempt-4-006",
+      "experiment_id": "sdk3-read-description-6-attempt-4",
+      "condition_epoch_id": "sdk3-product-loop-epoch-4",
+      "source_plan_file_sha256": "af0aeda76cc88eefa3b4282cfaadd250bf966640f8d3aa15b3628de681dc680d",
+      "reservation_sha256": "c617aec51a45ac0c656f517ec5076fca36444653d6c85879c8dcc7b1910ea21c"
+    },
+    {
+      "ordinal": 228,
+      "run_id": "sdk3-read-description-v2-pair-1-001",
+      "experiment_id": "sdk3-read-description-v2-pair-1",
+      "condition_epoch_id": "sdk3-product-loop-v2-epoch-1",
+      "source_plan_file_sha256": "4c24e9dc5b541741c741c7ef1b7b17d47f734732ce2522262856b20ed7fbfc6b",
+      "reservation_sha256": "655775056dacd1c62f29d45fc892e2e0b2b5f420dd1b870f68c12291a49df8ed"
+    },
+    {
+      "ordinal": 229,
+      "run_id": "sdk3-read-description-v2-pair-1-002",
+      "experiment_id": "sdk3-read-description-v2-pair-1",
+      "condition_epoch_id": "sdk3-product-loop-v2-epoch-1",
+      "source_plan_file_sha256": "4c24e9dc5b541741c741c7ef1b7b17d47f734732ce2522262856b20ed7fbfc6b",
+      "reservation_sha256": "16b10c0deca4781fc0f7dec4565af565bdf7b1367dcb20d82b2a2cf02283b08e"
+    }
+  ],
+  "new_registrations_detail": [
+    {
+      "global_sequence": 27,
+      "scope_id": "sdk3-read-description-6-attempt-3",
+      "registration_sha256": "8968e20c27d3fec4bd07d15ea5ae8579e581ff9e05bb9633f5042be527e27cd7"
+    },
+    {
+      "global_sequence": 28,
+      "scope_id": "sdk3-read-description-6-attempt-4",
+      "registration_sha256": "9a5fd1deccfcfac38660ff79fd952a7f16f4464af3dc4742b720436dbd290e41"
+    },
+    {
+      "global_sequence": 29,
+      "scope_id": "sdk3-read-description-v2-pair-1",
+      "registration_sha256": "114f2976179a0b53236a1c09293a451daffe43cfe547e168aed77fc54b54c8c6"
+    }
+  ],
+  "groups": [
+    {
+      "id": "apparatus-invalid-221",
+      "ordinals": [
+        221
+      ],
+      "episodes": [
+        {
+          "ordinal": 221,
+          "run_id": "sdk3-read-description-6-attempt-3-001",
+          "source_episode_sha256": "4d300f537477486e40f0e3ffd66515d9b12a2ebbe7c120e6ab915c5c8ef3df79",
+          "condition": "m0-e0",
+          "case_id": "references-01-a-n16-r1",
+          "outcome": "not_applicable",
+          "business": "fail",
+          "valid": "invalid",
+          "model_requests": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "observed_episode_duration_ms": 47870.911792
+        }
+      ],
+      "accounting_sum": {
+        "model_requests": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "observed_episode_duration_ms": 47870.911792
+      }
+    },
+    {
+      "id": "v1-original",
+      "ordinals": [
+        222,
+        223,
+        224,
+        225,
+        226,
+        227
+      ],
+      "episodes": [
+        {
+          "ordinal": 222,
+          "run_id": "sdk3-read-description-6-attempt-4-001",
+          "source_episode_sha256": "4fd039e0f50eb189664a84540e3ad12c382d020a6b9b02f470dfdc45893e21f5",
+          "condition": "m0-e0",
+          "case_id": "references-01-a-n16-r1",
+          "outcome": "unknown",
+          "business": "pass",
+          "valid": "valid",
+          "model_requests": 6,
+          "input_tokens": 26934,
+          "output_tokens": 416,
+          "observed_episode_duration_ms": 98995.63325
+        },
+        {
+          "ordinal": 223,
+          "run_id": "sdk3-read-description-6-attempt-4-002",
+          "source_episode_sha256": "fea8759ba2c7ba06eb6f7f2b0c399ad7b3b436c3d91929ba1690cf2477fd7a1c",
+          "condition": "m0-e1",
+          "case_id": "references-01-a-n16-r1",
+          "outcome": "unknown",
+          "business": "pass",
+          "valid": "valid",
+          "model_requests": 7,
+          "input_tokens": 34327,
+          "output_tokens": 503,
+          "observed_episode_duration_ms": 146034.107375
+        },
+        {
+          "ordinal": 224,
+          "run_id": "sdk3-read-description-6-attempt-4-003",
+          "source_episode_sha256": "477336c1c107c51e698e86ac9a371edabf5861ab2fdfbc01e6f83d845629d626",
+          "condition": "m0-e1",
+          "case_id": "continuation-01-a-n16-r2",
+          "outcome": "unknown",
+          "business": "pass",
+          "valid": "valid",
+          "model_requests": 8,
+          "input_tokens": 34786,
+          "output_tokens": 450,
+          "observed_episode_duration_ms": 150510.982959
+        },
+        {
+          "ordinal": 225,
+          "run_id": "sdk3-read-description-6-attempt-4-004",
+          "source_episode_sha256": "63b847d62fc7991cca384356aed46cfee1ef094daf9901667c5a7bd2e384c65e",
+          "condition": "m0-e0",
+          "case_id": "continuation-01-a-n16-r2",
+          "outcome": "unknown",
+          "business": "pass",
+          "valid": "valid",
+          "model_requests": 8,
+          "input_tokens": 35674,
+          "output_tokens": 515,
+          "observed_episode_duration_ms": 138246.580708
+        },
+        {
+          "ordinal": 226,
+          "run_id": "sdk3-read-description-6-attempt-4-005",
+          "source_episode_sha256": "e02d3f540430030e1bfdcb1c2db4193a4616503c8a10be56b7c56cf22b5e97f8",
+          "condition": "m0-e0",
+          "case_id": "implicit-01-a-n16-r1",
+          "outcome": "unknown",
+          "business": "pass",
+          "valid": "valid",
+          "model_requests": 5,
+          "input_tokens": 21256,
+          "output_tokens": 372,
+          "observed_episode_duration_ms": 126767.88162499998
+        },
+        {
+          "ordinal": 227,
+          "run_id": "sdk3-read-description-6-attempt-4-006",
+          "source_episode_sha256": "adc519a58801540dc386c721926137b19749bc608c80ae6b3b1f428c95a7f62f",
+          "condition": "m0-e1",
+          "case_id": "implicit-01-a-n16-r1",
+          "outcome": "unknown",
+          "business": "pass",
+          "valid": "valid",
+          "model_requests": 5,
+          "input_tokens": 20759,
+          "output_tokens": 360,
+          "observed_episode_duration_ms": 133235.577333
+        }
+      ],
+      "accounting_sum": {
+        "model_requests": 39,
+        "input_tokens": 173736,
+        "output_tokens": 2616,
+        "observed_episode_duration_ms": 793790.7632499998
+      }
+    },
+    {
+      "id": "v2-final",
+      "ordinals": [
+        228,
+        229
+      ],
+      "episodes": [
+        {
+          "ordinal": 228,
+          "run_id": "sdk3-read-description-v2-pair-1-001",
+          "source_episode_sha256": "1ac996ccf22a2c8deef4f11d029e7f998464ccc739e877d1fb4bc2f3e4aa75fc",
+          "condition": "m0-e0",
+          "case_id": "references-01-a-n16-r1",
+          "outcome": "unknown",
+          "business": "pass",
+          "valid": "valid",
+          "model_requests": 6,
+          "input_tokens": 27333,
+          "output_tokens": 513,
+          "observed_episode_duration_ms": 188615.50837499998
+        },
+        {
+          "ordinal": 229,
+          "run_id": "sdk3-read-description-v2-pair-1-002",
+          "source_episode_sha256": "de1f74cb13bff5af24116518cd40ac754d902008554d35f3d3052e101df1efff",
+          "condition": "m0-e1",
+          "case_id": "references-01-a-n16-r1",
+          "outcome": "unknown",
+          "business": "pass",
+          "valid": "valid",
+          "model_requests": 6,
+          "input_tokens": 27108,
+          "output_tokens": 480,
+          "observed_episode_duration_ms": 122218.170541
+        }
+      ],
+      "accounting_sum": {
+        "model_requests": 12,
+        "input_tokens": 54441,
+        "output_tokens": 993,
+        "observed_episode_duration_ms": 310833.67891599995
+      }
+    }
+  ],
+  "interpretation": "Global execution accounting is not a scientific sample denominator. The apparatus invalid, development v1 comparison and final v2 pair are separate epochs. Original/reanalysis views refer to the same six executions."
+}

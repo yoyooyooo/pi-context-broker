@@ -1,0 +1,350 @@
+{
+  "version": 1,
+  "exact_serialized_equality_verified": true,
+  "verification_script_sha256": "83f2f20401f7d8aa5a7031e639286a11d548b8f6b6bfdf148917e6cc89d92b96",
+  "status": "final-payload-difference-verified",
+  "scope": "captured first provider payload; no model outcome claims",
+  "admission": "not certified by this independent payload audit; consult controller result",
+  "real_model_run_completed": false,
+  "token_latency_or_cost_benefit_claimed": false,
+  "expected_description_delta_bytes": -219,
+  "exact_tutorial_deletion": {
+    "text": "For a requested latest-version inspection, use refresh:true with the supplied main Skill ref; the current task keeps its previous selection. To adopt the latest instructions, call notion_use with refresh:true directly. ",
+    "bytes": 219,
+    "all_other_description_bytes_identical": true
+  },
+  "controls": {
+    "model": "auto/gpt-6.2-sol",
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    },
+    "store": false,
+    "max_completion_tokens": 128000,
+    "reasoning_effort": "high"
+  },
+  "tools": [
+    {
+      "name": "read",
+      "parameters_equal": true,
+      "parameters_sha256": "ddcbf4be6301ed7ea0ce40b68c6ccc3c8ea175073cf4f3a5fcb4a7dc5512b73a",
+      "parameters_json_bytes": 2069,
+      "baseline_definition_bytes": 3237,
+      "candidate_definition_bytes": 3018,
+      "baseline_description_bytes": 1091,
+      "candidate_description_bytes": 872,
+      "definition_equal": false
+    },
+    {
+      "name": "bash",
+      "parameters_equal": true,
+      "parameters_sha256": "1ad6bb2c22082daa3c896b8b96ee6f799cbe3c6efeca93a3cbefbb4f9965f1fb",
+      "parameters_json_bytes": 218,
+      "baseline_definition_bytes": 543,
+      "candidate_definition_bytes": 543,
+      "baseline_description_bytes": 248,
+      "candidate_description_bytes": 248,
+      "definition_equal": true
+    },
+    {
+      "name": "edit",
+      "parameters_equal": true,
+      "parameters_sha256": "55866598f02c5e00ddfcbcae3df78081e3712de09a622bac7a6bc02ef2acc1bc",
+      "parameters_json_bytes": 776,
+      "baseline_definition_bytes": 1179,
+      "candidate_definition_bytes": 1179,
+      "baseline_description_bytes": 326,
+      "candidate_description_bytes": 326,
+      "definition_equal": true
+    },
+    {
+      "name": "write",
+      "parameters_equal": true,
+      "parameters_sha256": "e98a2484f667cf7c22d76ca103bf2022bf9113dc63fe38b899e71c328cb1e833",
+      "parameters_json_bytes": 225,
+      "baseline_definition_bytes": 430,
+      "candidate_definition_bytes": 430,
+      "baseline_description_bytes": 127,
+      "candidate_description_bytes": 127,
+      "definition_equal": true
+    },
+    {
+      "name": "tool_search",
+      "parameters_equal": true,
+      "parameters_sha256": "a953f7c2ad22762ad59a7773089ed4a0cb769ae801c12380a0c92234975b83be",
+      "parameters_json_bytes": 220,
+      "baseline_definition_bytes": 646,
+      "candidate_definition_bytes": 646,
+      "baseline_description_bytes": 338,
+      "candidate_description_bytes": 338,
+      "definition_equal": true
+    },
+    {
+      "name": "notion_list",
+      "parameters_equal": true,
+      "parameters_sha256": "3b83c9e315d0a6b83f53bf6771c75478fd4fd1a528e4b09b7d5f7b57a505c1be",
+      "parameters_json_bytes": 1256,
+      "baseline_definition_bytes": 2575,
+      "candidate_definition_bytes": 2575,
+      "baseline_description_bytes": 1235,
+      "candidate_description_bytes": 1235,
+      "definition_equal": true
+    },
+    {
+      "name": "notion_use",
+      "parameters_equal": true,
+      "parameters_sha256": "1df620a6e788edf606554eb0e21e22dc6bfece97a3bcf31b277fbb00e01107fb",
+      "parameters_json_bytes": 857,
+      "baseline_definition_bytes": 1538,
+      "candidate_definition_bytes": 1538,
+      "baseline_description_bytes": 598,
+      "candidate_description_bytes": 598,
+      "definition_equal": true
+    }
+  ],
+  "deltas": {
+    "read_description_bytes": -219,
+    "system_workspace_path_bytes": 0,
+    "guidance_build_path_bytes": 0,
+    "complete_serialized_payload_bytes": -219,
+    "path_normalized_payload_bytes": -219
+  },
+  "raw_difference_pointers": [
+    "[path:06463c15f4be854ba443]",
+    "[path:8bb62ee4e25a92f68fa9]",
+    "[path:63d9f8ffbc349a5af7ef]"
+  ],
+  "normalization_rules": [
+    {
+      "arm": "baseline",
+      "pointer": "/messages/0/content",
+      "from": "[path:4d72b08c4d96815f9c48]",
+      "to": "<RUN_WORKSPACE>",
+      "occurrences": 1
+    },
+    {
+      "arm": "baseline",
+      "pointer": "/messages/3/content/0/text",
+      "from": "[path:71cc083d29f7da5c93b8]",
+      "to": "<BUILD_ROOT>",
+      "occurrences": 2
+    },
+    {
+      "arm": "candidate",
+      "pointer": "/messages/0/content",
+      "from": "[path:45b52f42b64a89625a08]",
+      "to": "<RUN_WORKSPACE>",
+      "occurrences": 1
+    },
+    {
+      "arm": "candidate",
+      "pointer": "/messages/3/content/0/text",
+      "from": "[path:a9d697e87173cd186628]",
+      "to": "<BUILD_ROOT>",
+      "occurrences": 2
+    }
+  ],
+  "normalized_difference_pointers": [
+    "[path:63d9f8ffbc349a5af7ef]"
+  ],
+  "equal_after_exact_path_normalization_and_read_description_replacement": true,
+  "equal_payload_sha256_after_those_replacements": "d3d3fee34571ed64f0db8e88fe3a577d9fb146f3a04a346be009a8b96c9b55ac",
+  "arms": [
+    {
+      "arm": "baseline",
+      "run": "[path:2f5b86ba5c3fd7398cb3]",
+      "artifacts": {
+        "events.jsonl": {
+          "path": "[path:d0832332dc28c86582ec]",
+          "copied_to": "[path:843d44d4e119ada68e57]",
+          "bytes": 282325,
+          "sha256": "7afd3d1fe1159e61ccfeecec5f8064d89338002b9d89ec125435415ab03242ee"
+        },
+        "request-1-payload.json": {
+          "path": "[path:3436f13ffa84c05cc12f]",
+          "copied_to": "[path:0ab9afa15d411d370f3a]",
+          "bytes": 18751,
+          "sha256": "c4805a8b3a8c1ff2b95437d2449adb56f6158c5d226e0d69a0e4c68f2211db7c"
+        },
+        "candidate-observed.json": {
+          "path": "[path:a6a515e092388793cf4c]",
+          "copied_to": "[path:49e336533f505c6d8631]",
+          "bytes": 293024,
+          "sha256": "486475680ef662dc6a609428fda40050d53173846f586c38d79be5b563073d39"
+        },
+        "request-1-context.json": {
+          "path": "[path:0b89c94800914f947dd1]",
+          "copied_to": "[path:ea62d9ba4f83e12923d3]",
+          "bytes": 19382,
+          "sha256": "ed32e891b957c79efa1d21f49acfeaf8fb79354f07bd918d6c757926ff4ef1c4"
+        }
+      },
+      "final_payload_event": {
+        "version": 1,
+        "sequence": 48,
+        "wall_time": "2026-11-26T13:53:43.149Z",
+        "monotonic_ns": "305996248789041",
+        "run_id": "sdk3-read-description-v2-pair-1-capture-m0-e0-c0",
+        "episode_id": "sdk3-read-description-v2-pair-1-capture-m0-e0-c0",
+        "candidate_id": "m0-e0",
+        "task_id": "references-01-a-n16-r1",
+        "turn_id": null,
+        "request_id": "sdk3-read-description-v2-pair-1-capture-m0-e0-c0/request-1",
+        "stage": "admission",
+        "type": "provider_payload_final",
+        "data": {
+          "request_id": "sdk3-read-description-v2-pair-1-capture-m0-e0-c0/request-1",
+          "payload_ref": {
+            "artifact_id": "request-1-payload",
+            "sha256": "c4805a8b3a8c1ff2b95437d2449adb56f6158c5d226e0d69a0e4c68f2211db7c",
+            "pointer": ""
+          },
+          "serialized_sha256": "18c7660080c4b1895b95ab60796ba82ac7dd2f49647cbd54e55c854d2bba7af3"
+        }
+      },
+      "blocked_events": [
+        {
+          "version": 1,
+          "sequence": 51,
+          "wall_time": "2026-11-26T13:53:43.185Z",
+          "monotonic_ns": "305996284436750",
+          "run_id": "sdk3-read-description-v2-pair-1-capture-m0-e0-c0",
+          "episode_id": "sdk3-read-description-v2-pair-1-capture-m0-e0-c0",
+          "candidate_id": "m0-e0",
+          "task_id": "references-01-a-n16-r1",
+          "turn_id": null,
+          "request_id": "sdk3-read-description-v2-pair-1-capture-m0-e0-c0/request-1",
+          "stage": "admission",
+          "type": "provider_send_blocked",
+          "data": {
+            "request_id": "sdk3-read-description-v2-pair-1-capture-m0-e0-c0/request-1",
+            "error": {
+              "name": "EpisodeStop",
+              "code": "BENCHMARK_ADMISSION_CAPTURE_COMPLETE",
+              "message": "BENCHMARK_ADMISSION_CAPTURE_COMPLETE",
+              "details": {}
+            }
+          }
+        }
+      ],
+      "provider_event_types": [
+        "provider_payload_final",
+        "provider_send_blocked"
+      ],
+      "saved_payload_bytes": 18751,
+      "serialized_payload_bytes": 15158,
+      "serialized_payload_sha256": "18c7660080c4b1895b95ab60796ba82ac7dd2f49647cbd54e55c854d2bba7af3",
+      "serialized_tools_bytes": 10156,
+      "serialized_tools_sha256": "e290c7adef1d98509ca78f6936b42d593d2f6872a8de35f8e5fabe99fe8c415f",
+      "system_prompt_bytes": 2500,
+      "system_prompt_sha256": "f4b9a57ad20c3a39d0586224619f459368e353863504a2332ed7034d5ced38ad",
+      "guidance_bytes": 1655,
+      "guidance_sha256": "f5065c0d2848554505d308e1e4ef9747d7685c6642576d24a7fa8b5aa1302bfe",
+      "normalized_system_prompt_sha256": "124d013b645613b909fecfba0675f5fe3dc680febc1b76659f7eb382af31677d",
+      "normalized_guidance_sha256": "095b3b96b837610b98e0b4c2d4e7749a3e85977333a22a81a6ef19a558019e75",
+      "observed_tool_counts": {
+        "all": 13,
+        "active": 7,
+        "callable": 6
+      }
+    },
+    {
+      "arm": "candidate",
+      "run": "[path:240faa60939ed2dba501]",
+      "artifacts": {
+        "events.jsonl": {
+          "path": "[path:223908d2030ccc20994e]",
+          "copied_to": "[path:105b4bb9081f2f38ada0]",
+          "bytes": 281675,
+          "sha256": "43119add5f750d1a24b9e1c98402b135c3bea460ceb89f6a554a42042fd26dca"
+        },
+        "request-1-payload.json": {
+          "path": "[path:db8099e2d8c52b76cb60]",
+          "copied_to": "[path:1c825d1590058f4d9c55]",
+          "bytes": 18532,
+          "sha256": "e94ec03f2b2bd2625507f4987014277666f58e7b4bbf847f6a04881c79096122"
+        },
+        "candidate-observed.json": {
+          "path": "[path:9a32365a9915e09933aa]",
+          "copied_to": "[path:89b61bf91b35c286dec7]",
+          "bytes": 292148,
+          "sha256": "5b9fe63a6ba1292e9395bb3aa07f456f5d616f6670b3ff858c374fe357613308"
+        },
+        "request-1-context.json": {
+          "path": "[path:b047565d6a6b16160a84]",
+          "copied_to": "[path:563fc856f73e8b32ce5d]",
+          "bytes": 19163,
+          "sha256": "9734bf29392e48fc8814f8b44c5e35fbf871e57138fe1da18299c8b2cf62c72b"
+        }
+      },
+      "final_payload_event": {
+        "version": 1,
+        "sequence": 45,
+        "wall_time": "2026-11-26T13:53:30.729Z",
+        "monotonic_ns": "305983828661833",
+        "run_id": "sdk3-read-description-v2-pair-1-capture-m0-e1-c0",
+        "episode_id": "sdk3-read-description-v2-pair-1-capture-m0-e1-c0",
+        "candidate_id": "m0-e1",
+        "task_id": "references-01-a-n16-r1",
+        "turn_id": null,
+        "request_id": "sdk3-read-description-v2-pair-1-capture-m0-e1-c0/request-1",
+        "stage": "admission",
+        "type": "provider_payload_final",
+        "data": {
+          "request_id": "sdk3-read-description-v2-pair-1-capture-m0-e1-c0/request-1",
+          "payload_ref": {
+            "artifact_id": "request-1-payload",
+            "sha256": "e94ec03f2b2bd2625507f4987014277666f58e7b4bbf847f6a04881c79096122",
+            "pointer": ""
+          },
+          "serialized_sha256": "47bdbe1ed3138019eef691edbfa28702a7664d525a9437077af173dc3654c306"
+        }
+      },
+      "blocked_events": [
+        {
+          "version": 1,
+          "sequence": 51,
+          "wall_time": "2026-11-26T13:53:30.767Z",
+          "monotonic_ns": "305983866956791",
+          "run_id": "sdk3-read-description-v2-pair-1-capture-m0-e1-c0",
+          "episode_id": "sdk3-read-description-v2-pair-1-capture-m0-e1-c0",
+          "candidate_id": "m0-e1",
+          "task_id": "references-01-a-n16-r1",
+          "turn_id": null,
+          "request_id": "sdk3-read-description-v2-pair-1-capture-m0-e1-c0/request-1",
+          "stage": "admission",
+          "type": "provider_send_blocked",
+          "data": {
+            "request_id": "sdk3-read-description-v2-pair-1-capture-m0-e1-c0/request-1",
+            "error": {
+              "name": "EpisodeStop",
+              "code": "BENCHMARK_ADMISSION_CAPTURE_COMPLETE",
+              "message": "BENCHMARK_ADMISSION_CAPTURE_COMPLETE",
+              "details": {}
+            }
+          }
+        }
+      ],
+      "provider_event_types": [
+        "provider_payload_final",
+        "provider_send_blocked"
+      ],
+      "saved_payload_bytes": 18532,
+      "serialized_payload_bytes": 14939,
+      "serialized_payload_sha256": "47bdbe1ed3138019eef691edbfa28702a7664d525a9437077af173dc3654c306",
+      "serialized_tools_bytes": 9937,
+      "serialized_tools_sha256": "1b3d6990fe851c5fe3ff67ba945ae9aa721acb5ad2cabfbed0d4637c1152eace",
+      "system_prompt_bytes": 2500,
+      "system_prompt_sha256": "674733123a67d1ec4bbb2665289f173455c772aa6f6a94c3675f4b5f88a5b5fa",
+      "guidance_bytes": 1655,
+      "guidance_sha256": "d731cd468b98dd8449dd262dc4952a0b37207cceef7ac923307cb8501a8a74c2",
+      "normalized_system_prompt_sha256": "124d013b645613b909fecfba0675f5fe3dc680febc1b76659f7eb382af31677d",
+      "normalized_guidance_sha256": "095b3b96b837610b98e0b4c2d4e7749a3e85977333a22a81a6ef19a558019e75",
+      "observed_tool_counts": {
+        "all": 13,
+        "active": 7,
+        "callable": 6
+      }
+    }
+  ]
+}

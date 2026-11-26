@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "kind": "benchmark-independent-public-replay",
+  "status": "verified",
+  "at": "2026-11-26T13:28:26.926262+00:00",
+  "source_package": "[path:897744af7d406259904c]",
+  "isolated_package": "[path:47073ed2cd7435bee4df]",
+  "report_directory": "[path:5ec68a53e8ee96b33ea1]",
+  "manifest_sha256": "ade92228840e4040d4a83f919f4dfe5541a8ca1c769393424a6c3e1638dd30d4",
+  "source_analysis_sha256": "cc59078488ef3eb488fd241f7e7be78a3f2623416c0dc309a864d387abf8b068",
+  "public_analysis_sha256": "058764ccbe567d4c576271191d0b92ecfefd82353b8c67a21d9924f5a1e70e38",
+  "replay": {
+    "status": "verified",
+    "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun",
+    "analysis_sha256": "058764ccbe567d4c576271191d0b92ecfefd82353b8c67a21d9924f5a1e70e38",
+    "original_analysis_sha256": "cc59078488ef3eb488fd241f7e7be78a3f2623416c0dc309a864d387abf8b068",
+    "model_requests": 0
+  },
+  "model_requests": 0,
+  "original_package_unchanged": true,
+  "public_copy_unchanged": true,
+  "credential_environment": [],
+  "isolation": {
+    "profile": "[path:96ed8916f4ec95ca9aac]",
+    "profile_sha256": "d8a3f2cd9d0cddbb6f35eb299255c28e7f325c91571592037fdb29aee7d2fcf1",
+    "network": "denied",
+    "private_original_reads": "denied",
+    "public_copy_writes": "denied"
+  },
+  "tables": [
+    {
+      "file": "budget_curves.csv",
+      "sha256": "7ca33d3bcec81c7cfb01b3dac0303673053104a1cc3126ce1ce41c72c7d97819",
+      "exact": true
+    },
+    {
+      "file": "comparisons.csv",
+      "sha256": "2df5ce9e82316545868dd18ae99b39eeb2894c36ba6192a3e3373d78672eca58",
+      "exact": true
+    },
+    {
+      "file": "conditions.csv",
+      "sha256": "51843e913c3f66819c18048e17abc62919bab9d21079ad5c666da3f15b0fce36",
+      "exact": true
+    },
+    {
+      "file": "cost_frontier.csv",
+      "sha256": "d76806f2c30b96c3b5fea625d994f41db2fb9638b70eff2d8409fc201f9536e9",
+      "exact": true
+    },
+    {
+      "file": "interactions.csv",
+      "sha256": "bedca5f5c3450db9f398aa7a86904a16e6fa794bdb256baadca050d80d4e7534",
+      "exact": true
+    },
+    {
+      "file": "paired_budgets.csv",
+      "sha256": "23c6c58e89a3523611f89f917c115380a65c31836abd49d61108ef312f556629",
+      "exact": true
+    },
+    {
+      "file": "transitions.csv",
+      "sha256": "475a6b03b38e1263eac0c217e3ab0c95f7f819e0dc9003ba748fccb390de663d",
+      "exact": true
+    }
+  ],
+  "regenerated_charts": [
+    "input.svg",
+    "quality.svg",
+    "time.svg"
+  ]
+}

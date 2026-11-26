@@ -1,0 +1,1 @@
+{"elapsed_ms":104.684166,"metrics":{"complete":true,"total_requests":0,"trace":[],"trace_dropped":0},"metrics_observed":true,"operation":"library-selection","requestId":"[id:e675109255338c4c7097]","resultObserved":true,"sdk_started":true,"status":"completed","transport":"sdk","value":"[id:c311fb35ffd790623298]","version":2}

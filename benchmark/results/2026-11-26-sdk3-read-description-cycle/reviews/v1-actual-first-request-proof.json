@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "pair": "references-01-a-n16-r1",
+  "status": "actual-first-request-payload-difference-verified",
+  "arms": [
+    {
+      "root": "[path:76e84019b384c0d0daa4]",
+      "path": "[path:520d97dfd32eb180e3c3]",
+      "sha256": "4ce0eb17f1c820cd3c836e1c4f50c8eab6b74e91405c3d1862c9e6762c9ac7aa",
+      "bytes": 15164,
+      "first_reported_input": 2889
+    },
+    {
+      "root": "[path:824b2328b768a281143c]",
+      "path": "[path:71eeea32d232f60d28cd]",
+      "sha256": "432d390ec2922de6d1cb61daf95eb8320f1e4b897287ba40c1de7d583d0e0854",
+      "bytes": 14809,
+      "first_reported_input": 2826
+    }
+  ],
+  "payload_delta_bytes": -355,
+  "reported_first_request_input_delta": -63,
+  "after_exact_path_normalization_only_read_description_differs": true,
+  "interpretation": "The provider reported these token counts for these two actual first requests. This is not a byte-to-token conversion, whole-episode efficiency claim or population estimate."
+}

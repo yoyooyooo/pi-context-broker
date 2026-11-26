@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "kind": "narrow-product-adoption-policy",
+  "recorded_at": "2026-11-26T13:52:18.188Z",
+  "before_actual_model_requests": true,
+  "work_plan": {
+    "path": "[path:64affa84b29bcd8a3d64]",
+    "sha256": "b5d0192dba6a84297a408e66b44d47757c0c8c55e0b649b60c6f77586e879db0"
+  },
+  "expected_description_reduction_bytes": 219,
+  "scope": "Final candidate v2; exactly one references pair. Previous candidate is supporting design history only, not additional v2 validation samples.",
+  "required": [
+    "Actual final serialized payload differs only in the exact two removed refresh tutorial sentences and separately attributed environment paths; every other original read.description sentence, all tool schemas and execution sources remain unchanged.",
+    "Both actual references episodes must have valid admission, known model usage, passing business output and passing critical complete same-owner resource contracts.",
+    "Inspect the actual selection, adoption, reads, batching and recovery traces. A candidate-specific observed wrong skill/owner, broken content/adoption boundary, repeated unnecessary consumption or user intervention blocks adoption."
+  ],
+  "limits": [
+    "Keep all formal unknown outcomes and insufficient-evidence statistics; metadata-only discovery must be independently proven and arbitrary shell remains opaque.",
+    "A noncritical absence-proof unknown is not promoted to pass. A release decision may use the passing positive business/resource contracts and inspected traces, but may not claim full formal success or population-level noninferiority.",
+    "Payload reduction is deterministic; first-request provider token deltas and whole-episode tokens/time are separate observations. Do not claim whole-task efficiency improvement unless the actual evidence supports it.",
+    "No v1/v2 pooling and no historical model reruns. The standing grant remains unbounded."
+  ]
+}
