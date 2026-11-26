@@ -98,7 +98,7 @@ test('standing verifier accepts the actual collector 1.2 normalized shape withou
   for(const api of ['openai-completions','openai-responses']){
     const f=await fixture({routing,api,reportedModels:['grok-4.7']}),result=await collect(f);
     t.diagnostic('Retained task-owned collector fixture: '+f.root);
-    assert.equal(result.collector_version,'1.2.1');assert.equal(result.bundle.episode.identity.collector_version,'1.2.1');
+    assert.equal(result.collector_version,'1.2.2');assert.equal(result.bundle.episode.identity.collector_version,'1.2.2');
     assert.equal(Object.hasOwn(result.bundle.episode,'core_evidence'),false);
     assert.deepEqual(result.bundle.episode.admission.completeness,{attempts:'complete',tools:'complete',interventions:'complete'});
     const {plan,event}=standingEvidenceInput(f,result);

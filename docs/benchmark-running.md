@@ -20,13 +20,21 @@ remain explicit and separate from the current production protocol. Verify the
 original business result, requests, usage, duration and subject identity before
 using a changed contract grade in a product decision.
 
-Collector `1.2.1` fixes the retained SDK-v2 interpretation through
+Collector `1.2.2` fixes the retained SDK-v2 interpretation through
 `benchmark/retained-source-views.mjs`: resource-read v1, Skill references v1
 and preparation evidence v2. It preserves those historical validators and
 rejects Library-qualified protocol-v2 identities. Before applying this
 interpreter, verify the plan's build receipt, its runtime-manifest hash and
 the selected SDK hash. This is an applicability check for old evidence, not
 a parser fallback or support for new SDK-v3 experiments.
+
+Source-relative reads must bind to a verified preparation and independently
+observed SDK bytes. Exact source identities keep their existing matching path.
+When the retained material and runtime use different supported snapshot formulas,
+the collector can link them only through hash-checked material receipts, the same
+complete record, scope, content version and file binding, and both exact formulas
+from the frozen SDK source. An unverified link remains partial/unknown. This
+historical identity correction does not infer a source from matching text alone.
 
 The private Benchmark live fixture still uses the earlier `--entry` and
 `--database` interfaces. Before a new live journey uses this source baseline,
