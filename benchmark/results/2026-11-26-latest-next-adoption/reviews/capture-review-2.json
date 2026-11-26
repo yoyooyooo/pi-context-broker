@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "kind": "public-proof-projection",
+  "original_receipt": {
+    "sha256": "08ce9048532de10ac8d87f673aee8cddc853ffb7141033a99d5ae3798611da9e",
+    "bytes": 2358
+  },
+  "transformation": {
+    "publication_version": "1.0.6",
+    "publisher_sha256": "219791be176bf722248c3a2a3d73738647f2dd97cc6aadab1877391e6858f236",
+    "scope": "Private identifiers and machine coordinates are projected; claims and source byte hashes are retained."
+  },
+  "proof": {
+    "version": 1,
+    "status": "passed",
+    "scope": "actual current startup, schema and complete local-candidate accounting; no model or business execution",
+    "captures": [
+      {
+        "capture": {
+          "path": "[path:24bf52fe02b155a5faff]",
+          "sha256": "68f14f3efa934ff11f232311e877dc82e6d0ef592ffcd42fd8437648f7beeeb9"
+        },
+        "candidate": {
+          "path": "[path:6657bfce4cd444dbcd27]",
+          "sha256": "47a79cfe77701402df3ed66b9ee5b0ba66195e04feb9763ed367f5c23a8d0c45"
+        },
+        "mode": "native",
+        "status": "captured",
+        "model_requests": 0,
+        "business_tools": 0,
+        "read_description_bytes": 303,
+        "read_parameters": [
+          "path",
+          "offset",
+          "limit"
+        ],
+        "local_candidates_operations": 0,
+        "local_candidates_http_attempts": 0,
+        "actual_list_operations": 0
+      },
+      {
+        "capture": {
+          "path": "[path:1c5b66d0c94b54316c83]",
+          "sha256": "213e7e5b7e97a57d2c5749a9f37e30aa1a3ac494cd9f8ba07f2413dfa8787046"
+        },
+        "candidate": {
+          "path": "[path:55f681fc2f0bbd43d7e0]",
+          "sha256": "90a6c9ee9f29a0d80fc7e62ce56d6cc02ac843cfb611639336313853f430e200"
+        },
+        "mode": "broker",
+        "status": "captured",
+        "model_requests": 0,
+        "business_tools": 0,
+        "read_description_bytes": 872,
+        "read_parameters": [
+          "path",
+          "offset",
+          "limit",
+          "paths",
+          "from",
+          "budget",
+          "refresh"
+        ],
+        "local_candidates_operations": 3,
+        "local_candidates_http_attempts": 0,
+        "actual_list_operations": 2
+      }
+    ],
+    "candidate_snapshots_used_as_authoritative_catalog": false
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "kind": "public-proof-projection",
+  "original_receipt": {
+    "sha256": "1d6f16d9f6580bb5c6385c1fef206f074ab75c846584a11b97fe7ae9f0a6dade",
+    "bytes": 5588
+  },
+  "transformation": {
+    "publication_version": "1.0.6",
+    "publisher_sha256": "219791be176bf722248c3a2a3d73738647f2dd97cc6aadab1877391e6858f236",
+    "scope": "Private identifiers and machine coordinates are projected; claims and source byte hashes are retained."
+  },
+  "proof": {
+    "version": 1,
+    "kind": "independent-latest-next-isolated-publication-review",
+    "status": "verified",
+    "model_requests": 0,
+    "source_changes": [],
+    "package": "[path:25aea4494cc55268f67e]",
+    "public_manifest_sha256": "d744fbc66880433abcc3e5a34222dc0558a97db40480908e71ecf84deeef6591",
+    "public_analysis_sha256": "f3297ce44714fe6af3ccb3335e58289dc0bdadec2b052677d18f7cb29b5c9ba3",
+    "source_analysis_sha256": "4fbe3c646e87c1101883ac8f7509d779da3dbe9463334d785476cf0ab040bd1d",
+    "strict_verify": {
+      "valid": true,
+      "files": 231,
+      "episodes": 2,
+      "model_requests": 0,
+      "public_analysis_sha256": "f3297ce44714fe6af3ccb3335e58289dc0bdadec2b052677d18f7cb29b5c9ba3",
+      "source_analysis_sha256": "4fbe3c646e87c1101883ac8f7509d779da3dbe9463334d785476cf0ab040bd1d"
+    },
+    "model_bindings": [
+      {
+        "run_id": "latest-next-native-broker-pair-2-001",
+        "requests": 5,
+        "provider_binding": "known",
+        "reported_model": "matched",
+        "route_api_reported_ids_unchanged": true,
+        "endpoint_pseudonym_valid": true
+      },
+      {
+        "run_id": "latest-next-native-broker-pair-2-002",
+        "requests": 6,
+        "provider_binding": "known",
+        "reported_model": "matched",
+        "route_api_reported_ids_unchanged": true,
+        "endpoint_pseudonym_valid": true
+      }
+    ],
+    "negative_binding_tests": {
+      "episodes": 2,
+      "rejected_cases": 10,
+      "receipt": "[path:7c4d90788150d7f50cfd]",
+      "sha256": "35d9b4bc939b218c108e867b47f9813a3229e286ee9a6a0693387e9e54f24e72"
+    },
+    "replay": {
+      "package_copy": "[path:4cc07b11735f717c21f6]",
+      "report": "[path:fe58d4be712eff918846]",
+      "profile": "[path:7c53a3a3b630b57b493b]",
+      "profile_sha256": "c4219bf7681b79673e71e5f0fd0ceaaf9ab066454908926bd344bc1690b55cc9",
+      "sandbox_probe": {
+        "version": 1,
+        "status": "passed",
+        "environment_keys": [
+          "LANG",
+          "PATH",
+          "TMPDIR",
+          "__CF_USER_TEXT_ENCODING"
+        ],
+        "credentials_present": false,
+        "rejected": [
+          {
+            "kind": "private-original-read",
+            "code": "EPERM"
+          },
+          {
+            "kind": "public-copy-write",
+            "code": "EPERM"
+          },
+          {
+            "kind": "network-connect",
+            "code": "EPERM"
+          }
+        ],
+        "public_manifest": "d744fbc66880433abcc3e5a34222dc0558a97db40480908e71ecf84deeef6591"
+      },
+      "original_public_package_unchanged": true,
+      "public_copy_unchanged": true,
+      "files_unchanged": 232,
+      "scope": "public hashes and source locators; normalized-observation statistical reaggregation only; no raw-chain or private-grader rerun"
+    },
+    "privacy": {
+      "status": "verified",
+      "model_requests": 0,
+      "model_bindings": [
+        {
+          "run_id": "latest-next-native-broker-pair-2-001",
+          "requests": 5,
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_reported_ids_unchanged": true,
+          "endpoint_pseudonym_valid": true
+        },
+        {
+          "run_id": "latest-next-native-broker-pair-2-002",
+          "requests": 6,
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_reported_ids_unchanged": true,
+          "endpoint_pseudonym_valid": true
+        }
+      ],
+      "independent_endpoint_path_username_findings": 0,
+      "exact_credential_scan_receipt": "[path:4ecf8dcc85fe38fe5036]",
+      "exact_credential_scan_receipt_sha256": "26907f8d77d62211e9e9ecf41c75cfb1d224fe892bb56dbb0f2e6ef491fd5a11",
+      "reviewed_loopback_constants": [
+        {
+          "path": "raw/4c59d57f34e15b48e7e490a47d106e5d4690054df5fa45c3f671335c68a76820",
+          "sha256": "4c59d57f34e15b48e7e490a47d106e5d4690054df5fa45c3f671335c68a76820",
+          "count": 6
+        },
+        {
+          "path": "raw/9caa9d529b35221420c9348afad122162119a5606d2fda1d98c7ad377a6f602b",
+          "sha256": "9caa9d529b35221420c9348afad122162119a5606d2fda1d98c7ad377a6f602b",
+          "count": 6
+        }
+      ],
+      "loopback_scope": "The twelve exact contexts were independently read; fixed source hashes only, no implementation-wide exemption."
+    },
+    "private_trace_review": {
+      "path": "[path:67ebdff978eb292375ac]",
+      "sha256": "30c2f365036e171c0eb24a3b2002fe63658938ba232b988984540d81b1dabd4d"
+    },
+    "limitations": [
+      "Published replay validates public hashes/source locators and reaggregates normalized observations; it does not rerun private grading.",
+      "Provider-reported model labels do not attest to the actual backend model.",
+      "Latest pair retains native pass/Broker unknown and makes no general performance or noninferiority claim."
+    ]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "kind": "latest-next-publication-verification",
+  "status": "verified",
+  "public_manifest_sha256": "d744fbc66880433abcc3e5a34222dc0558a97db40480908e71ecf84deeef6591",
+  "public_analysis_sha256": "f3297ce44714fe6af3ccb3335e58289dc0bdadec2b052677d18f7cb29b5c9ba3",
+  "source_analysis_sha256": "4fbe3c646e87c1101883ac8f7509d779da3dbe9463334d785476cf0ab040bd1d",
+  "strict_verify": {
+    "valid": true,
+    "files": 231,
+    "episodes": 2,
+    "model_requests": 0,
+    "public_analysis_sha256": "f3297ce44714fe6af3ccb3335e58289dc0bdadec2b052677d18f7cb29b5c9ba3",
+    "source_analysis_sha256": "4fbe3c646e87c1101883ac8f7509d779da3dbe9463334d785476cf0ab040bd1d"
+  },
+  "independent_replay": {
+    "receipt": "reviews/independent-review.json",
+    "credential_free": true,
+    "network_denied": true,
+    "private_original_read_denied": true,
+    "public_copy_write_denied": true,
+    "actual_negative_probes": [
+      "private-original-read:EPERM",
+      "public-copy-write:EPERM",
+      "network-connect:EPERM"
+    ],
+    "unchanged_package_files": 232,
+    "model_binding_rejected_cases": 10
+  },
+  "privacy": {
+    "exact_private_values_and_origins_findings": 0,
+    "reviewed_public_sdk_constant_files": [
+      {
+        "sha256": "4c59d57f34e15b48e7e490a47d106e5d4690054df5fa45c3f671335c68a76820",
+        "count": 6
+      },
+      {
+        "sha256": "9caa9d529b35221420c9348afad122162119a5606d2fda1d98c7ad377a6f602b",
+        "count": 6
+      }
+    ],
+    "scope": "Each of the twelve loopback occurrences was reviewed against these exact public source hashes; no general implementation exemption."
+  },
+  "model_requests_during_export_and_replay": 0,
+  "private_grader_rerun": false
+}
