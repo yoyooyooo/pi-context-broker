@@ -14,25 +14,37 @@ const resultChannel = 'context-broker.notion-sdk-result';
 const operationsAllowed = new Set(['library-selection', 'library', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search']);
 const validId = id => typeof id === 'string' && /^[a-f0-9-]{36}$/i.test(id);
 
-/** Only these documented observation clocks/metrics are non-semantic. Catalog
- * identities, descriptions, source versions, policy and content hashes stay. */
+const currentViewDirectory = value => validId(value.library_id) && value.coverage?.method === 'explicit_view'
+  && value.view !== null && typeof value.view === 'object' && !Array.isArray(value.view) && validId(value.view.id);
+
+/** Public listCatalog can return both projections or a single selected View.
+ * Cache delivery and an explicit refresh are observations of that same metadata;
+ * freshness bounds, staleness, identities, versions and query semantics stay. */
 export function stableNotionCatalog(value) {
   return catalogFacets(value).map(outcome => {
     if (!outcome.ok) return structuredClone(outcome);
     const copy = structuredClone(outcome.value);
+    const facet = outcome.facet === 'flat' && currentViewDirectory(copy) ? 'directory' : outcome.facet;
     delete copy.fetched_at;
     delete copy.request_metrics;
     if (copy.freshness) {
       delete copy.freshness.validated_at;
       delete copy.freshness.age_ms;
     }
+    // Current SDK source and refresh/default policy identify how this metadata
+    // was obtained, not its content. Keep offline/pinned/max_age and unknown
+    // values visible, and retain the exact raw observation in every SDK receipt.
+    if (validId(copy.library_id) && (facet === 'catalog' || facet === 'directory')) {
+      if (copy.source === 'notion' || copy.source === 'local_cache') delete copy.source;
+      if (copy.freshness?.policy === 'default' || copy.freshness?.policy === 'refresh') delete copy.freshness.policy;
+    }
     // The service allocates a new directory query handle and expiry on each
     // invocation. Keep view identity, query semantics, counts and pagination.
-    if (outcome.facet === 'directory' && copy.view_query && typeof copy.view_query === 'object' && !Array.isArray(copy.view_query)) {
+    if (facet === 'directory' && copy.view_query && typeof copy.view_query === 'object' && !Array.isArray(copy.view_query)) {
       delete copy.view_query.id;
       delete copy.view_query.expires_at;
     }
-    return { ...outcome, value: copy };
+    return { ...outcome, facet, value: copy };
   });
 }
 
@@ -137,8 +149,12 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
       for (const operation of operations.values()) {
         if (operation.operation !== 'list' || operation.status !== 'completed' || !operation.result_observed) continue;
         const facets = stableNotionCatalog(operation.value);
-        selected.set(JSON.stringify(canonical([operation.source_id, operation.library])), {
-          source_id: operation.source_id, library: operation.library, facets,
+        const key = JSON.stringify(canonical([operation.source_id, operation.library]));
+        const previous = selected.get(key);
+        const merged = new Map((previous?.facets ?? []).map(facet => [facet.facet, facet]));
+        for (const facet of facets) merged.set(facet.facet, facet);
+        selected.set(key, { source_id: operation.source_id, library: operation.library,
+          facets: [...merged.values()].sort((a, b) => a.facet.localeCompare(b.facet)),
         });
         evidence.push({ operation_id: operation.operation_id, start_ref: operation.start_ref, end_ref: operation.end_ref, result_ref: operation.result_ref });
       }

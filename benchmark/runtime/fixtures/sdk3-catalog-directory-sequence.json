@@ -1,0 +1,2600 @@
+{
+  "version": 1,
+  "origin": "Two real zero-send admission captures on 2026-11-26. Only SDK result values are retained. UUIDs and 64-character identities are replaced consistently; record fields, ordering, query fields and cache observations are unchanged. Original receipt SHA-256 values identify the retained private evidence.",
+  "cases": [
+    {
+      "episode": "sdk3-read-description-6-attempt-2-capture-m0-e0-c0",
+      "original_receipts": [
+        {
+          "request_id": "28fa3e10-ae7e-46c1-8412-b984835f983e",
+          "sha256": "4c9377bda8abc2f1015ae8b749f0257b747af4fb5c00444f87ce16826cea9897"
+        },
+        {
+          "request_id": "dc82cf0a-a5a0-4ba0-a353-d5e1cacf2909",
+          "sha256": "2750f98b6ce137579dbcd612415374b9d7f60cedf65a2022343b1e0c711dc5aa"
+        }
+      ],
+      "combined": {
+        "version": 1,
+        "catalog": {
+          "ok": true,
+          "value": {
+            "scope": "8a7f80f0087425e9ce7bdb131cad1ed8f5d10cb97c31f57aea379d834fc1ab78",
+            "library_id": "00000000-0000-4000-8000-000000000001",
+            "fetched_at": 1795695070266,
+            "databases": [
+              {
+                "alias": "00000000-0000-4000-8000-000000000001",
+                "database_id": "00000000-0000-4000-8000-000000000002",
+                "title": "Skills",
+                "data_source_ids": [
+                  "00000000-0000-4000-8000-000000000003"
+                ],
+                "role": "content",
+                "shared_library": {
+                  "version": 2,
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "operation_id": "library-00000000-0000-4000-8000-000000000004",
+                  "skills": {
+                    "database_id": "00000000-0000-4000-8000-000000000002",
+                    "data_source_id": "00000000-0000-4000-8000-000000000003",
+                    "property_ids": {
+                      "Content": "%3CUmR",
+                      "Current State": "%40%40HN",
+                      "Default Context": "OQRw",
+                      "Description": "%3AI%5Cu",
+                      "Enabled": "d%60cr",
+                      "Kind": "saiJ",
+                      "Main File ID": "hJ%7DT",
+                      "Members": "i%5BGE",
+                      "Name": "title",
+                      "Operation": "%60nqb",
+                      "Origin": "%3B%7CN%60",
+                      "Requires": "gW%5E%3B",
+                      "Skill ID": "%7BLeS",
+                      "Tags": "DBiv"
+                    }
+                  },
+                  "files": {
+                    "database_id": "00000000-0000-4000-8000-000000000005",
+                    "data_source_id": "00000000-0000-4000-8000-000000000006",
+                    "property_ids": {
+                      "Content": "eSNK",
+                      "File ID": "UHud",
+                      "Name": "title",
+                      "Origin": "uXB%3C",
+                      "Path": "%7BjZB",
+                      "Skill": "Pqtf"
+                    }
+                  },
+                  "records": {
+                    "database_id": "00000000-0000-4000-8000-000000000007",
+                    "data_source_id": "00000000-0000-4000-8000-000000000008",
+                    "property_ids": {
+                      "Entity ID": "H%3B_v",
+                      "Hash": "Thsk",
+                      "Kind": "P%5DU_",
+                      "Name": "title",
+                      "Origin": "TRpA",
+                      "Payload": "FZas",
+                      "Record ID": "NUpg",
+                      "Resource": "Xelb",
+                      "Skill": "uwkd"
+                    }
+                  },
+                  "sources": {
+                    "database_id": "00000000-0000-4000-8000-000000000009",
+                    "data_source_id": "00000000-0000-4000-8000-00000000000a",
+                    "property_ids": {
+                      "Content": "UG%3F%7C",
+                      "Contributions": "W%3FDC",
+                      "Description": "ET~e",
+                      "Enabled": "%3C%5Cwb",
+                      "Last Revision": "kBXS",
+                      "Location": "ph%3B%7B",
+                      "Name": "title",
+                      "Operation": "hEwT",
+                      "Options": "xwlG",
+                      "Policy": "%3CdZz",
+                      "Provider": "IV%5BK",
+                      "Records": "TvlN",
+                      "Ref": "%5CVy%3B",
+                      "Selection": "gnRP",
+                      "Skills": "noll",
+                      "Source ID": "_KEy",
+                      "Status": "URiE"
+                    }
+                  }
+                }
+              }
+            ],
+            "records": [
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s010?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000b",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s010"
+                },
+                "name": "bm-complementary-01-a-privacy-b0dcf165",
+                "alias": "bm-complementary-01-a-privacy-b0dcf165",
+                "description": "松涛53外发报表个人信息处理",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s010/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s013?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000c",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s013"
+                },
+                "name": "bm-complementary-01-a-reconcile-b0dcf165",
+                "alias": "bm-complementary-01-a-reconcile-b0dcf165",
+                "description": "松涛53交易金额对账",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s013/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s005?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000d",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s005"
+                },
+                "name": "bm-continuation-01-a-routing-b0dcf165",
+                "alias": "bm-continuation-01-a-routing-b0dcf165",
+                "description": "松涛39包裹运输路由规则",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s005/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s012?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000e",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s012"
+                },
+                "name": "bm-explicit-01-a-refund-b0dcf165",
+                "alias": "bm-explicit-01-a-refund-b0dcf165",
+                "description": "松涛73退货审批政策",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s012/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s011?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000f",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s011"
+                },
+                "name": "bm-implicit-01-a-routing-b0dcf165",
+                "alias": "bm-implicit-01-a-routing-b0dcf165",
+                "description": "松涛92包裹运输路由规则",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s011/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s003?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000010",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s003"
+                },
+                "name": "bm-references-01-a-grant-b0dcf165",
+                "alias": "bm-references-01-a-grant-b0dcf165",
+                "description": "松涛98区域资助资格政策",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s003/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s004?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000011",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s004"
+                },
+                "name": "bm-scripts-assets-02-a-tariff-b0dcf165",
+                "alias": "bm-scripts-assets-02-a-tariff-b0dcf165",
+                "description": "松涛80包裹分段运费计算",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s004/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s006?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000012",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s006"
+                },
+                "name": "bm-shared-catalog-001-b0dcf165",
+                "alias": "bm-shared-catalog-001-b0dcf165",
+                "description": "仅处理会议座位编排",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s006/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s009?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000013",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s009"
+                },
+                "name": "bm-shared-catalog-002-b0dcf165",
+                "alias": "bm-shared-catalog-002-b0dcf165",
+                "description": "仅处理图书馆借阅标签",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s009/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s016?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000014",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s016"
+                },
+                "name": "bm-shared-catalog-003-b0dcf165",
+                "alias": "bm-shared-catalog-003-b0dcf165",
+                "description": "仅处理摄影文件命名",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s016/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s008?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000015",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s008"
+                },
+                "name": "bm-shared-catalog-004-b0dcf165",
+                "alias": "bm-shared-catalog-004-b0dcf165",
+                "description": "仅处理运动器材盘点",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s008/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s007?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000016",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s007"
+                },
+                "name": "bm-shared-catalog-005-b0dcf165",
+                "alias": "bm-shared-catalog-005-b0dcf165",
+                "description": "仅处理菜园采收日志",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s007/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s002?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000017",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s002"
+                },
+                "name": "bm-shared-catalog-006-b0dcf165",
+                "alias": "bm-shared-catalog-006-b0dcf165",
+                "description": "仅处理展厅灯光巡检",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s002/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s014?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000018",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s014"
+                },
+                "name": "bm-shared-catalog-007-b0dcf165",
+                "alias": "bm-shared-catalog-007-b0dcf165",
+                "description": "仅处理纸张尺寸换算",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s014/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s001?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000019",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s001"
+                },
+                "name": "bm-shared-catalog-008-b0dcf165",
+                "alias": "bm-shared-catalog-008-b0dcf165",
+                "description": "仅处理盆栽浇水记录",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s001/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s015?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000001a",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s015"
+                },
+                "name": "bm-shared-catalog-009-b0dcf165",
+                "alias": "bm-shared-catalog-009-b0dcf165",
+                "description": "仅处理会议座位编排",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s015/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              }
+            ],
+            "count": 16,
+            "coverage": {
+              "method": "explicit_library",
+              "exhaustive": true,
+              "queried_data_sources": [
+                "00000000-0000-4000-8000-000000000003"
+              ],
+              "failed_sources": [],
+              "search_index_limited": false
+            },
+            "source": "notion",
+            "freshness": {
+              "policy": "refresh",
+              "validated_at": "2026-11-26T12:11:10.266Z",
+              "age_ms": 0,
+              "max_age_ms": 60000,
+              "stale": false
+            }
+          }
+        },
+        "directory": {
+          "ok": true,
+          "value": {
+            "scope": "8a7f80f0087425e9ce7bdb131cad1ed8f5d10cb97c31f57aea379d834fc1ab78",
+            "library_id": "00000000-0000-4000-8000-000000000001",
+            "fetched_at": 1795695068900,
+            "databases": [
+              {
+                "alias": "00000000-0000-4000-8000-000000000001",
+                "database_id": "00000000-0000-4000-8000-000000000002",
+                "title": "Skills",
+                "data_source_ids": [
+                  "00000000-0000-4000-8000-000000000003"
+                ],
+                "role": "content",
+                "shared_library": {
+                  "version": 2,
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "operation_id": "library-00000000-0000-4000-8000-000000000004",
+                  "skills": {
+                    "database_id": "00000000-0000-4000-8000-000000000002",
+                    "data_source_id": "00000000-0000-4000-8000-000000000003",
+                    "property_ids": {
+                      "Content": "%3CUmR",
+                      "Current State": "%40%40HN",
+                      "Default Context": "OQRw",
+                      "Description": "%3AI%5Cu",
+                      "Enabled": "d%60cr",
+                      "Kind": "saiJ",
+                      "Main File ID": "hJ%7DT",
+                      "Members": "i%5BGE",
+                      "Name": "title",
+                      "Operation": "%60nqb",
+                      "Origin": "%3B%7CN%60",
+                      "Requires": "gW%5E%3B",
+                      "Skill ID": "%7BLeS",
+                      "Tags": "DBiv"
+                    }
+                  },
+                  "files": {
+                    "database_id": "00000000-0000-4000-8000-000000000005",
+                    "data_source_id": "00000000-0000-4000-8000-000000000006",
+                    "property_ids": {
+                      "Content": "eSNK",
+                      "File ID": "UHud",
+                      "Name": "title",
+                      "Origin": "uXB%3C",
+                      "Path": "%7BjZB",
+                      "Skill": "Pqtf"
+                    }
+                  },
+                  "records": {
+                    "database_id": "00000000-0000-4000-8000-000000000007",
+                    "data_source_id": "00000000-0000-4000-8000-000000000008",
+                    "property_ids": {
+                      "Entity ID": "H%3B_v",
+                      "Hash": "Thsk",
+                      "Kind": "P%5DU_",
+                      "Name": "title",
+                      "Origin": "TRpA",
+                      "Payload": "FZas",
+                      "Record ID": "NUpg",
+                      "Resource": "Xelb",
+                      "Skill": "uwkd"
+                    }
+                  },
+                  "sources": {
+                    "database_id": "00000000-0000-4000-8000-000000000009",
+                    "data_source_id": "00000000-0000-4000-8000-00000000000a",
+                    "property_ids": {
+                      "Content": "UG%3F%7C",
+                      "Contributions": "W%3FDC",
+                      "Description": "ET~e",
+                      "Enabled": "%3C%5Cwb",
+                      "Last Revision": "kBXS",
+                      "Location": "ph%3B%7B",
+                      "Name": "title",
+                      "Operation": "hEwT",
+                      "Options": "xwlG",
+                      "Policy": "%3CdZz",
+                      "Provider": "IV%5BK",
+                      "Records": "TvlN",
+                      "Ref": "%5CVy%3B",
+                      "Selection": "gnRP",
+                      "Skills": "noll",
+                      "Source ID": "_KEy",
+                      "Status": "URiE"
+                    }
+                  }
+                }
+              }
+            ],
+            "records": [
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s010?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000b",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s010"
+                },
+                "name": "bm-complementary-01-a-privacy-b0dcf165",
+                "alias": "bm-complementary-01-a-privacy-b0dcf165",
+                "description": "松涛53外发报表个人信息处理",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s010/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s016?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000014",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s016"
+                },
+                "name": "bm-shared-catalog-003-b0dcf165",
+                "alias": "bm-shared-catalog-003-b0dcf165",
+                "description": "仅处理摄影文件命名",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s016/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s015?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000001a",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s015"
+                },
+                "name": "bm-shared-catalog-009-b0dcf165",
+                "alias": "bm-shared-catalog-009-b0dcf165",
+                "description": "仅处理会议座位编排",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s015/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s014?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000018",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s014"
+                },
+                "name": "bm-shared-catalog-007-b0dcf165",
+                "alias": "bm-shared-catalog-007-b0dcf165",
+                "description": "仅处理纸张尺寸换算",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s014/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s013?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000c",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s013"
+                },
+                "name": "bm-complementary-01-a-reconcile-b0dcf165",
+                "alias": "bm-complementary-01-a-reconcile-b0dcf165",
+                "description": "松涛53交易金额对账",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s013/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s012?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000e",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s012"
+                },
+                "name": "bm-explicit-01-a-refund-b0dcf165",
+                "alias": "bm-explicit-01-a-refund-b0dcf165",
+                "description": "松涛73退货审批政策",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s012/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s011?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000f",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s011"
+                },
+                "name": "bm-implicit-01-a-routing-b0dcf165",
+                "alias": "bm-implicit-01-a-routing-b0dcf165",
+                "description": "松涛92包裹运输路由规则",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s011/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s009?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000013",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s009"
+                },
+                "name": "bm-shared-catalog-002-b0dcf165",
+                "alias": "bm-shared-catalog-002-b0dcf165",
+                "description": "仅处理图书馆借阅标签",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s009/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s008?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000015",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s008"
+                },
+                "name": "bm-shared-catalog-004-b0dcf165",
+                "alias": "bm-shared-catalog-004-b0dcf165",
+                "description": "仅处理运动器材盘点",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s008/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s007?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000016",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s007"
+                },
+                "name": "bm-shared-catalog-005-b0dcf165",
+                "alias": "bm-shared-catalog-005-b0dcf165",
+                "description": "仅处理菜园采收日志",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s007/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s006?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000012",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s006"
+                },
+                "name": "bm-shared-catalog-001-b0dcf165",
+                "alias": "bm-shared-catalog-001-b0dcf165",
+                "description": "仅处理会议座位编排",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s006/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s005?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000d",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s005"
+                },
+                "name": "bm-continuation-01-a-routing-b0dcf165",
+                "alias": "bm-continuation-01-a-routing-b0dcf165",
+                "description": "松涛39包裹运输路由规则",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s005/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s004?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000011",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s004"
+                },
+                "name": "bm-scripts-assets-02-a-tariff-b0dcf165",
+                "alias": "bm-scripts-assets-02-a-tariff-b0dcf165",
+                "description": "松涛80包裹分段运费计算",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s004/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s003?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000010",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s003"
+                },
+                "name": "bm-references-01-a-grant-b0dcf165",
+                "alias": "bm-references-01-a-grant-b0dcf165",
+                "description": "松涛98区域资助资格政策",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s003/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s002?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000017",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s002"
+                },
+                "name": "bm-shared-catalog-006-b0dcf165",
+                "alias": "bm-shared-catalog-006-b0dcf165",
+                "description": "仅处理展厅灯光巡检",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s002/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s001?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000019",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s001"
+                },
+                "name": "bm-shared-catalog-008-b0dcf165",
+                "alias": "bm-shared-catalog-008-b0dcf165",
+                "description": "仅处理盆栽浇水记录",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s001/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              }
+            ],
+            "count": 16,
+            "coverage": {
+              "method": "explicit_view",
+              "exhaustive": true,
+              "queried_data_sources": [
+                "00000000-0000-4000-8000-000000000003"
+              ],
+              "failed_sources": [],
+              "search_index_limited": false
+            },
+            "source": "notion",
+            "freshness": {
+              "policy": "refresh",
+              "validated_at": "2026-11-26T12:11:08.900Z",
+              "age_ms": 17491,
+              "max_age_ms": 60000,
+              "stale": false
+            },
+            "capability_directory": true,
+            "view": {
+              "id": "00000000-0000-4000-8000-00000000001b",
+              "name": "Default view",
+              "type": "table",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "url": "https://app.notion.com/p/4215636c236e81b68e70e4448f93be22?v=4215636c236e81a6b88a000ca44155de"
+            },
+            "view_selection": "first",
+            "view_query": {
+              "id": "00000000-0000-4000-8000-00000000001c",
+              "expires_at": "2026-11-26T12:26:26.171+00:00",
+              "total_count": 16
+            }
+          }
+        }
+      },
+      "directory": {
+        "scope": "8a7f80f0087425e9ce7bdb131cad1ed8f5d10cb97c31f57aea379d834fc1ab78",
+        "library_id": "00000000-0000-4000-8000-000000000001",
+        "fetched_at": 1795695069216,
+        "databases": [
+          {
+            "alias": "00000000-0000-4000-8000-000000000001",
+            "database_id": "00000000-0000-4000-8000-000000000002",
+            "title": "Skills",
+            "data_source_ids": [
+              "00000000-0000-4000-8000-000000000003"
+            ],
+            "role": "content",
+            "shared_library": {
+              "version": 2,
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "operation_id": "library-00000000-0000-4000-8000-000000000004",
+              "skills": {
+                "database_id": "00000000-0000-4000-8000-000000000002",
+                "data_source_id": "00000000-0000-4000-8000-000000000003",
+                "property_ids": {
+                  "Content": "%3CUmR",
+                  "Current State": "%40%40HN",
+                  "Default Context": "OQRw",
+                  "Description": "%3AI%5Cu",
+                  "Enabled": "d%60cr",
+                  "Kind": "saiJ",
+                  "Main File ID": "hJ%7DT",
+                  "Members": "i%5BGE",
+                  "Name": "title",
+                  "Operation": "%60nqb",
+                  "Origin": "%3B%7CN%60",
+                  "Requires": "gW%5E%3B",
+                  "Skill ID": "%7BLeS",
+                  "Tags": "DBiv"
+                }
+              },
+              "files": {
+                "database_id": "00000000-0000-4000-8000-000000000005",
+                "data_source_id": "00000000-0000-4000-8000-000000000006",
+                "property_ids": {
+                  "Content": "eSNK",
+                  "File ID": "UHud",
+                  "Name": "title",
+                  "Origin": "uXB%3C",
+                  "Path": "%7BjZB",
+                  "Skill": "Pqtf"
+                }
+              },
+              "records": {
+                "database_id": "00000000-0000-4000-8000-000000000007",
+                "data_source_id": "00000000-0000-4000-8000-000000000008",
+                "property_ids": {
+                  "Entity ID": "H%3B_v",
+                  "Hash": "Thsk",
+                  "Kind": "P%5DU_",
+                  "Name": "title",
+                  "Origin": "TRpA",
+                  "Payload": "FZas",
+                  "Record ID": "NUpg",
+                  "Resource": "Xelb",
+                  "Skill": "uwkd"
+                }
+              },
+              "sources": {
+                "database_id": "00000000-0000-4000-8000-000000000009",
+                "data_source_id": "00000000-0000-4000-8000-00000000000a",
+                "property_ids": {
+                  "Content": "UG%3F%7C",
+                  "Contributions": "W%3FDC",
+                  "Description": "ET~e",
+                  "Enabled": "%3C%5Cwb",
+                  "Last Revision": "kBXS",
+                  "Location": "ph%3B%7B",
+                  "Name": "title",
+                  "Operation": "hEwT",
+                  "Options": "xwlG",
+                  "Policy": "%3CdZz",
+                  "Provider": "IV%5BK",
+                  "Records": "TvlN",
+                  "Ref": "%5CVy%3B",
+                  "Selection": "gnRP",
+                  "Skills": "noll",
+                  "Source ID": "_KEy",
+                  "Status": "URiE"
+                }
+              }
+            }
+          }
+        ],
+        "records": [
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s010?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000000b",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s010"
+            },
+            "name": "bm-complementary-01-a-privacy-b0dcf165",
+            "alias": "bm-complementary-01-a-privacy-b0dcf165",
+            "description": "松涛53外发报表个人信息处理",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s010/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s016?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000014",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s016"
+            },
+            "name": "bm-shared-catalog-003-b0dcf165",
+            "alias": "bm-shared-catalog-003-b0dcf165",
+            "description": "仅处理摄影文件命名",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s016/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s015?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000001a",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s015"
+            },
+            "name": "bm-shared-catalog-009-b0dcf165",
+            "alias": "bm-shared-catalog-009-b0dcf165",
+            "description": "仅处理会议座位编排",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s015/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s014?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000018",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s014"
+            },
+            "name": "bm-shared-catalog-007-b0dcf165",
+            "alias": "bm-shared-catalog-007-b0dcf165",
+            "description": "仅处理纸张尺寸换算",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s014/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s013?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000000c",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s013"
+            },
+            "name": "bm-complementary-01-a-reconcile-b0dcf165",
+            "alias": "bm-complementary-01-a-reconcile-b0dcf165",
+            "description": "松涛53交易金额对账",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s013/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s012?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000000e",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s012"
+            },
+            "name": "bm-explicit-01-a-refund-b0dcf165",
+            "alias": "bm-explicit-01-a-refund-b0dcf165",
+            "description": "松涛73退货审批政策",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s012/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s011?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000000f",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s011"
+            },
+            "name": "bm-implicit-01-a-routing-b0dcf165",
+            "alias": "bm-implicit-01-a-routing-b0dcf165",
+            "description": "松涛92包裹运输路由规则",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s011/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s009?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000013",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s009"
+            },
+            "name": "bm-shared-catalog-002-b0dcf165",
+            "alias": "bm-shared-catalog-002-b0dcf165",
+            "description": "仅处理图书馆借阅标签",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s009/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s008?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000015",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s008"
+            },
+            "name": "bm-shared-catalog-004-b0dcf165",
+            "alias": "bm-shared-catalog-004-b0dcf165",
+            "description": "仅处理运动器材盘点",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s008/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s007?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000016",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s007"
+            },
+            "name": "bm-shared-catalog-005-b0dcf165",
+            "alias": "bm-shared-catalog-005-b0dcf165",
+            "description": "仅处理菜园采收日志",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s007/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s006?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000012",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s006"
+            },
+            "name": "bm-shared-catalog-001-b0dcf165",
+            "alias": "bm-shared-catalog-001-b0dcf165",
+            "description": "仅处理会议座位编排",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s006/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s005?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000000d",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s005"
+            },
+            "name": "bm-continuation-01-a-routing-b0dcf165",
+            "alias": "bm-continuation-01-a-routing-b0dcf165",
+            "description": "松涛39包裹运输路由规则",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s005/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s004?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000011",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s004"
+            },
+            "name": "bm-scripts-assets-02-a-tariff-b0dcf165",
+            "alias": "bm-scripts-assets-02-a-tariff-b0dcf165",
+            "description": "松涛80包裹分段运费计算",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s004/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s003?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000010",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s003"
+            },
+            "name": "bm-references-01-a-grant-b0dcf165",
+            "alias": "bm-references-01-a-grant-b0dcf165",
+            "description": "松涛98区域资助资格政策",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s003/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s002?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000017",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s002"
+            },
+            "name": "bm-shared-catalog-006-b0dcf165",
+            "alias": "bm-shared-catalog-006-b0dcf165",
+            "description": "仅处理展厅灯光巡检",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s002/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s001?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000019",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s001"
+            },
+            "name": "bm-shared-catalog-008-b0dcf165",
+            "alias": "bm-shared-catalog-008-b0dcf165",
+            "description": "仅处理盆栽浇水记录",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s001/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          }
+        ],
+        "count": 16,
+        "coverage": {
+          "method": "explicit_view",
+          "exhaustive": true,
+          "queried_data_sources": [
+            "00000000-0000-4000-8000-000000000003"
+          ],
+          "failed_sources": [],
+          "search_index_limited": false
+        },
+        "source": "local_cache",
+        "freshness": {
+          "policy": "default",
+          "validated_at": "2026-11-26T12:11:09.216Z",
+          "age_ms": 17560,
+          "max_age_ms": 60000,
+          "stale": false
+        },
+        "capability_directory": true,
+        "view": {
+          "id": "00000000-0000-4000-8000-00000000001b",
+          "name": "Default view",
+          "type": "table",
+          "database_id": "00000000-0000-4000-8000-000000000002",
+          "data_source_id": "00000000-0000-4000-8000-000000000003",
+          "url": "https://app.notion.com/p/4215636c236e81b68e70e4448f93be22?v=4215636c236e81a6b88a000ca44155de"
+        },
+        "view_selection": "first",
+        "view_query": {
+          "id": "00000000-0000-4000-8000-00000000001d",
+          "expires_at": "2026-11-26T12:26:25.850+00:00",
+          "total_count": 16
+        }
+      }
+    },
+    {
+      "episode": "sdk3-read-description-6-attempt-2-capture-m0-e1-c0",
+      "original_receipts": [
+        {
+          "request_id": "4438096d-2e55-4096-8848-953131fdf7f4",
+          "sha256": "daebacc8ec3d39f31b4079d6e8d5ba000f81c4e5d2079061f4b16c7a21565ffa"
+        },
+        {
+          "request_id": "3bc355b4-2d70-4e58-a31d-57f73dceb744",
+          "sha256": "d1d7a9cb499c288d1b8b9aac6f9f117980b5d9f27c5d7d3c71c6bd292021f495"
+        }
+      ],
+      "combined": {
+        "version": 1,
+        "catalog": {
+          "ok": true,
+          "value": {
+            "scope": "8a7f80f0087425e9ce7bdb131cad1ed8f5d10cb97c31f57aea379d834fc1ab78",
+            "library_id": "00000000-0000-4000-8000-000000000001",
+            "fetched_at": 1795695063121,
+            "databases": [
+              {
+                "alias": "00000000-0000-4000-8000-000000000001",
+                "database_id": "00000000-0000-4000-8000-000000000002",
+                "title": "Skills",
+                "data_source_ids": [
+                  "00000000-0000-4000-8000-000000000003"
+                ],
+                "role": "content",
+                "shared_library": {
+                  "version": 2,
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "operation_id": "library-00000000-0000-4000-8000-000000000004",
+                  "skills": {
+                    "database_id": "00000000-0000-4000-8000-000000000002",
+                    "data_source_id": "00000000-0000-4000-8000-000000000003",
+                    "property_ids": {
+                      "Content": "%3CUmR",
+                      "Current State": "%40%40HN",
+                      "Default Context": "OQRw",
+                      "Description": "%3AI%5Cu",
+                      "Enabled": "d%60cr",
+                      "Kind": "saiJ",
+                      "Main File ID": "hJ%7DT",
+                      "Members": "i%5BGE",
+                      "Name": "title",
+                      "Operation": "%60nqb",
+                      "Origin": "%3B%7CN%60",
+                      "Requires": "gW%5E%3B",
+                      "Skill ID": "%7BLeS",
+                      "Tags": "DBiv"
+                    }
+                  },
+                  "files": {
+                    "database_id": "00000000-0000-4000-8000-000000000005",
+                    "data_source_id": "00000000-0000-4000-8000-000000000006",
+                    "property_ids": {
+                      "Content": "eSNK",
+                      "File ID": "UHud",
+                      "Name": "title",
+                      "Origin": "uXB%3C",
+                      "Path": "%7BjZB",
+                      "Skill": "Pqtf"
+                    }
+                  },
+                  "records": {
+                    "database_id": "00000000-0000-4000-8000-000000000007",
+                    "data_source_id": "00000000-0000-4000-8000-000000000008",
+                    "property_ids": {
+                      "Entity ID": "H%3B_v",
+                      "Hash": "Thsk",
+                      "Kind": "P%5DU_",
+                      "Name": "title",
+                      "Origin": "TRpA",
+                      "Payload": "FZas",
+                      "Record ID": "NUpg",
+                      "Resource": "Xelb",
+                      "Skill": "uwkd"
+                    }
+                  },
+                  "sources": {
+                    "database_id": "00000000-0000-4000-8000-000000000009",
+                    "data_source_id": "00000000-0000-4000-8000-00000000000a",
+                    "property_ids": {
+                      "Content": "UG%3F%7C",
+                      "Contributions": "W%3FDC",
+                      "Description": "ET~e",
+                      "Enabled": "%3C%5Cwb",
+                      "Last Revision": "kBXS",
+                      "Location": "ph%3B%7B",
+                      "Name": "title",
+                      "Operation": "hEwT",
+                      "Options": "xwlG",
+                      "Policy": "%3CdZz",
+                      "Provider": "IV%5BK",
+                      "Records": "TvlN",
+                      "Ref": "%5CVy%3B",
+                      "Selection": "gnRP",
+                      "Skills": "noll",
+                      "Source ID": "_KEy",
+                      "Status": "URiE"
+                    }
+                  }
+                }
+              }
+            ],
+            "records": [
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s010?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000b",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s010"
+                },
+                "name": "bm-complementary-01-a-privacy-b0dcf165",
+                "alias": "bm-complementary-01-a-privacy-b0dcf165",
+                "description": "松涛53外发报表个人信息处理",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s010/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s013?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000c",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s013"
+                },
+                "name": "bm-complementary-01-a-reconcile-b0dcf165",
+                "alias": "bm-complementary-01-a-reconcile-b0dcf165",
+                "description": "松涛53交易金额对账",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s013/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s005?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000d",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s005"
+                },
+                "name": "bm-continuation-01-a-routing-b0dcf165",
+                "alias": "bm-continuation-01-a-routing-b0dcf165",
+                "description": "松涛39包裹运输路由规则",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s005/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s012?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000e",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s012"
+                },
+                "name": "bm-explicit-01-a-refund-b0dcf165",
+                "alias": "bm-explicit-01-a-refund-b0dcf165",
+                "description": "松涛73退货审批政策",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s012/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s011?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000f",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s011"
+                },
+                "name": "bm-implicit-01-a-routing-b0dcf165",
+                "alias": "bm-implicit-01-a-routing-b0dcf165",
+                "description": "松涛92包裹运输路由规则",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s011/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s003?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000010",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s003"
+                },
+                "name": "bm-references-01-a-grant-b0dcf165",
+                "alias": "bm-references-01-a-grant-b0dcf165",
+                "description": "松涛98区域资助资格政策",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s003/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s004?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000011",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s004"
+                },
+                "name": "bm-scripts-assets-02-a-tariff-b0dcf165",
+                "alias": "bm-scripts-assets-02-a-tariff-b0dcf165",
+                "description": "松涛80包裹分段运费计算",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s004/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s006?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000012",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s006"
+                },
+                "name": "bm-shared-catalog-001-b0dcf165",
+                "alias": "bm-shared-catalog-001-b0dcf165",
+                "description": "仅处理会议座位编排",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s006/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s009?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000013",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s009"
+                },
+                "name": "bm-shared-catalog-002-b0dcf165",
+                "alias": "bm-shared-catalog-002-b0dcf165",
+                "description": "仅处理图书馆借阅标签",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s009/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s016?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000014",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s016"
+                },
+                "name": "bm-shared-catalog-003-b0dcf165",
+                "alias": "bm-shared-catalog-003-b0dcf165",
+                "description": "仅处理摄影文件命名",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s016/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s008?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000015",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s008"
+                },
+                "name": "bm-shared-catalog-004-b0dcf165",
+                "alias": "bm-shared-catalog-004-b0dcf165",
+                "description": "仅处理运动器材盘点",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s008/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s007?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000016",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s007"
+                },
+                "name": "bm-shared-catalog-005-b0dcf165",
+                "alias": "bm-shared-catalog-005-b0dcf165",
+                "description": "仅处理菜园采收日志",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s007/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s002?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000017",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s002"
+                },
+                "name": "bm-shared-catalog-006-b0dcf165",
+                "alias": "bm-shared-catalog-006-b0dcf165",
+                "description": "仅处理展厅灯光巡检",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s002/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s014?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000018",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s014"
+                },
+                "name": "bm-shared-catalog-007-b0dcf165",
+                "alias": "bm-shared-catalog-007-b0dcf165",
+                "description": "仅处理纸张尺寸换算",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s014/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s001?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000019",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s001"
+                },
+                "name": "bm-shared-catalog-008-b0dcf165",
+                "alias": "bm-shared-catalog-008-b0dcf165",
+                "description": "仅处理盆栽浇水记录",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s001/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s015?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000001a",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s015"
+                },
+                "name": "bm-shared-catalog-009-b0dcf165",
+                "alias": "bm-shared-catalog-009-b0dcf165",
+                "description": "仅处理会议座位编排",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s015/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              }
+            ],
+            "count": 16,
+            "coverage": {
+              "method": "explicit_library",
+              "exhaustive": true,
+              "queried_data_sources": [
+                "00000000-0000-4000-8000-000000000003"
+              ],
+              "failed_sources": [],
+              "search_index_limited": false
+            },
+            "source": "notion",
+            "freshness": {
+              "policy": "refresh",
+              "validated_at": "2026-11-26T12:11:03.121Z",
+              "age_ms": 0,
+              "max_age_ms": 60000,
+              "stale": false
+            }
+          }
+        },
+        "directory": {
+          "ok": true,
+          "value": {
+            "scope": "8a7f80f0087425e9ce7bdb131cad1ed8f5d10cb97c31f57aea379d834fc1ab78",
+            "library_id": "00000000-0000-4000-8000-000000000001",
+            "fetched_at": 1795695062222,
+            "databases": [
+              {
+                "alias": "00000000-0000-4000-8000-000000000001",
+                "database_id": "00000000-0000-4000-8000-000000000002",
+                "title": "Skills",
+                "data_source_ids": [
+                  "00000000-0000-4000-8000-000000000003"
+                ],
+                "role": "content",
+                "shared_library": {
+                  "version": 2,
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "operation_id": "library-00000000-0000-4000-8000-000000000004",
+                  "skills": {
+                    "database_id": "00000000-0000-4000-8000-000000000002",
+                    "data_source_id": "00000000-0000-4000-8000-000000000003",
+                    "property_ids": {
+                      "Content": "%3CUmR",
+                      "Current State": "%40%40HN",
+                      "Default Context": "OQRw",
+                      "Description": "%3AI%5Cu",
+                      "Enabled": "d%60cr",
+                      "Kind": "saiJ",
+                      "Main File ID": "hJ%7DT",
+                      "Members": "i%5BGE",
+                      "Name": "title",
+                      "Operation": "%60nqb",
+                      "Origin": "%3B%7CN%60",
+                      "Requires": "gW%5E%3B",
+                      "Skill ID": "%7BLeS",
+                      "Tags": "DBiv"
+                    }
+                  },
+                  "files": {
+                    "database_id": "00000000-0000-4000-8000-000000000005",
+                    "data_source_id": "00000000-0000-4000-8000-000000000006",
+                    "property_ids": {
+                      "Content": "eSNK",
+                      "File ID": "UHud",
+                      "Name": "title",
+                      "Origin": "uXB%3C",
+                      "Path": "%7BjZB",
+                      "Skill": "Pqtf"
+                    }
+                  },
+                  "records": {
+                    "database_id": "00000000-0000-4000-8000-000000000007",
+                    "data_source_id": "00000000-0000-4000-8000-000000000008",
+                    "property_ids": {
+                      "Entity ID": "H%3B_v",
+                      "Hash": "Thsk",
+                      "Kind": "P%5DU_",
+                      "Name": "title",
+                      "Origin": "TRpA",
+                      "Payload": "FZas",
+                      "Record ID": "NUpg",
+                      "Resource": "Xelb",
+                      "Skill": "uwkd"
+                    }
+                  },
+                  "sources": {
+                    "database_id": "00000000-0000-4000-8000-000000000009",
+                    "data_source_id": "00000000-0000-4000-8000-00000000000a",
+                    "property_ids": {
+                      "Content": "UG%3F%7C",
+                      "Contributions": "W%3FDC",
+                      "Description": "ET~e",
+                      "Enabled": "%3C%5Cwb",
+                      "Last Revision": "kBXS",
+                      "Location": "ph%3B%7B",
+                      "Name": "title",
+                      "Operation": "hEwT",
+                      "Options": "xwlG",
+                      "Policy": "%3CdZz",
+                      "Provider": "IV%5BK",
+                      "Records": "TvlN",
+                      "Ref": "%5CVy%3B",
+                      "Selection": "gnRP",
+                      "Skills": "noll",
+                      "Source ID": "_KEy",
+                      "Status": "URiE"
+                    }
+                  }
+                }
+              }
+            ],
+            "records": [
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s010?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000b",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s010"
+                },
+                "name": "bm-complementary-01-a-privacy-b0dcf165",
+                "alias": "bm-complementary-01-a-privacy-b0dcf165",
+                "description": "松涛53外发报表个人信息处理",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s010/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s016?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000014",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s016"
+                },
+                "name": "bm-shared-catalog-003-b0dcf165",
+                "alias": "bm-shared-catalog-003-b0dcf165",
+                "description": "仅处理摄影文件命名",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s016/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s015?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000001a",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s015"
+                },
+                "name": "bm-shared-catalog-009-b0dcf165",
+                "alias": "bm-shared-catalog-009-b0dcf165",
+                "description": "仅处理会议座位编排",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s015/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s014?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000018",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s014"
+                },
+                "name": "bm-shared-catalog-007-b0dcf165",
+                "alias": "bm-shared-catalog-007-b0dcf165",
+                "description": "仅处理纸张尺寸换算",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s014/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s013?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000c",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s013"
+                },
+                "name": "bm-complementary-01-a-reconcile-b0dcf165",
+                "alias": "bm-complementary-01-a-reconcile-b0dcf165",
+                "description": "松涛53交易金额对账",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s013/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s012?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000e",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s012"
+                },
+                "name": "bm-explicit-01-a-refund-b0dcf165",
+                "alias": "bm-explicit-01-a-refund-b0dcf165",
+                "description": "松涛73退货审批政策",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s012/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s011?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000f",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s011"
+                },
+                "name": "bm-implicit-01-a-routing-b0dcf165",
+                "alias": "bm-implicit-01-a-routing-b0dcf165",
+                "description": "松涛92包裹运输路由规则",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s011/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s009?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000013",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s009"
+                },
+                "name": "bm-shared-catalog-002-b0dcf165",
+                "alias": "bm-shared-catalog-002-b0dcf165",
+                "description": "仅处理图书馆借阅标签",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s009/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s008?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000015",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s008"
+                },
+                "name": "bm-shared-catalog-004-b0dcf165",
+                "alias": "bm-shared-catalog-004-b0dcf165",
+                "description": "仅处理运动器材盘点",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s008/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s007?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000016",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s007"
+                },
+                "name": "bm-shared-catalog-005-b0dcf165",
+                "alias": "bm-shared-catalog-005-b0dcf165",
+                "description": "仅处理菜园采收日志",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s007/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s006?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000012",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s006"
+                },
+                "name": "bm-shared-catalog-001-b0dcf165",
+                "alias": "bm-shared-catalog-001-b0dcf165",
+                "description": "仅处理会议座位编排",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s006/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s005?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-00000000000d",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s005"
+                },
+                "name": "bm-continuation-01-a-routing-b0dcf165",
+                "alias": "bm-continuation-01-a-routing-b0dcf165",
+                "description": "松涛39包裹运输路由规则",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s005/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s004?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000011",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s004"
+                },
+                "name": "bm-scripts-assets-02-a-tariff-b0dcf165",
+                "alias": "bm-scripts-assets-02-a-tariff-b0dcf165",
+                "description": "松涛80包裹分段运费计算",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s004/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s003?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000010",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s003"
+                },
+                "name": "bm-references-01-a-grant-b0dcf165",
+                "alias": "bm-references-01-a-grant-b0dcf165",
+                "description": "松涛98区域资助资格政策",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s003/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s002?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000017",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s002"
+                },
+                "name": "bm-shared-catalog-006-b0dcf165",
+                "alias": "bm-shared-catalog-006-b0dcf165",
+                "description": "仅处理展厅灯光巡检",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s002/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              },
+              {
+                "id": "skill://agent-workflow-bm-engineering-common16-2-s001?library=00000000-0000-4000-8000-000000000001",
+                "kind": "skill",
+                "locator": {
+                  "type": "shared_skill",
+                  "page_id": "00000000-0000-4000-8000-000000000019",
+                  "database_id": "00000000-0000-4000-8000-000000000002",
+                  "data_source_id": "00000000-0000-4000-8000-000000000003",
+                  "library_id": "00000000-0000-4000-8000-000000000001",
+                  "skill_id": "agent-workflow-bm-engineering-common16-2-s001"
+                },
+                "name": "bm-shared-catalog-008-b0dcf165",
+                "alias": "bm-shared-catalog-008-b0dcf165",
+                "description": "仅处理盆栽浇水记录",
+                "default_context": false,
+                "enabled": true,
+                "entrypoint": "SKILL.md",
+                "ref": "skill://agent-workflow-bm-engineering-common16-2-s001/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+              }
+            ],
+            "count": 16,
+            "coverage": {
+              "method": "explicit_view",
+              "exhaustive": true,
+              "queried_data_sources": [
+                "00000000-0000-4000-8000-000000000003"
+              ],
+              "failed_sources": [],
+              "search_index_limited": false
+            },
+            "source": "notion",
+            "freshness": {
+              "policy": "refresh",
+              "validated_at": "2026-11-26T12:11:02.222Z",
+              "age_ms": 15753,
+              "max_age_ms": 60000,
+              "stale": false
+            },
+            "capability_directory": true,
+            "view": {
+              "id": "00000000-0000-4000-8000-00000000001b",
+              "name": "Default view",
+              "type": "table",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "url": "https://app.notion.com/p/4215636c236e81b68e70e4448f93be22?v=4215636c236e81a6b88a000ca44155de"
+            },
+            "view_selection": "first",
+            "view_query": {
+              "id": "00000000-0000-4000-8000-00000000001e",
+              "expires_at": "2026-11-26T12:26:17.857+00:00",
+              "total_count": 16
+            }
+          }
+        }
+      },
+      "directory": {
+        "scope": "8a7f80f0087425e9ce7bdb131cad1ed8f5d10cb97c31f57aea379d834fc1ab78",
+        "library_id": "00000000-0000-4000-8000-000000000001",
+        "fetched_at": 1795695063116,
+        "databases": [
+          {
+            "alias": "00000000-0000-4000-8000-000000000001",
+            "database_id": "00000000-0000-4000-8000-000000000002",
+            "title": "Skills",
+            "data_source_ids": [
+              "00000000-0000-4000-8000-000000000003"
+            ],
+            "role": "content",
+            "shared_library": {
+              "version": 2,
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "operation_id": "library-00000000-0000-4000-8000-000000000004",
+              "skills": {
+                "database_id": "00000000-0000-4000-8000-000000000002",
+                "data_source_id": "00000000-0000-4000-8000-000000000003",
+                "property_ids": {
+                  "Content": "%3CUmR",
+                  "Current State": "%40%40HN",
+                  "Default Context": "OQRw",
+                  "Description": "%3AI%5Cu",
+                  "Enabled": "d%60cr",
+                  "Kind": "saiJ",
+                  "Main File ID": "hJ%7DT",
+                  "Members": "i%5BGE",
+                  "Name": "title",
+                  "Operation": "%60nqb",
+                  "Origin": "%3B%7CN%60",
+                  "Requires": "gW%5E%3B",
+                  "Skill ID": "%7BLeS",
+                  "Tags": "DBiv"
+                }
+              },
+              "files": {
+                "database_id": "00000000-0000-4000-8000-000000000005",
+                "data_source_id": "00000000-0000-4000-8000-000000000006",
+                "property_ids": {
+                  "Content": "eSNK",
+                  "File ID": "UHud",
+                  "Name": "title",
+                  "Origin": "uXB%3C",
+                  "Path": "%7BjZB",
+                  "Skill": "Pqtf"
+                }
+              },
+              "records": {
+                "database_id": "00000000-0000-4000-8000-000000000007",
+                "data_source_id": "00000000-0000-4000-8000-000000000008",
+                "property_ids": {
+                  "Entity ID": "H%3B_v",
+                  "Hash": "Thsk",
+                  "Kind": "P%5DU_",
+                  "Name": "title",
+                  "Origin": "TRpA",
+                  "Payload": "FZas",
+                  "Record ID": "NUpg",
+                  "Resource": "Xelb",
+                  "Skill": "uwkd"
+                }
+              },
+              "sources": {
+                "database_id": "00000000-0000-4000-8000-000000000009",
+                "data_source_id": "00000000-0000-4000-8000-00000000000a",
+                "property_ids": {
+                  "Content": "UG%3F%7C",
+                  "Contributions": "W%3FDC",
+                  "Description": "ET~e",
+                  "Enabled": "%3C%5Cwb",
+                  "Last Revision": "kBXS",
+                  "Location": "ph%3B%7B",
+                  "Name": "title",
+                  "Operation": "hEwT",
+                  "Options": "xwlG",
+                  "Policy": "%3CdZz",
+                  "Provider": "IV%5BK",
+                  "Records": "TvlN",
+                  "Ref": "%5CVy%3B",
+                  "Selection": "gnRP",
+                  "Skills": "noll",
+                  "Source ID": "_KEy",
+                  "Status": "URiE"
+                }
+              }
+            }
+          }
+        ],
+        "records": [
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s010?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000000b",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s010"
+            },
+            "name": "bm-complementary-01-a-privacy-b0dcf165",
+            "alias": "bm-complementary-01-a-privacy-b0dcf165",
+            "description": "松涛53外发报表个人信息处理",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s010/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s016?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000014",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s016"
+            },
+            "name": "bm-shared-catalog-003-b0dcf165",
+            "alias": "bm-shared-catalog-003-b0dcf165",
+            "description": "仅处理摄影文件命名",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s016/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s015?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000001a",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s015"
+            },
+            "name": "bm-shared-catalog-009-b0dcf165",
+            "alias": "bm-shared-catalog-009-b0dcf165",
+            "description": "仅处理会议座位编排",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s015/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s014?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000018",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s014"
+            },
+            "name": "bm-shared-catalog-007-b0dcf165",
+            "alias": "bm-shared-catalog-007-b0dcf165",
+            "description": "仅处理纸张尺寸换算",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s014/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s013?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000000c",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s013"
+            },
+            "name": "bm-complementary-01-a-reconcile-b0dcf165",
+            "alias": "bm-complementary-01-a-reconcile-b0dcf165",
+            "description": "松涛53交易金额对账",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s013/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s012?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000000e",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s012"
+            },
+            "name": "bm-explicit-01-a-refund-b0dcf165",
+            "alias": "bm-explicit-01-a-refund-b0dcf165",
+            "description": "松涛73退货审批政策",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s012/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s011?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000000f",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s011"
+            },
+            "name": "bm-implicit-01-a-routing-b0dcf165",
+            "alias": "bm-implicit-01-a-routing-b0dcf165",
+            "description": "松涛92包裹运输路由规则",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s011/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s009?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000013",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s009"
+            },
+            "name": "bm-shared-catalog-002-b0dcf165",
+            "alias": "bm-shared-catalog-002-b0dcf165",
+            "description": "仅处理图书馆借阅标签",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s009/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s008?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000015",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s008"
+            },
+            "name": "bm-shared-catalog-004-b0dcf165",
+            "alias": "bm-shared-catalog-004-b0dcf165",
+            "description": "仅处理运动器材盘点",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s008/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s007?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000016",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s007"
+            },
+            "name": "bm-shared-catalog-005-b0dcf165",
+            "alias": "bm-shared-catalog-005-b0dcf165",
+            "description": "仅处理菜园采收日志",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s007/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s006?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000012",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s006"
+            },
+            "name": "bm-shared-catalog-001-b0dcf165",
+            "alias": "bm-shared-catalog-001-b0dcf165",
+            "description": "仅处理会议座位编排",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s006/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s005?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-00000000000d",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s005"
+            },
+            "name": "bm-continuation-01-a-routing-b0dcf165",
+            "alias": "bm-continuation-01-a-routing-b0dcf165",
+            "description": "松涛39包裹运输路由规则",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s005/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s004?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000011",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s004"
+            },
+            "name": "bm-scripts-assets-02-a-tariff-b0dcf165",
+            "alias": "bm-scripts-assets-02-a-tariff-b0dcf165",
+            "description": "松涛80包裹分段运费计算",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s004/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s003?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000010",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s003"
+            },
+            "name": "bm-references-01-a-grant-b0dcf165",
+            "alias": "bm-references-01-a-grant-b0dcf165",
+            "description": "松涛98区域资助资格政策",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s003/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s002?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000017",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s002"
+            },
+            "name": "bm-shared-catalog-006-b0dcf165",
+            "alias": "bm-shared-catalog-006-b0dcf165",
+            "description": "仅处理展厅灯光巡检",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s002/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          },
+          {
+            "id": "skill://agent-workflow-bm-engineering-common16-2-s001?library=00000000-0000-4000-8000-000000000001",
+            "kind": "skill",
+            "locator": {
+              "type": "shared_skill",
+              "page_id": "00000000-0000-4000-8000-000000000019",
+              "database_id": "00000000-0000-4000-8000-000000000002",
+              "data_source_id": "00000000-0000-4000-8000-000000000003",
+              "library_id": "00000000-0000-4000-8000-000000000001",
+              "skill_id": "agent-workflow-bm-engineering-common16-2-s001"
+            },
+            "name": "bm-shared-catalog-008-b0dcf165",
+            "alias": "bm-shared-catalog-008-b0dcf165",
+            "description": "仅处理盆栽浇水记录",
+            "default_context": false,
+            "enabled": true,
+            "entrypoint": "SKILL.md",
+            "ref": "skill://agent-workflow-bm-engineering-common16-2-s001/SKILL.md?library=00000000-0000-4000-8000-000000000001"
+          }
+        ],
+        "count": 16,
+        "coverage": {
+          "method": "explicit_view",
+          "exhaustive": true,
+          "queried_data_sources": [
+            "00000000-0000-4000-8000-000000000003"
+          ],
+          "failed_sources": [],
+          "search_index_limited": false
+        },
+        "source": "local_cache",
+        "freshness": {
+          "policy": "default",
+          "validated_at": "2026-11-26T12:11:03.116Z",
+          "age_ms": 15542,
+          "max_age_ms": 60000,
+          "stale": false
+        },
+        "capability_directory": true,
+        "view": {
+          "id": "00000000-0000-4000-8000-00000000001b",
+          "name": "Default view",
+          "type": "table",
+          "database_id": "00000000-0000-4000-8000-000000000002",
+          "data_source_id": "00000000-0000-4000-8000-000000000003",
+          "url": "https://app.notion.com/p/4215636c236e81b68e70e4448f93be22?v=4215636c236e81a6b88a000ca44155de"
+        },
+        "view_selection": "first",
+        "view_query": {
+          "id": "00000000-0000-4000-8000-00000000001f",
+          "expires_at": "2026-11-26T12:26:18.554+00:00",
+          "total_count": 16
+        }
+      }
+    }
+  ]
+}
