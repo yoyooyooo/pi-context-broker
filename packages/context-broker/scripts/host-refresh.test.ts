@@ -31,6 +31,47 @@ const payloadText = (turn: Awaited<ReturnType<Session["turn"]>>) => {
   return turn.payload!.messages.map(message => message.content).join("\n");
 };
 
+test("production index shutdown does not join an uncooperative catalog producer or publish its late result", async () => {
+  const h = await activeNotionSession();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const notifications: string[] = [];
+  let sourceSignal: AbortSignal | undefined, producerFinished = false;
+  let pending: Promise<{ status: "fulfilled"; value: unknown } | { status: "rejected"; reason: unknown }> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const original = h.f.state.list.bind(h.f.state), history = JSON.stringify(h.branch);
+    h.ctx.ui = { notify(text) { notifications.push(text); } };
+    addShopping(h);
+    h.f.state.list = async options => {
+      const result = original(options);
+      sourceSignal = options.signal; entered.resolve();
+      await release.promise; producerFinished = true;
+      return result;
+    };
+    pending = h.tool("notion_list").execute("late-shutdown-catalog", { query: "shopping", refresh: true }, undefined, undefined, h.ctx)
+      .then(value => ({ status: "fulfilled" as const, value }), reason => ({ status: "rejected" as const, reason }));
+    await entered.promise;
+    const shutdown = h.emit("session_shutdown");
+    const completed = await Promise.race([shutdown.then(() => true), new Promise<false>(resolve => {
+      timer = setTimeout(() => resolve(false), 50);
+    })]);
+    expect(completed).toBe(true);
+    expect(producerFinished).toBe(false);
+    expect(sourceSignal?.aborted).toBe(true);
+    const afterShutdown = notifications.slice();
+    release.resolve();
+    const result = await pending;
+    expect(result.status).toBe("rejected");
+    expect(producerFinished).toBe(true);
+    expect(JSON.stringify(h.branch)).toBe(history);
+    expect(notifications).toEqual(afterShutdown);
+  } finally {
+    if (timer) clearTimeout(timer);
+    release.resolve(); await pending;
+    await h.close();
+  }
+});
+
 test("production index resolves a relative read through the scoped SDK before reading the target's own selected version", async () => {
   const h = await activeNotionSession();
   try {

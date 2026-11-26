@@ -585,10 +585,14 @@ normal repository workflow. Do not force-push `next` or change a daily package
 pointer merely to test a feature branch. Pair CLI and Broker revisions explicitly
 when the shared contract changes.
 
-The [next delivery gate](next-worktree-delivery.md) still requires clean `next`
-checkouts, exact current remote commits, matching builds and actual normal Pi
-processes. Its branch and freshness checks must not be weakened for task
-branches or dirty development sources. The existing natural workflow
+The [daily next installation](next-worktree-delivery.md) uses independent packages
+built from the selected merged CLI/Broker commits. Keep normal Pi registrations
+and CLI commands outside development checkouts and worktrees. For a temporary
+candidate, use `pi -ne -e /absolute/task/extension.ts` or the isolated run entry;
+do not change the daily pointer. The existing worktree verification remains a
+separate, explicitly selected check. Its branch, freshness and build guards must
+not be weakened for task branches, dirty sources or installed package directories.
+The existing natural workflow
 `candidate-plan` / `candidate-run` path retains its normal-environment contract
 for daily/no-native-skills. The explicit
 [native-onboarding profile](../.agents/skills/verify-notion-agent-workflows/references/running.md#空父页首次使用)

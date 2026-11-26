@@ -1,5 +1,5 @@
 import { nativeFileRef, nativeSkillId, parseNativeReference, withNativeSnapshot } from "../src/native-reference";
-import { expect, test, setSystemTime } from "bun:test";
+import { expect, test, setSystemTime, spyOn } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -104,7 +104,7 @@ async function fixture(withShortRefs = false, withDirectoryAlias = false, hostKi
       budget: { maxNodes: 64, maxDepth: 16, maxInstructionBytes: 1048576, maxContextBytes: 262144 },
       usage: { prepared_nodes: selected.length, instruction_bytes: selected.reduce((n, record) => n + Buffer.byteLength(record.body!), 0), context_bytes: 4000, max_depth: purpose === "use" ? 1 : 0 } };
   }
-  const install = async (prepareGraph: (purpose: PreparationPurpose, signal: AbortSignal | undefined, policy: ConsumptionPolicy | undefined, requested: readonly SkillRecord[], pins: ReadonlyMap<string, string> | undefined) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs" | "resolveRelativeReference" | "resolveSkillReference" | "sessionBinding" | "librarySelection">> = {}, adapter?: HostCapabilities) => {
+  const install = async (prepareGraph: (purpose: PreparationPurpose, signal: AbortSignal | undefined, policy: ConsumptionPolicy | undefined, requested: readonly SkillRecord[], pins: ReadonlyMap<string, string> | undefined) => Promise<PreparedHostGraph[]> = async purpose => [graph(purpose)], discovery: Partial<Pick<HostSkillOptions, "getRecords" | "lookupReference" | "buildPreparedPrompt" | "persistGraphs" | "resolveRelativeReference" | "resolveSkillReference" | "sessionBinding" | "librarySelection" | "restoreActive" | "confirmDelivery">> = {}, adapter?: HostCapabilities) => {
     let host: HostSkills;
     host = await installHostSkills(api, {
       config: { sources },
@@ -875,7 +875,7 @@ test("Pi discovery description reuse requires exact visible metadata and restore
   expect(f.resourceReads).toEqual([]);
 });
 
-test("Pi preparation shows its budget immediately without queueing a session message", async () => {
+test("Pi preparation shows a compact loading row without queueing a session message", async () => {
   const f = await fixture();
   const widgets = new Map<string, string[]>(), messages: unknown[] = [], entries: unknown[] = [];
   const api: ExtensionAPI = { on() {}, sendMessage(message) { messages.push(message); }, appendEntry(_type, data) { entries.push(data); } };
@@ -893,7 +893,9 @@ test("Pi preparation shows its budget immediately without queueing a session mes
   const source = { type: "notion" as const, id: "controlled", preparation: { maxNodes: 8, maxDepth: 4, maxInstructionBytes: 8192, maxContextBytes: 131072 } };
   const finish = feedback.begin(f.root, context, "use", source);
   expect(finish).toBeDefined(); expect(widgets.size).toBe(1);
-  expect([...widgets.values()][0]!.join("\n")).toContain("Preparing use: up to 8 nodes, depth 4, 8192 instruction bytes, 131072 context bytes. Stop cancels preparation.");
+  expect([...widgets.values()][0]!.join("\n")).toContain("[skill@notion]");
+  expect([...widgets.values()][0]!.join("\n")).toContain("loading…");
+  expect([...widgets.values()][0]!.join("\n")).not.toContain("bytes");
   expect(messages).toEqual([]);
   finish!({ error: "Cancelled." });
   expect(widgets.size).toBe(0); expect(entries).toHaveLength(1);
@@ -1018,7 +1020,7 @@ test("session replacement settles a pending Pi input without touching the revoke
   await f.emit("session_switch", { type: "session_switch" }, next);
   expect(sourceSignal?.aborted).toBe(true);
   pending.resolve();
-  expect(await cancelled).toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+  expect(await cancelled).toBeUndefined();
   expect(staleReads).toBe(0);
   expect(f.persisted).toEqual([]);
   expect(await f.emit("input", { source: "rpc", text: "$root retry" }, next)).toEqual([{ action: "continue" }]);
@@ -1842,4 +1844,91 @@ test(code + " does not taint tracked inspection content in another " + boundary,
   // Metadata contains no new currentObservation. This checks the original
   // scoped denial, without a successful body acquisition clearing it first.
   expect(() => host.assertCanRestore(other.root)).not.toThrow();
+});
+
+for (const suspended of ["print metadata", "active restoration"] as const)
+test(`the whole Pi context deadline bounds a suspended ${suspended} producer without cancelling the user`, async () => {
+  const f = await fixture(true), operation = new AbortController();
+  const entered = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>(), completed = Promise.withResolvers<void>();
+  const notices: Array<{ text: string; level?: string }> = [];
+  let aborts = 0, confirmations = 0, restorationSignal: AbortSignal | undefined;
+  const image = { type: "image" as const, mimeType: "image/png", data: "aW1hZ2UtYnl0ZXM=" };
+  const text = "$root explain my question and this attached image.";
+  const user: AgentMessage = { role: "user", content: [{ type: "text", text }, image] };
+  const messages = [user], original = JSON.stringify(messages);
+  f.ctx.mode = suspended === "print metadata" ? "print" : "rpc";
+  f.ctx.signal = operation.signal;
+  f.ctx.model = { api: "openai-completions", baseUrl: "http://127.0.0.1:8989/v1" };
+  f.ctx.abort = () => { aborts++; operation.abort(); };
+  f.ctx.ui = { notify(text, level) { notices.push({ text, level }); } };
+  const h = await f.install(undefined, {
+    ...(suspended === "print metadata" ? { getRecords: async () => {
+      entered.resolve();
+      // This producer deliberately ignores cancellation and remains unresolved
+      // until after the host deadline has already allowed the user to continue.
+      await finish.promise; completed.resolve();
+      return { records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined })), failures: [] };
+    } } : { restoreActive: async (current: AgentMessage[], _ctx: ExtensionContext, signal: AbortSignal) => {
+      restorationSignal = signal; entered.resolve();
+      await finish.promise; completed.resolve();
+      return { messages: current, restored: [{ customType: "context-broker", content: f.root.body!, display: false,
+        details: { records: [sourceDeliveryReceipt(f.root, f.root.body!)] } }], notices: [] };
+    } }),
+    buildPreparedPrompt: async (_text, _ctx, _signal, records = []) => {
+      const content = records.map(record => record.body!).join("\n\n");
+      return { customType: "context-broker", content, display: false,
+        details: { records: records.map(record => sourceDeliveryReceipt(record, content)) } };
+    },
+    confirmDelivery() { confirmations++; },
+  });
+  if (suspended === "active restoration") await h.host.refresh(f.ctx);
+  const nativeTimeout = globalThis.setTimeout, deadlines: number[] = [];
+  const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
+    if (delay === 60_000) deadlines.push(delay);
+    return nativeTimeout(callback, delay === 60_000 ? 20 : delay, ...args);
+  });
+  let pending: Promise<unknown[]> | undefined;
+  try {
+    expect(await f.emit("input", { source: "rpc", text, images: [image] }, f.ctx)).toEqual([{ action: "continue" }]);
+    await f.emit("before_agent_start", { prompt: text, systemPrompt: "base" }, f.ctx);
+    await f.emit("agent_start", {}, f.ctx);
+    pending = f.emit("context", { messages }, f.ctx);
+    await entered.promise;
+    const [output] = await pending;
+    if (!output || typeof output !== "object" || !("messages" in output) || !Array.isArray(output.messages))
+      throw new Error("Expected a nonblocking context result");
+    expect(deadlines).toEqual([60_000]);
+    expect(output.messages).toContainEqual(user);
+    expect(JSON.stringify(output)).toContain("SOURCE_PREPARATION_TIMEOUT");
+    expect(JSON.stringify(output)).not.toContain("Exact root"); expect(JSON.stringify(output)).not.toContain("Exact required");
+    expect(notices.some(notice => notice.level === "warning" && notice.text.includes("SOURCE_PREPARATION_TIMEOUT"))).toBe(true);
+    expect(operation.signal.aborted).toBe(false); expect(aborts).toBe(0);
+    expect(f.calls).toEqual(suspended === "print metadata" ? [] : ["use"]);
+    if (suspended === "active restoration") expect(restorationSignal?.aborted).toBe(true);
+    const providerUser = { role: "user", content: [{ type: "text", text },
+      { type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.data}` } }] };
+    const payload = { messages: [providerUser, ...output.messages.filter(message => message.role !== "user")
+      .map(message => ({ role: "user", content: sourceMessageText(message.content) }))] };
+    const [sent] = await f.emit("before_provider_request", { type: "before_provider_request", payload }, f.ctx);
+    if (!sent || typeof sent !== "object" || !("messages" in sent) || !Array.isArray(sent.messages))
+      throw new Error("Expected a nonblocking provider payload");
+    expect(sent.messages.filter(message => JSON.stringify(message) === JSON.stringify(providerUser))).toHaveLength(1);
+    expect(JSON.stringify(sent)).toContain("SOURCE_PREPARATION_TIMEOUT");
+    expect(JSON.stringify(sent)).not.toContain("Exact root"); expect(JSON.stringify(sent)).not.toContain("Exact required");
+    await f.emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} }, f.ctx);
+    expect(f.persisted).toEqual([]); expect(confirmations).toBe(0);
+    const frozen = JSON.stringify(output);
+    finish.resolve(); await completed.promise;
+    await new Promise(resolve => nativeTimeout(resolve, 0));
+    const [later] = await f.emit("context", { messages }, f.ctx);
+    expect(JSON.stringify(later)).not.toContain("Exact root"); expect(JSON.stringify(later)).not.toContain("Exact required");
+    expect(JSON.stringify(output)).toBe(frozen); expect(JSON.stringify(messages)).toBe(original);
+    expect(f.persisted).toEqual([]); expect(confirmations).toBe(0); expect(aborts).toBe(0);
+    expect(f.session.entries.some(entry => entry.type === "custom"
+      && ["context-broker-selected-graph", "context-broker-active-sources"].includes(entry.customType))).toBe(false);
+  } finally {
+    finish.resolve(); await pending?.catch(() => undefined);
+    timeout.mockRestore();
+    await f.emit("agent_end", {}, f.ctx); await f.emit("session_shutdown", {}, f.ctx);
+  }
 });

@@ -10,7 +10,8 @@ import { InvocationError, recordIdentity } from "./discovery-records";
 import { assertSourceAvailable, formatSourceFailures, hasEnabledNotionSource } from "./sources";
 import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage, sourceFailureDiagnostic } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
-import { checkPreparationSignal, createPreparationGate, preparationCancelled, type ActivePreparation } from "./skill-preparation";
+import { checkPreparationSignal, createPreparationGate, preparationCancelled, withPreparationDeadline, type ActivePreparation } from "./skill-preparation";
+import { continueWithoutBrokerPayload, withoutBrokerInstructions } from "./nonblocking-context";
 import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceConfig, SourceFailure, NotionListObservation, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
 import type { HostCapabilities } from "./host-adapter";
 import { invocationText } from "./invocation-text";
@@ -399,7 +400,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const pendingNativeReads = new Map<string, { record: SkillRecord; generation: number; signal: AbortSignal; effects?: ConsumptionEffects; purpose?: "inspect"; display?: ReadDisplaySnapshot }>();
   const pendingResourceReads = new Map<string, PendingResourceRead>();
   const printTurns = new Set<() => void>();
-  const gate = createPreparationGate();
+  const gate = createPreparationGate(!deferredPiDiscovery);
   const commandPreparations = new WeakSet<ActivePreparation>();
   const misses = new WeakMap<ActivePreparation, Set<string>>();
   const preparedForUse = new WeakMap<ActivePreparation, Set<string>>();
@@ -413,11 +414,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   let turnPrompts: { snapshots: Map<string, SkillRecord>; signal: AbortSignal } | undefined;
   const feedback = await createActivationFeedback(api, gate.repaint, deferredPiDiscovery ? "widget" : "message");
   let handoff: { entry: ActivePreparation; prompts: string[]; consumed: boolean; selectedNative?: SkillRecord; native?: { snapshot: SkillRecord; promptSha256: string } } | undefined;
+  const queuedInputs: Array<{ text: string; submitted: string; images?: ImageContent[]; ctx: ExtensionContext; generation: number; sessionId?: string; selectedNative?: SkillRecord }> = [];
   type PiRun = {
     generation: number; sessionId: string | undefined; signal: AbortSignal; entry?: ActivePreparation;
     selectedNative?: SkillRecord; projection?: AgentMessage[];
     prepared: boolean; requestPending: boolean; confirmed: boolean; persisted: number;
     wireBlock?: boolean;
+    degraded?: boolean;
+    warning?: AgentMessage;
     userEntryId?: string;
     requestProjection?: { count: number; messages: AgentMessage[] };
     confirmedProjection?: { count: number; messages: AgentMessage[] };
@@ -433,6 +437,53 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     checkPreparationSignal(run.entry?.controller.signal);
     if (piRun !== run || generation !== run.generation || run.sessionId !== ctx.sessionManager?.getSessionId?.()) throw preparationCancelled();
   }
+  function currentPiRun(run: PiRun, ctx: ExtensionContext): boolean {
+    return piRun === run && generation === run.generation && !run.signal.aborted
+      && run.sessionId === ctx.sessionManager?.getSessionId?.();
+  }
+  function warnAndRetire(run: PiRun | undefined, ctx: ExtensionContext, error: unknown, delivered = false): AgentMessage {
+    if (run?.warning) return run.warning;
+    const warning = failure(error) + (delivered ? " Skill instructions reached the provider, but their session state could not be saved. Your response will continue."
+      : " Continuing without the unavailable Skill instructions.");
+    const effects = errorConsumptionEffects(error);
+    if (!run?.degraded) {
+      try {
+        if (delivered) { feedback.confirmPrepared(ctx); ctx.ui?.notify?.(warning, "warning"); }
+        else if (!feedback.failPending(ctx, warning)) ctx.ui?.notify?.(warning, "warning");
+      } catch { /* Optional UI cannot cancel a user turn. */ }
+    }
+    if (run) {
+      const entry = run.entry;
+      if (entry) {
+        entry.controller.abort();
+        pendingGraphs.delete(entry); preparedForUse.delete(entry); misses.delete(entry);
+        for (const [key, value] of loaded) if (value.owner === entry) loaded.delete(key);
+        entry.prepared.clear();
+        if (handoff?.entry === entry) handoff = undefined;
+        gate.release(entry);
+      }
+      run.entry = undefined; run.selectedNative = undefined;
+      run.candidates.clear(); run.graphs.length = 0;
+      run.projection = undefined; run.requestProjection = undefined;
+      run.confirmedProjection = undefined; run.pendingPersistence = undefined;
+      run.requestPending = false; run.degraded = true; run.prepared = true;
+      turnPrompts = undefined;
+    }
+    const message: AgentMessage = { role: "custom", customType: "context-broker-preparation-warning", display: false, timestamp: Date.now(),
+      content: warning + (delivered ? " Do not claim that unconfirmed Skill state was saved."
+        : " The requested Skill instructions were not loaded. Continue the user's original request where possible; do not claim to have read or applied the unavailable instructions.")
+        + "\n\n<notion-effects>" + JSON.stringify(effects) + "</notion-effects>", details: { effects } };
+    if (run) run.warning = message;
+    return message;
+  }
+  function continueContext(messages: AgentMessage[], ctx: ExtensionContext, run: PiRun | undefined, error: unknown): AgentMessage[] {
+    const warning = warnAndRetire(run, ctx, error);
+    let entries: ProjectedSessionEntry[] = [];
+    try { entries = ctx.sessionManager?.buildSessionProjection?.().entries ?? []; } catch { /* The original user input remains available. */ }
+    const safe = [...withoutBrokerInstructions(messages, entries), warning];
+    if (run) { run.contextMessages = structuredClone(safe); run.finalMessages = undefined; }
+    return safe;
+  }
   function acknowledgeProjection(run: PiRun, entries: readonly ProjectedSessionEntry[]): void {
     const pending = run.pendingPersistence;
     if (!pending) return;
@@ -446,7 +497,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     run.pendingPersistence = undefined;
   }
   const nativeCommands = new Map<string, (args: string, ctx: ExtensionContext, images?: ImageContent[], entry?: ActivePreparation) => Promise<void>>();
-  host.on("agent_end", () => {
+  host.on("agent_end", (_event, ctx) => {
+    try { feedback.clearPending(ctx); } catch { /* A retired host context has no display authority. */ }
     acceptedContext = undefined;
     runningContext = undefined;
     if (piRun?.entry) gate.release(piRun.entry);
@@ -872,7 +924,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         .map(record => [recordIdentity(record), record])).values()]
         .filter(record => !gate.active || !preparedForUse.get(gate.active)?.has(recordIdentity(record)) && !misses.get(gate.active)?.has(recordIdentity(record)));
       if (options.prepareGraph && graphRoots.length) {
-        const finish = feedback.begin(graphRoots[0]!, ctx, "use", options.config.sources?.find(source => source.id === graphRoots[0]!.sourceId && source.type === "notion"));
+        const finish = feedback.begin(graphRoots, ctx, "use", options.config.sources?.find(source => source.id === graphRoots[0]!.sourceId && source.type === "notion"));
         try {
           const values = await graphPreparation(graphRoots, ctx, combined, "use", undefined, "extend", true, policy);
           observedEffects.push(combineConsumptionEffects(values.graphs.map(graph => graph.effects)));
@@ -1085,7 +1137,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
   }
 
-  function notify(ctx: ExtensionContext, error: unknown): void { ctx.ui?.notify?.(failure(error), "error"); }
+  function notify(ctx: ExtensionContext, error: unknown): void {
+    try { ctx.ui?.notify?.(failure(error), piConsumption ? "warning" : "error"); } catch { /* Display errors do not own the user's operation. */ }
+  }
   function nativeRecord(text: string): SkillRecord | undefined {
     const match = /^\s*\/skill:([^\s]+)/.exec(invocationText(text));
     return match ? nativeNames.get(match[1]!) : undefined;
@@ -1299,6 +1353,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     },
   });
   for (const event of ["session_before_switch", "session_before_branch", "session_before_tree"] as const) host.on(event, () => {
+    queuedInputs.length = 0;
     generation++;
     lifecycleController.abort();
     lifecycleController = new AbortController();
@@ -1307,6 +1362,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     nativeInputs.clear();
   });
   for (const event of ["session_start", "session_switch", "session_tree", "session_branch"] as const) host.on(event, async (_event, ctx) => {
+    queuedInputs.length = 0;
     acceptedContext = undefined;
     runningContext = undefined;
     // A successful host session boundary acknowledges disposal of its pending turn.
@@ -1331,6 +1387,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     void ready.catch(() => undefined);
   });
   host.on("session_shutdown", () => {
+    queuedInputs.length = 0;
     acceptedContext = undefined;
     runningContext = undefined;
     generation++;
@@ -1382,140 +1439,138 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
   });
   api.on("context", async (event, ctx) => {
+    let admissionError: unknown;
+    try {
+    // Pi runs input hooks once, before queueing. Adopt accepted queued receipts
+    // only when their native user messages actually reach a later context.
+    if (deferredPiDiscovery && piRun && (piRun.prepared || !piRun.entry) && queuedInputs.length) {
+      const entries = ctx.sessionManager?.buildSessionProjection?.().entries ?? [];
+      const anchor = entries.findIndex(entry => entry.sourceEntry.id === piRun?.userEntryId);
+      const users = anchor >= 0 ? entries.slice(anchor + 1).flatMap(entry => entry.messages.filter(message => message.role === "user"))
+        : [event.messages.findLast(message => message.role === "user")].filter((message): message is AgentMessage => message !== undefined);
+      const counts = new Map<string, number>();
+      for (const user of users) { const text = sourceMessageText(user.content); counts.set(text, (counts.get(text) ?? 0) + 1); }
+      const accepted = queuedInputs.filter(receipt => {
+        const count = counts.get(receipt.submitted) ?? 0;
+        if (!count || receipt.generation !== generation || receipt.sessionId !== ctx.sessionManager?.getSessionId?.()) return false;
+        counts.set(receipt.submitted, count - 1); return true;
+      });
+      if (accepted.length) {
+        for (const receipt of accepted) queuedInputs.splice(queuedInputs.indexOf(receipt), 1);
+        if (piRun.entry) gate.release(piRun.entry);
+        handoff = undefined;
+        runningContext = accepted[accepted.length - 1]!.ctx;
+        ctx = turnContext(ctx);
+        const text = accepted.map(receipt => receipt.text).join("\n\n");
+        const entry = needsPreparation(text) ? beginPreparation({ text, images: accepted.flatMap(receipt => receipt.images ?? []) }, ctx) : undefined;
+        piRun = { generation, sessionId: ctx.sessionManager?.getSessionId?.(), signal: piRun.signal, entry,
+          selectedNative: accepted.length === 1 ? accepted[0]!.selectedNative : undefined,
+          prepared: false, requestPending: false, confirmed: false, persisted: 0, candidates: new Map(), graphs: [] };
+      }
+    }
+    } catch (error) { admissionError = error; }
     ctx = turnContext(ctx);
     const run = deferredPiDiscovery ? piRun : undefined;
+    const parent = AbortSignal.any([run?.signal ?? lifecycleController.signal, lifecycleController.signal]);
     try {
-      const contextEntries = deferredPiDiscovery ? ctx.sessionManager?.buildSessionProjection?.().entries ?? [] : [];
-      if (run) {
-        assertPiRun(run, ctx);
-        acknowledgeProjection(run, contextEntries);
-        run.userEntryId ??= contextEntries.findLast(entry => entry.sourceEntry.type === "message"
-          && entry.messages.some(message => message.role === "user"))?.sourceEntry.id;
-        // A one-shot print has no later turn for a late default directory. Join
-        // metadata only here, under the real operation's cancellation signal.
-        if (!run.prepared) revalidateMetadata(ctx);
-        if (!run.prepared && (ctx.mode === "print" || ctx.mode === "json")) {
-          await ready(AbortSignal.any([run.signal, lifecycleController.signal]));
+      return await withPreparationDeadline(parent, async signal => {
+        if (admissionError) throw admissionError;
+        const contextEntries = deferredPiDiscovery ? ctx.sessionManager?.buildSessionProjection?.().entries ?? [] : [];
+        if (run) {
           assertPiRun(run, ctx);
-        }
-        if (!run.prepared && run.entry) {
-          const entry = run.entry, text = entry.event.text ?? "", signal = entry.controller.signal;
-          const deadline = Promise.withResolvers<never>();
-          let timedOut = false;
-          const timer = setTimeout(() => {
-            timedOut = true;
-            entry.controller.abort();
-            deadline.reject(hostError("SOURCE_PREPARATION_TIMEOUT"));
-          }, 30_000);
-          timer.unref?.();
-          try {
-            await Promise.race([deadline.promise, (async () => {
-              gate.assertCurrent(entry, ctx);
-              await preflight(text, ctx, signal, run.selectedNative);
-              checkPreparationSignal(signal);
-              assertPiRun(run, ctx);
-              const task = await options.taskPrompt?.(text, ctx, signal, entry) ?? text;
-              checkPreparationSignal(signal);
-              assertPiRun(run, ctx);
-              const message = needsPreparation(text) ? await options.buildPreparedPrompt?.(text, ctx, signal, [...entry.prepared.values()]) : undefined;
-              checkPreparationSignal(signal);
-              assertPiRun(run, ctx);
-              for (const record of entry.prepared.values()) if (record.kind !== "prompt") run.candidates.set(recordIdentity(record), record);
-              run.projection = message ? [{ ...message, role: "custom", timestamp: Date.now() }] : [];
-              if ([...entry.prepared.values()].some(record => record.source === "notion")) {
-                const graphs = (pendingGraphs.get(entry) ?? []).flatMap(staged => staged.graphs);
-                // Bind disclosure to this acquisition, never to a retained snapshot's
-                // historical writes. Separate text preserves every source body span.
-                const effects = graphs.length ? combineConsumptionEffects(graphs.map(graph => graph.effects)) : consumptionEffects(undefined);
-                run.projection.push({ role: "custom", customType: "context-broker-consumption-effects",
-                  content: "<notion-effects>" + JSON.stringify(effects) + "</notion-effects>",
-                  display: false, details: { effects }, timestamp: Date.now() });
-              }
-              if (task !== text) run.projection.push({ role: "custom", customType: "context-broker-task",
-                content: task.startsWith(text) ? task.slice(text.length).trimStart() : task, display: false,
-                details: { version: 1, invocation: entry.id }, timestamp: Date.now() });
-              turnPrompts = { snapshots: new Map([...entry.prepared].filter(([, record]) => record.kind === "prompt")), signal };
-            })()]);
-          } catch (error) {
-            // Admission belongs to Pi. An unavailable selected Skill must not
-            // cancel the user's turn. Retire only this unconfirmed acquisition;
-            // never publish partial graphs, stale bodies, or activation receipts.
-            if (run.signal.aborted || piRun !== run || generation !== run.generation
-              || run.sessionId !== ctx.sessionManager?.getSessionId?.() || signal.aborted && !timedOut) throw error;
-            const warning = failure(timedOut ? hostError("SOURCE_PREPARATION_TIMEOUT") : error);
-            const effects = errorConsumptionEffects(error);
-            entry.controller.abort();
-            pendingGraphs.delete(entry);
-            preparedForUse.delete(entry);
-            misses.delete(entry);
-            for (const [key, value] of loaded) if (value.owner === entry) loaded.delete(key);
-            entry.prepared.clear();
-            run.candidates.clear();
-            run.graphs.length = 0;
-            run.entry = undefined;
-            run.selectedNative = undefined;
-            if (handoff?.entry === entry) handoff = undefined;
-            gate.release(entry);
-            turnPrompts = undefined;
-            ctx.ui?.notify?.(warning + " Continuing without the unavailable Skill instructions.", "warning");
-            run.projection = [{ role: "custom", customType: "context-broker-preparation-warning",
-              content: warning + " The requested Skill instructions were not loaded. Continue the user's original request where possible; do not claim to have read or applied the unavailable instructions.",
-              display: false, details: { effects }, timestamp: Date.now() }];
-          } finally {
-            clearTimeout(timer);
+          if (run.degraded) return { messages: continueContext(event.messages, ctx, run, hostError("SOURCE_PREPARATION_UNAVAILABLE")) };
+          acknowledgeProjection(run, contextEntries);
+          run.userEntryId ??= contextEntries.findLast(entry => entry.sourceEntry.type === "message"
+            && entry.messages.some(message => message.role === "user"))?.sourceEntry.id;
+          // Metadata, explicit preparation and restoration share one deadline.
+          if (!run.prepared && (run.entry || ctx.mode === "print" || ctx.mode === "json")) {
+            await options.librarySelection?.identity(ctx);
+            checkPreparationSignal(signal); assertPiRun(run, ctx);
+            if (run.selectedNative && !visibleInLibrary(run.selectedNative, ctx)) run.selectedNative = undefined;
           }
+          if (!run.prepared) revalidateMetadata(ctx);
+          if (!run.prepared && (ctx.mode === "print" || ctx.mode === "json")) {
+            await ready(signal);
+            checkPreparationSignal(signal); assertPiRun(run, ctx);
+          }
+          if (!run.prepared && run.entry) {
+            const entry = run.entry, text = entry.event.text ?? "";
+            const preparationSignal = AbortSignal.any([signal, entry.controller.signal]);
+            gate.assertCurrent(entry, ctx);
+            await preflight(text, ctx, preparationSignal, run.selectedNative);
+            checkPreparationSignal(preparationSignal); assertPiRun(run, ctx);
+            const task = await options.taskPrompt?.(text, ctx, preparationSignal, entry) ?? text;
+            checkPreparationSignal(preparationSignal); assertPiRun(run, ctx);
+            const message = needsPreparation(text) ? await options.buildPreparedPrompt?.(text, ctx, preparationSignal, [...entry.prepared.values()]) : undefined;
+            checkPreparationSignal(preparationSignal); assertPiRun(run, ctx);
+            for (const record of entry.prepared.values()) if (record.kind !== "prompt") run.candidates.set(recordIdentity(record), record);
+            run.projection = message ? [{ ...message, role: "custom", timestamp: Date.now() }] : [];
+            if ([...entry.prepared.values()].some(record => record.source === "notion")) {
+              const graphs = (pendingGraphs.get(entry) ?? []).flatMap(staged => staged.graphs);
+              const effects = graphs.length ? combineConsumptionEffects(graphs.map(graph => graph.effects)) : consumptionEffects(undefined);
+              run.projection.push({ role: "custom", customType: "context-broker-consumption-effects",
+                content: "<notion-effects>" + JSON.stringify(effects) + "</notion-effects>",
+                display: false, details: { effects }, timestamp: Date.now() });
+            }
+            if (task !== text) run.projection.push({ role: "custom", customType: "context-broker-task",
+              content: task.startsWith(text) ? task.slice(text.length).trimStart() : task, display: false,
+              details: { version: 1, invocation: entry.id }, timestamp: Date.now() });
+            turnPrompts = { snapshots: new Map([...entry.prepared].filter(([, record]) => record.kind === "prompt")), signal: preparationSignal };
+          }
+          run.prepared = true;
         }
-        if (run) run.prepared = true;
-      }
-      let messages = withSessionSourceReceipts(event.messages.filter(message => message.customType !== ACTIVATION_MESSAGE
-        && message.customType !== RECOVERY_NOTICE), contextEntries);
-      // Keep the submitted user content, including /skill's protection newline,
-      // identical to the projection bound by persisted source delivery receipts.
-      const projectionIndices: number[] = [];
-      for (const projected of run?.projection?.slice(run.persisted) ?? []) {
-        projectionIndices.push(messages.length);
-        messages = [...messages, projected];
-      }
-      messages = options.projectContext?.(messages, ctx, run?.graphs) ?? messages;
-      messages = projectSelectedSourceMessages(messages, { scopes: new Map() }, (scope, id) => unavailableContextSource(scope, id, ctx));
-      if (run && options.restoreActive) {
-        const restored = await options.restoreActive(messages, ctx, AbortSignal.any([run.signal, lifecycleController.signal]), run.graphs);
-        assertPiRun(run, ctx);
-        messages = restored.messages;
-        for (const addition of restored.restored) {
-          const message = { ...addition, role: "custom", timestamp: Date.now() };
-          (run.projection ??= []).push(message); projectionIndices.push(messages.length); messages = [...messages, message];
+        let messages = withSessionSourceReceipts(event.messages.filter(message => message.customType !== ACTIVATION_MESSAGE
+          && message.customType !== RECOVERY_NOTICE), contextEntries);
+        const projectionIndices: number[] = [];
+        for (const projected of run?.projection?.slice(run.persisted) ?? []) {
+          projectionIndices.push(messages.length);
+          messages = [...messages, projected];
         }
-        // Capability warnings describe this request, not a new activation or a
-        // native-history edit. Recompute them without appending persistent spam.
-        messages = [...messages, ...restored.notices.map(message => ({ ...message, role: "custom", timestamp: Date.now() }))];
+        messages = options.projectContext?.(messages, ctx, run?.graphs) ?? messages;
         messages = projectSelectedSourceMessages(messages, { scopes: new Map() }, (scope, id) => unavailableContextSource(scope, id, ctx));
-      }
-      messages = deduplicateSourceReads(messages);
-      assertContextAccess(messages, ctx);
-      if (run) {
-        assertPiRun(run, ctx); run.contextMessages = structuredClone(messages); run.finalMessages = undefined;
-        run.requestProjection = { count: run.projection?.length ?? 0, messages: projectionIndices.map(index => messages[index]!) };
-      }
-      // Receipt-only custom entries support validation above, never model input.
-      return { messages: messages.filter(message => !(message.role === "custom" && message.customType === "context-broker"
-        && !sourceMessageText(message.content) && message.details && typeof message.details === "object" && "nativePromptSha256" in message.details)) };
+        if (run && options.restoreActive) {
+          const restored = await options.restoreActive(messages, ctx, signal, run.graphs);
+          checkPreparationSignal(signal); assertPiRun(run, ctx);
+          messages = restored.messages;
+          for (const addition of restored.restored) {
+            const message = { ...addition, role: "custom", timestamp: Date.now() };
+            (run.projection ??= []).push(message); projectionIndices.push(messages.length); messages = [...messages, message];
+          }
+          messages = [...messages, ...restored.notices.map(message => ({ ...message, role: "custom", timestamp: Date.now() }))];
+          messages = projectSelectedSourceMessages(messages, { scopes: new Map() }, (scope, id) => unavailableContextSource(scope, id, ctx));
+        }
+        messages = deduplicateSourceReads(messages);
+        assertContextAccess(messages, ctx);
+        checkPreparationSignal(signal);
+        if (run) {
+          assertPiRun(run, ctx); run.contextMessages = structuredClone(messages); run.finalMessages = undefined;
+          run.requestProjection = { count: run.projection?.length ?? 0, messages: projectionIndices.map(index => messages[index]!) };
+        }
+        return { messages: messages.filter(message => !(message.role === "custom" && message.customType === "context-broker"
+          && !sourceMessageText(message.content) && message.details && typeof message.details === "object" && "nativePromptSha256" in message.details)) };
+      });
     } catch (error) {
-      // An already cancelled Pi operation cannot dispatch. Do not report normal
-      // Stop as an extension failure; acquisition errors below must still abort.
-      if (run?.signal.aborted && piRun === run && generation === run.generation) return undefined;
-      // Pi reports extension errors and continues; aborting the current operation
-      // is what actually prevents provider dispatch after failed acquisition.
-      if (!run || !run.signal.aborted && piRun === run && generation === run.generation) ctx.abort?.();
-      throw error;
+      // Stop and a superseded session belong to the host. Broker failures only
+      // retire Broker instructions; they never cancel the user's operation.
+      if (run && !currentPiRun(run, ctx) || parent.aborted) return run?.signal.aborted ? undefined : { messages: withoutBrokerInstructions(event.messages) };
+      if (!deferredPiDiscovery) throw error;
+      return { messages: continueContext(event.messages, ctx, run, error) };
     }
   });
   if (deferredPiDiscovery) {
     host.on("before_provider_request", (event, ctx) => {
       const run = piRun;
       if (!run) return;
+      const fallback = (error: unknown) => {
+        if (!currentPiRun(run, ctx)) return undefined;
+        const original = run.finalMessages ?? run.contextMessages ?? [];
+        const safe = continueContext(original, ctx, run, error);
+        run.finalMessages = structuredClone(safe);
+        return continueWithoutBrokerPayload(event.payload, original, safe, ctx.model?.api);
+      };
       try {
         assertPiRun(run, ctx);
+        if (run.degraded) return fallback(hostError("SOURCE_PREPARATION_UNAVAILABLE"));
         assertContextAccess(run.contextMessages ?? [], ctx);
         assertActiveContextDelivery(ctx, run.contextMessages ?? [], run.finalMessages ?? run.contextMessages ?? [], run.graphs);
         const decision = finalRequests.inspect({
@@ -1527,20 +1582,19 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           generation: run.generation,
           signal: run.signal,
         });
-        // A known serialized mismatch must not become active, selected, or persisted.
-        // Abort is the host's cancellation; the ledger still records a later send as dispatched.
+        // A serialized mismatch remains a failed source delivery. Continue with
+        // a safe payload, without granting activation or persistence receipts.
         if (decision.block) {
           run.wireBlock = true;
           run.requestPending = false;
           run.confirmedProjection = undefined;
-          if (piRun === run && generation === run.generation) ctx.abort?.();
-          return;
+          return fallback(hostError(decision.code ?? "SOURCE_FINAL_PROJECTION_INVALID"));
         }
         run.wireBlock = false;
         run.requestPending = true;
         run.confirmedProjection = undefined;
       }
-      catch (error) { if (piRun === run && generation === run.generation) ctx.abort?.(); throw error; }
+      catch (error) { return fallback(error); }
     });
     host.on("after_provider_response", (event, ctx) => {
       const run = piRun;
@@ -1548,7 +1602,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (!run?.requestPending || event.status < 200 || event.status >= 300) return;
       if (run.wireBlock || provider.blocked) {
         run.requestPending = false;
-        if (!run.signal.aborted && piRun === run && generation === run.generation) ctx.abort?.();
+        if (currentPiRun(run, ctx)) warnAndRetire(run, ctx, hostError("SOURCE_FINAL_PROJECTION_INVALID"));
         return;
       }
       try {
@@ -1561,8 +1615,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         run.confirmed = true;
         run.requestPending = false;
         if (run.entry) gate.release(run.entry);
+        feedback.confirmPrepared(ctx);
       } catch (error) {
-        if (!run.signal.aborted && piRun === run && generation === run.generation) { ctx.abort?.(); throw error; }
+        if (currentPiRun(run, ctx)) warnAndRetire(run, ctx, error, true);
       }
     });
     host.on("turn_end", (event, ctx) => {
@@ -1581,17 +1636,27 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         // assistant/tool ordering. Pi applies the content edit and proof together.
         return { entries: [...event.entries, ...projected.entries] };
       } catch (error) {
-        if (!run.signal.aborted && piRun === run && generation === run.generation) { ctx.abort?.(); throw error; }
+        if (currentPiRun(run, ctx)) warnAndRetire(run, ctx, error, true);
       }
     });
   }
   host.on("input", async (event, ctx) => {
     const text = event.text ?? "";
     const current = gate.active;
+    if (deferredPiDiscovery && (event.source === "interactive" || event.source === "rpc") && (event.streamingBehavior || current)) {
+      try {
+        const accepted = options.librarySelection?.accept(ctx) ?? ctx;
+        const native = nativeRecord(text);
+        const submitted = text.startsWith("/skill:") ? "\n" + text : text;
+        queuedInputs.push({ text, submitted, images: event.images?.slice(), ctx: accepted, generation,
+          sessionId: ctx.sessionManager?.getSessionId?.(), selectedNative: native });
+        return submitted === text ? adapter.continuedInput : adapter.transformInput(submitted, event.images);
+      } catch (error) { notify(ctx, error); return adapter.continuedInput; }
+    }
     if (current) {
       if (current.phase === "dispatching" && event.source === "extension" && !current.forwarded && handoff?.entry === current && handoff.prompts.includes(text)) {
         try { gate.assertCurrent(current, ctx); current.forwarded = true; return adapter.continuedInput; }
-        catch { ctx.abort?.(); return adapter.handledInput; }
+        catch (error) { if (!deferredPiDiscovery) ctx.abort?.(); else notify(ctx, error); return adapter.continuedInput; }
       }
       if (event.source !== "interactive" && event.source !== "rpc") return adapter.continuedInput;
       ctx.ui?.setEditorText?.(text);
@@ -1602,20 +1667,22 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (event.source !== "interactive" && event.source !== "rpc") return adapter.continuedInput;
     // A known native choice belongs to the observation visible at acceptance.
     // A directory arriving during preparation must not retarget its name.
-    ctx = options.librarySelection?.accept(ctx) ?? ctx;
-    // Synchronous ownership closes the second-Enter gap before this hook's first await.
-    acceptedContext = ctx;
-    const entry = needsPreparation(text) || options.librarySelection && hasEnabledNotionSource(options.config) ? beginPreparation(event, ctx) : undefined;
+    let entry: ActivePreparation | undefined;
+    try {
+      ctx = options.librarySelection?.accept(ctx) ?? ctx;
+      acceptedContext = ctx;
+      entry = needsPreparation(text) || options.librarySelection && hasEnabledNotionSource(options.config) ? beginPreparation(event, ctx) : undefined;
+    } catch (error) { notify(ctx, error); return deferredPiDiscovery ? adapter.continuedInput : adapter.handledInput; }
     const submissionSignal = entry?.controller.signal ?? lifecycleController.signal;
     const submissionGeneration = generation;
     try {
       // Only local config selection is awaited here. Remote root verification
       // remains owned by discovery/consumption after this admission boundary.
-      await options.librarySelection?.identity(ctx).catch(() => undefined);
+      if (!deferredPiDiscovery) await options.librarySelection?.identity(ctx).catch(() => undefined);
       checkPreparationSignal(submissionSignal);
       if (entry) gate.assertCurrent(entry, ctx);
       const native = deferredPiDiscovery ? nativeRecord(text) : undefined;
-      const selectedNative = native && visibleInLibrary(native, ctx) ? native : undefined;
+      const selectedNative = native;
       if (deferredPiDiscovery) {
         if (!entry) return adapter.continuedInput;
         // Pi expands /skill before it creates an agent operation. Keep the raw
@@ -1673,8 +1740,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (entry) gate.release(entry);
       // Session replacement revokes ctx. Settle the old input without accessing
       // its UI/session getters or aborting the new session.
-      if (restore) { ctx.ui?.setEditorText?.(text); notify(ctx, error); }
-      return adapter.handledInput;
+      if (restore) { if (!deferredPiDiscovery) ctx.ui?.setEditorText?.(text); notify(ctx, error); }
+      return deferredPiDiscovery ? adapter.continuedInput : adapter.handledInput;
     }
     return adapter.continuedInput;
   });
@@ -1687,7 +1754,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (!deferredPiDiscovery) await ready(beforeSignal);
       checkPreparationSignal(beforeSignal);
     }
-    catch (error) { if (!beforeSignal.aborted && beforeGeneration === generation) { ctx.abort?.(); notify(ctx, error); } return undefined; }
+    catch (error) { if (!beforeSignal.aborted && beforeGeneration === generation) { if (!deferredPiDiscovery) ctx.abort?.(); notify(ctx, error); } return undefined; }
     const receipt = handoff;
     const matches = receipt?.prompts.includes(event.prompt ?? "");
     try {
@@ -1700,7 +1767,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     } catch (error) {
       const current = !beforeSignal.aborted && beforeGeneration === generation;
       if (receipt && matches) receipt.entry.controller.abort();
-      if (current && (!gate.active || gate.active === receipt?.entry)) ctx.abort?.();
+      if (current && (!gate.active || gate.active === receipt?.entry) && !deferredPiDiscovery) ctx.abort?.();
+      if (deferredPiDiscovery && receipt && matches) { gate.release(receipt.entry); if (handoff === receipt) handoff = undefined; }
       // Keep the sole receipt until the final injection consumer acknowledges it.
       if (current) notify(ctx, error);
       return undefined;
@@ -1735,6 +1803,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
   if (deferredPiDiscovery) host.on("context_with_system", (event, ctx) => {
     ctx = turnContext(ctx);
+    try {
     if (event.messages[0]?.role !== "system" || lifecycleController.signal.aborted || piRun?.signal.aborted) return undefined;
     // Render only metadata already observed by the cancellable context boundary.
     const candidateRefs = modelCandidateReferences([...records, ...defaultRouters].filter(record => available(record) && visibleInLibrary(record, ctx)), ctx);
@@ -1812,7 +1881,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         .map(message => createHash("sha256").update(sourceMessageText(message.content)).digest("hex")));
       for (const receipt of receipts) {
         if (!users.has(String(Reflect.get(receipt.details!, "nativePromptSha256")))) {
-          ctx.abort?.(); throw hostError("SOURCE_FINAL_PROJECTION_INVALID");
+          throw hostError("SOURCE_FINAL_PROJECTION_INVALID");
         }
       }
       // The original receipt remains private. Later mutable hooks cannot change
@@ -1820,6 +1889,16 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       piRun.finalMessages = structuredClone([...finalMessages, ...receipts]);
     }
     return { messages: finalMessages };
+    } catch (error) {
+      const run = piRun;
+      if (run && !currentPiRun(run, ctx)) return undefined;
+      const original = run?.contextMessages
+        ? [...event.messages.filter(message => message.role === "system"), ...run.contextMessages.filter(message => message.role !== "system")]
+        : event.messages;
+      const messages = continueContext(original, ctx, run, error);
+      if (run) run.finalMessages = structuredClone(messages);
+      return { messages };
+    }
   });
   type ExactRecordLookup = { status: "found"; record: SkillRecord }
     | { status: "missing"; scopes: ReadonlyMap<string, ReadonlySet<string>>;

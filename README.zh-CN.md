@@ -36,6 +36,8 @@ Broker 的请求校验需要 Undici 提供实际发送的正文分块诊断，No
 
 npm 发布包与当前 `next` 源码可能不同。开发或试用未发布改动请遵循[隔离开发指南](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/isolated-development.md)，源码配对、构建和独立应用状态统一由该入口说明。
 
+日用 `next` 时，把已合入的精确 CLI/Broker 配对构建为独立安装包，放在开发 checkout 之外的稳定目录。归档身份、package 来源切换和新 Pi 进程核对见 [next 安装指南](./docs/next-worktree-delivery.md)。临时验证通过 `pi -ne -e /absolute/task/extension.ts` 加载候选，保持日用注册不变。
+
 可以先完成下方[本地快速开始](#快速开始)，也可以直接[连接已有 Notion 库](#连接-notion-库)。
 
 ## 快速开始
@@ -148,7 +150,7 @@ Pi 通过 `notion_list`、`notion_use` 与原生 `read` 提供会话引用：`sr
 
 Notion 缓存按凭据和远端目录身份共用。全库目录与 View 成员使用不同缓存选择，不会因会话筛选缩小其他会话的 `$` 候选。View 选择写入当前会话分支，进程续接时恢复；新会话独立解析默认值。共享刷新保留已加载工作流的固定快照。[缓存合同](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。
 
-执行 `/context-broker doctor` 检查官方 CLI 版本、能力、认证和 source 访问。缺少依赖或访问失败只将对应 source 标记为不可用，本地 Skill、正常 source 和普通聊天继续工作；激活不可用 source 中已选的已知记录时阻断提交并提示修复方法。未知简单引用即使使用该 source 的 namespace 也原样透传；已接受或完整身份的引用会明确报告未加载。修复后执行 `/context-broker refresh`。管理 CLI 固定来自同一随包产物，不允许 source 覆写。
+执行 `/context-broker doctor` 检查官方 CLI 版本、能力、认证和 source 访问。缺少依赖或访问失败只将对应 source 标记为不可用，本地 Skill、正常 source 和普通聊天继续工作。已选 Skill 无法加载时，Pi 显示 warning 并继续原用户请求，不注入这些指令、不交付不完整内容，也不宣称已加载。未知简单引用即使使用该 source 的 namespace 也原样透传；已接受或完整身份的引用会明确报告未加载。修复后执行 `/context-broker refresh`。管理 CLI 固定来自同一随包产物，不允许 source 覆写。
 
 `/context-broker sources` 显示后台准备状态、snapshot/version ID、CLI freshness 与安全错误码；`ready` 只表示内容已准备，不代表指令已加载到会话。
 
@@ -180,7 +182,7 @@ Pi 可用一次 `read({ paths: [...] })` 读取同一 Skill 快照中最多 16 �
 
 Pi 按需发现的 `notion_ctl` 还管理当前 Notion 工作集。`working_set:"show"` 显示活跃根、共享 Requires 和 UTF-8 指令字节；`"budget"` 加 `max_bytes` 设置明确的 Session 上限；`"release"` 加准确 `roots` 停止应用这些根，其他根仍需要的依赖会保留。释放保留原始会话历史、固定快照与 Notion 数据，默认不自动淘汰。详见[工作集控制](./packages/context-broker/docs/skill-consumption-runtime.md#当前工作集预算与显式释放)。
 
-已有会话在 Notion 编辑和元数据过期后保留已选根与 Requires 的版本。显式 `read` 配合 `refresh: true` 检查当前主文，不改变任务的固定选择；`notion_use` 配合 `refresh: true` 为指定根采用完整当前版本。固定字节缺失时，系统给出明确能力提示并暂不交付受影响的指令闭包，其他独立对话仍可继续。详见[刷新与恢复](./packages/context-broker/docs/skill-consumption-runtime.md#内容变更明确刷新与管理开关)及[配对 next 工作树交付合同](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/next-worktree-delivery.md)。
+已有会话在 Notion 编辑和元数据过期后保留已选根与 Requires 的版本。显式 `read` 配合 `refresh: true` 检查当前主文，不改变任务的固定选择；`notion_use` 配合 `refresh: true` 为指定根采用完整当前版本。固定字节缺失时，系统给出明确能力提示并暂不交付受影响的指令闭包，其他独立对话仍可继续。详见[刷新与恢复](./packages/context-broker/docs/skill-consumption-runtime.md#内容变更明确刷新与管理开关)及[配对 next 安装合同](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/next-worktree-delivery.md)。
 
 用户点名询问某个 Notion Skill 是否存在或可用时，Agent 必须把名称作为 `query` 调用 `notion_list`，并设置 `refresh:true`。已有会话、先前查到或没查到、默认 View 已显示该名称，都不能省略这次核验；仍遵守用户明确指定的来源。查询只读元数据，保留已选 root/Requires 的固定版本。存在性与声明用途直接依据返回的元数据回答；用户要求检查或采用指令时，再读取或使用正文。只有当前新鲜且完整的查询才能说明搜索范围内未找到可用项；离线、过期、失败或部分结果不能证明当前不存在。
 
@@ -194,11 +196,11 @@ Pi 按需发现的 `notion_ctl` 还管理当前 Notion 工作集。`working_set:
 
 ## 选择与会话行为
 
-按 Enter 即锁定本次提交，草稿仍可编辑。原生编辑器显示 running 与 **Stop**；点击 **Stop** 或按 Escape 可取消准备。期间再按 Enter 不会提交编辑后的草稿。Pi 在宿主创建 agent operation 后，于可取消的 `context` 阶段准备选中内容，RPC `abort` 也会取消这项工作。准备成功后，首个 provider 请求包含原提示词、图片及完整选中 Skill 正文。准备失败或取消会阻止该请求，切换会话也会阻止迟到结果派发。
+Pi 在宿主创建 agent operation 后，于可取消的 `context` 阶段准备选中内容。准备期间可继续编辑和排队输入；原生编辑器保留 running 与 **Stop**。点击 **Stop**、按 Escape 或发送 RPC `abort` 会取消本轮。每次模型请求前的 context 阶段，Broker 的元数据等待、正文准备与恢复共用最多 60 秒预算。准备成功后，首个 provider 请求包含原提示词、图片及完整选中 Skill 正文。Broker 自身失败或超时只给出 warning，继续原用户请求，不注入失败或不完整的 Skill 内容，也不宣称已经 loaded。切换会话仍阻止迟到结果进入新会话。
 
 Pi 仅在 `after_provider_response` 收到 2xx 响应头，且完整正文与本次请求的固定选择匹配后，才确认 Skill 为 active。这只表示逻辑上的请求接受，不表示模型响应已经完成，也不是最终 wire 投递。普通 `openai-completions` 的 wire 证明是单独的 Node Undici 实体哈希核对；其他传输不会被记成 wire 已确认。缓存字节和 ready 准备结果都不能单独证明 active。
 
-未知简单 `$name`、`$name@namespace`、金额和 `$bunfs/root/chunks/cli-nxfh2cp0.js` 等路径保持普通文本，不产生失败提示。之前已接受的选择或完整身份 token 不可用时，用户与模型都会收到明确的“未加载”反馈；其他有效 Skill/Prompt/Router、原文与图片仍只派发一次。歧义及实际已选记录的权限、网络、目录或完整性错误仍阻断，不悄然改选其他来源。
+未知简单 `$name`、`$name@namespace`、金额和 `$bunfs/root/chunks/cli-nxfh2cp0.js` 等路径保持普通文本，不产生失败提示。之前已接受的选择或完整身份 token 不可用时，用户与模型都会收到明确的“未加载”反馈，原文与图片仍只派发一次。歧义及实际已选记录的权限、网络、目录或完整性错误只阻止采用受影响的指令，对话继续；不悄然改选其他来源。完整有效的选择仍经过正常交付检查。
 
 下一次模型请求会包含 Skill 内容。正文仍在有效上下文时，通过 `$` 或 OMP 原生 `/skill:` 再次提交同一记录会复用已有正文。Pi 会在下一次请求前，从当前分支的确切快照恢复缺失的已确认 active 正文，包括压缩或 resume 后的普通续接。分支中没有该确认记录时，不继承激活状态。去重不会从后续请求中移除已经存在的上下文。
 
@@ -206,7 +208,7 @@ Pi 仅在 `after_provider_response` 收到 2xx 响应头，且完整正文与本
 
 CLI 目录只返回 `records`，每条必须包含 `id/kind/locator/name/alias/description/default_context/entrypoint/ref`。Broker 拒绝未知 kind、错误 locator 和旧 `skills/skill` 字段。选中消费将完整主文与文件清单绑定到同一 source、scope、record 和不可变快照。入口文件为 `SKILL.md`、`ROUTER.md` 和 `PROMPT.md`。
 
-用 `$alias@notion` 显式选择 Prompt。每次提交新建 invocation、会话 generation 与 prepared 集合，同轮预检和派发共用固定快照；下一轮再次引用会完整加入本轮用户任务，保留原文与图片。Prompt 不进入原生 Skill、默认发现、后台预取、关键词自动激活或 system prompt。取消、超时和切会话阻止旧轮派发。双宿主及 detached 补全在 v1 中共享 `identity/kind/source/ref` 与原 UTF-16 编辑范围；接受候选只改草稿。
+用 `$alias@notion` 显式选择 Prompt。每次提交新建 invocation、会话 generation 与 prepared 集合，同轮预检和派发共用固定快照；下一轮再次引用会完整加入本轮用户任务，保留原文与图片。Prompt 不进入原生 Skill、默认发现、后台预取、关键词自动激活或 system prompt。用户取消和切会话阻止旧轮派发；Pi 中超时只撤下未完成的 Prompt 内容，以 warning 继续原请求。双宿主及 detached 补全在 v1 中共享 `identity/kind/source/ref` 与原 UTF-16 编辑范围；接受候选只改草稿。
 
 旧 Bundle catalog 和 session 标记通过 `node scripts/migrate-content-assets.mjs INPUT OUTPUT` 显式转换。运行时只接受 Router；转换写独立输出，保留不可变快照和资源路径。
 转换只修改 catalog 记录字段及已识别的 Broker session details，包括结构化 Router 引用和来源回执身份。正文、snapshot ID、资源路径及未知嵌套数据即使含 `bundle:` 或 `kind="bundle"` 也原样保留。混合 catalog 结构及非法 member 会拒绝；原件和已存在输出不会被覆盖。

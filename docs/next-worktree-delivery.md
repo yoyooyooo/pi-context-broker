@@ -1,8 +1,64 @@
-# 多机 next 日用交付
+# 多机 next 日用安装
 
-每次多机交付都要核对实际提交、构建字节和新进程；一次正确的路径或旧回执不能覆盖后续更新。下文的 `receipts.pro` / `receipts.mini` 是现有双机检查器的配置键，路径和机器身份由本次输入决定。具体任务分工与完成状态保留在对应 Issue/PR。
+Pro、Mini 和 imile-win 的普通 Pi 使用从 `next` 构建的独立 Broker 安装包；普通
+`ntn-skills` 使用同一配对的 CLI 包。全局 package 来源和 CLI 入口不能指向开发
+checkout、worktree 或临时验证目录。这里的 `next` 是 Git 集成分支，不假定 npm
+存在同名 dist-tag。
 
-## 唯一当前代码来源
+## 当前安装约定
+
+更新前读回两仓的远端 `next`，选定已合入且通过相应 gate 的精确提交。
+Broker 的 `.github/ntn-skills-cli-revision` 必须绑定所选 CLI 提交。在自有构建目录
+完成 CLI 和 Broker 构建，沿现有 `npm pack` / `scripts/pack.mjs` 生成完整归档。
+记录两个完整 commit、归档 SHA-256 与随包 `dist/next-build.json`，不能仅凭包的
+version 或目录名判断来源。多机分发相同归档；平台相关依赖在目标机器正常安装。
+
+每次更新使用新的稳定安装目录，例如
+`~/.local/share/notion-skills-next/<cli-commit>-<broker-commit>/install`。
+该目录独立于构建现场，并在仍被日用入口或进程使用时保留。安装命令沿用 npm，
+不新增常驻更新器：
+
+```sh
+# 三个变量分别是本次新的绝对目录和两份已核对归档的绝对路径。
+test ! -e "$NEXT_GENERATION/install"
+npm install --prefix "$NEXT_GENERATION/install" \
+  --ignore-scripts --no-audit --no-fund --prefer-offline \
+  "$CLI_ARCHIVE" "$BROKER_ARCHIVE"
+```
+
+安装完成后核对两包实际文件与归档字节。保留现有其他插件和用户设置，只切换唯一的
+Broker package 来源至 `install/node_modules/pi-context-broker`；CLI 入口选择
+`install/node_modules/ntn-skills/dist/ntn-skills.js`。读回 `pi list` 和普通
+`ntn-skills` 的实际解析结果，检查 PATH 中是否有旧 shim 抢先命中。不能覆盖活动
+代际来更新，或用临时 PATH 证明普通入口已修复。
+
+在每台机器启动新的普通 Pi 进程，核对实际注册路径、Node/Pi 版本，并验证本次修改
+的用户行为。路径切换不改变已经加载代码的旧进程。Source 未就绪时的 warning、
+继续对话和加载展示需要实际验证；安装或 metadata 检查通过不能代替这些结果。
+保留简短的本次来源和结果记录即可，不要求每次日用更新重跑完整模型矩阵或旧双机
+worktree aggregate。严格专项仍按下文原入口执行，结果不能扩大解释。
+
+## 临时验证
+
+开发候选通过进程参数加载，不修改日用注册：
+
+```sh
+pi -ne -e /absolute/task/broker/packages/context-broker/src/index.ts
+```
+
+需要独立应用状态时使用[隔离开发入口](isolated-development.md)和明确的 build ID。
+验证完成后，日用来源仍是已安装的 `next` 包。不得为了通过专项检查把日用来源改回
+worktree。旧安装只有在不再被入口、进程或回滚需要引用后，才按系统 Trash 规则收尾。
+
+## 历史 worktree 专项验收
+
+以下保留原工作树专项的完整取证合同，用于解释现有检查器和历史回执。它要求真实
+worktree 输入，不能把独立安装目录伪装成 worktree，也不是当前日用安装方式。
+需要执行此专项时，原分支、构建、机器身份和 aggregate 守卫保持不变。
+`receipts.pro` / `receipts.mini` 是该双机检查器的配置键，不包含 imile-win。
+一次正确路径或旧回执不能证明后续更新；具体运行范围保留在对应 Issue/PR。
+
+### 专项代码来源
 
 两机使用各自明确的 `next` checkout。CLI 包来自该 checkout 的 `packages/cli`，Broker 来自配对 checkout 的 `packages/context-broker`。不要让普通入口同时保留旧 npm Broker 和新本地 Broker 两份活动扩展。
 
@@ -10,7 +66,7 @@
 
 CLI 先完成当前 gate 并提交，Broker 的 `.github/ntn-skills-cli-revision` 再绑定该完整 commit；CI、publish 和 formal workflow 共用这一来源。双机都以相同的目标 commit 对齐；不能用 main、发布版本或另一个工作树替代。
 
-## 构建与来源对应
+### 构建与来源对应
 
 先构建 CLI，再明确选择这份 raw CLI/SDK 构建 Broker：
 
@@ -46,7 +102,7 @@ node scripts/verify-next-worktrees.mjs --config /absolute/owned/current-pair.jso
 
 回执版本为 2，含稳定的实际机器指纹。macOS 使用平台 UUID，Linux 使用 machine-id；原值只在进程内读取，回执仅保存带固定域前缀的 SHA-256 和平台名。无法取得受支持的机器身份时 `blocked`，不以 hostname 替代。该结果固定标为 `actual_pi_process:not_run`；它没有启动 Pi。
 
-## 普通入口与新进程
+### 普通入口与新进程
 
 源/包检查完成后，使用 Pi 的公开安装/配置入口选择实际 Broker 工作树。先读回现有 package 来源，再做唯一来源切换，最后再次读回；不要覆盖其他插件、认证、模型或用户会话。包管理器的删除行为也必须符合系统 Trash 约束。
 
@@ -79,7 +135,7 @@ Pi 的 `responseModel` 是可选响应信息。现役 cost observer 区分原始
 
 如果执行环境不允许读取该检查需要的日用配置，记录具体 blocked，不通过另一条文件路径绕读。可使用公开 Pi API 取得独立的部分证据，但不能把该部分回执标为完整 daily runner 通过。
 
-## 每次更新的完成条件
+### 专项的完成条件
 
 每机保留目标 commit、干净状态、构建回执、实际 CLI/SDK/扩展路径与 hash、新进程 executable/version、公开来源读回和本次结果。收齐两份本次日用 `result.json` 后，用原入口进行联合检查：
 
@@ -103,7 +159,7 @@ aggregate config 使用相同的 `version:1`、`delivery`、`library`、`worktre
 本合同不自动发布 npm、不合并 main，也不在每次启动时隐式拉代码或改变已有会话版本。新代码通过下一次已核对的新进程生效；既有任务的内容 pin 仍由消费合同管理。
 
 
-## 普通模型观察中的包归属
+### 普通模型观察中的包归属
 
 模型和正文证据仍单独采集，不加入上面的 metadata aggregate。复用现役
 `analyzeNotionAgentTurn` 分析普通安装时，原始 `get_commands.sourceInfo.source`

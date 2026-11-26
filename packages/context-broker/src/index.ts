@@ -1506,9 +1506,6 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     | { status: "failed"; promise: Promise<DiscoveryResult>; error: unknown };
   const dollarRegistryByCwd = new Map<string, CatalogState>();
   const catalogOwner = new AbortController();
-  // Invalidated cache entries can disappear while their source request is still
-  // running. Retain ownership until the actual operation has settled.
-  const pendingCatalogs = new Set<Promise<unknown>>();
   const ownCatalog = <T>(run: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> => {
     const owned = signal ? AbortSignal.any([catalogOwner.signal, signal]) : catalogOwner.signal;
     const promise = (async () => {
@@ -1517,8 +1514,9 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       owned.throwIfAborted();
       return result;
     })();
-    pendingCatalogs.add(promise);
-    void promise.then(() => pendingCatalogs.delete(promise), () => pendingCatalogs.delete(promise));
+    // Cache invalidation may drop the caller before the producer settles.
+    // Observe rejection without making shutdown wait for that producer.
+    void promise.catch(() => undefined);
     return promise;
   };
   const sourceChanges = new Map<string, number>();
@@ -1989,13 +1987,14 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   });
   // Host metadata generations must retire before cancelled source promises
   // settle, so no late failure can notify or publish into the closed session.
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", () => {
     refreshGeneration++;
     catalogOwner.abort();
     dollarRegistryByCwd.clear();
     notionRefresh.clear();
     notionRetryAt.clear();
-    await Promise.allSettled([...pendingCatalogs]);
+    // Cancellation and publication fences already retire every catalog owner.
+    // A producer that ignores AbortSignal must not hold the user's shutdown.
   });
   const refresh = async (ctx: ExtensionContext) => {
     const selectedGeneration = ++refreshGeneration;

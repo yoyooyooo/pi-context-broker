@@ -212,8 +212,13 @@ test("inspection resource batches keep exact B proofs without selecting B and re
   await expect(f.read({ paths })).rejects.toThrow("AUTH_REQUIRED");
   const payload = { messages: messages.map(message => ({ role: message.role === "toolResult" ? "tool" : message.role === "custom" ? "user" : message.role,
     content: sourceMessageText(message.content), ...(message.role === "toolResult" ? { tool_call_id: message.toolCallId } : {}) })) };
-  await expect(f.emit("before_provider_request", { payload })).rejects.toMatchObject({ code: "AUTH_REQUIRED" });
-  expect(controller.signal.aborted).toBe(true); expect(f.state.binding.snapshot_id).toBe(old);
+  const [continued] = await f.emit("before_provider_request", { payload });
+  expect(controller.signal.aborted).toBe(false); expect(f.state.binding.snapshot_id).toBe(old);
+  expect(JSON.stringify(continued)).toContain("AUTH_REQUIRED");
+  expect(JSON.stringify(continued)).toContain("Compare B resources.");
+  expect(JSON.stringify(continued)).not.toContain(JSON.stringify(f.text).slice(1, -1));
+  await f.emit("after_provider_response", { status: 200, headers: {} });
+  expect(f.state.persisted).toBe(0); expect(f.state.binding.snapshot_id).toBe(old);
   await f.emit("agent_end");
   const next = new AbortController(); f.ctx.signal = next.signal; f.ctx.abort = () => next.abort();
   await f.emit("before_agent_start", { prompt: "Continue without the denied content.", systemPrompt: "Current." }); await f.emit("agent_start");

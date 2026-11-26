@@ -7,7 +7,7 @@ description: "验证双仓开发隔离、配对 CLI/SDK 与 Broker 的消费合�
 
 ## 范围和交接
 
-只验证从当前 `next` 演进的单轨。开发使用隔离任务分支；正式日用仍要求严格 `next` 配对。复用现有检查和安装入口，不新增总验证 runner。
+只验证从当前 `next` 演进的单轨。开发使用隔离任务分支；正式日用使用精确 `next` 配对构建的独立安装包，不指向开发 worktree。复用现有检查和安装入口，不新增总验证 runner。
 OMP/Tern 延期；不恢复 `source.command`、CLI 正文消费、完整 export 回退或旧 snapshot reader。
 [验证交接表](../../../docs/verification-routing.md) 指定 CLI 管理、消费、来源接手与 Broker 的负责人。
 本 Skill 检查跨仓消费和安装包，不复制作者操作验收。自然用户旅程、混合来源选路与日常管理闭环交给 [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md)。当前feature地图直接指向现役SDK、安装与实际Pi入口。
@@ -91,7 +91,7 @@ candidate/daily 对正常 HOME、agentDir 与配置的要求。现有 candidate 
 可以使用 `package:check` 已独立安装的包，或依赖齐全的 checkout 中 `bun run build` 产物。
 打包目录本身未安装依赖时，不能直接作为 Broker 的构建入口；先核对已安装包与归档的字节一致。
 CI 和 publish 的 CLI pin 必须指向同一完整 commit；不要用发布版或另一工作树代替候选。
-Pro/Mini 每次交付还须按 [next 工作树交付](../../../docs/next-worktree-delivery.md) 核真实 origin/next、机器指纹、构建与普通新进程，再由日用入口 `aggregate` 联合检查同一新 delivery 的两份 version:2 回执。单机、旧回执或 source/build-only 不能完成双机交付；固定路径本身不保证最新产物。
+Pro/Mini/imile-win 的日用更新按 [next 安装合同](../../../docs/next-worktree-delivery.md) 核所选提交、归档、独立安装字节、普通入口及新 Pi 进程，并验证本次修改的用户行为。临时验证用 `-ne -e` 或现有隔离 run，不改日用注册。只有明确执行历史工作树专项时，才使用原 `aggregate` 联合核验不同机器、同一新 delivery 的两份 version:2 回执；该检查的守卫不放宽，也不要求每次日用更新都跑它。固定路径、旧回执或 source/build-only 均不能证明当前实际装载。
 以下命令从 Broker 根目录执行。CLI 路径属于选定的完整包，decoder 源码属于同一提交：
 
 ```sh

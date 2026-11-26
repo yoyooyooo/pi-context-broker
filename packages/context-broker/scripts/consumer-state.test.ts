@@ -158,9 +158,16 @@ test("FV05 a late provider callback cannot confirm a different session identity"
   const f = await pendingProvider();
   try {
     f.state.sessionId = "replacement";
-    await expect(f.emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} })).rejects.toThrow(/cancel/i);
-    expect(f.controller.signal.aborted).toBe(true);
+    await f.emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} });
+    expect(f.controller.signal.aborted).toBe(false);
     expect(f.entries).toHaveLength(1);
+    const assistant: AgentMessage = { role: "assistant", content: "new session response" };
+    f.entries.push({ sourceEntry: { type: "message", id: "replacement-assistant", message: assistant }, messages: [assistant] });
+    const boundary = await f.emit("turn_end", { type: "turn_end", turnIndex: 0, outcome: "completed", entries: [], continue: false,
+      message: assistant, messageEntryId: "replacement-assistant", toolResults: [], toolResultEntryIds: [],
+      context: { contextEntries: f.entries, contextMessages: f.entries.flatMap(entry => entry.messages) } });
+    expect(boundary).toEqual([undefined]);
+    expect(f.entries).toHaveLength(2);
   } finally {
     await f.emit("agent_end");
     await f.emit("session_shutdown");

@@ -82,6 +82,20 @@ SelectionGraph 包含 retained + new closure 的有限字节预算前提及 `Rel
 
 真实回放使用 session-active.test.ts 的 selected/partial、discarded drafts、failed/aborted/late/rewound 场景；新回归补不同 session identity 的迟到 headers 和原 user 已离开 branch、另一个 user 仍存在的情况。后者避免“找到了任意 user”冒充原请求身份。native-read-session 和 skill-context-session 保留全正文、精确 snapshot/scope/hash、独立 pins、原生历史不被修改的检查。
 
+### Pi 的失败退化与交付证明
+
+Broker 准备、授权、完整闭包或最终投影检查失败时，原用户请求继续；失败的 Skill 指令不能因此获得交付、激活或持久化证明。`host-skills.warnAndRetire` 撤下本次未确认的 entry、pending graphs、candidate、投影和待确认 drafts，释放自己的准备状态，并给出一次 warning。原有 source/scope、观察顺序、session/generation、取消、完整正文及 provider/turn/projection 守卫仍决定能否发布。用户 Stop 和会话替换由宿主拥有，旧异步结果不能触碰新会话或重新发布正文。
+
+`nonblocking-context.withoutBrokerInstructions` 先保留并校验 receipt，再剥离其证明的正文片段；普通用户引文和图片不凭相似文本删除。最终 provider hook 的安全替换按原逻辑消息、工具调用 ID、原生文本和图片绑定识别已知消息槽，保留普通工具调用及输出、图片和 provider 字段。OpenAI completions、Responses、Anthropic、Google、Bedrock 与 Pi message 形态由具体回归检查；这不是通用 serializer，也不证明未知 provider 形态已被修复。未知形态只依赖序列化前的安全逻辑上下文，不获得额外 wire 确认。实际请求字节的完整 ledger 证明仍限于现有 OpenAI completions 和 Undici 路径。
+
+`skill-preparation.withPreparationDeadline` 将每次模型请求前 context 阶段的 Library 身份、print/JSON metadata、显式准备、任务 prompt 和 active restoration 纳入同一个 60 秒期限；不是整段含多次模型和工具往返的 agent turn 共用此期限。生产者不配合取消也必须让等待结束。超时只终止 Broker 获取；原操作 signal 保持可用，随后迟到结果还必须通过原取消和当前 owner 检查。Pi preparation gate 不禁用编辑器；一次 input 接纳的排队文本和图片由原生队列送到后续 context 后再准备。期限、Promise 退出、输入顺序和图片保留是实现义务，有限模型没有这些墙钟、队列或原生内容变量。
+
+`index` 的 shutdown 先推进目录代次、取消 catalog owner 并清空目录引用，不再等待所有目录 producer 退出。`ownCatalog` 保留获取前后的 signal 检查及拒绝观察；`publishCatalog` 仍检查 owner 和原 cache entry。`host-refresh.test.ts` 通过真实 index 入口暂停一个忽略取消的 SDK catalog，验证 shutdown 在 producer 返回前完成、迟到结果不能作为工具结果发布，也不新增 branch entry 或通知。此 Promise 退出义务不属于 ReadRace 的有限网络调度证明。
+
+收到 2xx 后才发生的 session 写入失败不能撤回已送达正文，也不能冒称正文从未加载。此时警告说明持久化未完成，响应继续，失败路径不制造新的确认或 boundary drafts。`activation-feedback` 的 `ready` 只表示准备完成，`loaded` 由 provider 接受路径确认；显示消息始终是 `content: []`，不会成为模型指令或另一套 selected/active 状态。
+
+`nonblocking-context.test.ts`、`host-prepare.test.ts`、`input-guard.test.ts`、`session-recovery.test.ts`、`final-request.test.ts` 和 `activation-feedback.test.ts` 分别检查这些具体边界。FV05 的不同 session 迟到 headers 回归还继续执行 `turn_end`，要求不返回旧来源 drafts；`provider-session-identity` mutation 仍须破坏真实守卫并触发行为断言失败。保留所有原有限域、cases、独立 expected_rules、负配置和 mutation；新增 owner/hash 只是经源码审查的对应，不扩张形式化证明范围。
+
 ## RecoveryClosure
 
 该切片覆盖三个连续 prompt，A、C 共用必须依赖 B，并保留独立根 D。原始字节完整或 B 缺失、远端 current 版本 1/2、业务 Enabled 关闭、一次明确权限拒绝和一次恢复 ticket 失效分别建模。恢复开始、外部返回、完整闭包/权限投影和继续提问是不同动作；不把异步读与最终发布当成原子事务。
@@ -141,8 +155,10 @@ SDK/CLI 回归核对，不能只观察名称或工具成功退出。
 六项 `library-*` mutation 分别破坏每次 input 取默认、blocked、目录 ticket、command
 session、最新 active-branch entry 和 running turn 优先级。失败 B 后的 oracle 会先
 恢复远端，再新接纳一次 input；仍须 blocked 且不得发新 resolver 请求，避免旧的
-rejected Promise 掩盖删守卫缺陷。普通 A turn 与排队 B 分别保留独立上下文；输入
-保护用的 preparation gate 在 `agent_start` 释放，不改变既有 graph 提交协议。
+rejected Promise 掩盖删守卫缺陷。普通 A turn 与排队 B 分别保留独立上下文；普通
+输入的 preparation gate 在 `agent_start` 释放。Pi 不用此 gate 锁定原生队列，排队
+input 保留接纳时的 Library、session 和 generation，在其实际消息进入 context 后
+再采用；队列交接不改变既有 graph 提交协议，其顺序与图片保留由具体宿主回归验证。
 
 有限模型只建模默认主 Library 和一个显式跨库调用，不穷尽同轮多 Source 的语法。
 `$name@source` 仍是明确 Source 覆盖，按配置绑定实际 root/full ref；无 `@source`

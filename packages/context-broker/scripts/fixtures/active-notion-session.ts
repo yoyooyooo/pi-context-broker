@@ -8,7 +8,22 @@ import { currentNotionFixture } from "./current-notion-source";
 import { noConsumptionWrites } from "../../src/consumption-effects";
 import { parseNativeReference } from "../../src/native-reference";
 import type { PreparedHostGraph } from "../../src/prepare-protocol";
-import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, SessionEntry, SkillRecord } from "../../src/types";
+import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, ImageContent, SessionEntry, SkillRecord } from "../../src/types";
+
+type ProviderPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+type ProviderPayload = { messages: Array<{ role: string; content: string | ProviderPart[]; tool_call_id?: string }> };
+const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+function providerPart(value: unknown): value is ProviderPart {
+  return object(value) && (value.type === "text" && typeof value.text === "string"
+    || value.type === "image_url" && object(value.image_url) && typeof value.image_url.url === "string");
+}
+function providerPayload(value: unknown): value is ProviderPayload {
+  if (!object(value) || !Array.isArray(value.messages)) return false;
+  const messages: unknown[] = value.messages;
+  return messages.every(message => object(message) && typeof message.role === "string"
+    && (typeof message.content === "string" || Array.isArray(message.content) && message.content.every(providerPart))
+    && (message.tool_call_id === undefined || typeof message.tool_call_id === "string"));
+}
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const canonical = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
@@ -125,6 +140,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   const commands = new Map<string, Parameters<NonNullable<ExtensionAPI["registerCommand"]>>[1]>();
   const tools: Parameters<NonNullable<ExtensionAPI["registerTool"]>>[0][] = [], branch: SessionEntry[] = [];
   let visible: AgentMessage[] = [], controller = new AbortController(), aborts = 0;
+  const notices: Array<{ text: string; level?: string }> = [];
   const api: ExtensionAPI = {
     on(name, handler) { handlers.set(name, [...handlers.get(name) ?? [], handler]); },
     registerTool(tool) { tools.push(tool); }, registerCommand(name, command) { commands.set(name, command); },
@@ -133,6 +149,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   };
   const ctx: ExtensionContext = { cwd: f.root, mode: "rpc", signal: controller.signal,
     model: { api: "openai-completions", baseUrl: "http://127.0.0.1:8989/v1" }, abort() { aborts++; controller.abort(); }, getSystemPrompt: () => "",
+    ui: { notify(text, level) { notices.push({ text, level }); } },
     sessionManager: { getBranch: () => branch, getSessionId: () => "recovery-session", getSessionFile: () => join(f.root, "session.jsonl"),
       buildSessionContext: () => ({ messages: visible }), buildSessionProjection: () => ({ messages: visible, entries: [] }) } };
   const emit = async (name: string, event: unknown = {}) => {
@@ -158,17 +175,18 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
     confirmActiveSources(api, ctx, [record], delivered([record]));
     return record;
   };
-  const turn = async (text: string, bodies: readonly SkillRecord[] = [], beforeProvider?: (payload: { messages: { role: string; content: string }[] }) => Promise<void> | void,
+  const turn = async (text: string, bodies: readonly SkillRecord[] = [], beforeProvider?: (payload: ProviderPayload) => Promise<void> | void,
     beforeFinalContext?: (messages: AgentMessage[]) => AgentMessage[], previousMessages: readonly AgentMessage[] = [],
-    delivery: { beforeContext?(): Promise<AgentMessage[]>; status?: number } = {}) => {
+    delivery: { beforeContext?(): Promise<AgentMessage[]>; status?: number; images?: ImageContent[] } = {}) => {
     controller = new AbortController(); ctx.signal = controller.signal;
-    const beforeAborts = aborts, beforeCalls = f.calls.length;
-    const input = await emit("input", { source: "rpc", text });
+    const beforeAborts = aborts, beforeCalls = f.calls.length, beforeNotices = notices.length;
+    const input = await emit("input", { source: "rpc", text, images: delivery.images });
     await emit("before_agent_start", { prompt: text, systemPrompt: "Current recovery test." });
     await emit("agent_start");
-    visible = [{ role: "system", content: "Current recovery test." }, { role: "user", content: text }, ...delivered(bodies), ...previousMessages];
+    visible = [{ role: "system", content: "Current recovery test." },
+      { role: "user", content: delivery.images?.length ? [{ type: "text", text }, ...delivery.images] : text }, ...delivered(bodies), ...previousMessages];
     let messages = visible, error: unknown, provider = false;
-    let payload: { messages: { role: string; content: string; tool_call_id?: string }[] } | undefined;
+    let payload: ProviderPayload | undefined;
     try {
       if (delivery.beforeContext) { visible.push(...await delivery.beforeContext()); messages = visible; }
       for (const name of ["context", "context_with_system"]) {
@@ -178,16 +196,29 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
           if (result && typeof result === "object" && "messages" in result && Array.isArray(result.messages)) messages = result.messages;
         }
       }
-      payload = { messages: messages.map(message => ({ role: message.role === "custom" ? "user" : message.role === "toolResult" ? "tool" : message.role,
-        content: sourceMessageText(message.content), ...(message.role === "toolResult" ? { tool_call_id: message.toolCallId } : {}) })) };
+      payload = { messages: messages.map(message => {
+        const content = Array.isArray(message.content) && message.content.some(part => part.type === "image")
+          ? message.content.map((part): ProviderPart => {
+            if (part.type === "text") return { type: "text", text: part.text };
+            assert.equal(typeof part.mimeType, "string"); assert.equal(typeof part.data, "string");
+            return { type: "image_url", image_url: { url: `data:${part.mimeType};base64,${part.data}` } };
+          }) : sourceMessageText(message.content);
+        return { role: message.role === "custom" ? "user" : message.role === "toolResult" ? "tool" : message.role,
+          content, ...(message.role === "toolResult" ? { tool_call_id: message.toolCallId } : {}) };
+      }) };
       await beforeProvider?.(payload);
-      await emit("before_provider_request", { payload });
+      // Pi chains each returned payload into the next handler and sends the final
+      // value. Ignoring the return would hide a broken nonblocking replacement.
+      for (const handler of handlers.get("before_provider_request") ?? []) {
+        const result = await handler({ type: "before_provider_request", payload } as never, ctx);
+        if (result !== undefined) { assert.ok(providerPayload(result), "Provider hook returned an invalid payload"); payload = result; }
+      }
       provider = !controller.signal.aborted;
       if (provider && delivery.status !== undefined) await emit("after_provider_response", { type: "after_provider_response", status: delivery.status, headers: {} });
     } catch (cause) { error = cause; }
     await emit("agent_end");
     return { input, messages, payload, error, provider, aborted: controller.signal.aborted, aborts: aborts - beforeAborts,
-      calls: f.calls.slice(beforeCalls).filter(call => call.operation === "consume"), active: activeSources(ctx) };
+      calls: f.calls.slice(beforeCalls).filter(call => call.operation === "consume"), notices: notices.slice(beforeNotices), active: activeSources(ctx) };
   };
   const close = async () => {
     try { await emit("session_shutdown"); }
@@ -207,7 +238,7 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
     return { role: "toolResult", ...event, ...(result as Record<string, unknown> ?? {}) } as AgentMessage;
   };
   const command = (name: string) => { const found = commands.get(name); assert.ok(found); return found; };
-  return { f, record, ready, failed, revise, seed, seedLocal, turn, close, emit, ctx, tool, command, branch, read,
+  return { f, record, ready, failed, revise, seed, seedLocal, turn, close, emit, ctx, api, tool, command, branch, read,
     fixedRef: (record: SkillRecord) => createSessionShortRefHost(api).selected(ctx, record),
     selected: () => sessionSelection(ctx), active: () => activeSources(ctx), delivered };
 }

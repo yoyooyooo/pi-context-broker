@@ -87,6 +87,7 @@ test("a pending explicit use is already selected but the following read does not
     });
     expect(turn.error).toBeUndefined(); expect(turn.provider).toBe(true);
     const delivered = turn.payload!.messages.find(message => message.tool_call_id === result!.toolCallId)!;
+    if (typeof delivered.content !== "string") throw new Error("Expected text tool result");
     expect(readStatus({ role: "toolResult", content: delivered.content })).toEqual(expectedStatus(["root"]));
     expect(delivered.content).not.toContain("<skill-directory>");
     expect([...h.active().sources.values()].map(item => item.record.name).sort()).toEqual(["required", "root"]);
