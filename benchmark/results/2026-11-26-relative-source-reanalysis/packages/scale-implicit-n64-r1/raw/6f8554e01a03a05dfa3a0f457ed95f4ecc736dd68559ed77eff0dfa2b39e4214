@@ -1,0 +1,13 @@
+---
+name: [identity:9a69335a08399292ea8d]
+description: "松涛53交易金额对账"
+---
+
+
+# 松涛53交易金额对账
+
+读取 references/reconcile.json。实际 paid_cents 与 expected_cents 的差绝对值不超过 tolerance_cents 为 matched，否则为 mismatch。保留 id、status 和 delta_cents。
+
+本材料为可公开复现的合成业务资料，许可 CC0-1.0。
+
+金额一律使用整数分；若有舍入，按文中规则执行。

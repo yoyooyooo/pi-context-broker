@@ -1,0 +1,8 @@
+{"at":"2026-11-25T09:50:45.122Z","channels":["context-broker.notion-sdk","context-broker.notion-sdk-result"],"phase":"sdk-observer-start","pid":8916}
+{"at":"2026-11-25T09:50:46.351Z","monotonic_ns":"205020094565583","operation":"list","phase":"sdk-start","pid":8916,"requestId":"[id:5696419536573de68160]","transport":"sdk"}
+{"at":"2026-11-25T09:50:52.147Z","metricsComplete":true,"monotonic_ns":"205025880031416","operation":"list","phase":"sdk-end","pid":8916,"requestId":"[id:5696419536573de68160]","responseFile":"[id:5696419536573de68160].json","resultObserved":true,"status":"completed","transport":"sdk"}
+{"at":"2026-11-25T09:50:55.325Z","monotonic_ns":"205029069250416","operation":"consume","phase":"sdk-start","pid":8916,"requestId":"[id:2d8c2842c89ea288410e]","transport":"sdk"}
+{"at":"2026-11-25T09:51:01.982Z","metricsComplete":true,"monotonic_ns":"205035724205750","operation":"consume","phase":"sdk-end","pid":8916,"requestId":"[id:2d8c2842c89ea288410e]","responseFile":"[id:2d8c2842c89ea288410e].json","resultObserved":true,"status":"completed","transport":"sdk"}
+{"at":"2026-11-25T09:51:05.357Z","monotonic_ns":"205039100591625","operation":"read","phase":"sdk-start","pid":8916,"requestId":"[id:ff7791d23f1fe8d324b8]","transport":"sdk"}
+{"at":"2026-11-25T09:51:09.115Z","metricsComplete":true,"monotonic_ns":"205042857060000","operation":"read","phase":"sdk-end","pid":8916,"requestId":"[id:ff7791d23f1fe8d324b8]","responseFile":"[id:ff7791d23f1fe8d324b8].json","resultObserved":true,"status":"completed","transport":"sdk"}
+{"at":"2026-11-25T09:51:17.995Z","pending":0,"phase":"sdk-observer-end","pid":8916}

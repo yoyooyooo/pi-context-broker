@@ -330,3 +330,5 @@ Report bugs through [GitHub Issues](https://github.com/yoyooyooo/pi-context-brok
 ## Benchmark development
 
 The `benchmark` branch compares candidate consumption environments with accepted versions and provides targeted native calibration. Start with [running a comparison](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-running.md), [the protocol](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-protocol.md), and [evidence analysis](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-analysis.md). Retained runs keep their original product and material identities; reanalysis does not execute models or establish new product behavior.
+
+The [resource-read reanalysis and product decision](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-relative-source-reanalysis-2026-11-26.md) corrects retained engineering results, preserves actual costs, and identifies the next focused input-cost question.

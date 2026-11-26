@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="363" viewBox="0 0 980 363" role="img" aria-label="Verified business quality">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font:14px system-ui,sans-serif;fill:#172033}.title{font-size:22px;font-weight:600}.note{font-size:12px;fill:#536176}</style>
+<text x="24" y="32" class="title">Verified business quality</text>
+<text x="24" y="55" class="note">Fixed family weights; missing values stay unknown. Intervals use independent declared clusters.</text>
+<text x="24" y="102">m0-e0<title>m0-e0</title></text>
+<line x1="300" y1="111" x2="860" y2="111" stroke="#dde3eb"/>
+<rect x="300" y="85" width="466.66666666666663" height="24" rx="3" fill="#3972ae"/>
+<path d="M 307.7647668972471 97 H 860 M 307.7647668972471 91 V 103 M 860 91 V 103" stroke="#172033" fill="none"/>
+<text x="872" y="102">83.3%</text>
+<text x="24" y="164">m0-e1<title>m0-e1</title></text>
+<line x1="300" y1="173" x2="860" y2="173" stroke="#dde3eb"/>
+<rect x="300" y="147" width="373.3333333333333" height="24" rx="3" fill="#3972ae"/>
+<path d="M 300 159 H 860 M 300 153 V 165 M 860 153 V 165" stroke="#172033" fill="none"/>
+<text x="872" y="164">66.7%</text>
+<text x="24" y="226">m0-e2<title>m0-e2</title></text>
+<line x1="300" y1="235" x2="860" y2="235" stroke="#dde3eb"/>
+<rect x="300" y="209" width="559.9999999999999" height="24" rx="3" fill="#3972ae"/>
+<path d="M 401.0981002305804 221 H 860 M 401.0981002305804 215 V 227 M 860 215 V 227" stroke="#172033" fill="none"/>
+<text x="872" y="226">100.0%</text>
+<text x="24" y="288">m0-e3<title>m0-e3</title></text>
+<line x1="300" y1="297" x2="860" y2="297" stroke="#dde3eb"/>
+<rect x="300" y="271" width="559.9999999999999" height="24" rx="3" fill="#3972ae"/>
+<path d="M 401.0981002305804 283 H 860 M 401.0981002305804 277 V 289 M 860 277 V 289" stroke="#172033" fill="none"/>
+<text x="872" y="288">100.0%</text>
+<text x="300" y="349" class="note">0</text>
+<text x="860" y="349" class="note" text-anchor="end">1</text>
+</svg>

@@ -307,3 +307,5 @@ Bug 请提交到 [GitHub Issues](https://github.com/yoyooyooo/pi-context-broker/
 ## Benchmark 开发
 
 `benchmark` 分支比较候选消费环境与已接受版本，并按采用问题进行原生校准。入口见[运行指南](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-running.md)、[协议](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-protocol.md)和[证据分析](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-analysis.md)。已有实验保留原产品与材料身份；重分析不调用模型，也不证明新产品行为。
+
+[资源读取重分析与产品取舍](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-relative-source-reanalysis-2026-11-26.md)修正了旧工程成绩，保留实际消耗，并将下一项收益验证收窄到常驻输入的具体问题。

@@ -36,6 +36,10 @@ complete record, scope, content version and file binding, and both exact formula
 from the frozen SDK source. An unverified link remains partial/unknown. This
 historical identity correction does not infer a source from matching text alone.
 
+The [2026-11-26 resource-read reanalysis](benchmark-relative-source-reanalysis-2026-11-26.md)
+records the original, intermediate and corrected outcomes across the six retained
+engineering scopes, unchanged actual costs, and the resulting product decision.
+
 The private Benchmark live fixture still uses the earlier `--entry` and
 `--database` interfaces. Before a new live journey uses this source baseline,
 adapt that journey and its analysis contract to the current Library protocol,

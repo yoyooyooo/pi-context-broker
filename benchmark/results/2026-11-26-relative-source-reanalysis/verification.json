@@ -1,0 +1,372 @@
+{
+  "version": 1,
+  "kind": "retained-reanalysis-delivery-verification",
+  "status": "passed",
+  "analysis_source_commit": "7490cbebb6729f466dc6b99eef485e7892b2e7b2",
+  "collector_version": "1.2.2",
+  "private_reanalysis": {
+    "episodes": 34,
+    "scopes": 6,
+    "unique_protected_original_files": 8523,
+    "unique_protected_original_bytes": 426670697,
+    "original_hash_bytes_mtime_unchanged": true,
+    "original_subject_identity_usage_duration_unchanged": true,
+    "prior_analysis_versions_retained": true,
+    "selection_bridges_independently_verified": 10,
+    "new_subject_executions": 0,
+    "new_model_requests": 0,
+    "new_registrations": 0,
+    "independent_summary_sha256": "820a6daf9d06305cbfc42d24a84fe8e65a2ef9b9cdd65a819c870636e0c911d1"
+  },
+  "local_tests": {
+    "node": "26.13.1",
+    "source_commit": "7490cbebb6729f466dc6b99eef485e7892b2e7b2",
+    "focused": {
+      "pass": 67,
+      "fail": 0,
+      "skip": 0
+    },
+    "full": {
+      "files": 49,
+      "tests": 746,
+      "pass": 743,
+      "fail": 0,
+      "skip": 3
+    },
+    "skip_boundary": "Three explicitly owned paired-build / maintained Pi integration fixtures were not supplied; no live SDK3 Benchmark claim."
+  },
+  "pull_request": "https://github.com/yoyooyooo/pi-context-broker/pull/91",
+  "ci_boundary": "CI and Formal status must be read for the actual delivered PR head; local tests and offline reanalysis do not substitute for those checks.",
+  "public_packages": [
+    {
+      "status": "passed",
+      "scope": "codemode-24",
+      "source_commit": "7490cbebb6729f466dc6b99eef485e7892b2e7b2",
+      "collector_version": "1.2.2",
+      "node": "26.13.1",
+      "source_analysis_sha256": "85f56257f1d13199493fa835edadfeee96eea910a2c0e46ad820d88ffd44774d",
+      "public_analysis_sha256": "9e4dbf7c632fc293384fbc177682ce41bde74e3b653ca24772a1426e2d5cc131",
+      "manifest_sha256": "73da915e1c0804c5a3f47ebe5a5fd73437c199456ae8ec16afef2590ea283be4",
+      "unchanged_analysis_meaning_sha256": "4dd0c90a0b9034b7f898b5a3810d5175f966b40f04436f12ea3cfde7bafca452",
+      "episodes": 24,
+      "outcomes": {
+        "pass": 21,
+        "fail": 0,
+        "unknown": 3
+      },
+      "package_files": 810,
+      "package_bytes": 60951629,
+      "source_artifacts_verified": 785,
+      "source_bytes_verified": 59446655,
+      "jsonl_line_counts_verified": 128,
+      "manifest_inventory_exact": true,
+      "source_public_statistics_identical_after_model_projection": true,
+      "episode_semantics_identical": [
+        "admission",
+        "business",
+        "contracts",
+        "measurements",
+        "result",
+        "timing",
+        "interventions"
+      ],
+      "attempt_measures_and_tool_status_identical": true,
+      "privacy_findings": 0,
+      "public_package_unchanged": true,
+      "new_subject_executions": 0,
+      "model_requests": 0,
+      "limits": [
+        "Statistical reaggregation; no private business regrading",
+        "Original body and chain hashes are historical claims, not hashes of redacted bytes",
+        "Deterministic pseudonyms do not guarantee irreversible anonymization"
+      ],
+      "isolation_checks": {
+        "public_readable": true,
+        "private_source_read_denied": true,
+        "mutable_repo_read_denied": true,
+        "public_write_denied": true,
+        "private_write_denied": true,
+        "network_denied": true
+      },
+      "inherited_credentials": false,
+      "review_receipt_sha256": "97f092b6d7ce24d4a47dc39345d5a981d49091ce4d112f6d68baeff88c3a551d"
+    },
+    {
+      "status": "passed",
+      "scope": "scale-implicit-n256-r1",
+      "source_commit": "7490cbebb6729f466dc6b99eef485e7892b2e7b2",
+      "collector_version": "1.2.2",
+      "node": "26.13.1",
+      "source_analysis_sha256": "cb763ffff5a87a753b6a2667ea2e84ef0f78cbe3f71443b1594b117213187ead",
+      "public_analysis_sha256": "36ab66b7f2d56ec429c9289082720a5aff734b6f857163fe53d2a1594f59e3d2",
+      "manifest_sha256": "37a322be284b98f975c545b0f26467c5c39c1b2ea8307eb50c4926ce2d9302d5",
+      "unchanged_analysis_meaning_sha256": "966add113df8ff4a65c1c0d2613cf664f1afa608f3ff046ab33a5d73978049a9",
+      "episodes": 2,
+      "outcomes": {
+        "pass": 1,
+        "fail": 0,
+        "unknown": 1
+      },
+      "package_files": 1406,
+      "package_bytes": 18889555,
+      "source_artifacts_verified": 1375,
+      "source_bytes_verified": 22194453,
+      "jsonl_line_counts_verified": 10,
+      "manifest_inventory_exact": true,
+      "source_public_statistics_identical_after_model_projection": true,
+      "episode_semantics_identical": [
+        "admission",
+        "business",
+        "contracts",
+        "measurements",
+        "result",
+        "timing",
+        "interventions"
+      ],
+      "attempt_measures_and_tool_status_identical": true,
+      "privacy_findings": 0,
+      "public_package_unchanged": true,
+      "new_subject_executions": 0,
+      "model_requests": 0,
+      "limits": [
+        "Statistical reaggregation; no private business regrading",
+        "Original body and chain hashes are historical claims, not hashes of redacted bytes",
+        "Deterministic pseudonyms do not guarantee irreversible anonymization"
+      ],
+      "isolation_checks": {
+        "public_readable": true,
+        "private_source_read_denied": true,
+        "mutable_repo_read_denied": true,
+        "public_write_denied": true,
+        "private_write_denied": true,
+        "network_denied": true
+      },
+      "inherited_credentials": false,
+      "review_receipt_sha256": "649272729d3965827a003ba46fa2fb2857d804bfe2eb2f55d9c9fc229056b175"
+    },
+    {
+      "status": "passed",
+      "scope": "scale-implicit-n64-r1",
+      "source_commit": "7490cbebb6729f466dc6b99eef485e7892b2e7b2",
+      "collector_version": "1.2.2",
+      "node": "26.13.1",
+      "source_analysis_sha256": "a2034fd0f3140b62567aeb347d906ce98b1e9722407583d580ac99184496bd91",
+      "public_analysis_sha256": "c0124c79794a5bc8a403d354b8031caf46652c0e1b938561340ec6c659a280c5",
+      "manifest_sha256": "26e006d8a83e14c7413c47b6491d79759f760f5ad45c01711f61f60fbc4bc3bc",
+      "unchanged_analysis_meaning_sha256": "ab148452a40aafdbade7a536ae099e5e9616ea8ddb8aa1760157640767abaa66",
+      "episodes": 2,
+      "outcomes": {
+        "pass": 2,
+        "fail": 0,
+        "unknown": 0
+      },
+      "package_files": 441,
+      "package_bytes": 9200531,
+      "source_artifacts_verified": 409,
+      "source_bytes_verified": 9745957,
+      "jsonl_line_counts_verified": 10,
+      "manifest_inventory_exact": true,
+      "source_public_statistics_identical_after_model_projection": true,
+      "episode_semantics_identical": [
+        "admission",
+        "business",
+        "contracts",
+        "measurements",
+        "result",
+        "timing",
+        "interventions"
+      ],
+      "attempt_measures_and_tool_status_identical": true,
+      "privacy_findings": 0,
+      "public_package_unchanged": true,
+      "new_subject_executions": 0,
+      "model_requests": 0,
+      "limits": [
+        "Statistical reaggregation; no private business regrading",
+        "Original body and chain hashes are historical claims, not hashes of redacted bytes",
+        "Deterministic pseudonyms do not guarantee irreversible anonymization"
+      ],
+      "isolation_checks": {
+        "public_readable": true,
+        "private_source_read_denied": true,
+        "mutable_repo_read_denied": true,
+        "public_write_denied": true,
+        "private_write_denied": true,
+        "network_denied": true
+      },
+      "inherited_credentials": false,
+      "review_receipt_sha256": "eb158a02955d8f1570fd633441e655bd32773f4a7fdb6c07531caf5a8261ce6f"
+    },
+    {
+      "status": "passed",
+      "scope": "scale-references-n16-r2",
+      "source_commit": "7490cbebb6729f466dc6b99eef485e7892b2e7b2",
+      "collector_version": "1.2.2",
+      "node": "26.13.1",
+      "source_analysis_sha256": "dc3d61231fa52fa17b1e65843da0ba214d6a856dca4bac83ba3482400245b19f",
+      "public_analysis_sha256": "3b96bf5233a169e8ed148c6f39d0a46d539d641902214922ec8c73ecbbbaa18b",
+      "manifest_sha256": "152999edf345cff6de675f569f450cb91b37e63cdee2ae49f2db9e329a9f0f59",
+      "unchanged_analysis_meaning_sha256": "98b88159f88c8003a0592abc061f785c55846933940279c55bb27ef3b11395e9",
+      "episodes": 2,
+      "outcomes": {
+        "pass": 2,
+        "fail": 0,
+        "unknown": 0
+      },
+      "package_files": 238,
+      "package_bytes": 12381615,
+      "source_artifacts_verified": 206,
+      "source_bytes_verified": 11991533,
+      "jsonl_line_counts_verified": 14,
+      "manifest_inventory_exact": true,
+      "source_public_statistics_identical_after_model_projection": true,
+      "episode_semantics_identical": [
+        "admission",
+        "business",
+        "contracts",
+        "measurements",
+        "result",
+        "timing",
+        "interventions"
+      ],
+      "attempt_measures_and_tool_status_identical": true,
+      "privacy_findings": 0,
+      "public_package_unchanged": true,
+      "new_subject_executions": 0,
+      "model_requests": 0,
+      "limits": [
+        "Statistical reaggregation; no private business regrading",
+        "Original body and chain hashes are historical claims, not hashes of redacted bytes",
+        "Deterministic pseudonyms do not guarantee irreversible anonymization"
+      ],
+      "isolation_checks": {
+        "public_readable": true,
+        "private_source_read_denied": true,
+        "mutable_repo_read_denied": true,
+        "public_write_denied": true,
+        "private_write_denied": true,
+        "network_denied": true
+      },
+      "inherited_credentials": false,
+      "review_receipt_sha256": "743440249222b213d5e9d8fd6075ef9833939b7e50cc93935b9ad2f0d3ef2091"
+    },
+    {
+      "status": "passed",
+      "scope": "scale-references-n16-r4",
+      "source_commit": "7490cbebb6729f466dc6b99eef485e7892b2e7b2",
+      "collector_version": "1.2.2",
+      "node": "26.13.1",
+      "source_analysis_sha256": "e347cbabe7de3104afca56780796bfddafe67d515c3cb4f002ef88a3f0f683db",
+      "public_analysis_sha256": "b5aa866e4f948f2983d0d0d65b61bfb45e1fbfbff05d541267ff5f5ab37d9a6a",
+      "manifest_sha256": "7d9cee479d61c5f8d75ae36d35175f3124a62e543aa92b2fca50d8f5d14c29b3",
+      "unchanged_analysis_meaning_sha256": "6146d1a4cb1b7fc1bff8d37e744ee5f7ddb9b4887785c668bdf32e101cb160bb",
+      "episodes": 2,
+      "outcomes": {
+        "pass": 1,
+        "fail": 0,
+        "unknown": 1
+      },
+      "package_files": 282,
+      "package_bytes": 20372416,
+      "source_artifacts_verified": 250,
+      "source_bytes_verified": 19942897,
+      "jsonl_line_counts_verified": 14,
+      "manifest_inventory_exact": true,
+      "source_public_statistics_identical_after_model_projection": true,
+      "episode_semantics_identical": [
+        "admission",
+        "business",
+        "contracts",
+        "measurements",
+        "result",
+        "timing",
+        "interventions"
+      ],
+      "attempt_measures_and_tool_status_identical": true,
+      "privacy_findings": 0,
+      "public_package_unchanged": true,
+      "new_subject_executions": 0,
+      "model_requests": 0,
+      "limits": [
+        "Statistical reaggregation; no private business regrading",
+        "Original body and chain hashes are historical claims, not hashes of redacted bytes",
+        "Deterministic pseudonyms do not guarantee irreversible anonymization"
+      ],
+      "isolation_checks": {
+        "public_readable": true,
+        "private_source_read_denied": true,
+        "mutable_repo_read_denied": true,
+        "public_write_denied": true,
+        "private_write_denied": true,
+        "network_denied": true
+      },
+      "inherited_credentials": false,
+      "review_receipt_sha256": "763128bcea18c73be0cb27a6ff6821a4c06fa9460f52a45a34f3788d76b4fd3a"
+    },
+    {
+      "status": "passed",
+      "scope": "scale-tariff-n16-r8",
+      "source_commit": "7490cbebb6729f466dc6b99eef485e7892b2e7b2",
+      "collector_version": "1.2.2",
+      "node": "26.13.1",
+      "source_analysis_sha256": "b1fe76d8d0842eb029a15782fe72237fa4a2f30824f48b9f0adfab5ef5644705",
+      "public_analysis_sha256": "02cdbfa54a897b65e78afd2fae9635f2a1c28aef257b8c06653a1535777493d9",
+      "manifest_sha256": "6c522dd92eb759885152d3c21e5acd492f661a2c7629353b8a8897738ffd734a",
+      "unchanged_analysis_meaning_sha256": "4549b5fbd965b05158de7adae98dcf29a68559028a6e454da0ba60c0019879d5",
+      "episodes": 2,
+      "outcomes": {
+        "pass": 2,
+        "fail": 0,
+        "unknown": 0
+      },
+      "package_files": 336,
+      "package_bytes": 26267585,
+      "source_artifacts_verified": 307,
+      "source_bytes_verified": 25649401,
+      "jsonl_line_counts_verified": 14,
+      "manifest_inventory_exact": true,
+      "source_public_statistics_identical_after_model_projection": true,
+      "episode_semantics_identical": [
+        "admission",
+        "business",
+        "contracts",
+        "measurements",
+        "result",
+        "timing",
+        "interventions"
+      ],
+      "attempt_measures_and_tool_status_identical": true,
+      "privacy_findings": 0,
+      "public_package_unchanged": true,
+      "new_subject_executions": 0,
+      "model_requests": 0,
+      "limits": [
+        "Statistical reaggregation; no private business regrading",
+        "Original body and chain hashes are historical claims, not hashes of redacted bytes",
+        "Deterministic pseudonyms do not guarantee irreversible anonymization"
+      ],
+      "isolation_checks": {
+        "public_readable": true,
+        "private_source_read_denied": true,
+        "mutable_repo_read_denied": true,
+        "public_write_denied": true,
+        "private_write_denied": true,
+        "network_denied": true
+      },
+      "inherited_credentials": false,
+      "review_receipt_sha256": "c5ff23cdd934ecd1600d29f89c6f3b1831ecf02a8bd944571fb87f7f8fbd8e07"
+    }
+  ],
+  "package_counts": {
+    "excluding_manifests": {
+      "files": 3507,
+      "bytes": 145918304
+    },
+    "including_manifests": {
+      "files": 3513,
+      "bytes": 148063331
+    }
+  },
+  "copy_into_repository": "all package bytes independently compared with the reviewed export",
+  "public_replay_boundary": "Public-file hashes, source locators and normalized statistical reaggregation. No private-grader or private raw-chain rerun."
+}
