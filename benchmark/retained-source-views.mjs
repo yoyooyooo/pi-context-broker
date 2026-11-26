@@ -46,6 +46,74 @@ function retainedRecord(record) {
   if (record.ref !== undefined) retainedRef(record.ref);
 }
 
+/** Frozen from the actual paired build's CLI source, not its base Git revision:
+ * packages/core/src/snapshot-identity.ts, SHA-256
+ * 9f030e890998e503434d1ee07a9e97b7719ba63352e38711dbb0cd53549e8955.
+ * Both inputs are explicitly recognized by that retained SDK. */
+export function retainedSelectionSnapshots(selection) {
+  const record = Object.entries(selection.record).map(([key, value]) => [key,
+    key === 'locator' ? Object.entries(selection.record.locator).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0) : value])
+    .sort(([a], [b]) => String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0);
+  return {
+    record_bound: 's_' + hash(JSON.stringify(['record-selection-v1', selection.scope, selection.record.id, selection.version_id, record])),
+    legacy: 's_' + hash(JSON.stringify([selection.scope, selection.record.id, selection.version_id])),
+  };
+}
+
+/** Derive a selection only from the hash-checked parity receipt and its raw
+ * readback. The caller owns artifact hashing; rawEvidence links these two bytes.
+ * A missing witness grants no equivalence and leaves the old strict gate intact. */
+export function retainedMaterialSelection({ receiptBytes, rawBytes, material, boundIdentity, proofIdentity }) {
+  try {
+    const receipt = JSON.parse(receiptBytes), raw = JSON.parse(rawBytes), main = raw.main, directory = raw.directory;
+    assert.equal(receipt.status, 'passed'); assert.equal(receipt.observed?.state, 'present'); assert.equal(receipt.observed.ready, true);
+    assert.equal(receipt.rawEvidence?.sha256, hash(rawBytes)); assert.equal(receipt.rawEvidence.bytes, Buffer.byteLength(rawBytes));
+    assert.equal(main.ok, true); assert.equal(directory.ok, true); retainedRecord(main.record);
+    assert.deepEqual(directory.record, main.record);
+    for (const key of ['scope', 'snapshot_id', 'version_id', 'entrypoint']) assert.equal(directory[key], main[key]);
+    assert.match(main.scope, /^[a-f0-9]{64}$/u); assert.match(main.version_id, /^[a-f0-9]{64}$/u);
+    const selection = { owner: main.record.id, scope: main.scope, snapshot_id: main.snapshot_id, version_id: main.version_id };
+    assert.deepEqual(receipt.object, selection);
+    for (const identity of [boundIdentity, proofIdentity]) {
+      assert.equal(identity?.bound_owner, selection.owner);
+      for (const [key, field] of [['bound_skill_id', 'skill_id'], ['bound_page_id', 'page_id']])
+        if (identity[key] !== undefined) assert.equal(identity[key], main.record.locator[field]);
+    }
+    const versions = Object.entries(proofIdentity.bound_versions ?? {}).filter(([, version]) =>
+      version.snapshot_id === main.snapshot_id && version.version_id === main.version_id && version.ref === main.ref);
+    assert.equal(versions.length, 1, 'The parity selection needs one named material version');
+    assert.ok(Object.hasOwn(boundIdentity.bound_versions ?? {}, versions[0][0]), 'The case must bind the same named material version');
+    assert.ok(Object.values(retainedSelectionSnapshots(main)).includes(main.snapshot_id), 'Unknown retained material snapshot identity');
+    assert.equal(main.materialization?.manifest_complete, true); assert.equal(directory.materialization?.manifest_complete, true);
+    assert.equal(main.has_more, false); assert.equal(main.range?.start, 1); assert.equal(main.range?.end, main.range?.total_lines);
+    assert.equal(main.range.total_lines, main.content.split('\n').length); assert.equal(main.path, main.entrypoint);
+    assert.equal(main.entrypoint, main.record.entrypoint); assert.equal(directory.ref, main.ref);
+    assert.deepEqual(directory.file_bindings, main.file_bindings);
+    const unique = (files, path) => {
+      const selected = files.filter(file => file.path === path); assert.equal(selected.length, 1); return selected[0];
+    };
+    const entry = unique(directory.files, main.entrypoint), file = unique(directory.files, material.path);
+    assert.equal(entry.sha256, hash(main.content)); assert.equal(entry.bytes, Buffer.byteLength(main.content));
+    for (const observed of [file, unique(raw.observedFiles, material.path), unique(receipt.observed.files, material.path)]) {
+      assert.equal(observed.sha256, material.sha256); assert.equal(observed.bytes, material.bytes);
+    }
+    const fileBinding = unique(directory.file_bindings, material.path);
+    assert.ok(typeof fileBinding.file_id === 'string' && fileBinding.file_id && typeof fileBinding.page_id === 'string' && fileBinding.page_id);
+    for (const selected of [entry, file]) {
+      const ref = retainedRef(selected.ref), binding = unique(directory.file_bindings, selected.path);
+      assert.equal(decodeURIComponent(ref.hostname), selection.owner);
+      assert.equal(ref.pathname.slice(1).split('/').map(decodeURIComponent).join('/'), selected.path);
+      assert.deepEqual(ref.searchParams.getAll('snapshot'), [selection.snapshot_id]);
+      assert.deepEqual(ref.searchParams.getAll('file_id'), [binding.file_id]);
+      assert.ok(!ref.username && !ref.password && !ref.port && !ref.hash);
+    }
+    assert.equal(main.ref, entry.ref);
+    return { ...selection, record: structuredClone(main.record), material_version: versions[0][0],
+      path: material.path, sha256: material.sha256, bytes: material.bytes, file_binding: structuredClone(fileBinding),
+      receipt_sha256: hash(receiptBytes), raw_receipt_sha256: hash(rawBytes) };
+  } catch { return null; }
+}
+
 /** Read projections without turning one SDK result into extra source operations.
  * Legacy flat receipts keep their original shape; paired failures stay explicit. */
 export function catalogFacets(value) {

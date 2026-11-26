@@ -13,9 +13,9 @@ export { deriveRedactedProviderBinding } from './provider-binding.mjs';
 import { verifyArtifactFiles, writeEvidenceBundle } from './evidence/store.mjs';
 import { readProviderTransport } from '../scripts/skill-consumption-provider.mjs';
 import { parseSourceObservation } from '../scripts/skill-consumption-source-observer.mjs';
-import { graphSourceViews, verifyPreparationEvidence, RETAINED_SOURCE_CONTRACT } from './retained-source-views.mjs';
+import { graphSourceViews, verifyPreparationEvidence, retainedMaterialSelection, retainedSelectionSnapshots, RETAINED_SOURCE_CONTRACT } from './retained-source-views.mjs';
 
-export const COLLECTOR_VERSION = '1.2.1';
+export const COLLECTOR_VERSION = '1.2.2';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const inside = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
@@ -272,12 +272,28 @@ function preparedResourceBodies(tool, preparations) {
   } catch { return []; } // Unverified, ambiguous or cross-turn short refs stay opaque.
 }
 
-export function preparedSourceMatches(binding, material, sdk, bytes) {
+export function preparedSourceMatchKind(binding, material, sdk, bytes) {
+  if (!['owner', 'scope', 'snapshot_id', 'version_id'].every(key => sdk[key] === binding[key]) ||
+      sdk.path !== material.path || sdk.sha256 !== material.actual_sha256 || sdk.bytes !== bytes) return null;
   const versions = material.version ? [material.identity.bound_versions?.[material.version]] : Object.values(material.identity.bound_versions ?? {});
-  return binding.owner === material.identity.bound_owner && versions.length === 1 &&
-    versions[0]?.snapshot_id === binding.snapshot_id && versions[0]?.version_id === binding.version_id &&
-    ['owner', 'scope', 'snapshot_id', 'version_id'].every(key => sdk[key] === binding[key]) &&
-    sdk.path === material.path && sdk.sha256 === material.actual_sha256 && sdk.bytes === bytes;
+  if (binding.owner === material.identity.bound_owner && versions.length === 1 &&
+      versions[0]?.snapshot_id === binding.snapshot_id && versions[0]?.version_id === binding.version_id) return 'exact';
+  const selected = material.source_selection;
+  if (selected) {
+    try {
+      const snapshots = Object.values(retainedSelectionSnapshots(selected));
+      const matches = binding.owner === material.identity.bound_owner && selected.owner === binding.owner && selected.scope === binding.scope &&
+        selected.version_id === binding.version_id && snapshots.includes(selected.snapshot_id) && snapshots.includes(binding.snapshot_id) &&
+        canonicalJson(selected.record) === canonicalJson(sdk.record) && canonicalJson(selected.file_binding) === canonicalJson(sdk.file_binding) &&
+        selected.path === material.path && selected.sha256 === material.actual_sha256 && selected.bytes === bytes &&
+        (!material.version || material.version === selected.material_version);
+      return matches ? 'retained-record-selection-v1' : null;
+    } catch { return null; }
+  }
+  return null;
+}
+export function preparedSourceMatches(binding, material, sdk, bytes) {
+  return preparedSourceMatchKind(binding, material, sdk, bytes) !== null;
 }
 
 /** Complete delivered bytes backed by product receipts; declarations without bytes are excluded. */
@@ -477,12 +493,14 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
         if (output) { assert.equal(output.sha256, value.sha256); assert.equal(output.bytes, value.bytes); }
         sdkBodyRows.push({ operation_id: entry.requestId, path: value.path ?? 'SKILL.md', owner: value.record?.id ?? null,
           scope: value.scope, snapshot_id: value.snapshot_id, version_id: value.version_id,
+          record: value.record, file_binding: value.file_bindings?.find(file => file.path === (value.path ?? 'SKILL.md')),
           sha256: hash(body), bytes: Buffer.byteLength(body), ref: receiptRefs.get(entry.requestId) });
       }
       for (const entry of views.resources) for (const file of entry.value.files) {
         const bytes = Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8');
         sdkBodyRows.push({ operation_id: entry.requestId, path: file.path, owner: entry.value.selection.owner,
           scope: entry.value.selection.scope, snapshot_id: entry.value.selection.snapshot_id, version_id: entry.value.selection.version_id,
+          record: entry.value.manifest.record, file_binding: entry.value.manifest.file_bindings?.find(binding => binding.path === file.path),
           sha256: hash(bytes), bytes: bytes.length, ref: receiptRefs.get(entry.requestId) });
       }
       assert.equal(episode.notion.coverage?.sdk, 'complete'); assert.equal(episode.notion.coverage?.owned_http, 'complete');
@@ -531,9 +549,15 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       }
       const native = (proof.files ?? []).find(file => file.skill_id === item.skill_id && file.resource_path === item.path);
       if (native) await addFile('collection-native-material-' + index, native.path, native.sha256, 'source-bytes');
+      const selection = retainedMaterialSelection({ receiptBytes: fileBytes.get(files.receipt.id), rawBytes: fileBytes.get(files.raw_receipt.id),
+        material: { path: item.path, sha256: item.actual_sha256, bytes: files.actual_source.bytes },
+        boundIdentity: identityMap[item.skill_id], proofIdentity: proof.identity_map?.[item.skill_id] });
+      if (selection) selection.refs = [ref(artifact, '/identity_map/' + item.skill_id.replaceAll('~', '~0').replaceAll('/', '~1')),
+        ref(files.receipt, '/object'), ref(files.raw_receipt, '/main'), ref(files.raw_receipt, '/directory')];
       materialRows.push({ skill_id: item.skill_id, path: item.path, actual_sha256: item.actual_sha256,
         canonical_sha256: item.canonical_sha256, native_path: native?.path ?? null,
         actual_source: files.actual_source.path, refs: references.filter(Boolean),
+        ...(selection ? { source_selection: selection } : {}),
         identity: identityMap[item.skill_id] ?? proof.identity_map?.[item.skill_id] ?? {} });
     }
   } else {
@@ -624,12 +648,19 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     if (sourceBinding && sdkMatches.length === 0) {
       unmatchedReads.push({ tool_call_id: tool.id, path: resourcePath, owner, reason: 'Prepared reference has no independently observed source binding' }); return false;
     }
+    const sourceMatchKind = sourceBinding ? preparedSourceMatchKind(sourceBinding, material, sdkMatches[0], Buffer.byteLength(body)) : null;
     const refs = uniqueRefs([...tool.refs, ...material.refs, ...sdkMatches.map(row => row.ref)]);
     evidence.resource_reads.push({ skill_id: material.skill_id, path: material.path, sha256: material.canonical_sha256,
       actual_sha256: material.actual_sha256, mapping: material.mapping ?? (material.actual_sha256 === material.canonical_sha256 ? 'exact-bytes' : 'verified-material-parity'),
       ...(material.version ? { version: material.version, state_event_id: material.event_id } : {}),
       turn_id: tool.turn_id, evidence_id, tool_call_id: tool.id, kind,
       ...(sourceBinding ? { source_binding: sourceBinding } : {}),
+      ...(sourceMatchKind === 'retained-record-selection-v1' ? { selection_bridge: {
+        kind: 'retained-record-selection-v1', material_snapshot_id: material.source_selection.snapshot_id,
+        runtime_snapshot_id: sourceBinding.snapshot_id, version_id: material.source_selection.version_id,
+        record_sha256: hash(canonicalJson(material.source_selection.record)), receipt_sha256: material.source_selection.receipt_sha256,
+        raw_receipt_sha256: material.source_selection.raw_receipt_sha256, refs: material.source_selection.refs,
+      } } : {}),
       sdk_operation_ids: sdkMatches.map(row => row.operation_id), sdk_association: 'matching bytes and identity; causal association unproven' });
     evidenceRefs.set(evidence_id, refs);
     if (material.path === 'SKILL.md') evidence.selections.push({ skill_id: material.skill_id, evidence_id, turn_id: tool.turn_id, tool_call_id: tool.id });
