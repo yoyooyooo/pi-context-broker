@@ -66,12 +66,17 @@ explicit states; repair the measurement only where it affects this decision.
 
 ## Current source and retained experiments
 
-The shared product and verification base now follows `next`
-`c3a880071996429e615bd66de74b86b462c669c3`, with CLI
+The shared engineering base now follows `next`
+`78b8739f6227fdb8a89962499ce579a563996b3a`, with CLI
 `ba092a531a64633c31e648b4f9f806e606a78f4e` (SDK v3 and Library root).
-This is a new linear integration commit on the Benchmark history. Existing
-plans, product builds, raw observations and published scores retain their
-original identities; synchronizing source does not migrate an experiment.
+The measured and adopted runtime remains that CLI paired with Broker
+`c3a880071996429e615bd66de74b86b462c669c3` on Pro, Mini and imile-win.
+The later engineering sync adds capacity checks and optional runtime-only
+command preparation; it does not rebuild or relabel that runtime. Its root
+`package.json` change only adds a verification test, so the conservative build
+input inventory differs even though product source and dependencies do not.
+Existing plans, product builds, raw observations and published scores retain
+their original identities; synchronizing source does not migrate an experiment.
 
 Offline `reanalysis` can correct the interpretation of retained raw evidence
 without rebuilding or executing the product. Its historical source contracts
