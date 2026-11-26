@@ -32,14 +32,14 @@
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
     "packages/context-broker/src/notion-source.ts": "a8a77d98b33a9b6dc4968fbd4ff30c336e87aa45d29ab343d9c76f1ed92b610e",
-    "packages/context-broker/src/pi-host-adapter.ts": "c74fafae1e11164a1c1ecc161d3e33c76fa906bdd90721957a207eaba0372462",
+    "packages/context-broker/src/pi-host-adapter.ts": "1d91fa6a7e2528e3641a93754aeeb598f8e8c8270eb27ba5dc1e9ca3a1ea4ce0",
     "packages/context-broker/scripts/host-refresh.test.ts": "92a34ff905b50f1586133c1e0863ca4750e64d67dfad9fbb64b23ef373711fc5",
     "packages/context-broker/scripts/session-refresh.test.ts": "5e3f715774593d8a95cdf4c9869bf010a70c2e792943350b08d2657b6dfe8cf4",
     "packages/context-broker/scripts/session-recovery.test.ts": "01c5c745744d8233f2f25757dd61b0cfcb75e4c70d7e355d60f2e1bc66031db5",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "84d3fb8a58b0fd203cffe45a29442b5363666ecfd0997f55c001d8d8197c1959",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "5a906e9a1468c0764999557f0e4f8cf011345f4708eeec7a7622581cc3765cf7",
     "packages/context-broker/scripts/notion-source-sdk.test.ts": "3786836128bb0a4c1b82b49f671e9a7112868a847a383d553381959b2e0c9c9d",
-    "packages/context-broker/scripts/pi-read-adapter.test.ts": "5c8f69c40967a41e42fc3f09355992b58605875408b53987cd9ab56079f54e87",
+    "packages/context-broker/scripts/pi-read-adapter.test.ts": "03a34ead959e817ad3af9ba1ba324107eecddb27673f838feda3e2954eb0023c",
     "packages/context-broker/scripts/fixtures/active-notion-session.ts": "26132aa2f28fbb21a8586bb102abbd41907922e1eb9ced6da659369346c25f8e",
     "packages/context-broker/scripts/notion-entry.test.ts": "7ff3897a2cd5aebed74786139c1d565e63ce58023c25774b0757f4ff5e1fc238",
     "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
@@ -987,9 +987,9 @@
   "current_review": {
     "pi_read_description": {
       "reviewed_from": "cbe36c332b16c4286afe9d1782e87a9b618a6300",
-      "scope": "Only the Pi read tool description changes. Removing that exact description line leaves pi-host-adapter.ts byte-identical to the reviewed base. The refresh parameter still specifies requested current-version inspection, unchanged active selection and a supplied Notion main ref; notion_use owns latest adoption. The read adapter regression checks the complete tool definition instead of requiring the repeated tutorial in its top-level description.",
+      "scope": "Only two consecutive refresh tutorial sentences are deleted from the reviewed cbe36c3 Pi read description (219 UTF-8 bytes). All other description bytes, including the root/Requires explanation and the explicit batch-together instruction, match that base. Removing the description line leaves pi-host-adapter.ts byte-identical to the base. The refresh parameter still specifies requested current-version inspection, unchanged active selection and a supplied Notion main ref; notion_use owns latest adoption. The read adapter regression checks refresh in the complete definition and retains the root/Requires and batch-together guidance.",
       "preserved_guards": "Tool registration and ownership, parameter schemas, native execution, relative and fixed references, source authorization, resource batches, cancellation, graph selection and provider delivery are unchanged. No other tool or host guidance changes.",
-      "proof_limit": "Tool wording is outside the finite model variables. Models, configs, views, bounds, cases, expected_rules, tool locks and mutation targets are unchanged. This hash binds reviewed source bytes; real request payload and model behavior require the separate Benchmark comparison."
+      "proof_limit": "Tool wording is outside the finite model variables. Models, configs, views, bounds, cases, expected_rules, tool locks and mutation targets are unchanged. This hash binds reviewed source bytes; real request payload and model behavior require the separate Benchmark comparison. The earlier 355-byte candidate and its results remain retained; they do not validate this narrower 219-byte candidate."
     },
     "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
     "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
