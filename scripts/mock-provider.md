@@ -8,9 +8,9 @@
 `openai-completions` serializer 发送请求。辅助函数的存在不代表当前
 Pi driver 同时维护两套运行链路。
 
-当前 `scripts/notion-sdk-pi.mjs` 只使用 HTTP provider、当前 SDK v2 和实际
+当前 `scripts/notion-sdk-pi.mjs` 只使用 HTTP provider、当前 SDK v3 和实际
 Notion HTTP 服务夹具。它只接受 `default-view`、`http-cache-recovery`、
-`http-interruption`、`working-set` 四个场景；旧 provider-backend 参数、
+`http-warm-restart`、`http-interruption`、`working-set` 五个场景；旧 provider-backend 参数、
 旧快照夹具和旧场景直接拒绝。完整复现命令见
 [当前验收入口](../docs/current-context-candidate.md)。
 

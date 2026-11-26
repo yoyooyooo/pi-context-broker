@@ -34,6 +34,23 @@ test("SDK default supplies the root; an empty Library needs no discovered Skill"
   expect(selected?.library.skills.database_id).not.toBe(selected?.library.library_id);
 });
 
+test("local admission and source routing leave current Library verification to SDK consumption", async () => {
+  const h = harness(), gate = Promise.withResolvers<SharedLibrary>();
+  h.resolver(() => gate.promise);
+  const accepted = h.owner.accept(h.ctx);
+  await h.owner.identity(accepted);
+  expect(h.calls).toEqual([]);
+  expect(await h.owner.sources(accepted)).toMatchObject([{ id: "a", library: a }, { id: "b", library: b }]);
+  expect((await h.owner.config(accepted)).sources).toMatchObject([{ id: "a", library: a }]);
+  expect(await h.owner.route(a, accepted)).toMatchObject([{ id: "a", library: a }]);
+  expect(h.calls).toEqual([]);
+  const verified = h.owner.selected(accepted);
+  await Promise.resolve();
+  expect(h.calls).toEqual([a]);
+  gate.resolve(descriptor(a));
+  expect((await verified)?.library.library_id).toBe(a);
+});
+
 test("accepted A context and publication identity survive a subsequent B selection", async () => {
   const h = harness(), accepted = h.owner.capture(h.ctx);
   await h.owner.selected(accepted);
@@ -56,6 +73,7 @@ test("requested B is visible before verification and failure blocks defaults ins
   expect(sessionLibrary(h.ctx)).toMatchObject({ library: b, status: "blocked", code: "ACCESS_DENIED" });
   h.resolver(async root => descriptor(root ?? a));
   const calls = h.calls.length;
+  await expect(h.owner.identity(h.owner.accept(h.ctx))).rejects.toMatchObject({ code: "ACCESS_DENIED" });
   await expect(h.owner.selected(h.owner.accept(h.ctx))).rejects.toMatchObject({ code: "ACCESS_DENIED" });
   expect(h.calls).toHaveLength(calls);
   expect((await h.owner.selected(accepted))?.library.library_id).toBe(a);
