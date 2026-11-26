@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import { fingerprint } from './protocol.mjs';
 import { validateCollectionRecoveryLedger, collectionRecoverySourceChanges, validateCollectionRecoveryRaw,
-  verifyCollectionRecovery, verifyCollectionRecoveryResults, archivedCollectionInstrumentation } from './collection-recovery.mjs';
+  verifyCollectionRecovery, verifyCollectionRecoveryResults, archivedCollectionInstrumentation,
+  prepareAdapterEvidenceOwnership, validateStandingZeroSendCollectionRaw } from './collection-recovery.mjs';
 
 const hash = 'a'.repeat(64), sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const encode = rows => Buffer.from(rows.map((row, i) => JSON.stringify({ version: 1, seq: i + 1, ...row })).join('\n') + '\n');
@@ -117,6 +119,16 @@ test('collector, normalization, grader, subject, dependency deletion and arbitra
     after.sha256 = fingerprint(after.files); assert.throws(() => collectionRecoverySourceChanges(before, after));
   }
 });
+test('standing closeout wiring changes do not widen the historical paid-gate source contract', () => {
+  for (const path of ['configure.mjs', 'batch.mjs', 'standing-campaign.mjs']) {
+    const { before, after } = sources();
+    before.files.push({ path, sha256: hash, bytes: 7 });
+    after.files.push({ path, sha256: 'c'.repeat(64), bytes: 7 });
+    before.sha256 = fingerprint(before.files); after.sha256 = fingerprint(after.files);
+    assert.throws(() => collectionRecoverySourceChanges(before, after), /cannot alter/);
+    assert.ok(collectionRecoverySourceChanges(before, after, { closeoutOnly: true }).some(file => file.path === path));
+  }
+});
 
 function rawFixture() {
   const f = fixture(), model = f.plan.protocol.models[0], root = '/owned/runs/gate-001';
@@ -193,4 +205,87 @@ test('legacy absent registration permits sibling temporary control and environme
   assert.equal(await verifyCollectionRecoveryResults(plan, [{ run_id: 'legacy', result: { status: 'retained' } }]), null);
   await assert.rejects(verifyCollectionRecoveryResults(plan,
     [{ run_id: 'legacy', result: { collection_recovery: reference } }]), /lost its registration/);
+});
+
+test('standing closeout retains one invalid zero-send completion and can never dispatch another slot', () => {
+  const f = fixture();
+  f.repairs[0].budget_usage = { model_requests: 0, input_tokens: 0, output_tokens: 0, duration_ms: 47870.911792 };
+  const complete = changes => f.complete(0, { status: 'invalid', stop_batch: true, budget_usage: f.repairs[0].budget_usage, ...changes });
+  const check = suffix => validateCollectionRecoveryLedger({ plan: f.plan, bytes: encode([...f.rows, ...suffix]),
+    prefix: f.prefix, reference, repairs: f.repairs, closeoutOnly: true });
+  const result = check([f.open, complete(), f.close]);
+  assert.equal(result.original_recovered, true); assert.equal(result.zero_send_batch_closed, true);
+  assert.equal(result.completed.length, 1);
+  assert.throws(() => check([f.open, complete(), f.close, f.open, f.next]), /cannot dispatch/);
+  for (const changed of [{ status: 'completed' }, { stop_batch: false },
+    { budget_usage: { ...f.repairs[0].budget_usage, duration_ms: 0 } },
+    { budget_usage: { ...f.repairs[0].budget_usage, input_tokens: null } }])
+    assert.throws(() => check([f.open, complete(changed), f.close]));
+});
+
+test('future adapter ownership preserves raw proof bytes, source identity and exclusive owned output', async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-adapter-ownership-')));
+  t.diagnostic('Retained task-owned fixture: ' + root);
+  const environmentRoot = join(root, 'owned'); await mkdir(environmentRoot);
+  const source = join(root, 'original.json'), directory = join(environmentRoot, 'control/adapter');
+  const bytes = Buffer.from('{ "version": 1, "controlled": true }\n'); await writeFile(source, bytes);
+  const args = { source, sha256: sha(bytes), directory, environmentRoot };
+  const first = await prepareAdapterEvidenceOwnership(args);
+  assert.deepEqual(await readFile(first.owned.path), bytes);
+  assert.deepEqual(await readFile(source), bytes);
+  assert.equal(first.original.path, source); assert.equal(first.owned.sha256, first.original.sha256);
+  assert.deepEqual(await prepareAdapterEvidenceOwnership(args), first);
+  await assert.rejects(prepareAdapterEvidenceOwnership({ ...args, sha256: hash }), /adapter evidence changed/);
+  const linked = join(root, 'linked.json'); await symlink(source, linked);
+  await assert.rejects(prepareAdapterEvidenceOwnership({ ...args, source: linked }), /ordinary file/);
+  await assert.rejects(prepareAdapterEvidenceOwnership({ ...args, directory: join(root, 'outside') }), /escapes/);
+  await writeFile(first.owned.path, 'different');
+  await assert.rejects(prepareAdapterEvidenceOwnership(args), /overwrite/);
+});
+
+function providerTrace(runId, rows = []) {
+  let previous = null;
+  const values = [{ phase: 'transport_start' }, ...rows, { phase: 'transport_end', complete: true,
+    attempts: rows.filter(row => row.phase === 'request_start').length, errors: 0, incompleteRequestIds: [], pendingForkRebind: false }];
+  return values.map((value, index) => {
+    const row = { version: 1, sequence: index + 1, previousSha256: previous, clockId: runId, monotonicNs: String(index + 1), ...value };
+    row.eventSha256 = sha(JSON.stringify(row)); previous = row.eventSha256; return JSON.stringify(row);
+  }).join('\n') + '\n';
+}
+
+test('standing raw closeout independently verifies complete transport and refuses any send, unknown usage or different rejection', async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-standing-raw-closeout-')));
+  t.diagnostic('Retained task-owned fixture: ' + root);
+  const input = rawFixture(), runId = input.run.run_id;
+  input.plan.execution.environment_root = root;
+  input.plan.execution.standing_scope = { kind: 'benchmark-standing-campaign' };
+  input.run.root = input.shared.root = join(root, 'runs', runId);
+  input.run.build_root = join(root, 'builds', 'build');
+  input.shared.status = 'failed'; input.shared.exit_code = 1;
+  Object.assign(input.runtime, { status: 'invalid', admission: { status: 'pending' }, requests: [], turns: [], interventions: [],
+    error: { name: 'AssertionError', code: 'ERR_ASSERTION', message: 'BENCHMARK_NOTION_STARTUP_PENDING' },
+    budget: { requests: 0, attempts: 0, tools: 0, input_tokens: 0, output_tokens: 0, tokens: 0, usage_unknown: false, stop: null } });
+  input.runtime.completion.agent_settled = false; input.runtime.timing.duration_ms = 47870.911792;
+  input.transportPath = join(input.run.root, 'benchmark/runtime/transport.jsonl');
+  await mkdir(join(input.run.root, 'benchmark/runtime'), { recursive: true });
+  const trace = providerTrace(runId, [{ phase: 'request_start', id: 1, category: 'other' },
+    { phase: 'request_end', id: 1, category: 'other', outcome: 'failure' }]);
+  await writeFile(input.transportPath, trace);
+  assert.deepEqual(await validateStandingZeroSendCollectionRaw(input), { model_requests: 0, input_tokens: 0, output_tokens: 0, duration_ms: 47870.911792 });
+  for (const mutate of [x => x.runtime.budget.requests = 1, x => x.runtime.budget.input_tokens = 1,
+    x => x.runtime.budget.usage_unknown = true, x => x.runtime.requests.push({}), x => x.runtime.turns.push({}),
+    x => x.runtime.coverage.attempts = 'partial', x => x.runtime.completion.cleanup.dispose_called = false,
+    x => x.runtime.error.message = 'different failure', x => x.shared.timed_out = true,
+    x => x.runtime.timing.duration_ms = null, x => x.runtime.correlation.candidate_id = 'other']) {
+    const changed = structuredClone(input); mutate(changed);
+    await assert.rejects(validateStandingZeroSendCollectionRaw(changed));
+  }
+  await writeFile(input.transportPath, providerTrace(runId, [{ phase: 'request_start', id: 1, category: 'model' },
+    { phase: 'request_end', id: 1, category: 'model', outcome: 'completed' }]));
+  await assert.rejects(validateStandingZeroSendCollectionRaw(input), /zero model transport/);
+  await writeFile(input.transportPath, trace.replace('"complete":true', '"complete":false'));
+  await assert.rejects(validateStandingZeroSendCollectionRaw(input), /PROVIDER_TRACE_INVALID/);
+  await writeFile(input.transportPath, trace.trimEnd());
+  await assert.rejects(validateStandingZeroSendCollectionRaw(input), /PROVIDER_TRACE_TRUNCATED/);
+  assert.throws(() => validateCollectionRecoveryRaw(input), 'The paid gate still requires a completed paid run');
 });

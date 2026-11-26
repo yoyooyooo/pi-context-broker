@@ -150,9 +150,9 @@ export async function batchStatus(controlRoot) {
 
 /** Restart is read/reconcile only for a started run. It never guesses whether a model call happened. */
 export async function runBatch({ plan, executeEpisode, maximumNewEpisodes = Infinity, reconcileEpisode, pilotLedgerRoot,
-  analysisRevisionReference, analysisRevision }) {
+  analysisRevisionReference, analysisRevision, collectionRecoveryReference }) {
   validateBatchPlan(plan);
-  const scopeAmendment = await verifyCampaignDispatch(plan, { analysisRevisionReference, analysisRevision });
+  const scopeAmendment = await verifyCampaignDispatch(plan, { analysisRevisionReference, analysisRevision, collectionRecoveryReference, maximumNewEpisodes });
   if (scopeAmendment && plan.execution.pilot_scope?.role === 'expansion') {
     const gate = await verifyRouteGate(plan, { analysisRevisionReference, analysisRevision });
     assert.ok(gate.passed, 'PILOT_SCOPE_GATE_REQUIRED: expansion cannot start before the prospective gate passes');
@@ -161,7 +161,7 @@ export async function runBatch({ plan, executeEpisode, maximumNewEpisodes = Infi
   try {
     // The lease can be acquired after another controller changed the boundary.
     // Re-read both registration and current evidence under our own lease.
-    await verifyCampaignDispatch(plan, { activate: true, analysisRevisionReference, analysisRevision });
+    await verifyCampaignDispatch(plan, { activate: true, analysisRevisionReference, analysisRevision, collectionRecoveryReference, maximumNewEpisodes });
     return await runBatchOwned({ plan, executeEpisode, maximumNewEpisodes, reconcileEpisode, pilotLedgerRoot,
       analysisRevisionReference, analysisRevision, scopeAmendment });
   } finally { if (release) await release(); }

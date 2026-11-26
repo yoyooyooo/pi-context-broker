@@ -40,7 +40,10 @@ test('collection recovery exposes an explicit zero-new-slot path without executi
   assert.equal(parsed['collection-recovery'], '/frozen/collection-repair-registration.json');
   for (const extra of ['--model', '--budget', '--bindings', '--controller', '--allow-unknown'])
     assert.throws(() => parseBenchmarkArgs(['run', '--plan', '/frozen/plan.json', extra, '/override']));
-  assert.throws(() => parseBenchmarkArgs(['register-collection-recovery', '--plan', '/frozen/plan.json', '--out', '/elsewhere']));
+  const replacement = parseBenchmarkArgs(['register-collection-recovery', '--plan', '/frozen/plan.json',
+    '--out', '/frozen/collection-repair-registration-2.json', '--supersedes', '/frozen/collection-repair-registration.json']);
+  assert.equal(replacement.out, '/frozen/collection-repair-registration-2.json');
+  assert.equal(replacement.supersedes, '/frozen/collection-repair-registration.json');
 });
 
 test('collection recovery refuses mixed corrections and relative source inputs before opening a plan', () => {

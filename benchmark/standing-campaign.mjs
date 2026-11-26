@@ -123,7 +123,8 @@ export async function readStandingHistoryBaseline(ref) {
   return { value, reference: structuredClone(ref) };
 }
 
-export async function readStandingWorkPlan({ authorization, workPlan }) {
+export async function readStandingWorkPlan(input) { return readStandingWorkPlanContext(input); }
+async function readStandingWorkPlanContext({ authorization, workPlan }, recovery = null) {
   const grant = await readStandingAuthorization(authorization), value = await verified(workPlan);
   keys(value, ['version', 'kind', 'id', 'task', 'environment_root', 'authorization', 'resource_policy', 'condition_epoch',
     'controller', 'baseline', 'entries', 'created_at']);
@@ -133,7 +134,13 @@ export async function readStandingWorkPlan({ authorization, workPlan }) {
   keys(value.condition_epoch, ['id', 'started_at', 'authorization']); assert.ok(safe(value.condition_epoch.id)); timestamp(value.condition_epoch.started_at);
   assert.deepEqual(value.condition_epoch.authorization, authorization);
   const baseline = await readStandingHistoryBaseline(value.baseline);
-  await verifyControllerFiles(value.controller); await verifyExecutionImplementation(value.controller.implementation);
+  if (recovery) {
+    assert.deepEqual(recovery.before_implementation, value.controller.implementation, 'STANDING_RECOVERY_ORIGINAL_CONTROLLER_CHANGED');
+    await verifyControllerFiles({ source_root: dirname(dirname(recovery.frozen_controller.path)), implementation: value.controller.implementation });
+    await verifyExecutionImplementation(recovery.implementation);
+  } else {
+    await verifyControllerFiles(value.controller); await verifyExecutionImplementation(value.controller.implementation);
+  }
   assert.ok(Array.isArray(value.entries) && value.entries.length > 0);
   assert.equal(new Set(value.entries.map(item => item.id)).size, value.entries.length, 'STANDING_DUPLICATE_WORK_ITEM');
   for (const item of value.entries) {
@@ -160,13 +167,14 @@ export function standingSetupProjection(setup) {
   const { id, control_root, standing, ...science } = setup;
   return science;
 }
-export async function assertStandingSetup(setup) {
+export async function assertStandingSetup(setup) { return standingSetupContext(setup); }
+async function standingSetupContext(setup, recovery = null) {
   const input = setup.standing; keys(input, ['authorization', 'work_plan', 'work_item_id', 'attempt_id', 'ledger_root']);
   assert.equal(setup.pilot_scope, undefined); assert.equal(setup.campaign_scope, undefined); assert.equal(setup.resumption, undefined);
   assert.equal(setup.pilot_ledger_root, undefined, 'STANDING_LEDGER_USES_STANDING_BINDING');
   assert.ok(safe(input.attempt_id)); assert.equal(setup.id, input.attempt_id);
   assert.ok(canonical(input.ledger_root) && canonical(setup.control_root));
-  const context = await readStandingWorkPlan({ authorization: input.authorization, workPlan: input.work_plan });
+  const context = await readStandingWorkPlanContext({ authorization: input.authorization, workPlan: input.work_plan }, recovery);
   assert.ok(input.ledger_root.startsWith(context.baseline.value.environment_root + '/control/'));
   assert.ok(setup.control_root.startsWith(context.workPlan.value.environment_root + '/control/'));
   assert.notEqual(input.ledger_root, context.baseline.value.ledger_root, 'STANDING_HISTORY_LEDGER_IMMUTABLE');
@@ -320,11 +328,19 @@ export async function assertCompletedStandingEvidence(plan, event) {
 
 /** Every dispatch reads the live closure and ledger. Historical evidence is
  * bound through the baseline receipt; it never becomes a renewable allowance. */
-export async function verifyStandingPlan(plan, { activate = false, forReservation = false } = {}) {
+export async function verifyStandingPlan(plan, { activate = false, forReservation = false, collectionRecoveryReference, maximumNewEpisodes } = {}) {
   const registration = plan.execution.standing_scope; assert.ok(registration && isStandingCampaign(plan.protocol.policies.campaign));
   assert.equal(plan.execution.campaign_scope, undefined); assert.equal(plan.execution.pilot_scope, undefined); assert.equal(plan.execution.resumption, undefined);
   const amendment = await readStandingAmendment(registration.amendment), setup = await verified(amendment.setup);
-  const context = await assertStandingSetup(setup);
+  let recovery = null;
+  if (collectionRecoveryReference) {
+    assert.equal(maximumNewEpisodes, 0, 'STANDING_RECOVERY_REQUIRES_ZERO_NEW_EPISODES');
+    assert.equal(forReservation, false, 'STANDING_RECOVERY_CANNOT_RESERVE');
+    const { verifyCollectionRecovery } = await import('./collection-recovery.mjs');
+    recovery = await verifyCollectionRecovery({ reference: collectionRecoveryReference, plan });
+    assert.equal(recovery.closeout_only, true, 'STANDING_REQUIRES_EXPLICIT_ZERO_SEND_CLOSEOUT');
+  }
+  const context = await standingSetupContext(setup, recovery);
   assert.equal(registration.version, 1); assert.equal(registration.kind, STANDING_CAMPAIGN); assert.equal(registration.role, amendment.role);
   assert.equal(plan.id, amendment.id); assert.equal(registration.id, amendment.id); assert.equal(plan.protocol.id, amendment.id);
   assert.deepEqual(amendment.authorization, context.authorization.reference); assert.deepEqual(amendment.work_plan, context.workPlan.reference);

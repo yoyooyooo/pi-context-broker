@@ -34,7 +34,7 @@ const HELP = `Benchmark: frozen comparisons, actual episodes, and offline eviden
   node benchmark/cli.mjs analyze --root ABS_BATCH_DIRECTORY --out ABS_NEW_REPORT
   node benchmark/cli.mjs reanalysis --root ABS_BATCH_DIRECTORY --out ABS_NEW_REPORT
   node benchmark/cli.mjs register-reanalysis --plan ABS_PLAN --replacements ABS_JSON --out ABS_NEW_REVISION --reason TEXT
-  node benchmark/cli.mjs register-collection-recovery --plan ABS_PLAN --frozen-controller ABS_ORIGINAL_CLI --reason TEXT
+  node benchmark/cli.mjs register-collection-recovery --plan ABS_PLAN --frozen-controller ABS_ORIGINAL_CLI --reason TEXT [--out ABS_JSON --supersedes ABS_UNAPPLIED_REGISTRATION]
   node benchmark/cli.mjs journey --root ABS_BATCH_DIRECTORY --run RUN_ID
   node benchmark/cli.mjs query --root ABS_BATCH_DIRECTORY [--condition ID] [--outcome pass|fail|unknown]
 
@@ -85,7 +85,7 @@ export function parseBenchmarkArgs(args) {
     'run-engineering-window': ['plan', 'out', 'limit'],
     'run-engineering-preflight-repair': ['plan', 'out', 'limit'],
     'register-reanalysis': ['plan', 'replacements', 'out', 'reason'],
-    'register-collection-recovery': ['plan', 'frozen-controller', 'reason'],
+    'register-collection-recovery': ['plan', 'frozen-controller', 'reason', 'out', 'supersedes'],
     journey: ['root', 'run'], query: ['root', 'condition', 'outcome'] };
   assert.ok(Object.hasOwn(flags, action), 'Unknown Benchmark action; use --help');
   const options = { action };
@@ -147,10 +147,12 @@ export async function benchmarkMain(args) {
   if (options.action === 'register-collection-recovery') {
     for (const key of ['plan', 'frozen-controller'])
       assert.ok(options[key] && isAbsolute(options[key]), '--' + key + ' must be absolute');
+    for (const key of ['out', 'supersedes']) assert.ok(options[key] === undefined || isAbsolute(options[key]), '--' + key + ' must be absolute');
+    assert.equal(Boolean(options.out), Boolean(options.supersedes), 'A replacement registration needs both --out and --supersedes');
     assert.ok(options.reason, '--reason must explain the collection failure and path projection');
     const { createCollectionRecovery } = await import('./collection-recovery.mjs');
     const { reference, recovery } = await createCollectionRecovery({ planFile: options.plan,
-      frozenController: options['frozen-controller'], reason: options.reason });
+      frozenController: options['frozen-controller'], reason: options.reason, outputFile: options.out, supersedes: options.supersedes });
     return { status: 'registered', kind: recovery.kind, reference, execution_performed: false, model_requests: 0 };
   }
   if (options.action === 'configure') {

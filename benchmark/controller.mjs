@@ -35,14 +35,14 @@ export async function loadExecution(plan) {
   return { input, bindings, slotBindings };
 }
 
-async function collect(raw, plan, slot, condition, model, binding, outputDirectory, reanalysisOf) {
+async function collect(raw, plan, slot, condition, model, binding, outputDirectory, reanalysisOf, adapterEvidencePath = plan.execution.adapter_evidence_file) {
   const required = (binding.public_case?.turns?.length ?? 0) > 1 || (binding.events?.length ?? 0) > 0 || (binding.clarification?.length ?? 0) > 0;
   raw.turn_control_verification = await readSubjectTurnControl({ controlRoot: plan.execution.control_root,
     runRoot: raw.root, runId: raw.run_id, required });
   if (!raw.turn_control) raw.turn_control = raw.turn_control_verification.result;
   const { collectEpisode } = await import('./collect.mjs');
   return collectEpisode({ raw, binding, protocol: plan.protocol, slot, condition,
-    model: { ...model, adapter_evidence_path: plan.execution.adapter_evidence_file }, outputDirectory,
+    model: { ...model, adapter_evidence_path: adapterEvidencePath }, outputDirectory,
     environmentRoot: plan.execution.environment_root, ...(reanalysisOf ? { reanalysisOf } : {}) });
 }
 
@@ -142,6 +142,8 @@ export async function executeBatchPlan({ plan, maximumNewEpisodes = Infinity, an
     ? { path: collectionRecoveryFile, sha256: sha(await readFile(collectionRecoveryFile)) } : null;
   let collectionRecovery = collectionRecoveryReference
     ? await verifyCollectionRecovery({ reference: collectionRecoveryReference, plan }) : null;
+  if (collectionRecovery?.closeout_only)
+    assert.equal(maximumNewEpisodes, 0, 'Standing zero-send collection recovery requires --limit 0 and cannot continue dispatch');
   if (collectionRecovery?.repairs.some(item => !status.episodes.some(episode => episode.run_id === item.run_id)))
     assert.equal(maximumNewEpisodes, 0, 'Recover retained collection with --limit 0 before starting another slot');
   let analysisRevision = null;
@@ -165,13 +167,15 @@ export async function executeBatchPlan({ plan, maximumNewEpisodes = Infinity, an
       ? join(input.control_root, 'collection-repair-results', raw.run_id) : join(raw.root, 'benchmark/normalized');
     // Only postprocessing receives the path projection. Subject execution below
     // keeps the original frozen binding, input, materials and startup expectation.
-    const result = await collect(raw, plan, slot, condition, model, projected?.binding ?? binding, output, reanalysisOf);
+    const result = await collect(raw, plan, slot, condition, model, projected?.binding ?? binding, output, reanalysisOf,
+      collectionRecovery?.adapter_projection?.owned.path ?? input.adapter_evidence_file);
     const episodeBudget = plan.protocol.policies.budgets.find(budget => budget.id === condition.budget_id)?.episode ?? null;
     return { ...completedEpisodeRecord(raw, result, { episodeBudget }),
       ...(collectionRecoveryReference ? { collection_recovery: collectionRecoveryReference } : {}) };
   }
-  return runBatch({ plan, maximumNewEpisodes, pilotLedgerRoot: input.pilot_ledger_root, analysisRevisionReference, analysisRevision,
+  return runBatch({ plan, maximumNewEpisodes, pilotLedgerRoot: input.pilot_ledger_root, analysisRevisionReference, analysisRevision, collectionRecoveryReference,
     executeEpisode: async ({ slot, runId, budget }) => {
+      assert.ok(!collectionRecovery?.closeout_only, 'Standing zero-send collection recovery cannot execute a subject');
       await verifyExecutionImplementation(implementation);
       if (collectionRecoveryReference)
         collectionRecovery = await verifyCollectionRecovery({ reference: collectionRecoveryReference, plan });
@@ -216,7 +220,8 @@ export async function analyzeBatch({ root, outputDirectory, reanalysis = false }
     const originalBinding = slotBindings.get(slot.slot_id)?.binding ?? bindings.find(b => b.id === slot.case_id);
     const collectionBinding = recovery?.projectedBindings.find(item => item.case_id === slot.case_id)?.binding ?? originalBinding;
     const result = await collect(raw, plan, slot, condition, model, collectionBinding,
-      join(outputDirectory, 'reanalysis', finished.run_id), finished.result.episode_sha256);
+      join(outputDirectory, 'reanalysis', finished.run_id), finished.result.episode_sha256,
+      recovery?.adapter_projection?.owned.path ?? plan.execution.adapter_evidence_file);
     episodes.push(result.bundle.episode);
   }
   const input = { protocol: plan.protocol, episodes }, analysis = scoreExperiment(input);
