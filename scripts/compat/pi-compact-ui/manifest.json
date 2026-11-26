@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "package": "pi-compact-ui",
+  "upstream_version": "0.1.3",
+  "compatibility_version": "0.1.3-yoyo.1",
+  "upstream_url": "https://registry.npmjs.org/pi-compact-ui/-/pi-compact-ui-0.1.3.tgz",
+  "upstream_sha256": "327d89f26209683a35aba970ba89816419fc1fe6639b64d2c9b3a717b7b5c996",
+  "upstream_integrity": "sha512-oBkjTN587wid952T2sY7pDxF9RraXQQfSSaIFxhV2o60wD3eQYUG+7vkq5G3TsdOdhC5ukMYA/03XLerFzI6Hw==",
+  "upstream_license": null,
+  "upstream_files": {
+    "package.json": "a5f319f04fcc0ddeb47c0da5bdd08240598404f96b38dc1fe1baaaab14428f98",
+    "README.md": "01ecce91b629f989542d18b4b1e3c101d69ad6e46c228d67a8303af129782e5f",
+    "index.ts": "bac76ae9ed99a3790d8a728cc6e9b5463927ac427a1462ffe59c6adf9e4d4509"
+  },
+  "patch": "read-renderer.patch",
+  "patch_sha256": "b5b7810ee475bcb3b038e8f0770e18a9543fa532078262814a89548e42c78fda",
+  "result_files": {
+    "README.md": "c6fe64b285e4fd744d468c5e37ff2ea6f6564c8aff3fe67b855373d143b19fce",
+    "index.ts": "8bce09851becbf9730a4e8e6b3a7dba0e55bba7f95e72ac18923c11c112a9675",
+    "package.json": "8bd740a6a44109d18a53515ff404a83037a7f6a77aeb8b30c40d210fba31e805"
+  },
+  "tested_pi_version": "1.6.0",
+  "scope": "Private compatibility build. Only read moves from native delegation to rendering middleware; other six native tool registrations remain unchanged."
+}
