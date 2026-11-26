@@ -17,7 +17,7 @@ import { graphSourceViews, verifyPreparationEvidence, retainedMaterialSelection,
 import { CURRENT_SOURCE_CONTRACT, loadCurrentSourceViews } from './current-source-views.mjs';
 
 export const COLLECTOR_VERSION = '1.2.2';
-export const CURRENT_COLLECTOR_VERSION = '1.3.0';
+export const CURRENT_COLLECTOR_VERSION = '1.3.1';
 const retainedSourceViews = { contract: RETAINED_SOURCE_CONTRACT, graphSourceViews, verifyPreparationEvidence };
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -215,6 +215,105 @@ export function verifiedCodeModeRuntime({ candidate, expected, admission, after 
     assert.deepEqual(pinned(candidate.snapshot.pi.files), pinned(after.files));
     return true;
   } catch { return false; }
+}
+
+// Reviewed Broker owner and metadata-only list branch. Changed producers remain
+// opaque until reviewed; a matching tool name or description is not evidence.
+const notionMetadataProducer = {
+  'src/index.ts': '292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d63',
+  'src/host-skills.ts': 'c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1',
+};
+export function verifiedNotionListRuntime({ candidate, expected, admission, files }) {
+  try {
+    assert.deepEqual(candidate.projection, expected.projection); assert.deepEqual(admission.differences, []);
+    for (const [path, sha256] of Object.entries(notionMetadataProducer)) {
+      const matches = files.filter(file => file.name === path);
+      assert.equal(matches.length, 1); assert.equal(matches[0].sha256, sha256);
+    }
+    for (const [view, root] of [[candidate.snapshot, dirname(candidate.snapshot.build.path)], [candidate.projection, '$BUILD']]) {
+      assert.equal(view.entry_kind, 'pi-sdk'); assert.equal(view.mode, 'broker');
+      const path = root + '/broker/src/index.ts';
+      const owners = view.extensions.filter(extension => extension.tools.includes('notion_list'));
+      assert.equal(owners.length, 1); assert.equal(owners[0].resolved_path, path);
+      assert.equal(owners[0].entry.path, path); assert.equal(owners[0].entry.realpath, path);
+      assert.equal(owners[0].entry.sha256, notionMetadataProducer['src/index.ts']);
+      const declarations = view.tools.all.filter(tool => tool.name === 'notion_list');
+      assert.equal(declarations.length, 1); assert.equal(declarations[0].sourceInfo.path, path);
+      assert.equal(declarations[0].sourceInfo.source, 'cli'); assert.equal(declarations[0].exposure, 'direct');
+      const launch = view.launch_profile.extensions.filter(extension => extension.role === 'broker');
+      assert.equal(launch.length, 1); assert.equal(launch[0].path, path);
+      assert.equal(launch[0].sha256, notionMetadataProducer['src/index.ts']);
+    }
+    return true;
+  } catch { return false; }
+}
+
+/** Only a verified current producer's closed metadata projection is exempt.
+ * The directory match proves metadata identity, not Skill adoption or absence. */
+export function notionMetadataEvidence(tool, { runtime, directories, sources }) {
+  if (tool.name !== 'notion_list' || runtime.status !== 'verified') return null;
+  try {
+    assert.equal(runtime.status, 'verified'); assert.equal(tool.name, 'notion_list'); assert.equal(tool.status, 'pass');
+    assert.equal(tool.execution, 'observed');
+    const keys = (value, allowed, required = allowed) => {
+      assert.ok(object(value) && Object.keys(value).every(key => allowed.includes(key)) && required.every(key => Object.hasOwn(value, key)));
+    };
+    const args = tool.args;
+    keys(args, ['query', 'source', 'limit', 'search_in', 'refresh', 'cursor'], []);
+    assert.ok(args.search_in === undefined || args.search_in === 'metadata');
+    assert.ok(args.query === undefined || typeof args.query === 'string' && args.query.length <= 512);
+    assert.ok(args.source === undefined || typeof args.source === 'string');
+    assert.ok(args.limit === undefined || Number.isSafeInteger(args.limit) && args.limit >= 1 && args.limit <= 100);
+    assert.ok(args.refresh === undefined || typeof args.refresh === 'boolean');
+    assert.ok(args.cursor === undefined || typeof args.cursor === 'string' && /^(0|[1-9][0-9]*)\.[a-f0-9]{64}$/.test(args.cursor));
+    assert.ok(!(args.refresh === true && args.cursor !== undefined));
+    keys(tool.result, ['content', 'details', 'isError'], ['content', 'details']); assert.notEqual(tool.result.isError, true);
+    assert.equal(tool.result.content.length, 1); keys(tool.result.content[0], ['type', 'text']);
+    assert.equal(tool.result.content[0].type, 'text');
+    const result = tool.result.details;
+    keys(result, ['ok', 'state', 'count', 'has_more', 'total_count', 'next_cursor', 'freshness', 'coverage', 'records', 'failures']);
+    assert.equal(result.ok, true); assert.equal(result.state, 'known'); assert.deepEqual(result.failures, []);
+    assert.ok(Array.isArray(result.records)); assert.equal(result.count, result.records.length);
+    assert.ok(finite(result.total_count) && result.total_count >= result.count); assert.equal(typeof result.has_more, 'boolean');
+    assert.ok(result.next_cursor === null || typeof result.next_cursor === 'string' && /^(0|[1-9][0-9]*)\.[a-f0-9]{64}$/.test(result.next_cursor));
+    keys(result.freshness, ['sources']); keys(result.coverage, ['exhaustive', 'sources']);
+    assert.equal(result.coverage.exhaustive, true); assert.ok(result.coverage.sources.length > 0);
+    const matched = [], allowedSources = new Set();
+    for (const coverage of result.coverage.sources) {
+      keys(coverage, ['source', 'exhaustive']); assert.equal(coverage.exhaustive, true);
+      assert.ok(!allowedSources.has(coverage.source)); allowedSources.add(coverage.source);
+      const configured = sources.filter(source => source.type === 'notion' && source.enabled !== false && source.id === coverage.source);
+      assert.equal(configured.length, 1); assert.ok(args.source === undefined || args.source === coverage.source);
+      assert.ok(typeof configured[0].library === 'string' && configured[0].library.length > 0);
+      const observed = directories.filter(item => item.value.library_id === configured[0].library && item.end_sequence < tool.end_sequence);
+      assert.ok(observed.length > 0); matched.push(...observed);
+    }
+    assert.equal(result.freshness.sources.length, allowedSources.size);
+    const freshSources = new Set();
+    for (const fresh of result.freshness.sources) {
+      keys(fresh, ['source', 'policy', 'validated_at', 'age_ms', 'max_age_ms', 'stale']);
+      assert.ok(allowedSources.has(fresh.source) && !freshSources.has(fresh.source)); freshSources.add(fresh.source);
+      assert.ok(['default', 'refresh', 'offline'].includes(fresh.policy));
+      assert.ok(typeof fresh.validated_at === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(fresh.validated_at) && Number.isFinite(Date.parse(fresh.validated_at)));
+      assert.ok(finite(fresh.age_ms) && finite(fresh.max_age_ms)); assert.equal(typeof fresh.stale, 'boolean');
+    }
+    for (const record of result.records) {
+      keys(record, ['id', 'ref', 'kind', 'name', 'description', 'source', 'scope', 'in_default_view', 'availability']);
+      assert.equal(record.kind, 'skill'); assert.equal(record.availability, 'available');
+      assert.equal(typeof record.in_default_view, 'boolean'); assert.ok(allowedSources.has(record.source));
+      const source = sources.find(source => source.id === record.source);
+      const matches = matched.flatMap(item => item.value.library_id === source.library && item.value.scope === record.scope
+        ? item.value.records.filter(row => row.id === record.id && row.kind === record.kind && row.name === record.name && row.description === record.description && row.enabled === true) : []);
+      assert.ok(matches.length > 0);
+      assert.ok(matches.some(row => row.ref === record.ref) || /^sr:[A-Za-z0-9_-]{23}$/.test(record.ref));
+    }
+    const rendered = JSON.parse(tool.result.content[0].text);
+    const compact = { ...result, records: result.records.map(({ id, scope, ...record }) => record) };
+    assert.ok(canonicalJson(rendered) === canonicalJson(result) || canonicalJson(rendered) === canonicalJson(compact));
+    return { tool_call_id: tool.id, kind: 'broker-metadata-only', source_contract: CURRENT_SOURCE_CONTRACT,
+      operation_ids: [...new Set(matched.map(item => item.requestId))],
+      refs: uniqueRefs([...tool.refs, ...runtime.refs, ...matched.map(item => item.ref)]) };
+  } catch { return null; }
 }
 
 function bodySpan(text, proof, defaultHashKey = 'bodySha256') {
@@ -463,7 +562,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       sourceViews = null; notion.errors.push(error.message); problems.push('current_source_contract_unverified');
     }
   } else assert.equal(sourceContract, RETAINED_SOURCE_CONTRACT, 'Unknown source evidence contract');
-  const sdkBodyRows = [];
+  const sdkBodyRows = [], sdkDirectories = [];
   if (episode?.notion) {
     try {
       assert.ok(sourceArtifact && sdkArtifact, 'Notion ledgers are required');
@@ -514,6 +613,10 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       }
       assert.ok(sourceViews, 'Current source interpreter provenance is unavailable');
       const views = sourceViews.graphSourceViews(receipts);
+      for (const entry of views.directories) {
+        const operation = operations.find(item => item.operation_id === entry.requestId);
+        sdkDirectories.push({ ...entry, end_sequence: operation.end_ref.line, ref: receiptRefs.get(entry.requestId) });
+      }
       for (const entry of views.entries) {
         const value = entry.value, output = entry.outputEvidence;
         const body = typeof value.content === 'string' ? value.content : typeof output?.content === 'string' ? output.content : null;
@@ -643,10 +746,33 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     codeModeRuntime.status = 'verified'; codeModeRuntime.refs = [ref(candidate), ref(admission), ref(expected),
       { artifact_id: eventArtifact.id, sha256: eventArtifact.sha256, line: after[0].index + 1 }];
   } catch (error) { codeModeRuntime.reason = error.message; }
+  const metadataRuntime = { status: 'unverified', refs: [], scope: 'reviewed current Broker metadata-only list branch' };
+  let metadataSources = [];
+  if (currentSource && notion.status === 'observed' && tools.some(tool => tool.name === 'notion_list')) try {
+    assert.equal(episode.admission.status, 'accepted_before_task');
+    const candidate = registry.get('candidate-observed'), admission = registry.get('admission-comparison');
+    for (const artifact of [candidate, admission]) assert.ok(artifact && episode.admission.refs.some(item => item.artifact_id === artifact.id && item.sha256 === artifact.sha256));
+    const captured = JSON.parse(fileBytes.get(candidate.id)), comparison = JSON.parse(fileBytes.get(admission.id));
+    const expected = await addFile('collection-provider-binding-expectation', comparison.expected_file.path, comparison.expected_file.sha256);
+    const buildArtifact = await addFile('collection-metadata-build', captured.snapshot.build.path, captured.snapshot.build.sha256);
+    const build = JSON.parse(fileBytes.get(buildArtifact.id)), files = [];
+    for (const name of Object.keys(notionMetadataProducer)) {
+      const declarations = build.packages.broker.files.filter(file => file.path === name); assert.equal(declarations.length, 1);
+      const artifact = await addFile('collection-metadata-producer-' + files.length, join(run.build_root, 'broker', name), declarations[0].sha256, 'implementation');
+      files.push({ name, ...artifact });
+    }
+    assert.ok(verifiedNotionListRuntime({ candidate: captured, expected: JSON.parse(fileBytes.get(expected.id)), admission: comparison, files }));
+    assert.equal(shared.runtime_check.status, 'unchanged'); assert.equal(shared.frozen_artifacts, 'passed');
+    metadataSources = captured.snapshot.broker_config?.sources ?? [];
+    const sourceRef = artifact => ({ artifact_id: artifact.id, sha256: artifact.sha256, line: 1 });
+    metadataRuntime.status = 'verified'; metadataRuntime.refs = uniqueRefs([ref(candidate), ref(admission), ref(expected), ref(buildArtifact),
+      ...files.map(sourceRef), ...notion.refs.map(item => registry.get(item.artifact_id)?.kind === 'implementation'
+        ? sourceRef(registry.get(item.artifact_id)) : item)]);
+  } catch (error) { metadataRuntime.reason = error.message; }
   const evidence = { artifacts: [], selections: [], resource_reads: [], clarifications: turnFacts.clarifications,
     state_events: turnFacts.state_events,
     coverage: { artifacts: 'partial', selections: 'partial', resource_reads: 'partial', ...turnFacts.coverage } };
-  const evidenceRefs = new Map(turnFacts.evidence_refs), unmatchedReads = [], opaqueTools = [];
+  const evidenceRefs = new Map(turnFacts.evidence_refs), unmatchedReads = [], opaqueTools = [], metadataOnlyTools = [];
   const copiedRoot = run.pi_launch?.native_corpus?.root;
   const sourceRoot = binding.skills_root ?? binding.native_skill_root;
   function matchMaterial(bytes, resourcePath = null, owner = null, actualPath = null, turnId = null) {
@@ -708,6 +834,9 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     const delivered = deliveredSourceBodies(tool, tools, sourceViews);
     for (const item of delivered) observeSource({ ...tool, refs: uniqueRefs([...tool.refs, ...(item.refs ?? [])]) }, item.body, item.path, item.owner, null, item.kind, item.source_binding);
     if (delivered.length) continue;
+    const metadata = notionMetadataEvidence(tool, { runtime: metadataRuntime, directories: sdkDirectories,
+      sources: metadataSources });
+    if (metadata) { metadataOnlyTools.push(metadata); tool.refs = uniqueRefs([...tool.refs, ...metadata.refs]); continue; }
     if (tool.name === 'read' && Object.hasOwn(tool.args ?? {}, 'from')) {
       unmatchedReads.push({ tool_call_id: tool.id, path: tool.args.path ?? null, from: tool.args.from ?? null,
         reason: 'Source-backed read has no verified preparation mapping' });
@@ -785,7 +914,8 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       skill_id: row.skill_id, path: row.path, version: row.version, actual_sha256: row.actual_sha256,
       canonical_sha256: row.canonical_sha256, available_from_turn_id: row.available_from_turn_id, event_id: row.event_id, mapping: row.mapping })) },
     evidence, output_checks: outputChecks, tool_lineage_errors: toolResult.errors, unmatched_reads: unmatchedReads, opaque_tools: opaqueTools,
-    code_mode_runtime: codeModeRuntime, tool_containers: tools.filter(tool => tool.container).map(tool => ({ tool_call_id: tool.id, ...tool.container })),
+    code_mode_runtime: codeModeRuntime, metadata_runtime: metadataRuntime, metadata_only_tools: metadataOnlyTools,
+    tool_containers: tools.filter(tool => tool.container).map(tool => ({ tool_call_id: tool.id, ...tool.container })),
     limitations: ['Source consumption requires delivered bytes and independently verified material parity.',
       'Opaque shell or arbitrary tool filesystem access is not inferred from code text or tool count.',
       'No clarification or state callback is synthesized from an expected event.'],
