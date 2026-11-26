@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="239" viewBox="0 0 980 239" role="img" aria-label="Capped time">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font:14px system-ui,sans-serif;fill:#172033}.title{font-size:22px;font-weight:600}.note{font-size:12px;fill:#536176}</style>
+<text x="24" y="32" class="title">Capped time</text>
+<text x="24" y="55" class="note">Fixed family weights; missing values stay unknown. Intervals use independent declared clusters.</text>
+<text x="24" y="102">m0-e0<title>m0-e0</title></text>
+<line x1="300" y1="111" x2="860" y2="111" stroke="#dde3eb"/>
+<rect x="300" y="85" width="122.46783904506667" height="24" rx="3" fill="#3972ae"/>
+<path d="M 300 97 H 860 M 300 91 V 103 M 860 91 V 103" stroke="#172033" fill="none"/>
+<text x="872" y="102">131216</text>
+<text x="24" y="164">m0-e1<title>m0-e1</title></text>
+<line x1="300" y1="173" x2="860" y2="173" stroke="#dde3eb"/>
+<rect x="300" y="147" width="104.89803971173333" height="24" rx="3" fill="#3972ae"/>
+<path d="M 300 159 H 860 M 300 153 V 165 M 860 153 V 165" stroke="#172033" fill="none"/>
+<text x="872" y="164">112391</text>
+<text x="300" y="225" class="note">0</text>
+<text x="860" y="225" class="note" text-anchor="end">600000</text>
+</svg>

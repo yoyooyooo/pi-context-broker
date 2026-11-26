@@ -1,0 +1,2558 @@
+{
+  "version": 1,
+  "kind": "codemode-observed-resource-comparison",
+  "conditions": [
+    {
+      "condition_id": "m0-e0",
+      "environment_id": "broker-free",
+      "code_mode": "free",
+      "observed": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 38256.7302985,
+          "median": 38626.0832085,
+          "total": 229540.381791
+        },
+        "actual_requests": {
+          "mean": 4.666666666666667,
+          "median": 4.5,
+          "total": 28
+        },
+        "input_tokens": {
+          "mean": 21613,
+          "median": 20647.5,
+          "total": 129678
+        },
+        "output_tokens": {
+          "mean": 360.3333333333333,
+          "median": 348.5,
+          "total": 2162
+        }
+      },
+      "per_case": [
+        {
+          "run_id": "standing42-run-2-codemode-24-008",
+          "case_id": "scripts-assets-02-a-n16-r1",
+          "duration_ms": 42481.275333,
+          "actual_requests": 4,
+          "input_tokens": 18035,
+          "output_tokens": 263
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-009",
+          "case_id": "complementary-01-a-n16-r1",
+          "duration_ms": 36414.835374999995,
+          "actual_requests": 5,
+          "input_tokens": 24299,
+          "output_tokens": 496
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-012",
+          "case_id": "explicit-01-a-n16-r1",
+          "duration_ms": 32891.918957999995,
+          "actual_requests": 4,
+          "input_tokens": 18034,
+          "output_tokens": 272
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-016",
+          "case_id": "references-01-a-n16-r1",
+          "duration_ms": 40500.185708000005,
+          "actual_requests": 5,
+          "input_tokens": 23260,
+          "output_tokens": 425
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-017",
+          "case_id": "implicit-01-a-n16-r1",
+          "duration_ms": 38322.483374999996,
+          "actual_requests": 4,
+          "input_tokens": 18027,
+          "output_tokens": 264
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-021",
+          "case_id": "continuation-01-a-n16-r2",
+          "duration_ms": 38929.683042,
+          "actual_requests": 6,
+          "input_tokens": 28023,
+          "output_tokens": 442
+        }
+      ]
+    },
+    {
+      "condition_id": "m0-e1",
+      "environment_id": "native-free",
+      "code_mode": "free",
+      "observed": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 21804.141271,
+          "median": 18729.081063,
+          "total": 130824.847626
+        },
+        "actual_requests": {
+          "mean": 5,
+          "median": 4.0,
+          "total": 30
+        },
+        "input_tokens": {
+          "mean": 20974.666666666668,
+          "median": 16590.0,
+          "total": 125848
+        },
+        "output_tokens": {
+          "mean": 498,
+          "median": 482.5,
+          "total": 2988
+        }
+      },
+      "per_case": [
+        {
+          "run_id": "standing42-run-2-codemode-24-007",
+          "case_id": "scripts-assets-02-a-n16-r1",
+          "duration_ms": 15887.668625,
+          "actual_requests": 4,
+          "input_tokens": 16001,
+          "output_tokens": 353
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-010",
+          "case_id": "complementary-01-a-n16-r1",
+          "duration_ms": 20581.780292000003,
+          "actual_requests": 4,
+          "input_tokens": 17061,
+          "output_tokens": 599
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-011",
+          "case_id": "explicit-01-a-n16-r1",
+          "duration_ms": 14859.107458,
+          "actual_requests": 4,
+          "input_tokens": 16119,
+          "output_tokens": 366
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-015",
+          "case_id": "references-01-a-n16-r1",
+          "duration_ms": 35834.572416999996,
+          "actual_requests": 7,
+          "input_tokens": 30171,
+          "output_tokens": 693
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-018",
+          "case_id": "implicit-01-a-n16-r1",
+          "duration_ms": 16876.381834,
+          "actual_requests": 4,
+          "input_tokens": 16049,
+          "output_tokens": 332
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-022",
+          "case_id": "continuation-01-a-n16-r2",
+          "duration_ms": 26785.337,
+          "actual_requests": 7,
+          "input_tokens": 30447,
+          "output_tokens": 645
+        }
+      ]
+    },
+    {
+      "condition_id": "m0-e2",
+      "environment_id": "broker-off",
+      "code_mode": "off",
+      "observed": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 36982.098430833335,
+          "median": 38965.9928335,
+          "total": 221892.590585
+        },
+        "actual_requests": {
+          "mean": 4.833333333333333,
+          "median": 4.5,
+          "total": 29
+        },
+        "input_tokens": {
+          "mean": 20074,
+          "median": 18518.5,
+          "total": 120444
+        },
+        "output_tokens": {
+          "mean": 322.3333333333333,
+          "median": 314.0,
+          "total": 1934
+        }
+      },
+      "per_case": [
+        {
+          "run_id": "standing42-run-2-codemode-24-001",
+          "case_id": "scripts-assets-02-a-n16-r1",
+          "duration_ms": 27523.511584,
+          "actual_requests": 4,
+          "input_tokens": 16172,
+          "output_tokens": 258
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-004",
+          "case_id": "references-01-a-n16-r1",
+          "duration_ms": 41952.773541999995,
+          "actual_requests": 5,
+          "input_tokens": 20865,
+          "output_tokens": 379
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-005",
+          "case_id": "explicit-01-a-n16-r1",
+          "duration_ms": 31168.197708,
+          "actual_requests": 4,
+          "input_tokens": 16093,
+          "output_tokens": 293
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-013",
+          "case_id": "complementary-01-a-n16-r1",
+          "duration_ms": 41769.29325,
+          "actual_requests": 5,
+          "input_tokens": 21334,
+          "output_tokens": 335
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-020",
+          "case_id": "continuation-01-a-n16-r2",
+          "duration_ms": 43316.122084,
+          "actual_requests": 7,
+          "input_tokens": 29875,
+          "output_tokens": 424
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-024",
+          "case_id": "implicit-01-a-n16-r1",
+          "duration_ms": 36162.692417,
+          "actual_requests": 4,
+          "input_tokens": 16105,
+          "output_tokens": 245
+        }
+      ]
+    },
+    {
+      "condition_id": "m0-e3",
+      "environment_id": "native-off",
+      "code_mode": "off",
+      "observed": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 23646.197180333333,
+          "median": 24713.411645500004,
+          "total": 141877.183082
+        },
+        "actual_requests": {
+          "mean": 4.833333333333333,
+          "median": 4.0,
+          "total": 29
+        },
+        "input_tokens": {
+          "mean": 17741.666666666668,
+          "median": 14508.0,
+          "total": 106450
+        },
+        "output_tokens": {
+          "mean": 486.3333333333333,
+          "median": 465.0,
+          "total": 2918
+        }
+      },
+      "per_case": [
+        {
+          "run_id": "standing42-run-2-codemode-24-002",
+          "case_id": "scripts-assets-02-a-n16-r1",
+          "duration_ms": 22809.711416000002,
+          "actual_requests": 4,
+          "input_tokens": 14080,
+          "output_tokens": 435
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-003",
+          "case_id": "references-01-a-n16-r1",
+          "duration_ms": 28450.971833,
+          "actual_requests": 5,
+          "input_tokens": 18211,
+          "output_tokens": 592
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-006",
+          "case_id": "explicit-01-a-n16-r1",
+          "duration_ms": 15784.790500000001,
+          "actual_requests": 4,
+          "input_tokens": 14223,
+          "output_tokens": 385
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-014",
+          "case_id": "complementary-01-a-n16-r1",
+          "duration_ms": 26617.111875000002,
+          "actual_requests": 4,
+          "input_tokens": 14793,
+          "output_tokens": 495
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-019",
+          "case_id": "continuation-01-a-n16-r2",
+          "duration_ms": 28653.597625,
+          "actual_requests": 8,
+          "input_tokens": 31123,
+          "output_tokens": 676
+        },
+        {
+          "run_id": "standing42-run-2-codemode-24-023",
+          "case_id": "implicit-01-a-n16-r1",
+          "duration_ms": 19560.999832999998,
+          "actual_requests": 4,
+          "input_tokens": 14020,
+          "output_tokens": 335
+        }
+      ]
+    }
+  ],
+  "paired": [
+    {
+      "environment": "broker",
+      "difference": "free minus off",
+      "observed_delta": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 1274.6318676666644,
+          "median": 135.5667080000021,
+          "total": 7647.791205999987
+        },
+        "actual_requests": {
+          "mean": -0.16666666666666666,
+          "median": 0.0,
+          "total": -1
+        },
+        "input_tokens": {
+          "mean": 1539,
+          "median": 1931.5,
+          "total": 9234
+        },
+        "output_tokens": {
+          "mean": 38,
+          "median": 18.5,
+          "total": 228
+        }
+      },
+      "per_case": [
+        {
+          "case_id": "scripts-assets-02-a-n16-r1",
+          "free_run": "standing42-run-2-codemode-24-008",
+          "off_run": "standing42-run-2-codemode-24-001",
+          "duration_ms": 14957.763748999998,
+          "actual_requests": 0,
+          "input_tokens": 1863,
+          "output_tokens": 5
+        },
+        {
+          "case_id": "complementary-01-a-n16-r1",
+          "free_run": "standing42-run-2-codemode-24-009",
+          "off_run": "standing42-run-2-codemode-24-013",
+          "duration_ms": -5354.457875000007,
+          "actual_requests": 0,
+          "input_tokens": 2965,
+          "output_tokens": 161
+        },
+        {
+          "case_id": "explicit-01-a-n16-r1",
+          "free_run": "standing42-run-2-codemode-24-012",
+          "off_run": "standing42-run-2-codemode-24-005",
+          "duration_ms": 1723.721249999995,
+          "actual_requests": 0,
+          "input_tokens": 1941,
+          "output_tokens": -21
+        },
+        {
+          "case_id": "references-01-a-n16-r1",
+          "free_run": "standing42-run-2-codemode-24-016",
+          "off_run": "standing42-run-2-codemode-24-004",
+          "duration_ms": -1452.5878339999908,
+          "actual_requests": 0,
+          "input_tokens": 2395,
+          "output_tokens": 46
+        },
+        {
+          "case_id": "implicit-01-a-n16-r1",
+          "free_run": "standing42-run-2-codemode-24-017",
+          "off_run": "standing42-run-2-codemode-24-024",
+          "duration_ms": 2159.7909579999978,
+          "actual_requests": 0,
+          "input_tokens": 1922,
+          "output_tokens": 19
+        },
+        {
+          "case_id": "continuation-01-a-n16-r2",
+          "free_run": "standing42-run-2-codemode-24-021",
+          "off_run": "standing42-run-2-codemode-24-020",
+          "duration_ms": -4386.439042000005,
+          "actual_requests": -1,
+          "input_tokens": -1852,
+          "output_tokens": 18
+        }
+      ]
+    },
+    {
+      "environment": "native",
+      "difference": "free minus off",
+      "observed_delta": {
+        "n": 6,
+        "duration_ms": {
+          "mean": -1842.0559093333338,
+          "median": -2276.4393119999986,
+          "total": -11052.335456000003
+        },
+        "actual_requests": {
+          "mean": 0.16666666666666666,
+          "median": 0.0,
+          "total": 1
+        },
+        "input_tokens": {
+          "mean": 3233,
+          "median": 1975.0,
+          "total": 19398
+        },
+        "output_tokens": {
+          "mean": 11.666666666666666,
+          "median": -11.0,
+          "total": 70
+        }
+      },
+      "per_case": [
+        {
+          "case_id": "scripts-assets-02-a-n16-r1",
+          "free_run": "standing42-run-2-codemode-24-007",
+          "off_run": "standing42-run-2-codemode-24-002",
+          "duration_ms": -6922.042791000002,
+          "actual_requests": 0,
+          "input_tokens": 1921,
+          "output_tokens": -82
+        },
+        {
+          "case_id": "complementary-01-a-n16-r1",
+          "free_run": "standing42-run-2-codemode-24-010",
+          "off_run": "standing42-run-2-codemode-24-014",
+          "duration_ms": -6035.331582999999,
+          "actual_requests": 0,
+          "input_tokens": 2268,
+          "output_tokens": 104
+        },
+        {
+          "case_id": "explicit-01-a-n16-r1",
+          "free_run": "standing42-run-2-codemode-24-011",
+          "off_run": "standing42-run-2-codemode-24-006",
+          "duration_ms": -925.6830420000006,
+          "actual_requests": 0,
+          "input_tokens": 1896,
+          "output_tokens": -19
+        },
+        {
+          "case_id": "references-01-a-n16-r1",
+          "free_run": "standing42-run-2-codemode-24-015",
+          "off_run": "standing42-run-2-codemode-24-003",
+          "duration_ms": 7383.600583999996,
+          "actual_requests": 2,
+          "input_tokens": 11960,
+          "output_tokens": 101
+        },
+        {
+          "case_id": "implicit-01-a-n16-r1",
+          "free_run": "standing42-run-2-codemode-24-018",
+          "off_run": "standing42-run-2-codemode-24-023",
+          "duration_ms": -2684.6179989999982,
+          "actual_requests": 0,
+          "input_tokens": 2029,
+          "output_tokens": -3
+        },
+        {
+          "case_id": "continuation-01-a-n16-r2",
+          "free_run": "standing42-run-2-codemode-24-022",
+          "off_run": "standing42-run-2-codemode-24-019",
+          "duration_ms": -1868.260624999999,
+          "actual_requests": -1,
+          "input_tokens": -676,
+          "output_tokens": -31
+        }
+      ]
+    }
+  ],
+  "units": "Milliseconds and tokens. Actual requests count observed sent transport attempts.",
+  "interpretation": "Each condition has six synthetic cases with one retained run per case. These descriptive observations do not establish a general product effect. Capped time is success-dependent and can change after grading correction without any change in actual waiting, raw duration, requests, or tokens.",
+  "success_dependent_scores": [
+    {
+      "condition_id": "m0-e0",
+      "capped_time_before": {
+        "case_values": [
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "cluster_id": "complementary-01",
+            "family": "complementary",
+            "known_repeats": 1,
+            "known_sum": 180000,
+            "planned_repeats": 1,
+            "value": 180000,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "continuation-01-a-n16-r2",
+            "cluster_id": "continuation-01",
+            "family": "continuation",
+            "known_repeats": 1,
+            "known_sum": 180000,
+            "planned_repeats": 1,
+            "value": 180000,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "explicit-01-a-n16-r1",
+            "cluster_id": "explicit-01",
+            "family": "explicit",
+            "known_repeats": 1,
+            "known_sum": 180000,
+            "planned_repeats": 1,
+            "value": 180000,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "cluster_id": "implicit-01",
+            "family": "implicit",
+            "known_repeats": 1,
+            "known_sum": 180000,
+            "planned_repeats": 1,
+            "value": 180000,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "cluster_id": "references-01",
+            "family": "references",
+            "known_repeats": 1,
+            "known_sum": 180000,
+            "planned_repeats": 1,
+            "value": 180000,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "scripts-assets-02-a-n16-r1",
+            "cluster_id": "scripts-assets-02",
+            "family": "scripts-assets",
+            "known_repeats": 1,
+            "known_sum": 180000,
+            "planned_repeats": 1,
+            "value": 180000,
+            "weight": 0.16666666666666666
+          }
+        ],
+        "estimate": 180000,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 180000,
+          "lower": 32495.817931258003,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 147504.182068742,
+          "status": "available",
+          "upper": 180000
+        },
+        "p95_success_time": {
+          "denominator": "all valid planned episodes",
+          "status": "not_reached",
+          "value_ms": null
+        },
+        "raw_elapsed_ms": {
+          "case_values": [
+            {
+              "case_id": "complementary-01-a-n16-r1",
+              "cluster_id": "complementary-01",
+              "family": "complementary",
+              "known_repeats": 1,
+              "known_sum": 36414.835374999995,
+              "planned_repeats": 1,
+              "value": 36414.835374999995,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "continuation-01-a-n16-r2",
+              "cluster_id": "continuation-01",
+              "family": "continuation",
+              "known_repeats": 1,
+              "known_sum": 38929.683042,
+              "planned_repeats": 1,
+              "value": 38929.683042,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "explicit-01-a-n16-r1",
+              "cluster_id": "explicit-01",
+              "family": "explicit",
+              "known_repeats": 1,
+              "known_sum": 32891.918957999995,
+              "planned_repeats": 1,
+              "value": 32891.918957999995,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "implicit-01-a-n16-r1",
+              "cluster_id": "implicit-01",
+              "family": "implicit",
+              "known_repeats": 1,
+              "known_sum": 38322.483374999996,
+              "planned_repeats": 1,
+              "value": 38322.483374999996,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "references-01-a-n16-r1",
+              "cluster_id": "references-01",
+              "family": "references",
+              "known_repeats": 1,
+              "known_sum": 40500.185708000005,
+              "planned_repeats": 1,
+              "value": 40500.185708000005,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "scripts-assets-02-a-n16-r1",
+              "cluster_id": "scripts-assets-02",
+              "family": "scripts-assets",
+              "known_repeats": 1,
+              "known_sum": 42481.275333,
+              "planned_repeats": 1,
+              "value": 42481.275333,
+              "weight": 0.16666666666666666
+            }
+          ],
+          "complete": true,
+          "estimate": 38256.7302985,
+          "status": "available"
+        },
+        "status": "available",
+        "tau_ms": 180000
+      },
+      "capped_time_after": {
+        "case_values": [
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "cluster_id": "complementary-01",
+            "family": "complementary",
+            "known_repeats": 1,
+            "known_sum": 180000,
+            "planned_repeats": 1,
+            "value": 180000,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "continuation-01-a-n16-r2",
+            "cluster_id": "continuation-01",
+            "family": "continuation",
+            "known_repeats": 1,
+            "known_sum": 38860.73375,
+            "planned_repeats": 1,
+            "value": 38860.73375,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "explicit-01-a-n16-r1",
+            "cluster_id": "explicit-01",
+            "family": "explicit",
+            "known_repeats": 1,
+            "known_sum": 32866.402875,
+            "planned_repeats": 1,
+            "value": 32866.402875,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "cluster_id": "implicit-01",
+            "family": "implicit",
+            "known_repeats": 1,
+            "known_sum": 38304.150625,
+            "planned_repeats": 1,
+            "value": 38304.150625,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "cluster_id": "references-01",
+            "family": "references",
+            "known_repeats": 1,
+            "known_sum": 40476.925958,
+            "planned_repeats": 1,
+            "value": 40476.925958,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "scripts-assets-02-a-n16-r1",
+            "cluster_id": "scripts-assets-02",
+            "family": "scripts-assets",
+            "known_repeats": 1,
+            "known_sum": 42454.828583,
+            "planned_repeats": 1,
+            "value": 42454.828583,
+            "weight": 0.16666666666666666
+          }
+        ],
+        "estimate": 62160.50696516667,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 62160.50696516667,
+          "lower": 0,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 147504.182068742,
+          "status": "available",
+          "upper": 180000
+        },
+        "p95_success_time": {
+          "denominator": "all valid planned episodes",
+          "status": "not_reached",
+          "value_ms": null
+        },
+        "raw_elapsed_ms": {
+          "case_values": [
+            {
+              "case_id": "complementary-01-a-n16-r1",
+              "cluster_id": "complementary-01",
+              "family": "complementary",
+              "known_repeats": 1,
+              "known_sum": 36414.835374999995,
+              "planned_repeats": 1,
+              "value": 36414.835374999995,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "continuation-01-a-n16-r2",
+              "cluster_id": "continuation-01",
+              "family": "continuation",
+              "known_repeats": 1,
+              "known_sum": 38929.683042,
+              "planned_repeats": 1,
+              "value": 38929.683042,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "explicit-01-a-n16-r1",
+              "cluster_id": "explicit-01",
+              "family": "explicit",
+              "known_repeats": 1,
+              "known_sum": 32891.918957999995,
+              "planned_repeats": 1,
+              "value": 32891.918957999995,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "implicit-01-a-n16-r1",
+              "cluster_id": "implicit-01",
+              "family": "implicit",
+              "known_repeats": 1,
+              "known_sum": 38322.483374999996,
+              "planned_repeats": 1,
+              "value": 38322.483374999996,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "references-01-a-n16-r1",
+              "cluster_id": "references-01",
+              "family": "references",
+              "known_repeats": 1,
+              "known_sum": 40500.185708000005,
+              "planned_repeats": 1,
+              "value": 40500.185708000005,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "scripts-assets-02-a-n16-r1",
+              "cluster_id": "scripts-assets-02",
+              "family": "scripts-assets",
+              "known_repeats": 1,
+              "known_sum": 42481.275333,
+              "planned_repeats": 1,
+              "value": 42481.275333,
+              "weight": 0.16666666666666666
+            }
+          ],
+          "complete": true,
+          "estimate": 38256.7302985,
+          "status": "available"
+        },
+        "status": "available",
+        "tau_ms": 180000
+      },
+      "verified_quality_before": {
+        "counts": {
+          "fail": 1,
+          "invalid_runs": 0,
+          "pass": 0,
+          "planned": 6,
+          "unknown": 5,
+          "unresolved": 0,
+          "unsupported": 0,
+          "valid": 6
+        },
+        "estimate": 0,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 0,
+          "lower": 0,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 0.8194676781596777,
+          "status": "available",
+          "upper": 0.8194676781596777
+        },
+        "planned_verified_lower_bound": 0,
+        "score_percent": {
+          "estimate": 0,
+          "interval": {
+            "adjusted_alpha": 0.0006329113924050638,
+            "assumptions": [
+              "Clusters are independent sampling units.",
+              "Case, family and cluster assignments were fixed before outcomes.",
+              "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+            ],
+            "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+            "cluster_weight_squares": 0.16666666666666669,
+            "clusters": 6,
+            "comparisons": 79,
+            "confidence": 0.95,
+            "effective_clusters": 5.999999999999999,
+            "estimate": 0,
+            "lower": 0,
+            "method": "weighted-cluster-hoeffding-v1",
+            "radius": 81.94676781596777,
+            "status": "available",
+            "upper": 81.94676781596777
+          },
+          "status": "available",
+          "unit": "percent"
+        },
+        "status": "available",
+        "unit": "ratio",
+        "valid_episode_ratio": 0
+      },
+      "verified_quality_after": {
+        "counts": {
+          "fail": 0,
+          "invalid_runs": 0,
+          "pass": 5,
+          "planned": 6,
+          "unknown": 1,
+          "unresolved": 0,
+          "unsupported": 0,
+          "valid": 6
+        },
+        "estimate": 0.8333333333333333,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 0.8333333333333333,
+          "lower": 0.013865655173655567,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 0.8194676781596777,
+          "status": "available",
+          "upper": 1
+        },
+        "planned_verified_lower_bound": 0.8333333333333333,
+        "score_percent": {
+          "estimate": 83.33333333333333,
+          "interval": {
+            "adjusted_alpha": 0.0006329113924050638,
+            "assumptions": [
+              "Clusters are independent sampling units.",
+              "Case, family and cluster assignments were fixed before outcomes.",
+              "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+            ],
+            "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+            "cluster_weight_squares": 0.16666666666666669,
+            "clusters": 6,
+            "comparisons": 79,
+            "confidence": 0.95,
+            "effective_clusters": 5.999999999999999,
+            "estimate": 83.33333333333333,
+            "lower": 1.3865655173655567,
+            "method": "weighted-cluster-hoeffding-v1",
+            "radius": 81.94676781596777,
+            "status": "available",
+            "upper": 100
+          },
+          "status": "available",
+          "unit": "percent"
+        },
+        "status": "available",
+        "unit": "ratio",
+        "valid_episode_ratio": 0.8333333333333334
+      }
+    },
+    {
+      "condition_id": "m0-e1",
+      "capped_time_before": {
+        "case_values": [
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "cluster_id": "complementary-01",
+            "family": "complementary",
+            "known_repeats": 1,
+            "known_sum": 180000,
+            "planned_repeats": 1,
+            "value": 180000,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "continuation-01-a-n16-r2",
+            "cluster_id": "continuation-01",
+            "family": "continuation",
+            "known_repeats": 1,
+            "known_sum": 26694.767125,
+            "planned_repeats": 1,
+            "value": 26694.767125,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "explicit-01-a-n16-r1",
+            "cluster_id": "explicit-01",
+            "family": "explicit",
+            "known_repeats": 1,
+            "known_sum": 14852.953541,
+            "planned_repeats": 1,
+            "value": 14852.953541,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "cluster_id": "implicit-01",
+            "family": "implicit",
+            "known_repeats": 1,
+            "known_sum": 16858.496,
+            "planned_repeats": 1,
+            "value": 16858.496,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "cluster_id": "references-01",
+            "family": "references",
+            "known_repeats": 1,
+            "known_sum": 180000,
+            "planned_repeats": 1,
+            "value": 180000,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "scripts-assets-02-a-n16-r1",
+            "cluster_id": "scripts-assets-02",
+            "family": "scripts-assets",
+            "known_repeats": 1,
+            "known_sum": 15872.596375,
+            "planned_repeats": 1,
+            "value": 15872.596375,
+            "weight": 0.16666666666666666
+          }
+        ],
+        "estimate": 72379.80217350001,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 72379.80217350001,
+          "lower": 0,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 147504.182068742,
+          "status": "available",
+          "upper": 180000
+        },
+        "p95_success_time": {
+          "denominator": "all valid planned episodes",
+          "status": "not_reached",
+          "value_ms": null
+        },
+        "raw_elapsed_ms": {
+          "case_values": [
+            {
+              "case_id": "complementary-01-a-n16-r1",
+              "cluster_id": "complementary-01",
+              "family": "complementary",
+              "known_repeats": 1,
+              "known_sum": 20581.780292000003,
+              "planned_repeats": 1,
+              "value": 20581.780292000003,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "continuation-01-a-n16-r2",
+              "cluster_id": "continuation-01",
+              "family": "continuation",
+              "known_repeats": 1,
+              "known_sum": 26785.337,
+              "planned_repeats": 1,
+              "value": 26785.337,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "explicit-01-a-n16-r1",
+              "cluster_id": "explicit-01",
+              "family": "explicit",
+              "known_repeats": 1,
+              "known_sum": 14859.107458,
+              "planned_repeats": 1,
+              "value": 14859.107458,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "implicit-01-a-n16-r1",
+              "cluster_id": "implicit-01",
+              "family": "implicit",
+              "known_repeats": 1,
+              "known_sum": 16876.381834,
+              "planned_repeats": 1,
+              "value": 16876.381834,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "references-01-a-n16-r1",
+              "cluster_id": "references-01",
+              "family": "references",
+              "known_repeats": 1,
+              "known_sum": 35834.572416999996,
+              "planned_repeats": 1,
+              "value": 35834.572416999996,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "scripts-assets-02-a-n16-r1",
+              "cluster_id": "scripts-assets-02",
+              "family": "scripts-assets",
+              "known_repeats": 1,
+              "known_sum": 15887.668625,
+              "planned_repeats": 1,
+              "value": 15887.668625,
+              "weight": 0.16666666666666666
+            }
+          ],
+          "complete": true,
+          "estimate": 21804.141270999997,
+          "status": "available"
+        },
+        "status": "available",
+        "tau_ms": 180000
+      },
+      "capped_time_after": {
+        "case_values": [
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "cluster_id": "complementary-01",
+            "family": "complementary",
+            "known_repeats": 1,
+            "known_sum": 180000,
+            "planned_repeats": 1,
+            "value": 180000,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "continuation-01-a-n16-r2",
+            "cluster_id": "continuation-01",
+            "family": "continuation",
+            "known_repeats": 1,
+            "known_sum": 26694.767125,
+            "planned_repeats": 1,
+            "value": 26694.767125,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "explicit-01-a-n16-r1",
+            "cluster_id": "explicit-01",
+            "family": "explicit",
+            "known_repeats": 1,
+            "known_sum": 14852.953541,
+            "planned_repeats": 1,
+            "value": 14852.953541,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "cluster_id": "implicit-01",
+            "family": "implicit",
+            "known_repeats": 1,
+            "known_sum": 16858.496,
+            "planned_repeats": 1,
+            "value": 16858.496,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "cluster_id": "references-01",
+            "family": "references",
+            "known_repeats": 1,
+            "known_sum": 180000,
+            "planned_repeats": 1,
+            "value": 180000,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "scripts-assets-02-a-n16-r1",
+            "cluster_id": "scripts-assets-02",
+            "family": "scripts-assets",
+            "known_repeats": 1,
+            "known_sum": 15872.596375,
+            "planned_repeats": 1,
+            "value": 15872.596375,
+            "weight": 0.16666666666666666
+          }
+        ],
+        "estimate": 72379.80217350001,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 72379.80217350001,
+          "lower": 0,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 147504.182068742,
+          "status": "available",
+          "upper": 180000
+        },
+        "p95_success_time": {
+          "denominator": "all valid planned episodes",
+          "status": "not_reached",
+          "value_ms": null
+        },
+        "raw_elapsed_ms": {
+          "case_values": [
+            {
+              "case_id": "complementary-01-a-n16-r1",
+              "cluster_id": "complementary-01",
+              "family": "complementary",
+              "known_repeats": 1,
+              "known_sum": 20581.780292000003,
+              "planned_repeats": 1,
+              "value": 20581.780292000003,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "continuation-01-a-n16-r2",
+              "cluster_id": "continuation-01",
+              "family": "continuation",
+              "known_repeats": 1,
+              "known_sum": 26785.337,
+              "planned_repeats": 1,
+              "value": 26785.337,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "explicit-01-a-n16-r1",
+              "cluster_id": "explicit-01",
+              "family": "explicit",
+              "known_repeats": 1,
+              "known_sum": 14859.107458,
+              "planned_repeats": 1,
+              "value": 14859.107458,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "implicit-01-a-n16-r1",
+              "cluster_id": "implicit-01",
+              "family": "implicit",
+              "known_repeats": 1,
+              "known_sum": 16876.381834,
+              "planned_repeats": 1,
+              "value": 16876.381834,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "references-01-a-n16-r1",
+              "cluster_id": "references-01",
+              "family": "references",
+              "known_repeats": 1,
+              "known_sum": 35834.572416999996,
+              "planned_repeats": 1,
+              "value": 35834.572416999996,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "scripts-assets-02-a-n16-r1",
+              "cluster_id": "scripts-assets-02",
+              "family": "scripts-assets",
+              "known_repeats": 1,
+              "known_sum": 15887.668625,
+              "planned_repeats": 1,
+              "value": 15887.668625,
+              "weight": 0.16666666666666666
+            }
+          ],
+          "complete": true,
+          "estimate": 21804.141270999997,
+          "status": "available"
+        },
+        "status": "available",
+        "tau_ms": 180000
+      },
+      "verified_quality_before": {
+        "counts": {
+          "fail": 0,
+          "invalid_runs": 0,
+          "pass": 4,
+          "planned": 6,
+          "unknown": 2,
+          "unresolved": 0,
+          "unsupported": 0,
+          "valid": 6
+        },
+        "estimate": 0.6666666666666666,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 0.6666666666666666,
+          "lower": 0,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 0.8194676781596777,
+          "status": "available",
+          "upper": 1
+        },
+        "planned_verified_lower_bound": 0.6666666666666666,
+        "score_percent": {
+          "estimate": 66.66666666666666,
+          "interval": {
+            "adjusted_alpha": 0.0006329113924050638,
+            "assumptions": [
+              "Clusters are independent sampling units.",
+              "Case, family and cluster assignments were fixed before outcomes.",
+              "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+            ],
+            "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+            "cluster_weight_squares": 0.16666666666666669,
+            "clusters": 6,
+            "comparisons": 79,
+            "confidence": 0.95,
+            "effective_clusters": 5.999999999999999,
+            "estimate": 66.66666666666666,
+            "lower": 0,
+            "method": "weighted-cluster-hoeffding-v1",
+            "radius": 81.94676781596777,
+            "status": "available",
+            "upper": 100
+          },
+          "status": "available",
+          "unit": "percent"
+        },
+        "status": "available",
+        "unit": "ratio",
+        "valid_episode_ratio": 0.6666666666666666
+      },
+      "verified_quality_after": {
+        "counts": {
+          "fail": 0,
+          "invalid_runs": 0,
+          "pass": 4,
+          "planned": 6,
+          "unknown": 2,
+          "unresolved": 0,
+          "unsupported": 0,
+          "valid": 6
+        },
+        "estimate": 0.6666666666666666,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 0.6666666666666666,
+          "lower": 0,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 0.8194676781596777,
+          "status": "available",
+          "upper": 1
+        },
+        "planned_verified_lower_bound": 0.6666666666666666,
+        "score_percent": {
+          "estimate": 66.66666666666666,
+          "interval": {
+            "adjusted_alpha": 0.0006329113924050638,
+            "assumptions": [
+              "Clusters are independent sampling units.",
+              "Case, family and cluster assignments were fixed before outcomes.",
+              "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+            ],
+            "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+            "cluster_weight_squares": 0.16666666666666669,
+            "clusters": 6,
+            "comparisons": 79,
+            "confidence": 0.95,
+            "effective_clusters": 5.999999999999999,
+            "estimate": 66.66666666666666,
+            "lower": 0,
+            "method": "weighted-cluster-hoeffding-v1",
+            "radius": 81.94676781596777,
+            "status": "available",
+            "upper": 100
+          },
+          "status": "available",
+          "unit": "percent"
+        },
+        "status": "available",
+        "unit": "ratio",
+        "valid_episode_ratio": 0.6666666666666666
+      }
+    },
+    {
+      "condition_id": "m0-e2",
+      "capped_time_before": {
+        "case_values": [
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "cluster_id": "complementary-01",
+            "family": "complementary",
+            "known_repeats": 1,
+            "known_sum": 41760.1535,
+            "planned_repeats": 1,
+            "value": 41760.1535,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "continuation-01-a-n16-r2",
+            "cluster_id": "continuation-01",
+            "family": "continuation",
+            "known_repeats": 1,
+            "known_sum": 43208.939292,
+            "planned_repeats": 1,
+            "value": 43208.939292,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "explicit-01-a-n16-r1",
+            "cluster_id": "explicit-01",
+            "family": "explicit",
+            "known_repeats": 1,
+            "known_sum": 31149.096125,
+            "planned_repeats": 1,
+            "value": 31149.096125,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "cluster_id": "implicit-01",
+            "family": "implicit",
+            "known_repeats": 1,
+            "known_sum": 36132.854792,
+            "planned_repeats": 1,
+            "value": 36132.854792,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "cluster_id": "references-01",
+            "family": "references",
+            "known_repeats": 1,
+            "known_sum": 41930.426625,
+            "planned_repeats": 1,
+            "value": 41930.426625,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "scripts-assets-02-a-n16-r1",
+            "cluster_id": "scripts-assets-02",
+            "family": "scripts-assets",
+            "known_repeats": 1,
+            "known_sum": 27516.255334,
+            "planned_repeats": 1,
+            "value": 27516.255334,
+            "weight": 0.16666666666666666
+          }
+        ],
+        "estimate": 36949.62094466667,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 36949.62094466667,
+          "lower": 0,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 147504.182068742,
+          "status": "available",
+          "upper": 180000
+        },
+        "p95_success_time": {
+          "denominator": "all valid planned episodes",
+          "status": "available",
+          "value_ms": 43208.939292
+        },
+        "raw_elapsed_ms": {
+          "case_values": [
+            {
+              "case_id": "complementary-01-a-n16-r1",
+              "cluster_id": "complementary-01",
+              "family": "complementary",
+              "known_repeats": 1,
+              "known_sum": 41769.29325,
+              "planned_repeats": 1,
+              "value": 41769.29325,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "continuation-01-a-n16-r2",
+              "cluster_id": "continuation-01",
+              "family": "continuation",
+              "known_repeats": 1,
+              "known_sum": 43316.122084,
+              "planned_repeats": 1,
+              "value": 43316.122084,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "explicit-01-a-n16-r1",
+              "cluster_id": "explicit-01",
+              "family": "explicit",
+              "known_repeats": 1,
+              "known_sum": 31168.197708,
+              "planned_repeats": 1,
+              "value": 31168.197708,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "implicit-01-a-n16-r1",
+              "cluster_id": "implicit-01",
+              "family": "implicit",
+              "known_repeats": 1,
+              "known_sum": 36162.692417,
+              "planned_repeats": 1,
+              "value": 36162.692417,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "references-01-a-n16-r1",
+              "cluster_id": "references-01",
+              "family": "references",
+              "known_repeats": 1,
+              "known_sum": 41952.773541999995,
+              "planned_repeats": 1,
+              "value": 41952.773541999995,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "scripts-assets-02-a-n16-r1",
+              "cluster_id": "scripts-assets-02",
+              "family": "scripts-assets",
+              "known_repeats": 1,
+              "known_sum": 27523.511584,
+              "planned_repeats": 1,
+              "value": 27523.511584,
+              "weight": 0.16666666666666666
+            }
+          ],
+          "complete": true,
+          "estimate": 36982.09843083333,
+          "status": "available"
+        },
+        "status": "available",
+        "tau_ms": 180000
+      },
+      "capped_time_after": {
+        "case_values": [
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "cluster_id": "complementary-01",
+            "family": "complementary",
+            "known_repeats": 1,
+            "known_sum": 41760.1535,
+            "planned_repeats": 1,
+            "value": 41760.1535,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "continuation-01-a-n16-r2",
+            "cluster_id": "continuation-01",
+            "family": "continuation",
+            "known_repeats": 1,
+            "known_sum": 43208.939292,
+            "planned_repeats": 1,
+            "value": 43208.939292,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "explicit-01-a-n16-r1",
+            "cluster_id": "explicit-01",
+            "family": "explicit",
+            "known_repeats": 1,
+            "known_sum": 31149.096125,
+            "planned_repeats": 1,
+            "value": 31149.096125,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "cluster_id": "implicit-01",
+            "family": "implicit",
+            "known_repeats": 1,
+            "known_sum": 36132.854792,
+            "planned_repeats": 1,
+            "value": 36132.854792,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "cluster_id": "references-01",
+            "family": "references",
+            "known_repeats": 1,
+            "known_sum": 41930.426625,
+            "planned_repeats": 1,
+            "value": 41930.426625,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "scripts-assets-02-a-n16-r1",
+            "cluster_id": "scripts-assets-02",
+            "family": "scripts-assets",
+            "known_repeats": 1,
+            "known_sum": 27516.255334,
+            "planned_repeats": 1,
+            "value": 27516.255334,
+            "weight": 0.16666666666666666
+          }
+        ],
+        "estimate": 36949.62094466667,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 36949.62094466667,
+          "lower": 0,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 147504.182068742,
+          "status": "available",
+          "upper": 180000
+        },
+        "p95_success_time": {
+          "denominator": "all valid planned episodes",
+          "status": "available",
+          "value_ms": 43208.939292
+        },
+        "raw_elapsed_ms": {
+          "case_values": [
+            {
+              "case_id": "complementary-01-a-n16-r1",
+              "cluster_id": "complementary-01",
+              "family": "complementary",
+              "known_repeats": 1,
+              "known_sum": 41769.29325,
+              "planned_repeats": 1,
+              "value": 41769.29325,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "continuation-01-a-n16-r2",
+              "cluster_id": "continuation-01",
+              "family": "continuation",
+              "known_repeats": 1,
+              "known_sum": 43316.122084,
+              "planned_repeats": 1,
+              "value": 43316.122084,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "explicit-01-a-n16-r1",
+              "cluster_id": "explicit-01",
+              "family": "explicit",
+              "known_repeats": 1,
+              "known_sum": 31168.197708,
+              "planned_repeats": 1,
+              "value": 31168.197708,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "implicit-01-a-n16-r1",
+              "cluster_id": "implicit-01",
+              "family": "implicit",
+              "known_repeats": 1,
+              "known_sum": 36162.692417,
+              "planned_repeats": 1,
+              "value": 36162.692417,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "references-01-a-n16-r1",
+              "cluster_id": "references-01",
+              "family": "references",
+              "known_repeats": 1,
+              "known_sum": 41952.773541999995,
+              "planned_repeats": 1,
+              "value": 41952.773541999995,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "scripts-assets-02-a-n16-r1",
+              "cluster_id": "scripts-assets-02",
+              "family": "scripts-assets",
+              "known_repeats": 1,
+              "known_sum": 27523.511584,
+              "planned_repeats": 1,
+              "value": 27523.511584,
+              "weight": 0.16666666666666666
+            }
+          ],
+          "complete": true,
+          "estimate": 36982.09843083333,
+          "status": "available"
+        },
+        "status": "available",
+        "tau_ms": 180000
+      },
+      "verified_quality_before": {
+        "counts": {
+          "fail": 0,
+          "invalid_runs": 0,
+          "pass": 6,
+          "planned": 6,
+          "unknown": 0,
+          "unresolved": 0,
+          "unsupported": 0,
+          "valid": 6
+        },
+        "estimate": 0.9999999999999999,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 0.9999999999999999,
+          "lower": 0.1805323218403222,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 0.8194676781596777,
+          "status": "available",
+          "upper": 1
+        },
+        "planned_verified_lower_bound": 0.9999999999999999,
+        "score_percent": {
+          "estimate": 99.99999999999999,
+          "interval": {
+            "adjusted_alpha": 0.0006329113924050638,
+            "assumptions": [
+              "Clusters are independent sampling units.",
+              "Case, family and cluster assignments were fixed before outcomes.",
+              "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+            ],
+            "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+            "cluster_weight_squares": 0.16666666666666669,
+            "clusters": 6,
+            "comparisons": 79,
+            "confidence": 0.95,
+            "effective_clusters": 5.999999999999999,
+            "estimate": 99.99999999999999,
+            "lower": 18.05323218403222,
+            "method": "weighted-cluster-hoeffding-v1",
+            "radius": 81.94676781596777,
+            "status": "available",
+            "upper": 100
+          },
+          "status": "available",
+          "unit": "percent"
+        },
+        "status": "available",
+        "unit": "ratio",
+        "valid_episode_ratio": 1
+      },
+      "verified_quality_after": {
+        "counts": {
+          "fail": 0,
+          "invalid_runs": 0,
+          "pass": 6,
+          "planned": 6,
+          "unknown": 0,
+          "unresolved": 0,
+          "unsupported": 0,
+          "valid": 6
+        },
+        "estimate": 0.9999999999999999,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 0.9999999999999999,
+          "lower": 0.1805323218403222,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 0.8194676781596777,
+          "status": "available",
+          "upper": 1
+        },
+        "planned_verified_lower_bound": 0.9999999999999999,
+        "score_percent": {
+          "estimate": 99.99999999999999,
+          "interval": {
+            "adjusted_alpha": 0.0006329113924050638,
+            "assumptions": [
+              "Clusters are independent sampling units.",
+              "Case, family and cluster assignments were fixed before outcomes.",
+              "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+            ],
+            "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+            "cluster_weight_squares": 0.16666666666666669,
+            "clusters": 6,
+            "comparisons": 79,
+            "confidence": 0.95,
+            "effective_clusters": 5.999999999999999,
+            "estimate": 99.99999999999999,
+            "lower": 18.05323218403222,
+            "method": "weighted-cluster-hoeffding-v1",
+            "radius": 81.94676781596777,
+            "status": "available",
+            "upper": 100
+          },
+          "status": "available",
+          "unit": "percent"
+        },
+        "status": "available",
+        "unit": "ratio",
+        "valid_episode_ratio": 1
+      }
+    },
+    {
+      "condition_id": "m0-e3",
+      "capped_time_before": {
+        "case_values": [
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "cluster_id": "complementary-01",
+            "family": "complementary",
+            "known_repeats": 1,
+            "known_sum": 26609.54325,
+            "planned_repeats": 1,
+            "value": 26609.54325,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "continuation-01-a-n16-r2",
+            "cluster_id": "continuation-01",
+            "family": "continuation",
+            "known_repeats": 1,
+            "known_sum": 28551.847916,
+            "planned_repeats": 1,
+            "value": 28551.847916,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "explicit-01-a-n16-r1",
+            "cluster_id": "explicit-01",
+            "family": "explicit",
+            "known_repeats": 1,
+            "known_sum": 15670.021459,
+            "planned_repeats": 1,
+            "value": 15670.021459,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "cluster_id": "implicit-01",
+            "family": "implicit",
+            "known_repeats": 1,
+            "known_sum": 19544.883042,
+            "planned_repeats": 1,
+            "value": 19544.883042,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "cluster_id": "references-01",
+            "family": "references",
+            "known_repeats": 1,
+            "known_sum": 28426.071833,
+            "planned_repeats": 1,
+            "value": 28426.071833,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "scripts-assets-02-a-n16-r1",
+            "cluster_id": "scripts-assets-02",
+            "family": "scripts-assets",
+            "known_repeats": 1,
+            "known_sum": 22790.447333,
+            "planned_repeats": 1,
+            "value": 22790.447333,
+            "weight": 0.16666666666666666
+          }
+        ],
+        "estimate": 23598.802472166666,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 23598.802472166666,
+          "lower": 0,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 147504.182068742,
+          "status": "available",
+          "upper": 171102.98454090866
+        },
+        "p95_success_time": {
+          "denominator": "all valid planned episodes",
+          "status": "available",
+          "value_ms": 28551.847916
+        },
+        "raw_elapsed_ms": {
+          "case_values": [
+            {
+              "case_id": "complementary-01-a-n16-r1",
+              "cluster_id": "complementary-01",
+              "family": "complementary",
+              "known_repeats": 1,
+              "known_sum": 26617.111875000002,
+              "planned_repeats": 1,
+              "value": 26617.111875000002,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "continuation-01-a-n16-r2",
+              "cluster_id": "continuation-01",
+              "family": "continuation",
+              "known_repeats": 1,
+              "known_sum": 28653.597625,
+              "planned_repeats": 1,
+              "value": 28653.597625,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "explicit-01-a-n16-r1",
+              "cluster_id": "explicit-01",
+              "family": "explicit",
+              "known_repeats": 1,
+              "known_sum": 15784.790500000001,
+              "planned_repeats": 1,
+              "value": 15784.790500000001,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "implicit-01-a-n16-r1",
+              "cluster_id": "implicit-01",
+              "family": "implicit",
+              "known_repeats": 1,
+              "known_sum": 19560.999832999998,
+              "planned_repeats": 1,
+              "value": 19560.999832999998,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "references-01-a-n16-r1",
+              "cluster_id": "references-01",
+              "family": "references",
+              "known_repeats": 1,
+              "known_sum": 28450.971833,
+              "planned_repeats": 1,
+              "value": 28450.971833,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "scripts-assets-02-a-n16-r1",
+              "cluster_id": "scripts-assets-02",
+              "family": "scripts-assets",
+              "known_repeats": 1,
+              "known_sum": 22809.711416000002,
+              "planned_repeats": 1,
+              "value": 22809.711416000002,
+              "weight": 0.16666666666666666
+            }
+          ],
+          "complete": true,
+          "estimate": 23646.19718033333,
+          "status": "available"
+        },
+        "status": "available",
+        "tau_ms": 180000
+      },
+      "capped_time_after": {
+        "case_values": [
+          {
+            "case_id": "complementary-01-a-n16-r1",
+            "cluster_id": "complementary-01",
+            "family": "complementary",
+            "known_repeats": 1,
+            "known_sum": 26609.54325,
+            "planned_repeats": 1,
+            "value": 26609.54325,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "continuation-01-a-n16-r2",
+            "cluster_id": "continuation-01",
+            "family": "continuation",
+            "known_repeats": 1,
+            "known_sum": 28551.847916,
+            "planned_repeats": 1,
+            "value": 28551.847916,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "explicit-01-a-n16-r1",
+            "cluster_id": "explicit-01",
+            "family": "explicit",
+            "known_repeats": 1,
+            "known_sum": 15670.021459,
+            "planned_repeats": 1,
+            "value": 15670.021459,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "implicit-01-a-n16-r1",
+            "cluster_id": "implicit-01",
+            "family": "implicit",
+            "known_repeats": 1,
+            "known_sum": 19544.883042,
+            "planned_repeats": 1,
+            "value": 19544.883042,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "references-01-a-n16-r1",
+            "cluster_id": "references-01",
+            "family": "references",
+            "known_repeats": 1,
+            "known_sum": 28426.071833,
+            "planned_repeats": 1,
+            "value": 28426.071833,
+            "weight": 0.16666666666666666
+          },
+          {
+            "case_id": "scripts-assets-02-a-n16-r1",
+            "cluster_id": "scripts-assets-02",
+            "family": "scripts-assets",
+            "known_repeats": 1,
+            "known_sum": 22790.447333,
+            "planned_repeats": 1,
+            "value": 22790.447333,
+            "weight": 0.16666666666666666
+          }
+        ],
+        "estimate": 23598.802472166666,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 23598.802472166666,
+          "lower": 0,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 147504.182068742,
+          "status": "available",
+          "upper": 171102.98454090866
+        },
+        "p95_success_time": {
+          "denominator": "all valid planned episodes",
+          "status": "available",
+          "value_ms": 28551.847916
+        },
+        "raw_elapsed_ms": {
+          "case_values": [
+            {
+              "case_id": "complementary-01-a-n16-r1",
+              "cluster_id": "complementary-01",
+              "family": "complementary",
+              "known_repeats": 1,
+              "known_sum": 26617.111875000002,
+              "planned_repeats": 1,
+              "value": 26617.111875000002,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "continuation-01-a-n16-r2",
+              "cluster_id": "continuation-01",
+              "family": "continuation",
+              "known_repeats": 1,
+              "known_sum": 28653.597625,
+              "planned_repeats": 1,
+              "value": 28653.597625,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "explicit-01-a-n16-r1",
+              "cluster_id": "explicit-01",
+              "family": "explicit",
+              "known_repeats": 1,
+              "known_sum": 15784.790500000001,
+              "planned_repeats": 1,
+              "value": 15784.790500000001,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "implicit-01-a-n16-r1",
+              "cluster_id": "implicit-01",
+              "family": "implicit",
+              "known_repeats": 1,
+              "known_sum": 19560.999832999998,
+              "planned_repeats": 1,
+              "value": 19560.999832999998,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "references-01-a-n16-r1",
+              "cluster_id": "references-01",
+              "family": "references",
+              "known_repeats": 1,
+              "known_sum": 28450.971833,
+              "planned_repeats": 1,
+              "value": 28450.971833,
+              "weight": 0.16666666666666666
+            },
+            {
+              "case_id": "scripts-assets-02-a-n16-r1",
+              "cluster_id": "scripts-assets-02",
+              "family": "scripts-assets",
+              "known_repeats": 1,
+              "known_sum": 22809.711416000002,
+              "planned_repeats": 1,
+              "value": 22809.711416000002,
+              "weight": 0.16666666666666666
+            }
+          ],
+          "complete": true,
+          "estimate": 23646.19718033333,
+          "status": "available"
+        },
+        "status": "available",
+        "tau_ms": 180000
+      },
+      "verified_quality_before": {
+        "counts": {
+          "fail": 0,
+          "invalid_runs": 0,
+          "pass": 6,
+          "planned": 6,
+          "unknown": 0,
+          "unresolved": 0,
+          "unsupported": 0,
+          "valid": 6
+        },
+        "estimate": 0.9999999999999999,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 0.9999999999999999,
+          "lower": 0.1805323218403222,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 0.8194676781596777,
+          "status": "available",
+          "upper": 1
+        },
+        "planned_verified_lower_bound": 0.9999999999999999,
+        "score_percent": {
+          "estimate": 99.99999999999999,
+          "interval": {
+            "adjusted_alpha": 0.0006329113924050638,
+            "assumptions": [
+              "Clusters are independent sampling units.",
+              "Case, family and cluster assignments were fixed before outcomes.",
+              "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+            ],
+            "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+            "cluster_weight_squares": 0.16666666666666669,
+            "clusters": 6,
+            "comparisons": 79,
+            "confidence": 0.95,
+            "effective_clusters": 5.999999999999999,
+            "estimate": 99.99999999999999,
+            "lower": 18.05323218403222,
+            "method": "weighted-cluster-hoeffding-v1",
+            "radius": 81.94676781596777,
+            "status": "available",
+            "upper": 100
+          },
+          "status": "available",
+          "unit": "percent"
+        },
+        "status": "available",
+        "unit": "ratio",
+        "valid_episode_ratio": 1
+      },
+      "verified_quality_after": {
+        "counts": {
+          "fail": 0,
+          "invalid_runs": 0,
+          "pass": 6,
+          "planned": 6,
+          "unknown": 0,
+          "unresolved": 0,
+          "unsupported": 0,
+          "valid": 6
+        },
+        "estimate": 0.9999999999999999,
+        "interval": {
+          "adjusted_alpha": 0.0006329113924050638,
+          "assumptions": [
+            "Clusters are independent sampling units.",
+            "Case, family and cluster assignments were fixed before outcomes.",
+            "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+          ],
+          "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+          "cluster_weight_squares": 0.16666666666666669,
+          "clusters": 6,
+          "comparisons": 79,
+          "confidence": 0.95,
+          "effective_clusters": 5.999999999999999,
+          "estimate": 0.9999999999999999,
+          "lower": 0.1805323218403222,
+          "method": "weighted-cluster-hoeffding-v1",
+          "radius": 0.8194676781596777,
+          "status": "available",
+          "upper": 1
+        },
+        "planned_verified_lower_bound": 0.9999999999999999,
+        "score_percent": {
+          "estimate": 99.99999999999999,
+          "interval": {
+            "adjusted_alpha": 0.0006329113924050638,
+            "assumptions": [
+              "Clusters are independent sampling units.",
+              "Case, family and cluster assignments were fixed before outcomes.",
+              "Within-cluster dependence is unrestricted; repeats add no independent cluster."
+            ],
+            "boundary_method": "hoeffding-no-degenerate-bootstrap-v1",
+            "cluster_weight_squares": 0.16666666666666669,
+            "clusters": 6,
+            "comparisons": 79,
+            "confidence": 0.95,
+            "effective_clusters": 5.999999999999999,
+            "estimate": 99.99999999999999,
+            "lower": 18.05323218403222,
+            "method": "weighted-cluster-hoeffding-v1",
+            "radius": 81.94676781596777,
+            "status": "available",
+            "upper": 100
+          },
+          "status": "available",
+          "unit": "percent"
+        },
+        "status": "available",
+        "unit": "ratio",
+        "valid_episode_ratio": 1
+      }
+    }
+  ],
+  "reanalysis_change": [
+    {
+      "condition_id": "m0-e0",
+      "before": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 38256.7302985,
+          "median": 38626.0832085,
+          "total": 229540.381791
+        },
+        "actual_requests": {
+          "mean": 4.666666666666667,
+          "median": 4.5,
+          "total": 28
+        },
+        "input_tokens": {
+          "mean": 21613,
+          "median": 20647.5,
+          "total": 129678
+        },
+        "output_tokens": {
+          "mean": 360.3333333333333,
+          "median": 348.5,
+          "total": 2162
+        }
+      },
+      "after": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 38256.7302985,
+          "median": 38626.0832085,
+          "total": 229540.381791
+        },
+        "actual_requests": {
+          "mean": 4.666666666666667,
+          "median": 4.5,
+          "total": 28
+        },
+        "input_tokens": {
+          "mean": 21613,
+          "median": 20647.5,
+          "total": 129678
+        },
+        "output_tokens": {
+          "mean": 360.3333333333333,
+          "median": 348.5,
+          "total": 2162
+        }
+      },
+      "delta": {
+        "duration_ms": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0.0
+        },
+        "actual_requests": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0
+        },
+        "input_tokens": {
+          "mean": 0,
+          "median": 0.0,
+          "total": 0
+        },
+        "output_tokens": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "condition_id": "m0-e1",
+      "before": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 21804.141271,
+          "median": 18729.081063,
+          "total": 130824.847626
+        },
+        "actual_requests": {
+          "mean": 5,
+          "median": 4.0,
+          "total": 30
+        },
+        "input_tokens": {
+          "mean": 20974.666666666668,
+          "median": 16590.0,
+          "total": 125848
+        },
+        "output_tokens": {
+          "mean": 498,
+          "median": 482.5,
+          "total": 2988
+        }
+      },
+      "after": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 21804.141271,
+          "median": 18729.081063,
+          "total": 130824.847626
+        },
+        "actual_requests": {
+          "mean": 5,
+          "median": 4.0,
+          "total": 30
+        },
+        "input_tokens": {
+          "mean": 20974.666666666668,
+          "median": 16590.0,
+          "total": 125848
+        },
+        "output_tokens": {
+          "mean": 498,
+          "median": 482.5,
+          "total": 2988
+        }
+      },
+      "delta": {
+        "duration_ms": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0.0
+        },
+        "actual_requests": {
+          "mean": 0,
+          "median": 0.0,
+          "total": 0
+        },
+        "input_tokens": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0
+        },
+        "output_tokens": {
+          "mean": 0,
+          "median": 0.0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "condition_id": "m0-e2",
+      "before": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 36982.098430833335,
+          "median": 38965.9928335,
+          "total": 221892.590585
+        },
+        "actual_requests": {
+          "mean": 4.833333333333333,
+          "median": 4.5,
+          "total": 29
+        },
+        "input_tokens": {
+          "mean": 20074,
+          "median": 18518.5,
+          "total": 120444
+        },
+        "output_tokens": {
+          "mean": 322.3333333333333,
+          "median": 314.0,
+          "total": 1934
+        }
+      },
+      "after": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 36982.098430833335,
+          "median": 38965.9928335,
+          "total": 221892.590585
+        },
+        "actual_requests": {
+          "mean": 4.833333333333333,
+          "median": 4.5,
+          "total": 29
+        },
+        "input_tokens": {
+          "mean": 20074,
+          "median": 18518.5,
+          "total": 120444
+        },
+        "output_tokens": {
+          "mean": 322.3333333333333,
+          "median": 314.0,
+          "total": 1934
+        }
+      },
+      "delta": {
+        "duration_ms": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0.0
+        },
+        "actual_requests": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0
+        },
+        "input_tokens": {
+          "mean": 0,
+          "median": 0.0,
+          "total": 0
+        },
+        "output_tokens": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "condition_id": "m0-e3",
+      "before": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 23646.197180333333,
+          "median": 24713.411645500004,
+          "total": 141877.183082
+        },
+        "actual_requests": {
+          "mean": 4.833333333333333,
+          "median": 4.0,
+          "total": 29
+        },
+        "input_tokens": {
+          "mean": 17741.666666666668,
+          "median": 14508.0,
+          "total": 106450
+        },
+        "output_tokens": {
+          "mean": 486.3333333333333,
+          "median": 465.0,
+          "total": 2918
+        }
+      },
+      "after": {
+        "n": 6,
+        "duration_ms": {
+          "mean": 23646.197180333333,
+          "median": 24713.411645500004,
+          "total": 141877.183082
+        },
+        "actual_requests": {
+          "mean": 4.833333333333333,
+          "median": 4.0,
+          "total": 29
+        },
+        "input_tokens": {
+          "mean": 17741.666666666668,
+          "median": 14508.0,
+          "total": 106450
+        },
+        "output_tokens": {
+          "mean": 486.3333333333333,
+          "median": 465.0,
+          "total": 2918
+        }
+      },
+      "delta": {
+        "duration_ms": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0.0
+        },
+        "actual_requests": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0
+        },
+        "input_tokens": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0
+        },
+        "output_tokens": {
+          "mean": 0.0,
+          "median": 0.0,
+          "total": 0
+        }
+      }
+    }
+  ],
+  "status": "unchanged",
+  "errors": []
+}
