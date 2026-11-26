@@ -8,6 +8,7 @@ import { installHostSkills, type HostSkills, type HostSkillOptions } from "../sr
 import { SourceError, sourceFailureMessage } from "../src/notion-source";
 import { createActivationFeedback } from "../src/activation-feedback";
 import { createLibrarySelection } from "../src/library-selection";
+import { CONTENT_SEARCH_TIMEOUT_MS } from "../src/content-search";
 import { buildCliGuidance, buildInjectedContextMessage, installSkillGuidance } from "../src/index";
 import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { createOmpHostAdapter } from "../src/omp-host-adapter";
@@ -907,6 +908,164 @@ test("Pi preparation shows a compact loading row without queueing a session mess
   expect(widgets.size).toBe(0);
   late!({ value: f.root }); expect(entries).toHaveLength(1);
   expect(messages).toEqual([]);
+});
+
+for (const boundary of ["metadata", "use", "scalar preparation", "source native read"] as const)
+for (const stop of ["deadline", "abort"] as const)
+test(`public Broker ${boundary} settles on ${stop} without waiting for a non-cooperative producer`, async () => {
+  const f = await fixture(true), operation = new AbortController();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  let hold = false, sourceSignal: AbortSignal | undefined, nativeCalls = 0, aborts = 0;
+  f.ctx.abort = () => { aborts++; operation.abort(); };
+  const adapter = createPiHostAdapter(f.api);
+  let executeRead: NativeReadExecutor | undefined;
+  adapter.registerReadExecutor = execute => { executeRead = execute; return () => true; };
+  const h = await f.install(async (purpose, signal, policy) => {
+    policy?.observeEffects?.(noConsumptionWrites());
+    if (hold && boundary !== "metadata" && boundary !== "source native read") {
+      sourceSignal = signal; entered.resolve(); await release.promise;
+    }
+    return [{ ...f.graph(purpose), effects: noConsumptionWrites() }];
+  }, { getRecords: async () => {
+    if (hold && boundary === "metadata") { entered.resolve(); await release.promise; }
+    return { records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined })), failures: [] };
+  } }, adapter);
+  await h.host.refresh(f.ctx);
+  const history = JSON.stringify(f.session.entries);
+  hold = true;
+  const refresh = boundary === "metadata" ? h.host.refresh(f.ctx) : undefined;
+  const nativeTimeout = globalThis.setTimeout;
+  const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) =>
+    nativeTimeout(callback, delay === 60_000 && stop === "deadline" ? 15 : delay, ...args));
+  let pending: Promise<{ error: unknown } | { value: unknown }> | undefined;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    if (!executeRead) throw new Error("Expected native read boundary");
+    const call = boundary === "metadata" ? h.search.execute("bounded-tool", {}, operation.signal, undefined, f.ctx)
+      : boundary === "use" ? h.tool.execute("bounded-tool", { ref: f.root.ref }, operation.signal, undefined, f.ctx)
+      : executeRead({ path: f.root.ref }, f.ctx, operation.signal, async (_input, signal) => {
+        nativeCalls++;
+        if (boundary === "source native read") { sourceSignal = signal; entered.resolve(); await release.promise; }
+        return { content: [{ type: "text", text: f.root.body! }] };
+      }, "bounded-tool");
+    pending = call.then(value => ({ value }), error => ({ error }));
+    await entered.promise;
+    // Source inspection can admit its fixed selection before the native reader
+    // runs. Timeout must preserve that prior fact and add no later delivery.
+    const admitted = f.persisted.slice();
+    expect(admitted).toEqual(boundary === "source native read" ? ["extend"] : []);
+    if (stop === "abort") operation.abort();
+    const result = await Promise.race([pending, new Promise<undefined>(resolve => { watchdog = nativeTimeout(() => resolve(undefined), 100); })]);
+    expect(result).toBeDefined();
+    if (!result || !("error" in result)) throw new Error("Broker acquisition must settle before its producer is released");
+    expect(result.error).toMatchObject({ code: stop === "abort" ? "SOURCE_ACTIVATION_CANCELLED" : "SOURCE_PREPARATION_TIMEOUT" });
+    if (boundary !== "metadata") expect(sourceSignal?.aborted).toBe(true);
+    expect(operation.signal.aborted).toBe(stop === "abort"); expect(aborts).toBe(0);
+    expect(nativeCalls).toBe(boundary === "source native read" ? 1 : 0);
+    expect(f.persisted).toEqual(admitted); expect(JSON.stringify(f.session.entries)).toBe(history);
+    release.resolve(); await refresh;
+    await new Promise(resolve => nativeTimeout(resolve, 0));
+    expect(f.persisted).toEqual(admitted); expect(JSON.stringify(f.session.entries)).toBe(history);
+    const late = await f.emit("tool_result", { toolName: "read", toolCallId: "bounded-tool", input: { path: f.root.ref },
+      content: [{ type: "text", text: f.root.body! }], isError: false }, f.ctx);
+    expect(late.every(value => value === undefined)).toBe(true);
+    hold = false;
+    expect((await h.search.execute("after-bounded-tool", { query: "root" }, undefined, undefined, f.ctx)).content).toBeDefined();
+  } finally {
+    if (watchdog) clearTimeout(watchdog);
+    release.resolve(); await pending; await refresh;
+    timeout.mockRestore(); await f.emit("session_shutdown", {}, f.ctx);
+  }
+});
+
+for (const mode of ["metadata", "content", "cli source"] as const)
+for (const stop of ["deadline", "abort"] as const)
+test(`public Broker ${mode} bounds Library selection on ${stop} before remote dispatch`, async () => {
+  const f = await fixture(true), operation = new AbortController();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const library = createLibrarySelection({ sources: [] });
+  f.sources[0]!.library = "1031b73d-3a2f-589c-9bdb-ebb50a7eb063";
+  f.api.getActiveTools = () => ["read", "bash", "notion_ctl"];
+  const h = await f.install(undefined, { librarySelection: library });
+  await h.host.refresh(f.ctx);
+  const selected = spyOn(library, "selected").mockImplementation(async () => { entered.resolve(); await release.promise; return undefined; });
+  const nativeTimeout = globalThis.setTimeout, budgets: number[] = [];
+  const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
+    if (delay === 60_000 || delay === CONTENT_SEARCH_TIMEOUT_MS) budgets.push(delay);
+    return nativeTimeout(callback, stop === "deadline" && (delay === 60_000 || delay === CONTENT_SEARCH_TIMEOUT_MS) ? 15 : delay, ...args);
+  });
+  let pending: Promise<{ error: unknown } | { value: unknown }> | undefined;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const call = mode === "cli source" ? h.graphTool!.execute("held-library", { cli_source: null }, operation.signal, undefined, f.ctx)
+      : h.search.execute("held-library", mode === "content" ? { search_in: "content", query: "needle" } : {}, operation.signal, undefined, f.ctx);
+    pending = call.then(value => ({ value }), error => ({ error }));
+    await entered.promise;
+    if (stop === "abort") operation.abort();
+    const result = await Promise.race([pending, new Promise<undefined>(resolve => { watchdog = nativeTimeout(() => resolve(undefined), 100); })]);
+    expect(result).toBeDefined();
+    if (!result || !("error" in result)) throw new Error("Library selection must settle before its producer is released");
+    expect(result.error).toMatchObject({ code: mode === "content" ? stop === "abort" ? "SOURCE_CANCELLED" : "CONTENT_SEARCH_TIMEOUT"
+      : stop === "abort" ? "SOURCE_ACTIVATION_CANCELLED" : "SOURCE_PREPARATION_TIMEOUT" });
+    expect(budgets).toContain(mode === "content" ? CONTENT_SEARCH_TIMEOUT_MS : 60_000);
+    expect(f.calls).toEqual([]); expect(f.persisted).toEqual([]); expect(operation.signal.aborted).toBe(stop === "abort");
+    release.resolve(); await new Promise(resolve => nativeTimeout(resolve, 0));
+    expect(f.calls).toEqual([]); expect(f.persisted).toEqual([]); expect(f.session.entries).toEqual([]);
+  } finally {
+    if (watchdog) clearTimeout(watchdog);
+    release.resolve(); await pending;
+    selected.mockRestore(); timeout.mockRestore(); await f.emit("session_shutdown", {}, f.ctx);
+  }
+});
+
+test("public Broker read leaves an ordinary native reader's arguments, result and execution budget intact", async () => {
+  const f = await fixture(true), adapter = createPiHostAdapter(f.api);
+  let executeRead: NativeReadExecutor | undefined;
+  adapter.registerReadExecutor = execute => { executeRead = execute; return () => true; };
+  await f.install(undefined, {}, adapter);
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const input = { path: join(f.ctx.cwd!, "ordinary.txt"), offset: 2, limit: 7, nativeOption: true };
+  const output = { content: [{ type: "text" as const, text: "Native-owned output" }], details: { original: true } };
+  const nativeTimeout = globalThis.setTimeout;
+  const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => nativeTimeout(callback, delay === 60_000 ? 10 : delay, ...args));
+  let pending: Promise<unknown> | undefined, settled = false;
+  try {
+    if (!executeRead) throw new Error("Expected native read boundary");
+    pending = executeRead(input, f.ctx, undefined, async actual => { expect(actual).toBe(input); entered.resolve(); await release.promise; return output; }, "ordinary-read")
+      .finally(() => { settled = true; });
+    await entered.promise; await new Promise(resolve => nativeTimeout(resolve, 25));
+    expect(settled).toBe(false);
+    release.resolve(); expect(await pending).toBe(output);
+    expect(f.calls).toEqual([]); expect(f.persisted).toEqual([]);
+  } finally { release.resolve(); await pending; timeout.mockRestore(); await f.emit("session_shutdown", {}, f.ctx); }
+});
+
+for (const stop of ["deadline", "abort"] as const)
+test(`public Broker fallback read hook settles on ${stop} if native executor ownership is unavailable`, async () => {
+  const f = await fixture(true), operation = new AbortController();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  f.ctx.signal = operation.signal;
+  const h = await f.install(async purpose => { entered.resolve(); await release.promise; return [f.graph(purpose)]; });
+  await h.host.refresh(f.ctx);
+  const nativeTimeout = globalThis.setTimeout;
+  const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) =>
+    nativeTimeout(callback, delay === 60_000 && stop === "deadline" ? 15 : delay, ...args));
+  const input = { path: f.root.ref! }, original = { ...input };
+  const pending = f.emit("tool_call", { toolName: "read", toolCallId: "fallback-read", input }, f.ctx);
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await entered.promise;
+    if (stop === "abort") operation.abort();
+    const result = await Promise.race([pending, new Promise<undefined>(resolve => { watchdog = nativeTimeout(() => resolve(undefined), 100); })]);
+    expect(result).toContainEqual(expect.objectContaining({ block: true, admission: expect.objectContaining({
+      code: stop === "abort" ? "SOURCE_ACTIVATION_CANCELLED" : "SOURCE_PREPARATION_TIMEOUT", signal_aborted: true,
+    }) }));
+    expect(input).toEqual(original); expect(f.persisted).toEqual([]);
+    release.resolve(); await new Promise(resolve => nativeTimeout(resolve, 0));
+    expect(f.persisted).toEqual([]);
+    expect(await f.emit("tool_result", { toolName: "read", toolCallId: "fallback-read", input,
+      content: [{ type: "text", text: f.root.body! }], isError: false }, f.ctx)).toEqual([undefined]);
+  } finally { if (watchdog) clearTimeout(watchdog); release.resolve(); await pending; timeout.mockRestore(); await f.emit("session_shutdown", {}, f.ctx); }
 });
 
 test("exact use survives unrelated discovery errors while discovery remains failed", async () => {

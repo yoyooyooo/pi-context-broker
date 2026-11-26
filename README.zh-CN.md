@@ -36,7 +36,7 @@ Broker 的请求校验需要 Undici 提供实际发送的正文分块诊断，No
 
 npm 发布包与当前 `next` 源码可能不同。开发或试用未发布改动请遵循[隔离开发指南](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/isolated-development.md)，源码配对、构建和独立应用状态统一由该入口说明。
 
-日用 `next` 时，把已合入的精确 CLI/Broker 配对构建为独立安装包，放在开发 checkout 之外的稳定目录。归档身份、package 来源切换和新 Pi 进程核对见 [next 安装指南](./docs/next-worktree-delivery.md)。临时验证通过 `pi -ne -e /absolute/task/extension.ts` 加载候选，保持日用注册不变。
+日用 `next` 时，把已合入的精确 CLI/Broker 配对构建为独立安装包，放在开发 checkout 之外的稳定目录。归档身份、package 来源切换和新 Pi 进程核对见 [next 安装指南](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/next-worktree-delivery.md)。临时验证通过 `pi -ne -e /absolute/task/extension.ts` 加载候选，保持日用注册不变。
 
 可以先完成下方[本地快速开始](#快速开始)，也可以直接[连接已有 Notion 库](#连接-notion-库)。
 
@@ -196,7 +196,7 @@ Pi 按需发现的 `notion_ctl` 还管理当前 Notion 工作集。`working_set:
 
 ## 选择与会话行为
 
-Pi 在宿主创建 agent operation 后，于可取消的 `context` 阶段准备选中内容。准备期间可继续编辑和排队输入；原生编辑器保留 running 与 **Stop**。点击 **Stop**、按 Escape 或发送 RPC `abort` 会取消本轮。每次模型请求前的 context 阶段，Broker 的元数据等待、正文准备与恢复共用最多 60 秒预算。准备成功后，首个 provider 请求包含原提示词、图片及完整选中 Skill 正文。Broker 自身失败或超时只给出 warning，继续原用户请求，不注入失败或不完整的 Skill 内容，也不宣称已经 loaded。切换会话仍阻止迟到结果进入新会话。
+Pi 在宿主创建 agent operation 后，于可取消的 `context` 阶段准备选中内容。准备期间可继续编辑和排队输入；原生编辑器保留 running 与 **Stop**。点击 **Stop**、按 Escape 或发送 RPC `abort` 会取消本轮。每次模型请求前的 context 阶段，Broker 的元数据等待、正文准备与恢复共用最多 60 秒预算。准备成功后，首个 provider 请求包含原提示词、图片及完整选中 Skill 正文。Broker 自身失败或超时只给出 warning，继续原用户请求，不注入失败或不完整的 Skill 内容，也不宣称已经 loaded。切换会话仍阻止迟到结果进入新会话。Broker 的目录查询、Skill 加载、来源单项 read 和 CLI scope 验证也各有 60 秒边界；内容搜索沿用 360 秒预算，资源 batch 沿用调用预算，普通 read 保持宿主原生执行合同。
 
 Pi 仅在 `after_provider_response` 收到 2xx 响应头，且完整正文与本次请求的固定选择匹配后，才确认 Skill 为 active。这只表示逻辑上的请求接受，不表示模型响应已经完成，也不是最终 wire 投递。普通 `openai-completions` 的 wire 证明是单独的 Node Undici 实体哈希核对；其他传输不会被记成 wire 已确认。缓存字节和 ready 准备结果都不能单独证明 active。
 

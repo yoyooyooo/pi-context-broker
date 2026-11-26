@@ -11,13 +11,13 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "6a4dc110b85f3c5584c2ab3bbb6ae21b4acc1abe352a08e7f3fc4c15d2317519",
+    "packages/context-broker/src/host-skills.ts": "395617ddc0e879abfcd10df93515437587a9c130731227d01011e4a3d6a33700",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
-    "packages/context-broker/scripts/host-prepare.test.ts": "b8e7c7bd31145f59419a3b0dab11018becf7194261b5f67852b4d38e763697fa",
+    "packages/context-broker/scripts/host-prepare.test.ts": "b53edafa76a27e9ac809277472855d2b90ed730f1fcd12dbc8d22f58bbf94268",
     "scripts/check-consumer-observation-mutations.mjs": "3ee2b6cc2909687ad54b619eff64b5722cfae5ead0c7a12c21bd013f8157801f",
     "packages/context-broker/scripts/host-refresh.test.ts": "92a34ff905b50f1586133c1e0863ca4750e64d67dfad9fbb64b23ef373711fc5",
-    "packages/context-broker/scripts/resource-read-host.test.ts": "1411774432d57f3cfff2a514d5d9cf237ae4b84f8479b519491bbea67280317d",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "7e7104c90791aa5cc34e65db4cf0d78d358768769543f5fb155a2e72284562b1",
     "packages/context-broker/scripts/fixtures/active-notion-session.ts": "26132aa2f28fbb21a8586bb102abbd41907922e1eb9ced6da659369346c25f8e",
     "packages/context-broker/src/content-publication.ts": "0dbb3fb6e12798474d08856649ebb4282483b7241e9830ac3f55daef81ddd4f8",
     "packages/context-broker/src/content-search.ts": "04587a09c4cc526851a010804e01ae200c53ecea10da5591002fadbfb071f6fa",
@@ -88,7 +88,8 @@
         "graphPreparation publication and commit checks",
         "host lifecycle generation and cancellation",
         "host-skills.ts warnAndRetire and skill-preparation.ts withPreparationDeadline retire an unconfirmed producer while original publication guards remain; concrete timeout behavior outside finite actions",
-        "index.ts ownCatalog/session_shutdown/publishCatalog retain signal and exact-entry publication fences while shutdown no longer joins uncooperative producers; concrete lifecycle obligation"
+        "index.ts ownCatalog/session_shutdown/publishCatalog retain signal and exact-entry publication fences while shutdown no longer joins uncooperative producers; concrete lifecycle obligation",
+        "host-skills.ts bounded list/use/read/cli_source waiters retain original source-publication fences and detach ignored cancellation; runtime wait behavior outside finite actions"
       ],
       "replays": [
         "F7",
@@ -96,7 +97,8 @@
         "retired session/cancelled operation",
         "host-content-search.test.ts: whole-result publication and independent waiters are concrete extension obligations; existing finite state variables are not expanded",
         "host-prepare.test.ts and nonblocking-context.test.ts: non-cooperative context producers time out, late results cannot publish, and the original user request is not aborted",
-        "host-refresh.test.ts: production index shutdown completes with a suspended catalog; its late result is rejected without branch or notification publication"
+        "host-refresh.test.ts: production index shutdown completes with a suspended catalog; its late result is rejected without branch or notification publication",
+        "host-prepare.test.ts and resource-read-host.test.ts: public deadline/Stop detaches non-cooperative producers before release and forbids late reference/receipt publication"
       ],
       "negative": "ReadRace.generation-negative.cfg"
     }
@@ -262,6 +264,15 @@
         "scalar-resource-read-host.test.ts"
       ],
       "contract": "Broker failures retire unconfirmed instructions and continue original user input with a warning while keeping qualification, cancellation, exact identity, closure and provider-persistence guards. The context stage before each model request has one shared production 60-second deadline; native queue messages retain their accepted scope and images. Known payload slots and receipt spans are repaired without rewriting arbitrary user text or provider fields. Unknown schemas receive no native repair or wire proof; exact entity confirmation remains OpenAI-completions/Undici only. Compact ready/loaded/read feedback is display-only. These are concrete obligations, not new Availability/ReadRace variables or actions. Index shutdown retires catalog ownership without joining non-cooperative producers; original signal and publication guards remain in force."
+    },
+    {
+      "name": "public Broker tool deadlines and native idle cancellation",
+      "tests": [
+        "host-prepare.test.ts",
+        "resource-read-host.test.ts",
+        "host-content-search.test.ts"
+      ],
+      "contract": "Use the same existing deadline race for Broker metadata/use, cli_source and scalar read at 60000ms, preserve content search 360000ms and batch requested timeBudgetMs, and settle on caller cancellation without waiting for a producer. Ordinary native read keeps its execution contract. Source instructions, refs, receipts and activation remain subject to original child-signal/publication guards. Pi idle behavior, timers and non-cooperative Promise termination are concrete execution obligations, not Availability/ReadRace finite variables."
     }
   ],
   "current_review": {
@@ -461,6 +472,23 @@
       ],
       "proof_limit": "Finite model/config/view bytes, bounds, cases, independent expected_rules, negative configurations, tool lock and all mutation targets are unchanged. Native queue order, image preservation, wall-clock deadlines, display rendering and known-provider payload repair are concrete implementation obligations outside the finite variables. Unknown provider shapes receive no guessed native repair or wire proof and rely on the earlier safe logical context. Exact entity confirmation remains limited to the existing OpenAI-completions/Undici ledger. Reviewed hashes bind these bytes, not implementation refinement, live Notion, actual Pi rendering or model task success; execute the existing formal, actual-guard and runtime gates separately.",
       "shutdown": "Reviewed index ownCatalog and session_shutdown: shutdown advances refreshGeneration, aborts the catalog owner and clears catalog references without joining uncooperative producers. The unused pendingCatalogs Set is removed; the returned original promise still has a rejection observer, checks its combined signal before/after acquisition, and publishCatalog retains owner plus exact-entry fences. Production-index host-refresh replay holds the SDK list operation past shutdown, requires bounded shutdown while the producer is unfinished, then verifies late tool rejection and no new branch entry or notification."
+    },
+    "pi_public_tool_deadlines": {
+      "reviewed_from": "9eae1bf2d806ddb219149e1971331f4d2e23be01",
+      "scope": "Reviewed the public list/use execute boundaries, cli_source root verification, scalar read executor and fallback tool_call hook, batch resource acquisition and actual added assertions. Reuses skill-preparation.withPreparationDeadline without a second lifecycle framework. The installed Pi 1.6.0 runner awaits tool.execute directly; AgentSession.abort aborts the signal and then awaits idle, so a signal alone cannot detach a non-cooperative producer.",
+      "budgets": "Metadata listing, Skill use, CLI scope verification and Broker-owned scalar read have independent 60000ms operation bounds. Content search retains 360000ms and CONTENT_SEARCH_TIMEOUT, with the initial Library resolution now inside the bound. Resource batches use their unchanged normalized timeBudgetMs, including lookup and acquisition, and keep RESOURCE_TIME_BUDGET. These are independent public-operation bounds, not a single deadline across a multi-request agent turn. OMP interactive commands and its existing headless 25-second guard retain their separate paths.",
+      "cancellation_and_publication": "Both caller/lifecycle cancellation and deadline race the entire owned acquisition. Timeout aborts only the child signal; user Stop keeps its original cancellation meaning. Existing graphPreparation, preparation commit, qualification, exact source/scope, generation, fixed-resource, branch and receipt guards continue to receive that child signal. New checks after Library/metadata awaits stop late dispatch or candidate-reference issuance. Failure does not call ctx.abort, manufacture source bytes or create an activation proof.",
+      "native_read": "The scalar executor bounds Broker preparation plus its owned native read and clears pendingNativeReads/pendingResourceReads on interruption. If prepareRead identifies an ordinary file, its original input and native result pass through outside this execution bound. NativeReadResult excludes undefined, so the ordinary sentinel cannot rerun a legitimate owned delegate. The fallback tool_call acquisition is bounded when native executor registration or ownership is unavailable. A complete fixed inspection selection admitted before native I/O remains a prior fact; interruption adds no successful read receipt or active proof and a late completion cannot make another commit.",
+      "errors_and_effects": "Content and resource timeout/cancellation retain their public codes. Existing use/prepared-read/batch consumption failures combine observed effects and preserve unknown rather than inventing a zero-write claim. Metadata and CLI scope resolution do not fabricate consumption effects. Ordinary tool failure allows the model conversation to continue; it is not a host operation abort.",
+      "replays": [
+        "host-prepare.test.ts: non-cooperative metadata, graph preparation, owned native read and initial Library selection; deadline and caller abort must settle before producer release, preserve prior state and forbid late receipt/commit publication",
+        "host-prepare.test.ts: metadata/content/cli_source choose their exact operation budget; content retains SOURCE_CANCELLED/CONTENT_SEARCH_TIMEOUT; fallback read hook is covered when native executor ownership is unavailable",
+        "host-prepare.test.ts: ordinary native read retains identical input/result objects and its own execution duration, while subsequent Broker operations remain usable after failure",
+        "resource-read-host.test.ts: actual operation timer covers lookup and acquisition; non-cooperative batch timeout/cancel withholds late output, preserves task selection and permits the next read",
+        "host-content-search.test.ts: existing OAuth, exact source/query, independent waiter, metadata/qualification/session/branch/deadline and safe-error publication regressions remain unchanged"
+      ],
+      "review_evidence": "Before the boundary change, the 17 initial controlled regressions produced 15 behavioral failures; existing ready(signal) metadata cancellation and ordinary native-read passthrough were the two passing controls. Two fallback-hook cases were then added. After implementation, the complete host-prepare, resource-read-host and host-content-search files passed 134 tests and 1291 assertions, and TypeScript passed. Actual Pi Stop/timeout runs and the final formal/mutation gates are separate execution evidence.",
+      "proof_limit": "All finite model/config/view bytes, domains, case inventories, independent expected_rules, negative configurations, tool lock and real guard mutation implementations remain unchanged. No finite model gains Promise, timer, native reader or Pi idle variables. These source hashes bind reviewed ownership and concrete regressions, not implementation refinement or an assertion that unsupported native payload shapes have wire proof."
     }
   },
   "library_root_review": {

@@ -92,6 +92,10 @@ Broker 准备、授权、完整闭包或最终投影检查失败时，原用户�
 
 `index` 的 shutdown 先推进目录代次、取消 catalog owner 并清空目录引用，不再等待所有目录 producer 退出。`ownCatalog` 保留获取前后的 signal 检查及拒绝观察；`publishCatalog` 仍检查 owner 和原 cache entry。`host-refresh.test.ts` 通过真实 index 入口暂停一个忽略取消的 SDK catalog，验证 shutdown 在 producer 返回前完成、迟到结果不能作为工具结果发布，也不新增 branch entry 或通知。此 Promise 退出义务不属于 ReadRace 的有限网络调度证明。
 
+`host-skills` 的公开 metadata list、use、`notion_ctl cli_source` 验证和 Broker 自有单项 read 复用 `withPreparationDeadline`，每次操作默认 60 秒。内容搜索保持 360 秒和 `CONTENT_SEARCH_TIMEOUT`，并将最初的 Library 解析纳入总预算；batch 按原 `timeBudgetMs` 做实际 Promise race，保持 `RESOURCE_TIME_BUDGET`。原生 read 接管失败时，tool_call hook 的来源获取同样有界。普通 native read 在识别后原参数直通，其执行不纳入 Broker 的期限。Stop 也通过 race 结束等待，不依赖 producer 自行响应 signal。
+
+外层取消会清理该 toolCall 的 pending read receipts；原 graph commit、qualification、scope、generation、完整文件和公开 ref 守卫继续接收子 signal。超时后的迟到结果不能 commit 或返回正文；已经在原生读取前合法完成的 fixed inspection selection 是先前事实，不回写成从未发生，也不据此伪造成功 read receipt 或 active。`host-prepare.test.ts` 与 `resource-read-host.test.ts` 分别暂停 metadata、Library、graph、原生来源读取和 batch producer，要求未释放 producer 前 timeout/Stop 已返回，再检查迟到回执、状态、下一次工具操作及普通 read 直通。Pi 1.6 的实际 tool runner 直接 await execute，且 Stop 等待 idle；因此只传 AbortSignal 不足以保证退出。以上 Promise 和宿主行为属于具体实现义务，有限模型不宣称证明这些运行时等待。
+
 收到 2xx 后才发生的 session 写入失败不能撤回已送达正文，也不能冒称正文从未加载。此时警告说明持久化未完成，响应继续，失败路径不制造新的确认或 boundary drafts。`activation-feedback` 的 `ready` 只表示准备完成，`loaded` 由 provider 接受路径确认；显示消息始终是 `content: []`，不会成为模型指令或另一套 selected/active 状态。
 
 `nonblocking-context.test.ts`、`host-prepare.test.ts`、`input-guard.test.ts`、`session-recovery.test.ts`、`final-request.test.ts` 和 `activation-feedback.test.ts` 分别检查这些具体边界。FV05 的不同 session 迟到 headers 回归还继续执行 `turn_end`，要求不返回旧来源 drafts；`provider-session-identity` mutation 仍须破坏真实守卫并触发行为断言失败。保留所有原有限域、cases、独立 expected_rules、负配置和 mutation；新增 owner/hash 只是经源码审查的对应，不扩张形式化证明范围。

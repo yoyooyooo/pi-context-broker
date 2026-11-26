@@ -11,13 +11,13 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "6a4dc110b85f3c5584c2ab3bbb6ae21b4acc1abe352a08e7f3fc4c15d2317519",
+    "packages/context-broker/src/host-skills.ts": "395617ddc0e879abfcd10df93515437587a9c130731227d01011e4a3d6a33700",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "dc3c97493542f11345aadbc35e2b49e351f1047cf5063ed50e09b2177b312622",
     "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
-    "packages/context-broker/scripts/host-prepare.test.ts": "b8e7c7bd31145f59419a3b0dab11018becf7194261b5f67852b4d38e763697fa",
+    "packages/context-broker/scripts/host-prepare.test.ts": "b53edafa76a27e9ac809277472855d2b90ed730f1fcd12dbc8d22f58bbf94268",
     "packages/context-broker/scripts/session-active.test.ts": "9e6b85e7db03965db5dbe5a2741472c2eee9c32e09f80c484f92f093d0d17186",
     "packages/context-broker/scripts/native-read-session.test.ts": "a00f16b9c35e3a3a03e31665aff043534bd8385d97e15e4948af9703ff1fcab1",
     "packages/context-broker/scripts/skill-context-session.test.ts": "f9917449d7af5c0f1c111b8966b8b98717bf8e2cd709f0ba9fd3eb9a7eb891c6",
@@ -44,7 +44,7 @@
     "packages/context-broker/scripts/notion-entry.test.ts": "7ff3897a2cd5aebed74786139c1d565e63ce58023c25774b0757f4ff5e1fc238",
     "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
     "packages/context-broker/scripts/read-intent-status.test.ts": "80314e6d13cd6dd90b797e125d0cccef777da57b5b10bffa95c83a3c1383b624",
-    "packages/context-broker/scripts/resource-read-host.test.ts": "1411774432d57f3cfff2a514d5d9cf237ae4b84f8479b519491bbea67280317d",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "7e7104c90791aa5cc34e65db4cf0d78d358768769543f5fb155a2e72284562b1",
     "packages/context-broker/scripts/fixed-resource-source.test.ts": "0b49d9e14ac4f4c1fe5289714f3f1ecbb9c69baa15f3eb1c4cc2e9b793023275",
     "packages/context-broker/src/resource-read-types.ts": "83bbf31109482048a472e58d580d6a09dcc605435db71528e33343570cbbeebd",
     "packages/context-broker/src/content-publication.ts": "0dbb3fb6e12798474d08856649ebb4282483b7241e9830ac3f55daef81ddd4f8",
@@ -102,7 +102,8 @@
         "prepare-protocol.ts decodePreparedGraph/decodePreparationLock",
         "session-graph.ts persistSessionSelection/reduceSessionSelection",
         "session-working-set.ts assertWorkingSetBudget/releaseWorkingSetRoots; exact shared closure and ref matching are concrete replay obligations",
-        "host-skills.ts assertRefreshMain/currentRoot; canonical main File identity and multi-root replacement are concrete replay obligations"
+        "host-skills.ts assertRefreshMain/currentRoot; canonical main File identity and multi-root replacement are concrete replay obligations",
+        "host-skills.ts bounded public use/read acquisition passes its child signal into the original graphPreparation and commit guards; concrete non-cooperative waits outside finite actions"
       ],
       "atomicity": "Prepare, identity validation, output budget validation and final guarded commit are separate steps. Commit is synchronous. In deferred Pi the approved graph remains staged until the provider hook; this model's selected vector denotes the approved fixed selection, not provider acceptance or durable activation.",
       "replays": [
@@ -111,7 +112,8 @@
         "skill-context-session.test.ts graph/projection identity mismatches",
         "session-active.test.ts NXT12 complete union, shared Requires, stale fixed release; session-active-session.mjs independent installed Pi resume, compaction and branch ownership",
         "host-refresh.test.ts issued sr:S and selected canonical main refresh; invalid File/path and failed refresh preserve prior pins; session-refresh.test.ts partial roots/shared dependency conflicts",
-        "notion-page-url.test.ts: authorized exact owner from physical page URLs, same fixed pins and explicit current refresh; URL parsing is outside finite-model variables"
+        "notion-page-url.test.ts: authorized exact owner from physical page URLs, same fixed pins and explicit current refresh; URL parsing is outside finite-model variables",
+        "host-prepare.test.ts: public-tool timeout/cancel settles before a held producer; no late commit, while an inspection selection completed before native I/O remains its prior admitted fact"
       ]
     },
     "DeliveryBoundary": {
@@ -137,7 +139,8 @@
         "final-request.test.ts and session-recovery.test.ts: final guard failures return the original user/image once, withhold invalid source bytes, keep ledger failure and grant no new confirmation or persistence",
         "consumer-state.test.ts FV05: different-session late provider callback followed by completed turn returns no old-source drafts; provider-session-identity mutation remains an actual guard check",
         "nonblocking-context.test.ts and activation-feedback.test.ts: native payload ownership and display-only readiness/confirmation are concrete obligations outside finite variables",
-        "scalar-resource-read-host.test.ts: a final AUTH_REQUIRED keeps original user text, withholds inspected resource bytes and grants no new persistence after 2xx"
+        "scalar-resource-read-host.test.ts: a final AUTH_REQUIRED keeps original user text, withholds inspected resource bytes and grants no new persistence after 2xx",
+        "host-prepare.test.ts and resource-read-host.test.ts: interrupted scalar/batch reads clear pending receipts, withhold late bodies and add no active delivery proof; ordinary native read stays unchanged"
       ]
     },
     "RecoveryClosure": {
@@ -1228,6 +1231,23 @@
       ],
       "proof_limit": "Finite model/config/view bytes, bounds, cases, independent expected_rules, negative configurations, tool lock and all mutation targets are unchanged. Native queue order, image preservation, wall-clock deadlines, display rendering and known-provider payload repair are concrete implementation obligations outside the finite variables. Unknown provider shapes receive no guessed native repair or wire proof and rely on the earlier safe logical context. Exact entity confirmation remains limited to the existing OpenAI-completions/Undici ledger. Reviewed hashes bind these bytes, not implementation refinement, live Notion, actual Pi rendering or model task success; execute the existing formal, actual-guard and runtime gates separately.",
       "shutdown": "Reviewed index ownCatalog and session_shutdown: shutdown advances refreshGeneration, aborts the catalog owner and clears catalog references without joining uncooperative producers. The unused pendingCatalogs Set is removed; the returned original promise still has a rejection observer, checks its combined signal before/after acquisition, and publishCatalog retains owner plus exact-entry fences. Production-index host-refresh replay holds the SDK list operation past shutdown, requires bounded shutdown while the producer is unfinished, then verifies late tool rejection and no new branch entry or notification."
+    },
+    "pi_public_tool_deadlines": {
+      "reviewed_from": "9eae1bf2d806ddb219149e1971331f4d2e23be01",
+      "scope": "Reviewed the public list/use execute boundaries, cli_source root verification, scalar read executor and fallback tool_call hook, batch resource acquisition and actual added assertions. Reuses skill-preparation.withPreparationDeadline without a second lifecycle framework. The installed Pi 1.6.0 runner awaits tool.execute directly; AgentSession.abort aborts the signal and then awaits idle, so a signal alone cannot detach a non-cooperative producer.",
+      "budgets": "Metadata listing, Skill use, CLI scope verification and Broker-owned scalar read have independent 60000ms operation bounds. Content search retains 360000ms and CONTENT_SEARCH_TIMEOUT, with the initial Library resolution now inside the bound. Resource batches use their unchanged normalized timeBudgetMs, including lookup and acquisition, and keep RESOURCE_TIME_BUDGET. These are independent public-operation bounds, not a single deadline across a multi-request agent turn. OMP interactive commands and its existing headless 25-second guard retain their separate paths.",
+      "cancellation_and_publication": "Both caller/lifecycle cancellation and deadline race the entire owned acquisition. Timeout aborts only the child signal; user Stop keeps its original cancellation meaning. Existing graphPreparation, preparation commit, qualification, exact source/scope, generation, fixed-resource, branch and receipt guards continue to receive that child signal. New checks after Library/metadata awaits stop late dispatch or candidate-reference issuance. Failure does not call ctx.abort, manufacture source bytes or create an activation proof.",
+      "native_read": "The scalar executor bounds Broker preparation plus its owned native read and clears pendingNativeReads/pendingResourceReads on interruption. If prepareRead identifies an ordinary file, its original input and native result pass through outside this execution bound. NativeReadResult excludes undefined, so the ordinary sentinel cannot rerun a legitimate owned delegate. The fallback tool_call acquisition is bounded when native executor registration or ownership is unavailable. A complete fixed inspection selection admitted before native I/O remains a prior fact; interruption adds no successful read receipt or active proof and a late completion cannot make another commit.",
+      "errors_and_effects": "Content and resource timeout/cancellation retain their public codes. Existing use/prepared-read/batch consumption failures combine observed effects and preserve unknown rather than inventing a zero-write claim. Metadata and CLI scope resolution do not fabricate consumption effects. Ordinary tool failure allows the model conversation to continue; it is not a host operation abort.",
+      "replays": [
+        "host-prepare.test.ts: non-cooperative metadata, graph preparation, owned native read and initial Library selection; deadline and caller abort must settle before producer release, preserve prior state and forbid late receipt/commit publication",
+        "host-prepare.test.ts: metadata/content/cli_source choose their exact operation budget; content retains SOURCE_CANCELLED/CONTENT_SEARCH_TIMEOUT; fallback read hook is covered when native executor ownership is unavailable",
+        "host-prepare.test.ts: ordinary native read retains identical input/result objects and its own execution duration, while subsequent Broker operations remain usable after failure",
+        "resource-read-host.test.ts: actual operation timer covers lookup and acquisition; non-cooperative batch timeout/cancel withholds late output, preserves task selection and permits the next read",
+        "host-content-search.test.ts: existing OAuth, exact source/query, independent waiter, metadata/qualification/session/branch/deadline and safe-error publication regressions remain unchanged"
+      ],
+      "review_evidence": "Before the boundary change, the 17 initial controlled regressions produced 15 behavioral failures; existing ready(signal) metadata cancellation and ordinary native-read passthrough were the two passing controls. Two fallback-hook cases were then added. After implementation, the complete host-prepare, resource-read-host and host-content-search files passed 134 tests and 1291 assertions, and TypeScript passed. Actual Pi Stop/timeout runs and the final formal/mutation gates are separate execution evidence.",
+      "proof_limit": "All finite model/config/view bytes, domains, case inventories, independent expected_rules, negative configurations, tool lock and real guard mutation implementations remain unchanged. No finite model gains Promise, timer, native reader or Pi idle variables. These source hashes bind reviewed ownership and concrete regressions, not implementation refinement or an assertion that unsupported native payload shapes have wire proof."
     }
   },
   "library_session_design": {
