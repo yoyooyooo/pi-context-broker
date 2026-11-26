@@ -4,9 +4,10 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { installHostSkills, type HostSkills, type HostSkillOptions } from "../src/host-skills";
 import { SourceError, sourceFailureMessage } from "../src/notion-source";
-import { createActivationFeedback } from "../src/activation-feedback";
+import { ACTIVATION_MESSAGE, createActivationFeedback } from "../src/activation-feedback";
 import { createLibrarySelection } from "../src/library-selection";
 import { CONTENT_SEARCH_TIMEOUT_MS } from "../src/content-search";
 import { buildCliGuidance, buildInjectedContextMessage, installSkillGuidance } from "../src/index";
@@ -876,38 +877,104 @@ test("Pi discovery description reuse requires exact visible metadata and restore
   expect(f.resourceReads).toEqual([]);
 });
 
-test("Pi preparation shows a compact loading row without queueing a session message", async () => {
+class PreparationText {
+  constructor(readonly text: string) {}
+  render() { return this.text.split("\n"); }
+  invalidate() {}
+}
+type PreparationEntryRenderer = Parameters<NonNullable<ExtensionAPI["registerEntryRenderer"]>>[1];
+const preparationTheme = { fg: (_color: string, value: string) => value };
+
+test("Pi preparation uses a transcript entry and fences cancelled or revoked feedback", async () => {
   const f = await fixture();
-  const widgets = new Map<string, string[]>(), messages: unknown[] = [], entries: unknown[] = [];
-  const api: ExtensionAPI = { on() {}, sendMessage(message) { messages.push(message); }, appendEntry(_type, data) { entries.push(data); } };
-  const feedback = await createActivationFeedback(api, () => {}, "widget");
+  const messages: unknown[] = [], entries: SessionEntry[] = [];
+  let renderer: PreparationEntryRenderer | undefined, widgets = 0;
+  const api: ExtensionAPI = { pi: { Text: PreparationText }, on() {},
+    registerEntryRenderer(type, value) { expect(type).toBe(ACTIVATION_MESSAGE); renderer = value; },
+    sendMessage(message) { messages.push(message); }, appendEntry(customType, data) { entries.push({ type: "custom", customType, data }); } };
+  const feedback = await createActivationFeedback(api, () => {}, "entry");
   let session = "feedback-session", revoked = false;
   const context = new Proxy({ ...f.ctx, hasUI: true, mode: "tui" as const,
-    ui: { setWidget(key: string, content: unknown) {
-      if (content === undefined) widgets.delete(key);
-      else {
-        if (!Array.isArray(content) || content.some(line => typeof line !== "string")) throw new Error("Expected a text preparation widget");
-        widgets.set(key, content);
-      }
-    } }, sessionManager: { getSessionId: () => session, getBranch: () => [] },
+    ui: { setWidget() { widgets++; } }, sessionManager: { getSessionId: () => session, getBranch: () => [] },
   }, { get(target, key, receiver) { if (revoked) throw new Error("Revoked feedback context"); return Reflect.get(target, key, receiver); } });
   const source = { type: "notion" as const, id: "controlled", preparation: { maxNodes: 8, maxDepth: 4, maxInstructionBytes: 8192, maxContextBytes: 131072 } };
   const finish = feedback.begin(f.root, context, "use", source);
-  expect(finish).toBeDefined(); expect(widgets.size).toBe(1);
-  expect([...widgets.values()][0]!.join("\n")).toContain("[skill@notion]");
-  expect([...widgets.values()][0]!.join("\n")).toContain("loading…");
-  expect([...widgets.values()][0]!.join("\n")).not.toContain("bytes");
-  expect(messages).toEqual([]);
+  expect(finish).toBeDefined(); expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({ type: "custom", customType: ACTIVATION_MESSAGE, data: { status: "running" } });
+  if (!renderer || !entries[0]) throw new Error("Expected an immediate preparation entry");
+  const component = renderer(entries[0], { expanded: false }, preparationTheme);
+  if (!component) throw new Error("Expected a preparation entry renderer");
+  const rendered = () => stripVTControlCharacters(component.render(160).join("\n"));
+  expect(rendered()).toBe("[skill@notion] root · loading…");
+  expect(rendered()).not.toContain("bytes");
+  expect(messages).toEqual([]); expect(widgets).toBe(0);
   finish!({ error: "Cancelled." });
-  expect(widgets.size).toBe(0); expect(entries).toHaveLength(1);
-  finish!({ value: f.root }); expect(entries).toHaveLength(1);
+  expect(rendered()).toContain(" · cancelled"); expect(entries).toHaveLength(2);
+  finish!({ value: f.root }); expect(entries).toHaveLength(2);
+  expect(rendered()).not.toContain("loaded");
   const late = feedback.begin(f.root, context, "use", source);
-  expect(widgets.size).toBe(1);
+  expect(entries).toHaveLength(3);
   session = "replacement";
   feedback.restore({ ...context }); revoked = true;
-  expect(widgets.size).toBe(0);
-  late!({ value: f.root }); expect(entries).toHaveLength(1);
-  expect(messages).toEqual([]);
+  expect(() => late!({ value: f.root })).not.toThrow(); expect(entries).toHaveLength(3);
+  expect(messages).toEqual([]); expect(widgets).toBe(0);
+});
+
+test("Pi dollar context appends its loading entry before preparation and confirms loaded only after provider acceptance", async () => {
+  const f = await fixture(true), entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  let renderer: PreparationEntryRenderer | undefined, widgets = 0, messages = 0, confirmations = 0;
+  f.api.pi = { Text: PreparationText };
+  f.api.registerEntryRenderer = (type, value) => { expect(type).toBe(ACTIVATION_MESSAGE); renderer = value; };
+  f.api.sendMessage = () => { messages++; };
+  f.ctx.hasUI = true; f.ctx.mode = "tui";
+  f.ctx.ui = { setWidget() { widgets++; } };
+  await f.install(async purpose => { entered.resolve(); await release.promise; return [f.graph(purpose)]; }, {
+    buildPreparedPrompt: async (_text, _ctx, _signal, records = []) => {
+      const content = records.map(record => record.body!).join("\n\n");
+      return { customType: "context-broker", content, display: false,
+        details: { records: records.map(record => sourceDeliveryReceipt(record, content)) } };
+    },
+    confirmDelivery() { confirmations++; },
+  });
+  const user: AgentMessage = { role: "user", content: "$root explain this task" };
+  let pending: Promise<unknown[]> | undefined;
+  try {
+    await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
+    await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "base" }, f.ctx);
+    await f.emit("agent_start", {}, f.ctx);
+    pending = f.emit("context", { messages: [user] }, f.ctx);
+    await Promise.race([entered.promise, pending.then(() => { throw new Error("Expected preparation to remain suspended"); })]);
+    const rows = () => f.session.entries.filter(entry => entry.type === "custom" && entry.customType === ACTIVATION_MESSAGE);
+    expect(rows()).toHaveLength(1);
+    const row = rows()[0];
+    expect(row).toMatchObject({ type: "custom", data: { status: "running", purpose: "use" } });
+    if (!row || !renderer) throw new Error("Expected the live host's preparation entry");
+    const component = renderer(row, { expanded: false }, preparationTheme);
+    if (!component) throw new Error("Expected the live host's entry component");
+    const rendered = () => stripVTControlCharacters(component.render(160).join("\n"));
+    expect(rendered()).toBe("[skill@notion] root · loading…");
+    expect(messages).toBe(0); expect(widgets).toBe(0); expect(confirmations).toBe(0);
+    expect(f.persisted).toEqual([]);
+    release.resolve();
+    const output = (await pending).find(value => value && typeof value === "object" && "messages" in value && Array.isArray(value.messages));
+    if (!output || typeof output !== "object" || !("messages" in output) || !Array.isArray(output.messages)) throw new Error("Expected complete source delivery");
+    expect(sourceBodyLoaded(output.messages, f.root)).toBe(true);
+    expect(sourceBodyLoaded(output.messages, f.required)).toBe(true);
+    expect(rendered()).toBe("[skill@notion] root · ready");
+    expect(rows()).toHaveLength(1); expect(confirmations).toBe(0); expect(f.persisted).toEqual([]);
+    await f.emit("before_provider_request", {}, f.ctx);
+    await f.emit("after_provider_response", { status: 503 }, f.ctx);
+    expect(rendered()).toBe("[skill@notion] root · ready"); expect(confirmations).toBe(0);
+    await f.emit("before_provider_request", {}, f.ctx);
+    await f.emit("after_provider_response", { status: 200 }, f.ctx);
+    expect(rendered()).toBe("[skill@notion] root · loaded");
+    expect(rows()).toHaveLength(1); expect(confirmations).toBe(1); expect(f.persisted).toEqual(["extend"]);
+    expect(messages).toBe(0); expect(widgets).toBe(0);
+    expect(output.messages.some(message => message.customType === ACTIVATION_MESSAGE)).toBe(false);
+  } finally {
+    release.resolve(); await pending?.catch(() => undefined);
+    await f.emit("agent_end", {}, f.ctx); await f.emit("session_shutdown", {}, f.ctx);
+  }
 });
 
 for (const boundary of ["metadata", "use", "scalar preparation", "source native read"] as const)

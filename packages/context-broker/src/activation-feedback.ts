@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { hostTextComponent, type HostTextConstructor } from "./host-text";
 import { singleLine } from "./pi-display";
-import type { ExtensionAPI, ExtensionContext, ExtensionWidgetNode, SkillRecord, SourceConfig } from "./types";
+import type { ExtensionAPI, ExtensionContext, ExtensionRenderOptions, ExtensionWidgetComponent, ExtensionWidgetNode, SkillRecord, SourceConfig } from "./types";
 
 export const ACTIVATION_MESSAGE = "context-broker-source-read";
 const ACTIVATION_RESULT = "context-broker-source-read-result";
@@ -22,7 +22,7 @@ type ReadState = {
   note: string;
 };
 type Result = { value: SkillRecord } | { error: string } | { skipped: true };
-type LiveRead = { state: ReadState; ctx: ExtensionContext; session: string | undefined; announced: boolean };
+type LiveRead = { state: ReadState; ctx: ExtensionContext; session: string | undefined };
 type Theme = { fg(color: string, value: string): string; bg?(color: string, value: string): string };
 const plainTheme: Theme = { fg: (_color, value) => value };
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -54,11 +54,10 @@ function detail(state: ReadState): string {
     state.snapshot && `Snapshot: ${state.snapshot}`].filter(Boolean).join("\n");
 }
 
-export async function createActivationFeedback(api: ExtensionAPI, repaint: () => void, presentation: "message" | "widget" = "message") {
+export async function createActivationFeedback(api: ExtensionAPI, repaint: () => void, presentation: "message" | "entry" = "message") {
   const states = new Map<string, ReadState>(), live = new Map<string, LiveRead>();
-  const widgetKey = (id: string) => `${ACTIVATION_MESSAGE}:${id}`;
   let Text: HostTextConstructor | undefined;
-  if (api.registerMessageRenderer) {
+  if (api.registerEntryRenderer || api.registerMessageRenderer) {
     try { Text = await hostTextComponent(api); } catch { /* Optional UI cannot prevent a user turn. */ }
   }
   // Display delivery is best effort. It must never turn a successful acquisition
@@ -67,14 +66,10 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
   const repaintDisplay = () => display(repaint);
   const isCurrent = (entry: LiveRead) => live.get(entry.state.id) === entry
     && entry.session === entry.ctx.sessionManager?.getSessionId?.();
-  const publish = (entry: LiveRead, announce = true) => {
-    const { state, ctx } = entry;
-    if (presentation === "widget") display(() => ctx.ui?.setWidget?.(widgetKey(state.id), undefined));
-    if (announce && presentation === "widget" && Text && !entry.announced && api.registerMessageRenderer) {
-      entry.announced = true;
-      display(() => api.sendMessage?.({ customType: ACTIVATION_MESSAGE, content: [], details: { ...state }, display: true }, { triggerTurn: false }));
-    }
-    display(() => api.appendEntry?.(ACTIVATION_RESULT, { ...state }));
+  const publish = (entry: LiveRead) => {
+    // Pi's entry_appended event repaints the existing transcript component even
+    // when this state-only entry has no renderer. No editor widget is involved.
+    display(() => api.appendEntry?.(ACTIVATION_RESULT, { ...entry.state }));
     repaintDisplay();
   };
   const finish = (entry: LiveRead, result: Result) => {
@@ -87,9 +82,9 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
     publish(entry);
     if (state.status === "done" && state.purpose !== "use") live.delete(state.id);
   };
-  api.registerMessageRenderer?.(ACTIVATION_MESSAGE, (message, options, themeValue) => {
-    if (!Text || !isReadState(message.details)) return undefined;
-    const RenderText = Text, original = message.details;
+  const render = (data: unknown, options: ExtensionRenderOptions, themeValue: unknown): ExtensionWidgetComponent | undefined => {
+    if (!Text || !isReadState(data)) return undefined;
+    const RenderText = Text, original = data;
     const theme = isTheme(themeValue) ? themeValue : plainTheme;
     let collapsed = !options.expanded;
     const current = () => states.get(original.id) ?? (original.status === "running"
@@ -122,10 +117,12 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
         repaintDisplay();
       },
     };
-  });
+  };
+  display(() => api.registerEntryRenderer?.(ACTIVATION_MESSAGE, (entry, options, theme) => render(entry.data, options, theme)));
+  // Existing message records and the other host keep the same display history.
+  display(() => api.registerMessageRenderer?.(ACTIVATION_MESSAGE, (message, options, theme) => render(message.details, options, theme)));
   return {
     restore(ctx: ExtensionContext) {
-      if (presentation === "widget") for (const id of live.keys()) display(() => ctx.ui?.setWidget?.(widgetKey(id), undefined));
       live.clear(); states.clear();
       // Only the selected leaf's entries may supply final states for restored running rows.
       for (const entry of ctx.sessionManager?.getBranch?.() ?? []) {
@@ -135,7 +132,7 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
     },
     begin(selected: SkillRecord | readonly SkillRecord[], ctx?: ExtensionContext, purpose?: "use" | "inspect", source?: SourceConfig): ((result: Result) => void) | undefined {
       if (!ctx?.hasUI) return undefined;
-      if (presentation === "widget" ? !ctx.ui?.setWidget : !api.sendMessage || !api.registerMessageRenderer) return undefined;
+      if (!Text || (presentation === "entry" ? !api.appendEntry || !api.registerEntryRenderer : !api.sendMessage || !api.registerMessageRenderer)) return undefined;
       const records: readonly SkillRecord[] = "name" in selected ? [selected] : selected;
       const record = records[0];
       if (!record) return undefined;
@@ -147,17 +144,12 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
       const state: ReadState = { id: randomUUID(), target: `ntn-skills://${token.slice(token.indexOf("/") + 1)}`,
         name: [...new Set(records.map(item => item.name))].join(", "), namespace: record.source === "notion" || source?.type === "notion" ? "notion" : "local", source: record.sourceId ?? "source",
         status: "running", started: Date.now(), purpose, limits, note: "Loading selected Skill instructions. Stop cancels preparation." };
-      const entry: LiveRead = { state, ctx, session, announced: presentation === "message" };
+      const entry: LiveRead = { state, ctx, session };
       states.set(state.id, state); live.set(state.id, entry);
-      // Pi queues non-triggering messages until the turn ends. Show an immediate
-      // compact widget while waiting, then retain a normal expandable result row.
-      if (presentation === "widget") {
-        const RenderText = Text;
-        display(() => ctx.ui?.setWidget?.(widgetKey(state.id), RenderText
-          ? (_tui, themeValue) => ({ render: width => new RenderText(heading(state,
-            isTheme(themeValue) ? themeValue : plainTheme), 0, 0).render(width), invalidate() {} })
-          : [heading(state, plainTheme)]));
-      } else display(() => api.sendMessage?.({ customType: ACTIVATION_MESSAGE, content: [], details: { ...state }, display: true }, { triggerTurn: false }));
+      // A custom entry appears immediately in Pi's chat transcript, including
+      // during context preparation. It is display-only and never queues a turn.
+      if (presentation === "entry") display(() => api.appendEntry?.(ACTIVATION_MESSAGE, { ...state }));
+      else display(() => api.sendMessage?.({ customType: ACTIVATION_MESSAGE, content: [], details: { ...state }, display: true }, { triggerTurn: false }));
       repaintDisplay();
       return result => finish(entry, result);
     },
@@ -185,7 +177,7 @@ export async function createActivationFeedback(api: ExtensionAPI, repaint: () =>
         if (entry.state.status !== "error") {
           entry.state.status = "error"; entry.state.note = "Cancelled.";
           entry.state.took = Date.now() - entry.state.started;
-          publish(entry, false);
+          publish(entry);
         }
         live.delete(entry.state.id);
       }
