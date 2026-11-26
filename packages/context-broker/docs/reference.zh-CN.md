@@ -258,7 +258,7 @@ MCP transport、OAuth 和凭据只由同包 CLI/core 持有。REST 与 MCP 凭�
 
 `Default Context` 明确保留为可选的作者组织／View 筛选属性，不作为第二个可用开关或全文注入开关。保留现有值、稳定 schema 和作者读写入口，因为真实 View 与其他集成可以使用它。没有筛选它的 View 中，切换该字段没有独立效果；明确筛选它的 View 则按正常目录新鲜度改变成员。`Enabled=false` 不能被它解禁。本批不重命名、删除字段，也不强制隐藏用户管理视图中的列。
 
-Pi 在 input 边界锁定选中提交，待 `agent_start` 提供本次操作的 signal 后，在 `context` hook 内获取目录、图与正文。待提交记录保留原文、图片和已接受的身份。**Stop**、Escape、RPC `abort` 及切换会话都会取消这项获取。准备出错会中止宿主操作，失败或已失效的准备不能继续调用 provider。
+Pi 在 input 边界锁定选中提交，待 `agent_start` 提供本次操作的 signal 后，在 `context` hook 内获取目录、图与正文。待提交记录保留原文、图片和已接受的身份。**Stop**、Escape、RPC `abort` 及切换会话都会取消这项获取。Pi 显式准备最多等待 30 秒。准备出错只撤销本轮未确认的 Skill 获取，发出非阻塞 warning，原始用户请求继续，不交付部分图或未确认正文。用户主动 Stop 与会话切换仍取消旧获取。
 
 Pi 仅在当前请求未取消，且 `after_provider_response` 返回 2xx 状态时记录 active 指令。写入 `context-broker-active-sources` 前，会核对本次请求中的完整正文；Notion 记录还须匹配固定的 `use` 图。该事件发生在收到响应头时，早于响应流结束；它只确认逻辑上的请求接受，不代表模型完成，也不是最终 wire 投递。`before_provider_request` 不是最后一次载荷修改：更晚的 handler 仍可替换 payload，响应事件也不含 body。普通 `openai-completions` HTTP 路由会先核对序列化后的工具结果和 Broker 拥有的 user/custom 投递，绑定实体摘要，并且只有 Node Undici 在该 run 的模型端点上观察到同一摘要时才记录 wire 回执。已知不一致不会确认 active、selected 或 persisted。已经发出的 body 保持 dispatched，不会被改写成 provider 状态 0。其他 API、mock provider 和非 Undici 传输明确不是 wire 证明。`/context-broker request` 最多打印 32 条内存记录，只含哈希、计数、固定 snapshot pin、copied/reused/retired、净化后的 `remote_writes`/`author_content` 和错误，不含源正文、path、ref 或密钥，也不新增模型工具。标量和批量 `contextBrokerResource` 与主文、preparation 一起核对。同一模型端点上无法归属到单一 run 的并发发送记为 unknown，不能变成 wire 成功。进程内 mock payload 即使 2xx 也只是 logical-only。缓存文件、`ready` 结果、选中图、摘要和仅展示的 loaded 日志都不能单独证明 active。[Skill 消费运行时](skill-consumption-runtime.md) 说明这些独立的当前状态。
 
@@ -418,7 +418,7 @@ OMP 的 print/json 模式执行原生 source `/skill:` 命令时，命令等待�
 
 交互激活在会话中追加持久、可折叠的 `Read ntn-skills://<alias>` 记录，显示来源、耗时及 `running`、`done` 或 `error` 状态。展示目标省略 namespace 前缀，重名时保留页面后缀。展开详情包含选中的版本与快照（如有）。终态记录保留，不按计时器清除。resume 恢复终态记录，并将旧 `running` 记录标为中断。自定义消息的 `content` 为空，展示元数据放在 `details`。记录及展开详情仅用于展示，不进入 provider 消息、上下文、压缩或 branch 摘要。`ntn-skills://` 是展示标识，不是可解析 URI 或模型工具调用。真实读取仍使用 `skill://`；模型原生 `read` 是真实工具调用。目录始终只有元数据；后台预取不会在选择前把正文加入目录或会话。其他终端使用文字渲染。同一实例已选中的快照直接复用，不新增激活记录。
 
-按 Enter 同步锁定本次准备与提交，草稿仍可编辑。原生编辑器显示 running 与 **Stop**。期间再按 Enter 不会提交第二条 prompt；点击 **Stop** 或按 Escape 可取消准备。Pi 在可取消的 `context` 阶段获取选中内容，OMP 保留通过命令执行的 preflight。准备成功后，首个 provider 请求包含原提示词、图片附件及完整选中正文。准备失败、超时或取消会阻止该请求；已明确报告未加载的缺失目标可随其他用户材料继续。取消或切换会话会使待完成的准备失效，迟到的 source 结果不会派发。
+按 Enter 同步锁定本次准备与提交，草稿仍可编辑。原生编辑器显示 running 与 **Stop**。期间再按 Enter 不会提交第二条 prompt；点击 **Stop** 或按 Escape 可取消准备。Pi 在可取消的 `context` 阶段获取选中内容，OMP 保留通过命令执行的 preflight。准备成功后，首个 provider 请求包含原提示词、图片附件及完整选中正文。Pi 准备失败或超时仅扣留失败的 Skill 获取，提示 warning 并继续原始用户请求；主动取消仍停止操作。OMP 保留命令 preflight 行为。取消或切换会话会使待完成的准备失效，迟到的 source 结果不会派发。
 
 OMP 在每轮系统提示中说明：宿主或 broker 提供、且仍在有效上下文中的完整 Skill 正文已满足“使用前读取”要求。Broker Skill payload 标明调用引用、source 的 qualified 原生宿主名、完整入口已加载状态与入口资源目录。模型应直接使用正文，无需仅为重新加载或确认身份再次读取入口、列缓存目录或检查包清单。任务需要的参考资源仍可读取；相对路径从该目录解析，`~` 展开为用户目录。`pathMode: hash|basename` 继续隐藏目录；source 资源仍可使用 qualified `skill://` URI。目录描述与 Router 索引不代表成员正文已加载，压缩或回退移除正文后仍须重新读取。Tern 自动胶囊和手动搜索沿用这条 OMP 提交合同。该提示规则仅用于 OMP。Pi 保留宿主原有提示；真实 Notion 发现、入口与资源消费独立使用联动 Skill 的 `--mode model --host pi` 路径验收，终端选择使用[Pi 独立终端规程](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/dollar-completion-selection.md#pi-独立终端)。
 

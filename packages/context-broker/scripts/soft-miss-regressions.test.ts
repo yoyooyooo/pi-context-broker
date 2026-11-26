@@ -318,9 +318,13 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
         else {
           assert.equal(object(input).action, "continue");
           await emit("before_agent_start", { prompt: text, systemPrompt: "base" });
-          await assert.rejects(projectPi(text), new RegExp(code!));
+          const projected = await projectPi(text);
+          assert.match(JSON.stringify(projected), new RegExp(code!));
+          assert.match(JSON.stringify(projected), /context-broker-preparation-warning/);
+          assert.ok(notices.some(notice => notice.includes(code!)));
+          assert.equal(aborts, 0, "A failed Skill preparation cannot abort Pi's user turn");
         }
-        assert.equal(sent.length, before, "Known failure cannot dispatch a submission");
+        assert.equal(sent.length, before, "A failed selection must not dispatch a duplicate submission");
         if (host === "omp") {
           assert.equal(drafts.at(-1), text);
           assert.ok(notices.some(notice => notice.includes(code!)), fault + " stays a visible failure");
