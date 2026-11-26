@@ -194,6 +194,8 @@ export type ExtensionWidgetComponent = {
 
 export type ExtensionWidgetFactory = (tui: { requestRender(): void }, theme: unknown) => ExtensionWidgetComponent;
 
+export type ExtensionRenderOptions = { expanded: boolean; outputPad?: number; keyText?(action: string): string };
+
 export type ExtensionContext = {
   hasUI?: boolean;
   ui?: {
@@ -265,7 +267,8 @@ export type ExtensionAPI = {
   getSettings?(): { images?: { autoResize?: boolean } };
   registerTool?(tool: NativeReadDefinition | PiReadDefinition | NativeSkillSearchDefinition | NativeSkillPrepareDefinition | NativeSkillGraphDefinition): void;
   registerToolRenderer?(resolver: (toolName: string, next: () => NativeToolRenderers | undefined) => NativeToolRenderers | undefined): void;
-  registerMessageRenderer?(customType: string, renderer: (message: AgentMessage, options: { expanded: boolean; outputPad?: number; keyText?(action: string): string }, theme: unknown) => ExtensionWidgetComponent | undefined): void;
+  registerMessageRenderer?(customType: string, renderer: (message: AgentMessage, options: ExtensionRenderOptions, theme: unknown) => ExtensionWidgetComponent | undefined): void;
+  registerEntryRenderer?(customType: string, renderer: (entry: SessionEntry, options: ExtensionRenderOptions, theme: unknown) => ExtensionWidgetComponent | undefined): void;
   sendMessage?(message: { customType: string; content: MessageContent; details: unknown; display: boolean }, options: { triggerTurn: boolean }): void;
   appendEntry?(customType: string, data?: unknown): void;
   registerCommand?(name: string, command: {
