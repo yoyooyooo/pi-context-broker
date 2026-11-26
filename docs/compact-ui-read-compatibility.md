@@ -31,4 +31,12 @@ fresh 普通 Pi 必须读回实际 `read` 的 `sourceInfo`、完整说明与 sch
 
 使用实际 `ToolExecutionComponent` 和 `Container` 验证分组，而非只检查空 renderer：pending、success、error，折叠和展开，普通和窄宽度，两种 resolver 顺序都应每条 read 只出现一行、正文只出现一次，批量显示文件数。
 
+可复用的实际组件验证入口：
+
+```sh
+node scripts/compat/pi-compact-ui/verify-ui.mjs --pi-root /absolute/pi-package --compact-entry /absolute/derived-package/index.ts --broker-renderer-source /absolute/paired-build/source/broker/packages/context-broker/src/pi-read-renderer.ts --out /absolute/new-owned-ui-evidence
+```
+
+该入口读取所选实际 Pi、插件与 Broker renderer，记录其 SHA，并在全新目录保存 16 项检查和渲染快照。它不安装插件、不执行工具、不发送模型请求。
+
 模型行为证据与以上受控验证分别记录。恢复普通 profile 的完整合同会增加它此前被删去的工具说明；219 字节精简的比较基准是完整 Broker `read`，不能把这个数字用于 compact-ui 原先的 54 字节说明。小样本未知和统计不足保持原值，不由 UI 或安装验证补成一般非劣证明。
