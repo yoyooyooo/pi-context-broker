@@ -47,6 +47,7 @@ type Options = {
   defaultView?: boolean;
   profile?: string;
   directory?: { view?: string; profile?: string };
+  onCatalogSettled?: () => void;
 };
 type RuntimeOptions = Omit<Options, "sourceId"> & { metrics?: boolean; onRequestMetrics?: (snapshot: unknown) => void };
 type Sdk = {
@@ -60,6 +61,8 @@ type Sdk = {
   decodeConsumeResult: (value: unknown, expected?: unknown) => Promise<unknown>;
   readSkill: (target: string, options?: RuntimeOptions) => Promise<unknown>;
   listCatalog?: (options?: RuntimeOptions) => Promise<unknown>;
+  readCandidateSnapshot?: (options?: RuntimeOptions) => Promise<unknown>;
+  CANDIDATE_SNAPSHOT_CONTRACT_VERSION?: number;
   resolveCatalogReference?: (target: string, catalog: unknown) => unknown;
   resolveReference?: (target: string, options: RuntimeOptions & { from: string }) => Promise<unknown>;
   listSkill?: (target: string, options?: RuntimeOptions) => Promise<unknown>;
@@ -84,6 +87,7 @@ let catalogDirectoryContractVersion: unknown;
 let consumptionEffectsVersion: unknown;
 let resourceEffectsVersion: unknown;
 let contentSearchContractVersion: unknown;
+let candidateSnapshotContractVersion: unknown;
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -116,6 +120,7 @@ async function loadBundledSdk(): Promise<Sdk> {
     consumptionEffectsVersion = manifest.consumption_effects_version;
     resourceEffectsVersion = manifest.resource_read_effects_version;
     contentSearchContractVersion = manifest.content_search_contract_version;
+    candidateSnapshotContractVersion = manifest.candidate_snapshot_contract_version;
     return sdk;
   })();
   try { return await bundledSdk; }
@@ -123,7 +128,7 @@ async function loadBundledSdk(): Promise<Sdk> {
 }
 
 /** Code is shared; every operation still creates and closes its own SDK runtime. */
-async function observed(operation: "library-selection" | "library" | "consume" | "read" | "read-resources" | "list" | "files" | "resolve" | "content-search", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
+async function observed(operation: "library-selection" | "library" | "consume" | "read" | "read-resources" | "list" | "candidates" | "files" | "resolve" | "content-search", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
   const { sourceId, ...runtimeOptions } = options;
   const attribution = { source_id: sourceId ?? null, library: options.library ?? null };
   const enabled = observations.hasSubscribers;
@@ -141,6 +146,9 @@ async function observed(operation: "library-selection" | "library" | "consume" |
     if (operation === "read-resources"
       && (sdk.RESOURCE_READ_EFFECTS_VERSION !== 1 || resourceEffectsVersion !== 1)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "list" && typeof sdk.listCatalog !== "function") throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+    if ((operation === "candidates" || operation === "list" && options.onCatalogSettled !== undefined)
+      && (sdk.CANDIDATE_SNAPSHOT_CONTRACT_VERSION !== 1 || candidateSnapshotContractVersion !== 1
+      || typeof sdk.readCandidateSnapshot !== "function")) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "list" && options.directory !== undefined
       && (sdk.CATALOG_DIRECTORY_CONTRACT_VERSION !== 1 || catalogDirectoryContractVersion !== 1)) throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
     if (operation === "read" && options.output !== undefined
@@ -215,6 +223,10 @@ export function resolveNotionReferenceSdk(target: string, options: Options & { f
 /** Metadata uses the core catalog cache; no CLI subprocess or second discovery authority. */
 export function listNotionCatalogSdk(options: Options): Promise<unknown> {
   return observed("list", options, (sdk, runtime) => sdk.listCatalog!(runtime));
+}
+/** Pure local discovery. Unlike offline inspection, known refusals remain excluded. */
+export function readNotionCandidateSnapshotSdk(options: Options): Promise<unknown> {
+  return observed("candidates", options, (sdk, runtime) => sdk.readCandidateSnapshot!(runtime));
 }
 /** The shared resolver is pure; it never acquires another SDK runtime or source. */
 export async function resolveNotionCatalogReferenceSdk(target: string, catalog: unknown): Promise<unknown> {

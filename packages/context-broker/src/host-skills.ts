@@ -10,7 +10,7 @@ import { InvocationError, recordIdentity } from "./discovery-records";
 import { assertSourceAvailable, formatSourceFailures, hasEnabledNotionSource } from "./sources";
 import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage, sourceFailureDiagnostic } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
-import { checkPreparationSignal, createPreparationGate, preparationCancelled, withPreparationDeadline, type ActivePreparation } from "./skill-preparation";
+import { checkPreparationSignal, createInputReceipt, createPreparationGate, preparationCancelled, withPreparationDeadline, type ActivePreparation, type InputReceipt } from "./skill-preparation";
 import { continueWithoutBrokerPayload, withoutBrokerInstructions } from "./nonblocking-context";
 import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceConfig, SourceFailure, NotionListObservation, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
 import type { HostCapabilities } from "./host-adapter";
@@ -61,11 +61,12 @@ export type HostSkillOptions = {
   restoreActive?(messages: AgentMessage[], ctx: ExtensionContext, signal: AbortSignal, pending: readonly { graphs: PreparedHostGraph[]; mode: SelectionMode }[]): Promise<ActiveContextRestoration>;
   confirmDelivery?(records: readonly SkillRecord[], messages: AgentMessage[], ctx: ExtensionContext): void;
   needsPreflightPrompt?(text: string): boolean;
+  onInputReceipt?(receipt: InputReceipt): void;
   onPreparation?(entry: ActivePreparation): void;
-  preflightPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<void>;
+  preflightPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal, receipt?: InputReceipt): Promise<void>;
   taskPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal, invocation?: ActivePreparation): Promise<string>;
   /** Pi acquires only after the host has created its cancellable agent operation. */
-  buildPreparedPrompt?(text: string, ctx: ExtensionContext, signal: AbortSignal, prepared: readonly SkillRecord[]): Promise<Omit<AgentMessage, "role" | "timestamp"> | undefined>;
+  buildPreparedPrompt?(text: string, ctx: ExtensionContext, signal: AbortSignal, prepared: readonly SkillRecord[], receipt: InputReceipt): Promise<Omit<AgentMessage, "role" | "timestamp"> | undefined>;
   isLoaded?(record: SkillRecord, ctx: ExtensionContext): boolean;
   sessionSnapshot?(record: SkillRecord, ctx: ExtensionContext): string | undefined;
   sessionBinding?(record: SkillRecord, ctx: ExtensionContext): PreparationBinding | undefined;
@@ -81,7 +82,7 @@ export type HostSkills = {
   activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord>;
   prepare(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<PreparedReference>;
   prepareMany(records: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal): Promise<void>;
-  withPreparedPrompt<T>(prompt: string, ctx: ExtensionContext, build: (signal?: AbortSignal, native?: SkillRecord, original?: string, prepared?: readonly SkillRecord[]) => Promise<T>): Promise<T>;
+  withPreparedPrompt<T>(prompt: string, ctx: ExtensionContext, build: (signal?: AbortSignal, native?: SkillRecord, original?: string, prepared?: readonly SkillRecord[], receipt?: InputReceipt) => Promise<T>): Promise<T>;
   isNativeLoaded(messages: AgentMessage[], record: SkillRecord): boolean;
   selectedModelReference(record: SkillRecord, ctx: ExtensionContext): string | undefined;
   selectedModelFiles(record: SkillRecord, ctx: ExtensionContext): PreparationDirectory["files"] | undefined;
@@ -295,7 +296,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }
   function assertRefreshRootRoles(references: readonly { reference: ExactNativeReference; short?: HostShortRefResolution; record?: SkillRecord }[], ctx: ExtensionContext): void {
     let selection = sessionSelection(ctx);
-    for (const transition of gate.active ? pendingGraphs.get(gate.active) ?? [] : [])
+    for (const transition of deferredPiDiscovery && piRun ? piRun.graphs : gate.active ? pendingGraphs.get(gate.active) ?? [] : [])
       selection = applySelectionGraphs(selection, { graphs: transition.graphs.map(graph => graph.lock), mode: transition.mode, selectionId: "pending-preparation" });
     const identity = libraryContext(ctx)?.local();
     const enabledSources = identity?.sources ?? options.config.sources?.filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false) ?? [];
@@ -405,19 +406,28 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const misses = new WeakMap<ActivePreparation, Set<string>>();
   const preparedForUse = new WeakMap<ActivePreparation, Set<string>>();
   const graphSelectionCommits = new WeakMap<SkillRecord, () => void>();
-  function beginPreparation(event: { text?: string; images?: ImageContent[] }, ctx: ExtensionContext): ActivePreparation {
+  function acceptInput(event: { text?: string; images?: ImageContent[] }, ctx: ExtensionContext): InputReceipt {
     if (options.librarySelection && !libraryContext(ctx)) ctx = options.librarySelection.accept(ctx);
-    const entry = gate.begin(event, ctx);
+    const receipt = createInputReceipt(event, ctx);
+    options.onInputReceipt?.(receipt);
+    return receipt;
+  }
+  function beginPreparation(event: { text?: string; images?: ImageContent[] }, ctx: ExtensionContext, receipt = acceptInput(event, ctx)): ActivePreparation {
+    const entry = gate.begin(receipt.event, receipt.ctx, receipt);
     try { options.onPreparation?.(entry); return entry; }
     catch (error) { gate.release(entry); throw error; }
   }
   let turnPrompts: { snapshots: Map<string, SkillRecord>; signal: AbortSignal } | undefined;
   const feedback = await createActivationFeedback(api, gate.repaint, deferredPiDiscovery ? "entry" : "message");
   let handoff: { entry: ActivePreparation; prompts: string[]; consumed: boolean; selectedNative?: SkillRecord; native?: { snapshot: SkillRecord; promptSha256: string } } | undefined;
-  const queuedInputs: Array<{ text: string; submitted: string; images?: ImageContent[]; ctx: ExtensionContext; generation: number; sessionId?: string; selectedNative?: SkillRecord }> = [];
+  type AcceptedHostInput = { receipt: InputReceipt; submitted: string; selectedNative?: SkillRecord };
+  type QueuedHostInput = AcceptedHostInput & { generation: number; queue: "steer" | "followUp" };
+  const queuedInputs: QueuedHostInput[] = [];
+  let queuedMessages = new WeakMap<AgentMessage, QueuedHostInput>();
   type PiRun = {
-    generation: number; sessionId: string | undefined; signal: AbortSignal; entry?: ActivePreparation;
-    selectedNative?: SkillRecord; projection?: AgentMessage[];
+    generation: number; sessionId: string | undefined; signal: AbortSignal;
+    inputs: AcceptedHostInput[]; preparations: ActivePreparation[]; projection?: AgentMessage[];
+    initialUserPending: boolean;
     prepared: boolean; requestPending: boolean; confirmed: boolean; persisted: number;
     wireBlock?: boolean;
     degraded?: boolean;
@@ -434,7 +444,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const pendingGraphs = new WeakMap<ActivePreparation, Array<{ graphs: PreparedHostGraph[]; mode: SelectionMode }>>();
   function assertPiRun(run: PiRun, ctx: ExtensionContext): void {
     checkPreparationSignal(run.signal);
-    checkPreparationSignal(run.entry?.controller.signal);
+    for (const entry of run.preparations) checkPreparationSignal(entry.controller.signal);
     if (piRun !== run || generation !== run.generation || run.sessionId !== ctx.sessionManager?.getSessionId?.()) throw preparationCancelled();
   }
   function currentPiRun(run: PiRun, ctx: ExtensionContext): boolean {
@@ -453,8 +463,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       } catch { /* Optional UI cannot cancel a user turn. */ }
     }
     if (run) {
-      const entry = run.entry;
-      if (entry) {
+      for (const entry of run.preparations) {
         entry.controller.abort();
         pendingGraphs.delete(entry); preparedForUse.delete(entry); misses.delete(entry);
         for (const [key, value] of loaded) if (value.owner === entry) loaded.delete(key);
@@ -462,7 +471,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         if (handoff?.entry === entry) handoff = undefined;
         gate.release(entry);
       }
-      run.entry = undefined; run.selectedNative = undefined;
+      run.preparations = []; run.inputs = [];
       run.candidates.clear(); run.graphs.length = 0;
       run.projection = undefined; run.requestProjection = undefined;
       run.confirmedProjection = undefined; run.pendingPersistence = undefined;
@@ -501,8 +510,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     try { feedback.clearPending(ctx); } catch { /* A retired host context has no display authority. */ }
     acceptedContext = undefined;
     runningContext = undefined;
-    if (piRun?.entry) gate.release(piRun.entry);
-    if (deferredPiDiscovery && handoff?.entry === piRun?.entry) handoff = undefined;
+    for (const entry of piRun?.preparations ?? []) gate.release(entry);
+    if (deferredPiDiscovery && handoff && piRun?.preparations.includes(handoff.entry)) handoff = undefined;
     piRun = undefined;
     turnPrompts = undefined;
     pendingNativeReads.clear();
@@ -517,6 +526,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   const visibleInLibrary = (record: SkillRecord, ctx: ExtensionContext) => !options.librarySelection || record.source !== "notion"
     || record.sourceId === libraryContext(ctx)?.local()?.source.id && record.locator?.type === "shared_skill"
       && record.locator.library_id === libraryContext(ctx)?.local()?.root;
+  const exactNotionRecord = (record: SkillRecord) => record.source === "notion" && Boolean(record.sourceId && record.sourceScope
+    && record.id && record.ref && record.locator?.type === "shared_skill");
   async function ready(signal: AbortSignal = lifecycleController.signal): Promise<void> {
     checkPreparationSignal(signal);
     const cancelled = Promise.withResolvers<never>();
@@ -882,7 +893,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       assertQualification();
       if (currentInspection) { committed = true; return; }
       let selection = ctx ? sessionSelection(ctx) : { scopes: new Map() };
-      for (const transition of owner ? pendingGraphs.get(owner) ?? [] : [])
+      for (const transition of deferredPiDiscovery && piRun ? piRun.graphs : owner ? pendingGraphs.get(owner) ?? [] : [])
         selection = applySelectionGraphs(selection, { graphs: transition.graphs.map(graph => graph.lock), mode: transition.mode, selectionId: "pending-preparation" });
       const next = applySelectionGraphs(selection, { graphs: graphs.map(graph => graph.lock), mode, selectionId: "prepared" });
       // Exact root/File identity and response budgets are checked by the caller
@@ -930,8 +941,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const observedEffects: ConsumptionEffects[] = [];
     const policy: ConsumptionPolicy = { observeEffects: effects => observedEffects.push(effects) };
     try {
-      await ready(combined);
-      if (discoveryError) throw discoveryError;
+      if (!selected.every(exactNotionRecord)) {
+        await ready(combined);
+        if (discoveryError) throw discoveryError;
+      }
+      for (const record of selected) assertRecordSourceAvailable(record);
       const graphRoots = [...new Map(selected.filter(record => record.source === "notion" && record.kind !== "prompt")
         .map(record => [recordIdentity(record), record])).values()]
         .filter(record => !gate.active || !preparedForUse.get(gate.active)?.has(recordIdentity(record)) && !misses.get(gate.active)?.has(recordIdentity(record)));
@@ -1031,7 +1045,11 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   async function activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal, waitForTool = false, readPhase: "hook" | "execute" = "hook", requestedSnapshot?: string, policy?: ConsumptionPolicy): Promise<SkillRecord> {
     signal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
     checkPreparationSignal(signal);
-    await ready(signal);
+    const exact = exactNotionRecord(record);
+    if (!exact) {
+      await ready(signal);
+      if (discoveryError) throw discoveryError;
+    }
     const { snapshot: sessionSnapshot } = assertSourceSelection(record, ctx, requestedSnapshot);
     const key = recordIdentity(record);
     const prepared = gate.active?.prepared.get(key);
@@ -1042,7 +1060,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       policy?.observeEffects?.(noConsumptionWrites());
       return prepared;
     }
-    record = hostRecords.get(key) ?? record;
+    if (!exact) record = hostRecords.get(key) ?? record;
     const selectedGeneration = generation;
     const directObservation = observations.begin(signal);
     const direct = !options.prepareGraph || record.source !== "notion" || record.kind === "prompt";
@@ -1159,16 +1177,18 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   function needsPreparation(text: string): boolean {
     return Boolean(/^\s*\/skill:[^\s]+/.test(text) || options.needsPreflightPrompt?.(text));
   }
-  async function preflight(text: string, ctx: ExtensionContext, signal?: AbortSignal, selectedNative?: SkillRecord): Promise<void> {
+  async function preflight(text: string, ctx: ExtensionContext, signal?: AbortSignal, selectedNative?: SkillRecord, receipt = gate.active?.receipt): Promise<void> {
     checkPreparationSignal(signal);
-    const selection = needsPreparation(text);
-    if (!deferredPiDiscovery || selection) await ready(signal);
     text = invocationText(text);
-    if (discoveryError && (deferredPiDiscovery ? selection : /(?:^|\s)(?:\$[^\s]+|\/skill:[^\s]+)/.test(text))) throw discoveryError;
+    const nativeSelection = /^\s*\/skill:[^\s]+/.test(text);
+    // Dollar selections resolve through their receipt-aware callback. A bound
+    // candidate still acquires current SDK proof; it need not wait for a View.
+    if (!deferredPiDiscovery || nativeSelection) await ready(signal);
+    if (discoveryError && (deferredPiDiscovery ? nativeSelection : /(?:^|\s)(?:\$[^\s]+|\/skill:[^\s]+)/.test(text))) throw discoveryError;
     const candidate = selectedNative ?? nativeRecord(text);
     const record = candidate && (selectedNative || visibleInLibrary(candidate, ctx)) ? candidate : undefined;
     if (record) await prepare(record, ctx, signal);
-    await options.preflightPrompt?.(text, ctx, signal);
+    await options.preflightPrompt?.(text, ctx, signal, receipt);
     checkPreparationSignal(signal);
   }
 
@@ -1196,7 +1216,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           const selected = nativeNames.get(name);
           const prepared = selected ? await prepare(selected, ctx, entry.controller.signal) : { status: "miss" as const };
           const snapshot = prepared.status === "ready" ? prepared.record : undefined;
-          await options.preflightPrompt?.(args, ctx, entry.controller.signal);
+          await options.preflightPrompt?.(args, ctx, entry.controller.signal, entry.receipt);
           if (!host.sendUserMessage) throw hostError("HOST_SKILL_API_UNAVAILABLE");
           const alreadyLoaded = snapshot ? options.isLoaded?.(snapshot, ctx) ?? false : false;
           let submitted: string;
@@ -1366,6 +1386,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
   for (const event of ["session_before_switch", "session_before_branch", "session_before_tree"] as const) host.on(event, () => {
     queuedInputs.length = 0;
+    queuedMessages = new WeakMap();
     generation++;
     lifecycleController.abort();
     lifecycleController = new AbortController();
@@ -1375,6 +1396,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
   for (const event of ["session_start", "session_switch", "session_tree", "session_branch"] as const) host.on(event, async (_event, ctx) => {
     queuedInputs.length = 0;
+    queuedMessages = new WeakMap();
     acceptedContext = undefined;
     runningContext = undefined;
     // A successful host session boundary acknowledges disposal of its pending turn.
@@ -1400,6 +1422,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   });
   host.on("session_shutdown", () => {
     queuedInputs.length = 0;
+    queuedMessages = new WeakMap();
     acceptedContext = undefined;
     runningContext = undefined;
     generation++;
@@ -1421,8 +1444,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     runningContext = receipt?.entry.ctx;
     if (deferredPiDiscovery) {
       // This is the first public boundary with Pi's actual operation signal.
-      // Preserve the accepted submission's controller: accepted choices use it as
-      // their identity, and cancellation must revoke those choices as well.
+      // The input receipt owns identity; this controller only owns cancellation.
       const preparedEntry = receipt && needsPreparation(receipt.entry.event.text ?? "") ? receipt.entry : undefined;
       const signal = ctx.signal ?? lifecycleController.signal;
       if (receipt) {
@@ -1431,7 +1453,9 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         if (signal.aborted) abort();
       }
       piRun = { generation, sessionId: ctx.sessionManager?.getSessionId?.(), signal,
-        entry: preparedEntry, selectedNative: receipt?.selectedNative,
+        inputs: receipt ? [{ receipt: receipt.entry.receipt, submitted: receipt.entry.event.text ?? "", selectedNative: receipt.selectedNative }] : [],
+        initialUserPending: Boolean(receipt),
+        preparations: preparedEntry ? [preparedEntry] : [],
         prepared: false, requestPending: false, confirmed: false, persisted: 0,
         candidates: new Map(), graphs: [] };
       // Plain input owns admission only until this run exists. Its Library stays
@@ -1450,33 +1474,47 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       catch { ctx.abort?.(); gate.cancel(); }
     }
   });
+  if (deferredPiDiscovery) host.on("message_start", (event, ctx) => {
+    if (!piRun || event.message.role !== "user") return;
+    // Pi starts the admitted prompt before draining either native queue.
+    if (piRun.initialUserPending) { piRun.initialUserPending = false; return; }
+    const text = sourceMessageText(event.message.content);
+    // Pi drains steer before followUp and preserves order within each queue.
+    // Image normalization may replace every image and append text hints before
+    // this event. Associate that occurrence once, never by later image bytes.
+    const input = [...queuedInputs].sort((a, b) => Number(a.queue === "followUp") - Number(b.queue === "followUp"))
+      .find(input => input.generation === generation && input.receipt.sessionId === ctx.sessionManager?.getSessionId?.()
+        && (text === input.submitted || input.receipt.event.images?.length && text.startsWith(input.submitted + "\n\n")));
+    if (!input) return;
+    queuedInputs.splice(queuedInputs.indexOf(input), 1);
+    queuedMessages.set(event.message, input);
+  });
   api.on("context", async (event, ctx) => {
     let admissionError: unknown;
     try {
     // Pi runs input hooks once, before queueing. Adopt accepted queued receipts
     // only when their native user messages actually reach a later context.
-    if (deferredPiDiscovery && piRun && (piRun.prepared || !piRun.entry) && queuedInputs.length) {
+    if (deferredPiDiscovery && piRun && (piRun.prepared || !piRun.preparations.length)) {
       const entries = ctx.sessionManager?.buildSessionProjection?.().entries ?? [];
-      const anchor = entries.findIndex(entry => entry.sourceEntry.id === piRun?.userEntryId);
-      const users = anchor >= 0 ? entries.slice(anchor + 1).flatMap(entry => entry.messages.filter(message => message.role === "user"))
-        : [event.messages.findLast(message => message.role === "user")].filter((message): message is AgentMessage => message !== undefined);
-      const counts = new Map<string, number>();
-      for (const user of users) { const text = sourceMessageText(user.content); counts.set(text, (counts.get(text) ?? 0) + 1); }
-      const accepted = queuedInputs.filter(receipt => {
-        const count = counts.get(receipt.submitted) ?? 0;
-        if (!count || receipt.generation !== generation || receipt.sessionId !== ctx.sessionManager?.getSessionId?.()) return false;
-        counts.set(receipt.submitted, count - 1); return true;
+      // emitContext clones messages. Session provenance retains the original
+      // message_start instance even when a context edit changes its projection.
+      const accepted = entries.flatMap(({ sourceEntry, messages }) => {
+        const message = sourceEntry.message;
+        if (!message) return [];
+        const input = queuedMessages.get(message);
+        if (!input || input.generation !== generation || input.receipt.sessionId !== ctx.sessionManager?.getSessionId?.()
+          || sourceEntry.id && input.receipt.branch.includes(sourceEntry.id) || !messages.some(message => message.role === "user")) return [];
+        queuedMessages.delete(message);
+        return [input];
       });
       if (accepted.length) {
-        for (const receipt of accepted) queuedInputs.splice(queuedInputs.indexOf(receipt), 1);
-        if (piRun.entry) gate.release(piRun.entry);
+        for (const entry of piRun.preparations) gate.release(entry);
         handoff = undefined;
-        runningContext = accepted[accepted.length - 1]!.ctx;
+        runningContext = accepted[accepted.length - 1]!.receipt.ctx;
         ctx = turnContext(ctx);
-        const text = accepted.map(receipt => receipt.text).join("\n\n");
-        const entry = needsPreparation(text) ? beginPreparation({ text, images: accepted.flatMap(receipt => receipt.images ?? []) }, ctx) : undefined;
-        piRun = { generation, sessionId: ctx.sessionManager?.getSessionId?.(), signal: piRun.signal, entry,
-          selectedNative: accepted.length === 1 ? accepted[0]!.selectedNative : undefined,
+        piRun = { generation, sessionId: ctx.sessionManager?.getSessionId?.(), signal: piRun.signal,
+          inputs: accepted, preparations: [],
+          initialUserPending: false,
           prepared: false, requestPending: false, confirmed: false, persisted: 0, candidates: new Map(), graphs: [] };
       }
     }
@@ -1495,28 +1533,43 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           run.userEntryId ??= contextEntries.findLast(entry => entry.sourceEntry.type === "message"
             && entry.messages.some(message => message.role === "user"))?.sourceEntry.id;
           // Metadata, explicit preparation and restoration share one deadline.
-          if (!run.prepared && (run.entry || ctx.mode === "print" || ctx.mode === "json")) {
+          if (!run.prepared && (ctx.mode === "print" || ctx.mode === "json")) {
             await options.librarySelection?.identity(ctx);
             checkPreparationSignal(signal); assertPiRun(run, ctx);
-            if (run.selectedNative && !visibleInLibrary(run.selectedNative, ctx)) run.selectedNative = undefined;
           }
           if (!run.prepared) revalidateMetadata(ctx);
           if (!run.prepared && (ctx.mode === "print" || ctx.mode === "json")) {
             await ready(signal);
             checkPreparationSignal(signal); assertPiRun(run, ctx);
           }
-          if (!run.prepared && run.entry) {
-            const entry = run.entry, text = entry.event.text ?? "";
+          if (!run.prepared) for (const input of run.inputs) {
+            const receipt = input.receipt, text = receipt.event.text ?? "";
+            if (!needsPreparation(text)) continue;
+            let entry = run.preparations.find(entry => entry.receipt === receipt);
+            if (!entry) {
+              if (gate.active) gate.release(gate.active);
+              entry = beginPreparation(receipt.event, receipt.ctx, receipt);
+              run.preparations.push(entry);
+            }
+            // The model may receive several queued messages at once. Each keeps
+            // its own Library and captured choice through every acquisition step.
+            runningContext = receipt.ctx;
+            const inputContext = inheritLibraryContext(ctx, receipt.ctx);
             const preparationSignal = AbortSignal.any([signal, entry.controller.signal]);
-            gate.assertCurrent(entry, ctx);
-            await preflight(text, ctx, preparationSignal, run.selectedNative);
-            checkPreparationSignal(preparationSignal); assertPiRun(run, ctx);
-            const task = await options.taskPrompt?.(text, ctx, preparationSignal, entry) ?? text;
-            checkPreparationSignal(preparationSignal); assertPiRun(run, ctx);
-            const message = needsPreparation(text) ? await options.buildPreparedPrompt?.(text, ctx, preparationSignal, [...entry.prepared.values()]) : undefined;
-            checkPreparationSignal(preparationSignal); assertPiRun(run, ctx);
+            gate.assertCurrent(entry, inputContext);
+            await options.librarySelection?.identity(inputContext);
+            checkPreparationSignal(preparationSignal); assertPiRun(run, inputContext);
+            const native = input.selectedNative && visibleInLibrary(input.selectedNative, inputContext) ? input.selectedNative : undefined;
+            revalidateMetadata(inputContext);
+            await preflight(text, inputContext, preparationSignal, native, receipt);
+            checkPreparationSignal(preparationSignal); assertPiRun(run, inputContext);
+            const task = await options.taskPrompt?.(text, inputContext, preparationSignal, entry) ?? text;
+            checkPreparationSignal(preparationSignal); assertPiRun(run, inputContext);
+            const message = await options.buildPreparedPrompt?.(text, inputContext, preparationSignal, [...entry.prepared.values()], receipt);
+            checkPreparationSignal(preparationSignal); assertPiRun(run, inputContext);
             for (const record of entry.prepared.values()) if (record.kind !== "prompt") run.candidates.set(recordIdentity(record), record);
-            run.projection = message ? [{ ...message, role: "custom", timestamp: Date.now() }] : [];
+            run.projection ??= [];
+            if (message) run.projection.push({ ...message, role: "custom", timestamp: Date.now() });
             if ([...entry.prepared.values()].some(record => record.source === "notion")) {
               const graphs = (pendingGraphs.get(entry) ?? []).flatMap(staged => staged.graphs);
               const effects = graphs.length ? combineConsumptionEffects(graphs.map(graph => graph.effects)) : consumptionEffects(undefined);
@@ -1527,8 +1580,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
             if (task !== text) run.projection.push({ role: "custom", customType: "context-broker-task",
               content: task.startsWith(text) ? task.slice(text.length).trimStart() : task, display: false,
               details: { version: 1, invocation: entry.id }, timestamp: Date.now() });
-            turnPrompts = { snapshots: new Map([...entry.prepared].filter(([, record]) => record.kind === "prompt")), signal: preparationSignal };
+            turnPrompts = { snapshots: new Map(run.preparations.flatMap(entry => [...entry.prepared].filter(([, record]) => record.kind === "prompt"))), signal };
           }
+          if (run.inputs.length) runningContext = run.inputs[run.inputs.length - 1]!.receipt.ctx;
+          ctx = turnContext(ctx);
           run.prepared = true;
         }
         let messages = withSessionSourceReceipts(event.messages.filter(message => message.customType !== ACTIVATION_MESSAGE
@@ -1619,14 +1674,17 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       }
       try {
         assertPiRun(run, ctx);
-        if (!run.confirmed && run.entry) for (const staged of pendingGraphs.get(run.entry) ?? []) options.persistGraphs?.(staged.graphs, ctx, staged.mode);
+        if (!run.confirmed) for (const entry of run.preparations) {
+          for (const staged of pendingGraphs.get(entry) ?? [])
+            options.persistGraphs?.(staged.graphs, inheritLibraryContext(ctx, entry.receipt.ctx), staged.mode);
+        }
         options.confirmDelivery?.([...run.candidates.values()], run.contextMessages ?? [], ctx);
         // onResponse means headers received, before consuming the stream. It
         // confirms this request was accepted; it does not claim model completion.
         run.confirmedProjection = run.requestProjection;
         run.confirmed = true;
         run.requestPending = false;
-        if (run.entry) gate.release(run.entry);
+        for (const entry of run.preparations) gate.release(entry);
         feedback.confirmPrepared(ctx);
       } catch (error) {
         if (currentPiRun(run, ctx)) warnAndRetire(run, ctx, error, true);
@@ -1658,10 +1716,10 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     if (deferredPiDiscovery && (event.source === "interactive" || event.source === "rpc") && (event.streamingBehavior || current)) {
       try {
         const accepted = options.librarySelection?.accept(ctx) ?? ctx;
+        const receipt = acceptInput(event, accepted);
         const native = nativeRecord(text);
         const submitted = text.startsWith("/skill:") ? "\n" + text : text;
-        queuedInputs.push({ text, submitted, images: event.images?.slice(), ctx: accepted, generation,
-          sessionId: ctx.sessionManager?.getSessionId?.(), selectedNative: native });
+        queuedInputs.push({ receipt, submitted, generation, queue: event.streamingBehavior ?? "steer", selectedNative: native });
         return submitted === text ? adapter.continuedInput : adapter.transformInput(submitted, event.images);
       } catch (error) { notify(ctx, error); return adapter.continuedInput; }
     }
@@ -1683,7 +1741,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     try {
       ctx = options.librarySelection?.accept(ctx) ?? ctx;
       acceptedContext = ctx;
-      entry = needsPreparation(text) || options.librarySelection && hasEnabledNotionSource(options.config) ? beginPreparation(event, ctx) : undefined;
+      const receipt = acceptInput(event, ctx);
+      entry = needsPreparation(text) || options.librarySelection && hasEnabledNotionSource(options.config) ? beginPreparation(event, ctx, receipt) : undefined;
     } catch (error) { notify(ctx, error); return deferredPiDiscovery ? adapter.continuedInput : adapter.handledInput; }
     const submissionSignal = entry?.controller.signal ?? lifecycleController.signal;
     const submissionGeneration = generation;
@@ -2232,7 +2291,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
             if (piRun) {
               piRun.generation = generation; piRun.candidates.clear(); piRun.graphs = [];
               piRun.requestPending = false; piRun.confirmedProjection = undefined;
-              if (piRun.entry) pendingGraphs.delete(piRun.entry);
+              for (const accepted of piRun.preparations) pendingGraphs.delete(accepted);
             }
           }
         }
@@ -2814,7 +2873,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     try {
       if (receipt) gate.assertCurrent(receipt.entry, ctx);
       const native = receipt?.consumed && receipt.native?.promptSha256 === createHash("sha256").update(prompt).digest("hex") ? receipt.native.snapshot : undefined;
-      const result = await build(receipt?.entry.controller.signal, native, receipt?.entry.event.text, receipt ? [...receipt.entry.prepared.values()] : []);
+      const result = await build(receipt?.entry.controller.signal, native, receipt?.entry.event.text, receipt ? [...receipt.entry.prepared.values()] : [], receipt?.entry.receipt);
       if (receipt) gate.assertCurrent(receipt.entry, ctx);
       return result;
     } catch (error) {

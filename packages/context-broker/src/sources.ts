@@ -9,7 +9,8 @@ import type { ConsumptionPolicy } from "./consumption-effects";
 import type { ConfigFile, NotionDirectorySelection, NotionDirectoryObservation, NotionListObservation, SkillRecord, SourceConfig, SourcePolicy, ScanConfig, DiscoveryResult, SourceFailure } from "./types";
 
 export { SourceError } from "./notion-source";
-export type SourceOptions = ConsumptionPolicy & { signal?: AbortSignal; stale?: boolean; refreshSourceIds?: readonly string[]; snapshotId?: string; directorySelections?: ReadonlyMap<string, NotionDirectorySelection> };
+export type SourceOptions = ConsumptionPolicy & { signal?: AbortSignal; stale?: boolean; refreshSourceIds?: readonly string[]; snapshotId?: string; directorySelections?: ReadonlyMap<string, NotionDirectorySelection>;
+  onCatalogSettled?: (source: Extract<SourceConfig, { type: "notion" }>) => void };
 
 export function hasEnabledNotionSource(config: Pick<ConfigFile, "sources">): boolean {
   return config.sources?.some(source => source.type === "notion" && source.enabled !== false) === true;

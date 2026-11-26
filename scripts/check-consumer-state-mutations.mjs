@@ -7,6 +7,36 @@ import { createHash } from "node:crypto";
 
 const cases = [
   {
+    "name": "accepted-candidate-directory-wait",
+    "file": "src/host-skills.ts",
+    "old": "if (!selected.every(exactNotionRecord)) {",
+    "replacement": "if (true) {",
+    "test": "host-prepare.test.ts",
+    "pattern": "accepted exact dollar graph prepares while the catalog remains pending",
+    "properties": [],
+    "concrete_obligations": ["An already bound candidate reaches current graph acquisition while the unrelated directory producer is held. Promise completion is outside the finite menu variables."]
+  },
+  {
+    "name": "accepted-candidate-physical-binding",
+    "file": "src/host-skills.ts",
+    "old": "if (!exact) record = hostRecords.get(key) ?? record;",
+    "replacement": "record = hostRecords.get(key) ?? record;",
+    "test": "host-prepare.test.ts",
+    "pattern": "accepted exact records keep their physical binding",
+    "properties": [],
+    "concrete_obligations": ["Accepted source/scope/physical locator cannot be replaced by a later directory record with the same logical identity. Physical locators are outside the finite menu variables."]
+  },
+  {
+    "name": "accepted-candidate-source-denial",
+    "file": "src/host-skills.ts",
+    "old": "for (const record of selected) assertRecordSourceAvailable(record);",
+    "replacement": "void selected;",
+    "test": "host-prepare.test.ts",
+    "pattern": "accepted exact records keep their physical binding",
+    "properties": [],
+    "concrete_obligations": ["Skipping unrelated directory waiting does not bypass the selected source's known refusal before graph preparation. The actual source lookup boundary remains a concrete consumer obligation."]
+  },
+  {
     "name": "library-each-input-default",
     "file": "src/library-selection.ts",
     "old": "accept: (ctx: ExtensionContext) => capture(ctx, true),",

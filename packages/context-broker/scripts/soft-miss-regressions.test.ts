@@ -182,7 +182,7 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
           assert.equal(typeof command, "string");
           await commands.get("context-broker-submit")!.handler((command as string).split(" ")[1]!, ctx);
           assert.equal(sent.length, before + 1, "OMP dispatches each input once");
-          assert.equal((sent.at(-1) as unknown[])[1], image);
+          assert.deepEqual((sent.at(-1) as unknown[])[1], image, "The admitted image retains its exact content after receipt copying");
           const content = sent.at(-1)!;
           submitted = typeof content === "string" ? content : content.flatMap(part => part.type === "text" && typeof part.text === "string" ? [part.text] : []).join("\n");
         } else {

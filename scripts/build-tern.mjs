@@ -67,11 +67,12 @@ const requiredConstants = {
   CATALOG_DIRECTORY_CONTRACT_VERSION: 1, READ_OUTPUT_PROOF_VERSION: 1,
   RESOURCE_READ_CONTRACT_VERSION: 1, RESOURCE_READ_EFFECTS_VERSION: 1,
   CONTENT_SEARCH_CONTRACT_VERSION: 1,
+  CANDIDATE_SNAPSHOT_CONTRACT_VERSION: 1,
 };
 for (const [name, version] of Object.entries(requiredConstants)) {
   if (selectedSdkApi[name] !== version) throw new Error(`The current paired ntn-skills SDK requires ${name}=${version}; upgrade the complete selected package`);
 }
-for (const name of ['selectLibrary', 'resolveLibrary', 'consume', 'decodeConsumeResult', 'listCatalog', 'listSkill', 'resolveCatalogReference', 'readSkill', 'readResources', 'decodeResourceReadResult', 'parseDuration', 'contentSearch']) {
+for (const name of ['selectLibrary', 'resolveLibrary', 'consume', 'decodeConsumeResult', 'listCatalog', 'readCandidateSnapshot', 'listSkill', 'resolveCatalogReference', 'readSkill', 'readResources', 'decodeResourceReadResult', 'parseDuration', 'contentSearch']) {
   if (typeof selectedSdkApi[name] !== 'function') throw new Error(`The current paired ntn-skills SDK must export ${name}`);
 }
 if (selectedSdkApi.PACKAGE_VERSION !== selectedCli.metadata.version) throw new Error('CLI and SDK package versions differ');
@@ -139,6 +140,7 @@ const runtimeManifest = { version: 1, package: "ntn-skills", package_version: se
   ...(consumptionEffectsVersion === undefined ? {} : { consumption_effects_version: consumptionEffectsVersion }),
   ...(resourceEffectsVersion === undefined ? {} : { resource_read_effects_version: resourceEffectsVersion }),
   content_search_contract_version: contentSearchVersion,
+  candidate_snapshot_contract_version: selectedSdkApi.CANDIDATE_SNAPSHOT_CONTRACT_VERSION,
   cli_sha256: createHash("sha256").update(cliCode).digest("hex"), sdk_sha256: createHash("sha256").update(sdkCode).digest("hex") };
 const licenseFiles = new Map();
 async function collectLicenses(name, from) {

@@ -15,14 +15,16 @@ import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose
 import { sharedSkillId, validSharedRecordId } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
 import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch, publishNotionResourceFile } from "./notion-entry";
-import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, resolveNotionCatalogReferenceSdk, resolveNotionReferenceSdk, listNotionFilesSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
+import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, readNotionCandidateSnapshotSdk, resolveNotionCatalogReferenceSdk, resolveNotionReferenceSdk, listNotionFilesSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
+import { notionCompletionCandidates, type CompletionCandidate } from "./completion-candidates";
 import type { ResourceReadBudget, FixedResourceRead, ResourceReadBatch, ResourceReadFileIdentity, ResourceReadWireFile } from "./resource-read-types";
 import type { ContentRecord, NotionDirectory, NotionDirectorySelection, NotionDirectoryOutcome, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
 import { searchNotionContentSdk } from "./notion-sdk";
 import { decodeContentSearchResult, type ContentSearchRequest, type ContentSearchOptions, type ContentSearchResult } from "./content-search";
 
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
-type Options = ConsumptionPolicy & { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean; snapshotId?: string };
+type Options = ConsumptionPolicy & { signal?: AbortSignal; refresh?: boolean; stale?: boolean; view?: string; defaultView?: boolean; snapshotId?: string;
+  onCatalogSettled?: (source: NotionSource) => void };
 type Json = Record<string, unknown>;
 const SharedLocator = Schema.Struct({ type: Schema.Literal("shared_skill"), page_id: Schema.String, database_id: Schema.String, data_source_id: Schema.String, library_id: Schema.String, skill_id: Schema.String });
 const ContentSchema = Schema.Struct({ id: Schema.String, kind: Schema.Literals(["skill", "router", "prompt"]), locator: SharedLocator, name: Schema.String, alias: Schema.String, description: Schema.String, default_context: Schema.Boolean, enabled: Schema.Boolean, entrypoint: Schema.String, ref: Schema.String });
@@ -114,6 +116,47 @@ async function sdkFreshness(source: NotionSource, refresh?: boolean) {
 function sdkOptions(source: NotionSource, cwd: string, signal?: AbortSignal) {
   return { sourceId: source.id, library: source.library, cwd, signal, env: { ...process.env,
     ...(source.requestTimeoutMs === undefined ? {} : { NTN_SKILLS_REQUEST_TIMEOUT_MS: String(source.requestTimeoutMs) }) } };
+}
+export type NotionCandidateSnapshot = { kind: "miss"; reason: string }
+  | { kind: "blocked"; scope: string; candidates: CompletionCandidate[] }
+  | { kind: "snapshot"; scope: string; candidates: CompletionCandidate[]; verifiedAt: number; stale: boolean; coverage: "complete" | "partial" };
+
+export async function readNotionCandidateSnapshot(source: NotionSource, cwd: string, signal?: AbortSignal): Promise<NotionCandidateSnapshot> {
+  const value = await readNotionCandidateSnapshotSdk(sdkOptions(source, cwd, signal));
+  signal?.throwIfAborted();
+  if (!object(value)) return decodeError(source);
+  if (value.kind === "miss" && typeof value.reason === "string") return { kind: "miss", reason: value.reason };
+  if (typeof value.libraryId !== "string" || notionPageId(value.libraryId) !== value.libraryId
+    || source.library !== undefined && notionPageId(source.library) !== value.libraryId
+    || typeof value.scope !== "string" || !HASH.test(value.scope) || !Array.isArray(value.denials)) return decodeError(source);
+  if (value.kind === "blocked") return { kind: "blocked", scope: value.scope, candidates: [] };
+  if (value.kind !== "snapshot" || !Array.isArray(value.records) || !["complete", "partial"].includes(String(value.coverage))
+    || typeof value.verifiedAt !== "number" || !Number.isSafeInteger(value.verifiedAt) || value.verifiedAt < 0
+    || value.fetched_at !== value.verifiedAt || typeof value.stale !== "boolean") return decodeError(source);
+  const records = value.records.map(record => contentRecord(record, source));
+  const stable = new Set<string>(), physical = new Set<string>();
+  for (const record of records) {
+    if (record.locator.library_id !== value.libraryId || stable.has(record.id) || physical.has(record.locator.page_id)) return decodeError(source);
+    stable.add(record.id); physical.add(record.locator.page_id);
+  }
+  return { kind: "snapshot", scope: value.scope, verifiedAt: value.verifiedAt, stale: value.stale,
+    coverage: value.coverage === "complete" ? "complete" : "partial",
+    candidates: notionCompletionCandidates(records, source, value.scope, value.coverage === "complete") };
+}
+
+/** Only an accepted input needs a host file projection. This grants no current/body proof. */
+export async function materializeCompletionCandidate(candidate: CompletionCandidate, cwd: string, signal?: AbortSignal): Promise<SkillRecord> {
+  signal?.throwIfAborted();
+  if (candidate.origin === "local") return candidate.record;
+  const { record: item, source, scope, token } = candidate;
+  const dir = join(await cacheRoot(source, cwd), "scopes", scope, "indexes", randomUUID(), createHash("sha256").update(item.id).digest("hex"));
+  await privateDirectory(dir, source);
+  const path = join(dir, item.entrypoint);
+  await writeFile(path, `---\nname: ${JSON.stringify(item.alias.replace(/[^a-z0-9-]/g, "-"))}\ndescription: ${JSON.stringify(item.description)}\n---\n`, { flag: "wx", mode: 0o600 });
+  signal?.throwIfAborted();
+  return { ...item, source: "notion", path, metadataIndexPath: path, aliases: [], autoloadEnabled: item.kind !== "prompt",
+    normalizedName: item.alias, normalizedAliases: [], normalizedDescription: normalizeKey(item.description),
+    sourceId: source.id, sourceScope: scope, token: `${source.namespace ?? source.id}/${item.alias}`, selectionToken: token };
 }
 /** One configured source enters the SDK; raw MCP candidates never enter Broker. */
 export async function searchNotionContent(input: ContentSearchRequest, source: NotionSource, cwd: string,
@@ -338,6 +381,7 @@ async function discoverNotionDirectory(source: NotionSource, cwd: string, option
         ...(options.view !== undefined ? { view: options.view } : options.defaultView ? { defaultView: true } : {}),
         ...(selectedProfile === undefined ? {} : { profile: selectedProfile }) });
     } catch (error) { throw sdkFailure(error, source, "list", options.signal); }
+    finally { if (!selectedView && !options.signal?.aborted) options.onCatalogSettled?.(source); }
     if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
     if (!object(value)) return decodeError(source);
     return value;
@@ -427,9 +471,17 @@ export async function discoverNotionSource(source: NotionSource, cwd: string, op
 /** Both projections use one SDK runtime; raw metadata stays inside that runtime. */
 export async function discoverNotionCatalogAndDirectory(source: NotionSource, cwd: string, selection: NotionDirectorySelection, options: Options = {}): Promise<{ catalog: NotionDirectoryOutcome; directory: NotionDirectoryOutcome }> {
   let value: unknown;
+  let notified = false;
+  const onCatalogSettled = () => {
+    if (notified || options.signal?.aborted) return;
+    notified = true;
+    try { void Promise.resolve(options.onCatalogSettled?.(source)).catch(() => {}); } catch {}
+  };
   try {
-    value = await listNotionCatalogSdk({ ...sdkOptions(source, cwd, options.signal), ...await catalogPolicy(source, options.refresh), directory: selection });
+    value = await listNotionCatalogSdk({ ...sdkOptions(source, cwd, options.signal), ...await catalogPolicy(source, options.refresh), directory: selection,
+      ...(options.onCatalogSettled ? { onCatalogSettled } : {}) });
   } catch (error) { throw sdkFailure(error, source, "list", options.signal); }
+  finally { onCatalogSettled(); }
   if (options.signal?.aborted) throw new SourceError("SOURCE_CANCELLED", source.id);
   if (!object(value) || value.version !== 1) decodeError(source);
   const project = async (outcome: unknown, selected: Options): Promise<NotionDirectoryOutcome> => {

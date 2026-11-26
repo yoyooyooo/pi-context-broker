@@ -170,6 +170,72 @@ input 保留接纳时的 Library、session 和 generation，在其实际消息�
 失效归具体宿主回归，不能从这个模型通过推出。
 根创建、descriptor v2、实际 DB/DS parent、同 root 换表与原 pending key 属于 CLI 的 LibraryLifecycle。
 
+### 普通与排队输入的接纳回执
+
+`skill-preparation.createInputReceipt` 在 input 接纳的同步部分复制原文本和图片，
+保存独立 invocation ID、原 session/branch 以及已经接纳的 Library context。
+`accepted-selections.capture` 同时消费这条输入的草稿选择；之后 preflight、
+task prompt 和正文构造按同一个 receipt 读取。组合、替换或取消 AbortSignal
+不改变身份；下一草稿、同 token 新候选或后台目录不得修改旧 receipt。
+
+Pi 只在消息真正到达 context 后准备排队输入。`host-skills` 在原生
+`message_start` 按 steer 优先于 followUp、同队列 FIFO 关联接纳回执，排除该轮
+初始 prompt；有图片的消息可已经被宿主改写图片并追加文本提示。关联只做一次，
+随后以 `SessionEntry.message` 保留的原消息实例认领。Pi 的 `emitContext` 会复制
+消息，不能拿 context 中的引用、原图片字节或下一草稿重建身份，也没有 fixture
+专用的值匹配回退。每条输入使用原 receipt 和 Library，不能先拼接再按最后一条
+Library 重新解析。
+准备图仍通过原 identity/budget/Requires/qualification 守卫，整个 model request
+仍共用既有有界 preparation deadline。多条 pending 图共同参与闭包与冲突检查，
+2xx 后才分别按原输入作用域持久化；原 user/image 消息保留。
+
+`accepted-selections.test.ts` 使用真实 host hooks 重放原组合 signal 和排队换绑
+反例，并覆盖多条同文本不同 Library/images、steering 优先序、归一化和生命周期退休。
+`pi-queued-input.test.ts` 直接使用选定 Pi 的 AgentSession 图片缩放、ExtensionRunner
+事件和 SessionManager：真实图片字节与文本变化后，原回执仍绑定 A；原生归一化
+消息经过真实 context clone 后完整交付，重复投影不重复认领。它是受控宿主边界
+回放，不是远端授权、实际模型消费或 TUI 体验的证明。
+LibrarySession 没有 arbitrary queue、图片或 Signal 对象变量，SelectionGraph
+也没有多输入图数组；这些是实际调用边界义务，不扩大有限模型的声明。
+DeliveryBoundary 的 provider、turn、branch、完整正文和公开 ACK 条件不变。
+
+## MenuPublication
+
+本轮切片保留四条既定性质及四个各破坏一个守卫的配置，使用现有 consumer-state
+runner 和独立 expected_rules。它是此次可复现源码，不能冒称为历史 18 states
+设计模型或以旧状态数代替当前运行结果。
+
+有限域是一份固定作用域、已打开并高亮 B 的下拉，候选 A/B，一次缓存返回、一次
+刷新及一次 Esc/接受。known-denial 场景以 A 的拒绝晚于缓存为前提；reorder 场景
+没有拒绝。缓存与刷新先进入内存快照，屏幕更新是另一动作，用户可以在两者之间
+接受仍显示的原候选。完成态允许 stutter；没有公平性、网络最终成功或时延性质。
+
+| 性质/动作 | 具体所有者与守卫 | 证明边界 |
+| --- | --- | --- |
+| NoDeniedResurrection / ReturnCache | SDK readCandidateSnapshot 筛除最新 scope/record 拒绝；Broker 只接纳 SDK 返回的候选 | 拒绝是本模型输入前提；SQLite 原子性和认证归 SDK 回归 |
+| FreshOutranksLateCache / ReturnFresh | completion-candidates.createCompletionSnapshot.accept 的 owner/order/refreshed 门禁；index 的 menu generation 与 catalog owner | 只枚举一次 cache/fresh，不覆盖跨库网络调度 |
+| NoDismissedReopen / Escape、UpdateMenu | pi-dollar-editor 的 intent、valid、sequence、dismiss；Esc 在 waiting/open 都撤销 intent | 真实 Pi debounce、输入键和 Promise 退出由 Editor/TUI 回放 |
+| ChoiceIdentityPreserved / UpdateMenu、Accept | editor 按 item.identity 保持高亮，移除时无选择；dollar.applyCompletion 使用原 item.candidate | 同名、重排、改名、撤下和接受竞态由实际 Editor 测试补齐 |
+
+`completion-candidates` 的新元信息候选没有伪造文件路径，`dollar` 每次只筛选当前
+内存快照。被选身份在 input 接纳时进入独立 receipt；真正消费才物化，并继续
+执行当前资格、精确来源、完整主文/Requires、固定 pin 和实际交付验证。
+候选可见不能推进 ready/loaded，关闭菜单也不能撤回历史 provider 接受事实。
+
+`host-skills.prepareMany/activate` 对已经携带精确 source、scope、稳定 ID/ref 和
+shared_skill locator 的 Notion 候选直接调用原 graph/load 消费边界，不等待无关
+Catalog/Default View。普通名字、原生 `/skill:` 解析和其他来源保持目录路径。
+`preflight` 的 `$` 解析交给 receipt-aware callback，仍由实际 SDK 取得当前资格
+和完整正文；已有本 source 的拒绝、较新拒绝与迟到成功、固定 pin 和最终 commit
+守卫保留。已捕获的 physical locator 不由后到目录中同 logical identity 的条目
+替换。`host-prepare.test.ts` 在目录 producer 未释放时重放完整 root/Requires、
+Prompt 获取、physical binding 和本 source 拒绝；这不证明实际网络可用或消费授权。
+
+实际回放另覆盖 cold/stale/partial/完整空结果、缓存损坏、已知拒绝、producer
+忽略 abort、provider reject 后下一请求、scope/cursor/session 退休和图片保持。
+按键至真实可见下拉、后台返回至屏幕更新及筛选 p50/p95 由真实 Editor/TUI 另测，
+包括 Pi 的自然 debounce；任何模型状态数或零 HTTP 断言都不是毫秒证据。
+
 ## 守卫破坏与诊断
 
 scripts/check-consumer-state-mutations.mjs 为每个实际守卫创建隔离 package 副本，链接既有依赖，只在副本内改一处。每个 case 保存源码/测试 hash、完整 argv、stdout/stderr 与 baseline/mutated/restored 退出状态。入口还运行 check-consumer-observation-mutations.mjs，保留旧 order/cursor 反例。

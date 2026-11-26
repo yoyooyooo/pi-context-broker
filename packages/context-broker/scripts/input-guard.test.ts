@@ -11,7 +11,7 @@ import { createPiHostAdapter } from "../src/pi-host-adapter";
 import { SourceError } from "../src/notion-source";
 import type { ActivePreparation } from "../src/skill-preparation";
 import { softMissRegressions } from "./soft-miss-regressions.test";
-import type { ExtensionAPI, ExtensionContext, SkillRecord, DiscoveryResult, MessageContent, NativeReadDefinition, NativeReadMetadata, NativeReadResult } from "../src/types";
+import type { ExtensionAPI, ExtensionContext, SkillRecord, DiscoveryResult, MessageContent, NativeReadDefinition, NativeReadMetadata, NativeReadResult, AgentMessage, SessionEntry } from "../src/types";
 import type { HostCapabilities } from "../src/host-adapter";
 
 type Listener = (event: never, ctx: ExtensionContext) => unknown;
@@ -55,6 +55,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
     const events = new Map<string, Listener[]>(), tools = new Map<string, NativeReadDefinition>();
     const requests: Array<ReturnType<typeof Promise.withResolvers<DiscoveryResult<SkillRecord>>>> = [];
     const published: SkillRecord[][] = [], notices: string[] = [], loads: SkillRecord[] = [];
+    let nativeEntries: SessionEntry[] = [], messageOrder = 0;
     let session = "startup-session", aborts = 0, entry: ActivePreparation | undefined, loaded = false, operation: AbortController | undefined;
     let load = async (selected: SkillRecord): Promise<SkillRecord> => ({ ...selected, body, snapshotId: "startup-v1" });
     const api: ExtensionAPI = {
@@ -63,7 +64,9 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       registerTool(tool) { tools.set(tool.name, tool); }, registerCommand() {},
     };
     const ctx: ExtensionContext = {
-      mode: "rpc", hasUI: false, cwd: root, sessionManager: { getSessionId: () => session, getEntries: () => [] },
+      mode: "rpc", hasUI: false, cwd: root, sessionManager: { getSessionId: () => session, getEntries: () => nativeEntries, getBranch: () => nativeEntries,
+        buildSessionProjection: () => ({ entries: nativeEntries.map(sourceEntry => ({ sourceEntry, messages: sourceEntry.message ? [sourceEntry.message] : [] })),
+          messages: nativeEntries.flatMap(entry => entry.message ? [entry.message] : []) }) },
       ui: { notify: text => notices.push(text) }, abort: () => { aborts++; operation?.abort(); },
     };
     const adapter = kind === "pi" ? createPiHostAdapter(api) : createOmpHostAdapter(api);
@@ -75,7 +78,12 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       onMetadata: records => published.push(records), onPreparation: value => { entry = value; },
       needsPreflightPrompt: text => parseInvocations(text, rules).length > 0,
       preflightPrompt: async (text, context, signal) => {
-        if (parseInvocations(text, rules).some(request => request.query === "startup@fixture")) await host.prepare(record, context, signal);
+        if (parseInvocations(text, rules).some(request => request.query === "startup@fixture")) {
+          // This fixture typed a name and has no accepted completion receipt.
+          // Resolve its directory before selecting a record, as index does.
+          await search(signal);
+          await host.prepare(record, context, signal);
+        }
       },
       buildPreparedPrompt: async (_text, _ctx, _signal, prepared) => ({ customType: "context-broker", content: prepared.map(record => record.body).join("\n"), display: false }),
       isLoaded: () => loaded,
@@ -98,21 +106,28 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       }).join("\n\n");
     };
     const search = (signal?: AbortSignal) => tools.get(kind === "pi" ? "notion_list" : "skill_search")!.execute("startup-search", { query: "startup" }, signal, undefined, ctx);
+    const deliver = async (content: MessageContent) => {
+      const message: AgentMessage = { role: "user", content };
+      await emit("message_start", { type: "message_start", message });
+      nativeEntries.push({ type: "message", id: "native-" + ++messageOrder, message });
+      return message;
+    };
     const begin = async (text: string) => {
       const [result] = await emit("input", { source: "rpc", text });
       const submitted = result && object(result).action === "transform" ? textOf(result) : text;
       await emit("before_agent_start", { prompt: submitted, systemPrompt: "base" });
       operation = new AbortController(); ctx.signal = operation.signal;
       await emit("agent_start");
-      return { result, submitted, project: () => emit("context", { messages: [{ role: "user", content: submitted }] }) };
+      const message = await deliver(submitted);
+      return { result, submitted, project: () => emit("context", { messages: [structuredClone(message)] }) };
     };
     return {
-      installed, emit, systemPrompt, requests, published, notices, loads, search, adapter, ctx, begin,
+      installed, emit, systemPrompt, requests, published, notices, loads, search, adapter, ctx, begin, deliver,
       stop: () => operation?.abort(),
       async end() { await emit("agent_end"); ctx.signal = undefined; operation = undefined; },
       entry: () => entry, aborts: () => aborts, host: () => host,
       setLoad: (next: typeof load) => { load = next; }, setLoaded: () => { loaded = true; },
-      move: () => { session = "replacement-session"; },
+      move: () => { session = "replacement-session"; nativeEntries = []; },
       resolve: (index = requests.length - 1, records = [record]) => requests[index]!.resolve({ records, failures: [] }),
       async close() { await emit("session_shutdown"); for (const pending of requests) pending.resolve({ records: [], failures: [] }); await installed; },
     };
@@ -216,7 +231,8 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
         assert.deepEqual(prepared?.map(value => [value.id, value.snapshotId]), [[record.id, "startup-v1"]]);
       });
       const queuedContent = [{ type: "text", text: submitted }, ...images];
-      const [queuedContext] = await f.emit("context", { messages: [{ role: "user", content: queuedContent }] });
+      const queuedMessage = await f.deliver(queuedContent);
+      const [queuedContext] = await f.emit("context", { messages: [structuredClone(queuedMessage)] });
       assert.equal(f.loads.length, 2, "A queued selection is prepared when its message reaches context, without another input hook");
       const queuedMessages = object(queuedContext).messages;
       assert.ok(Array.isArray(queuedMessages));

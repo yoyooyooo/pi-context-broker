@@ -11,34 +11,34 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1",
+    "packages/context-broker/src/host-skills.ts": "eb9153cdc6e3b6665633d80e6bca804bb72df7447eccd5ab98510640798da205",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "dc3c97493542f11345aadbc35e2b49e351f1047cf5063ed50e09b2177b312622",
     "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
-    "packages/context-broker/scripts/host-prepare.test.ts": "88fbe60781d503b2146aeb1717c8a9c2471d43b878d6e74fd208227f67605194",
+    "packages/context-broker/scripts/host-prepare.test.ts": "651aa20540dcbabed282c8600cfc8a1c732bfbfed042fc9538ce493484a44061",
     "packages/context-broker/scripts/session-active.test.ts": "9e6b85e7db03965db5dbe5a2741472c2eee9c32e09f80c484f92f093d0d17186",
     "packages/context-broker/scripts/native-read-session.test.ts": "a00f16b9c35e3a3a03e31665aff043534bd8385d97e15e4948af9703ff1fcab1",
     "packages/context-broker/scripts/skill-context-session.test.ts": "f9917449d7af5c0f1c111b8966b8b98717bf8e2cd709f0ba9fd3eb9a7eb891c6",
     "packages/context-broker/scripts/consumer-state.test.ts": "78ce1d2e7416649eb70c467835678abaa6203a6c6cfbe4da91d4f9ac139171ba",
-    "scripts/check-consumer-state-mutations.mjs": "02ea8b151ea52a06ae714e47916fbb5aa4ac089f0a0eff6e81ead5e366981690",
+    "scripts/check-consumer-state-mutations.mjs": "ab93143ab5a424a8816d603c4deec3cd09c52c7115dbcf1f33bd46b0d46bdfea",
     "packages/context-broker/src/final-request.ts": "35ecfb52a7321e93fee2579eac8e52d0fed3f5ece5e2bc819bb5f7c4db921e2c",
     "packages/context-broker/scripts/final-request.test.ts": "d9c5e24a03626d4bbc7271fb126e2288b28e257e5513de6dfc744b01c0bbfef4",
     "packages/context-broker/scripts/final-request-undici.test.ts": "bf57522e3cd63a398f05085dbfd04068eade37018a897bf269ee3c2d68836fbd",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "453d30268dc2bbe1f70202f919fd80e31d2f570b5848820bbd0e8da28e951169",
-    "packages/context-broker/src/index.ts": "292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d63",
+    "packages/context-broker/src/index.ts": "e76e3c3ac75e5c6f1ca9668e60f5addc625471ce68cb3a7cec20b02f4ea60482",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
-    "packages/context-broker/src/notion-source.ts": "a8a77d98b33a9b6dc4968fbd4ff30c336e87aa45d29ab343d9c76f1ed92b610e",
+    "packages/context-broker/src/notion-source.ts": "b63c5cb8f9a5d3a2d053e228e8fc6d9d70b9af454b57db8108325c4a17c6a28d",
     "packages/context-broker/src/pi-host-adapter.ts": "3230ccb80a90f1374b08559a432df6d15736c2cb58634bdcf6274108f7c021d2",
-    "packages/context-broker/scripts/host-refresh.test.ts": "92a34ff905b50f1586133c1e0863ca4750e64d67dfad9fbb64b23ef373711fc5",
+    "packages/context-broker/scripts/host-refresh.test.ts": "ab39fb9d470ba931e41425cf55ffe403f21c05d9c0c79756b2df250e44159654",
     "packages/context-broker/scripts/session-refresh.test.ts": "5e3f715774593d8a95cdf4c9869bf010a70c2e792943350b08d2657b6dfe8cf4",
     "packages/context-broker/scripts/session-recovery.test.ts": "01c5c745744d8233f2f25757dd61b0cfcb75e4c70d7e355d60f2e1bc66031db5",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "84d3fb8a58b0fd203cffe45a29442b5363666ecfd0997f55c001d8d8197c1959",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "5a906e9a1468c0764999557f0e4f8cf011345f4708eeec7a7622581cc3765cf7",
-    "packages/context-broker/scripts/notion-source-sdk.test.ts": "3786836128bb0a4c1b82b49f671e9a7112868a847a383d553381959b2e0c9c9d",
+    "packages/context-broker/scripts/notion-source-sdk.test.ts": "81007f711d35cf1e058d2f4f7f0e5fbad0d7970a5245437ab87bb0af89edad92",
     "packages/context-broker/scripts/pi-read-adapter.test.ts": "fe3aaac44d90c4610addc8cb26a64fa17414cb9619d0e8e7da15ebebf529355c",
     "packages/context-broker/scripts/fixtures/active-notion-session.ts": "26132aa2f28fbb21a8586bb102abbd41907922e1eb9ced6da659369346c25f8e",
     "packages/context-broker/scripts/notion-entry.test.ts": "7ff3897a2cd5aebed74786139c1d565e63ce58023c25774b0757f4ff5e1fc238",
@@ -50,11 +50,11 @@
     "packages/context-broker/src/content-publication.ts": "0dbb3fb6e12798474d08856649ebb4282483b7241e9830ac3f55daef81ddd4f8",
     "packages/context-broker/src/content-search.ts": "04587a09c4cc526851a010804e01ae200c53ecea10da5591002fadbfb071f6fa",
     "packages/context-broker/src/pi-authorization.ts": "9355d0cdf3347043c17447bc691d1a605b374bded3b60cee8a61b317eb690440",
-    "packages/context-broker/src/notion-sdk.ts": "bbd1bafc8863f0ab1092c9910019e5623e89b153508ee1c3cafdbedf7dcc5bb9",
-    "packages/context-broker/scripts/host-content-search.test.ts": "eb5ec2a3c7ca57bf460b6dfb1005394acd7e3386cc4564c966fe0e02fe33f78f",
+    "packages/context-broker/src/notion-sdk.ts": "4335b26f880759e2f619f9e54344928f3b71fa348e8e9b417016e4aecfab8a8c",
+    "packages/context-broker/scripts/host-content-search.test.ts": "2ee5d080075f43ade4375937f4473960a10dbd33f4eedf2864efb2ab371bc8b2",
     "packages/context-broker/scripts/content-search.test.ts": "d88a3e2d8a45ecf43e495235ffc3d5e1617ca9783b437fc70e9e9fc0eff39488",
     "packages/context-broker/scripts/pi-authorization.test.ts": "3b632769f7dc12d672c46155222cbc418cd66da86ae8fe6c592e275231a2ee3d",
-    "packages/context-broker/scripts/fixtures/current-notion-source.ts": "9a1609097463408c10561cad7e00e350c6155205c81c9d3e2734d023768afce8",
+    "packages/context-broker/scripts/fixtures/current-notion-source.ts": "072e6d629bc90f6df510c736db347989bb84c70ad9450e66bc9f9adb395ea9d8",
     "packages/context-broker/src/native-reference.ts": "37158660edb67b70a97bef4fb6bfdab70dfb7ef6ea4ad1c2765bd2313647207e",
     "packages/context-broker/src/shared-skill-identity.ts": "2495065caf4cb7b81227b60bc0c97d50ada7bdfa14a7824750cb9326583f9186",
     "packages/context-broker/src/session-short-ref.ts": "739f598b083740f918108477ea2fd072f001169a7d6eadf29805b53660447541",
@@ -67,17 +67,28 @@
     "packages/context-broker/scripts/skill-guidance.test.ts": "04bfcebdba25a1e9d22d018974743a98eac19cfe998e327a3de0ce2571189673",
     "packages/context-broker/src/cli-write-invalidation.ts": "b320091423e2d3da7e073cda2d58c46f20ddec8ea8a1bd12d770963a2a9b30f6",
     "packages/context-broker/scripts/cli-write-invalidation.test.ts": "1469fd9eb3eac1ee2760a86f617091f76d4936836e0da0e0650da6b653cb8466",
-    "packages/context-broker/src/sources.ts": "6d6021a9ee590790e402813caacc6de981192c514c52d004905cb1e4575918ce",
+    "packages/context-broker/src/sources.ts": "30572f81f9e6a8c314c6c4f595a95ec75f43767dbd8a280db3abab7bc907dedb",
     "packages/context-broker/scripts/shared-notion-adapter.test.ts": "9b1b4c91ed6004242f63ad76a88c6cb683715458f816e9ca287152dee2f2929e",
-    "packages/context-broker/scripts/soft-miss-regressions.test.ts": "a656fdb4f55ed59ba894537f7d023ca472a7cd5c4ca16c0f05d981ee3f71020f",
-    "packages/context-broker/scripts/input-guard.test.ts": "d02f124ced351a8eb33015884a9a76555b8d93e50b1a6a9ad3f09c2b24614976",
-    "packages/context-broker/src/skill-preparation.ts": "7df435552f987159a4810d60256f264148816b493ee0de0a098a70ea77ad1785",
+    "packages/context-broker/scripts/soft-miss-regressions.test.ts": "f7c3b733733b122d8fb4e7fca4ea48e0c6f1672cab9a85018e111f29c1fbe880",
+    "packages/context-broker/scripts/input-guard.test.ts": "957d10624ebb248a05c5ed63bef528b7fc46418f6cafe41a61e4e3977e57190d",
+    "packages/context-broker/src/skill-preparation.ts": "195ca6ded47974e2f1a2f6a150557e2c18f90afe5068816318fdd9b5516c87d4",
     "packages/context-broker/src/nonblocking-context.ts": "eb4b70618333384415ba03c62d4aa9d738cd61044ffd8864f75e6a63bacd84e7",
     "packages/context-broker/src/activation-feedback.ts": "607ef6f22e7c40106b6048f14a3863876a78db5ca307345a70117f1cdaa78d5b",
     "packages/context-broker/src/host-text.ts": "89d0c4d1591667ab71ee0b8b41e8dba7d9f7aae12f778590149ef49425a3b77c",
-    "packages/context-broker/src/types.ts": "430c23c611c5c2ec9d824c0f027c7f2a5eab52f65f7eac081889934fe12d65cd",
+    "packages/context-broker/src/types.ts": "1c0114476ee68660b440537209ac98b960509a69fc730e63e84a4745c918cddc",
     "packages/context-broker/scripts/nonblocking-context.test.ts": "96888a84d5e132f0c4ebac4956c4559ec737ca64c52538635695da62b6abaf39",
-    "packages/context-broker/scripts/activation-feedback.test.ts": "9f15a1bbbad5f5a12e8c0544ef10037d85b44d0dbe127ecff08cd000c2dac6ce"
+    "packages/context-broker/scripts/activation-feedback.test.ts": "9f15a1bbbad5f5a12e8c0544ef10037d85b44d0dbe127ecff08cd000c2dac6ce",
+    "packages/context-broker/src/accepted-selections.ts": "792eeb195d47c3a925e9cc56224af1bcf512584a13483cf9db2e37f14fa0d19e",
+    "packages/context-broker/src/completion-candidates.ts": "270b111a87596f60c0026411fc71d87b438588495a0a6403b121c932e53f2724",
+    "packages/context-broker/src/dollar.ts": "325dc550c88d7ad7e3b1c6db2768f29bcefde441c622ea391409bf423f2ad7d9",
+    "packages/context-broker/src/pi-dollar-editor.ts": "cb1f2ac59e3a5b10e8ef79ba1d81b7c0055d827c44ec732fbe3d99be1da47290",
+    "packages/context-broker/scripts/accepted-selections.test.ts": "5854988f8d8c2e4db46abb73a456a8e31dc39e2ddfd5d2edbc60e7c2ce729a83",
+    "packages/context-broker/scripts/catalog-menu.test.ts": "45dfd4b3918898fb088f9c04425977c1221767036e6ac4d0a6cd9fe10e829410",
+    "packages/context-broker/scripts/catalog-menu-session.test.ts": "1cea4b2637f3b1e0f430e44ee173aa3658deac9442a3b5db90fb35a8425980a3",
+    "packages/context-broker/scripts/pi-dollar-editor.test.ts": "9d9b1cd39e9b4b631ef46fa7bb2e6df4009c91814563eb1b0e844f46e932fc4a",
+    "packages/context-broker/scripts/fixtures/completion-menu.ts": "982e2cc09ee665c6d24df5b4b0ba544775e5ce56f926a5a115b306b7ced3612b",
+    "packages/context-broker/scripts/pi-queued-input.test.ts": "6f00d63e07082cdab7e60e6916758d6dd621d5ee25b38fb5ef472585826ea090",
+    "packages/context-broker/scripts/notion-sdk.test.ts": "0bebac7afc04079cf6229d4a51d559a68e653a6d1acbbc5ca79db1ff5c4dbeb3"
   },
   "models": {
     "FreshnessPublication": {
@@ -113,7 +124,8 @@
         "session-active.test.ts NXT12 complete union, shared Requires, stale fixed release; session-active-session.mjs independent installed Pi resume, compaction and branch ownership",
         "host-refresh.test.ts issued sr:S and selected canonical main refresh; invalid File/path and failed refresh preserve prior pins; session-refresh.test.ts partial roots/shared dependency conflicts",
         "notion-page-url.test.ts: authorized exact owner from physical page URLs, same fixed pins and explicit current refresh; URL parsing is outside finite-model variables",
-        "host-prepare.test.ts: public-tool timeout/cancel settles before a held producer; no late commit, while an inspection selection completed before native I/O remains its prior admitted fact"
+        "host-prepare.test.ts: public-tool timeout/cancel settles before a held producer; no late commit, while an inspection selection completed before native I/O remains its prior admitted fact",
+        "host-prepare.test.ts accepted exact cases: directory-held graph/Prompt acquisition, original physical binding and own-source refusal, followed by current proof and unchanged commit guards"
       ]
     },
     "DeliveryBoundary": {
@@ -124,7 +136,8 @@
         "session-source-snapshot.ts sourceBodyLoaded/deferredSourceEntries/withSessionSourceReceipts",
         "final-request.ts assessFinalRequestPayload/createFinalRequestLedger; concrete request roles and entity digests outside finite variables",
         "session-graph.ts applyRootRelease; host-skills.ts notion_ctl working_set release resets pending graphs/candidates and advances generation",
-        "host-skills.ts warnAndRetire/continueContext and nonblocking-context.ts withoutBrokerInstructions/continueWithoutBrokerPayload; concrete source retirement without new delivery proof"
+        "host-skills.ts warnAndRetire/continueContext and nonblocking-context.ts withoutBrokerInstructions/continueWithoutBrokerPayload; concrete source retirement without new delivery proof",
+        "host-skills.ts run.preparations: per-receipt graphs persist only at provider acceptance; warning retires all unconfirmed preparation owners"
       ],
       "atomicity": "Headers, turn completion, draft return, host apply/drop and later public projection acknowledgement are separate transitions. A 2xx response proves request acceptance and may record active delivery before stream completion. A later failed turn does not erase that historical acceptance. No draft is a persisted projection until observed in the public branch.",
       "replays": [
@@ -173,7 +186,8 @@
         "host-skills.ts turnContext and input/agent_start/agent_end admission ownership",
         "host-skills.ts refreshMetadata publication checks and index.ts root-specific catalog key",
         "index.ts exact configured Source routing; fixed graph/manifest owners retain original bindings",
-        "host-skills.ts queuedInputs input receipts and later context admission retain accepted Library/session/generation; concrete native queue ordering outside finite actions"
+        "host-skills.ts queuedInputs input receipts and later context admission retain accepted Library/session/generation; concrete native queue ordering outside finite actions",
+        "skill-preparation.createInputReceipt and accepted-selections.capture; invocation identity is independent of cancellation signal"
       ],
       "atomicity": "Validate, commit branch selection, invoke the admitted turn, return directory evidence, restore a branch, and admit the next turn are separate transitions. Committing B does not cancel the admitted A turn. A directory publication stores whether its own scope/selection/epoch ticket was valid at that instant; a later valid switch does not retroactively invalidate a past publication.",
       "fairness": "Weak fairness covers started local actions and return of the bounded acquisition/validation. SessionFlowEventuallyExplained permits an explicit rejection or blocked switch flow; it does not promise Notion availability, provider completion or a successful user task.",
@@ -183,8 +197,25 @@
         "check-consumer-state-mutations.mjs: six library-* real guard mutations with baseline/assertion/restored phases",
         "soft-miss-regressions.test.ts through input-guard.test.ts: default-only overlapping names and actual OMP/Pi explicit B completion during A-to-C default change; multiple explicit Sources remain concrete obligations outside finite variables",
         "cli-write-invalidation.test.ts: call-time full Source/record ownership and late A receipt plus explicit B write from A; physical DB/data-source bindings remain internal",
-        "input-guard.test.ts: a queued explicit selection and images are prepared on their later context without a second input hook; native editor/queue behavior is outside the finite model"
+        "input-guard.test.ts: a queued explicit selection and images are prepared on their later context without a second input hook; native editor/queue behavior is outside the finite model",
+        "accepted-selections.test.ts: composed signal, next-draft rebinding, per-message Libraries/images, same-text steering order and lifecycle retirement; queue objects remain outside finite variables"
       ]
+    },
+    "MenuPublication": {
+      "bounds": "One fixed scope, candidates A/B, an already-open dropdown with B highlighted, one cache return, one fresh return and one Escape or acceptance. Two scenarios: A was refused more recently than cache, or neither candidate is denied. Screen update is separate from snapshot publication. No fairness/performance property.",
+      "owners": [
+        "completion-candidates.ts createCompletionSnapshot.accept owner/order/refreshed checks",
+        "index.ts menuIsCurrent/readMenuCache/activateMenu and lifecycle fences",
+        "pi-dollar-editor.ts request/publish/valid/dismiss and identity-based selection",
+        "dollar.ts memory filtering and displayed item acceptance"
+      ],
+      "atomicity": "ReturnCache/ReturnFresh admit memory snapshots after asynchronous acquisition. UpdateMenu separately changes the screen; the user can accept old displayed B between these actions. Escape/Accept end one intent. SDK refusal filtering is an input contract, not atomic Store I/O or authorization.",
+      "replays": [
+        "catalog-menu.test.ts: late cache/refresh, foreign/retired owner, complete-empty removal and displayed target",
+        "notion-source-sdk.test.ts: denied metadata grants no projection/current/body authority",
+        "pi-dollar-editor.test.ts: actual Editor/SelectList update, waiting/open Esc, stable/withdrawn highlight, silent replacement and noncooperative producer"
+      ],
+      "limitations": "The historical 18-state design run is not this maintained model. Cold/partial snapshots, arbitrary removals, source/session changes, Promise termination, terminal frames, milliseconds and actual Skill use require separate implementation/host evidence."
     }
   },
   "cases": [
@@ -964,6 +995,79 @@
         "SessionFlowEventuallyExplained",
         "NoDeadlock"
       ]
+    },
+    {
+      "model": "MenuPublication",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "NoDeniedResurrection",
+        "FreshOutranksLateCache",
+        "NoDismissedReopen",
+        "ChoiceIdentityPreserved",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "MenuPublication",
+      "config": "denial-negative",
+      "expected_broken": [
+        "NoDeniedResurrection"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "NoDeniedResurrection",
+        "FreshOutranksLateCache",
+        "NoDismissedReopen",
+        "ChoiceIdentityPreserved",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "MenuPublication",
+      "config": "cache-negative",
+      "expected_broken": [
+        "FreshOutranksLateCache"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "NoDeniedResurrection",
+        "FreshOutranksLateCache",
+        "NoDismissedReopen",
+        "ChoiceIdentityPreserved",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "MenuPublication",
+      "config": "dismiss-negative",
+      "expected_broken": [
+        "NoDismissedReopen"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "NoDeniedResurrection",
+        "FreshOutranksLateCache",
+        "NoDismissedReopen",
+        "ChoiceIdentityPreserved",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "MenuPublication",
+      "config": "identity-negative",
+      "expected_broken": [
+        "ChoiceIdentityPreserved"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "NoDeniedResurrection",
+        "FreshOutranksLateCache",
+        "NoDismissedReopen",
+        "ChoiceIdentityPreserved",
+        "NoDeadlock"
+      ]
     }
   ],
   "excluded": [
@@ -1274,6 +1378,27 @@
       "delivery_boundary": "Ready continues to mean prepared bytes, not provider acceptance. host-skills production bytes are unchanged: the operation signal and agent_end retirement still fence late provider responses, and graph persistence, delivery confirmation and completed-turn projection keep their original guards. Preserving a display record grants no selection, activation or persistence receipt.",
       "concrete_replays": "activation-feedback.test.ts checks ready and loaded before and after Stop, no appended cancellation result, rejected late updates and branch restoration. host-prepare.test.ts exercises the actual host hooks with an abort before or after provider acceptance, retains complete root plus Requires and 503 assertions, and requires a late 200 to leave confirmation and persistence counts unchanged. Existing unfinished-preparation cancellation remains covered.",
       "proof_limit": "This is display lifecycle behavior outside the finite-model variables. These reviewed hashes bind the changed implementation and tests; they do not prove actual terminal behavior or installation identity. Model/config/view bytes, bounds, cases, independent expected_rules, negative configurations and guard mutation selectors are unchanged."
+    },
+    "dollar_completion": {
+      "reviewed_from": "cbe36c332b16c4286afe9d1782e87a9b618a6300",
+      "identity": "Reviewed task-tree bytes are bound by files. The actual checkout or sealed candidate identity and executed results belong to the existing runner, not this correspondence entry.",
+      "input_receipts": "createInputReceipt copies text/images and captures session/branch plus admitted Library before the input hook awaits. accepted-selections consumes draft candidates under that independent receipt. Every preflight/task/body caller uses the same receipt; a composed AbortSignal only cancels. Queued receipts associate once at native message_start in steer/followUp FIFO order, allowing image normalization hints and excluding the initial prompt. SessionEntry.message retains that instance while emitContext clones projected messages; only source provenance adopts the receipt, without a value-matching context fallback. Each input prepares under its original Library rather than joining and reparsing under the last context.",
+      "actual_counterexamples": "Base cbe36c3 replays showed a composed-signal lookup lost saved A and queued A was replaced by next-draft B. Additional real-host replays held the directory producer: exact graph and Prompt acquisition waited; activate also replaced the captured physical locator with a later same-identity directory item. The regression oracles preserve A, complete root/Requires, original image bytes, original physical binding and same-source refusal. Actual Pi queued image resizing also reproduced a lost receipt in the previous implementation: resized bytes and appended text no longer matched the input. The real AgentSession/SessionManager/ExtensionRunner regression preserves the receipt and normalized native delivery. These are implementation failures and fixes, separate from intentional model negatives.",
+      "consumption_guards": "Exact source/scope/shared_skill locator/id/ref can skip unrelated metadata readiness, never source availability or actual SDK graph/load acquisition. Unbound/native/other-source paths retain directory readiness and discovery errors. Current observations, later-denial ordering, complete Requires, independent pins, cancellation, output/working-set budgets and delayed graph commit remain. Multiple receipts share pending graph conflict checks; only original provider acceptance persists each receipt scope.",
+      "menu_owners": "completion-candidates.accept checks owner, retirement, request order and refresh precedence. index retains menu/session/branch/Library fences, independently publishes local and SDK snapshots and bounds background producers. dollar filters memory and accepts item.candidate after identity/token checks. pi-dollar-editor owns waiting/open/closed intent, input/cursor/scope ticket, request sequence and stable/withdrawn highlight; uncooperative or rejected requests do not serialize later keystrokes.",
+      "sdk_boundary": "Pinned candidate snapshot contract v1 returns metadata-only miss/blocked/snapshot. The decoder checks root/scope and duplicate logical/physical owners; materialization occurs only after acceptance and grants no currentObservation/body. The same paired capability binds onCatalogSettled: one runtime publishes the stored catalog before waiting for Default View; the Broker callback is once-only, silent after cancellation, and cannot throw into the source request. The held-View regression reads the local snapshot before projection exists while the original SDK operation is still pending. Store denial/last-complete/partial semantics remain SDK-owned and are not new Broker state variables.",
+      "fixture_review": "The manual-token fixture now performs its actual directory resolution before selecting a record and keeps all failure/warning assertions. The default-catalog fixture confirms publication before checking projection because exact consumption intentionally no longer waits for it. OMP compares the complete copied image value. Refresh fixtures distinguish the pure local candidates call from list and retain selected/active/body/network arguments assertions.",
+      "finite_scope": "Existing LibrarySession, FreshnessPublication/ReadRace, SelectionGraph and DeliveryBoundary bounds and independent rules are unchanged. MenuPublication separately represents memory admission and screen update for one fixed scope, A/B, one cache/fresh return and one Escape/acceptance. No cold/partial/cross-scope/Promise/UI timing/provider-success proof is inferred.",
+      "implementation_replays": [
+        "accepted-selections.test.ts",
+        "host-prepare.test.ts accepted exact cases",
+        "input-guard.test.ts and soft-miss-regressions.test.ts",
+        "catalog-menu.test.ts and catalog-menu-session.test.ts",
+        "notion-source-sdk.test.ts",
+        "pi-dollar-editor.test.ts against a selected real Pi package",
+        "pi-queued-input.test.ts: real host resize, original SessionEntry message identity, cloned context and repeated projection"
+      ],
+      "mutations": "The three accepted-candidate-* isolated baseline/assertion-failure/restored checks cover directory waiting, physical rebinding and own-source refusal as concrete_obligations. Existing library, graph commit, provider/session, turn and public projection mutations remain."
     }
   },
   "library_session_design": {
