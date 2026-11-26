@@ -194,7 +194,7 @@ sources:
     library: 00000000-0000-0000-0000-000000000000
     cacheDir: ~/.cache/context-broker/notion
     discovery: {maxAge: 5m, offline: false}
-    activation: {maxAge: 5m, offline: false}
+    activation: {maxAge: 1h, offline: false}
     prefetch: false
     requestTimeoutMs: 30000
 ```
@@ -273,6 +273,8 @@ Pi 1.4 只在启动或 reload 时通过 `resources_discover` 收集扩展资源�
 OMP 保留原行为：查询目录时不阻塞编辑器，首次普通提交会在调用 provider 前等待当前 View。每轮 `before_agent_start` 生成一份 `<ntn-skills-view-catalog>`，按精确路径移除 Broker 自己的旧目录项，保留其他本地条目和会话正文。新建会话、列举或切换 View 均不自行调用模型。默认零预取预算不会在注册或切换目录时准备正文；显式预算可以在后台准备所选 View 的有限子集，不构成选择或激活。完整目录和 View 查询各自保留覆盖范围，新鲜度或某个页面可读都不能补成完整覆盖。
 
 Notion 元数据发现统一经过随包 SDK。Core 管理凭据、Library 隔离、目录新鲜度与 HTTP 请求预算。`source.command` 已移除。Broker 的 `cacheDir` 只保存可重建的元数据入口和选中主文、资源，不是另一套权威目录。目录按 SDK 的凭据 scope 隔离；source ID、namespace 仍保留在每条选中记录中。显式相对 `cacheDir` 按工作目录解析，不能据此推导跨 Skill 的作者路径。
+
+未显式配置 activation 或共享 Profile 规则时，Skill 消费继承配对 SDK 的一小时正文默认值。已有 `activation.maxAge: 5m` 仍是五分钟覆盖；改为 `1h` 才会采用新时长。本地 Library 路由不会另行启动远程验证。同一凭据作用域和 Library 下，新进程可直接复用完整且未过期的 root 与 Requires 图，无需 HTTP，并保留原始 `validated_at`。显式刷新、过期、缺字节和未知凭据作用域继续走在线准入；已知精确拒绝仍阻止消费。目录保持独立策略，正文仍有效时也可能刷新元数据。
 
 目录年龄始终从 SDK 原始 `validated_at` 计算。读取缓存或重启进程不会续期。过期菜单可以在单次后台刷新期间展示已有记录，位置仍绑定精确身份，新增候选追加，消失候选禁用。临时故障保留失败原因和短暂重试间隔；认证、权限或 scope 失败撤下候选。`discovery.offline` 仅使用合格缓存。目录刷新不读取正文，切换 Library 也不改写已接收任务和固定版本。升级扩展后启动新进程；`/context-broker refresh` 只刷新当前代码所读的数据。
 
@@ -410,7 +412,7 @@ Pi 与 OMP 的选中 Skill payload 在完整正文旁提供经过转义的 `skil
 
 普通本地 Skill 保留 Pi 原生发现和 read。显式配置的 filesystem source 继续使用其元数据目录与选中快照机制。Notion source 发布所选 View 的 Skill 与 Router 元数据；`default_context` 通过 View filter 影响成员名单，Prompt 保持仅显式调用。Pi 显示作者名称、明确来源和准确入口引用。read 只检查所请求内容；`notion_use`、`/skill:` 与 `$` 准备所选指令及 Requires，Members 在选中前保持候选。复制宿主实际公布的名称或引用。OMP 保留 `notion-ui-alpha` 等宿主名称与 metadata 路径激活；这些展示名称不成为 Skill ID，可移植链接使用返回的 canonical 引用。
 
-目录注册后，显式配置的预取预算可对初始 View 中最多 `maxNodes` 个可用 Skill/Router 根发起一次公开 `prepare --purpose inspect --priority prefetch`。预取不展开 Members、不准备 Requires 闭包、不读取 Prompt、不导出宿主目录、不追加会话锁，也不投递正文。`maxBytes` 限制完整成功 preparation JSON 与每份主文，不是网络传输配额；`maxTimeMs` 限制任务生命周期，`rateShare` 使用同一 CLI 调度器的独立低优先级通道。前台选择或资源读取会取消预热，不等其迟到回调；服务压力推迟预热，不增加后台重试。前台等待者独立持有取消状态。激活仍校验 CLI 缓存资格，正文默认五分钟，失败不隐式回退旧内容。切会话取消所属工作；移出 View 不移除当前会话已加载的指令。
+目录注册后，显式配置的预取预算可对初始 View 中最多 `maxNodes` 个可用 Skill/Router 根发起一次公开 `prepare --purpose inspect --priority prefetch`。预取不展开 Members、不准备 Requires 闭包、不读取 Prompt、不导出宿主目录、不追加会话锁，也不投递正文。`maxBytes` 限制完整成功 preparation JSON 与每份主文，不是网络传输配额；`maxTimeMs` 限制任务生命周期，`rateShare` 使用同一 CLI 调度器的独立低优先级通道。前台选择或资源读取会取消预热，不等其迟到回调；服务压力推迟预热，不增加后台重试。前台等待者独立持有取消状态。激活仍校验 CLI 缓存资格，正文默认一小时，失败不隐式回退旧内容。切会话取消所属工作；移出 View 不移除当前会话已加载的指令。
 
 默认激活策略下，Notion 修改或缓存过期都不替换当前分支已选的确切 Skill 快照。新会话（包括在另一进程中新建的会话）重新检查引擎缓存资格：可用快照直接复用，命中不推进 `validated_at`；当前观察过期后，先重新校验再选择版本。选中图绑定可跨重启和压缩保留，与正文投递状态分别管理。相对资源始终跟随选中快照。
 
