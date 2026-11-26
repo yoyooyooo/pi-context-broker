@@ -345,7 +345,7 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
     }
     for (const operation of starts.filter(event => event.kind === 'sdk')) {
       assert.ok(hostPids.has(operation.pid), 'SDK operation belongs to another process');
-      assert.ok(['library-selection', 'library', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve'].includes(operation.operation));
+      assert.ok(['library-selection', 'candidates', 'library', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve'].includes(operation.operation));
       const terminal = events.filter(event => event.phase === 'completed' && event.requestId === operation.requestId);
       assert.equal(terminal.length, 1, 'SDK operation needs one actual terminal');
       assert.equal(terminal[0].pid, operation.pid);
@@ -357,7 +357,11 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
       assert.equal(metrics[0].observed, true);
       assert.equal(metrics[0].complete, true, 'Truncated or absent metrics cannot prove SDK HTTP coverage');
       assert.equal(metrics[0].total_requests, events.filter(event => event.phase === 'attempt' && event.requestId === operation.requestId).length);
-      if (operation.operation === 'library-selection') assert.equal(metrics[0].total_requests, 0, 'Local Library selection cannot perform HTTP');
+      if (operation.operation === 'library-selection' || operation.operation === 'candidates') {
+        assert.equal(metrics[0].total_requests, 0, 'Local SDK operation cannot perform HTTP');
+        assert.equal(events.filter(event => event.requestId === operation.requestId && ['attempt', 'wait'].includes(event.phase)).length,
+          0, 'Local SDK operation cannot contain an HTTP trace');
+      }
     }
   }
   const source = [], sdk = [], otherPlugins = [], unattributedHostHttp = [], proxyTunnels = [];
@@ -429,7 +433,7 @@ export function validateDailySdkOperations(operations, library) {
   assert.ok(rootId(library));
   assert.ok(Array.isArray(operations) && operations.some(row => row.operation === 'list'), 'Actual SDK catalog discovery is required');
   for (const row of operations) {
-    assert.ok(['library-selection', 'library', 'list'].includes(row.operation), 'Daily metadata cannot consume Skill bodies or resources');
+    assert.ok(['library-selection', 'candidates', 'library', 'list'].includes(row.operation), 'Daily metadata cannot consume Skill bodies or resources');
     if (row.operation === 'library-selection') assert.ok(row.library === null || row.library === library, 'Local selection names another Library');
     else assert.equal(row.library, library, 'Metadata belongs to another Library, even if its Source or Skill name matches');
   }

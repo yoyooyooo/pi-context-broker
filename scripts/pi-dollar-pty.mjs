@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import { appendFileSync } from 'node:fs';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import xterm from '@xterm/headless';
@@ -105,6 +106,7 @@ os.close(fd)
 export class PiTerminal {
   constructor({ command, args, env, cwd, directory, cols = 140, rows = 42 }) {
     this.directory = directory; this.sequence = 0; this.frames = new EventEmitter(); this.writes = new Map(); this.latest = '0'; this.started = '0'; this.closed = undefined; this.tail = Promise.resolve();
+    this.matches = new Map(); this.received = '0'; this.parsed = '0';
     this.screen = new xterm.Terminal({ cols, rows, scrollback: 5000, allowProposedApi: true });
     this.process = spawn('/usr/bin/python3', ['-u', '-c', bridge], { stdio: ['pipe', 'pipe', 'pipe'] });
     let buffer = '';
@@ -115,8 +117,11 @@ export class PiTerminal {
         const line = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 1);
         const event = JSON.parse(line);
         if (event.kind === 'output') {
+          const received = process.hrtime.bigint().toString();
           const bytes = Buffer.from(event.data, 'base64'); appendFileSync(join(directory, 'terminal.ansi'), bytes);
-          this.tail = this.tail.then(() => new Promise(resolve => this.screen.write(bytes, resolve))).then(() => { this.latest = event.ns; this.frames.emit('frame'); });
+          this.tail = this.tail.then(() => new Promise(resolve => this.screen.write(bytes, resolve))).then(() => {
+            this.latest = event.ns; this.received = received; this.parsed = process.hrtime.bigint().toString(); this.frames.emit('frame');
+          });
         } else {
           appendFileSync(join(directory, 'pty-events.jsonl'), JSON.stringify(event) + '\n');
           if (event.kind === 'spawn') this.started = event.ns;
@@ -161,7 +166,14 @@ export class PiTerminal {
     const deadline = Date.now() + timeout;
     for (;;) {
       await this.tail;
-      if (predicate(this.text())) { await this.capture(name); return this.latest; }
+      const text = this.text();
+      if (predicate(text)) {
+        const matched = { name, python_read_ns: this.latest, parent_received_ns: this.received, parent_parsed_ns: this.parsed };
+        this.matches.set(name, matched);
+        appendFileSync(join(this.directory, 'frame-observations.jsonl'), JSON.stringify(matched) + '\n');
+        await writeFile(join(this.directory, name + '.screen.txt'), text + '\n');
+        return matched.python_read_ns;
+      }
       assert.ok(!this.closed, `Pi exited during ${name}: ${JSON.stringify(this.closed)}\n${this.text()}`);
       if (Date.now() >= deadline) { await this.capture('failed-' + name); throw new Error(`Terminal timeout: ${name}\n${this.text()}`); }
       await new Promise(resolve => { const onFrame = () => { clearTimeout(timer); this.frames.off('frame', onFrame); resolve(); }; const timer = setTimeout(onFrame, 30); this.frames.once('frame', onFrame); });
@@ -191,6 +203,45 @@ function observer(api) {
 const menu = text => /→ \$[^\n]+\[skill\]/u.test(text);
 const remote = text => /\$acceptance-c@pty \[skill\]/u.test(text);
 const selectedRemote = text => /→ \$acceptance-c@pty \[skill\]/u.test(text);
+
+async function measureProvider(packageRoot, piRoot, context, localRoot, service, out) {
+  const { readCandidateSnapshot } = await import(pathToFileURL(join(packageRoot, 'dist/ntn-skills-sdk.mjs')).href);
+  const requestsBefore = service.requests.length;
+  const snapshot = await readCandidateSnapshot({ library: context.source.library, cwd: context.base, env: context.env });
+  assert.equal(service.requests.length, requestsBefore, 'Provider corpus must come from the same local cache without HTTP');
+  assert.equal(snapshot.kind, 'snapshot'); assert.equal(snapshot.records.length, 103);
+  const jitiPath = createRequire(join(piRoot, 'package.json')).resolve('jiti');
+  const { createJiti } = await import(pathToFileURL(jitiPath).href);
+  const load = createJiti(import.meta.url, { fsCache: false, moduleCache: true, tryNative: false });
+  const providerPath = join(packageRoot, 'src/dollar.ts');
+  const { createDollarSkillAutocompleteProvider } = await load.import(providerPath);
+  const { localCompletionCandidate, notionCompletionCandidates } = await load.import(join(packageRoot, 'src/completion-candidates.ts'));
+  const { configuredBundledBuiltinRecords } = await load.import(join(packageRoot, 'src/bundled-builtins.ts'));
+  const { skillRecordFromFile } = await load.import(join(packageRoot, 'src/skill-records.ts'));
+  const local = skillRecordFromFile(join(localRoot, 'aa-pty-local/SKILL.md'), false); assert.ok(local);
+  const candidates = [local, ...configuredBundledBuiltinRecords({ sources: [context.source] })].map(localCompletionCandidate)
+    .concat(notionCompletionCandidates(snapshot.records, context.source, snapshot.scope, snapshot.coverage === 'complete'));
+  assert.equal(candidates.length, 107);
+  await save(join(out, 'provider-corpus.json'), { source: context.source, snapshot, candidates });
+  const owner = {}, provider = createDollarSkillAutocompleteProvider({ async getSuggestions() { return null; }, applyCompletion(lines, cursorLine, cursorCol) { return { lines, cursorLine, cursorCol }; } },
+    { read: () => ({ candidates, revision: 1 }), scope: () => owner, subscribe: () => () => {} });
+  const options = { signal: new AbortController().signal, force: false }, queries = ['$', '$a', '$acceptance-', '$acceptance-c', '$ntn', '$missing'];
+  const measure = async prefix => {
+    const start = process.hrtime.bigint(), value = await provider.getSuggestions([prefix], 0, prefix.length, options);
+    return { prefix, elapsed_ms: Number(process.hrtime.bigint() - start) / 1e6, results: value?.items.length ?? 0 };
+  };
+  const first = await measure('$'); assert.equal(first.results, 50);
+  for (let i = 0; i < 30; i++) await measure(queries[i % queries.length]);
+  const samples = []; for (let i = 0; i < 300; i++) samples.push(await measure(queries[i % queries.length]));
+  assert.ok(samples.filter(row => row.prefix === '$acceptance-c').every(row => row.results === 1));
+  const measured = { kind: 'packed-provider-memory-microbenchmark', node: { path: process.execPath, version: process.version },
+    provider: { path: providerPath, sha256: hash(await readFile(providerPath)) }, jiti: { path: jitiPath, sha256: hash(await readFile(jitiPath)) },
+    candidate_count: candidates.length, corpus_sha256: hash(await readFile(join(out, 'provider-corpus.json'))), first_call: first, warmup_calls: 30,
+    summary: summary(samples.map(row => row.elapsed_ms)), by_prefix: Object.fromEntries(queries.map(prefix => [prefix, summary(samples.filter(row => row.prefix === prefix).map(row => row.elapsed_ms))])), samples,
+    method: 'Actual packed getSuggestions loaded with the installed Pi Jiti in Node; same observed cache corpus plus actual local/builtin records. SDK read, corpus construction and module load occur before timing. One Node clock includes async resolution. Independent memory microbenchmark, not Editor/PTY latency.' };
+  await save(join(out, 'provider-microbenchmark.json'), measured);
+  return { ...measured.summary, first_call_ms: first.elapsed_ms, candidate_count: candidates.length, evidence: join(out, 'provider-microbenchmark.json'), method: measured.method };
+}
 
 export async function run(options) {
   const out = resolve(options.out); await mkdir(out, { mode: 0o700 });
@@ -256,7 +307,7 @@ export async function run(options) {
         await active.key('\x1b[B\x1b[B\r', 'trust-owned-project-session-only');
       }
       const ready = await active.wait(text => text.includes('PTY_READY'), 'ready', 60000);
-      return { terminal: active, directory, ready, startup_ms: ms(ready, active.started) };
+      return { terminal: active, directory, ready, startup_ms: ms(ready, active.started), base, source, env };
     };
     const finish = async () => { const old = active; await old?.close(); if (active === old) active = undefined; };
     const caseResult = async value => { result.cases.push(value); await save(join(out, 'result.json'), result); };
@@ -277,12 +328,19 @@ export async function run(options) {
     await bounded(hold.reached, 'cold HTTP gate');
     const viewHold = service.holdNext({ method: 'GET', path: '/v1/views' });
     const released = process.hrtime.bigint().toString(); hold.release();
-    const heldView = await bounded(viewHold.reached, 'Default View HTTP gate', 60000);
-    await active.wait(remote, 'background-remote-while-view-held', 60000);
+    const [heldView] = await Promise.all([bounded(viewHold.reached, 'Default View HTTP gate', 60000), active.wait(remote, 'background-remote-while-view-held', 60000)]);
     assert.equal(service.requests.find(row => row.sequence === heldView.sequence).terminal, 'pending');
     const duringView = await rows(join(current.directory, 'sdk.jsonl'));
     const inFlightList = duringView.find(row => row.operation === 'list' && row.event === 'start');
     assert.ok(inFlightList); assert.equal(duringView.some(row => row.id === inFlightList.id && row.event === 'end'), false);
+    const metadataEnd = (await rows(service.eventsPath)).filter(row => row.event === 'end' && row.sequence < heldView.sequence && row.terminal === 'finished'
+      && row.method === 'POST' && row.path === '/v1/data_sources/' + sample.notion.library.skills.data_source_id + '/query').at(-1);
+    assert.ok(metadataEnd);
+    const publicationFrame = active.matches.get('background-remote-while-view-held');
+    const backgroundUpdate = { catalog_query_end_to_frame_observed_ms: ms(publicationFrame.parent_parsed_ns, metadataEnd.monotonic_ns),
+      metadata_http_end: metadataEnd, frame: publicationFrame,
+      method: 'Same parent Node clock: last full-catalog Skills data-source page response finished to parsing the target ANSI frame before Default View completion; the remote menu remains visible when the View request is held. Later View initialization metadata is excluded. Includes client decode/cache publication, Pi scheduling, PTY bridge IPC and xterm observer overhead; no Python/Node clock subtraction.' };
+    assert.ok(backgroundUpdate.catalog_query_end_to_frame_observed_ms >= 0);
     await save(join(current.directory, 'held-view-publication.json'), { http: heldView, sdk_operation: inFlightList, terminal_frame: 'background-remote-while-view-held.screen.txt' });
     viewHold.release(); await bounded(viewHold.closed, 'released View HTTP close');
     const listDeadline = Date.now() + 60000;
@@ -291,7 +349,7 @@ export async function run(options) {
     }
     const sourceEvents = await rows(service.eventsPath), finalCatalog = sourceEvents.filter(row => row.event === 'end').at(-1);
     await caseResult({ case: 'cold-local-first-background-update', status: 'passed', evidence: current.directory, first_dollar_ms: localFirstMs, background_release_ns: released,
-      default_view_held_during_remote_publication: true, held_view_http_sequence: heldView.sequence, last_source_event: finalCatalog ?? null });
+      default_view_held_during_remote_publication: true, held_view_http_sequence: heldView.sequence, background_update: backgroundUpdate, last_source_event: finalCatalog ?? null });
     await finish();
     // Every sample starts a fresh actual Pi process. Cache/store bytes are only
     // those populated by the preceding current HTTP consumer, not preseeded data.
@@ -310,6 +368,8 @@ export async function run(options) {
     }
     result.metrics = { first_dollar: summary(result.samples.map(row => row.first_dollar_ms)), first_dollar_remote: summary(result.samples.map(row => row.first_dollar_remote_ms)),
       filter: summary(result.samples.map(row => row.filter_ms)), startup_to_editor: summary(result.samples.map(row => row.startup_to_editor_ms)),
+      cache_read: summary(result.samples.map(row => row.cache_ready.elapsed_ms)), cache_ready_from_session_start: summary(result.samples.map(row => row.cache_ready_from_session_start_ms)),
+      background_update: backgroundUpdate, provider_compute: await measureProvider(packageRoot, piRoot, current, localRoot, service, out),
       method: 'One Python bridge clock per process: immediately before PTY key write to PTY read of the ANSI bytes producing the asserted current xterm frame. Includes all Pi scheduling/debounce and output delay; excludes controller/terminal-emulator parsing. SDK/observer/provider use a separate Node clock; raw clock domains are never subtracted.' };
     await save(join(out, 'result.json'), result);
     // Esc before the first remote result and after an open local menu must keep

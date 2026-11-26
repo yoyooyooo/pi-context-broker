@@ -27,14 +27,15 @@ const canonical = value => value === null || typeof value !== 'object' ? JSON.st
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const lines = async file => (await readFile(file, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
 const emptyMetrics = { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [] };
+const fixtureLibrary = '22222222-3333-4444-8555-666666666666';
 
 function sourceFixture(owner = 'root', resources = [{ path: 'guide.md', content: 'Complete resource bytes.\n' }]) {
   const body = '# Complete source\nUse the resource when needed.\n', resource = resources[0].content;
   const scope = 'a'.repeat(64), snapshot = 's_' + hash(body), version = hash('version-controlled');
-  const id = skillIdentity('library-controlled', owner), uuid = '11111111-2222-4333-8444-555555555555';
+  const id = skillIdentity(fixtureLibrary, owner), uuid = '11111111-2222-4333-8444-555555555555';
   const rootRef = skillFileRef(id, 'SKILL.md');
   const record = { id, ref: rootRef, kind: 'skill', entrypoint: 'SKILL.md', name: 'Root', alias: 'root', description: 'Controlled complete source', enabled: true,
-    locator: { type: 'shared_skill', library_id: 'library-controlled', skill_id: owner, database_id: uuid, data_source_id: uuid, page_id: uuid }, default_context: true };
+    locator: { type: 'shared_skill', library_id: fixtureLibrary, skill_id: owner, database_id: uuid, data_source_id: uuid, page_id: uuid }, default_context: true };
   const ref = name => skillFileRef(id, name, snapshot);
   const files = [{ path: 'SKILL.md', bytes: Buffer.byteLength(body), sha256: hash(body), ref: ref('SKILL.md', 'file-main') },
     ...resources.map((file, index) => ({ path: file.path, bytes: Buffer.byteLength(file.content), sha256: hash(file.content), ref: ref(file.path, index ? 'file-resource-' + index : 'file-guide') }))];
@@ -98,7 +99,7 @@ test('one read.paths call proves every complete resource from the selected SDK m
     assert.equal((await lines(output)).find(event => event.phase === 'tool-result' && event.toolCallId === 'root-main')?.complete, true);
     handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'root-main', content: mainContent }] } }, ctx);
     for (const [id, paths] of [['unknown', [refs[0], refs[1].replace('notes.md', 'unseen.md')]],
-      ['wrong-owner', [refs[0], skillFileRef(skillIdentity('library-controlled', 'another'), 'notes.md', fixture.snapshot)]],
+      ['wrong-owner', [refs[0], skillFileRef(skillIdentity(fixtureLibrary, 'another'), 'notes.md', fixture.snapshot)]],
       ['wrong-pin', [refs[0], refs[1].replace(fixture.snapshot, 's_' + 'd'.repeat(64))]],
       ['duplicate', [refs[0], refs[0]]], ['main', [fixture.node.ref]], ['empty', []]]) {
       assert.equal(invoke(id, { paths }).block, true, id);
@@ -207,15 +208,26 @@ for (const representation of ['flat', 'combined']) test('SDK observer retains ac
   publish('resolution', 'resolve', resolution, { ...emptyMetrics, total_requests: 1, trace: [{ event: 'attempt', attempt: 1,
     kind: 'notion_metadata', method: 'POST', started_ms: 0, duration_ms: 1, outcome: 'success',
     request_bytes: 2, response_bytes: 37, http_status: 200, request_id: 'resolve-metadata', rate_limit_reason: null, retry_after_seconds: null }] });
+  const cached = { kind: 'snapshot', libraryId: fixture.record.locator.library_id, scope: fixture.scope,
+    verifiedAt: 1000, fetched_at: 1000, stale: true, coverage: 'complete', records: [fixture.record], denials: [], generation: 1 };
+  publish('cached', 'candidates', cached);
+  publish('selected-library', 'library-selection', fixture.record.locator.library_id);
+  publish('library', 'library', { library_id: fixture.record.locator.library_id });
   observer.close();
-  const receipts = await Promise.all(['catalog', 'manifest', 'consumption', 'resolution'].map(async id => JSON.parse(await readFile(path.join(responses, id + '.json'), 'utf8'))));
+  const receipts = await Promise.all(['catalog', 'manifest', 'consumption', 'resolution', 'cached', 'selected-library', 'library'].map(async id => JSON.parse(await readFile(path.join(responses, id + '.json'), 'utf8'))));
   assert.deepEqual(receipts[2].value, fixture.value);
   assert.deepEqual(graphSourceViews([receipts[1]]), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'File metadata is not a directory, prepared graph or delivered body');
   assert.deepEqual(receipts[3].value, resolution);
   assert.deepEqual(graphSourceViews([receipts[3]]), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'Resolving an identity does not read a body, prepare a graph or deliver a resource');
+  assert.deepEqual(receipts[4].value, cached);
+  assert.deepEqual(graphSourceViews(receipts.slice(4)), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'Cached candidates and Library operations do not prove a current directory, preparation or delivered body');
   const events = await lines(ledger), accounting = graphSourceAccounting(events, receipts, { sourceMode: 'sdk', requireConsumption: true });
-  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0, resolve: 1, 'content-search': 0 }); assert.equal(accounting.actual_http_attempts, 1);
-  assert.equal(accounting.source_results_observed, 4);
+  assert.deepEqual(accounting.sdk_calls, { 'library-selection': 1, library: 1, candidates: 1, list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0, resolve: 1, 'content-search': 0 }); assert.equal(accounting.actual_http_attempts, 1);
+  assert.equal(accounting.source_results_observed, 7);
+  for (const operation of ['candidates', 'library-selection']) {
+    assert.throws(() => graphSourceAccounting(events, receipts.map(item => item.operation === operation ? { ...item, metrics: receipts[3].metrics } : item), { sourceMode: 'sdk' }), /local SDK operation cannot make HTTP requests/);
+    assert.throws(() => graphSourceAccounting(events, receipts.map(item => item.operation === operation ? { ...item, metrics: null } : item), { sourceMode: 'sdk' }), /metrics/);
+  }
   const contentEvents = [...events, { phase: 'sdk-start', requestId: 'content', operation: 'content-search' },
     { phase: 'sdk-end', requestId: 'content', operation: 'content-search' }];
   for (const metrics of [null, emptyMetrics]) {

@@ -20,3 +20,5 @@ node scripts/pi-dollar-pty.mjs --package /absolute/standalone/pi-context-broker 
 PTY 入口验证新进程首次 `$`、冷启动本地与 bundled 候选、缓存候选、后台同屏更新、waiting/open Esc、503 源故障后普通输入继续、Tab 和实际排队输入的完整正文及 Requires 交付。保留原始 ANSI、当前终端帧、按键时间与每进程回执；warm 至少 20 个新进程，分别报告首次菜单、远端缓存就绪和筛选的 p50/p95。按键写入到产生目标帧的终端输出包含 Pi 调度与 debounce；源码调用耗时不能代填。宿主的 `--offline` 只关闭版本/工具下载等无关启动网络，SDK 与 provider 仍经实际 loopback HTTP；故障入口仅返回503，重试与失败由实际 SDK 处理。受控 HTTP 与 provider 只证明该链路，不证明 live Notion 或自然模型理解。未被这些动作覆盖的焦点、双向命令切换和宿主场景仍须单独实测。
 
 OMP/Tern 延期；不得使用延期的 UI 模式填补 Pi 结果。重新验证 UI 时使用当前实际产品与安装，从有限用户动作开始，不恢复旧消费协议。
+
+性能回执同时保留三个口径：实际 PTY 按键到目标帧、SDK cache read/ready，以及后台 catalog HTTP 完成到同屏更新的 parent Node 观测间隔。后者包含 Pi 调度、bridge IPC 和终端解析开销，不能与 Python 时钟相减。`provider-microbenchmark.json` 单独对实际 packed provider 与同一缓存候选集计时，包含首次调用和 300 次多前缀内存筛选；模块加载、缓存读取与候选构造在计时外，不用这一微基准替代真实 Editor/TUI 结论。

@@ -233,11 +233,15 @@ export function graphSourceAccounting(events, receipts, { sourceMode, requireCon
     assert.equal(ends.length, 1, 'Every SDK operation must finish'); assert.equal(captured.length, 1, 'Every SDK result must have one raw receipt');
     assert.equal(captured[0].operation, start.operation);
     if (start.operation !== 'content-search') assert.equal(captured[0].metrics?.complete, true, 'SDK HTTP metrics must be complete');
+    if (start.operation === 'candidates' || start.operation === 'library-selection') {
+      assert.equal(captured[0].metrics.total_requests, 0, 'A local SDK operation cannot make HTTP requests');
+      assert.deepEqual(captured[0].metrics.trace, [], 'A local SDK operation cannot have remote request or scheduler events');
+    }
     if (captured[0].status === 'completed') assert.equal(captured[0].resultObserved, true, 'SDK success without its actual return value is not evidence');
   }
   for (const start of events.filter(event => event.phase === 'child-spawn')) assert.equal(events.filter(event => event.phase === 'child-close' && event.id === start.id).length, 1, 'Every observed child must close');
   const sdk = receipts.filter(receipt => receipt.transport === 'sdk');
-  const sdkOperations = ['list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search'];
+  const sdkOperations = ['library-selection', 'library', 'candidates', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search'];
   assert.ok(sdk.every(receipt => sdkOperations.includes(receipt.operation)), 'Unknown SDK operation cannot disappear from source accounting');
   const childCalls = events.filter(event => (event.phase === 'child-spawn' || event.phase === 'alternate-child-api') && event.source);
   if (sourceMode === 'sdk') {
