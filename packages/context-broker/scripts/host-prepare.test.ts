@@ -209,6 +209,78 @@ test("Pi dollar acquisition discloses its own effects in provider and native his
   }
 });
 
+test("accepted exact dollar graph prepares while the catalog remains pending", async () => {
+  const f = await fixture(true), release = Promise.withResolvers<void>();
+  let directoryReturned = false;
+  await f.install(undefined, {
+    getRecords: async () => { await release.promise; directoryReturned = true; return { records: f.records, failures: [] }; },
+    buildPreparedPrompt: async (_text, _ctx, _signal, records = []) => {
+      const content = records.map(record => record.body!).join("\n\n");
+      return { customType: "context-broker", content, display: false,
+        details: { records: records.map(record => sourceDeliveryReceipt(record, content)) } };
+    },
+  });
+  const user: AgentMessage = { role: "user", content: "$root cached choice" };
+  await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
+  await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "base" }, f.ctx);
+  await f.emit("agent_start", {}, f.ctx);
+  const pending = f.emit("context", { messages: [user] }, f.ctx);
+  try {
+    const result = await Promise.race([pending, new Promise<undefined>(resolve => setTimeout(resolve, 100))]);
+    expect(directoryReturned).toBe(false);
+    expect(result).toBeDefined();
+    const output = result!.find(value => value && typeof value === "object" && "messages" in value && Array.isArray(value.messages));
+    if (!output || typeof output !== "object" || !("messages" in output) || !Array.isArray(output.messages)) throw new Error("Expected complete source projection");
+    expect(sourceBodyLoaded(output.messages, f.root)).toBe(true);
+    expect(sourceBodyLoaded(output.messages, f.required)).toBe(true);
+    expect(output.messages).toContainEqual(user);
+    expect(f.calls).toEqual(["use"]);
+    expect(f.persisted).toEqual([]);
+  } finally { release.resolve(); await pending; await f.emit("session_shutdown", {}, f.ctx); }
+});
+
+test("accepted exact Prompt reads through its SDK boundary before catalog completion", async () => {
+  const f = await fixture(), release = Promise.withResolvers<void>();
+  const record: SkillRecord = { ...f.root, kind: "prompt" };
+  const reads: SkillRecord[] = [];
+  const host = await installHostSkills(f.api, { config: { sources: f.sources },
+    getRecords: async () => { await release.promise; return { records: [], failures: [] }; },
+    loadRecord: async requested => {
+      reads.push(requested);
+      const validatedAt = Date.now();
+      return { ...requested, body: record.body, currentObservation: { origin: "remote", validatedAt, validUntil: validatedAt + 60_000 } };
+    },
+  }, createPiHostAdapter(f.api));
+  const pending = host.prepare(record, f.ctx);
+  try {
+    const result = await Promise.race([pending, new Promise<undefined>(resolve => setTimeout(resolve, 100))]);
+    expect(result?.status).toBe("ready");
+    expect(reads).toEqual([record]);
+  } finally { release.resolve(); await pending; await f.emit("session_shutdown", {}, f.ctx); }
+});
+
+test("accepted exact records keep their physical binding and reject their own catalog denial", async () => {
+  for (const denied of [false, true]) {
+    const f = await fixture();
+    const original = structuredClone(f.root), requested: SkillRecord[] = [];
+    const replacement = { ...f.root, locator: { ...f.root.locator!, page_id: "00000000-0000-4000-8000-000000000099" } } as SkillRecord;
+    const { host } = await f.install(async (purpose, _signal, _policy, records) => { requested.push(...records); return [f.graph(purpose)]; }, {
+      getRecords: async () => ({ records: [replacement], failures: denied
+        ? [{ sourceId: "controlled", namespace: "controlled", type: "notion", code: "ACCESS_DENIED", message: "Selected source denied" }] : [] }),
+    });
+    await host.refresh(f.ctx);
+    if (denied) {
+      await expect(host.prepareMany([original], f.ctx)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+      expect(requested).toEqual([]);
+    } else {
+      expect((await host.prepare(original, f.ctx)).status).toBe("ready");
+      expect(requested[0]!.locator).toEqual(original.locator);
+      expect(requested[0]!.locator).not.toEqual(replacement.locator);
+    }
+    await f.emit("session_shutdown", {}, f.ctx);
+  }
+});
+
 test("partial multi-source failure retains prior effects and cannot report zero writes", async () => {
   const f = await fixture();
   const observed: ConsumptionEffects = { version: 1, remote_writes: "unknown", author_content: "unchanged" };
@@ -342,9 +414,9 @@ test("a live disabled read corrects stale availability without extra discovery a
   expect(metadataRequests).toBe(before);
 });
 
-test("Pi projects the ready default catalog after explicit preparation, not the earlier pending observation", async () => {
+test("Pi projects the published default catalog after exact preparation without pinning the earlier pending observation", async () => {
   const f = await fixture(true), metadata = Promise.withResolvers<Awaited<ReturnType<HostSkillOptions["getRecords"]>>>();
-  await f.install(undefined, { getRecords: () => metadata.promise });
+  const { search } = await f.install(undefined, { getRecords: () => metadata.promise });
   const user = { role: "user", content: "$root task" };
   await f.emit("input", { source: "rpc", text: user.content }, f.ctx);
   const before = await f.emit("before_agent_start", { prompt: user.content, systemPrompt: "Native instructions" }, f.ctx);
@@ -355,6 +427,7 @@ test("Pi projects the ready default catalog after explicit preparation, not the 
   metadata.resolve({ records: f.records.map(record => ({ ...record, body: undefined, preparationBinding: undefined,
     defaultDiscovery: record !== f.required })), failures: [] });
   await preparing;
+  await search.execute("published-default", { query: "root" }, undefined, undefined, f.ctx);
   const head = { role: "system", content: beforePrompt, sections: { local: "Keep the native local rules" },
     toolsAdded: [{ name: "read", parameters: { type: "object" } }] };
   const messages = [head, user], original = JSON.stringify(messages);

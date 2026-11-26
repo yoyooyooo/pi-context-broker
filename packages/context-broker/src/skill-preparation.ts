@@ -3,8 +3,22 @@ import type { EditorLike, ExtensionContext, ImageContent, SkillRecord } from "./
 
 export type PreparationContext = ExtensionContext;
 export type PreparationInput = { text?: string; images?: ImageContent[] };
+export type InputReceipt = {
+  readonly id: string;
+  readonly event: PreparationInput;
+  readonly ctx: PreparationContext;
+  readonly sessionId: string | undefined;
+  readonly branch: readonly string[];
+};
+/** Called synchronously at input admission, including streaming queue admission. */
+export function createInputReceipt(event: PreparationInput, ctx: PreparationContext): InputReceipt {
+  return Object.freeze({ id: randomUUID(), event: structuredClone(event), ctx,
+    sessionId: ctx.sessionManager?.getSessionId?.(),
+    branch: Object.freeze((ctx.sessionManager?.getBranch?.() ?? []).flatMap(entry => entry.id ? [entry.id] : [])) });
+}
 export type ActivePreparation = {
   readonly id: string;
+  readonly receipt: InputReceipt;
   readonly generation: number;
   readonly prepared: Map<string, SkillRecord>;
   readonly event: PreparationInput;
@@ -110,10 +124,11 @@ export function createPreparationGate(lockSubmission = true) {
     repaint,
     cancel,
     release,
-    begin(event: PreparationInput, ctx: PreparationContext): ActivePreparation {
+    begin(event: PreparationInput, ctx: PreparationContext, receipt = createInputReceipt(event, ctx)): ActivePreparation {
       if (active) throw new Error("A Skill submission is already preparing");
       generation++;
-      const entry: ActivePreparation = { id: randomUUID(), generation, prepared: new Map(), event: { ...event, images: event.images?.slice() }, ctx, sessionId: ctx.sessionManager?.getSessionId?.(), controller: new AbortController(), phase: "preparing", forwarded: false };
+      const entry: ActivePreparation = { id: receipt.id, receipt, generation, prepared: new Map(), event: receipt.event, ctx: receipt.ctx,
+        sessionId: receipt.sessionId, controller: new AbortController(), phase: "preparing", forwarded: false };
       active = entry;
       if (editor && lockSubmission) { priorDisabled = editor.disableSubmit ?? false; editor.disableSubmit = true; }
       repaint();
@@ -122,6 +137,8 @@ export function createPreparationGate(lockSubmission = true) {
     assertCurrent(entry: ActivePreparation, ctx: ExtensionContext = entry.ctx): void {
       checkPreparationSignal(entry.controller.signal);
       if (entry.generation !== generation || active !== entry || entry.sessionId !== ctx.sessionManager?.getSessionId?.() || entry.sessionId !== entry.ctx.sessionManager?.getSessionId?.()) throw preparationCancelled();
+      const branch = ctx.sessionManager?.getBranch?.().flatMap(entry => entry.id ? [entry.id] : []);
+      if (branch && entry.receipt.branch.some((id, index) => branch[index] !== id)) throw preparationCancelled();
     },
     bindEditor: bind,
   };

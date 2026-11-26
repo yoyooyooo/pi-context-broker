@@ -1,3 +1,4 @@
+import { completionMenu } from "./fixtures/completion-menu.ts";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, readFile, readdir, realpath, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -765,17 +766,17 @@ try {
   };
   const autocompleteProvider = mod.createDollarSkillAutocompleteProvider(
     baseAutocompleteProvider,
-    Promise.resolve(dollarRegistry),
+    completionMenu(dollarRegistry),
   );
   assert.deepEqual(autocompleteProvider.triggerCharacters, ["#", "@", "$"]);
   assert.notEqual(autocompleteProvider.triggerCharacters, baseAutocompleteProvider.triggerCharacters);
   assert.deepEqual(mod.createDollarSkillAutocompleteProvider(
     { ...baseAutocompleteProvider, triggerCharacters: undefined },
-    Promise.resolve(dollarRegistry),
+    completionMenu(dollarRegistry),
   ).triggerCharacters, ["$"], "Pi must receive an explicit dollar trigger even without upstream triggers");
   assert.deepEqual(mod.createDollarSkillAutocompleteProvider(
     { ...baseAutocompleteProvider, triggerCharacters: ["#", "@"] },
-    Promise.resolve(dollarRegistry),
+    completionMenu(dollarRegistry),
   ).triggerCharacters, ["#", "@", "$"], "Preserve existing provider triggers");
   const autocompleteSignal = new AbortController().signal;
   const dollarSuggestions = await autocompleteProvider.getSuggestions(["use $pl"], 0, "use $pl".length, {
@@ -814,7 +815,7 @@ try {
     ["use $pl"],
     0,
     "use $pl".length,
-    { value: "$plain", label: "$plain", description: "Plain skill not enabled" },
+    dollarSuggestions.items.find(item => item.value === "$plain"),
     "$pl",
   );
   assert.equal(dollarCompletion.lines[0], "use $plain ");

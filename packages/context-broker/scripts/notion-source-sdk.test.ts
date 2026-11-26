@@ -17,6 +17,52 @@ const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 const uuid = (n: number) => "00000000-0000-4000-8000-" + n.toString().padStart(12, "0");
 const exists = (path: string) => stat(path).then(() => true, () => false);
 
+test("a settled catalog publishes candidates while the same SDK operation still waits for its View", async () => {
+  const f = await fixture();
+  let enter!: () => void, release!: () => void, notifications = 0;
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let published: ReturnType<typeof f.boundary.readNotionCandidateSnapshot> | undefined;
+  f.state.list = async options => {
+    options.onCatalogSettled?.();
+    enter();
+    await held;
+    return { version: 1, catalog: { ok: true, value: f.state.catalog }, directory: { ok: true, value: f.state.catalog } };
+  };
+  let completed = false;
+  const discovery = f.boundary.discoverNotionCatalogAndDirectory(f.source, f.root, {}, { onCatalogSettled: source => {
+    notifications++;
+    published = f.boundary.readNotionCandidateSnapshot(source, f.root);
+  } }).finally(() => { completed = true; });
+  try {
+    await entered;
+    expect(notifications).toBe(1);
+    expect(completed).toBe(false);
+    const snapshot = await published;
+    if (snapshot?.kind !== "snapshot") throw new Error("Expected the settled catalog snapshot");
+    expect(snapshot.candidates).toHaveLength(1);
+    expect(await exists(f.source.cacheDir!)).toBe(false);
+    expect(f.calls.map(call => call.operation)).toEqual(["list", "candidates"]);
+  } finally { release(); await discovery; }
+  expect(notifications).toBe(1);
+});
+
+test("an early combined discovery refusal publishes its local denial once and cancelled discovery stays silent", async () => {
+  for (const cancelled of [false, true]) {
+    const f = await fixture(), controller = new AbortController();
+    let notifications = 0;
+    f.state.list = async () => {
+      if (cancelled) controller.abort();
+      throw { code: "ACCESS_DENIED" };
+    };
+    const error = await f.boundary.discoverNotionCatalogAndDirectory(f.source, f.root, {}, {
+      signal: controller.signal, onCatalogSettled: () => { notifications++; },
+    }).catch(error => error);
+    expect(error.code).toBe(cancelled ? "SOURCE_CANCELLED" : "ACCESS_DENIED");
+    expect(notifications).toBe(cancelled ? 0 : 1);
+  }
+});
+
 test("custom Notion CLI configuration is retired with an actionable upgrade error", () => {
   for (const command of ["ntn-skills", ["node", "/old/ntn-skills.js"]])
     expect(() => normalizeSources([{ type: "notion", id: "current", command }])).toThrow(expect.objectContaining({ code: "SOURCE_COMMAND_UNSUPPORTED" }));
@@ -213,4 +259,38 @@ test("SDK failures, cancellation and foreign scopes never publish a ready entry 
   const foreign = await fixture();
   await expect(foreign.boundary.loadNotionSkill({ ...foreign.selected, sourceScope: hash("foreign") }, foreign.source, foreign.root)).rejects.toMatchObject({ code: "SOURCE_PREPARATION_INVALID" });
   expect(foreign.calls).toHaveLength(1); expect(await exists(foreign.source.cacheDir!)).toBe(false);
+});
+
+test("candidate snapshots publish exact metadata without host projections or consumption authority", async () => {
+  const f = await fixture();
+  const value = await f.boundary.readNotionCandidateSnapshot(f.source, f.root);
+  expect(value.kind).toBe("snapshot");
+  if (value.kind !== "snapshot") throw new Error("Expected cached candidate snapshot");
+  expect(value.candidates).toHaveLength(1);
+  const candidate = value.candidates[0]!;
+  expect(candidate).toMatchObject({ origin: "notion", scope: f.state.catalog.scope, record: { id: f.record.id, locator: f.record.locator } });
+  expect(candidate.record).not.toHaveProperty("path");
+  expect(candidate.record).not.toHaveProperty("currentObservation");
+  expect(await exists(f.source.cacheDir!)).toBe(false);
+  expect(f.calls.map(call => call.operation)).toEqual(["candidates"]);
+  const selected = await f.boundary.materializeCompletionCandidate(candidate, f.root);
+  expect(await exists(selected.path)).toBe(true);
+  expect(selected).not.toHaveProperty("currentObservation");
+  expect(selected.locator).toEqual(f.record.locator);
+  expect(selected.sourceScope).toBe(f.state.catalog.scope);
+  expect(f.calls.map(call => call.operation)).toEqual(["candidates"]);
+  const loaded = await f.boundary.loadNotionSkill(selected, f.source, f.root);
+  expect(loaded.body).toBe(f.body);
+  expect(f.calls.map(call => call.operation)).toEqual(["candidates", "consume"]);
+});
+
+test("cached denial clears remote candidates and malformed snapshots never become host records", async () => {
+  const denied = await fixture();
+  denied.state.catalogFailure = "ACCESS_DENIED";
+  expect(await denied.boundary.readNotionCandidateSnapshot(denied.source, denied.root)).toMatchObject({ kind: "blocked", candidates: [] });
+  expect(await exists(denied.source.cacheDir!)).toBe(false);
+  const foreign = await fixture();
+  foreign.state.catalog = { ...foreign.state.catalog, records: [{ ...foreign.record, locator: { ...foreign.record.locator, library_id: uuid(199) } }] };
+  await expect(foreign.boundary.readNotionCandidateSnapshot(foreign.source, foreign.root)).rejects.toBeDefined();
+  expect(await exists(foreign.source.cacheDir!)).toBe(false);
 });

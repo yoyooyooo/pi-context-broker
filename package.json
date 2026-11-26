@@ -27,11 +27,14 @@
     "verify:formal": "node scripts/verify-consumer-observations.mjs",
     "test:formal-contract": "node --test scripts/formal-result-contract.test.mjs",
     "prepare:ref": "node scripts/prepare-skill-ref.mjs",
+    "test:pi-editor": "bun test packages/context-broker/scripts/pi-dollar-editor.test.ts",
+    "test:pi-queued-input": "bun test packages/context-broker/scripts/pi-queued-input.test.ts",
     "benchmark": "node benchmark/cli.mjs",
     "test:benchmark": "node --test benchmark/*.test.mjs benchmark/runtime/*.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
+    "@xterm/headless": "6.0.0",
     "typescript": "^5.9.3"
   }
 }

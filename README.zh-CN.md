@@ -148,6 +148,8 @@ Pi 通过 `notion_list`、`notion_use` 与原生 `read` 提供会话引用：`sr
 
 `/context-broker refresh` 刷新元数据，让后续 selection 可以取得新 snapshot，已有会话正文保留。默认发现只覆盖所选 Library；完整在线结果只能证明该库内不存在匹配，另一库的同名 Skill 属于不同范围。所有字段、scope 隔离、歧义和缓存策略见[source 配置与激活](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。
 
+Pi 输入 `$` 时先展示已准备的本地与缓存候选，后台目录到达后自动更新当前下拉。按 Esc 可关闭等待中或已展开的下拉；刷新不会重开它，也不会把当前高亮换成另一条记录。普通与排队提交均在接纳时固定选择，缓存仅用于发现，实际消费仍检查权限、完整正文和 Requires。
+
 Notion 缓存按凭据和远端目录身份共用。全库目录与 View 成员使用不同缓存选择，不会因会话筛选缩小其他会话的 `$` 候选。View 选择写入当前会话分支，进程续接时恢复；新会话独立解析默认值。共享刷新保留已加载工作流的固定快照。[缓存合同](./packages/context-broker/docs/reference.zh-CN.md#内置-sources)。
 
 执行 `/context-broker doctor` 检查官方 CLI 版本、能力、认证和 source 访问。缺少依赖或访问失败只将对应 source 标记为不可用，本地 Skill、正常 source 和普通聊天继续工作。已选 Skill 无法加载时，Pi 显示 warning 并继续原用户请求，不注入这些指令、不交付不完整内容，也不宣称已加载。未知简单引用即使使用该 source 的 namespace 也原样透传；已接受或完整身份的引用会明确报告未加载。修复后执行 `/context-broker refresh`。管理 CLI 固定来自同一随包产物，不允许 source 覆写。

@@ -218,11 +218,13 @@ sources:
 
 `maxAge` 接受 `0`，或整数加 `s`、`m`、`h`、`d`。省略策略时使用 CLI 默认值。`offline: true` 优先于 `maxAge`，只使用已有 CLI 缓存；缓存不存在或不完整时失败，不悄然联网。[schema](../examples/config.schema.json) 拒绝未知 source 字段和类型不匹配的配置；source id 唯一性由 broker 运行时检查。
 
-Source 操作不设总时限。每次网络尝试独立计时；分页和限流等待可能延长准备时间。显式 `requestTimeoutMs` 设置 SDK 本次操作或管理 CLI 的环境。Escape、Stop 和会话取消会中止所属 SDK 操作或管理进程树。发现与正文准备各自保持新鲜度策略；Broker 不另设目录缓存或重置 SDK 的验证时间。
+每次网络尝试独立计时；分页和限流等待可能延长 SDK 操作。Broker 的后台目录请求和 Pi 每次模型请求前的 context 阶段分别受 60 秒总时限约束；超时或失败不持续占用输入。显式 `requestTimeoutMs` 设置 SDK 本次操作或管理 CLI 的环境。Escape、Stop 和会话取消会中止所属 SDK 操作或管理进程树。发现与正文准备各自保持新鲜度策略；Broker 不另设持久目录缓存或重置 SDK 的验证时间。
 
-Notion 元数据统一使用 `listCatalog`。Skill/Router 准备、Prompt 直接加载和有预算的预取均调用 `consume`；支持文件使用 `readSkill` 或当前批量资源操作。配对 SDK 一次返回完整 manifest 与准确主文，Broker 首次只物化主文，保留所有 File 绑定供按需续读；`manifest_complete` 不代表全部文件已经在本地。Prompt 每次显式提交取得本轮内容。`source.command`、CLI prepare/read 回退和完整 export 快照路径已移除。旧包或不完整的包明确失败，需要一起升级配对 CLI/SDK 与 Broker。OMP/Tern 延后。
+Pi 的 `$` 每次按键只筛选内存候选。会话启动时分别读取本地 Skill、随包维护 Skill 和 SDK 的纯本地候选快照，在线验证在后台继续。快照复用已有持久缓存的最近完整目录与较新的部分结果，并应用最新拒绝事实；它不提供当前授权、完整正文或 Requires 证明，也不能用部分空结果证明不存在。目录刷新完成后自动更新仍有效的当前下拉，不等待 Default View 或文件投影。排序变化保留高亮身份；高亮记录消失后取消选择，用户须重新选择。Esc 在等待和已展开状态都关闭本次意图，迟到结果不会重新打开。普通输入和排队输入在接纳时分别冻结显示过的 Skill 身份、Library 与 Source，后续草稿或刷新不能换绑。
 
-配对 runtime 只接受 SDK v3，SDK 与 runtime 清单的能力必须一致。消费恒为零语义写入，不再接收 `readOnly` 参数。catalog-directory v1 在一次操作中提供完整目录与 Default View 两份独立投影，全库无关失败不会隐藏有效 View；缺少能力在调用前失败。
+在线 Notion 元数据使用 `listCatalog`，补全预热使用 `readCandidateSnapshot` 的纯本地元数据。Skill/Router 准备、Prompt 直接加载和有预算的预取均调用 `consume`；支持文件使用 `readSkill` 或当前批量资源操作。配对 SDK 一次返回完整 manifest 与准确主文，Broker 首次只物化主文，保留所有 File 绑定供按需续读；`manifest_complete` 不代表全部文件已经在本地。Prompt 每次显式提交取得本轮内容。`source.command`、CLI prepare/read 回退和完整 export 快照路径已移除。旧包或不完整的包明确失败，需要一起升级配对 CLI/SDK 与 Broker。OMP/Tern 延后。
+
+配对 runtime 只接受 SDK v3，SDK 与 runtime 清单的能力必须一致。消费恒为零语义写入，不再接收 `readOnly` 参数。candidate-snapshot v1 提供候选元信息，并在同一次组合操作进入 View 读取前通知目录已结束；SDK 与清单都必须声明该能力。catalog-directory v1 在一次操作中提供完整目录与 Default View 两份独立投影，全库无关失败不会隐藏有效 View；缺少能力在调用前失败。
 
 Git-only 与混合 Skill 都暴露完整的当前文件目录。CLI/SDK 以每文件显式 native、resource 或 source descriptor 决定权威；编辑 Notion 阅读投影不会自动接管 Git/resource 内容，主文以 Notion 为权威。Broker 只消费准确正文和 File 绑定，不执行 adoption、不维护第二套归属。Notion 页面历史和 Git 历史不属于该消费协议。
 

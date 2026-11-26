@@ -89,19 +89,24 @@ try {
   assert.ok(initial?.items.some(item => item.value === "$ui-alpha@notion"));
   await emit("session_before_switch", first);
   assert.ok((await provider.getSuggestions(["$"], 0, 1))?.items.some(item => item.value === "$native-first"), "A cancelled switch retains the active menu context");
-  const refreshing = Promise.withResolvers<void>();
-  const oldMenu = provider.getSuggestions(["$"], 0, 1, undefined, () => refreshing.resolve());
-  await within(refreshing.promise, "old menu partial delivery");
+  const oldScope = provider.getCompletionScope!();
   await emit("session_before_switch", first);
   retired = true;
   await emit("session_switch", next);
   await emit("session_start", next);
+  assert.notEqual(provider.getCompletionScope!(), oldScope, "Session replacement retires the old menu intent");
+  const changed = Promise.withResolvers<void>();
+  let unsubscribe = () => {};
+  unsubscribe = provider.subscribe!(() => {
+    void provider.getSuggestions(["$"], 0, 1).then(menu => {
+      if (menu?.items.some(item => item.value === "$refreshed-skill@notion")
+        && menu.items.some(item => item.value === "$native-next")) changed.resolve();
+    });
+  });
   publishCatalog("refreshed-skill", false);
   releaseRefresh.resolve();
-  const completed = await within(oldMenu, "old menu refresh");
-  assert.ok(completed?.items.some(item => item.value === "$refreshed-skill@notion"));
-  assert.ok(completed?.items.some(item => item.value === "$native-first"));
-  assert.ok(!completed?.items.some(item => item.value === "$native-next"), "An old menu retains its own prompt snapshot");
+  await within(changed.promise, "replacement menu snapshot publication");
+  unsubscribe();
   assert.equal(providers.length, 1, "The same editor retains its provider across sessions");
   const replacement = await provider.getSuggestions(["$"], 0, 1);
   assert.ok(replacement?.items.some(item => item.value === "$native-next"), "A retained provider reads the current session");
@@ -159,7 +164,7 @@ try {
   const callsAfterShutdown = fixture.calls.length;
   assert.equal(await providers.at(-1)!.getSuggestions(["$"], 0, 1), null, "The retired menu cannot restart catalogue discovery");
   assert.equal(fixture.calls.length, callsAfterShutdown, "A retired provider must not start another SDK operation");
-  console.log("catalog session checks passed: current paired SDK metadata; delayed refresh survives context retirement; old menu stays pinned; retained provider uses the replacement session; shutdown cancels without joining SDK settlement");
+  console.log("catalog session checks passed: current paired SDK metadata; delayed refresh respects context retirement; retained provider publishes only the replacement session; shutdown cancels without joining SDK settlement");
 } finally {
   releaseRefresh.resolve();
   shutdownAborted.resolve();

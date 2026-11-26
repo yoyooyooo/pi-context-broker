@@ -6,7 +6,7 @@
 
 | 当前领域 | 入口 | 套件与边界 |
 | --- | --- | --- |
-| Broker 资格、Library 与交付 | verify-notion-consumer-state | observations 的 Availability/ReadRace；consumer-state 的 FreshnessPublication/SelectionGraph/DeliveryBoundary/RecoveryClosure/LibrarySession |
+| Broker 资格、Library、菜单与交付 | verify-notion-consumer-state | observations 的 Availability/ReadRace；consumer-state 的 FreshnessPublication/SelectionGraph/DeliveryBoundary/RecoveryClosure/LibrarySession/MenuPublication |
 | CLI 请求引擎 | CLI verify-notion-consumption | CLI 原 request-engine runner；预算、取消与请求调度由其 owner 维护 |
 | 当前管理、来源与消费 | 各仓既有领域测试和 integration Skill | current operation、SDK、import 失效与实际包检查；不由已退役模型代证 |
 

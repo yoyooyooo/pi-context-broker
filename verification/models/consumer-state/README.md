@@ -2,7 +2,7 @@
 
 Owner: [.agents/skills/verify-notion-consumer-state](../../../.agents/skills/verify-notion-consumer-state/SKILL.md).
 
-These five bounded contracts complement Availability/ReadRace. The complete case inventory and independent expected rules live in `coverage.json`. Candidates must satisfy every declared rule and NoDeadlock. Each negative must break exactly its declared set. Parse errors, timeouts, incomplete spaces and unknown outcomes fail.
+These six bounded contracts complement Availability/ReadRace. The complete case inventory and independent expected rules live in `coverage.json`. Candidates must satisfy every declared rule and NoDeadlock. Each negative must break exactly its declared set. Parse errors, timeouts, incomplete spaces and unknown outcomes fail.
 
 | Model | Contract | Independent implementation checks |
 | --- | --- | --- |
@@ -11,16 +11,18 @@ These five bounded contracts complement Availability/ReadRace. The complete case
 | DeliveryBoundary | Provider acceptance, complete source proof, turn completion, host draft decision and actual projection ACK | Registered hooks, discarded drafts, session/rewind identities and receipt guards |
 | RecoveryClosure | Original fixed bodies, mandatory closure, local failure isolation and three subsequent prompts | Missing/disabled/denied originals, late restores and continued conversation |
 | LibrarySession | Branch Library choice, admitted-turn binding, exact call target, directory publication ticket and original pin owner | Switch/failure/branch restoration, A-to-B late producers, canonical root routing and old A selections |
+| MenuPublication | Current denial, snapshot order, dismissed dropdown and highlighted candidate identity | Pure snapshot publication, displayed-item acceptance, real Pi Editor and independently accepted input receipts |
 
 Read the Skill's contracts reference for atomic boundaries and finite assumptions. Hashes bind reviewed implementation bytes; they do not establish full implementation refinement. Fixed pins describe verified local selections, not remote version management or guaranteed historical recovery.
 
-Run the Skill's doctor and full run from the repository root with the pinned statechart/TLC installation. Keep outputs outside the repository. The existing runner supports `--suite consumer-state` and `--model FreshnessPublication`, `SelectionGraph`, `DeliveryBoundary`, `RecoveryClosure` or `LibrarySession` for a targeted investigation.
+Run the Skill's doctor and full run from the repository root with the pinned statechart/TLC installation. Keep outputs outside the repository. The existing runner supports `--suite consumer-state` and `--model FreshnessPublication`, `SelectionGraph`, `DeliveryBoundary`, `RecoveryClosure`, `LibrarySession` or `MenuPublication` for a targeted investigation.
 
 `DeliveryBoundary.providerAccepted` denotes logical headers, not a wire receipt. Actual source roles, directory counts, JSON schemas, body completeness and HTTP entity digests remain concrete regression obligations. `final-request-undici.test.ts` checks real Node HTTP entities; installed Pi serializer and live provider behavior belong to the separate integration scope and must be executed before claiming them.
 
 ## Library selection
 
-LibrarySession adds eleven configurations, giving this suite forty-two in total.
+LibrarySession has eleven configurations. The complete suite has forty-seven,
+including the five MenuPublication configurations.
 Its independent oracle preserves the admitted A turn, A directory payload, parent
 branch selection and original A pin while the current child branch selects B.
 The selection ticket and lifecycle epoch are separate. A valid switch affects
@@ -57,3 +59,37 @@ Those names select configured Sources and keep each actual root/full reference;
 unqualified names use only the selected default. Concrete UUID/URL parsing,
 enabled Source routing, mixed Prompt/Skill injection, actual Pi branch
 serialization and installed CLI arguments remain separate implementation checks.
+
+## Menu publication and input admission
+
+MenuPublication is the reproducible implementation-review slice for AH-1322.
+It retains the four reviewed properties and their independent single-guard
+negative cases. Its source is maintained here; the earlier 18-state design run
+is historical evidence, not the state count or provenance of this model.
+
+The finite domain has one scope and an already-open dropdown with B highlighted,
+one cache return, one fresh return, one screen update per changed snapshot and
+one Escape or acceptance. The known-denial scenario starts with a newer refusal
+of A than the stored cache; the reorder scenario has no denial. Snapshot
+publication and screen publication are separate actions, so acceptance can occur
+between them. Each publication either honors the original highlighted identity
+or, in the negative, reuses its old ordinal. No fairness or latency property is
+claimed. Cold/partial/empty snapshots, arbitrary source changes, removed
+highlights and noncooperative Promises remain concrete regression obligations.
+
+`completion-candidates.ts` owns ordered in-memory snapshot admission. The SDK's
+pure local reader supplies denial-filtered candidates and remains an independent
+consumer boundary. `pi-dollar-editor.ts` owns the intent, input/cursor and scope
+ticket, request generation, dismissal and highlighted identity. `dollar.ts`
+accepts the actual displayed candidate rather than looking its label up again.
+`accepted-selections.ts` consumes that draft choice into a synchronous
+`InputReceipt`; `host-skills.ts` prepares ordinary and queued inputs under each
+receipt's Library and session. A candidate still grants no consumption authority,
+complete body, selected graph or provider-delivery proof.
+
+Queued images are normalized before Pi emits `message_start`. The receipt is
+associated with that native occurrence and later adopted through the original
+`SessionEntry.message` instance, because `emitContext` clones its messages.
+`pi-queued-input.test.ts` replays these actual installed host methods, including
+real image resizing and repeated context. Image bytes, host object identity and
+arbitrary queues remain outside the finite model.

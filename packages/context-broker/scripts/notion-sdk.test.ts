@@ -7,7 +7,7 @@ import { channel } from "node:diagnostics_channel";
 
 // These fixtures exercise the loading/observation boundary only. Actual SDK
 // runtime, package and Pi proofs use independently installed ntn-skills builds.
-async function fixture(options: { sdk?: boolean; sdkVersion?: number; sdkManifestVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; resourceEffectsVersion?: number | null; resourceEffectsManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; effectsVersion?: number | null; effectsManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; relativeResolver?: boolean; files?: boolean; contentSearch?: boolean; contentVersion?: number; contentManifestVersion?: number } = {}) {
+async function fixture(options: { candidates?: boolean; candidateVersion?: number; candidateManifestVersion?: number; sdk?: boolean; sdkVersion?: number; sdkManifestVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; resourceEffectsVersion?: number | null; resourceEffectsManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; effectsVersion?: number | null; effectsManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; relativeResolver?: boolean; files?: boolean; contentSearch?: boolean; contentVersion?: number; contentManifestVersion?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-sdk-boundary-"));
   await mkdir(join(root, "src")); await mkdir(join(root, "dist"));
   await copyFile(new URL("../src/notion-sdk.ts", import.meta.url), join(root, "src/notion-sdk.ts"));
@@ -26,6 +26,12 @@ export async function contentSearch(input, options) {
   calls.push({ operation: 'content-search', input, options });
   options.onRequestMetrics?.({ total_requests: 0, trace: [] });
   return { kind: 'results', records: [], input, library: options.library };
+}` : ""}
+${options.candidates ? `export const CANDIDATE_SNAPSHOT_CONTRACT_VERSION = ${options.candidateVersion ?? 1};
+export async function readCandidateSnapshot(options) {
+  calls.push({ operation: 'candidates', options });
+  options.onRequestMetrics?.({ total_requests: 0, trace: [] });
+  return { kind: 'miss', reason: 'cache_missing' };
 }` : ""}
 export const calls = [];
 export async function selectLibrary(options) { calls.push({operation: 'library-selection', options}); return options.library ?? '00000000-0000-4000-8000-000000000099'; }
@@ -87,6 +93,7 @@ export async function readResources(input, options) {
 `);
   await writeFile(join(root, "dist/ntn-skills-runtime.json"), JSON.stringify({ version: 1, skill_ref_version: 2, package: "ntn-skills",
     package_version: options.manifestVersion ?? options.packageVersion ?? "fixture-1", sdk_version: options.sdkManifestVersion ?? options.sdkVersion ?? 3, consumer_contract_version: 1,
+    ...(options.candidates || options.candidateManifestVersion !== undefined ? { candidate_snapshot_contract_version: options.candidateManifestVersion ?? options.candidateVersion ?? 1 } : {}),
     ...(options.contentSearch ? { content_search_contract_version: options.contentManifestVersion ?? options.contentVersion ?? 1 } : {}),
     ...(options.resourceVersion === undefined ? {} : { resource_read_contract_version: options.resourceManifestVersion ?? options.resourceVersion }),
     ...(options.readProofVersion === undefined && options.readProofManifestVersion === undefined ? {} : { read_output_proof_version: options.readProofManifestVersion ?? options.readProofVersion }),
@@ -132,13 +139,15 @@ test("all consumption requires matching effects capability without a readOnly op
 });
 
 test("paired catalog discovery stays one SDK call", async () => {
-  const { boundary, module } = await fixture({ catalog: true, directoryVersion: 1 });
+  const { boundary, module } = await fixture({ catalog: true, directoryVersion: 1, candidates: true });
   const sdk = await import(pathToFileURL(module).href);
+  const onCatalogSettled = () => {};
   expect(sdk.calls).toHaveLength(0);
-  const result = await boundary.listNotionCatalogSdk({ sourceId: "source", library: "8b354352-3917-5c97-bfae-0fba48bfb0d0", directory: { view: "selected" }, env: { SDK_TEST_ID: "scope" } });
+  const result = await boundary.listNotionCatalogSdk({ sourceId: "source", library: "8b354352-3917-5c97-bfae-0fba48bfb0d0", directory: { view: "selected" }, env: { SDK_TEST_ID: "scope" }, onCatalogSettled });
   expect(result).toMatchObject({ version: 1, catalog: { ok: true, value: { scope: "scope" } }, directory: { ok: true, value: { view: "selected", scope: "scope" } } });
   expect(sdk.calls).toHaveLength(1);
   expect(sdk.calls[0].options.directory).toEqual({ view: "selected" });
+  expect(sdk.calls[0].options.onCatalogSettled).toBe(onCatalogSettled);
   expect(sdk.calls[0].options.sourceId).toBeUndefined();
 });
 
@@ -413,5 +422,24 @@ test("content search requires the paired capability and preserves its scoped req
   expect(calls[0]).toMatchObject({ operation: "content-search", input, options: { library: "2487dd03-18c1-570e-9fbb-e1f060afb334", cwd: "/owned", deadline } });
   expect(calls[0].options.signal).toBe(signal);
   expect(calls[0].options.onAuthorize).toBe(onAuthorize);
+  expect(calls[0].options).not.toHaveProperty("sourceId");
+});
+
+test("candidate discovery requires the same paired capability and calls only the pure snapshot operation", async () => {
+  for (const options of [{}, { candidates: true, candidateVersion: 2 }, { candidates: true, candidateManifestVersion: 2 }, { candidateManifestVersion: 1 }]) {
+    const { boundary, module } = await fixture({ catalog: true, directoryVersion: 1, ...options });
+    await expect(boundary.readNotionCandidateSnapshotSdk({ library: "8b354352-3917-5c97-bfae-0fba48bfb0d0" })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    await expect(boundary.listNotionCatalogSdk({ directory: {}, onCatalogSettled: () => {} })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    expect((await import(pathToFileURL(module).href)).calls).toHaveLength(0);
+  }
+  const { boundary, module } = await fixture({ candidates: true });
+  const signal = new AbortController().signal;
+  const options = { library: "8b354352-3917-5c97-bfae-0fba48bfb0d0", sourceId: "source", cwd: "/selected", signal, env: { SDK_TEST_ID: "captured" } };
+  expect(await boundary.readNotionCandidateSnapshotSdk(options)).toEqual({ kind: "miss", reason: "cache_missing" });
+  const calls = (await import(pathToFileURL(module).href)).calls;
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ operation: "candidates", options: { library: options.library, cwd: options.cwd } });
+  expect(calls[0].options.signal).toBe(signal);
+  expect(calls[0].options.env).toBe(options.env);
   expect(calls[0].options).not.toHaveProperty("sourceId");
 });

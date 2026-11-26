@@ -7,6 +7,7 @@ import { completeDollarRequest, parseCompletionRequest, type ContentCompletionIt
 import { bundledBuiltinRecords } from "../src/bundled-builtins";
 import { recordIdentity } from "../src/discovery-records";
 import { createDollarSkillAutocompleteProvider, dollarAutocompleteItems } from "../src/dollar";
+import { completionMenu } from "./fixtures/completion-menu";
 import { buildDollarRegistry, invokeForContext } from "../src/index";
 import { currentNotionFixture } from "./fixtures/current-notion-source";
 
@@ -148,7 +149,7 @@ for (const kind of ["skill", "router", "prompt"] as const) {
 const provider = createDollarSkillAutocompleteProvider({
   async getSuggestions() { return null; },
   applyCompletion(lines, cursorLine, cursorCol) { return { lines, cursorLine, cursorCol }; },
-}, Promise.resolve([{ name: "design-review", normalizedName: "design-review", description: "Review", normalizedDescription: "review", aliases: [], normalizedAliases: [], path: join(root, "design-review/SKILL.md") }]));
+}, completionMenu([{ name: "design-review", normalizedName: "design-review", description: "Review", normalizedDescription: "review", aliases: [], normalizedAliases: [], path: join(root, "design-review/SKILL.md") }]));
 const hostSignal = new AbortController();
 assert.equal((await provider.getSuggestions(["$des"], 0, 4, hostSignal.signal))?.items[0]?.value, "$design-review");
 const inlineDraft = "中文😀使用$des tail";
