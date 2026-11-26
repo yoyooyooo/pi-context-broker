@@ -5,11 +5,69 @@ run state. It adds public business cases, private grading, actual Pi SDK episode
 and evidence analysis. Use the maintained runtime and an explicitly named frozen
 build. The ordinary daily `next` verification gate remains separate.
 
+## Daily product iteration
+
+Start with the latest project narrative, then inspect both repositories and the
+actual Mini installation. A completed historical ticket does not establish the
+current product state. The [SDK3 product cycle](../benchmark/results/2026-11-26-sdk3-read-description-cycle/README.md)
+keeps the first concrete decision, frozen model conditions and evidence limits.
+
+1. **Select the product and the question.** Fetch and compare `next` and
+   `benchmark` in both isolated checkouts. Bring accepted shared changes into
+   Benchmark; keep product and general engineering fixes on `next`. Name the
+   exact commits, current product gap and smallest existing case that exercises
+   it. Reuse an applicable corpus and its native-equivalent files. A complete
+   historical matrix is not a prerequisite for a product fix.
+2. **Freeze the actual subjects.** Use the existing paired build entry and reuse
+   verified dependency caches. A formal model subject needs the current
+   Benchmark runtime in its frozen source tree; a pure `next` package alone
+   does not contain it. Compare the product/SDK bytes with the daily candidate
+   instead of editing a frozen manifest. Refresh a retained read-only Library
+   through `fixture.mjs refresh-readonly` when its current SDK proof is needed.
+3. **Declare only the next decision.** Follow the
+   [standing continuation contract](benchmark-standing-campaign.md) with the
+   existing grant, history baseline and ledger. Freeze a new scientific template
+   and attempt for changed product, model, material or runtime conditions. The
+   maintained comparison entry accepts two environments, or two explicit pairs;
+   one representative case does not require expanding to every corpus family.
+4. **Inspect before transport.** Run `configure` to capture actual Pi loading,
+   tool ownership, source readiness and serialized input without a model call.
+   Inspect the relevant difference. For a daily integration change, also check
+   the ordinary profile: an isolated profile cannot reveal an extension that
+   shadows a product tool in the user's installation.
+5. **Run and decide.** Run the frozen plan through `run-standing`. Review the
+   actual business output, critical resource and adoption contracts, tool trace,
+   input usage, duration and recovery. A narrow positive contract can support a
+   bounded product decision while an unproved absence remains unknown. State
+   that boundary; do not turn an unknown into a pass or claim general efficiency
+   from one pair.
+6. **Close the product loop.** Fix a valuable gap as soon as it is clear, then
+   perform the checks affected by the change. Merge the accepted product through
+   `next` and complete the normal Pro, Mini and imile-win delivery contract.
+   Record the exact packages, fresh ordinary Pi observations and user-visible
+   result. Publish Benchmark evidence separately, update the project record and
+   retain the raw artifacts and accounting needed by the next iteration.
+
+Use the existing commands from the frozen controller:
+
+```sh
+node benchmark/cli.mjs configure --setup ABS_STANDING_SETUP
+node benchmark/cli.mjs run-standing --plan ABS_FROZEN_PLAN --out ABS_NEW_RUNNER --slice 1
+node benchmark/cli.mjs status --root ABS_BATCH_DIRECTORY
+node benchmark/cli.mjs journey --root ABS_BATCH_DIRECTORY --run RUN_ID
+```
+
+The slice is a checkpoint frequency, not a resource limit. If only interpretation
+is wrong, use report-only `reanalysis` against retained originals before paying
+for another run. A new product needs new execution evidence. Leave unrelated
+unknowns, unsupported stateful material and historical stopped plans in their
+explicit states; repair the measurement only where it affects this decision.
+
 ## Current source and retained experiments
 
-The shared product and verification sources now follow `next`
-`cbe36c332b16c4286afe9d1782e87a9b618a6300`, with CLI
-`6727bea66a3aaea3368a5cc8f84fad83e67d21c1` (SDK v3 and Library root).
+The shared product and verification base now follows `next`
+`3c78765ff82c36bbb2b0e2d75a1157180e00b59c`, with CLI
+`ba092a531a64633c31e648b4f9f806e606a78f4e` (SDK v3 and Library root).
 This is a new linear integration commit on the Benchmark history. Existing
 plans, product builds, raw observations and published scores retain their
 original identities; synchronizing source does not migrate an experiment.
