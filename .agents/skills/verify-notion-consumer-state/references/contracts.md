@@ -88,6 +88,10 @@ Broker 准备、授权、完整闭包或最终投影检查失败时，原用户�
 
 `nonblocking-context.withoutBrokerInstructions` 先保留并校验 receipt，再剥离其证明的正文片段；普通用户引文和图片不凭相似文本删除。最终 provider hook 的安全替换按原逻辑消息、工具调用 ID、原生文本和图片绑定识别已知消息槽，保留普通工具调用及输出、图片和 provider 字段。OpenAI completions、Responses、Anthropic、Google、Bedrock 与 Pi message 形态由具体回归检查；这不是通用 serializer，也不证明未知 provider 形态已被修复。未知形态只依赖序列化前的安全逻辑上下文，不获得额外 wire 确认。实际请求字节的完整 ledger 证明仍限于现有 OpenAI completions 和 Undici 路径。
 
+直接返回给 Pi 的逻辑上下文仍须保留原生消息形状：撤下 source tool result 时，原来是数组的 `content` 继续是 text block 数组，普通图文和调用配对保持原样。后置 payload repair 不能证明此前的 native serializer 边界安全。`nonblocking-context.test.ts` 检查该边界；AH-1327 的实际 Pi 1.6 离线回放还经过 session projection、context clone、`convertToLlm` 和 Responses converter，保留旧 TypeError 与修复后的原件。这不是新的 HTTP 发送或自然模型消费证明。
+
+失败后同一 turn 内的新成功获取可以重新尝试原上下文链。`toolResultRecovery` 在获取前捕获 run 和失败 episode 的 Map，只在当前 session/generation/signal、同一 Map 且完整获取成功时登记 call ID 与结果 digest。digest 包含正文、来源 receipt 和规范化 `isError`；undefined/false 等价，true 或正文/receipt 变化均不能放行。新的失败替换 Map，旧 episode 的迟到结果不能恢复它；partial scalar、截断 batch 和授权失败不登记。旧结果和旧指令片段继续退休，新结果仍经过当前权限、完整 Requires、最终投影及 provider/turn/projection 守卫。`host-prepare.test.ts`、`resource-read-host.test.ts` 和 `nonblocking-context.test.ts` 回放这些正反例。RecoveryClosure 的三个 prompt 与 DeliveryBoundary 的有限变量不包含同 turn 的 episode、原生数组或 digest；它们的原规则不变，不能据此宣称这些新实现边界已穷尽证明。
+
 `skill-preparation.withPreparationDeadline` 将每次模型请求前 context 阶段的 Library 身份、print/JSON metadata、显式准备、任务 prompt 和 active restoration 纳入同一个 60 秒期限；不是整段含多次模型和工具往返的 agent turn 共用此期限。生产者不配合取消也必须让等待结束。超时只终止 Broker 获取；原操作 signal 保持可用，随后迟到结果还必须通过原取消和当前 owner 检查。Pi preparation gate 不禁用编辑器；一次 input 接纳的排队文本和图片由原生队列送到后续 context 后再准备。期限、Promise 退出、输入顺序和图片保留是实现义务，有限模型没有这些墙钟、队列或原生内容变量。
 
 `index` 的 shutdown 先推进目录代次、取消 catalog owner 并清空目录引用，不再等待所有目录 producer 退出。`ownCatalog` 保留获取前后的 signal 检查及拒绝观察；`publishCatalog` 仍检查 owner 和原 cache entry。`host-refresh.test.ts` 通过真实 index 入口暂停一个忽略取消的 SDK catalog，验证 shutdown 在 producer 返回前完成、迟到结果不能作为工具结果发布，也不新增 branch entry 或通知。此 Promise 退出义务不属于 ReadRace 的有限网络调度证明。
@@ -216,6 +220,12 @@ runner 和独立 expected_rules。它是此次可复现源码，不能冒称为�
 | FreshOutranksLateCache / ReturnFresh | completion-candidates.createCompletionSnapshot.accept 的 owner/order/refreshed 门禁；index 的 menu generation 与 catalog owner | 只枚举一次 cache/fresh，不覆盖跨库网络调度 |
 | NoDismissedReopen / Escape、UpdateMenu | pi-dollar-editor 的 intent、valid、sequence、dismiss；Esc 在 waiting/open 都撤销 intent | 真实 Pi debounce、输入键和 Promise 退出由 Editor/TUI 回放 |
 | ChoiceIdentityPreserved / UpdateMenu、Accept | editor 按 item.identity 保持高亮，移除时无选择；dollar.applyCompletion 使用原 item.candidate | 同名、重排、改名、撤下和接受竞态由实际 Editor 测试补齐 |
+
+实际 Pi 在 extension 的 `session_start` 完成前已接收输入，随后还会重绑原生 provider。启动观察在 extension factory 成功完成配置、工具和命令注册之后、TUI 开始输入之前安装；前序初始化失败不会创建一个在 loader 丢弃 cleanup handlers 后仍遗留的 observer。初装前的短暂观察只记录 focused native Editor 实际处理的输入，按实例保存；handoff 必须仍是同一 TUI/焦点、同一输入方法和精确 draft/cursor，已知 scope 也不能变化。未知历史 `$` 草稿不自动认领；早期 Esc、提交、输入/焦点变化或方法被其他扩展替换都不能被复活。原 native 调用只委托一次，返回值和异常原样保留，观察错误不阻塞输入；接管、no-UI 和 shutdown 都停用观察，只有完整 method descriptor 仍归自己时才恢复，不覆盖其他扩展改动。
+
+已有同 scope/draft 的有效意图在 provider 重绑时保留高亮身份并重新订阅、请求；迟到结果不变成隐式 Tab 接受。它在意图抽象中对应 stutter 后的现有 UpdateMenu，具体列表重建和等待状态另由真实 Editor 回放。初装 handoff 在本模型 Init 之前；模型没有 native focus、waiting 或安装事件，安全性质通过也不能证明该交接或等待保活。实际 Editor 的初装/重绑正反例、全插件首 `$` 与早 Esc 终端原件由 AH-1327 记录，时延按各自初态报告。
+
+`index.activateMenu` 先把已有 bundled 本地候选发布到同一 snapshot，再让异步本地扫描与同一 bundled 数组合并去重；无需等待扫描完成才显示这些现成条目。该同步发布仍不提供消费资格、正文或 loaded 证明。
 
 `completion-candidates` 的新元信息候选没有伪造文件路径，`dollar` 每次只筛选当前
 内存快照。被选身份在 input 接纳时进入独立 receipt；真正消费才物化，并继续
