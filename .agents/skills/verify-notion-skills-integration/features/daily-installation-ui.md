@@ -1,6 +1,6 @@
 # 实际 Pi 日用安装与界面边界
 
-AH-1197/AH-637/AH-1198 使用 `scripts/verify-pi-daily-installation.mjs` 的公开动作。`scripts/verify-pi-daily-candidate.mjs` 是导入的实现模块，没有独立 CLI。真实表切换后，先核对有效 Pi 配置实际加载的安装，不能把工作树或独立临时包成功称为日用成功。
+普通多机更新沿 [next 交付合同](../../../../docs/next-worktree-delivery.md) 使用同一配对归档和各机独立安装，核对普通入口与新 Pi 进程。下文 `plan/run/aggregate` 保留 AH-1197/AH-637/AH-1198 的历史 worktree 专项；它要求真实 next checkout，不应把独立安装目录伪装成 worktree。`scripts/verify-pi-daily-candidate.mjs` 是导入的实现模块，没有独立 CLI。真实表切换后，先核对有效 Pi 配置实际加载的安装，不能把工作树或独立临时包成功称为日用成功。
 
 ```sh
 node scripts/verify-pi-daily-installation.mjs plan --config /absolute/current-daily.json
@@ -158,6 +158,6 @@ T22 的本地充分负例在 daily 普通 Pi 中证明目标由原生全局发�
 
 ## 界面范围
 
-原生终端候选、Tab、光标、焦点和菜单操作必须实际驱动并观察。本轮原生终端专项未验收；旧 CLI fixture PTY 与旧 OMP/Tern daily UI 驱动已删除。OMP/Tern 产品代码保留但延期，无Tern成绩，不把一个宿主的结果替代另一个。
+原生终端候选、Tab、光标、焦点和菜单操作必须实际驱动并观察。Pi 的 `$` 专项沿 [候选地图](dollar-completion-selection.md) 运行实 Editor 回放与当前 `scripts/pi-dollar-pty.mjs`，分别记录首次菜单、后台同屏更新、Esc、高亮身份、排队输入、网络故障及实际正文交付。受控 PTY 与每机普通安装读回各自留证，不能互相代替。旧 CLI fixture PTY 与旧 OMP/Tern daily UI 驱动已删除；OMP/Tern 产品代码保留但延期，不把一个宿主的结果替代另一个。
 
 清理仅限本轮自有进程与绝对scratch路径，经系统Trash。不要复制用户凭据、重置用户会话或以全局重装绕过身份问题。结果分别记录源码、安装、SDK/HTTP、Pi、真实Notion、模型和UI。
