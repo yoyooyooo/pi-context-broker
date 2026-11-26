@@ -7,7 +7,7 @@ import diagnostics from 'node:diagnostics_channel';
 import { randomUUID } from 'node:crypto';
 import { candidateDifferences, createEpisodeRecorder, sha256 } from './episode-evidence.mjs';
 import { observeEpisodeNotion, stableNotionCatalog } from './episode-notion.mjs';
-import { graphSourceAccounting } from '../../scripts/notion-skill-graph-model-evidence.mjs';
+import { graphSourceAccounting, graphSourceViews } from '../../scripts/notion-skill-graph-model-evidence.mjs';
 
 const publish = (name, value) => diagnostics.channel(name).publish(value);
 const metricChannel = 'context-broker.notion-sdk', resultChannel = 'context-broker.notion-sdk-result';
@@ -275,6 +275,51 @@ test('SDK3 Library selection, binding and content search keep paired operation r
   assert.ok(result.operations.every(item => item.library === library && item.receipt_ref && item.end_ref));
 });
 
+test('local candidate snapshots retain every receipt without becoming a catalog, consumption or absence proof', async () => {
+  const f = await fixture(), captured = capturedCatalogSequences[0];
+  const library = captured.directory.library_id, scope = captured.directory.scope;
+  const verifiedAt = Date.parse('2026-11-26T12:00:00.000Z');
+  const snapshots = [
+    { kind: 'miss', reason: 'catalog_unavailable', libraryId: library },
+    { kind: 'blocked', libraryId: library, scope, denials: [{ kind: 'library', identity: library, code: 'ACCESS_DENIED', verifiedAt, generation: 2 }] },
+    { kind: 'snapshot', libraryId: library, scope, verifiedAt, fetched_at: verifiedAt, stale: true, coverage: 'partial',
+      records: captured.directory.records, denials: [], generation: 3, lastFailure: { code: 'SOURCE_UNAVAILABLE', observed_at: verifiedAt + 1 } },
+  ];
+  const ids = []; let result, listId;
+  try {
+    for (const value of snapshots) ids.push(f.operation('candidates', value, { library }));
+    assert.equal(await f.observer.waitIdle(), true);
+    assert.deepEqual(f.observer.candidate().projection, { observed: false, catalogs: [] });
+    assert.throws(() => f.observer.candidate([{ type: 'notion', id: 'notion' }]), /CATALOG_UNAVAILABLE/);
+    listId = f.operation('list', captured.combined, { library });
+    const before = f.observer.candidate([{ type: 'notion', id: 'notion' }]);
+    snapshots.push({ ...snapshots[2], stale: false, coverage: 'complete', records: [], generation: 4 });
+    ids.push(f.operation('candidates', snapshots.at(-1), { library }));
+    const after = f.observer.candidate([{ type: 'notion', id: 'notion' }]);
+    assert.deepEqual(after, before, 'Even a complete empty snapshot cannot replace the observed full catalog');
+    assert.deepEqual(after.evidence.map(item => item.operation_id), [listId]);
+  } finally { result = await f.close(); }
+  assert.equal(result.coverage.sdk, 'complete'); assert.equal(result.coverage.owned_http, 'complete');
+  const receipts = fs.readdirSync(result.paths.responses).map(name => JSON.parse(fs.readFileSync(path.join(result.paths.responses, name), 'utf8')));
+  const candidates = ids.map(id => receipts.find(receipt => receipt.requestId === id));
+  assert.deepEqual(candidates.map(receipt => receipt.value), snapshots);
+  for (const id of ids) {
+    const operation = result.operations.find(item => item.operation_id === id);
+    assert.equal(operation.operation, 'candidates'); assert.equal(operation.library, library);
+    assert.equal(operation.status, 'completed'); assert.equal(operation.result_observed, true);
+    assert.equal(operation.metrics_complete, true); assert.equal(operation.http_attempts, 0);
+    assert.ok(operation.start_ref && operation.result_ref && operation.end_ref && operation.receipt_ref);
+  }
+  assert.deepEqual(graphSourceViews(candidates), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] });
+  const ledger = fs.readFileSync(result.paths.sdk, 'utf8').trim().split('\n').map(JSON.parse);
+  const accounting = graphSourceAccounting(ledger, receipts, { sourceMode: 'sdk' });
+  assert.equal(accounting.sdk_calls.candidates, 4); assert.equal(accounting.sdk_calls.list, 1);
+  assert.equal(accounting.actual_http_attempts, 0);
+  const remote = structuredClone(receipts);
+  remote.find(receipt => receipt.requestId === ids[0]).metrics.total_requests = 1;
+  assert.throws(() => graphSourceAccounting(ledger, remote, { sourceMode: 'sdk' }), /local SDK operation cannot make HTTP/);
+});
+
 test('a legal resolve sequence retains all five SDK operations and zero-request resolution', async () => {
   const f = await fixture();
   f.operation('list', catalog());
@@ -302,7 +347,8 @@ test('a legal resolve sequence retains all five SDK operations and zero-request 
   assert.equal(source.at(-1).operations, 5); assert.equal(source.at(-1).sdkStarts, 5);
   assert.equal(source.at(-1).errors, 0); assert.equal(source.at(-1).complete, true);
   const accounting = graphSourceAccounting(ledger, receipts, { sourceMode: 'sdk', requireConsumption: true });
-  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 0, consume: 1, read: 1, 'read-resources': 1, resolve: 1, 'content-search': 0 });
+  assert.deepEqual(accounting.sdk_calls, { 'library-selection': 0, library: 0, candidates: 0,
+    list: 1, files: 0, consume: 1, read: 1, 'read-resources': 1, resolve: 1, 'content-search': 0 });
   assert.equal(accounting.actual_http_attempts, 0);
 });
 

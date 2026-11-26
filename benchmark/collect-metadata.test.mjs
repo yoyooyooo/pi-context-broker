@@ -10,7 +10,10 @@ const sha = value => createHash('sha256').update(value).digest('hex');
 const ref = { artifact_id: 'metadata-fixture', sha256: sha('metadata'), pointer: '' };
 const indexSha = '292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d63';
 const hostSha = 'c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1';
-function producerFixture() {
+const candidateIndexSha = 'e76e3c3ac75e5c6f1ca9668e60f5addc625471ce68cb3a7cec20b02f4ea60482';
+const candidateHostSha = 'eb9153cdc6e3b6665633d80e6bca804bb72df7447eccd5ab98510640798da205';
+const producers = [{ indexSha, hostSha }, { indexSha: candidateIndexSha, hostSha: candidateHostSha }];
+function producerFixture({ indexSha, hostSha } = producers[0]) {
   const view = root => {
     const path = root + '/broker/src/index.ts';
     return { entry_kind: 'pi-sdk', mode: 'broker', build: { path: root + '/build.json' },
@@ -22,8 +25,8 @@ function producerFixture() {
   return { candidate, expected: { projection: structuredClone(candidate.projection) }, admission: { differences: [] },
     files: [{ name: 'src/index.ts', sha256: indexSha }, { name: 'src/host-skills.ts', sha256: hostSha }] };
 }
-test('metadata exemption needs the actual reviewed Broker owner and matching admission', () => {
-  assert.equal(verifiedNotionListRuntime(producerFixture()), true);
+for (const [index, producer] of producers.entries()) test('metadata exemption needs reviewed Broker tuple ' + index + ' and matching admission', () => {
+  assert.equal(verifiedNotionListRuntime(producerFixture(producer)), true);
   for (const change of [
     f => { f.candidate.snapshot.tools.all[0].sourceInfo.path = '/other/index.ts'; },
     f => { f.candidate.snapshot.tools.all[0].sourceInfo.source = 'builtin'; },
@@ -35,7 +38,14 @@ test('metadata exemption needs the actual reviewed Broker owner and matching adm
     f => { f.files.push(f.files[1]); },
     f => { f.expected.projection.mode = 'native'; },
     f => { f.admission.differences.push('drift'); },
-  ]) { const f = producerFixture(); change(f); assert.equal(verifiedNotionListRuntime(f), false); }
+  ]) { const f = producerFixture(producer); change(f); assert.equal(verifiedNotionListRuntime(f), false); }
+});
+test('separately reviewed source hashes cannot be mixed into an unreviewed producer', () => {
+  for (const producer of [
+    { indexSha, hostSha: candidateHostSha },
+    { indexSha: candidateIndexSha, hostSha },
+    { indexSha: sha('unreviewed index'), hostSha: sha('unreviewed host') },
+  ]) assert.equal(verifiedNotionListRuntime(producerFixture(producer)), false);
 });
 
 function metadataFixture() {

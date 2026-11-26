@@ -17,7 +17,7 @@ import { graphSourceViews, verifyPreparationEvidence, retainedMaterialSelection,
 import { CURRENT_SOURCE_CONTRACT, loadCurrentSourceViews } from './current-source-views.mjs';
 
 export const COLLECTOR_VERSION = '1.2.2';
-export const CURRENT_COLLECTOR_VERSION = '1.3.1';
+export const CURRENT_COLLECTOR_VERSION = '1.3.2';
 const retainedSourceViews = { contract: RETAINED_SOURCE_CONTRACT, graphSourceViews, verifyPreparationEvidence };
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -217,32 +217,36 @@ export function verifiedCodeModeRuntime({ candidate, expected, admission, after 
   } catch { return false; }
 }
 
-// Reviewed Broker owner and metadata-only list branch. Changed producers remain
-// opaque until reviewed; a matching tool name or description is not evidence.
-const notionMetadataProducer = {
+// Reviewed Broker owner and metadata-only list branch, paired by source revision.
+// Changed or mixed producers remain opaque; a tool name is not evidence.
+const notionMetadataProducers = [{
   'src/index.ts': '292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d63',
   'src/host-skills.ts': 'c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1',
-};
+}, {
+  'src/index.ts': 'e76e3c3ac75e5c6f1ca9668e60f5addc625471ce68cb3a7cec20b02f4ea60482',
+  'src/host-skills.ts': 'eb9153cdc6e3b6665633d80e6bca804bb72df7447eccd5ab98510640798da205',
+}];
 export function verifiedNotionListRuntime({ candidate, expected, admission, files }) {
   try {
     assert.deepEqual(candidate.projection, expected.projection); assert.deepEqual(admission.differences, []);
-    for (const [path, sha256] of Object.entries(notionMetadataProducer)) {
+    const producer = notionMetadataProducers.find(producer => Object.entries(producer).every(([path, sha256]) => {
       const matches = files.filter(file => file.name === path);
-      assert.equal(matches.length, 1); assert.equal(matches[0].sha256, sha256);
-    }
+      return matches.length === 1 && matches[0].sha256 === sha256;
+    }));
+    assert.ok(producer, 'The complete Broker metadata producer tuple must be reviewed');
     for (const [view, root] of [[candidate.snapshot, dirname(candidate.snapshot.build.path)], [candidate.projection, '$BUILD']]) {
       assert.equal(view.entry_kind, 'pi-sdk'); assert.equal(view.mode, 'broker');
       const path = root + '/broker/src/index.ts';
       const owners = view.extensions.filter(extension => extension.tools.includes('notion_list'));
       assert.equal(owners.length, 1); assert.equal(owners[0].resolved_path, path);
       assert.equal(owners[0].entry.path, path); assert.equal(owners[0].entry.realpath, path);
-      assert.equal(owners[0].entry.sha256, notionMetadataProducer['src/index.ts']);
+      assert.equal(owners[0].entry.sha256, producer['src/index.ts']);
       const declarations = view.tools.all.filter(tool => tool.name === 'notion_list');
       assert.equal(declarations.length, 1); assert.equal(declarations[0].sourceInfo.path, path);
       assert.equal(declarations[0].sourceInfo.source, 'cli'); assert.equal(declarations[0].exposure, 'direct');
       const launch = view.launch_profile.extensions.filter(extension => extension.role === 'broker');
       assert.equal(launch.length, 1); assert.equal(launch[0].path, path);
-      assert.equal(launch[0].sha256, notionMetadataProducer['src/index.ts']);
+      assert.equal(launch[0].sha256, producer['src/index.ts']);
     }
     return true;
   } catch { return false; }
