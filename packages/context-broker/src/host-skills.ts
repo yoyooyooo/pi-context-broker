@@ -412,7 +412,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     catch (error) { gate.release(entry); throw error; }
   }
   let turnPrompts: { snapshots: Map<string, SkillRecord>; signal: AbortSignal } | undefined;
-  const feedback = await createActivationFeedback(api, gate.repaint, deferredPiDiscovery ? "widget" : "message");
+  const feedback = await createActivationFeedback(api, gate.repaint, deferredPiDiscovery ? "entry" : "message");
   let handoff: { entry: ActivePreparation; prompts: string[]; consumed: boolean; selectedNative?: SkillRecord; native?: { snapshot: SkillRecord; promptSha256: string } } | undefined;
   const queuedInputs: Array<{ text: string; submitted: string; images?: ImageContent[]; ctx: ExtensionContext; generation: number; sessionId?: string; selectedNative?: SkillRecord }> = [];
   type PiRun = {
