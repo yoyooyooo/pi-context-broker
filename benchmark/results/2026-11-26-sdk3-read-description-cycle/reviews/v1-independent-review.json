@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "kind": "independent-publication-review-complete",
+  "model_requests": 0,
+  "source_changes": [],
+  "binding_counterexamples_per_package": 5,
+  "detailed_proof": "[path:56f3dc694e515c932381]",
+  "detailed_proof_sha256": "a69b85def8b0345dfc10ec59860d5f184868032f12f6b0d000d718b51612fbc3",
+  "packages": [
+    {
+      "package": "v1-original",
+      "export_receipt": "[path:a8551bec5f5b0ccaf30c]",
+      "export_receipt_sha256": "0a7d17f2df7a9ff671c685c43cddeea3626c837de09995825ebd2345348f0e24",
+      "manifest_sha256": "f3c4f63d3cd25ab26c7c8d0baa9c096bb74464ce7d4a9b92bf91d9090626634d",
+      "strict_verify_independently_passed": true,
+      "standalone_replay": "[path:658ea2c672265ce0a8eb]",
+      "public_analysis_sha256": "bee7cebe1342eea9eb8e9a487ed6ccc3b61cf356462afc4e6b150a35c5b21a4b",
+      "credential_scan": "publisher exact in-memory scan receipt read back; zero findings",
+      "independent_privacy_checks": "private origin/base URL[path:8538e9011f38527d1a1f] username zero; exact 12 public SDK loopback constants manually inspected"
+    },
+    {
+      "package": "v1-reanalysis",
+      "export_receipt": "[path:e72562b2f121fd0b768e]",
+      "export_receipt_sha256": "57d499ef84bcedd230c5a44e79daec34b523be66c0ba05537e2d00cca5431667",
+      "manifest_sha256": "00b184761adc6ef29daebf411ee70aa3bf41e1ef2559a9cc793d218fa0c6cb07",
+      "strict_verify_independently_passed": true,
+      "standalone_replay": "[path:a8d642454b9098e0d810]",
+      "public_analysis_sha256": "db826bbd581b7016cd0fbe3fcfda4ae168bd4ba50e372a2ecf4ef4a1871cd2bf",
+      "credential_scan": "publisher exact in-memory scan receipt read back; zero findings",
+      "independent_privacy_checks": "private origin/base URL[path:8538e9011f38527d1a1f] username zero; exact 12 public SDK loopback constants manually inspected"
+    }
+  ],
+  "scope": "Public manifest, transformed raw source bindings and normalized statistical replay. No original private grader rerun or new execution."
+}

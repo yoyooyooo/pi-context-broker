@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "kind": "narrow-product-adoption-policy",
+  "recorded_at": "2026-11-26T13:19:18.282Z",
+  "before_actual_model_requests": true,
+  "plan_sha256": "0b08b3264988ebcd0b55d568b0e190430a966722803c4dbe908a0e74e1c71935",
+  "scope": "One read tool description change, three predefined paired development journeys; do not expand the matrix to force a favorable decision.",
+  "required": [
+    "Actual serialized captures differ only in the reviewed read.description and separately attributed exact environment paths; description reduction is 355 UTF-8 bytes; tool order, parameters and all other guidance remain identical.",
+    "All six actual episodes retain their observed admission, usage, oracle and task outcomes. Inspect paired implicit discovery/application, complete same-owner reference consumption, and two-turn continuation traces.",
+    "Do not adopt if the candidate introduces a clear task regression, wrong owner/skill choice, adoption or zero-write boundary violation, lost continuation/recovery, avoidable repeated consumption attributable to the edit, or extra user intervention.",
+    "An invalid or unknown episode that prevents judging a pair requires diagnosis; it is not evidence of equivalence. Shared pre-existing failures are product gaps, not passing pairs."
+  ],
+  "reporting": [
+    "Retain all actual token/time/request metrics and every statistical conclusion, including insufficient evidence.",
+    "No requirement that each of six noisy latency/token observations decrease; investigate causal extra work when present.",
+    "If adopted, claim only the exact payload reduction and that these fixed tasks did not reveal a regression attributable to the edit; do not claim population-level noninferiority, faster responses or improved task capability."
+  ],
+  "execution_note": "The standing grant remains unbounded. Six episodes are the finite scientific comparison, not an authorization or spending limit."
+}

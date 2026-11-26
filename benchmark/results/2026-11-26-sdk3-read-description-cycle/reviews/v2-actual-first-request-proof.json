@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "status": "actual-first-request-payload-difference-verified",
+  "verification_script_sha256": "915f213a89b55115f6fd42154d87a09737afadb31b49612028fb3ecfc55cebd5",
+  "scope": "two completed accepted real-model references episodes; first actual payload comparison",
+  "arms": [
+    {
+      "run": "[path:7ec3a13c14c75ca12330]",
+      "extraction": {
+        "path": "[path:5cc93420c2a679dcc75c]",
+        "sha256": "8ba83f4f24c25901ce0590a9e84bb8f4136c4cfa20c4b3414af67e9098de543d"
+      },
+      "artifacts": [
+        {
+          "path": "[path:0cc52bd1c2774a61424f]",
+          "sha256": "fc7090d6c48843c45a7d61237777ae3aea563ee90e907b697fe2e67cfde23c5f"
+        },
+        {
+          "path": "[path:8cf62b5ddd56193f1a1b]",
+          "sha256": "c1efd99920f3c2825d4ca064b6ef0bfe03ad6a9caddbc7935f7e7f89bbac6244"
+        },
+        {
+          "path": "[path:0a5b28fef308a3234afa]",
+          "sha256": "893602035e2b7d8a3a5d30f381c2d901a3d2c6d21f3e9c1ff06a3ae8ca9861b9"
+        }
+      ],
+      "serialized_bytes": 15162,
+      "first_reported_input": 2889,
+      "normalizations": [
+        {
+          "field": "[path:06463c15f4be854ba443]",
+          "from": "[path:14c7ce737cb018819c44]",
+          "to": "<RUN_WORKSPACE>",
+          "count": 1
+        },
+        {
+          "field": "[path:8bb62ee4e25a92f68fa9]",
+          "from": "[path:71cc083d29f7da5c93b8]",
+          "to": "<BUILD_ROOT>",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "run": "[path:be9c6a8216cda7ab73fb]",
+      "extraction": {
+        "path": "[path:b579ec463970c1f570ff]",
+        "sha256": "baabd4601d360cc6fa9afb6eac11b390fc9a16a0b1c07a87660ac391a593bc23"
+      },
+      "artifacts": [
+        {
+          "path": "[path:3cff59b9b609a01be8e0]",
+          "sha256": "8cc2bf855ca8c75a09b4dc2d865f2402a5802345206e824a674bd2a379ff5fc5"
+        },
+        {
+          "path": "[path:4ac9adab0e6d01c0beb3]",
+          "sha256": "fb54f3a1a2a20536199036673684ae4d4fdac6cf5dec5f0f0717a81372730716"
+        },
+        {
+          "path": "[path:263bb12ceab92f874d69]",
+          "sha256": "1a585da9f2f79d732081ca5c48ef16547489932283e9165263711e160b8435ef"
+        }
+      ],
+      "serialized_bytes": 14943,
+      "first_reported_input": 2850,
+      "normalizations": [
+        {
+          "field": "[path:06463c15f4be854ba443]",
+          "from": "[path:90912c8e0796f16ebe0a]",
+          "to": "<RUN_WORKSPACE>",
+          "count": 1
+        },
+        {
+          "field": "[path:8bb62ee4e25a92f68fa9]",
+          "from": "[path:a9d697e87173cd186628]",
+          "to": "<BUILD_ROOT>",
+          "count": 2
+        }
+      ]
+    }
+  ],
+  "exact_description_deletion": {
+    "bytes": 219,
+    "text": "For a requested latest-version inspection, use refresh:true with the supplied main Skill ref; the current task keeps its previous selection. To adopt the latest instructions, call notion_use with refresh:true directly. ",
+    "all_other_description_bytes_identical": true
+  },
+  "payload_delta_bytes": -219,
+  "all_parameters_other_tools_and_normalized_messages_equal": true,
+  "reported_first_input_delta": -39,
+  "interpretation": "Reported token counts describe these actual first requests only. No byte-to-token conversion or whole-task efficiency/general noninferiority claim."
+}

@@ -1,0 +1,193 @@
+{
+  "version": 1,
+  "kind": "independent-publication-binding-review",
+  "model_requests": 0,
+  "rows": [
+    {
+      "name": "v1-original",
+      "public_analysis_sha256": "bee7cebe1342eea9eb8e9a487ed6ccc3b61cf356462afc4e6b150a35c5b21a4b",
+      "urls": [
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-001",
+          "requests": 6,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-002",
+          "requests": 7,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-003",
+          "requests": 8,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-004",
+          "requests": 8,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-005",
+          "requests": 5,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-006",
+          "requests": 5,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        }
+      ],
+      "rejected": [
+        {
+          "case": "wrong route",
+          "reason": "Reported model event binding differs from raw request metadata"
+        },
+        {
+          "case": "wrong API",
+          "reason": "Reported model event binding differs from raw request metadata"
+        },
+        {
+          "case": "forged server model",
+          "reason": "Reported model value or field differs from original server event"
+        },
+        {
+          "case": "omitted original server model event",
+          "reason": "Reported model evidence omits an original server model event"
+        },
+        {
+          "case": "public package claimed as original evidence",
+          "reason": "Public projection requires an explicit verified manifest mapping"
+        }
+      ],
+      "privacy": {
+        "private_origin": 0,
+        "private_base_url": 0,
+        "original_home_root": 0,
+        "standalone_username": 0,
+        "loopback_occurrences": [
+          {
+            "file": "raw/870e27cd454ae7c54852920ad326e2ff516f0385c79c83b3594ff5eed9144ffc",
+            "count": 6
+          },
+          {
+            "file": "raw/c633c3002280d9a360270084e70c78501cd4ff39c36c485f507365e35760643f",
+            "count": 6
+          }
+        ]
+      },
+      "loopback_review": "Exactly 12 reviewed public SDK constants across two source artifacts; not a blanket implementation exemption."
+    },
+    {
+      "name": "v1-reanalysis",
+      "public_analysis_sha256": "db826bbd581b7016cd0fbe3fcfda4ae168bd4ba50e372a2ecf4ef4a1871cd2bf",
+      "urls": [
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-001",
+          "requests": 6,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-002",
+          "requests": 7,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-003",
+          "requests": 8,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-004",
+          "requests": 8,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-005",
+          "requests": 5,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-006",
+          "requests": 5,
+          "url_structure": "valid-private-endpoint-pseudonym",
+          "provider_binding": "known",
+          "reported_model": "matched",
+          "route_api_and_reported_ids_unchanged": true
+        }
+      ],
+      "rejected": [
+        {
+          "case": "wrong route",
+          "reason": "Reported model event binding differs from raw request metadata"
+        },
+        {
+          "case": "wrong API",
+          "reason": "Reported model event binding differs from raw request metadata"
+        },
+        {
+          "case": "forged server model",
+          "reason": "Reported model value or field differs from original server event"
+        },
+        {
+          "case": "omitted original server model event",
+          "reason": "Reported model evidence omits an original server model event"
+        },
+        {
+          "case": "public package claimed as original evidence",
+          "reason": "Public projection requires an explicit verified manifest mapping"
+        }
+      ],
+      "privacy": {
+        "private_origin": 0,
+        "private_base_url": 0,
+        "original_home_root": 0,
+        "standalone_username": 0,
+        "loopback_occurrences": [
+          {
+            "file": "raw/870e27cd454ae7c54852920ad326e2ff516f0385c79c83b3594ff5eed9144ffc",
+            "count": 6
+          },
+          {
+            "file": "raw/c633c3002280d9a360270084e70c78501cd4ff39c36c485f507365e35760643f",
+            "count": 6
+          }
+        ]
+      },
+      "loopback_review": "Exactly 12 reviewed public SDK constants across two source artifacts; not a blanket implementation exemption."
+    }
+  ]
+}

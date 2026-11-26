@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "kind": "independent-v2-publication-review",
+  "status": "verified",
+  "model_requests": 0,
+  "source_changes": [],
+  "package": "[path:137fb8e65db0cc8c9ca8]",
+  "public_manifest_sha256": "962b9c77b16619c1f3992503df4d6f0d26e567661b6c7e422c0af78540c0ab13",
+  "public_analysis_sha256": "1ff86ff801c9cae0ca035022389fb22eaa42f6b09f74f90130ad39367b5f5f18",
+  "source_analysis_sha256": "cd9567260abbba706fc3655532abc450d2923c48722de0e05e56e618aa83aad7",
+  "strict_verify": {
+    "valid": true,
+    "files": 244,
+    "episodes": 2
+  },
+  "model_bindings": [
+    {
+      "run_id": "sdk3-read-description-v2-pair-1-001",
+      "observed_requests": 6,
+      "provider_binding": "known",
+      "reported_model": "matched",
+      "route_api_reported_ids_unchanged": true
+    },
+    {
+      "run_id": "sdk3-read-description-v2-pair-1-002",
+      "observed_requests": 6,
+      "provider_binding": "known",
+      "reported_model": "matched",
+      "route_api_reported_ids_unchanged": true
+    }
+  ],
+  "replay": {
+    "package_copy": "[path:867ba469368d71656c7a]",
+    "report": "[path:6759da914eac3014152c]",
+    "profile": "[path:f7568e9c48e4251dd769]",
+    "profile_sha256": "a7a80c17f10f1e64ab1bf1fa2280bcdfe840c4f4d2d286aa2cb345400972c342",
+    "sandbox_probe": {
+      "version": 1,
+      "status": "passed",
+      "environment_keys": [
+        "LANG",
+        "PATH",
+        "TMPDIR",
+        "__CF_USER_TEXT_ENCODING"
+      ],
+      "credentials_present": false,
+      "rejected": [
+        {
+          "kind": "private-original-read",
+          "code": "EPERM"
+        },
+        {
+          "kind": "public-copy-write",
+          "code": "EPERM"
+        },
+        {
+          "kind": "network-connect",
+          "code": "EPERM"
+        }
+      ],
+      "public_manifest": "962b9c77b16619c1f3992503df4d6f0d26e567661b6c7e422c0af78540c0ab13"
+    },
+    "original_public_package_unchanged": true,
+    "public_copy_unchanged": true,
+    "scope": "Public hashes/source locators and normalized statistical reaggregation; no original private grader rerun."
+  },
+  "privacy": {
+    "independent_private_value_hits": {
+      "origin": 0,
+      "base_url": 0,
+      "home_root": 0,
+      "username": 0
+    },
+    "credential_scan_receipt": "[path:e2c2396913d00ba6d9fb]",
+    "credential_scan_receipt_sha256": "6a3ead1f0477d827aba678f06e3c483fcb835d2d9a0de783cae2c65c158be51d",
+    "credential_findings": 0,
+    "reviewed_public_loopback_constants": [
+      {
+        "path": "raw/870e27cd454ae7c54852920ad326e2ff516f0385c79c83b3594ff5eed9144ffc",
+        "count": 6
+      },
+      {
+        "path": "raw/c633c3002280d9a360270084e70c78501cd4ff39c36c485f507365e35760643f",
+        "count": 6
+      }
+    ]
+  }
+}

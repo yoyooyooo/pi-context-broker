@@ -1,0 +1,717 @@
+{
+  "version": 1,
+  "kind": "benchmark-product-cycle-evidence-index",
+  "date": "2026-11-26",
+  "publication_version": "1.0.6",
+  "packages": [
+    {
+      "package_id": "apparatus-invalid-221",
+      "directory": "packages/apparatus-invalid-221",
+      "manifest_sha256": "ade92228840e4040d4a83f919f4dfe5541a8ca1c769393424a6c3e1638dd30d4",
+      "manifest_file_sha256": "e87b1d3673cf3b4acf050feb3b2f4f2a2fa1e210edbbc5dc3fabd8b06796b77f",
+      "source_analysis_sha256": "cc59078488ef3eb488fd241f7e7be78a3f2623416c0dc309a864d387abf8b068",
+      "public_analysis_sha256": "058764ccbe567d4c576271191d0b92ecfefd82353b8c67a21d9924f5a1e70e38",
+      "source_protocol_sha256": "92d3ae0e0639e996917978d10cecadfb142adf279e4cec53724b514f8022f1fa",
+      "public_protocol_sha256": "6e73cd4d95cc91fff0d293d155e2628db8ab7d325440e6082a6ce336ff00ee64",
+      "source_episode_sha256": [
+        "4d300f537477486e40f0e3ffd66515d9b12a2ebbe7c120e6ab915c5c8ef3df79"
+      ],
+      "public_episode_sha256": [
+        "7feba6fb3d8d0fe72475b042025c118e5959b9fd3ec5383a8e9b9ac510abe5cc"
+      ],
+      "collector_versions": [
+        "1.3.0"
+      ],
+      "unique_execution_count": 1,
+      "model_requests_created_by_publication": 0,
+      "formal_decisions": [
+        {
+          "stage": "no_acceptance_claim",
+          "status": "descriptive"
+        }
+      ],
+      "episodes": [
+        {
+          "run_id": "sdk3-read-description-6-attempt-3-001",
+          "source_episode_sha256": "4d300f537477486e40f0e3ffd66515d9b12a2ebbe7c120e6ab915c5c8ef3df79",
+          "public_episode_sha256": "7feba6fb3d8d0fe72475b042025c118e5959b9fd3ec5383a8e9b9ac510abe5cc",
+          "reanalysis_of": null,
+          "admission": "invalid",
+          "business": "fail",
+          "critical_contracts": [
+            {
+              "id": "business-grants-1",
+              "status": "fail"
+            },
+            {
+              "id": "grant-chain-read",
+              "status": "fail"
+            }
+          ],
+          "formal_outcome": "not_applicable",
+          "condition": "m0-e0",
+          "case_id": "references-01-a-n16-r1",
+          "actual_model_requests": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "first_request_input_tokens": null,
+          "actual_duration_ms": 47870.911792
+        }
+      ]
+    },
+    {
+      "package_id": "v1-original",
+      "directory": "packages/v1-original",
+      "manifest_sha256": "f3c4f63d3cd25ab26c7c8d0baa9c096bb74464ce7d4a9b92bf91d9090626634d",
+      "manifest_file_sha256": "e92e6ffb251dc9870177c749912a866e637a5ac171fe9353b4099ab438d49b62",
+      "source_analysis_sha256": "7f12e69eff28f8abc7a29c0ecc86a0066f0b2ea529d44492c2f86bfd40a5472f",
+      "public_analysis_sha256": "bee7cebe1342eea9eb8e9a487ed6ccc3b61cf356462afc4e6b150a35c5b21a4b",
+      "source_protocol_sha256": "ccd6c7bf07744508ed1e70721b1d3c1bc4bddf3b635fee10fd01dbefafa5f6f1",
+      "public_protocol_sha256": "013873498c1b766e08a9a2c8216fe6ae3aba9baa4d0c44a823a4505af17f66c0",
+      "source_episode_sha256": [
+        "4fd039e0f50eb189664a84540e3ad12c382d020a6b9b02f470dfdc45893e21f5",
+        "fea8759ba2c7ba06eb6f7f2b0c399ad7b3b436c3d91929ba1690cf2477fd7a1c",
+        "477336c1c107c51e698e86ac9a371edabf5861ab2fdfbc01e6f83d845629d626",
+        "63b847d62fc7991cca384356aed46cfee1ef094daf9901667c5a7bd2e384c65e",
+        "e02d3f540430030e1bfdcb1c2db4193a4616503c8a10be56b7c56cf22b5e97f8",
+        "adc519a58801540dc386c721926137b19749bc608c80ae6b3b1f428c95a7f62f"
+      ],
+      "public_episode_sha256": [
+        "248d381ad2a4e1cb9f76499ba1118208005c4340a19384764e62ebbef8c561e6",
+        "f3397e78d727b85bdc1fa8bcdca8451957d395f1ea191418db4405c57ed3394a",
+        "721117b8a4136cdc8a187a11c15cb371763d47e5543c677760a5d2546ac08c11",
+        "84584a255df7346b81019d17c1a2ffdcfc562feb726dda0360783b72a7dd0e1b",
+        "def46be85dc223d8ca0f125e227a6f50135da879adc18952f8bb905d43545a78",
+        "91915ab2c6def0475a85cae214a860a81c53b0fec603581cd9cbe6c084edb62b"
+      ],
+      "collector_versions": [
+        "1.3.0"
+      ],
+      "unique_execution_count": 6,
+      "model_requests_created_by_publication": 0,
+      "formal_decisions": [
+        {
+          "stage": "no_acceptance_claim",
+          "status": "descriptive"
+        }
+      ],
+      "episodes": [
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-001",
+          "source_episode_sha256": "4fd039e0f50eb189664a84540e3ad12c382d020a6b9b02f470dfdc45893e21f5",
+          "public_episode_sha256": "248d381ad2a4e1cb9f76499ba1118208005c4340a19384764e62ebbef8c561e6",
+          "reanalysis_of": null,
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-grants-1",
+              "status": "pass"
+            },
+            {
+              "id": "grant-chain-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e0",
+          "case_id": "references-01-a-n16-r1",
+          "actual_model_requests": 6,
+          "input_tokens": 26934,
+          "output_tokens": 416,
+          "first_request_input_tokens": 2889,
+          "actual_duration_ms": 98995.63325
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-002",
+          "source_episode_sha256": "fea8759ba2c7ba06eb6f7f2b0c399ad7b3b436c3d91929ba1690cf2477fd7a1c",
+          "public_episode_sha256": "f3397e78d727b85bdc1fa8bcdca8451957d395f1ea191418db4405c57ed3394a",
+          "reanalysis_of": null,
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-grants-1",
+              "status": "pass"
+            },
+            {
+              "id": "grant-chain-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e1",
+          "case_id": "references-01-a-n16-r1",
+          "actual_model_requests": 7,
+          "input_tokens": 34327,
+          "output_tokens": 503,
+          "first_request_input_tokens": 2826,
+          "actual_duration_ms": 146034.107375
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-003",
+          "source_episode_sha256": "477336c1c107c51e698e86ac9a371edabf5861ab2fdfbc01e6f83d845629d626",
+          "public_episode_sha256": "721117b8a4136cdc8a187a11c15cb371763d47e5543c677760a5d2546ac08c11",
+          "reanalysis_of": null,
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-routes-1",
+              "status": "pass"
+            },
+            {
+              "id": "business-routes-2",
+              "status": "pass"
+            },
+            {
+              "id": "routing-policy-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e1",
+          "case_id": "continuation-01-a-n16-r2",
+          "actual_model_requests": 8,
+          "input_tokens": 34786,
+          "output_tokens": 450,
+          "first_request_input_tokens": 2839,
+          "actual_duration_ms": 150510.982959
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-004",
+          "source_episode_sha256": "63b847d62fc7991cca384356aed46cfee1ef094daf9901667c5a7bd2e384c65e",
+          "public_episode_sha256": "84584a255df7346b81019d17c1a2ffdcfc562feb726dda0360783b72a7dd0e1b",
+          "reanalysis_of": null,
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-routes-1",
+              "status": "pass"
+            },
+            {
+              "id": "business-routes-2",
+              "status": "pass"
+            },
+            {
+              "id": "routing-policy-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e0",
+          "case_id": "continuation-01-a-n16-r2",
+          "actual_model_requests": 8,
+          "input_tokens": 35674,
+          "output_tokens": 515,
+          "first_request_input_tokens": 2902,
+          "actual_duration_ms": 138246.580708
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-005",
+          "source_episode_sha256": "e02d3f540430030e1bfdcb1c2db4193a4616503c8a10be56b7c56cf22b5e97f8",
+          "public_episode_sha256": "def46be85dc223d8ca0f125e227a6f50135da879adc18952f8bb905d43545a78",
+          "reanalysis_of": null,
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-routes-1",
+              "status": "pass"
+            },
+            {
+              "id": "routing-policy-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e0",
+          "case_id": "implicit-01-a-n16-r1",
+          "actual_model_requests": 5,
+          "input_tokens": 21256,
+          "output_tokens": 372,
+          "first_request_input_tokens": 2902,
+          "actual_duration_ms": 126767.88162499998
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-006",
+          "source_episode_sha256": "adc519a58801540dc386c721926137b19749bc608c80ae6b3b1f428c95a7f62f",
+          "public_episode_sha256": "91915ab2c6def0475a85cae214a860a81c53b0fec603581cd9cbe6c084edb62b",
+          "reanalysis_of": null,
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-routes-1",
+              "status": "pass"
+            },
+            {
+              "id": "routing-policy-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e1",
+          "case_id": "implicit-01-a-n16-r1",
+          "actual_model_requests": 5,
+          "input_tokens": 20759,
+          "output_tokens": 360,
+          "first_request_input_tokens": 2839,
+          "actual_duration_ms": 133235.577333
+        }
+      ]
+    },
+    {
+      "package_id": "v1-reanalysis",
+      "directory": "packages/v1-reanalysis",
+      "manifest_sha256": "00b184761adc6ef29daebf411ee70aa3bf41e1ef2559a9cc793d218fa0c6cb07",
+      "manifest_file_sha256": "423732fa041d06905ab40a5886ab45cb04fdf1cb9d134908f4f2927a97426a7c",
+      "source_analysis_sha256": "296af6fc3932f0bdacb6fd9b974c3dae66d15147882cb91d31f5b6c919e66a75",
+      "public_analysis_sha256": "db826bbd581b7016cd0fbe3fcfda4ae168bd4ba50e372a2ecf4ef4a1871cd2bf",
+      "source_protocol_sha256": "ccd6c7bf07744508ed1e70721b1d3c1bc4bddf3b635fee10fd01dbefafa5f6f1",
+      "public_protocol_sha256": "013873498c1b766e08a9a2c8216fe6ae3aba9baa4d0c44a823a4505af17f66c0",
+      "source_episode_sha256": [
+        "6c1959c1a5edd85e01e2dd29705e6185996bbc61e803486c9e384557ea0b2cb0",
+        "08f2f551124b3e4db75b1029e83c53b6cd37951f1c84962318ea13c80b03ccab",
+        "dcda224ed96e11308bcea4e0ecfe392ab361ce4286a698e18d1b6900345f5c00",
+        "3a30255e3773d47b6af9253349c893476d34b86a61405ccf8e6ac0a0024d4357",
+        "e632a5c59305ac327157e8d6df06a5ac71c079539d2274af8a9c940efe5ca8fd",
+        "06d12894f528e08bb9a405bb887a82a7e040c4f1b03983ac94a5e2d5ce4b08e3"
+      ],
+      "public_episode_sha256": [
+        "ddf7b8a2d17a10ff3940a1ebee81ab1ebe22972c4d1d1b189c5c6226141a3e88",
+        "10fa416822b8d7c9e9f124f7d58ca84d390d455d0c3e9a94e7a9130dec9e9050",
+        "ec11c5e0c1aedbf61dbfc29ae8eb1aca8b8e5a3575d66620161aa5a494d7955a",
+        "97a1d70ca1dd2a86324f188dc2c891eb160f2b443236201a53ebda36f48ad5d9",
+        "72c00736f0fb9e8676077448301eb9c6e4baf3c9fb99087e1cf0e00b9af9e6ad",
+        "49c23bb17dae67396b4b2b5b72862b6d1d598cc77650c00434e5e51e7612fa9c"
+      ],
+      "collector_versions": [
+        "1.3.1"
+      ],
+      "unique_execution_count": 0,
+      "model_requests_created_by_publication": 0,
+      "formal_decisions": [
+        {
+          "stage": "no_acceptance_claim",
+          "status": "descriptive"
+        }
+      ],
+      "episodes": [
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-001",
+          "source_episode_sha256": "6c1959c1a5edd85e01e2dd29705e6185996bbc61e803486c9e384557ea0b2cb0",
+          "public_episode_sha256": "ddf7b8a2d17a10ff3940a1ebee81ab1ebe22972c4d1d1b189c5c6226141a3e88",
+          "reanalysis_of": "4fd039e0f50eb189664a84540e3ad12c382d020a6b9b02f470dfdc45893e21f5",
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-grants-1",
+              "status": "pass"
+            },
+            {
+              "id": "grant-chain-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e0",
+          "case_id": "references-01-a-n16-r1",
+          "actual_model_requests": 6,
+          "input_tokens": 26934,
+          "output_tokens": 416,
+          "first_request_input_tokens": 2889,
+          "actual_duration_ms": 98995.63325
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-002",
+          "source_episode_sha256": "08f2f551124b3e4db75b1029e83c53b6cd37951f1c84962318ea13c80b03ccab",
+          "public_episode_sha256": "10fa416822b8d7c9e9f124f7d58ca84d390d455d0c3e9a94e7a9130dec9e9050",
+          "reanalysis_of": "fea8759ba2c7ba06eb6f7f2b0c399ad7b3b436c3d91929ba1690cf2477fd7a1c",
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-grants-1",
+              "status": "pass"
+            },
+            {
+              "id": "grant-chain-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e1",
+          "case_id": "references-01-a-n16-r1",
+          "actual_model_requests": 7,
+          "input_tokens": 34327,
+          "output_tokens": 503,
+          "first_request_input_tokens": 2826,
+          "actual_duration_ms": 146034.107375
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-003",
+          "source_episode_sha256": "dcda224ed96e11308bcea4e0ecfe392ab361ce4286a698e18d1b6900345f5c00",
+          "public_episode_sha256": "ec11c5e0c1aedbf61dbfc29ae8eb1aca8b8e5a3575d66620161aa5a494d7955a",
+          "reanalysis_of": "477336c1c107c51e698e86ac9a371edabf5861ab2fdfbc01e6f83d845629d626",
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-routes-1",
+              "status": "pass"
+            },
+            {
+              "id": "business-routes-2",
+              "status": "pass"
+            },
+            {
+              "id": "routing-policy-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "pass",
+          "condition": "m0-e1",
+          "case_id": "continuation-01-a-n16-r2",
+          "actual_model_requests": 8,
+          "input_tokens": 34786,
+          "output_tokens": 450,
+          "first_request_input_tokens": 2839,
+          "actual_duration_ms": 150510.982959
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-004",
+          "source_episode_sha256": "3a30255e3773d47b6af9253349c893476d34b86a61405ccf8e6ac0a0024d4357",
+          "public_episode_sha256": "97a1d70ca1dd2a86324f188dc2c891eb160f2b443236201a53ebda36f48ad5d9",
+          "reanalysis_of": "63b847d62fc7991cca384356aed46cfee1ef094daf9901667c5a7bd2e384c65e",
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-routes-1",
+              "status": "pass"
+            },
+            {
+              "id": "business-routes-2",
+              "status": "pass"
+            },
+            {
+              "id": "routing-policy-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e0",
+          "case_id": "continuation-01-a-n16-r2",
+          "actual_model_requests": 8,
+          "input_tokens": 35674,
+          "output_tokens": 515,
+          "first_request_input_tokens": 2902,
+          "actual_duration_ms": 138246.580708
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-005",
+          "source_episode_sha256": "e632a5c59305ac327157e8d6df06a5ac71c079539d2274af8a9c940efe5ca8fd",
+          "public_episode_sha256": "72c00736f0fb9e8676077448301eb9c6e4baf3c9fb99087e1cf0e00b9af9e6ad",
+          "reanalysis_of": "e02d3f540430030e1bfdcb1c2db4193a4616503c8a10be56b7c56cf22b5e97f8",
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-routes-1",
+              "status": "pass"
+            },
+            {
+              "id": "routing-policy-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e0",
+          "case_id": "implicit-01-a-n16-r1",
+          "actual_model_requests": 5,
+          "input_tokens": 21256,
+          "output_tokens": 372,
+          "first_request_input_tokens": 2902,
+          "actual_duration_ms": 126767.88162499998
+        },
+        {
+          "run_id": "sdk3-read-description-6-attempt-4-006",
+          "source_episode_sha256": "06d12894f528e08bb9a405bb887a82a7e040c4f1b03983ac94a5e2d5ce4b08e3",
+          "public_episode_sha256": "49c23bb17dae67396b4b2b5b72862b6d1d598cc77650c00434e5e51e7612fa9c",
+          "reanalysis_of": "adc519a58801540dc386c721926137b19749bc608c80ae6b3b1f428c95a7f62f",
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-routes-1",
+              "status": "pass"
+            },
+            {
+              "id": "routing-policy-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e1",
+          "case_id": "implicit-01-a-n16-r1",
+          "actual_model_requests": 5,
+          "input_tokens": 20759,
+          "output_tokens": 360,
+          "first_request_input_tokens": 2839,
+          "actual_duration_ms": 133235.577333
+        }
+      ]
+    },
+    {
+      "package_id": "v2-final",
+      "directory": "packages/v2-final",
+      "manifest_sha256": "962b9c77b16619c1f3992503df4d6f0d26e567661b6c7e422c0af78540c0ab13",
+      "manifest_file_sha256": "c0daf6b8b5ed566b4d8aa778dfe939d028288e224883f7e3b5f460af5032fe7c",
+      "source_analysis_sha256": "cd9567260abbba706fc3655532abc450d2923c48722de0e05e56e618aa83aad7",
+      "public_analysis_sha256": "1ff86ff801c9cae0ca035022389fb22eaa42f6b09f74f90130ad39367b5f5f18",
+      "source_protocol_sha256": "303594d5209911bbebfe67f21c5f6bbe497e1d12baacdfbbd5b8fc3c2eac2660",
+      "public_protocol_sha256": "9fe79ee70e6db2e8c66b8d376484fabb8e706d962eaa9b8238c396431f33675b",
+      "source_episode_sha256": [
+        "1ac996ccf22a2c8deef4f11d029e7f998464ccc739e877d1fb4bc2f3e4aa75fc",
+        "de1f74cb13bff5af24116518cd40ac754d902008554d35f3d3052e101df1efff"
+      ],
+      "public_episode_sha256": [
+        "b37690e0bcd9a293ab781d2787f819ed4cfa4bd4b66220afee75fda28413af41",
+        "c99d61300d94646b52a8d51c69efde4cd941a349fa2cabaaa3bff07a350c6407"
+      ],
+      "collector_versions": [
+        "1.3.1"
+      ],
+      "unique_execution_count": 2,
+      "model_requests_created_by_publication": 0,
+      "formal_decisions": [
+        {
+          "stage": "no_acceptance_claim",
+          "status": "descriptive"
+        }
+      ],
+      "episodes": [
+        {
+          "run_id": "sdk3-read-description-v2-pair-1-001",
+          "source_episode_sha256": "1ac996ccf22a2c8deef4f11d029e7f998464ccc739e877d1fb4bc2f3e4aa75fc",
+          "public_episode_sha256": "b37690e0bcd9a293ab781d2787f819ed4cfa4bd4b66220afee75fda28413af41",
+          "reanalysis_of": null,
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-grants-1",
+              "status": "pass"
+            },
+            {
+              "id": "grant-chain-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e0",
+          "case_id": "references-01-a-n16-r1",
+          "actual_model_requests": 6,
+          "input_tokens": 27333,
+          "output_tokens": 513,
+          "first_request_input_tokens": 2889,
+          "actual_duration_ms": 188615.50837499998
+        },
+        {
+          "run_id": "sdk3-read-description-v2-pair-1-002",
+          "source_episode_sha256": "de1f74cb13bff5af24116518cd40ac754d902008554d35f3d3052e101df1efff",
+          "public_episode_sha256": "c99d61300d94646b52a8d51c69efde4cd941a349fa2cabaaa3bff07a350c6407",
+          "reanalysis_of": null,
+          "admission": "valid",
+          "business": "pass",
+          "critical_contracts": [
+            {
+              "id": "business-grants-1",
+              "status": "pass"
+            },
+            {
+              "id": "grant-chain-read",
+              "status": "pass"
+            }
+          ],
+          "formal_outcome": "unknown",
+          "condition": "m0-e1",
+          "case_id": "references-01-a-n16-r1",
+          "actual_model_requests": 6,
+          "input_tokens": 27108,
+          "output_tokens": 480,
+          "first_request_input_tokens": 2850,
+          "actual_duration_ms": 122218.170541
+        }
+      ]
+    }
+  ],
+  "scientific_groups": [
+    {
+      "id": "apparatus-221",
+      "original_ordinals": [
+        221
+      ],
+      "package_ids": [
+        "apparatus-invalid-221"
+      ],
+      "role": "Startup apparatus invalid with complete zero-send evidence; 47870.911792 ms retained, not a business-quality trial.",
+      "source_plan_file_sha256": "0f620cb8ed8127927c4d9f6d0976f15acbe0594327306f98a32246c62ff79e08",
+      "source_plan_sha256": "989f771649e49214d4ea58723073c3a058629a73fccb5659daf47079557ac21d",
+      "source_protocol_sha256": "92d3ae0e0639e996917978d10cecadfb142adf279e4cec53724b514f8022f1fa",
+      "condition_epoch_id": "sdk3-product-loop-epoch-3",
+      "source_execution_implementation_sha256": "65c18854f706708bbf4ff7a8e90886ff3b92f69a1568dcaab3ed2b6753c38440"
+    },
+    {
+      "id": "product-v1",
+      "original_ordinals": [
+        222,
+        223,
+        224,
+        225,
+        226,
+        227
+      ],
+      "package_ids": [
+        "v1-original",
+        "v1-reanalysis"
+      ],
+      "role": "Three paired development journeys for the broader 355-byte description candidate. Reanalysis changes the interpretation of identical raw executions, not the sample count.",
+      "source_plan_file_sha256": "af0aeda76cc88eefa3b4282cfaadd250bf966640f8d3aa15b3628de681dc680d",
+      "source_plan_sha256": "0b08b3264988ebcd0b55d568b0e190430a966722803c4dbe908a0e74e1c71935",
+      "source_protocol_sha256": "ccd6c7bf07744508ed1e70721b1d3c1bc4bddf3b635fee10fd01dbefafa5f6f1",
+      "condition_epoch_id": "sdk3-product-loop-epoch-4",
+      "source_execution_implementation_sha256": "d0d8810e7428a526bda30be9a092563b02a3fc5bb1408552c0961dc347827095"
+    },
+    {
+      "id": "product-v2",
+      "original_ordinals": [
+        228,
+        229
+      ],
+      "package_ids": [
+        "v2-final"
+      ],
+      "role": "One separately registered references pair for the final 219-byte deletion. No pooling with v1.",
+      "source_plan_file_sha256": "4c24e9dc5b541741c741c7ef1b7b17d47f734732ce2522262856b20ed7fbfc6b",
+      "source_plan_sha256": "f1433e8c0fbee356d640b6b21f65fed98fc96179cf06c797c8894b88cebb0b8f",
+      "source_protocol_sha256": "303594d5209911bbebfe67f21c5f6bbe497e1d12baacdfbbd5b8fc3c2eac2660",
+      "condition_epoch_id": "sdk3-product-loop-v2-epoch-1",
+      "source_execution_implementation_sha256": "ba2ccec3a0ec94e670de736fc4701a17b2b0f5b547546b2960dd0b36806bc6d7"
+    }
+  ],
+  "original_unique_observations": 9,
+  "report_only_reanalysis_new_observations": 0,
+  "policies": [
+    {
+      "path": "product-decision-policy.json",
+      "source_sha256": "4d476245c7a1a97e9b9486c723a6f003e6551574547ffd4343120f8b4101f34e",
+      "public_sha256": "4d476245c7a1a97e9b9486c723a6f003e6551574547ffd4343120f8b4101f34e",
+      "source_recorded_at": "2026-11-26T13:19:18.282Z",
+      "before_actual_model_requests": true,
+      "role": "Derived privacy projection of the prospectively recorded product decision policy; original bytes remain separately retained."
+    },
+    {
+      "path": "product-decision-policy-v2.json",
+      "source_sha256": "d44187e5f102378adc87eaf2e6ec4d36965c4de3b48122021208e695d5bf6f90",
+      "public_sha256": "7d073fd44d65a8246e077e83645a1b545ffa1302eab4ca551a5358fd6ca7f69c",
+      "source_recorded_at": "2026-11-26T13:52:18.188Z",
+      "before_actual_model_requests": true,
+      "role": "Derived privacy projection of the prospectively recorded product decision policy; original bytes remain separately retained."
+    }
+  ],
+  "physical_accounting_file": "physical-accounting.json",
+  "reanalysis_difference_file": "v1-reanalysis-difference.json",
+  "statistical_claim": "Descriptive, no acceptance claim. Positive business/resource evidence supports a narrow product review; formal unknowns and sampling uncertainty remain.",
+  "privacy_boundary": "Public mappings bind transformed evidence bytes and reported-model refs. Standalone replay reaggregates normalized observations; it does not rerun private grading or reconstruct redacted original hash chains.",
+  "previous_public_evidence": [
+    "../2026-11-25-four-model-pilot-suffix34/README.md",
+    "../2026-11-26-relative-source-reanalysis/README.md"
+  ],
+  "auxiliary_reviews": [
+    {
+      "path": "reviews/v1-captured-payload-audit.json",
+      "source_file_sha256": "921dd7f8858771a5e6bc9ff3798f48241e225f3482f79778c5906e223301ae3f",
+      "public_file_sha256": "ec5ff34687fd4bb0d243fe93a9873962c4b93081c28ebde46c377ffd2e3d01ec",
+      "role": "v1 capture-only: 355-byte difference; admission and actual outcomes are recorded separately.",
+      "transformation": "Existing publisher sanitizer; all original hash claims remain historical references to separately retained originals."
+    },
+    {
+      "path": "reviews/v2-captured-payload-audit.json",
+      "source_file_sha256": "db91136add2d9319ca903b44279688bc3d1aa76e76a88e88a5c037360000b091",
+      "public_file_sha256": "0e02911a389784910653575ff752c63cb92b32925bec53777d8338e365de4583",
+      "role": "v2 capture-only: exact 219-byte two-sentence deletion.",
+      "transformation": "Existing publisher sanitizer; all original hash claims remain historical references to separately retained originals."
+    },
+    {
+      "path": "reviews/v2-capture-status-proof.json",
+      "source_file_sha256": "eba48353da9f3029b36f8b6abc8b9db94c33a3c9f383e8d3929108bf67150ee3",
+      "public_file_sha256": "7dcb9ccb036b0ed08d58d1bd657121c8eae92f696b5c4c658a6c5ad3784e45ed",
+      "role": "v2 zero-send capture and actual controller admission status.",
+      "transformation": "Existing publisher sanitizer; all original hash claims remain historical references to separately retained originals."
+    },
+    {
+      "path": "reviews/v1-actual-first-request-proof.json",
+      "source_file_sha256": "e0ec5e68f8a46228c1c5e8b22183cfc26c93d43f9eefd34fdc7b142cec440337",
+      "public_file_sha256": "5fca136c4e9b154cc4438c89045bdd7efb9770ce1b531d70d3001bf093e699fe",
+      "role": "Actual first request pair for v1, distinct from final v2.",
+      "transformation": "Existing publisher sanitizer; all original hash claims remain historical references to separately retained originals."
+    },
+    {
+      "path": "reviews/v2-actual-first-request-proof.json",
+      "source_file_sha256": "244d4306f42ebaacfdea71e80d910b11ad004b0167736ff5b2959de25c21cac6",
+      "public_file_sha256": "1901e722792d8296191ef78b8d163f7d893570660d53a7ad335c096c1c8de3cc",
+      "role": "Actual first request pair for final v2.",
+      "transformation": "Existing publisher sanitizer; all original hash claims remain historical references to separately retained originals."
+    },
+    {
+      "path": "reviews/v1-trace-review-original-analysis.json",
+      "source_file_sha256": "28791ba31b05baad20f10693e338f1bbd42339263152901c4d743fd815ec3a4f",
+      "public_file_sha256": "9a083d429171b8f618de27f39bd28c8cb1e681248221b7c8b4bd55658c2b2bac",
+      "role": "Trace review of the original collector 1.3.0 interpretation. The later 1.3.1 report-only reanalysis is retained separately and changes only episode 003 legal-selection.",
+      "transformation": "Existing publisher sanitizer; all original hash claims remain historical references to separately retained originals."
+    },
+    {
+      "path": "reviews/v2-trace-review.json",
+      "source_file_sha256": "7f779ad9cf4f35a5a31aa196df0f0337b5abb07c8bd70649e3ea13a79fe0a338",
+      "public_file_sha256": "a1dee649aa3c8a0174f01513d682052b2c70264762426c7d2529172cffed43c1",
+      "role": "Final v2 positive task/resource and actual consumption review; ordinary-profile compact-ui integration remains separate.",
+      "transformation": "Existing publisher sanitizer; all original hash claims remain historical references to separately retained originals."
+    }
+  ],
+  "adoption_status": {
+    "status": "product-candidate-verified; daily-integration-repair-in-progress",
+    "reason": "Ordinary Mini profile currently selects the compact-ui read wrapper. A separate renderer-only compatibility repair is being validated before the final daily adoption claim.",
+    "source": "reviews/v2-trace-review.json"
+  },
+  "verification_file": "verification.json",
+  "verification_receipts": [
+    {
+      "path": "reviews/apparatus-221-isolated-replay.json",
+      "source_file_sha256": "57aeb0204365622e76cdc1a49bf64daf9e0c5110976446c30cd0128264b9921d",
+      "public_file_sha256": "f0bfc5d2f3df7c7be1b920fe553f1932595f42020178bc4e81a6ca39b2c29bed",
+      "role": "Privacy-projected verification receipt; private source/report paths are aliases, package identities are unchanged."
+    },
+    {
+      "path": "reviews/v1-independent-review.json",
+      "source_file_sha256": "e4b479b6522c447aeec7e72d85d0b34afb2e8f859c578f95572007a226b662d2",
+      "public_file_sha256": "b7b3d80372496a57d03fa1ac32d04b2e18a8c02240790a231fa6284a9d0785a6",
+      "role": "Privacy-projected verification receipt; private source/report paths are aliases, package identities are unchanged."
+    },
+    {
+      "path": "reviews/v1-model-binding-counterexamples.json",
+      "source_file_sha256": "a69b85def8b0345dfc10ec59860d5f184868032f12f6b0d000d718b51612fbc3",
+      "public_file_sha256": "a69b85def8b0345dfc10ec59860d5f184868032f12f6b0d000d718b51612fbc3",
+      "role": "Privacy-projected verification receipt; private source/report paths are aliases, package identities are unchanged."
+    },
+    {
+      "path": "reviews/v2-independent-isolated-review.json",
+      "source_file_sha256": "b7926442f08f685b7e6f09d05f1cbb7742610253453d8499e07a6533564c9cec",
+      "public_file_sha256": "deeeb0c0cd5f57ef30f07b8ce5b7d584f2cfe3abfe0b7201f870ca2bf4eca8c4",
+      "role": "Privacy-projected verification receipt; private source/report paths are aliases, package identities are unchanged."
+    }
+  ]
+}

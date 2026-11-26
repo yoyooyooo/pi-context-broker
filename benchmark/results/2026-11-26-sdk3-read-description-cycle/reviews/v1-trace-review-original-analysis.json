@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "kind": "independent-v1-three-pair-trace-review",
+  "candidate_role": "Retained earlier v1 (355-byte) evidence; not the final v2 (219-byte) candidate or its adoption proof.",
+  "facts": {
+    "completed_episodes": 6,
+    "accepted_before_task": 6,
+    "valid_normalized_episodes": 6,
+    "business_pass_episodes": 6,
+    "critical_contracts_pass": 14,
+    "unknown_legal_selection": 6,
+    "verified_success_episodes": 0,
+    "user_interventions": 0,
+    "unmatched_source_reads": 0,
+    "tool_lineage_errors": 0
+  },
+  "pair_reviews": [
+    {
+      "path": "[path:bb5f63b88bf4f4b89ed9]",
+      "sha256": "63e388ef8f71338a2d4fb8ef62cb6b62e33c898fc8b3fb544ddf1452103bffed"
+    },
+    {
+      "path": "[path:39f9fd2159c5207225cd]",
+      "sha256": "45d767cef57c7e9a971322cc7609f5bc3032012933d809f3ad34af9fc5f97deb"
+    },
+    {
+      "path": "[path:2d05ff9587c8c63fbc41]",
+      "sha256": "5c24f4efeb6f6c1b71c7530bb6a11c0e364126af665ef230d0920d48c7e37112"
+    }
+  ],
+  "bounded_conclusion": "All observed business outputs and required resource chains pass. Correct discovery and continuation reuse are visible in the retained traces. Formal legal-selection remains unknown, and no episode is relabeled verified success. The references candidate uses more work (extra tool search and serial table reads); the one stochastic pair does not establish a causal regression. The final narrower v2 preserves the original batch-together and root/Requires wording and needs its own actual payload plus one references-pair validation.",
+  "preserved_limitations": [
+    "Metadata-only tools and arbitrary shell calls currently make selection coverage partial; raw and normalized results are unchanged.",
+    "No statistical conclusion is computed here; the separate analysis must retain insufficient findings.",
+    "No overall token, cost or latency improvement is claimed."
+  ]
+}

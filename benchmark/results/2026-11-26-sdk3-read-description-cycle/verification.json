@@ -1,0 +1,267 @@
+{
+  "version": 1,
+  "kind": "benchmark-publication-verification-index",
+  "status": "verified",
+  "model_requests": 0,
+  "packages": [
+    {
+      "id": "apparatus-invalid-221",
+      "export_receipt_source_sha256": "b113d6f1658909b434aab2986ea91f3b5bfdbc13ef72a241d3e128f24124bb2c",
+      "public_manifest_sha256": "ade92228840e4040d4a83f919f4dfe5541a8ca1c769393424a6c3e1638dd30d4",
+      "strict_verification": {
+        "valid": true,
+        "files": 160,
+        "episodes": 1,
+        "model_requests": 0,
+        "public_analysis_sha256": "058764ccbe567d4c576271191d0b92ecfefd82353b8c67a21d9924f5a1e70e38",
+        "source_analysis_sha256": "cc59078488ef3eb488fd241f7e7be78a3f2623416c0dc309a864d387abf8b068"
+      },
+      "standalone_replay": {
+        "status": "verified",
+        "analysis_sha256": "058764ccbe567d4c576271191d0b92ecfefd82353b8c67a21d9924f5a1e70e38",
+        "credential_environment": [],
+        "network": "denied",
+        "private_original_read": "denied",
+        "public_copy_write": "denied",
+        "model_requests": 0,
+        "unchanged_original_package": true,
+        "unchanged_public_copy": true
+      },
+      "privacy": {
+        "private_credential_origin_path_username_findings": 0,
+        "bare_loopback_occurrences_reviewed": 0,
+        "receipt_source_sha256": "4900fac2c0afe47a211f8ae6094ba0e3585c18ce816351d47f239856ffe24df7"
+      }
+    },
+    {
+      "id": "v1-original",
+      "export_receipt_source_sha256": "0a7d17f2df7a9ff671c685c43cddeea3626c837de09995825ebd2345348f0e24",
+      "public_manifest_sha256": "f3c4f63d3cd25ab26c7c8d0baa9c096bb74464ce7d4a9b92bf91d9090626634d",
+      "strict_verification": {
+        "valid": true,
+        "files": 425,
+        "episodes": 6,
+        "model_requests": 0,
+        "public_analysis_sha256": "bee7cebe1342eea9eb8e9a487ed6ccc3b61cf356462afc4e6b150a35c5b21a4b",
+        "source_analysis_sha256": "7f12e69eff28f8abc7a29c0ecc86a0066f0b2ea529d44492c2f86bfd40a5472f"
+      },
+      "standalone_replay": {
+        "status": "verified",
+        "analysis_sha256": "bee7cebe1342eea9eb8e9a487ed6ccc3b61cf356462afc4e6b150a35c5b21a4b",
+        "execution": "separate Node process from retained public package",
+        "isolation_claim": "No credential-environment or denied-network/private-read assertion for this replay.",
+        "model_requests": 0,
+        "binding_counterexamples_rejected": [
+          {
+            "case": "wrong route",
+            "reason": "Reported model event binding differs from raw request metadata"
+          },
+          {
+            "case": "wrong API",
+            "reason": "Reported model event binding differs from raw request metadata"
+          },
+          {
+            "case": "forged server model",
+            "reason": "Reported model value or field differs from original server event"
+          },
+          {
+            "case": "omitted original server model event",
+            "reason": "Reported model evidence omits an original server model event"
+          },
+          {
+            "case": "public package claimed as original evidence",
+            "reason": "Public projection requires an explicit verified manifest mapping"
+          }
+        ]
+      },
+      "privacy": {
+        "private_credential_origin_path_username_findings": 0,
+        "bare_loopback_occurrences_reviewed": 12,
+        "reviewed_public_constants": [
+          {
+            "public_sha256": "870e27cd454ae7c54852920ad326e2ff516f0385c79c83b3594ff5eed9144ffc",
+            "occurrences": 6,
+            "artifact_ids": [
+              "collection-current-source-18"
+            ],
+            "classification": "Public SDK generic loopback/OAuth callback constant, not an observed endpoint.",
+            "kind": "implementation"
+          },
+          {
+            "public_sha256": "c633c3002280d9a360270084e70c78501cd4ff39c36c485f507365e35760643f",
+            "occurrences": 6,
+            "artifact_ids": [
+              "collection-current-source-19",
+              "collection-current-material-sdk"
+            ],
+            "classification": "Public SDK generic loopback/OAuth callback constant, not an observed endpoint.",
+            "kind": "implementation"
+          }
+        ],
+        "scope": "Exact in-memory secret values, complete private origin, private provider, machine roots and whole terminal username were checked. Generic loopback literals are accepted only in these two byte-bound public SDK implementations."
+      }
+    },
+    {
+      "id": "v1-reanalysis",
+      "export_receipt_source_sha256": "57d499ef84bcedd230c5a44e79daec34b523be66c0ba05537e2d00cca5431667",
+      "public_manifest_sha256": "00b184761adc6ef29daebf411ee70aa3bf41e1ef2559a9cc793d218fa0c6cb07",
+      "strict_verification": {
+        "valid": true,
+        "files": 427,
+        "episodes": 6,
+        "model_requests": 0,
+        "public_analysis_sha256": "db826bbd581b7016cd0fbe3fcfda4ae168bd4ba50e372a2ecf4ef4a1871cd2bf",
+        "source_analysis_sha256": "296af6fc3932f0bdacb6fd9b974c3dae66d15147882cb91d31f5b6c919e66a75"
+      },
+      "standalone_replay": {
+        "status": "verified",
+        "analysis_sha256": "db826bbd581b7016cd0fbe3fcfda4ae168bd4ba50e372a2ecf4ef4a1871cd2bf",
+        "execution": "separate Node process from retained public package",
+        "isolation_claim": "No credential-environment or denied-network/private-read assertion for this replay.",
+        "model_requests": 0,
+        "binding_counterexamples_rejected": [
+          {
+            "case": "wrong route",
+            "reason": "Reported model event binding differs from raw request metadata"
+          },
+          {
+            "case": "wrong API",
+            "reason": "Reported model event binding differs from raw request metadata"
+          },
+          {
+            "case": "forged server model",
+            "reason": "Reported model value or field differs from original server event"
+          },
+          {
+            "case": "omitted original server model event",
+            "reason": "Reported model evidence omits an original server model event"
+          },
+          {
+            "case": "public package claimed as original evidence",
+            "reason": "Public projection requires an explicit verified manifest mapping"
+          }
+        ]
+      },
+      "privacy": {
+        "private_credential_origin_path_username_findings": 0,
+        "bare_loopback_occurrences_reviewed": 12,
+        "reviewed_public_constants": [
+          {
+            "public_sha256": "870e27cd454ae7c54852920ad326e2ff516f0385c79c83b3594ff5eed9144ffc",
+            "occurrences": 6,
+            "artifact_ids": [
+              "collection-current-source-18"
+            ],
+            "classification": "Public SDK generic loopback/OAuth callback constant, not an observed endpoint.",
+            "kind": "implementation"
+          },
+          {
+            "public_sha256": "c633c3002280d9a360270084e70c78501cd4ff39c36c485f507365e35760643f",
+            "occurrences": 6,
+            "artifact_ids": [
+              "collection-current-source-19",
+              "collection-current-material-sdk"
+            ],
+            "classification": "Public SDK generic loopback/OAuth callback constant, not an observed endpoint.",
+            "kind": "implementation"
+          }
+        ],
+        "scope": "Exact in-memory secret values, complete private origin, private provider, machine roots and whole terminal username were checked. Generic loopback literals are accepted only in these two byte-bound public SDK implementations."
+      }
+    },
+    {
+      "id": "v2-final",
+      "export_receipt_source_sha256": "6a3ead1f0477d827aba678f06e3c483fcb835d2d9a0de783cae2c65c158be51d",
+      "public_manifest_sha256": "962b9c77b16619c1f3992503df4d6f0d26e567661b6c7e422c0af78540c0ab13",
+      "strict_verification": {
+        "valid": true,
+        "files": 244,
+        "episodes": 2,
+        "model_requests": 0,
+        "public_analysis_sha256": "1ff86ff801c9cae0ca035022389fb22eaa42f6b09f74f90130ad39367b5f5f18",
+        "source_analysis_sha256": "cd9567260abbba706fc3655532abc450d2923c48722de0e05e56e618aa83aad7"
+      },
+      "standalone_replay": {
+        "status": "verified",
+        "analysis_sha256": "1ff86ff801c9cae0ca035022389fb22eaa42f6b09f74f90130ad39367b5f5f18",
+        "credential_environment": [],
+        "negative_probes": [
+          {
+            "kind": "private-original-read",
+            "code": "EPERM"
+          },
+          {
+            "kind": "public-copy-write",
+            "code": "EPERM"
+          },
+          {
+            "kind": "network-connect",
+            "code": "EPERM"
+          }
+        ],
+        "network": "denied",
+        "private_original_read": "denied",
+        "public_copy_write": "denied",
+        "model_requests": 0,
+        "unchanged_original_package": true,
+        "unchanged_public_copy": true
+      },
+      "privacy": {
+        "private_credential_origin_path_username_findings": 0,
+        "bare_loopback_occurrences_reviewed": 12,
+        "reviewed_public_constants": [
+          {
+            "public_sha256": "870e27cd454ae7c54852920ad326e2ff516f0385c79c83b3594ff5eed9144ffc",
+            "occurrences": 6,
+            "artifact_ids": [
+              "collection-current-source-18"
+            ],
+            "classification": "Public SDK generic loopback/OAuth callback constant, not an observed endpoint.",
+            "kind": "implementation"
+          },
+          {
+            "public_sha256": "c633c3002280d9a360270084e70c78501cd4ff39c36c485f507365e35760643f",
+            "occurrences": 6,
+            "artifact_ids": [
+              "collection-current-source-19",
+              "collection-current-material-sdk"
+            ],
+            "classification": "Public SDK generic loopback/OAuth callback constant, not an observed endpoint.",
+            "kind": "implementation"
+          }
+        ],
+        "scope": "Exact in-memory secret values, complete private origin, private provider, machine roots and whole terminal username were checked. Generic loopback literals are accepted only in these two byte-bound public SDK implementations."
+      }
+    }
+  ],
+  "independent_review_projections": [
+    {
+      "path": "reviews/apparatus-221-isolated-replay.json",
+      "source_file_sha256": "57aeb0204365622e76cdc1a49bf64daf9e0c5110976446c30cd0128264b9921d",
+      "public_file_sha256": "f0bfc5d2f3df7c7be1b920fe553f1932595f42020178bc4e81a6ca39b2c29bed",
+      "role": "Privacy-projected verification receipt; private source/report paths are aliases, package identities are unchanged."
+    },
+    {
+      "path": "reviews/v1-independent-review.json",
+      "source_file_sha256": "e4b479b6522c447aeec7e72d85d0b34afb2e8f859c578f95572007a226b662d2",
+      "public_file_sha256": "b7b3d80372496a57d03fa1ac32d04b2e18a8c02240790a231fa6284a9d0785a6",
+      "role": "Privacy-projected verification receipt; private source/report paths are aliases, package identities are unchanged."
+    },
+    {
+      "path": "reviews/v1-model-binding-counterexamples.json",
+      "source_file_sha256": "a69b85def8b0345dfc10ec59860d5f184868032f12f6b0d000d718b51612fbc3",
+      "public_file_sha256": "a69b85def8b0345dfc10ec59860d5f184868032f12f6b0d000d718b51612fbc3",
+      "role": "Privacy-projected verification receipt; private source/report paths are aliases, package identities are unchanged."
+    },
+    {
+      "path": "reviews/v2-independent-isolated-review.json",
+      "source_file_sha256": "b7926442f08f685b7e6f09d05f1cbb7742610253453d8499e07a6533564c9cec",
+      "public_file_sha256": "deeeb0c0cd5f57ef30f07b8ce5b7d584f2cfe3abfe0b7201f870ca2bf4eca8c4",
+      "role": "Privacy-projected verification receipt; private source/report paths are aliases, package identities are unchanged."
+    }
+  ],
+  "public_private_binding_policy": "Strict original-to-public mapping and reported-model/source-ref validation retained. No evidence store contract was weakened.",
+  "privacy_scope": "Exact in-memory secret values, complete private origin, machine paths and whole terminal usernames; each bare generic SDK loopback constant accepted only by reviewed public content SHA.",
+  "replay_scope": "Public hashes and source locators plus statistical reaggregation of normalized observations. No original raw-chain or private grader rerun.",
+  "source_originals_and_model_usage_unchanged": true
+}

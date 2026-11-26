@@ -1,0 +1,392 @@
+{
+  "version": 1,
+  "kind": "benchmark-report-only-reanalysis-difference",
+  "created_at": "2026-11-26T14:11:20.145Z",
+  "model_requests": 0,
+  "new_observations": 0,
+  "scientific_epochs": 1,
+  "original_collector": "1.3.0",
+  "current_collector": "1.3.1",
+  "original_analysis_implementation": "885f7855b4122824976da39b1b2e5c986c30e9a3d461694fcb2e2d2d35c1c045",
+  "current_analysis_implementation": "7a400155ee13d235a9b4b02d23fc4a74031ea609045c49131e75bf29327ae99c",
+  "original_outcomes": {
+    "pass": 0,
+    "fail": 0,
+    "unknown": 6
+  },
+  "current_outcomes": {
+    "pass": 1,
+    "fail": 0,
+    "unknown": 5
+  },
+  "verified_original_artifact_files": 660,
+  "original_ledger_sha256": "4287fee040b093a1bc70ce40802483ede457645dca37378f8ea891dff2a2e155",
+  "raw_execution_usage_and_observed_duration_unchanged": true,
+  "private_originals_rehashed": true,
+  "rows": [
+    {
+      "run_id": "sdk3-read-description-6-attempt-4-001",
+      "condition": "m0-e0",
+      "case_id": "references-01-a-n16-r1",
+      "source_episode_sha256": "4fd039e0f50eb189664a84540e3ad12c382d020a6b9b02f470dfdc45893e21f5",
+      "reanalysis_episode_sha256": "6c1959c1a5edd85e01e2dd29705e6185996bbc61e803486c9e384557ea0b2cb0",
+      "reanalysis_of": "4fd039e0f50eb189664a84540e3ad12c382d020a6b9b02f470dfdc45893e21f5",
+      "old_outcome": "unknown",
+      "current_outcome": "unknown",
+      "business": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-grants-1",
+          "status": "pass"
+        },
+        {
+          "id": "grant-chain-read",
+          "status": "pass"
+        }
+      ],
+      "changed_contracts": [],
+      "unchanged_observed": {
+        "model_requests": 6,
+        "input": 26934,
+        "output": 416,
+        "duration_ms": 98995.63325
+      },
+      "derived_time_to_success": null,
+      "changed_analysis_artifacts": [
+        {
+          "id": "collection-implementation-2",
+          "original_sha256": "aff004e0b8901523bd121b89b9e87e4b94ceb8638ef824dd87b93ebfc1bd9283",
+          "current_sha256": "61c82dcf3536caeede1739df48dde2f453c89d34e8a805beef49bab5a94528b5"
+        },
+        {
+          "id": "collection-readback",
+          "original_sha256": "bcc4b1b14684d7463f237bd309e0b6d54fb7815ebe0dba83789d56f3aae1834a",
+          "current_sha256": "1413a44420a9d28e1c7c9dca256f3d5be0c1110c652cc2e02dae63d7fcf8df4e"
+        },
+        {
+          "id": "collection-grade",
+          "original_sha256": "051498229ce8e5b082f418d4be523f72fb79e47b7020e3ab05282c62913162a0",
+          "current_sha256": "1e7e3c1c139466cfb9584be06b78ae753422209ffc0f75cf2d323a56bb1adc2f"
+        }
+      ],
+      "new_metadata_proof_artifacts": [
+        {
+          "id": "collection-metadata-producer-0",
+          "sha256": "292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d63"
+        },
+        {
+          "id": "collection-metadata-producer-1",
+          "sha256": "c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1"
+        }
+      ]
+    },
+    {
+      "run_id": "sdk3-read-description-6-attempt-4-002",
+      "condition": "m0-e1",
+      "case_id": "references-01-a-n16-r1",
+      "source_episode_sha256": "fea8759ba2c7ba06eb6f7f2b0c399ad7b3b436c3d91929ba1690cf2477fd7a1c",
+      "reanalysis_episode_sha256": "08f2f551124b3e4db75b1029e83c53b6cd37951f1c84962318ea13c80b03ccab",
+      "reanalysis_of": "fea8759ba2c7ba06eb6f7f2b0c399ad7b3b436c3d91929ba1690cf2477fd7a1c",
+      "old_outcome": "unknown",
+      "current_outcome": "unknown",
+      "business": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-grants-1",
+          "status": "pass"
+        },
+        {
+          "id": "grant-chain-read",
+          "status": "pass"
+        }
+      ],
+      "changed_contracts": [],
+      "unchanged_observed": {
+        "model_requests": 7,
+        "input": 34327,
+        "output": 503,
+        "duration_ms": 146034.107375
+      },
+      "derived_time_to_success": null,
+      "changed_analysis_artifacts": [
+        {
+          "id": "collection-implementation-2",
+          "original_sha256": "aff004e0b8901523bd121b89b9e87e4b94ceb8638ef824dd87b93ebfc1bd9283",
+          "current_sha256": "61c82dcf3536caeede1739df48dde2f453c89d34e8a805beef49bab5a94528b5"
+        },
+        {
+          "id": "collection-readback",
+          "original_sha256": "ebc82f05cd6e2503bee8af606de6a63f9e875ddd9e03c1b9758f0e075a53482c",
+          "current_sha256": "baa5d0f42f2fc98896f954aabfcb53f888d38ca7ba28cb8309792fc664e13cf5"
+        },
+        {
+          "id": "collection-grade",
+          "original_sha256": "3dbd59a6fef4d38b626d2b3ed40029e0988fb0e29cf58dfe4275ce7054ee716a",
+          "current_sha256": "8c1265bb1c2cbfa01678a95c732abb4a1c5a1560cdaab0441960c048450e87f7"
+        }
+      ],
+      "new_metadata_proof_artifacts": [
+        {
+          "id": "collection-metadata-producer-0",
+          "sha256": "292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d63"
+        },
+        {
+          "id": "collection-metadata-producer-1",
+          "sha256": "c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1"
+        }
+      ]
+    },
+    {
+      "run_id": "sdk3-read-description-6-attempt-4-003",
+      "condition": "m0-e1",
+      "case_id": "continuation-01-a-n16-r2",
+      "source_episode_sha256": "477336c1c107c51e698e86ac9a371edabf5861ab2fdfbc01e6f83d845629d626",
+      "reanalysis_episode_sha256": "dcda224ed96e11308bcea4e0ecfe392ab361ce4286a698e18d1b6900345f5c00",
+      "reanalysis_of": "477336c1c107c51e698e86ac9a371edabf5861ab2fdfbc01e6f83d845629d626",
+      "old_outcome": "unknown",
+      "current_outcome": "pass",
+      "business": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-routes-1",
+          "status": "pass"
+        },
+        {
+          "id": "business-routes-2",
+          "status": "pass"
+        },
+        {
+          "id": "routing-policy-read",
+          "status": "pass"
+        }
+      ],
+      "changed_contracts": [
+        {
+          "id": "legal-selection",
+          "old": "unknown",
+          "current": "pass",
+          "old_reason": "Selection evidence is incomplete",
+          "current_reason": "Complete evidence establishes one legal selection set"
+        }
+      ],
+      "unchanged_observed": {
+        "model_requests": 8,
+        "input": 34786,
+        "output": 450,
+        "duration_ms": 150510.982959
+      },
+      "derived_time_to_success": {
+        "original": {
+          "reason": "Verified business completion boundary is unavailable",
+          "status": "unknown"
+        },
+        "current": {
+          "formula": "verified_readback_matching_subject_boundary_elapsed_ms/v1",
+          "precision": "derived",
+          "status": "known",
+          "value": 150401.687
+        },
+        "interpretation": "The same retained completion boundary became verifiable after observer correction. This is not a new execution or a product latency improvement."
+      },
+      "changed_analysis_artifacts": [
+        {
+          "id": "collection-implementation-2",
+          "original_sha256": "aff004e0b8901523bd121b89b9e87e4b94ceb8638ef824dd87b93ebfc1bd9283",
+          "current_sha256": "61c82dcf3536caeede1739df48dde2f453c89d34e8a805beef49bab5a94528b5"
+        },
+        {
+          "id": "collection-readback",
+          "original_sha256": "591ae401538fd9edc6485fd6d7c772141acd2fc13268681904589e9d18aeee31",
+          "current_sha256": "93b519039992cfef77ec391d6f40c4cbddda9e69f5b915d99013bb3f3603d25e"
+        },
+        {
+          "id": "collection-grade",
+          "original_sha256": "9b60ae88f6392f272deb2c1f6a12cbb50cad0de4bfc738d516aba2dca6de4179",
+          "current_sha256": "40b9aed23ca2aa51bee71bf639cf05636dff03e6f63a6cf6f505118e5cc5e3cb"
+        }
+      ],
+      "new_metadata_proof_artifacts": [
+        {
+          "id": "collection-metadata-producer-0",
+          "sha256": "292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d63"
+        },
+        {
+          "id": "collection-metadata-producer-1",
+          "sha256": "c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1"
+        }
+      ]
+    },
+    {
+      "run_id": "sdk3-read-description-6-attempt-4-004",
+      "condition": "m0-e0",
+      "case_id": "continuation-01-a-n16-r2",
+      "source_episode_sha256": "63b847d62fc7991cca384356aed46cfee1ef094daf9901667c5a7bd2e384c65e",
+      "reanalysis_episode_sha256": "3a30255e3773d47b6af9253349c893476d34b86a61405ccf8e6ac0a0024d4357",
+      "reanalysis_of": "63b847d62fc7991cca384356aed46cfee1ef094daf9901667c5a7bd2e384c65e",
+      "old_outcome": "unknown",
+      "current_outcome": "unknown",
+      "business": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-routes-1",
+          "status": "pass"
+        },
+        {
+          "id": "business-routes-2",
+          "status": "pass"
+        },
+        {
+          "id": "routing-policy-read",
+          "status": "pass"
+        }
+      ],
+      "changed_contracts": [],
+      "unchanged_observed": {
+        "model_requests": 8,
+        "input": 35674,
+        "output": 515,
+        "duration_ms": 138246.580708
+      },
+      "derived_time_to_success": null,
+      "changed_analysis_artifacts": [
+        {
+          "id": "collection-implementation-2",
+          "original_sha256": "aff004e0b8901523bd121b89b9e87e4b94ceb8638ef824dd87b93ebfc1bd9283",
+          "current_sha256": "61c82dcf3536caeede1739df48dde2f453c89d34e8a805beef49bab5a94528b5"
+        },
+        {
+          "id": "collection-readback",
+          "original_sha256": "a5a607ef0981467331d770f27c86a518302c77393fb1ca9c13705e04fcf7ebe0",
+          "current_sha256": "148ce14a32bac12b02bc9c782966dd99210d1a82f9f842bf458640549bb6257d"
+        },
+        {
+          "id": "collection-grade",
+          "original_sha256": "db3099a8bdc4fa3a3d1e0b0c802bd574b010a7be3e00bac1bfee92487f5aa5ba",
+          "current_sha256": "96b6384f34392554058fb795764491a8f1f0d48752bd0528ea223957c9345fcf"
+        }
+      ],
+      "new_metadata_proof_artifacts": [
+        {
+          "id": "collection-metadata-producer-0",
+          "sha256": "292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d63"
+        },
+        {
+          "id": "collection-metadata-producer-1",
+          "sha256": "c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1"
+        }
+      ]
+    },
+    {
+      "run_id": "sdk3-read-description-6-attempt-4-005",
+      "condition": "m0-e0",
+      "case_id": "implicit-01-a-n16-r1",
+      "source_episode_sha256": "e02d3f540430030e1bfdcb1c2db4193a4616503c8a10be56b7c56cf22b5e97f8",
+      "reanalysis_episode_sha256": "e632a5c59305ac327157e8d6df06a5ac71c079539d2274af8a9c940efe5ca8fd",
+      "reanalysis_of": "e02d3f540430030e1bfdcb1c2db4193a4616503c8a10be56b7c56cf22b5e97f8",
+      "old_outcome": "unknown",
+      "current_outcome": "unknown",
+      "business": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-routes-1",
+          "status": "pass"
+        },
+        {
+          "id": "routing-policy-read",
+          "status": "pass"
+        }
+      ],
+      "changed_contracts": [],
+      "unchanged_observed": {
+        "model_requests": 5,
+        "input": 21256,
+        "output": 372,
+        "duration_ms": 126767.88162499998
+      },
+      "derived_time_to_success": null,
+      "changed_analysis_artifacts": [
+        {
+          "id": "collection-implementation-2",
+          "original_sha256": "aff004e0b8901523bd121b89b9e87e4b94ceb8638ef824dd87b93ebfc1bd9283",
+          "current_sha256": "61c82dcf3536caeede1739df48dde2f453c89d34e8a805beef49bab5a94528b5"
+        },
+        {
+          "id": "collection-readback",
+          "original_sha256": "2019bfda3f7fc158fab264db9bcc5fa1cbf6ff4a20b23c6775bb22aaa5428783",
+          "current_sha256": "8a374267504173a95651522e8be8767cd2d84340500e38cddc24ec582baa5e7b"
+        },
+        {
+          "id": "collection-grade",
+          "original_sha256": "bb26857ed4eebf0ed93cc14f55c55f190dce7639167ccec26e54c1d5bbb0888c",
+          "current_sha256": "a291c4d6544519d543619a5482e501c8195aa03d3f6b55468a0fbaa02ce96eeb"
+        }
+      ],
+      "new_metadata_proof_artifacts": [
+        {
+          "id": "collection-metadata-producer-0",
+          "sha256": "292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d63"
+        },
+        {
+          "id": "collection-metadata-producer-1",
+          "sha256": "c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1"
+        }
+      ]
+    },
+    {
+      "run_id": "sdk3-read-description-6-attempt-4-006",
+      "condition": "m0-e1",
+      "case_id": "implicit-01-a-n16-r1",
+      "source_episode_sha256": "adc519a58801540dc386c721926137b19749bc608c80ae6b3b1f428c95a7f62f",
+      "reanalysis_episode_sha256": "06d12894f528e08bb9a405bb887a82a7e040c4f1b03983ac94a5e2d5ce4b08e3",
+      "reanalysis_of": "adc519a58801540dc386c721926137b19749bc608c80ae6b3b1f428c95a7f62f",
+      "old_outcome": "unknown",
+      "current_outcome": "unknown",
+      "business": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-routes-1",
+          "status": "pass"
+        },
+        {
+          "id": "routing-policy-read",
+          "status": "pass"
+        }
+      ],
+      "changed_contracts": [],
+      "unchanged_observed": {
+        "model_requests": 5,
+        "input": 20759,
+        "output": 360,
+        "duration_ms": 133235.577333
+      },
+      "derived_time_to_success": null,
+      "changed_analysis_artifacts": [
+        {
+          "id": "collection-implementation-2",
+          "original_sha256": "aff004e0b8901523bd121b89b9e87e4b94ceb8638ef824dd87b93ebfc1bd9283",
+          "current_sha256": "61c82dcf3536caeede1739df48dde2f453c89d34e8a805beef49bab5a94528b5"
+        },
+        {
+          "id": "collection-readback",
+          "original_sha256": "41271d330afe36de09f0b764618ff58161f5a72ff1d0f5704bf095aac68faece",
+          "current_sha256": "7a808b07cef016bdb51b14eb9bc879270ab065767979ab595ee6e4a6109656a8"
+        },
+        {
+          "id": "collection-grade",
+          "original_sha256": "1335c918f0d68b3d6033705b904dbafccc227b58c9c596bf0906bbd551853e1c",
+          "current_sha256": "6f8b0b3ef6379a75ba73e94d3c99be3fc82148078030be47e581c5cd87a122bc"
+        }
+      ],
+      "new_metadata_proof_artifacts": [
+        {
+          "id": "collection-metadata-producer-0",
+          "sha256": "292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d63"
+        },
+        {
+          "id": "collection-metadata-producer-1",
+          "sha256": "c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1"
+        }
+      ]
+    }
+  ]
+}
