@@ -63,6 +63,7 @@ The only current scenarios are:
 | --- | --- |
 | `default-view` | Default Context off/on fetches no body before use; an active root/Requires keeps its fixed bytes across Default Context and Enabled changes, rejected refresh, ordinary continuation and compaction. |
 | `http-cache-recovery` | Ordinary continuation keeps the selected root/Requires after source edits and expired metadata TTL; read-refresh compares without adoption; use-refresh adopts a complete current closure; cache clear and missing fixed bytes after compaction do not prevent later prompts. |
+| `http-warm-restart` | Two fresh Pi processes submit the same `$` Skill with explicit five-minute TTLs. The second reuses the complete root/Requires from disk, preserves original validation times, and sends no Notion HTTP, including background discovery. |
 | `http-interruption` | Abort an actual held Notion body request, continue the same Pi session and explicitly retry without accepting cancelled delivery. |
 | `working-set` | Two roots share one Required node; release retains the surviving closure; compaction restores it; an over-budget addition fails without eviction. |
 
@@ -72,7 +73,7 @@ and tool results. The provider controls decisions; original source text, RPC
 frames, SDK operation terminal events and HTTP request entities remain
 independent observations.
 
-`all` means these four scenarios. Removed SDK v1 fixtures, old scenarios and
+`all` means these five scenarios. Removed SDK v1 fixtures, old scenarios and
 provider-backend flags are rejected. Evidence and failed runs are retained;
 there is no cleanup action in this driver. Negative entity/role/schema cases
 remain in the explicit source and Node transport tests, not an implied removed

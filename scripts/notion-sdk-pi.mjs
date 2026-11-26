@@ -10,7 +10,7 @@ import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-
 import { renderHttpWrapper, startLoopbackMock } from './mock-provider-adapter.mjs';
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
 
-export const scenarios = Object.freeze(['default-view', 'http-cache-recovery', 'http-interruption', 'working-set']);
+export const scenarios = Object.freeze(['default-view', 'http-cache-recovery', 'http-warm-restart', 'http-interruption', 'working-set']);
 export const usage = `Current SDK v3, actual Pi, controlled Notion and provider HTTP.
 node scripts/notion-sdk-pi.mjs doctor|run --package ABS --fixture ABS --source-http-helper ABS [--pi ABS] [--scenario all|${scenarios.join('|')}]
 run additionally requires --out NEW_ABS. --pi selects one explicit installed entry; there is no fallback.
@@ -211,8 +211,9 @@ async function runScenario(name, info, out) {
     onBody: async (record, bytes) => { const file = `provider-${String(wire.length + 1).padStart(3, '0')}.json`; await writeFile(join(base, file), bytes, { mode: 0o600 }); wire.push({ file, sha256: hash(bytes), body: JSON.parse(bytes), record }); } });
   const agentDir = join(base, 'agent'), sessions = join(base, 'sessions');
   await mkdir(join(agentDir, 'context-broker'), { recursive: true }); await mkdir(sessions);
+  const maxAge = name === 'http-warm-restart' ? '5m' : '0';
   const source = { type: 'notion', id: 'current-sdk', namespace: 'current-sdk', library: sample.notion.library.library_id,
-    discovery: { maxAge: '0' }, activation: { maxAge: '0' }, cacheDir: join(base, 'broker-cache'), prefetch: false };
+    discovery: { maxAge }, activation: { maxAge }, cacheDir: join(base, 'broker-cache'), prefetch: false };
   const config = join(agentDir, 'context-broker/config.yml'), control = join(base, 'control.json');
   await save(config, { sources: [source] }); await save(control, { action: 'none' });
   await save(join(agentDir, 'settings.json'), { compaction: { enabled: false, keepRecentTokens: 1, reserveTokens: 1024 }, retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } } });
@@ -266,7 +267,29 @@ async function runScenario(name, info, out) {
     rpc = await startRpc({ host: info.host, args, cwd: base, env, timeoutMs: 120000 });
     const a1 = sourceText(service.notion, owners.a), b1 = sourceText(service.notion, owners.b), c1 = sourceText(service.notion, owners.c);
     let records;
-    if (name === 'default-view') {
+    if (name === 'http-warm-restart') {
+      await step('cold dollar submission reads the complete root and Requires', async () => {
+        checkSources(await ordinary('$current-demo Apply this Skill to the current task.'), [a1, b1], [c1]);
+      });
+      const cold = await snapshot('cold-session'), coldPid = rpc.lifecycle[0].pid;
+      await rpc.closeInput();
+      await save(join(base, 'cold-rpc.json'), rpc.frames); await save(join(base, 'cold-rpc-lifecycle.json'), rpc.lifecycle);
+      const coldRequests = service.requests.length;
+      service.setPhase('warm-restart');
+      rpc = await startRpc({ host: info.host, args, cwd: base, env, timeoutMs: 120000 });
+      const warm = await snapshot('warm-empty-session'), warmPid = rpc.lifecycle[0].pid;
+      assert.notEqual(warmPid, coldPid); assert.notEqual(warm.session_file, cold.session_file);
+      assert.equal(warm.branch.some(entry => entry.customType === 'context-broker-selected-graph'), false);
+      await step('a new Pi process reuses the five-minute cache with no Notion HTTP', async () => {
+        const started = Date.now();
+        checkSources(await ordinary('$current-demo Apply this Skill to the new task.'), [a1, b1], [c1]);
+        const elapsed = Date.now() - started;
+        assert.equal(service.requests.length, coldRequests, 'Warm restart issued Notion HTTP');
+        await save(join(base, 'warm-restart.json'), { cold_pid: coldPid, warm_pid: warmPid,
+          cold_session: cold.session_file, warm_session: warm.session_file, max_age_ms: 300000,
+          elapsed_ms: elapsed, cold_source_requests: coldRequests, warm_source_requests: service.requests.length - coldRequests });
+      });
+    } else if (name === 'default-view') {
       await step('default metadata only before activation', async () => { const body = await ordinary('Describe the available capabilities.'); checkSources(body, [], [a1, b1, c1]); records = await list(); const row = records.find(row => row.ref === refFor(records, 'a')); assert.equal(row.in_default_view, true); });
       await step('Default Context removal does not consume a body', async () => { property(service.notion.main, 'default').checkbox = false; service.setPhase('default-off', { viewObservationId: 'off' }); records = await list(); const row = records.find(row => row.ref === refFor(records, 'a')); assert.equal(row.in_default_view, false); checkSources(wire.at(-1).body, [], [a1, b1, c1]); });
       await step('Default Context can return without fetching bodies', async () => { property(service.notion.main, 'default').checkbox = true; service.setPhase('default-on', { viewObservationId: 'initial' }); records = await list(); assert.equal(records.find(row => row.ref === refFor(records, 'a')).in_default_view, true); assert.equal(service.requests.filter(item => /\/markdown$/.test(item.path)).length, 0, 'Metadata discovery must not fetch any source body'); });
@@ -360,6 +383,31 @@ export async function verifyEvidence(directory) {
     assert.ok(starts.length > 0); assert.deepEqual(starts.map(row => row.id).sort(), ends.map(row => row.id).sort());
     assert.equal(events.filter(row => row.kind === 'child_process' && row.active_sdk_ids.length > 0).length, 0);
     const lifecycle = JSON.parse(await readFile(join(base, 'rpc-lifecycle.json'), 'utf8')); assert.equal(lifecycle.at(-1).event, 'close'); assert.equal(lifecycle.at(-1).code, 0); assert.equal(lifecycle.at(-1).signal, null);
+    if (entry.name === 'http-warm-restart') {
+      const restart = JSON.parse(await readFile(join(base, 'warm-restart.json'), 'utf8'));
+      const coldLifecycle = JSON.parse(await readFile(join(base, 'cold-rpc-lifecycle.json'), 'utf8'));
+      assert.equal(coldLifecycle.at(-1).code, 0); assert.equal(coldLifecycle.at(-1).signal, null);
+      assert.equal(coldLifecycle[0].pid, restart.cold_pid); assert.equal(lifecycle[0].pid, restart.warm_pid);
+      assert.notEqual(restart.cold_pid, restart.warm_pid); assert.notEqual(restart.cold_session, restart.warm_session);
+      assert.equal(restart.max_age_ms, 300000); assert.equal(restart.warm_source_requests, 0);
+      assert.equal(source.filter(row => row.phase === 'warm-restart').length, 0, 'Warm restart sent Notion HTTP, including background work');
+      const consumed = pid => events.filter(row => row.observer_pid === pid && row.operation === 'consume' && row.kind === 'context-broker.notion-sdk-result');
+      const cold = consumed(restart.cold_pid), warm = consumed(restart.warm_pid);
+      assert.equal(cold.length, 1); assert.equal(warm.length, 1);
+      assert.equal(cold[0].value.status, 'ready'); assert.equal(warm[0].value.status, 'ready');
+      const prepared = value => value.preparation.nodes.filter(node => node.state === 'prepared').sort((left, right) => left.id.localeCompare(right.id));
+      const previous = prepared(cold[0].value), current = prepared(warm[0].value);
+      assert.equal(previous.length, 2); assert.equal(current.length, 2);
+      assert.ok(previous.every(node => node.source === 'notion'));
+      assert.ok(current.every(node => node.source === 'local_cache' && node.freshness?.max_age_ms === 300000
+        && node.freshness.age_ms >= 0 && node.freshness.age_ms < 300000 && node.freshness.stale === false));
+      const observed = node => [node.id, node.binding.snapshot_id, node.freshness.validated_at];
+      assert.deepEqual(current.map(observed), previous.map(observed), 'Cache reuse must retain original validation times and fixed versions');
+      const completed = ends.find(row => row.id === warm[0].id);
+      assert.equal(completed?.request_metrics?.total_requests, 0);
+      assert.equal(events.filter(row => row.observer_pid === restart.warm_pid && row.operation === 'library').length, 0,
+        'Local routing must not trigger separate Library verification');
+    }
   }
   return result;
 }
@@ -380,6 +428,6 @@ async function main() {
     for (const entry of info.identity.broker.files) assert.equal(hash(await readFile(join(info.packageRoot, entry.path))), entry.sha256, 'Installed artifact changed during verification');
     result.status = 'passed'; result.completed_at = new Date().toISOString(); await save(join(out, 'result.json'), result);
     await verifyEvidence(out); console.log(JSON.stringify({ status: 'passed', evidence: out, cases: cases.map(item => item.name), evidence_level: 'controlled-Pi' }));
-  } catch (error) { result.error = { message: error.message, stack: error.stack }; await save(join(out, 'result.json'), result); console.error(JSON.stringify({ status: 'failed', evidence: out, error: error.message })); process.exitCode = 1; }
+  } catch (error) { result.status = 'failed'; result.error = { message: error.message, stack: error.stack }; await save(join(out, 'result.json'), result); console.error(JSON.stringify({ status: 'failed', evidence: out, error: error.message })); process.exitCode = 1; }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
