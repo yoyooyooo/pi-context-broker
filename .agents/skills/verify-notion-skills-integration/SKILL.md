@@ -23,10 +23,18 @@ create 只建立两个独立 clone 和任务分支，不安装依赖；不要在
 文件清单复制 tracked 与 nonignored untracked 源码，在该 generation 的 snapshot
 内安装依赖，再生成完整私有配对。并行 build 不共享 source node_modules。
 build.json 的 source_tree 封存完整源码与已安装依赖；check 同时核对它和 runtime 包。
-run 必须明确选择 build ID，不能靠 `latest` 猜测。每个 command run 先把两个源码
+run 必须明确选择 build ID，不能靠 `latest` 猜测。默认 command run 先把两个源码
 snapshot 与依赖复制到自己的 run/source；`--cwd cli|broker` 及 PAIRED_CLI_SOURCE /
 PAIRED_BROKER_SOURCE 指向本 run 副本，默认 workspace 为 run 自有目录。
 command 可修改自己的副本，不能改 build 内冻结目录；CLI/Pi 纯运行不复制源码。
+只消费冻结运行时的 controller 显式选 `--command-source none`，只允许 workspace cwd，
+不得收到 PAIRED_CLI_SOURCE / PAIRED_BROKER_SOURCE 或源码验证绑定，也不产生 run/source。
+复核 run.json.command_source、真实 CLI/Pi wrapper、私有状态及 frozen artifacts；源码修改测试
+继续用默认 copy，并保留并发修改一份副本不会影响另一份或 build 的负例。
+create/build/run 在写入前读取环境及所有祖先的 capacity-policy.json，合并明确指定 policy，取更严格的限制。
+按目标卷可用量和实际复制长度核对预算；clone/install 总量未知时保留 unknown，低于主机复核线
+须先审查并提供总增量估计。不得下调政策绕过拒绝。保留 capacity.json 与首次失败，
+安装及启动前复核不构成并发容量预留，ENOSPC 仍须保留原始错误和已有状态。
 
 首次初始化候选使用 `build --install-mode packed`。该模式沿现有 npm pack / 空 consumer install 合同，复用 daily 的 archive-to-installed 字节核对，并比较打包前源码产物。检查 build.json.candidate 的 package/version、archive、实际 bin/SDK/Broker entry、完整 installed 与 archive inventory。run 的直接入口和私有 wrapper 必须选同一安装候选；冻结后不能改 wrapper、包或依赖来绕过检查。默认 directory build 不变。针对这一选择运行 scripts/paired-environment.test.mjs 的实际归档安装与篡改反例。
 
@@ -38,7 +46,7 @@ snapshot 指纹、完整 source_tree 与 runtime 清单。构建后修改一边�
 读回真实入口、退出和自有证据。重复 build/run ID 必须拒绝覆盖.
 具体命令和通过范围以规范及当前 `--help` 为准。
 
-隔离机制按规范执行两层检查：`node --test scripts/paired-environment.test.mjs scripts/paired-runtime-identity.test.mjs`
+隔离机制按规范执行两层检查：`node --test scripts/paired-capacity.test.mjs scripts/paired-environment.test.mjs scripts/paired-runtime-identity.test.mjs`
 检查实际子进程、启动声明和运行时反例；`scripts/paired-environment.smoke.mjs` 接收两个独立环境和明确 build ID，
 执行两个真实 CLI，以及两环境 × Broker/原生模式 × direct/private wrapper 的八个真实 Pi。
 受控 provider 必须收到所选 Skill 完整正文，排除另一环境和未选择的发现 canary；
