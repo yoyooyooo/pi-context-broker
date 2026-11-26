@@ -111,7 +111,7 @@ test("a restoration denial remains authoritative on following turns while unrela
   } finally { await h.close(); }
 });
 
-test("authorization discovered after context withholds unsafe instructions and continues the user request", async () => {
+test("authorization discovered after context still blocks denied instructions while the user request continues", async () => {
   const h = await activeNotionSession();
   try {
     const graph = await h.seed(["root", "independent"]);
