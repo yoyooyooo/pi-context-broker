@@ -2158,6 +2158,112 @@ test(code + " does not taint tracked inspection content in another " + boundary,
   expect(() => host.assertCanRestore(other.root)).not.toThrow();
 });
 
+for (const acquisition of ["use", "main read", "resource read"] as const)
+test(`a fresh verified ${acquisition} recovers after a Pi preparation failure without reviving retired source messages`, async () => {
+  const f = await fixture(true), operation = new AbortController();
+  const user: AgentMessage = { role: "user", content: [{ type: "text", text: "$root explain my task" }] };
+  const old: AgentMessage = { role: "toolResult", toolName: "notion_use", toolCallId: "retired-result",
+    content: [{ type: "text", text: "Old failed source instructions" }] };
+  let restorations = 0, confirmations = 0, refuse = false;
+  f.ctx.signal = operation.signal;
+  f.ctx.model = { api: "openai-responses", baseUrl: "http://127.0.0.1:8989/v1" };
+  const h = await f.install(async purpose => {
+    if (refuse) throw new SourceError("AUTH_REQUIRED", "controlled");
+    return [f.graph(purpose)];
+  }, {
+    restoreActive: async messages => {
+      if (++restorations === 1) throw Object.assign(new Error("Skill preparation timed out"), { code: "SOURCE_PREPARATION_TIMEOUT" });
+      return { messages, restored: [], notices: [] };
+    },
+    confirmDelivery() { confirmations++; },
+  });
+  const context = async (messages: AgentMessage[]) => {
+    const [result] = await f.emit("context", { messages }, f.ctx);
+    if (!result || typeof result !== "object" || !("messages" in result) || !Array.isArray(result.messages))
+      throw new Error("Expected a context result");
+    return result.messages as AgentMessage[];
+  };
+  try {
+    await h.host.refresh(f.ctx);
+    await f.emit("input", { source: "rpc", text: sourceMessageText(user.content) }, f.ctx);
+    await f.emit("before_agent_start", { prompt: sourceMessageText(user.content), systemPrompt: "base" }, f.ctx);
+    await f.emit("agent_start", {}, f.ctx);
+    const initial = await context([user, old]);
+    expect(JSON.stringify(initial)).toContain("SOURCE_PREPARATION_TIMEOUT");
+    expect(JSON.stringify(initial)).not.toContain("Old failed source instructions");
+    expect(confirmations).toBe(0);
+    const lateInput = { path: f.root.ref! };
+    if (acquisition === "use") {
+      const admission = await f.emit("tool_call", { toolName: "read", toolCallId: "late-read", input: lateInput }, f.ctx);
+      expect(admission.some(value => value && typeof value === "object" && "block" in value)).toBe(false);
+    }
+    const toolCallId = "fresh-result";
+    const fresh: AgentMessage = acquisition === "use"
+      ? { role: "toolResult", toolName: "notion_use", toolCallId,
+        ...await h.tool.execute(toolCallId, { ref: f.root.ref }, operation.signal, undefined, f.ctx) }
+      : await nativeRead(f, acquisition === "main read" ? f.root.ref!
+        : f.root.entryManifest!.files.find(file => file.path === "resources/guide.md")!.ref, toolCallId);
+    if (acquisition === "use") {
+      const changed = { ...fresh, content: [{ type: "text" as const, text: "Unverified replacement instructions" }] };
+      const withheld = await context([user, old, changed]);
+      expect(withheld.find(message => message.toolCallId === toolCallId)).toMatchObject({ isError: true });
+      expect(JSON.stringify(withheld)).not.toContain("Unverified replacement instructions");
+    }
+    const recovered = await context([user, old, fresh]);
+    const expectedRestorations = acquisition === "use" ? 3 : 2;
+    expect(restorations).toBe(expectedRestorations);
+    expect(recovered.find(message => message.toolCallId === toolCallId)).toEqual(fresh);
+    expect(Array.isArray(recovered.find(message => message.toolCallId === old.toolCallId)?.content)).toBe(true);
+    expect(JSON.stringify(recovered)).not.toContain("Old failed source instructions");
+    expect(JSON.stringify(recovered)).not.toContain("SOURCE_PREPARATION_TIMEOUT");
+    if (acquisition === "use") {
+      expect(sourceBodyLoaded(recovered, f.root)).toBe(true);
+      expect(sourceBodyLoaded(recovered, f.required)).toBe(true);
+    } else expect(sourceMessageText(fresh.content)).toContain(acquisition === "main read" ? f.root.body! : f.resourceText.get(f.root.id!)!);
+    const payload = { input: recovered.map(message => message.role === "toolResult"
+      ? { type: "function_call_output", call_id: message.toolCallId, output: sourceMessageText(message.content) }
+      : { role: "user", content: sourceMessageText(message.content) }) };
+    expect(await f.emit("before_provider_request", { type: "before_provider_request", payload }, f.ctx)).toEqual([undefined]);
+    expect(confirmations).toBe(0);
+    await f.emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} }, f.ctx);
+    expect(confirmations).toBe(1);
+    expect(operation.signal.aborted).toBe(false);
+    if (acquisition === "use") {
+      // A later host projection drops Requires after the complete context was
+      // captured. Recovery must still cross the original delivery guard.
+      const broken = recovered.map(message => message.toolCallId === toolCallId ? { ...message,
+        content: [{ type: "text" as const, text: sourceMessageText(message.content).replace(JSON.stringify(f.required.body!).slice(1, -1), "truncated") }] } : message);
+      await f.emit("context_with_system", { messages: [{ role: "system", content: "base" }, ...broken] }, f.ctx);
+      const [safe] = await f.emit("before_provider_request", { type: "before_provider_request", payload }, f.ctx);
+      expect(JSON.stringify(safe)).toContain("SOURCE_CONTEXT_CLOSURE_INCOMPLETE");
+      expect(JSON.stringify(safe)).not.toContain("Exact root");
+      await f.emit("after_provider_response", { type: "after_provider_response", status: 200, headers: {} }, f.ctx);
+      expect(confirmations).toBe(1);
+      // This main read was authorized in the previous failure episode. Its late
+      // complete receipt must not reopen the newer failed episode.
+      const content = [{ type: "text" as const, text: await readFile(lateInput.path, "utf8") }];
+      const [late] = await f.emit("tool_result", { toolName: "read", toolCallId: "late-read", input: lateInput, content, isError: false }, f.ctx);
+      if (!late || typeof late !== "object") throw new Error("Expected a complete late read result");
+      expect(late).toMatchObject({ details: { contextBrokerRead: { toolCallId: "late-read" } } });
+      const continued = await context([user, old, fresh, { role: "toolResult", toolName: "read", toolCallId: "late-read", content, ...late }]);
+      expect(restorations).toBe(expectedRestorations);
+      expect(JSON.stringify(continued)).not.toContain("Exact root");
+      expect(continued.every(message => message.role !== "toolResult" || Array.isArray(message.content))).toBe(true);
+      const partialInput = { path: f.root.entryManifest!.files.find(file => file.path === "resources/guide.md")!.ref };
+      await f.emit("tool_call", { toolName: "read", toolCallId: "partial-resource", input: partialInput }, f.ctx);
+      const partialContent = [{ type: "text" as const, text: (await readFile(partialInput.path, "utf8")).slice(0, 5) }];
+      const [partial] = await f.emit("tool_result", { toolName: "read", toolCallId: "partial-resource", input: partialInput, content: partialContent, isError: false }, f.ctx);
+      expect(partial).toMatchObject({ details: { contextBrokerResource: { delivered_complete_text: false } } });
+      await context([user, fresh]);
+      expect(restorations).toBe(expectedRestorations);
+      refuse = true;
+      await expect(h.tool.execute("denied-recovery", { ref: f.root.ref }, operation.signal, undefined, f.ctx)).rejects.toMatchObject({ code: "AUTH_REQUIRED" });
+      expect(JSON.stringify(await context([user, old, fresh]))).not.toContain("Exact root");
+      expect(confirmations).toBe(1);
+    }
+  } finally { await f.emit("agent_end", {}, f.ctx); await f.emit("session_shutdown", {}, f.ctx); }
+});
+
 for (const suspended of ["print metadata", "active restoration"] as const)
 test(`the whole Pi context deadline bounds a suspended ${suspended} producer without cancelling the user`, async () => {
   const f = await fixture(true), operation = new AbortController();

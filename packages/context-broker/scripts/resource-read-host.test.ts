@@ -18,7 +18,7 @@ import { persistSessionSelection, sessionSelection } from "../src/session-graph"
 import { confirmActiveSources, activeSources } from "../src/session-active";
 import type { PreparedHostGraph } from "../src/prepare-protocol";
 import { SourceError } from "../src/notion-source";
-import type { ContentRecord, ExtensionAPI, ExtensionContext, PiReadDefinition, SessionEntry, SkillRecord, SourceFailure } from "../src/types";
+import type { AgentMessage, ContentRecord, ExtensionAPI, ExtensionContext, PiReadDefinition, SessionEntry, SkillRecord, SourceFailure } from "../src/types";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 const canonical = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
@@ -47,7 +47,7 @@ async function fixture(options: { otherSource?: boolean } = {}) {
   const manifest = { complete: true, scope, snapshot_id: snapshot, version_id: version, record: content, entrypoint: "SKILL.md", files: manifestFiles.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })) };
   const state = { id: "session-one", entries: [] as SessionEntry[], catalog: [metadata], lookupFailures: [] as SourceFailure[], lookupScope: true, calls: [] as string[][], mainReads: 0, persisted: 0,
     resolutionCalls: [] as string[], fixedCalls: [] as string[], scalarReads: 0, readOnly: [] as Array<boolean | undefined>, budgets: [] as ResourceReadBudget[],
-    effects: undefined as ConsumptionEffects | undefined, failure: undefined as Error | undefined,
+    effects: undefined as ConsumptionEffects | undefined, failure: undefined as Error | undefined, contextFailure: undefined as Error | undefined,
     transform: (batch: ResourceReadBatch): ResourceReadBatch => batch, wait: undefined as undefined | ((signal?: AbortSignal) => Promise<void>),
     lookupWait: undefined as undefined | ((signal?: AbortSignal) => Promise<void>), signal: undefined as AbortSignal | undefined };
   const events = new Map<string, Array<(event: never, context: ExtensionContext) => unknown>>();
@@ -85,6 +85,10 @@ async function fixture(options: { otherSource?: boolean } = {}) {
     loadRecord: async () => { state.mainReads++; throw new Error("Resource reads cannot load the main entry"); },
     prepareGraph: async () => { state.mainReads++; throw new Error("Resource reads cannot prepare a graph"); },
     persistGraphs: () => { state.persisted++; },
+    restoreActive: async messages => {
+      if (state.contextFailure) throw state.contextFailure;
+      return { messages, restored: [], notices: [] };
+    },
     sessionGraph: sessionSelection,
     readFixedResource: async (_record, input, _ctx, _signal, policy) => {
       state.fixedCalls.push(input);
@@ -113,7 +117,11 @@ async function fixture(options: { otherSource?: boolean } = {}) {
         manifest_sha256: hash(JSON.stringify(manifest)), files: selected, budget, machine: { status: "ready", manifest, files: selected } });
     },
   }, createPiHostAdapter(api, async () => () => native));
-  const emit = async (name: string) => { for (const handler of events.get(name) ?? []) await handler({ type: name } as never, ctx); };
+  const emit = async (name: string, value: unknown = { type: name }) => {
+    const results: unknown[] = [];
+    for (const handler of events.get(name) ?? []) results.push(await handler(value as never, ctx));
+    return results;
+  };
   await emit("session_start"); await host.refresh(ctx);
   const selected: SkillRecord = { ...metadata, snapshotId: snapshot, versionId: version, preparationBinding: ownerBinding,
     fileBindings: [{ path: "SKILL.md", file_id: "main", page_id: "00000000-0000-4000-8000-000000000001" },
@@ -157,6 +165,39 @@ async function fixture(options: { otherSource?: boolean } = {}) {
     },
     read: (input: Record<string, unknown>, signal?: AbortSignal) => tools.get("read")!.definition.execute("batch-call", input, signal, undefined, ctx) };
 }
+
+test("a complete resource batch recovers a failed Pi context while a partial batch cannot", async () => {
+  const f = await fixture(), operation = new AbortController();
+  const user: AgentMessage = { role: "user", content: [{ type: "text", text: "Inspect the selected resources." }] };
+  const old: AgentMessage = { role: "toolResult", toolName: "notion_use", toolCallId: "old-source", content: [{ type: "text", text: "Retired source instructions" }] };
+  f.ctx.signal = operation.signal;
+  const context = async (messages: AgentMessage[]) => {
+    const [result] = await f.emit("context", { messages });
+    if (!result || typeof result !== "object" || !("messages" in result) || !Array.isArray(result.messages)) throw new Error("Expected context messages");
+    return result.messages as AgentMessage[];
+  };
+  try {
+    await f.emit("input", { source: "rpc", text: sourceMessageText(user.content) });
+    await f.emit("before_agent_start", { prompt: sourceMessageText(user.content), systemPrompt: "base" });
+    await f.emit("agent_start");
+    f.state.contextFailure = Object.assign(new Error("Skill preparation timed out"), { code: "SOURCE_PREPARATION_TIMEOUT" });
+    expect(JSON.stringify(await context([user, old]))).toContain("SOURCE_PREPARATION_TIMEOUT");
+    f.state.contextFailure = undefined;
+    f.state.transform = batch => ({ ...batch, files: batch.files.map(file => file.encoding === "utf8" ? { ...file, content: file.content.slice(0, 1) } : file) });
+    await expect(f.read({ paths: [f.files[0]!.ref] })).rejects.toMatchObject({ code: "SOURCE_RESOURCE_PROJECTION_INVALID" });
+    expect(JSON.stringify(await context([user, old]))).toContain("SOURCE_PREPARATION_TIMEOUT");
+    f.state.transform = batch => batch;
+    const result = await f.read({ paths: f.files.map(file => file.ref) });
+    const fresh: AgentMessage = { role: "toolResult", toolName: "read", toolCallId: "batch-call", ...result };
+    const recovered = await context([user, old, fresh]);
+    expect(recovered.find(message => message.toolCallId === "batch-call")).toEqual(fresh);
+    expect(JSON.stringify(recovered)).not.toContain("SOURCE_PREPARATION_TIMEOUT");
+    expect(JSON.stringify(recovered)).not.toContain("Retired source instructions");
+    expect(recovered.every(message => message.role !== "toolResult" || Array.isArray(message.content))).toBe(true);
+    expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
+    expect(operation.signal.aborted).toBe(false);
+  } finally { await f.emit("agent_end"); await f.emit("session_shutdown"); }
+});
 
 test("a requested batch time budget is per call and preserves original count, bytes and task pins", async () => {
   const f = await fixture(); await f.confirmTask();

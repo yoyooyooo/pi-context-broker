@@ -14,10 +14,18 @@ const sourceTool = (message: AgentMessage) => {
 const sourceCustom = (message: AgentMessage) => message.role === "custom"
   && (message.customType?.startsWith("context-broker") || message.customType === "skill-prompt-message");
 
+/** Bind the exact owned result, without depending on host-added timestamps or
+ * display metadata. This is a recovery receipt, not a new authorization grant. */
+export function brokerToolResultDigest(message: Pick<AgentMessage, "content" | "details" | "isError">): string {
+  const details = object(message.details) ? message.details : undefined;
+  return hash(JSON.stringify([message.isError === true, message.content, details?.contextBrokerRead, details?.contextBrokerPreparation, details?.contextBrokerResource]));
+}
+
 /** Retire Broker instructions without changing the user's conversation. Native
  * user entries undo our append; inline receipts remain until their owned spans
  * have been removed, including when session projection is unavailable. */
-export function withoutBrokerInstructions(messages: AgentMessage[], entries: readonly ProjectedSessionEntry[] = []): AgentMessage[] {
+export function withoutBrokerInstructions(messages: AgentMessage[], entries: readonly ProjectedSessionEntry[] = [],
+  retainedToolCalls?: ReadonlyMap<string, string>): AgentMessage[] {
   const originalUsers = new Map<string, AgentMessage>();
   const userKey = (message: AgentMessage) => hash(JSON.stringify([message.timestamp ?? null, message.content]));
   const receipts = new Set(entries.flatMap(({ sourceEntry }) => sourceEntry.type === "custom" && sourceEntry.customType === "context-broker"
@@ -35,13 +43,20 @@ export function withoutBrokerInstructions(messages: AgentMessage[], entries: rea
   const stripped = messages.map((message): AgentMessage => {
     if (!sourceTool(message)) return message;
     const effects = object(message.details) && isConsumptionEffects(message.details.effects) ? message.details.effects : undefined;
-    return { ...message, isError: true, content: withheld + (effects ? "\n\n<notion-effects>" + JSON.stringify(effects) + "</notion-effects>" : ""),
+    const text = withheld + (effects ? "\n\n<notion-effects>" + JSON.stringify(effects) + "</notion-effects>" : "");
+    return { ...message, isError: true, content: Array.isArray(message.content) ? [{ type: "text", text }] : text,
       details: effects ? { effects } : undefined };
   });
   // Receipt validation never treats arbitrary user quotations as owned bytes.
   return projectSelectedSourceMessages(withSessionSourceReceipts(stripped, entries), { scopes: new Map() }, () => "unavailable")
-    .map((message, index) => message.role === "user" && messages[index]
-      ? originalUsers.get(userKey(messages[index]!)) ?? message : message)
+    .map((message, index) => {
+      const original = messages[index];
+      // Only a new successful acquisition from this run can retain its result.
+      // Retired tool calls and inline/native source spans remain withheld.
+      if (original && sourceTool(original) && original.toolCallId && retainedToolCalls?.has(original.toolCallId)
+        && retainedToolCalls.get(original.toolCallId) === brokerToolResultDigest(original)) return original;
+      return message.role === "user" && original ? originalUsers.get(userKey(original)) ?? message : message;
+    })
     .filter(message => !sourceCustom(message));
 }
 
