@@ -163,6 +163,8 @@ test("Pi scalar read advertises issued Skill refs without changing the native de
   expect(f.current().description).toContain("without loading Requires or activating its workflow");
   expect(f.current().description).toContain("Notion reads do not write to the remote library");
   expect(f.current().description).toContain("applying a chosen Skill, call notion_use directly");
+  expect(f.current().description).toContain("loads the root and Requires without a preliminary main read");
+  expect(f.current().description).toContain("paths reads fixed resources of one owner and snapshot together");
   expect(f.current().parameters).toMatchObject({ properties: { refresh: {
     description: expect.stringMatching(/only for a user-requested current-version inspection;.*Keeps the active selection unchanged\..*Only for a supplied Notion Skill ref in path/),
   } } });
