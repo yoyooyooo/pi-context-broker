@@ -1,7 +1,6 @@
 # Fixed resource batches in Pi
 
-SC07 / [AH-626](https://linear.app/yoyooyooo/issue/AH-626) adds a resource-only
-batch to Pi's existing `read` tool. The owner and snapshot are fixed before
+Pi's existing `read` tool accepts a resource-only batch. The owner and snapshot are fixed before
 reading. A batch does not prepare a Skill graph, reread its main instructions,
 or activate its workflow.
 
@@ -26,6 +25,40 @@ the real `toolCallId`; existing single-file/main receipts remain linked to their
 actual tool results. A third-party extension that already owns `read` is not
 replaced. OMP receives the call-ID plumbing but this batch slice is Pi-specific.
 The optional `budget` belongs only to `paths`; scalar and local reads reject it.
+
+### Relative paths from a selected File
+
+The scalar branch can resolve a relative link from its exact containing File:
+
+```ts
+read({ path: "../review/SKILL.md", from: "sr:S…" })
+read({ path: "../../reference.md", from: "sr:R…" })
+```
+
+Copy `from` from the actual selected main or supporting file. It accepts a valid
+`sr:S`, `sr:R`, or fixed canonical `skill://architect/path?library=team&snapshot=s_...`
+File ref. An unfixed `sr:C` candidate is not a containing-file selection. The base
+is the exact selected owner, manifest and path. An old path is not a rename hint.
+`path` accepts a relative file path or a `skill://` reference; the latter binds an omitted
+Library from `from`. Absolute paths, `~/`, queries or fragments on relative paths are rejected. `from` cannot be combined with `paths` or `refresh: true`.
+
+The paired SDK resolves identity before Broker reads the target. A target mapped
+to the containing owner stays in its fixed selection. A cross-Skill link requires
+the containing file's Source revision and original path to map to one exact current
+contribution. Nested documents use their own Source path before mounts or renames;
+a coincidentally matching cache path cannot override that meaning. Missing or changed
+Source authority, ambiguous mappings, and mappings unavailable offline fail explicitly;
+neighboring cache directories never supply a fallback.
+For a file without reliable Source context, use the target's exact stable ref.
+
+After resolution, the target retains its own owner, scope and any existing session
+pin. Resolving a link does not upgrade an already selected target to newer content.
+The normal read route validates the target and returns its fixed ref and existing
+read receipt. It remains inspection: no `notion_use`, Requires expansion, Members
+change or remote write. Cancellation and branch changes still prevent stale results
+from being delivered. Ordinary local filesystem reads keep Pi's native behavior.
+The paired SDK must export `resolveReference`; a missing export reports
+`SOURCE_SDK_INCOMPATIBLE` without a CLI or filesystem fallback.
 
 ### Fixed scalar resources
 
@@ -61,11 +94,11 @@ bytes. A directory query failure does not establish a physical-page refusal.
 
 The paired SDK must advertise this capability. Missing capability fails before
 dispatch; there is no custom command or old SDK route. OMP/Tern are deferred.
-Canonical paths naming the main entrypoint use the existing main
-route, including when they carry a File ID; this avoids an extra main read.
-A stale main-path hint whose File ID identifies a resource still resolves on
-that existing route. A resource-path hint whose File ID identifies the main
-is recognized by the source and continues through normal main preparation.
+A pathless URI selects the entrypoint declared by its selected manifest. An exact
+main path uses the existing main route. Resources require their exact manifest paths;
+a former path cannot be repaired by a File ID. Public `file_id` parameters are rejected.
+Native File IDs are checked through internal manifest bindings, while frozen Source
+files retain their own route, byte count and hash without requiring a Notion File row.
 
 One batch enters one source-runtime operation and one SDK `readResources` call.
 It does not loop over `readSkill`, launch a CLI for every file, or invoke
@@ -150,23 +183,15 @@ same identity-based deduplication.
 
 ## Verification boundaries
 
-The existing CLI package fixture adds a separate `resources` Skill containing
-ordinary UTF-8, BOM/CRLF, empty and binary files plus an unselected resource.
-It stays warm and does not prove cold download behavior. Core controlled-source
-tests check selected object IDs, shared-chunk deduplication and unselected/main
-zero reads. Independent npm SDK smoke checks real exports, decoder rejection and
-request cleanup. Installed Pi uses the existing `scripts/notion-sdk-pi.mjs`
-`resource-batch` scenario with actual native tool schema/results, provider
-payloads, local binary bytes, source observations, and repeat projection. The
-separate `resource-batch-short-refs` variant explicitly inspects the owner first,
-then batches the four actual `sr:R` handles from that directory. Its one inspect
-consume is counted separately from the two resource reads.
+Current source regressions cover fixed owner/snapshot/File identity, complete
+text, binary bytes, budgets, cancellation and rejected mixed batches. The existing
+independent package gate checks the installed SDK over controlled current Notion
+HTTP, including scalar/batch resources and zero semantic writes.
 
-The scalar variants and their baseline/candidate source and provider costs are
-recorded separately in [fixed scalar verification](scalar-resource-consumption-verification-2026-11-05.md).
-
-Launch, Doctor, Drive, Evidence and Cleanup remain in the existing
-[consumption map](https://github.com/yoyooyooo/pi-context-broker/blob/main/.agents/skills/verify-notion-skills-integration/features/skill-consumption.md).
-Controlled provider success, live source behavior, real model choice, pro/mini
-recovery and daily installation remain distinct evidence. The original SC07
-introduction/execution journeys and SC21 gates are not closed by a batch fixture.
+Actual Pi checks follow the current SDK v3 driver and its
+[consumption map](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/features/skill-consumption.md).
+Use its currently declared scenarios rather than a retired scenario name. Compare
+actual tool schema/results, complete provider-visible content, original binary
+bytes and per-operation observations. A fixture, installed SDK or controlled Pi
+result does not establish live service behavior, natural model choice, native UI
+or normal installation. Keep those results and their package identities separate.

@@ -18,7 +18,7 @@ sources:
     namespace: notion
     # Consumption uses the paired SDK; management uses the bundled CLI.
     # Replace with your skills database id or unambiguous CLI database selector.
-    database: 00000000-0000-0000-0000-000000000000
+    library: 00000000-0000-0000-0000-000000000000
     cacheDir: ~/.cache/context-broker/notion
     discovery:
       maxAge: 5m

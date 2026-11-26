@@ -28,9 +28,18 @@ Install the published package into Pi:
 pi install npm:pi-context-broker
 ```
 
-The package requires Node.js `^22.22.3 || >=24.20.0`. It includes the matching Notion CLI, SDK, and packaged Skills, so Pi use does not require a separate global `ntn-skills` installation. Bun is a build dependency.
+The package requires Node.js `^24.22.3 || ^26.13.1`. It includes the matching Notion CLI, SDK, and packaged Skills, so Pi use does not require a separate global `ntn-skills` installation. Bun is a build dependency.
+
+Broker's request verification needs Undici's sent-body chunk diagnostics, which Node 22's built-in transport does not provide. This is a Broker runtime requirement; the standalone Notion CLI maintains its own supported Node range.
+
+Current real Pi verification uses Pi 1.6.0. The optional `*` peer ranges allow a
+host-managed installation; they do not certify every Pi or OMP version. Check a
+new host version with the [existing verification routes](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/verification-routing.md)
+before relying on it. The Node range covers the listed maintained LTS lines.
 
 Published npm packages and the current `next` source can differ. To develop or try unreleased changes, use the [isolated development guide](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/isolated-development.md). It owns source pairing, builds, and separate application state.
+
+For daily use of `next`, install the packages built from the selected merged CLI/Broker commits in a stable directory outside development checkouts. Follow the [next installation guide](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/next-worktree-delivery.md) for archive identity, package selection and a fresh Pi process. Test a temporary candidate with `pi -ne -e /absolute/task/extension.ts`; keep the daily registration unchanged.
 
 Choose the [local quick start](#quick-start) below, or [connect an existing Notion library](#connect-a-notion-library).
 
@@ -89,15 +98,15 @@ Pi prepares the selected Skill and includes its complete instructions in the nex
 
 ## Connect a Notion library
 
-Complete the [CLI quick start](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.md#quick-start) first. The CLI creates a library with `ctl library init --parent PARENT`; `ctl library init --entry ENTRY` validates an existing current library. Keep `library.skills.database_id` as the entry: it is the Skills database ID. An existing current library needs neither new tables nor a local Skill directory.
+Complete the [CLI quick start](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.md#quick-start) first. The CLI creates a library with `ctl library init --parent PARENT`; `ctl library init --library ROOT` validates an existing current library. Keep `library.library_id` as the Library root: it is the Library root page ID. An existing current library needs neither new tables nor a local Skill directory.
 
-In Pi, preview the connection using that entry and your chosen configuration file:
+In Pi, preview the connection using that root and your chosen configuration file:
 
 ```text
-/context-broker connect personal ENTRY --config /absolute/project/config.json
+/context-broker connect personal ROOT --config /absolute/project/config.json
 ```
 
-Replace `ENTRY` with the returned library entry and choose a real absolute configuration path. The preview changes no configuration. Review it and execute the exact returned `--apply` command to save the source. Then start Pi with the same file:
+Replace `ROOT` with the returned `library.library_id` and choose a real absolute configuration path. The preview changes no configuration. Review it and execute the exact returned `--apply` command to save the source. Then start Pi with the same file:
 
 ```sh
 CONTEXT_BROKER_CONFIG=/absolute/project/config.json pi
@@ -107,6 +116,38 @@ Run `/context-broker doctor` and `/context-broker sources`. Ask Pi to find a Ski
 
 The CLI quick start also covers authentication, the first Skill, and management. Broker uses the paired bundled CLI/SDK and its configured credentials. Keep credentials out of the Broker config.
 
+### Select a Library for a session
+
+`library_id` is the canonical UUID of the Library root page created by `init`.
+Skills, Files, Records and Sources are its direct child databases. Table IDs are
+physical bindings inside the descriptor; they are not Library selectors.
+
+The CLI global `default_library` supplies Broker's default through the same SDK.
+Every accepted input reads that local setting again; changing it affects the next
+input. Root and table verification is reused for the same root within this session. Broker has no separate global default. A Source's `library`
+may be omitted only to bind that SDK default; explicit Sources name root IDs or
+Notion root URLs. Every selected root must match one enabled Source. Connecting
+a Source makes it available but does not change the selected Library.
+
+Use `/context-broker library ROOT_ID_OR_URL` to switch the current session branch,
+`/context-broker library default` to select the CLI default, and
+`/context-broker library` to inspect it. Fork, rewind and resume use the active
+branch's entries. A failed switch keeps that requested Library blocked until a
+successful explicit selection; it never silently writes to the previous Library.
+
+Each interactive or RPC submission freezes its Library when accepted. Switching
+A to B affects later submissions, default discovery and short Skill references.
+An accepted A task and its selected snapshots remain in A. A fully qualified
+`skill://name/SKILL.md?library=ROOT_UUID` can route to another enabled Source
+without changing the session default. Same-name Skills in A and B are distinct.
+Unqualified `$name` and default discovery stay in the accepted Library. An explicit
+`$name@source` (or configured namespace) reads only that enabled Source on demand,
+then retains the returned full Library identity. Several explicit Sources can be
+used in one submission; their results do not change the default, Profile or menu.
+To request the accepted turn's CLI target, use `notion_ctl` with
+`cli_source: null`; the returned `library` is the verified root to pass as
+`--library`. An explicit Source ID chooses that Source's root instead.
+
 ### Source configuration
 
 The connection command adds the source to the selected file. Its options can also be reviewed or edited there:
@@ -115,8 +156,8 @@ The connection command adds the source to the selected file. Its options can als
 sources:
   - id: notion
     type: notion
-    # Use the library entry returned by the CLI.
-    database: 00000000-0000-0000-0000-000000000000
+    # Use library.library_id: the Library root page, not a table ID.
+    library: 00000000-0000-0000-0000-000000000000
     discovery: {maxAge: 5m, offline: false}
     activation: {maxAge: 5m, offline: false}
     prefetch: false
@@ -128,11 +169,11 @@ Pi exposes session references through `notion_list`, `notion_use` and native `re
 
 An optional `default_view_id` on each Notion source fixes its default View; omit it to use the first View in API order. An invalid configured ID is reported, not replaced; a verified empty View list means no default Notion entries. Pi submits ordinary messages without waiting for the remote directory, so its first request may report metadata as pending. At each model request, Pi presents the current directory from memory, preserving local Skills and already loaded bodies; explicit `$` preparation finishes before its first request. A checked page outside the View is not advertised; an unchecked page inside it is. Pi native `read` inspects the selected record or resource; `notion_use` and an explicit `$` selection prepare the selected root with Requires. Detached completion stays full-library and metadata-only. Code or configuration changes require a host restart; a session View switch does not.
 
-Use `/context-broker refresh` to refresh metadata and make a later selection eligible for a new snapshot; existing conversation content is retained. Unscoped Notion discovery can be search-index limited; an explicit database can supply exhaustive coverage for that database. See [source configuration and activation](./packages/context-broker/docs/reference.md#built-in-sources) for all fields, scope isolation, ambiguity and cache policies.
+Use `/context-broker refresh` to refresh metadata and make a later selection eligible for a new snapshot; existing conversation content is retained. Ordinary discovery uses the selected Library root. Complete online coverage can establish absence only in that Library; another Library with the same Skill name remains a different scope. See [source configuration and activation](./packages/context-broker/docs/reference.md#built-in-sources) for all fields, scope isolation, ambiguity and cache policies.
 
 Notion caches are shared across projects and Pi/OMP by credential and remote catalog identity. Full-directory metadata and View membership use separate cache selections, so filtering one session never hides another session’s `$` candidates. Session choices live in active-branch entries and survive process resume; new sessions resolve their own defaults. Shared refresh preserves loaded workflow snapshots. [Cache contract](./packages/context-broker/docs/reference.md#built-in-sources).
 
-Run `/context-broker doctor` to check the official CLI version, capabilities, authentication and source access. Missing dependencies or failed access mark only that source unavailable; local Skills, healthy sources and ordinary chat continue working. Activating a selected known record from an unavailable source blocks dispatch with a repair hint. An unknown simple reference passes through unchanged even in that source's namespace; accepted and full-identity references report unavailability explicitly. After repairing it, run `/context-broker refresh`. The management CLI comes from the same installed package; source-level executable overrides are rejected.
+Run `/context-broker doctor` to check the official CLI version, capabilities, authentication and source access. Missing dependencies or failed access mark only that source unavailable; local Skills, healthy sources and ordinary chat continue working. If a selected Skill cannot be loaded, Pi shows a warning and continues the original user request without those instructions. It does not report the Skill as loaded or inject partial content. An unknown simple reference passes through unchanged even in that source's namespace; accepted and full-identity references report unavailability explicitly. After repairing it, run `/context-broker refresh`. The management CLI comes from the same installed package; source-level executable overrides are rejected.
 
 `/context-broker sources` reports background preparation state, snapshot/version IDs, CLI freshness and safe error codes; `ready` means prepared bytes, not instructions loaded into the session.
 
@@ -146,7 +187,7 @@ Run `/context-broker doctor` to check the official CLI version, capabilities, au
 /context-broker view default
 ```
 
-`views` lists API-ordered choices with exact selection commands. `view` without arguments reports name, ID, source, selection origin and count. Multiple sources require the source ID. Selecting a View changes only the active session; `default` resets to configured selection or first-View fallback. These commands do not call the LLM. The next ordinary user submission receives the new names/descriptions; full Skill bodies remain on demand. A source may set `default_view_id: VIEW_UUID` beside `database` in YAML. Names are never special and API order is not promised to match UI tab order.
+`views` lists API-ordered choices with exact selection commands. `view` without arguments reports name, ID, source, selection origin and count. Omitting the source ID uses the selected Library; an explicit source ID targets another enabled Source. Selecting a View changes only the active session; `default` resets to configured selection or first-View fallback. These commands do not call the LLM. The next ordinary user submission receives the new names/descriptions; full Skill bodies remain on demand. A source may set `default_view_id: VIEW_UUID` beside `library` in YAML. Names are never special and API order is not promised to match UI tab order.
 
 Notion prefetch defaults to a zero budget, so startup and View discovery read metadata only. Explicit Skill selection prepares the complete pinned main instructions and, for use, the Required closure. Resources stay in a verified complete manifest and are fetched individually when read. `prefetch: false` keeps this behavior explicit; optional warming requires a node, byte, time and rate budget. [Source options](./packages/context-broker/docs/reference.md#built-in-sources).
 
@@ -158,9 +199,15 @@ Pi consumes Notion Skills through `notion_list`, native `read`, and `notion_use`
 
 Pi can read up to 16 selected resources in one `read({ paths: [...] })` call using fixed `sr:R` handles or pinned `skill://` file refs from the same Skill snapshot. Text arrives in full; binary resources provide verified file metadata and a local path. Ordinary `read({ path, offset?, limit? })` keeps Pi's native behavior. See [fixed resource batches](./packages/context-broker/docs/fixed-resource-batches.md) for selection, budgets and delivery semantics.
 
+Portable Skill links now use `skill://<stable-skill-id>[/<path>][?library=<library-root-uuid>][&snapshot=<id>]`, for example `skill://architect/references/review.md?library=44444444-4444-4444-8444-444444444444`. Omit `library` only when the containing selected file or an explicitly selected Library supplies it. Names and aliases remain discovery labels; URI resolution uses stable IDs. The old `shared_skill:…` prefix and public `file_id` parameter are rejected. See [exact Skill references](./packages/context-broker/docs/reference.md#exact-skill-references) for scope, fixed entrypoints and migration requirements.
+
+For a relative link in a Notion Skill, use `read({ path: "../review/SKILL.md", from: FIXED_CONTAINING_FILE_REF })`. The base is the actual file containing the link: a returned `sr:S`, `sr:R` or fixed canonical File ref. Crossing Skills requires a verified original Source path, frozen revision and exact contribution map; cache directories do not recreate repository siblings. Resolution preserves an already selected target's own session snapshot and remains inspection, without activating Requires or changing Members. `from` cannot be combined with a resource batch or `refresh: true`. See [relative file reads](./packages/context-broker/docs/fixed-resource-batches.md#relative-paths-from-a-selected-file).
+
 Pi's deferred `notion_ctl` also manages the current Notion working set. `working_set: "show"` reports active roots, shared Requires and UTF-8 instruction bytes; `"budget"` with `max_bytes` sets an explicit Session limit; `"release"` with exact `roots` stops applying those roots. Shared dependencies remain while another active root needs them. Release preserves the original Session history, fixed snapshots and Notion data. The default has no automatic eviction. See [working-set controls](./packages/context-broker/docs/skill-consumption-runtime.md#当前工作集预算与显式释放).
 
-Existing conversations retain their selected root and Requires versions across Notion edits and metadata expiry. Explicit `read` with `refresh: true` compares the current main without changing task pins; `notion_use` with `refresh: true` adopts complete current versions for the requested roots. Missing fixed bytes produce a bounded capability warning and withhold the affected instruction closure while independent conversation continues. See [refresh and recovery](./packages/context-broker/docs/skill-consumption-runtime.md#内容变更明确刷新与管理开关) and the [paired next-worktree delivery contract](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/next-worktree-delivery.md).
+Existing conversations retain their selected root and Requires versions across Notion edits and metadata expiry. Explicit `read` with `refresh: true` compares the current main without changing task pins; `notion_use` with `refresh: true` adopts complete current versions for the requested roots. Missing fixed bytes produce a bounded capability warning and withhold the affected instruction closure while independent conversation continues. See [refresh and recovery](./packages/context-broker/docs/skill-consumption-runtime.md#内容变更明确刷新与管理开关) and the [paired next installation contract](https://github.com/yoyooyooo/pi-context-broker/blob/next/docs/next-worktree-delivery.md).
+
+When a user asks whether a named Notion Skill exists or is available, the Agent must call `notion_list` with that name as `query` and `refresh:true`, including in an existing conversation and after an earlier hit or miss. The default View and conversation history do not replace this check. Explicit source choices still apply. The lookup reads metadata only and keeps selected root/Requires versions fixed. Answer existence and stated-purpose questions from the returned metadata; inspect or apply the instructions only when that is the user's request. A fresh, complete lookup can establish that no available match was found in the searched scope; offline, stale, failed or partial results cannot establish current absence.
 
 | Record | Source | What the model receives |
 | --- | --- | --- |
@@ -172,11 +219,11 @@ Use `$name` or an alias to select a record. Keyword rules can load Skills or exp
 
 ## Selection and session behavior
 
-Enter reserves the submission while leaving the draft editable. The native composer shows running and **Stop**; **Stop** or Escape cancels preparation. Enter during preparation does not submit the edited draft. In Pi, selected content is prepared in the cancellable `context` stage, after the host creates the agent operation. RPC `abort` also cancels that work. Successful preparation includes the original prompt, images, and complete selected Skill bodies in the first provider request. Preparation failure or cancellation prevents that request; a session switch also prevents late dispatch.
+In Pi, selected content is prepared in the cancellable `context` stage after the host creates the agent operation. The draft remains editable and further input can be queued; the native composer keeps running and **Stop**. **Stop**, Escape or RPC `abort` cancels the turn. Broker's metadata wait, preparation and restoration share a 60-second budget in the context stage before each model request. Successful preparation includes the original prompt, images and complete selected Skill bodies in the first provider request. Broker failures or timeouts produce a warning and continue the original user request, without failed or partial Skill content or a false loaded claim. A session switch still prevents late results from entering the new session. Broker metadata listing, Skill loading, source-owned scalar reads and CLI scope verification also have their own 60-second bound. Content search retains its 360-second budget, resource batches retain their requested budget, and ordinary native reads keep their host execution contract.
 
 Pi confirms a selected Skill as active when `after_provider_response` receives 2xx response headers and the complete body matches the request's fixed selection. This confirms logical request acceptance, not completion of the model's response and not final wire delivery. Ordinary `openai-completions` wire proof is a separate Node Undici entity-hash check; other transports are not reported as wire-confirmed. Cached bytes and a ready preparation result do not establish active state.
 
-Unknown simple `$name` and `$name@namespace`, amounts and paths such as `$bunfs/root/chunks/cli-nxfh2cp0.js` remain ordinary text without a failure notification. A previously accepted choice or full identity token that is unavailable produces explicit user/model **not loaded** feedback. Other valid Skill/Prompt/Router references, original text and images still proceed once. Ambiguity and actual selected-record permission, network, catalog or integrity errors block activation; no other source is selected silently.
+Unknown simple `$name` and `$name@namespace`, amounts and paths such as `$bunfs/root/chunks/cli-nxfh2cp0.js` remain ordinary text without a failure notification. A previously accepted choice or full identity token that is unavailable produces explicit user/model **not loaded** feedback. Original text and images still proceed once. Ambiguity and selected-record permission, network, catalog or integrity errors withhold the affected instructions while the conversation continues; no other source is selected silently. Complete valid selections retain their normal delivery checks.
 
 The next model request includes the Skill content. Submitting the same record through `$` or OMP native `/skill:` reuses the body while it remains in the active context. Pi restores missing confirmed-active bodies from the branch's exact snapshots before the next request, including ordinary follow-ups after compaction or resume. A branch without that confirmation does not inherit activation. Deduplication does not remove existing context from subsequent requests.
 
@@ -184,27 +231,27 @@ The next model request includes the Skill content. Submitting the same record th
 
 Every CLI catalog exposes `records` with required `id/kind/locator/name/alias/description/default_context/entrypoint/ref`. The broker rejects unknown kinds, malformed locators and legacy `skills/skill` responses. Selected consumption binds the complete main body and file manifest to one source, scope, record and immutable snapshot. Entry files are `SKILL.md`, `ROUTER.md` and `PROMPT.md`.
 
-Select a Prompt explicitly with `$alias@notion`. Each submission owns a new invocation, session generation and prepared snapshot set; preflight and dispatch reuse that exact snapshot. Repeating the same Prompt on the next submission appends its full requirements again at user-task level, preserving original text and images. Prompt never enters native Skills, default discovery, background preparation, keyword activation or system prompts. Stop, timeout and session changes invalidate pending dispatch. Completion acceptance changes only the draft; all hosts and detached completion share `identity/kind/source/ref` and existing UTF-16 edit ranges in protocol v1.
+Select a Prompt explicitly with `$alias@notion`. Each submission owns a new invocation, session generation and prepared snapshot set; preflight and dispatch reuse that exact snapshot. Repeating the same Prompt on the next submission appends its full requirements again at user-task level, preserving original text and images. Prompt never enters native Skills, default discovery, background preparation, keyword activation or system prompts. Stop and session changes invalidate pending dispatch. In Pi, a timeout withholds the unfinished Prompt and continues the original request with a warning. Completion acceptance changes only the draft; all hosts and detached completion share `identity/kind/source/ref` and existing UTF-16 edit ranges in protocol v1.
 
 Old domain Bundle catalogs and stored session markers require explicit conversion with `node scripts/migrate-content-assets.mjs INPUT OUTPUT`. Runtime discovery accepts only Router records. Conversion writes a separate output and preserves immutable snapshots and resource paths.
 The converter changes only catalog record fields and recognized Broker session details, including structured Router references and source receipt identities. Authored content, snapshot IDs, resource paths and unknown nested data remain unchanged, even when they contain `bundle:` or `kind="bundle"`. It rejects mixed catalog envelopes and malformed members; it never overwrites the input or an existing output.
 
 ## Maintain and sync
 
-For connected-library maintenance, read `ntn-skills-maintain` from that Notion source using its exact advertised ref and the ordinary `read` tool. Reuse an already loaded complete workflow. If the default directory is pending or does not contain it, use `notion_list` with its name and the task's source, then read the returned ref. A failed or partial discovery result does not establish absence and must not silently select a packaged copy. Keep discovery, instruction reads and authorized writes in the intended source/library; same-name entries in other sources remain separate.
+For ordinary product maintenance and Source synchronization, use the `ntn-skills-maintain` and `ntn-skills-sync` Builtins shipped with the actual paired CLI. Broker advertises their installed paths for ordinary native `read`; shell-only hosts receive the paired CLI's `ctl builtin read` route. Reuse a complete workflow already loaded for the task. A new library needs no official Skill copies in Notion, and no Notion search is required to locate these product instructions.
 
-Reading only inspects the workflow. To apply it, use that source's exact ref through `notion_use(ref)` to load its complete Requires, unless already prepared for this task. The edited target remains inspection-only. With shell access but no native use tool, the same source's CLI `use EXACT_REF --database ENTRY --json` supplies the closure. Advertise only available routes; if neither exists, report unavailable adoption. Local and packaged Skills keep their native route.
+Choose the workflow and the write target separately. Packaged instructions do not select a Notion source or database. Use the explicitly chosen source's CLI command and the same `--library ROOT` selector for consumption and management. Never infer a target from the first configured source. Ordinary business Skill discovery and same-name ambiguity rules remain unchanged. A same-name Notion page is a user-owned workflow with its own identity, not an official Builtin.
 
-Ordinary CLI `list --database ENTRY --query ntn-skills-maintain` and `read EXACT_REF --database ENTRY` provide the same route when native tools are unavailable. CLI reads require canonical `skill://` refs, not session `sr:` handles. Existing sessions retain their selected instruction versions; inspect or adopt newer content only on request.
+If the user explicitly chooses a Notion team workflow, inspect its exact ref in the chosen source. Discover within that source if needed, including beyond the default View. To apply it, use `notion_use(ref)` to load its complete Requires, unless already prepared for this task; inspecting the edited target never activates its workflow. Without native use, the same source's CLI `use EXACT_REF --library ROOT_UUID --json` provides the closure. CLI refs must be canonical, not session `sr:` handles. Report unavailable adoption when no route exists. Pending, partial or failed access does not switch the selected workflow to a Builtin. Existing tasks keep their selected versions until an explicit refresh. Local and packaged workflows keep their native consumption route.
 
-Installation also includes `$ntn-skills@builtin`, `$ntn-skills-maintain@builtin` and `$ntn-skills-sync@builtin` for explicit bootstrap or offline use. They appear in `$` discovery only when at least one `sources` entry has `type: notion` and is not `enabled: false`. A configured Notion source exposes these packaged copies even when the connection/authentication is unavailable; their availability does not replace the connected-library route. With no enabled Notion source, they stay packaged but do not appear in `$` completion; follow the [CLI quick start](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.md#quick-start) for setup or use the supplied CLI to read `ctl builtin read notion/ntn-skills-maintain --path references/setup.md`.
+`$ntn-skills@builtin`, `$ntn-skills-maintain@builtin` and `$ntn-skills-sync@builtin` appear in `$` discovery only when at least one `sources` entry has `type: notion` and is not `enabled: false`. They are readable even before connection or authentication succeeds. In Pi, ordinary local sessions with no enabled Notion source expose no Notion candidates, tools or system guidance. For explicit setup, follow the [CLI quick start](https://github.com/yoyooyooo/notion-skills-cli/blob/next/README.md#quick-start) or read `ctl builtin read notion/ntn-skills-maintain --path references/setup.md` through the supplied CLI. This entry works offline.
 
 ```text
 Save the reusable method from this conversation as a Skill in my connected Notion library.
 Check the chosen library's sources and preview the synchronization I requested.
 ```
 
-The current Agent reads the selected workflow and obtains the real CLI argv and database scope for the intended source. With `bash` enabled, Pi can discover and call `notion_ctl({cli_source:"SOURCE_ID"})` for this host-local invocation metadata; it does not execute a command or authorize a workflow. With multiple Notion sources, choose the intended source explicitly. Notion writes and synchronization use the CLI's own preview, exact-target and operation-result contracts. Verified literal calls to the paired CLI's native Skill `create/update/register/remove`, import and Source routes mark only their matching configured sources for fresh discovery. Compound shell commands and external writes are not inferred. To verify a newly written item or request current metadata, call `notion_list({query:"NAME",source:"SOURCE_ID",refresh:true})`; omitting source refreshes all configured Notion sources. Read the returned freshness and coverage independently. Configured offline sources remain offline, and selected Skill versions, accepted drafts and fixed refs remain unchanged.
+The current Agent reads the selected workflow and obtains the real CLI argv and Library root scope for the intended source. With `bash` enabled, Pi can discover and call `notion_ctl({cli_source:"SOURCE_ID"})` for this host-local invocation metadata; it does not execute a command or authorize a workflow. With multiple Notion sources, choose the intended source explicitly. Notion writes and synchronization use the CLI's own preview, exact-target and operation-result contracts. Verified literal calls to the paired CLI's native Skill `create/update/register/remove`, import and Source routes mark only their matching configured sources for fresh discovery. Compound shell commands and external writes are not inferred. To verify a newly written item or request current metadata, call `notion_list({query:"NAME",source:"SOURCE_ID",refresh:true})`; omitting source refreshes this accepted turn's selected Library. Read the returned freshness and coverage independently. Configured offline sources remain offline, and selected Skill versions, accepted drafts and fixed refs remain unchanged.
 
 `/context-broker` remains the host entry for View selection, metadata refresh and diagnostics. The old `/ntn-skills` command mirror, dedicated `save` shortcut and Tern management palettes are retired. Keep your natural-language request and attachments in the ordinary prompt; selecting a Skill only edits the draft.
 
@@ -212,7 +259,7 @@ When an accepted reference is no longer available, both the user and model recei
 
 ## Updating packaged Skills
 
-Bundled Skills belong to the installed Broker/companion version. Upgrade those packages to receive new workflow and reference files, then restart the host (`/restart` in OMP). A Notion copy or same-name local Skill has its own identity; the `@builtin` selector always identifies the packaged workflow.
+Bundled Skills belong to the installed Broker/companion version. Upgrade those packages to receive new workflow and reference files, then restart the host (`/restart` in OMP). A Notion copy or same-name local Skill has its own identity; the `@builtin` selector always identifies the packaged workflow. Optional Notion team copies are native Skills managed by the user: upgrades neither overwrite nor delete them, and an active task does not silently switch its selected instructions.
 
 Your Notion data and connected source directories remain under the CLI's normal management. Use the maintenance or synchronization Skill for those tasks. Upgrade Broker to update its paired CLI/SDK and workflows. A separate global CLI upgrade does not replace the runtime already bundled in Broker. See [bundled Skills](./packages/context-broker/docs/reference.md#bundled-skills) and [build inputs](./CONTRIBUTING.md#bundling-cli-and-skills).
 
@@ -270,13 +317,16 @@ Choose checks through [verification routing](https://github.com/yoyooyooo/pi-con
 - [Configuration examples](./packages/context-broker/examples/config.example.yml) and [catalog example](./packages/context-broker/examples/discovery-catalog.example.yaml).
 - [Broker verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-context-broker/SKILL.md) and [Notion integration verification Skill](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/SKILL.md): checkout procedures and feature maps. The [daily installation and native menu map](https://github.com/yoyooyooo/pi-context-broker/blob/next/.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md) separately covers actual installations, slash menus, live Notion and model consumption. CLI consumption verification lives in `.cursor/skills/verify-notion-consumption/SKILL.md` in the [CLI repository](https://github.com/yoyooyooo/notion-skills-cli/tree/next). These routes do not imply completed acceptance.
 - [Contributing](./CONTRIBUTING.md): development checks, verification and release workflow.
-- [Benchmark protocol](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-protocol.md), [running a comparison](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-running.md), [synthetic corpus](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-corpus.md), and [evidence analysis](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-analysis.md): frozen, bounded comparisons using the maintained Pi SDK on the `benchmark` branch. The [recorded pilot and offline replay](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-pilot-2026-11-22.md) retain an external authorization block and incomplete coverage; they do not establish model or environment superiority.
 - [Changelog](./CHANGELOG.md) and [security policy](./SECURITY.md).
 
 ## Privacy and support
 
-The broker runs with the host agent's local permissions. Selected Skill content is sent to your configured model provider and stored in session history. Routers expose member metadata and paths; their bodies are loaded separately. Use trusted roots, catalogs and Notion databases. Notion credentials stay with `ntn-skills`; metadata and selected bodies/resources are cached locally. Source errors expose safe codes instead of raw stderr or secrets. Paths are home-relative by default; `pathMode: hash` provides stronger path redaction, and decision logs omit paths unless enabled.
+The broker runs with the host agent's local permissions. Selected Skill content is sent to your configured model provider and stored in session history. Router selection includes its own body and member metadata; member bodies are read separately when needed. Use trusted roots, catalogs and Notion databases. Notion credentials stay with `ntn-skills`; metadata and selected bodies/resources are cached locally. Source errors expose safe codes instead of raw stderr or secrets. Paths are home-relative by default; `pathMode: hash` provides stronger path redaction, and decision logs omit paths unless enabled.
 
 Local Pi/OMP checks have run on macOS; CI runs CLI and artifact checks on Linux. Windows path-list separators are supported, but Windows runtime behavior remains unverified. Native Tern UI checks require macOS; remote panes and the Tern web client are unsupported by the manual companion.
 
 Report bugs through [GitHub Issues](https://github.com/yoyooyooo/pi-context-broker/issues); use the [private security reporting channel](https://github.com/yoyooyooo/pi-context-broker/security/advisories/new) for vulnerabilities. Licensed under [MIT](./LICENSE); bundled dependency notices are included in the distributed query.
+
+## Benchmark development
+
+The `benchmark` branch compares candidate consumption environments with accepted versions and provides targeted native calibration. Start with [running a comparison](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-running.md), [the protocol](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-protocol.md), and [evidence analysis](https://github.com/yoyooyooo/pi-context-broker/blob/benchmark/docs/benchmark-analysis.md). Retained runs keep their original product and material identities; reanalysis does not execute models or establish new product behavior.

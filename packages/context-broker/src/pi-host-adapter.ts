@@ -2,8 +2,12 @@ import { dirname } from "node:path";
 import type { HostCapabilities } from "./host-adapter";
 import type { ExtensionAPI, PiReadDefinition, SkillRecord } from "./types";
 import { installPiDollarAutocompleteEditor } from "./pi-dollar-editor";
+import { presentPiAuthorization } from "./pi-authorization";
 import { DEFAULT_RESOURCE_READ_BUDGET, MAX_RESOURCE_READ_BUDGET, normalizeResourceReadBudget } from "./resource-read-types";
 import { consumptionEffectsJsonSchema } from "./consumption-effects";
+import { createPiReadRenderers } from "./pi-read-renderer";
+import { loadPiNotionRenderers } from "./pi-notion-renderer";
+import { relativeReadInput } from "./native-reference";
 
 const escapeText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const PI_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
@@ -37,11 +41,30 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
     paths: { host: "pi" },
     submission: { mode: "transform", receipt: "input-digest" },
     metadataDiscovery: "deferred",
-    registerReadExecutor(execute) {
+    notionToolRenderers: loadPiNotionRenderers,
+    presentAuthorization: presentPiAuthorization,
+    registerReadExecutor(execute, displayForCall) {
       const register = api.registerTool, allTools = api.getAllTools, activeTools = api.getActiveTools;
       if (!register || !allTools || !activeTools) return undefined;
       let installedParameters: Record<string, unknown> | undefined;
+      let sessionBound = false;
+      const registerRenderer = api.registerToolRenderer;
+      // Pi replays a resumed session before session_start. Register display
+      // decoration now; getAllTools is only available after the session binds.
+      registerRenderer?.((toolName, next) => {
+        const native = next();
+        if (toolName !== "read" || !native) return native;
+        if (sessionBound) {
+          const current = allTools().find(tool => tool.name === "read");
+          const owned = current?.sourceInfo.source === "builtin"
+            || installedParameters !== undefined && current?.parameters === installedParameters;
+          if (!owned) return native;
+        }
+        return { ...native, ...createPiReadRenderers({ native,
+          getDisplay: displayForCall ? ({ toolCallId }) => displayForCall(toolCallId) : undefined }) };
+      });
       api.on("session_start", async (_event, ctx) => {
+        sessionBound = true;
         if (installedParameters) return;
         const original = allTools().find(tool => tool.name === "read");
         if (original?.sourceInfo.source !== "builtin") return;
@@ -60,6 +83,7 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
         // Providers may reject root combinators. Enforce the two exclusive modes
         // before shared preparation or native I/O, including direct tool callers.
         const parameters: Record<string, unknown> = { type: "object", additionalProperties: false, properties: { ...scalarProperties, paths,
+          from: { type: "string", description: "For an authored relative file link, copy the fixed sr:S/sr:R or canonical skill:// ref of the actual file containing that link. Put the original relative link or skill:// reference in path; an omitted Library binds from the containing file. Nested documents use their own resource ref, not the main Skill ref. Source-backed cross-Skill links resolve through the shared Source mapping; targets keep their own versions. Excludes paths batches and refresh:true." },
           budget: { type: "object", additionalProperties: false, required: ["timeBudgetMs"],
             properties: { timeBudgetMs: { type: "integer", minimum: 1, maximum: MAX_RESOURCE_READ_BUDGET.timeBudgetMs } },
             description: "For a user-requested bounded wait on a resource paths batch only. timeBudgetMs covers the complete operation, including lookup and acquisition; default 30000, maximum 120000. File and byte limits stay unchanged. No automatic retry." },
@@ -83,12 +107,16 @@ export function createPiHostAdapter(api: ExtensionAPI, loadReadFactory: ReadFact
                 || input.paths.some(value => typeof value !== "string" || !resourceRef.test(value)))) {
               throw Object.assign(new Error("Choose one file path or an explicit resource paths array"), { code: "INVALID_ARGUMENT" });
             }
+            relativeReadInput(input);
             if (hasPaths) normalizeResourceReadBudget(input.budget);
             return execute(input, context, signal,
-              (updated, preparedSignal) => native.execute(id, updated, preparedSignal ?? signal, onUpdate, context), id);
+              (updated, preparedSignal) => {
+                const { from: _from, ...nativeInput } = updated;
+                return native.execute(id, nativeInput, preparedSignal ?? signal, onUpdate, context);
+              }, id);
           },
-          ...(native.renderCall ? { renderCall: (input, theme, context) => native.renderCall!(
-            Array.isArray(input.paths) ? { path: input.paths.join(", ") } : input, theme, context) } : {}),
+          ...(registerRenderer ? {} : createPiReadRenderers({ native,
+            getDisplay: displayForCall ? ({ toolCallId }) => displayForCall(toolCallId) : undefined })),
         };
         register(definition);
         installedParameters = parameters;

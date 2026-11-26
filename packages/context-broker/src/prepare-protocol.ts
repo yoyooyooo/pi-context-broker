@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { parseNativeReference } from "./native-reference";
+import { parseNativeReference, notionPageId } from "./native-reference";
 import type { ContentRecord, SkillRecord } from "./types";
 import { consumptionEffects, type ConsumptionEffects } from "./consumption-effects";
 
@@ -145,7 +145,7 @@ export function decodePreparedGraph(value: unknown, input: { purpose: Preparatio
 }
 
 /** Expose failure provenance and budgets without forwarding raw response bodies or URLs. */
-export type PreparationDenial = { scope: string; id: string; ref: string; code: "CONTENT_DISABLED" | "ACCESS_DENIED" | "AUTH_REQUIRED" };
+export type PreparationDenial = { scope: string; id: string; ref: string; code: "CONTENT_DISABLED" | "ACCESS_DENIED" | "AUTH_REQUIRED"; page_id?: string };
 type PreparationFailureDetails = Record<string, unknown> & { preparation?: unknown; retry_after?: number; denials?: readonly PreparationDenial[]; effects?: ConsumptionEffects; roots?: readonly { scope: string; id: string }[];
   field?: "Requires" | "Members"; page_id?: string };
 export function preparationFailureDetails(value: unknown): PreparationFailureDetails | undefined {
@@ -187,8 +187,12 @@ export function preparationFailureDetails(value: unknown): PreparationFailureDet
       // A parent's error can originate in a child. Retain only the exact
       // failing node or explicit dependency identity, never the root guess.
       if (target.state !== "failed") continue;
+      // Physical denial is explicit SDK evidence, never inferred from a logical
+      // record's current locator or a UUID-looking stable Skill ID.
+      const page_id = code === "ACCESS_DENIED" && object(error.details) && typeof error.details.page_id === "string"
+        ? notionPageId(error.details.page_id) : undefined;
       if (!denials.some(value => value.id === target.id && value.code === code))
-        denials.push({ scope: preparation.scope, id: target.id, ref: target.ref, code });
+        denials.push({ scope: preparation.scope, id: target.id, ref: target.ref, code, ...(page_id === undefined ? {} : { page_id }) });
     }
   }
   return {

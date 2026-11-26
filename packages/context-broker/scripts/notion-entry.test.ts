@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import * as filesystem from "node:fs/promises";
@@ -47,18 +48,18 @@ test("binary batch rejects invalid bytes, traversal, symlinks and cancellation w
 });
 async function entry(nested = false, resourceHasFileId = true) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "broker-entry-boundary-")));
-  const id = "shared_skill:entry-test:owner", snapshot = "s_" + hash("entry snapshot"), scope = hash("entry scope");
+  const id = "skill://owner?library=e7b5437d-6cd8-51fd-9db5-a13084be814d", snapshot = "s_" + hash("entry snapshot"), scope = hash("entry scope");
   const main = nested ? "instructions/SKILL.md" : "SKILL.md", resource = "references/guide.md";
-  const ref = "skill://" + encodeURIComponent(id) + "/";
+  const ref = id;
   const content: ContentRecord = {
     id, kind: "skill", name: "owner", alias: "owner", description: "Entry boundary", default_context: false, enabled: true,
-    entrypoint: main, ref: ref + main,
-    locator: { type: "shared_skill", library_id: "entry-test", skill_id: "owner", page_id: "00000000-0000-4000-8000-000000000001",
+    entrypoint: main, ref: nativeFileRef(ref, String(main)),
+    locator: { type: "shared_skill", library_id: "e7b5437d-6cd8-51fd-9db5-a13084be814d", skill_id: "owner", page_id: "00000000-0000-4000-8000-000000000001",
       database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" },
   };
   const bytes = new Map([[main, Buffer.from("---\nname: owner\n---\nExact main instructions.\n")], [resource, Buffer.from("Exact resource bytes.\n")]]);
   const files = [...bytes].map(([path, bytes]) => ({ path, bytes: bytes.length, sha256: hash(bytes),
-    ref: ref + path + "?snapshot=" + snapshot + (path === main ? "&file_id=main" : resourceHasFileId ? "&file_id=guide" : "") }));
+    ref: nativeFileRef(ref, String(path), String(snapshot)) }));
   const metadata: SkillRecord = { ...content, sourceId: "notion", source: "notion", sourceScope: scope,
     path: join(root, "metadata", "SKILL.md"), aliases: [], normalizedAliases: [], normalizedName: "owner", normalizedDescription: "Entry boundary", autoloadEnabled: false };
   const selected: SkillRecord = { ...metadata, body: bytes.get(main)!.toString("utf8"), snapshotId: snapshot, versionId: hash("version"),
@@ -97,13 +98,13 @@ test("a conflicting entry manifest or foreign File ID cannot replace an immutabl
   const f = await entry();
   await expect(publishNotionEntry(f.selected, f.files.map(file => file.path === f.resource ? { ...file, sha256: hash("different") } : file), join(f.root, "cache"), ensure))
     .rejects.toMatchObject({ code: "SOURCE_OUTPUT_CONFLICT" });
-  await expect(publishNotionEntry(f.selected, f.files.map(file => file.path === f.resource ? { ...file, ref: file.ref.replace("file_id=guide", "file_id=foreign") } : file), join(f.root, "cache"), ensure))
-    .rejects.toMatchObject({ code: "SHARED_FILE_BINDING_UNAVAILABLE" });
+  await expect(publishNotionEntry(f.selected, f.files.map(file => file.path === f.resource ? { ...file, ref: file.ref + "&file_id=foreign" } : file), join(f.root, "cache"), ensure))
+    .rejects.toMatchObject({ code: "SOURCE_REFERENCE_INVALID" });
   expect(await readFile(f.selected.path)).toEqual(f.bytes.get(f.main)!);
   expect(f.selected.entryManifest?.local_files_ready).toBe(false);
 });
 
-test("native resource tools resolve stable File ID and report materialization without claiming main delivery", async () => {
+test("native resource tools read exact manifest paths and report materialization without claiming main delivery", async () => {
   const f = await entry();
   const events = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   const api = { on(name: string, listener: (event: never, ctx: ExtensionContext) => unknown) { events.set(name, [...events.get(name) ?? [], listener]); } } as ExtensionAPI;
@@ -119,10 +120,10 @@ test("native resource tools resolve stable File ID and report materialization wi
     },
   }, createPiHostAdapter(api));
   const emit = async (name: string, event: unknown) => { const result = []; for (const listener of events.get(name) ?? []) result.push(await listener(event as never, ctx)); return result; };
-  const input = { path: f.files[1]!.ref.replace(f.resource, "old-spelling.md") };
+  const input = { path: f.files[1]!.ref };
   const pending = emit("tool_call", { toolName: "read", toolCallId: "resource", input });
   expect(mainReads).toBe(0); expect(requested).toEqual([]);
-  expect(input.path).toContain("old-spelling.md");
+  expect(input.path).toBe(f.files[1]!.ref);
   metadata.resolve({ records: [f.metadata], failures: [] });
   const admission = await pending;
   expect(admission, JSON.stringify(admission)).not.toContainEqual(expect.objectContaining({ block: true }));
@@ -167,7 +168,7 @@ test("a completed cold resource cannot authorize an old read after a controlled 
     },
   }, createPiHostAdapter(api));
   const emit = async (name: string, event: unknown) => { const values = []; for (const listener of events.get(name) ?? []) values.push(await listener(event as never, ctx)); return values; };
-  const original = f.files[1]!.ref.replace(f.resource, "old-spelling.md"), input = { path: original };
+  const original = f.files[1]!.ref, input = { path: original };
   const pending = emit("tool_call", { toolName: "read", toolCallId: "old-resource", input });
   const output = await completed.promise;
   expect(await readFile(output)).toEqual(f.bytes.get(f.resource)!);
@@ -285,7 +286,7 @@ for (const resourceHasFileId of [true, false]) for (const scheduling of ["sequen
     const proof = (message.details as { contextBrokerResource: Record<string, unknown> }).contextBrokerResource;
     expect(proof).toMatchObject({ ref: reference, path: f.resource, delivered_complete_text: true, loaded: false });
     expect(proof.file_id).toBe(resourceHasFileId ? "guide" : undefined);
-    expect(parseNativeReference(String(proof.ref)).fileId).toBe(resourceHasFileId ? "guide" : undefined);
+    expect(parseNativeReference(String(proof.ref))).not.toHaveProperty("fileId");
     expect(Object.hasOwn(JSON.parse(JSON.stringify(proof)), "file_id")).toBe(resourceHasFileId);
   }
   const stored = JSON.stringify(history);

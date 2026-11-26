@@ -1,3 +1,4 @@
+import { withNativeSnapshot, parseNativeReference } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -61,15 +62,16 @@ async function childProcess(command, args, { cwd, env, ledger, category, passthr
 // A tracing process around the installed public CLI. It forwards every command
 // unchanged apart from requesting metrics, and never supplies catalog/graph data.
 async function publicCommand(state, args, passthrough = false) {
-  assert.ok(['list', 'views', 'prepare', 'read', 'files', 'schema', 'ctl'].includes(args[0]));
-  if (args[0] === 'ctl') assert.ok(args[1] === 'views' || args[1] === 'doctor' || args[1] === 'cache' && args[2] === 'identity');
-  const measured = ['list', 'prepare', 'read', 'files'].includes(args[0]) && !args.includes('--metrics') ? [...args, '--metrics'] : args;
+  assert.ok(['list', 'views', 'read', 'files', 'schema', 'ctl'].includes(args[0]));
+  if (args[0] === 'ctl') assert.ok(args[1] === 'prepare' || args[1] === 'views' || args[1] === 'doctor' || args[1] === 'cache' && args[2] === 'identity');
+  const command = args[0] === 'ctl' && args[1] === 'prepare' ? 'prepare' : args[0];
+  const measured = ['list', 'prepare', 'read', 'files'].includes(command) && !args.includes('--metrics') ? [...args, '--metrics'] : args;
   assert.equal(hash(await readFile(state.cli)), state.cliSha256, 'The installed CLI changed after the run was frozen');
   const result = await childProcess([process.execPath, state.cli], measured, { cwd: state.cwd, env: state.env, ledger: state.ledger, category: 'installed-cli', passthrough });
   let response;
   try { response = JSON.parse(result.stdout); } catch { /* The raw failed output remains evidence. */ }
   const metrics = response?.request_metrics === undefined ? undefined : safeRequestMetrics(response.request_metrics);
-  const receipt = { ...result, command: args[0], args: measured, response, metrics };
+  const receipt = { ...result, command, args: measured, response, metrics };
   await save(join(state.responses, result.id + '.json'), receipt);
   return receipt;
 }
@@ -85,8 +87,8 @@ export function nextSessionTool(context, plan) {
         throw new Error('Expected tool failure did not occur: ' + id);
       const diagnostic = (typeof result.content === 'string' ? result.content
         : (result.content ?? []).filter(part => part.type === 'text').map(part => part.text ?? '').join('\n')).trim().replace(/^Error: /u, '');
-      const matches = expected.name === 'notion_use' && expected.code === 'CATALOG_INCOMPLETE'
-        ? diagnostic === 'context-broker source operation failed (CATALOG_INCOMPLETE)'
+      const matches = expected.name === 'notion_use' && expected.code === 'SHARED_GRAPH_METADATA_UNAVAILABLE'
+        ? diagnostic === 'context-broker source operation failed (SHARED_GRAPH_METADATA_UNAVAILABLE)'
         : expected.name === 'read' && expected.code === 'SNAPSHOT_MISSING' && /\(SNAPSHOT_MISSING\)/u.test(diagnostic);
       if (!matches || result.details?.contextBrokerPreparation !== undefined || result.details?.contextBrokerRead !== undefined)
         throw new Error('Unexpected failure or success receipt: ' + id);
@@ -199,7 +201,7 @@ export function unchangedSelection(before, after) {
   return hash(canonical(selected(after)));
 }
 
-export function fixedMainFailureTarget(selection, messages, ref, database) {
+export function fixedMainFailureTarget(selection, messages, ref, library) {
   assert.equal(selection.status, 'passed', 'A fixed-main exception needs the actual successful first selection');
   const delivered = selection.delivery.filter(item => item.ref === ref);
   assert.equal(delivered.length, 1);
@@ -210,7 +212,7 @@ export function fixedMainFailureTarget(selection, messages, ref, database) {
   const binding = nodes[0].binding, record = binding.record;
   assert.equal(binding.scope, delivered[0].scope); assert.equal(record.id, delivered[0].id);
   assert.equal(binding.snapshot_id, delivered[0].snapshot_id); assert.equal(binding.body_sha256, delivered[0].body_sha256);
-  assert.equal(record.locator.database_id, database);
+  assert.equal(record.locator.library_id, library);
   const locks = scopes[0].graph_locks.filter(lock => lock.roots.includes(record.id));
   assert.equal(locks.length, 1); const { sha256, ...vector } = locks[0];
   assert.equal(hash(canonical(vector)), sha256); assert.equal(vector.scope, binding.scope);
@@ -224,17 +226,14 @@ export function fixedMainFailureTarget(selection, messages, ref, database) {
   const files = proofs[0].directory.files.filter(file => file.path === record.entrypoint);
   assert.equal(files.length, 1); assert.equal(files[0].ref, ref);
   assert.equal(files[0].sha256, delivered[0].body_sha256); assert.equal(files[0].bytes, delivered[0].bytes);
-  const fixed = new URL(ref), current = new URL(record.ref);
-  assert.equal(fixed.protocol, 'skill:'); assert.equal(current.protocol, 'skill:');
-  assert.equal(decodeURIComponent(fixed.hostname), record.id); assert.equal(fixed.host, current.host);
-  assert.equal(decodeURIComponent(fixed.pathname.slice(1)), record.entrypoint); assert.equal(fixed.pathname, current.pathname);
-  assert.equal(current.search, ''); assert.equal(fixed.hash, ''); assert.equal(current.hash, '');
-  assert.deepEqual([...fixed.searchParams.keys()].sort(), ['file_id', 'snapshot']);
-  assert.equal(fixed.searchParams.get('snapshot'), binding.snapshot_id);
-  const fileId = fixed.searchParams.get('file_id'); assert.ok(fileId);
-  const target = record.ref + '?snapshot=' + binding.snapshot_id;
-  fixed.searchParams.delete('file_id'); assert.equal(fixed.href, target, 'Only the proven main File ID may be omitted from a graph target');
-  return { ref, target, owner: record.id, scope: binding.scope, snapshot: binding.snapshot_id, database, entrypoint: record.entrypoint, fileId };
+  const fixed = parseNativeReference(ref), current = parseNativeReference(record.ref);
+  assert.equal(fixed.selector, record.id); assert.equal(fixed.selector, current.selector);
+  assert.equal(fixed.path, record.entrypoint); assert.equal(fixed.path, current.path);
+  assert.equal(current.snapshot, undefined); assert.equal(fixed.snapshot, binding.snapshot_id);
+  const target = withNativeSnapshot(record.ref, binding.snapshot_id);
+  assert.equal(ref, target, 'The graph target retains the exact selected main reference');
+  return { ref, target, owner: record.id, scope: binding.scope, snapshot: binding.snapshot_id, library, entrypoint: record.entrypoint };
+
 }
 
 export function failedSourceEvidence(receipts, expected) {
@@ -244,17 +243,18 @@ export function failedSourceEvidence(receipts, expected) {
   const failed = failures[0];
   assert.ok(Number.isInteger(failed.code) && failed.code !== 0 && !failed.signal && !failed.timedOut, 'A missing PID or timeout cannot prove the planned error');
   const sourceArgs = receipt => {
-    assert.ok(Array.isArray(receipt.args) && receipt.args.every(value => typeof value === 'string')
-      && receipt.args[0] === receipt.command, 'The source command must match its recorded argv');
+    assert.ok(Array.isArray(receipt.args) && receipt.args.every(value => typeof value === 'string'), 'The source command must match its recorded argv');
+    const prefix = receipt.command === 'prepare' ? ['ctl', 'prepare'] : [receipt.command];
+    assert.deepEqual(receipt.args.slice(0, prefix.length), prefix, 'The source command must match its recorded argv');
     return receipt.args;
   };
-  // The original source adapter passes read/files/prepare targets immediately
-  // after the command; a matching database or other flag value is not a target.
+  // Targets immediately follow read/files or ctl prepare; a matching database
+  // or other flag value is not a target.
   const fixedMain = expected.code === 'SNAPSHOT_MISSING' && failed.command === 'prepare' ? expected.fixedMain : undefined;
   if (fixedMain) {
     assert.equal(fixedMain.ref, expected.ref);
-    assert.deepEqual(sourceArgs(failed), ['prepare', fixedMain.target, '--purpose', 'inspect', '--database', fixedMain.database, '--max-age', '0', '--metrics'], 'Only the one pinned-main inspect preparation is permitted');
-  } else assert.ok(expected.commands.includes(failed.command) && sourceArgs(failed)[1] === expected.ref, 'The failed source must receive the exact requested reference');
+    assert.deepEqual(sourceArgs(failed), ['ctl', 'prepare', fixedMain.target, '--purpose', 'inspect', '--library', fixedMain.library, '--max-age', '0', '--metrics'], 'Only the one pinned-main inspect preparation is permitted');
+  } else assert.ok(expected.commands.includes(failed.command) && sourceArgs(failed)[failed.command === 'prepare' ? 2 : 1] === expected.ref, 'The failed source must receive the exact requested reference');
   assert.equal(failed.response?.ok, false);
   assert.equal(failed.response.error?.code, expected.code);
   if (fixedMain) {
@@ -273,13 +273,31 @@ export function failedSourceEvidence(receipts, expected) {
     assert.equal(error.target, fixedMain.target); assert.equal(error.code, 'SNAPSHOT_MISSING'); assert.equal(error.details?.snapshot_id, fixedMain.snapshot);
   }
   if (expected.dataSource) {
+    assert.equal(expected.code, 'SHARED_GRAPH_METADATA_UNAVAILABLE');
+    assert.equal(failed.command, 'prepare');
     assert.ok(failed.args.includes('--refresh'), 'Failed refresh must actually request a fresh observation');
-    const coverage = failed.response.error.details;
-    assert.equal(coverage?.method, 'explicit_database'); assert.equal(coverage?.exhaustive, false);
-    assert.ok(Array.isArray(coverage?.failed_sources) && coverage.failed_sources.length === 1, 'Only the controlled Skills inventory may fail');
-    const source = coverage.failed_sources[0];
-    assert.equal(source.id, expected.dataSource.id); assert.equal(source.data_source_id, expected.dataSource.id);
-    assert.equal(source.database_id, expected.dataSource.database); assert.equal(source.code, 'NOT_FOUND');
+    assert.equal(failed.args.filter(value => value === '--library').length, 1);
+    assert.equal(failed.args[failed.args.indexOf('--library') + 1], expected.dataSource.library);
+    const details = failed.response.error.details, preparation = details?.preparation;
+    assert.equal(typeof details?.path, 'string');
+    assert.equal(details.path.split('?')[0], 'v1/data_sources/' + expected.dataSource.id + '/query');
+    assert.equal(preparation?.version, 1); assert.equal(preparation?.purpose, 'use'); assert.equal(preparation?.status, 'failed');
+    assert.match(preparation.scope, /^[0-9a-f]{64}$/u);
+    assert.deepEqual(preparation.roots, [{ target: expected.ref, readiness: 'not_ready' }]);
+    assert.equal(preparation.nodes.length, 1); const node = preparation.nodes[0];
+    assert.equal(node.id, parseNativeReference(expected.ref).selector); assert.equal(node.ref, expected.ref);
+    assert.deepEqual(node.roles, ['root']); assert.equal(node.state, 'failed');
+    assert.equal(node.error?.code, expected.code);
+    assert.equal(node.content, undefined); assert.equal(node.binding, undefined); assert.equal(preparation.graph_lock, undefined);
+    assert.equal(preparation.usage?.prepared_nodes, 0); assert.equal(preparation.usage?.instruction_bytes, 0);
+    for (const field of ['observed_bindings', 'required', 'required_closure']) assert.deepEqual(preparation[field], []);
+    assert.equal(preparation.errors.length, 1); const error = preparation.errors[0];
+    assert.equal(error.target, expected.ref); assert.equal(error.code, expected.code);
+    for (const diagnostic of [details, node.error.details, error.details]) {
+      assert.equal(diagnostic?.path, details.path); assert.equal(diagnostic?.cause_code, 'NOT_FOUND');
+      assert.equal(diagnostic?.http_status, 404); assert.equal(diagnostic?.notion_code, 'object_not_found');
+      assert.equal(diagnostic?.phase, 'definitive_rejection');
+    }
   }
   const measured = receipts.filter(receipt => ['list', 'prepare', 'read', 'files'].includes(receipt.command));
   assert.ok(measured.every(receipt => receipt.metrics?.complete), 'A planned error cannot hide source costs');
@@ -307,7 +325,7 @@ export function failedSourceEvidence(receipts, expected) {
     }
   }
   return { id: failed.id, command: failed.command, args: failed.args, code: failed.response.error.code,
-    ...(expected.dataSource ? { failedSource: failed.response.error.details.failed_sources[0], failedAttempts } : {}),
+    ...(expected.dataSource ? { failedSource: failed.response.error.details, failedAttempts } : {}),
     ...(fixedMain ? { fixedMain } : {}), exitCode: failed.code, httpAttempts: attempts.length, attempts };
 }
 
@@ -327,7 +345,7 @@ export function sourceLedgerEvidence(receipts, requests, processes) {
       // Keep that gap visible; full server accounting below does not make this
       // subprocess successful or manufacture a per-invocation zero ledger.
       assert.equal(receipt.command, 'ctl'); assert.equal(receipt.args.length, 5);
-      assert.deepEqual(receipt.args.slice(0, 4), ['ctl', 'cache', 'identity', '--database']);
+      assert.deepEqual(receipt.args.slice(0, 4), ['ctl', 'cache', 'identity', '--library']);
       assert.ok(typeof receipt.args[4] === 'string' && receipt.args[4].length > 0);
       assert.equal(receipt.code, null); assert.equal(receipt.signal, 'SIGTERM');
       assert.equal(receipt.stdout, ''); assert.equal(receipt.stderr, ''); assert.equal(receipt.response, undefined);
@@ -356,14 +374,14 @@ export function sourceLedgerEvidence(receipts, requests, processes) {
 }
 
 async function oracle(state, info, revision) {
-  const listed = await publicCommand(state, ['list', '--database', info.database, '--view', info.view]);
+  const listed = await publicCommand(state, ['list', '--library', info.library_id, '--view', info.view]);
   assert.equal(listed.code, 0, listed.stdout + listed.stderr); assert.equal(listed.response.count, 1);
   assert.equal(listed.response.records[0].id, info.logical_ids.root);
-  const all = await publicCommand(state, ['list', '--database', info.database]);
+  const all = await publicCommand(state, ['list', '--library', info.library_id]);
   assert.equal(all.code, 0, all.stdout + all.stderr); assert.equal(all.response.records.length, 3);
   const roots = ['root', 'optional'].map(role => all.response.records.find(record => record.id === info.logical_ids[role])?.ref);
   assert.ok(roots.every(Boolean));
-  const prepared = await publicCommand(state, ['prepare', ...roots, '--purpose', 'use', '--refresh']);
+  const prepared = await publicCommand(state, ['ctl', 'prepare', ...roots, '--purpose', 'use', '--refresh']);
   assert.equal(prepared.code, 0, prepared.stdout + prepared.stderr); assert.equal(prepared.response.status, 'ready');
   const nodes = prepared.response.nodes.filter(node => node.state === 'prepared');
   assert.equal(nodes.length, 3);
@@ -444,7 +462,7 @@ export async function runGraphSession(options) {
     const sessions = join(base, 'sessions'); await mkdir(sessions);
     const provider = await sessionProvider(base), plan = join(base, 'plan.json'), config = join(base, 'broker.json');
     await save(plan, { stage: 'initial', steps: [] });
-    const sourceConfig = (state, cacheDir) => ({ sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: [process.execPath, helper, '--source', join(state.cwd, 'source-state.json')], database: info.database, default_view_id: info.view, cacheDir, prefetch: false, activation: { maxAge: '0' }, discovery: { maxAge: '0' }, requestTimeoutMs: 30000 }] });
+    const sourceConfig = (state, cacheDir) => ({ sources: [{ type: 'notion', id: 'notion', namespace: 'notion', command: [process.execPath, helper, '--source', join(state.cwd, 'source-state.json')], library: info.library_id, default_view_id: info.view, cacheDir, prefetch: false, activation: { maxAge: '0' }, discovery: { maxAge: '0' }, requestTimeoutMs: 30000 }] });
     await save(config, sourceConfig(consumer, cache));
     const guard = join(base, 'tools.mjs');
     await writeFile(guard, 'import { readFileSync } from "node:fs"; export default api=>{const tools=' + JSON.stringify(tools) + ',management=' + JSON.stringify(managementTools) + ',plan=' + JSON.stringify(plan) + ';let active=tools;const set=value=>{active=value;api.setActiveTools?.(value);};api.on("session_start",()=>set(tools));api.on("before_agent_start",()=>{const value=JSON.parse(readFileSync(plan,"utf8"));set(value.steps[0]?.name==="notion_ctl"?management:tools);});api.on("tool_result",event=>{const value=JSON.parse(readFileSync(plan,"utf8")),expected=value.expectedFailure;if((!event.isError||expected?.index===value.steps.length-2&&expected.name===event.toolName)&&event.toolCallId===value.stage+":"+(value.steps.length-2))set(management);});api.on("tool_call",e=>active.includes(e.toolName)?undefined:{block:true,reason:"Controlled session enables graph management only for its explicit audit step"});};\n');
@@ -544,9 +562,9 @@ export async function runGraphSession(options) {
     await setControl('B', true);
     try {
       await stage('failed-refresh-keeps-a', [prepare([currentRef('root')], true)], aRequired, [], {
-        expectedFailure: { index: 0, name: 'notion_use', code: 'CATALOG_INCOMPLETE' },
+        expectedFailure: { index: 0, name: 'notion_use', code: 'SHARED_GRAPH_METADATA_UNAVAILABLE' },
         selectionBefore: resumedA.selectedGraph,
-        source: { commands: ['prepare'], ref: currentRef('root'), code: 'CATALOG_INCOMPLETE', dataSource: { id: info.data_source_id, database: info.database } },
+        source: { commands: ['prepare'], ref: currentRef('root'), code: 'SHARED_GRAPH_METADATA_UNAVAILABLE', dataSource: { id: info.data_source_id, library: info.library_id } },
       });
       const afterFailedRefresh = await readFile(originalSession);
       assert.deepEqual(afterFailedRefresh.subarray(0, beforeFailedRefresh.length), beforeFailedRefresh, 'Failed refresh rewrote original native history');
@@ -570,8 +588,8 @@ export async function runGraphSession(options) {
     await stage('resumed-refresh-keeps-b', [], b.nodes, []);
     await stopHost();
     const fixedA = firstSelection.delivery.find(receipt => receipt.id === info.logical_ids.root);
-    assert.ok(fixedA && new URL(fixedA.ref).searchParams.get('snapshot') === fixedA.snapshot_id);
-    const fixedMain = fixedMainFailureTarget(firstSelection, await json(join(evidence, 'cold-root-required-a-messages.json')), fixedA.ref, info.database);
+    assert.ok(fixedA && parseNativeReference(fixedA.ref).snapshot === fixedA.snapshot_id);
+    const fixedMain = fixedMainFailureTarget(firstSelection, await json(join(evidence, 'cold-root-required-a-messages.json')), fixedA.ref, info.library_id);
     const fixedCheckState = await stateFor('unavailable-fixed-cli');
     const fixedCheck = await publicCommand(fixedCheckState, ['read', fixedA.ref]);
     manifest.fixedCliCheck = failedSourceEvidence([fixedCheck], { commands: ['read'], ref: fixedA.ref, code: 'SNAPSHOT_MISSING' });

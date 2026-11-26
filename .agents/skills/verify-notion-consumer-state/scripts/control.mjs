@@ -20,8 +20,9 @@ const hashFile = file => hash(fs.readFileSync(file));
 const lockPath = path.join(repository, "verification/models/consumer-observations/tool-lock.json");
 function doctor() {
   const [major, minor, patch] = process.versions.node.split(".").map(Number);
-  assert.ok(major === 24 && minor >= 20 || major === 22 && (minor > 22 || minor === 22 && patch >= 3),
-    "Use supported Node 22.22.3+ or 24.20.0+");
+  assert.ok((major === 24 && (minor > 22 || (minor === 22 && patch >= 3))) ||
+    (major === 26 && (minor > 13 || (minor === 13 && patch >= 1))),
+    "Use supported Node ^24.22.3 or ^26.13.1");
   const tool = process.env.PSTACK_STATECHART_ROOT, jar = process.env.TLA2TOOLS;
   assert.ok(tool && path.isAbsolute(tool) && jar && path.isAbsolute(jar), "Set absolute PSTACK_STATECHART_ROOT and TLA2TOOLS from the existing frozen tool installation");
   const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
@@ -92,7 +93,7 @@ try {
     ["contracts", process.execPath, ["--test", "scripts/formal-result-contract.test.mjs"]],
     ["observations", process.execPath, ["scripts/verify-consumer-observations.mjs", "--suite", "observations", "--out", path.join(out, "observations")]],
     ["models", process.execPath, ["scripts/verify-consumer-observations.mjs", "--suite", "consumer-state", "--out", path.join(out, "models")]],
-    ["regressions", "bun", ["test", ...["consumer-observation", "consumer-state", "host-prepare", "host-refresh", "resource-read-host", "session-active", "session-refresh", "session-recovery", "native-read-session", "skill-context-session"].map(name => "packages/context-broker/scripts/" + name + ".test.ts"), "--timeout", "30000"]],
+    ["regressions", "bun", ["test", ...["consumer-observation", "consumer-state", "host-content-search", "content-search", "pi-authorization", "host-prepare", "host-refresh", "resource-read-host", "session-active", "session-refresh", "session-recovery", "native-read-session", "skill-context-session"].map(name => "packages/context-broker/scripts/" + name + ".test.ts"), "--timeout", "30000"]],
     ["observation-mutations", process.execPath, ["scripts/check-consumer-observation-mutations.mjs", "--out", path.join(out, "observation-mutations")]],
     ["mutations", process.execPath, ["scripts/check-consumer-state-mutations.mjs", "--out", path.join(out, "mutations")]],
   ];

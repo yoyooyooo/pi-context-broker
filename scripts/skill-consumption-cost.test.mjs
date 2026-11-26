@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { skillFileRef } from './skill-ref-fixture.mjs';
 import { after, test } from 'node:test';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -334,8 +335,8 @@ test('resource batch cost observes actual nonempty text spans and never binary o
     offsets.push({ start, end, encoding: 'json' }); cursor = end + 1;
   }
   const proof = { version: 2, toolCallId: 'resource-batch', loaded: false,
-    selection: { scope: 'scope', owner: 'shared_skill:lib:resource', snapshot_id: 's_' + 'a'.repeat(64), version_id: 'b'.repeat(64) },
-    files: files.map((file, index) => ({ index, model_ref: file.ref, ref: 'skill://owner/' + file.path, path: file.path, loaded: false,
+    selection: { scope: 'scope', owner: 'skill://resource?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', snapshot_id: 's_' + 'a'.repeat(64), version_id: 'b'.repeat(64) },
+    files: files.map((file, index) => ({ index, model_ref: file.ref, ref: skillFileRef('skill://resource?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', file.path, 's_' + 'a'.repeat(64)), path: file.path, loaded: false,
       ...(file.kind === 'text' ? { state: 'source', encoding: 'utf8', delivered_complete_text: true, sha256: sha(bodies[index]), bytes: Buffer.byteLength(bodies[index]), delivery: offsets[index] }
         : { state: 'binary', encoding: 'base64', delivered_complete_text: false, sha256: file.sha256, bytes: file.bytes }) })),
     projection: { version: 1, compiler: 'context-broker/resource-read/v1', rendered: { sha256: sha(text), bytes: Buffer.byteLength(text) } } };
@@ -355,8 +356,8 @@ test('scalar resource v2 counts the exact native prefix and keeps effects outsid
   const body = '\uFEFF# Reference\r\n完整正文 🧭 & "quoted"\r\n';
   const effects = { version: 1, remote_writes: 'none', author_content: 'unchanged' };
   const footer = '\n\n<notion-effects>' + JSON.stringify(effects) + '</notion-effects>';
-  const proof = { version: 2, toolCallId: 'fixed-resource', id: 'original-owner', scope: 'original-scope',
-    ref: 'skill://original-owner/reference.md', path: 'reference.md', snapshot_id: 's_' + 'a'.repeat(64),
+  const proof = { version: 2, toolCallId: 'fixed-resource', id: 'skill://original-owner?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', scope: 'original-scope',
+    ref: skillFileRef('skill://original-owner?library=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'reference.md', 's_' + 'a'.repeat(64)), path: 'reference.md', snapshot_id: 's_' + 'a'.repeat(64),
     loaded: false, delivered_complete_text: true, bytes: Buffer.byteLength(body), sha256: sha(body),
     delivery: { start: 0, end: body.length, encoding: 'raw' } };
   const message = { role: 'toolResult', toolName: 'read', toolCallId: proof.toolCallId, isError: false,
@@ -612,4 +613,24 @@ test('shrinking only the first request cannot conceal more tool rounds or higher
   assert.equal(result.status, 'rejected'); assert.equal(result.regressions[0].code, 'COST_FIRST_REQUEST_ONLY_IMPROVEMENT');
   const failed = copy(baseline); failed.samples[0].status = 'failed';
   assert.ok(compareConsumptionRuns({ baseline, candidate: failed }).regressions.some(item => item.code === 'COST_TASK_SUCCESS_REGRESSION'));
+});
+
+test('Responses cost records actual API, nested effort and terminal identity without changing provider input', async () => {
+  const observed = await observe({ context: { model: { provider: 'magpie', id: 'group/worker', api: 'openai-responses' } },
+    payload: { model: 'group/worker', reasoning: { effort: 'high' }, input: [{ role: 'user', content: 'private request' }] },
+    assistantFields: { provider: 'magpie', model: 'group/worker', api: 'openai-responses',
+      responseId: 'resp_cost_fixture', rawStopReason: 'completed' } });
+  const request = observed.events.find(row => row.phase === 'provider_request');
+  const message = observed.events.find(row => row.phase === 'message_end').message;
+  assert.equal(request.api, 'openai-responses'); assert.equal(request.reasoningEffort, 'high');
+  assert.equal(message.api, 'openai-responses'); assert.equal(message.responseId, 'resp_cost_fixture');
+  assert.equal(message.rawStopReason, 'completed');
+  assert.equal(fs.readFileSync(observed.file, 'utf8').includes('private request'), false);
+});
+
+test('Responses cost does not invent API, identity or completion from invalid native metadata', async () => {
+  const observed = await observe({ assistantFields: { api: { secret: 'private' }, responseId: 'bad response id with spaces',
+    rawStopReason: { status: 'completed' } } });
+  const message = observed.events.find(row => row.phase === 'message_end').message;
+  for (const key of ['api', 'responseId', 'rawStopReason']) assert.equal(message[key], null, key);
 });

@@ -6,17 +6,22 @@
 
 | 当前领域 | 入口 | 套件与边界 |
 | --- | --- | --- |
-| Broker 资格与交付 | verify-notion-consumer-state | observations 的 Availability/ReadRace；consumer-state 的 FreshnessPublication/SelectionGraph/DeliveryBoundary |
+| Broker 资格、Library 与交付 | verify-notion-consumer-state | observations 的 Availability/ReadRace；consumer-state 的 FreshnessPublication/SelectionGraph/DeliveryBoundary/RecoveryClosure/LibrarySession |
 | CLI 请求引擎 | CLI verify-notion-consumption | CLI 原 request-engine runner；预算、取消与请求调度由其 owner 维护 |
 | 当前管理、来源与消费 | 各仓既有领域测试和 integration Skill | current operation、SDK、import 失效与实际包检查；不由已退役模型代证 |
 
-完整路由见 [验证交接表](verification-routing.md)。跨域变更执行相交的必要检查，不新增全链路总验证 Skill。当前 SDK v2 消费恒零语义写入；旧隐式 retention、readOnly 开关和独立管理回执接受流程已退出形式化入口。
+完整路由见 [验证交接表](verification-routing.md)。跨域变更执行相交的必要检查，不新增全链路总验证 Skill。SDK v3 消费恒零语义写入；旧隐式 retention、readOnly 开关和独立管理回执接受流程已退出形式化入口。
 
 ## 结果合同
 
 每套 coverage 的 `cases.expected_rules` 是独立审阅的完整清单，含安全性、已声明的时序性质和 NoDeadlock。不得从变更后的 config 自动生成期待。正例 broken 为空；故意破坏的负例要求 broken 集合精确一致，多一条或少一条均失败。
 
 既有 runner 先核 protected source bytes、固定 TLC 和完整 statechart 工具字节，再执行当前输入。缺工具、语法错误、工具异常、超时、cut、未检查规则和不完整结果均失败。读取报告和原 TLC 结果，不能只看退出码。
+
+正式 model runner 接受真实 Git checkout，或官方 paired command 的封存源码。
+无 `.git` 时，复用 CLI 的 `formal_source_identity.py` 校验 run/build manifest、原始
+commit、源清单及受保护源码、模型、配置和 runner 的实际字节。开发 overlay 不属于
+选中 build，仍被拒绝；不能补造 HEAD 或把开发回放当作最终候选证明。
 
 输出使用仓库外新建或预建的空绝对目录；mutation 输出自身须不存在。失败诊断保留在本轮输出，下次用新目录。真实 mutation 在隔离副本内要求 baseline 通过、行为断言失败、精确恢复后通过，并核 active checkout 未变；装配或解析错误不能代替行为检出。
 
@@ -29,6 +34,33 @@
 | 实现/受保护测试 | 追到真实 owner、caller 和 guard；运行相关代码回归、真实守卫破坏/恢复及对应模型 |
 
 源码漂移默认阻断。先读 diff、判断模型映射或产品缺陷，再更新精确 hash。仅刷新 hash 不算审阅。source coverage 只绑定实际状态 owner、守卫和必要测试；包 pin/build、指导文案与安装配置由各自集成检查负责，不伪装成有限模型的证明前提。
+
+### Skill 引用与固定文件
+
+Skill 引用 v2 使用完整 root URI 表达 Library 与稳定 Skill ID；资格模型中的 scope 仍是来源和授权范围，不能被 URI 的 `library` 参数替代。实际入口先用配对 CLI 的纯协议解析，再进入现有资格、选择和交付守卫。Notion 页面地址的当前查询与实际物理权限拒绝保留独立证据，不能把形似 UUID 的 Skill ID 解释成页面。
+
+固定文件按选定 owner、snapshot 和精确 path 查 manifest。原生 File ID 只作为内部 binding，Source 文件可以没有对应 File 行。短引用的同一路径不能换绑另一 File ID，同一原生 File ID 也不能在同一固定 owner 下改路径。`check-consumer-state-mutations.mjs` 的两项 `fixed-resource-*` 检查直接破坏这两个实现守卫；报告以 `concrete_obligations` 标明其边界，`properties` 为空。既有有限 TLA 未建模 File ID 与路径的对应关系，不从模型通过推导这个关系正确。
+
+两套 coverage 的 `current_review.skill_reference_v2` 记录实际 owner、caller 和回放对应。URI 文法、Library 绑定、Source 相对路径及所选包字节分别由 CLI 引用模型、协议和集成测试验证；这里保留原有模型、独立规则清单和负例。
+
+### Library 的 branch 与 turn 绑定
+
+LibrarySession 复用 consumer-state runner，增加一个正例和十个故意缺陷配置。
+先验证选择，再保存当前 branch 的默认 root；已接纳的 turn、完整 ref 的单次目标、
+目录 ticket 与原固定 pin 保持各自所有权。选择 B 不等于取消 A。
+独立 oracle 保存原 A turn、A producer payload、parent branch 的 A 和旧 A pin，
+不从可变默认值反推预期结果。
+
+`library-selection.ts` 的 active branch、每次 input 本地选择、失败 blocked、
+publication ticket 与 command session 守卫，以及 `host-skills.ts` 的 running turn
+优先上下文，共对应六项 `library-*` 真实 mutation。coverage 只记录审阅过的字节与
+对应关系；模型和 mutation 是否通过，以同一候选实际保留的运行结果为准。
+
+有限模型只包含默认主 Library 与一个显式跨库调用。同轮多个 `$name@source`
+选择各自已配置的 Source，不改变默认；无 `@source` 名称只查当前默认 Library。
+这些组合、UUID/URL 入口、同名实际字节和 Pi 序列化由消费/集成层核验。
+CLI 根身份、四表物理 parent、root CREATE 与原 pending 寻址沿其 LibraryLifecycle，
+不在 Broker 复制一个初始化协议。
 
 ## CI 和 Skill
 

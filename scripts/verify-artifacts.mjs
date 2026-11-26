@@ -5,28 +5,29 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from "no
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { verifyPackageClosure, verifyBundledRuntime } from "./verify-package-closure.mjs";
+import { verifyPackageClosure, verifyBundledNotices, verifyBundledRuntime, packageInstallationEnvironment } from "./verify-package-closure.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
-const usage = "Usage: node scripts/verify-artifacts.mjs --fixture CURRENT_FIXTURE_JSON --source-http-helper ABSOLUTE_HELPER";
+const usage = "Usage: node scripts/verify-artifacts.mjs --fixture CURRENT_FIXTURE_JSON --source-http-helper ABSOLUTE_HELPER [--archive CHECKED_TARBALL] [--report NEW_ABSOLUTE_JSON]";
 const options = new Map();
 for (let index = 0; index < args.length; index += 2) {
   const key = args[index], value = args[index + 1];
-  assert.ok(["--fixture", "--source-http-helper"].includes(key) && !options.has(key) && value && isAbsolute(value), usage);
-  options.set(key, await realpath(value));
+  assert.ok(["--fixture", "--source-http-helper", "--archive", "--report"].includes(key) && !options.has(key) && value && isAbsolute(value), usage);
+  options.set(key, key === "--report" ? resolve(value) : await realpath(value));
 }
-assert.equal(options.size, 2, usage);
+assert.ok(options.has("--fixture") && options.has("--source-http-helper"), usage);
 const fixture = JSON.parse(await readFile(options.get("--fixture"), "utf8"));
 assert.equal(fixture.version, 2);
 assert.equal(fixture.kind, "current-notion-service");
 assert.ok(!("snapshots" in fixture), "Historical seeded fixtures are retired");
 const selectedEntry = process.env.NTN_SKILLS_BUILD_ENTRY;
+const downloads = { cache: process.env.npm_config_cache, proxy: process.env.HTTPS_PROXY || process.env.HTTP_PROXY };
 assert.ok(selectedEntry && isAbsolute(selectedEntry), "NTN_SKILLS_BUILD_ENTRY must select the current paired CLI");
 const base = await realpath(await mkdtemp(join(tmpdir(), "broker-artifacts-")));
 console.log("Artifact workspace retained: " + base);
 const report = { version: 2, status: "running", startedAt: new Date().toISOString(),
-  boundary: "Independently installed Broker and SDK v2 with controlled current Notion HTTP.",
+  boundary: "Independently installed Broker and SDK v3 with controlled current Notion HTTP.",
   notRun: ["Pi session", "provider/model", "live Notion", "OMP", "Tern"],
   currentSdk: { status: "not_run" } };
 const saveReport = () => writeFile(join(base, "manifest.json"), JSON.stringify(report, null, 2) + "\n");
@@ -61,7 +62,9 @@ async function selectedBuildInput(entry) {
       const exported = metadata.exports?.["./sdk"];
       const sdk = typeof exported === "string" ? exported : exported?.import;
       return { package: metadata.name, version: metadata.version, manifest: await identity(path),
-        cli: await identity(entry), sdk: await identity(await runtimePath(directory, sdk)) };
+        cli: await identity(entry), sdk: await identity(await runtimePath(directory, sdk)),
+        ref: await identity(await runtimePath(directory, metadata.exports?.["./ref"]?.require)),
+        notices: await identity(await runtimePath(directory, "THIRD_PARTY_NOTICES.md")) };
     }
     const parent = dirname(directory);
     assert.notEqual(parent, directory, "Explicit build entry must belong to an ntn-skills package");
@@ -75,6 +78,8 @@ async function verifyDocumentLinks(directory, entries) {
     if (!entry.endsWith(".md") || visited.has(file)) continue;
     visited.add(file);
     const document = await readFile(file, "utf8");
+    assert.ok(!/(?:\/Users\/[^/\s]+\/|\/home\/[^/\s]+\/|https:\/\/(?:linear\.app|app\.notion\.com|(?:www\.)?notion\.so)\/)/u.test(document),
+      "Public package documentation contains a private workspace path or workspace-only link: " + entry);
     for (const match of document.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) {
       const [target, fragment] = match[1].split("#");
       if (/^[a-z][a-z\d+.-]*:/i.test(target)) continue;
@@ -95,27 +100,42 @@ await saveReport();
 try {
   const selected = await selectedBuildInput(selectedEntry);
   report.buildInput = selected;
-  const output = join(base, "archives");
-  await mkdir(output);
-  run("bun", ["scripts/pack.mjs", "--target", "broker", "--out-dir", output], { cwd: root });
+  let archive = options.get("--archive");
+  if (!archive) {
+    const output = join(base, "archives");
+    await mkdir(output);
+    run("bun", ["scripts/pack.mjs", "--target", "broker", "--out-dir", output], { cwd: root });
+    const archives = (await readdir(output)).filter(name => name.endsWith(".tgz"));
+    assert.equal(archives.length, 1);
+    assert.equal((await readdir(output)).some(name => name.includes("tern")), false);
+    archive = join(output, archives[0]);
+  }
   assert.deepEqual(await selectedBuildInput(selectedEntry), selected, "Build input changed while packaging");
-  const archives = (await readdir(output)).filter(name => name.endsWith(".tgz"));
-  assert.equal(archives.length, 1);
-  assert.equal((await readdir(output)).some(name => name.includes("tern")), false);
-  const archive = join(output, archives[0]);
-  const closure = await verifyPackageClosure({ brokerArchive: archive, base: join(base, "strict-closure") });
+  const closure = await verifyPackageClosure({ brokerArchive: archive, base: join(base, "strict-closure"), downloads });
   const installed = closure.installed;
   const metadata = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
   report.package = { name: metadata.name, version: metadata.version, installed, archive: await identity(archive) };
+  report.notices = verifyBundledNotices({ selectedNoticesBytes: await readFile(selected.notices.path),
+    bundledNoticesBytes: await readFile(join(installed, "dist/NOTICES.txt")), expectedSha256: selected.notices.sha256 });
   const runtime = JSON.parse(await readFile(join(installed, "dist/ntn-skills-runtime.json"), "utf8"));
   report.runtime = { ...runtime, hashes: verifyBundledRuntime({ manifest: runtime, expectedVersion: selected.version,
     cliBytes: await readFile(join(installed, "dist/ntn-skills.mjs")),
-    sdkBytes: await readFile(join(installed, "dist/ntn-skills-sdk.mjs")) }) };
+    sdkBytes: await readFile(join(installed, "dist/ntn-skills-sdk.mjs")),
+    refBytes: await readFile(join(installed, "dist/ntn-skills-ref.cjs")) }) };
   const sdk = await import(pathToFileURL(join(installed, "dist/ntn-skills-sdk.mjs")).href);
-  assert.equal(sdk.SDK_VERSION, 2);
+  assert.equal(sdk.SDK_VERSION, 3);
+  assert.equal(sdk.SKILL_REF_VERSION, 2);
+  const pure = await import(pathToFileURL(join(installed, "dist/ntn-skills-ref.cjs")).href);
+  assert.equal(pure.default.SKILL_REF_VERSION, 2);
+  assert.equal(runtime.ref_sha256, selected.ref.sha256, "The installed parser must be the selected CLI artifact bytes");
   for (const name of ["listCatalog", "consume", "readSkill", "readResources"])
     assert.equal(typeof sdk[name], "function", name + " must be exported by the actual installed SDK");
-  await verifyDocumentLinks(installed, ["README.md", "README.zh-CN.md", "docs/reference.md", "docs/reference.zh-CN.md", "CONTRIBUTING.md"]);
+  const currentDocs = ["README.md", "fixed-resource-batches.md", "reference.md", "reference.zh-CN.md", "skill-consumption-runtime.md"];
+  assert.deepEqual((await readdir(join(installed, "docs"))).sort(), currentDocs,
+    "The published documentation must contain only the current reference allowlist");
+  await verifyDocumentLinks(installed, ["README.md", "README.zh-CN.md", "CONTRIBUTING.md", "SECURITY.md",
+    ...currentDocs.map(name => "docs/" + name)]);
+  report.documentation = { status: "passed", files: currentDocs, privateReferences: 0 };
 
   // The pinned Pi package provides Jiti only. This does not start or validate a Pi host.
   const loader = join(base, "loader");
@@ -123,8 +143,7 @@ try {
   await writeFile(join(loader, "package.json"), JSON.stringify({ name: "current-broker-loader", private: true }));
   const loaderHome = join(loader, "home");
   await mkdir(loaderHome);
-  const loaderEnv = { PATH: dirname(process.execPath) + ":/usr/bin:/bin:/usr/sbin:/sbin",
-    HOME: loaderHome, TMPDIR: base, LANG: "en_US.UTF-8" };
+  const loaderEnv = packageInstallationEnvironment({ home: loaderHome, base, ...downloads });
   run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact",
     "@earendil-works/pi-coding-agent@1.5.2"], { cwd: loader, env: loaderEnv });
   const piPackage = join(loader, "node_modules/@earendil-works/pi-coding-agent/package.json");
@@ -140,7 +159,7 @@ try {
   assert.equal(report.currentSdk.child_starts, 0);
   assert.deepEqual(report.currentSdk.not_run, report.notRun);
   report.status = "passed";
-  console.log("Artifact verification passed: installed Broker/SDK v2 current HTTP consumption; Pi session/provider/model not run.");
+  console.log("Artifact verification passed: installed Broker/SDK v3 current HTTP consumption; Pi session/provider/model not run.");
 } catch (error) {
   report.status = "failed"; report.error = { code: error.code ?? error.name, message: error.message };
   throw error;
@@ -148,4 +167,5 @@ try {
   report.finishedAt = new Date().toISOString();
   await writeFile(join(base, "commands.json"), JSON.stringify(commands, null, 2) + "\n");
   await saveReport();
+  if (options.has("--report")) await writeFile(options.get("--report"), JSON.stringify(report, null, 2) + "\n", { flag: "wx" });
 }

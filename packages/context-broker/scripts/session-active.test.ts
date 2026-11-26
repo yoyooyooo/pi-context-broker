@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
@@ -20,14 +21,14 @@ const scope = "e".repeat(64);
 function graph(revision = "A", purpose: PreparationPurpose = "use", root = "root"): PreparedHostGraph {
   const hasRequired = purpose === "use" && root !== "required";
   const records = (hasRequired ? [root, "required"] : [root]).map((name): SkillRecord => {
-    const id = "shared_skill:controlled:" + name;
+    const id = nativeSkillId("1031b73d-3a2f-589c-9bdb-ebb50a7eb063", String(name));
     const metadata: ContentRecord = { id, kind: "skill", name, alias: name, description: name, enabled: true, default_context: false,
-      entrypoint: "SKILL.md", ref: "skill://" + encodeURIComponent(id) + "/SKILL.md",
-      locator: { type: "shared_skill", library_id: "controlled", skill_id: name, page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000002", data_source_id: "00000000-0000-4000-8000-000000000003" } };
+      entrypoint: "SKILL.md", ref: nativeFileRef(id, "SKILL.md"),
+      locator: { type: "shared_skill", library_id: "1031b73d-3a2f-589c-9bdb-ebb50a7eb063", skill_id: name, page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000002", data_source_id: "00000000-0000-4000-8000-000000000003" } };
     const body = `Complete ${name} instructions ${revision}.\n`, snapshotId = "s_" + hash(name + revision);
     return { ...metadata, source: "notion", sourceId: "controlled", sourceScope: scope, body, snapshotId, versionId: hash(body),
       path: "/immutable/" + name + "/SKILL.md", aliases: [], normalizedName: name, normalizedAliases: [], normalizedDescription: name, autoloadEnabled: false,
-      preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: metadata.ref + "?snapshot=" + snapshotId } };
+      preparationBinding: { record: metadata, scope, snapshot_id: snapshotId, version_id: hash(body), body_sha256: hash(body), ref: withNativeSnapshot(metadata.ref, snapshotId) } };
   });
   const vector = { version: 1 as const, kind: "observed_version_vector" as const, purpose, scope, roots: [records[0]!.id!],
     required: hasRequired ? [{ from: records[0]!.id!, to: records[1]!.id!, ref: records[1]!.preparationBinding!.ref }] : [], bindings: records.map(record => record.preparationBinding!) };

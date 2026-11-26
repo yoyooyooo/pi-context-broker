@@ -30,11 +30,18 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
     const { default: contextBroker, buildDollarRegistry, invokeForContext } = await import(pathToFileURL(join(primary.root, "src/index.ts")).href);
     const { loadNotionSkill, ReferenceMiss, SourceError } = primary.boundary;
     const sources = fixtures.map((fixture, index) => ({ ...fixture.source, id: kinds[index]!, namespace: kinds[index]! }));
-    let faults: Record<string, string> = {}, delayed = Promise.withResolvers<void>();
+    let defaultLibrary = primary.descriptor.library_id;
+    primary.state.selectLibrary = async options => options.library ?? defaultLibrary;
+    primary.state.resolveLibrary = async options => {
+      const fixture = fixtures.find(value => value.descriptor.library_id === (options.library ?? defaultLibrary));
+      assert.ok(fixture, "Selected root must be one of the configured fixture Libraries");
+      return fixture.descriptor;
+    };
+    let faults: Record<string, string> = {}, delayed = Promise.withResolvers<void>(), releasePrompt = Promise.withResolvers<void>();
     const adapters = fixtures.map((fixture, index) => {
       const kind = kinds[index]!, consume = fixture.state.consume.bind(fixture.state);
       return {
-        database: fixture.source.database,
+        library: fixture.source.library,
         list(options: { directory?: unknown; defaultView?: boolean; view?: string }) {
           if (faults[kind] === "discovery-denied") throw { code: "ACCESS_DENIED" };
           const catalog = faults[kind] === "removed" ? { ...fixture.state.catalog, records: [], count: 0 } : fixture.state.catalog;
@@ -44,6 +51,7 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
         },
         async consume(input: Parameters<typeof consume>[0], options: Parameters<typeof consume>[1]) {
           const fault = faults[kind];
+          if (fault === "delayed-prompt") { delayed.resolve(); await releasePrompt.promise; }
           if (fault === "delayed-miss") {
             assert.ok(options.signal, "Current SDK operation must receive its cancellation signal");
             delayed.resolve();
@@ -58,7 +66,7 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
               value.entries[0]!.source_body.has_more = true;
               return value;
             }
-            if (!fault || fault === "removed" || fault === "discovery-denied") return value;
+            if (!fault || fault === "removed" || fault === "discovery-denied" || fault === "delayed-prompt") return value;
             const code = fault === "denied" ? "ACCESS_DENIED" : "NOT_FOUND";
             const path = fault === "child-miss" ? "v1/blocks/77777777-7777-4777-8777-777777777777/children"
               : fault === "other-page" ? "v1/pages/99999999-9999-4999-8999-999999999999" : "v1/pages/" + fixture.record.locator.page_id;
@@ -70,13 +78,13 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
         },
       };
     });
-    const adapter = (database?: string) => {
-      const found = adapters.find(value => value.database === database);
-      assert.ok(found, "SDK must preserve the selected source database");
+    const adapter = (library?: string) => {
+      const found = adapters.find(value => value.library === library);
+      assert.ok(found, "SDK must preserve the selected Library root");
       return found;
     };
-    primary.state.list = options => adapter(options.database).list(options);
-    primary.state.consume = (input, options) => adapter(options.database).consume(input, options);
+    primary.state.list = options => adapter(options.library).list(options);
+    primary.state.consume = (input, options) => adapter(options.library).consume(input, options);
     const config = { sources };
     const { records: discovered } = await buildDollarRegistry(config, root);
     const records = discovered.filter(record => record.source === "notion");
@@ -84,7 +92,7 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
     const skill = records.find(record => record.kind === "skill")!;
     const setFault = async (value: Record<string, string>) => { faults = value; };
     const calls = async (): Promise<Call[]> => primary.calls.map(call => ({
-      source: kinds[fixtures.findIndex(fixture => fixture.source.database === call.options.database)]!, operation: call.operation,
+      source: kinds[fixtures.findIndex(fixture => fixture.source.library === call.options.library)]!, operation: call.operation,
     }));
     const malformedCode = process.env.CONTEXT_BROKER_GRAPH_CORE ? "CONSUME_INVALID_PROOF" : "SOURCE_PREPARATION_INVALID";
 
@@ -118,6 +126,7 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
     assert.match(JSON.stringify(mixed), /context-broker-unavailable/);
 
     for (const host of ["omp", "pi"] as const) {
+      defaultLibrary = primary.descriptor.library_id;
       await setFault({ skill: "root-miss" });
       const configPath = join(root, host + "-config.json");
       await writeFile(configPath, JSON.stringify({ sources: sources.map(source => ({ ...source, cacheDir: join(root, host + "-" + source.id + "-cache") })) }));
@@ -134,10 +143,17 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
         registerCommand(name, command) { commands.set(name, command); },
         sendUserMessage(content) { sent.push(content); },
       };
+      const registrationStart = (await calls()).length;
       await contextBroker(api);
       const emit = async (name: string, event: unknown) => {
         const values = [];
-        for (const listener of listeners.get(name) ?? []) values.push(await listener(event as never, ctx));
+        let current = event;
+        for (const listener of listeners.get(name) ?? []) {
+          const result = await listener(current as never, ctx);
+          values.push(result);
+          if (name === "context" && result && typeof result === "object" && "messages" in result && Array.isArray(result.messages))
+            current = { ...object(current), messages: result.messages };
+        }
         return values;
       };
       // Reuse the installed official Pi runner when this existing test setting is supplied.
@@ -189,12 +205,34 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
         } else { await emit("agent_start", {}); await emit("agent_end", {}); }
         return { submitted, results, task };
       };
+      const ordinary = await submit("$ui-alpha use the default Library only");
+      assert.equal(ordinary.task.split(canary).length - 1, 0, "An unqualified same-name selection cannot borrow another Library's Prompt");
+      assert.doesNotMatch(JSON.stringify(ordinary.results), /kind=\\?"router/);
+      assert.ok((await calls()).slice(registrationStart).filter(call => ["list", "consume"].includes(call.operation))
+        .every(call => call.source === "skill"), "Default discovery and names do not enumerate another configured Library");
+      delayed = Promise.withResolvers<void>(); releasePrompt = Promise.withResolvers<void>();
+      await setFault({ prompt: "delayed-prompt" });
+      const late = submit("$ui-alpha@prompt delayed explicit Source");
+      await delayed.promise;
+      defaultLibrary = fixtures[2]!.descriptor.library_id;
+      releasePrompt.resolve();
+      const lateResult = await late;
+      assert.equal(lateResult.task.split(canary).length - 1, 1);
+      assert.match(lateResult.task, new RegExp(fixtures[1]!.descriptor.library_id), "A late explicit Source result retains its own root after the global default changes");
+      const changedAt = (await calls()).length;
+      const switched = await submit("$ui-alpha use the newly selected default Library");
+      assert.match(JSON.stringify(switched.results), /kind=\\?"router/);
+      assert.ok((await calls()).slice(changedAt).filter(call => ["list", "consume"].includes(call.operation))
+        .every(call => call.source === "router"), "The next input selects the new default without inheriting the prior explicit Source");
+      defaultLibrary = primary.descriptor.library_id;
+      await setFault({ skill: "root-miss" });
       for (const round of ["FIRST", "SECOND"]) {
         const before = (await calls()).length;
         const text = `$unknown@elsewhere $ui-alpha@skill $ui-alpha@skill $ui-alpha@prompt $ui-alpha@prompt $ui-alpha@router ${round}`;
         const { submitted, results, task } = await submit(text);
         assert.ok(submitted.startsWith(text), "Original material and missing refs remain intact");
-        assert.equal(task.split(canary).length - 1, 1, "One Prompt body per submission in the actual task projection");
+        assert.equal(task.split(canary).length - 1, 1, "One Prompt body per submission in the actual task projection: " + JSON.stringify({ host, notices, calls: (await calls()).slice(before), submitted }));
+        if (host === "pi") assert.match(task, new RegExp(fixtures[1]!.descriptor.library_id), "An explicit Source keeps its own full Library identity");
         assert.match(JSON.stringify(results), /kind=\\?"router/);
         assert.doesNotMatch(JSON.stringify(results), /kind=\\?"skill/);
         const turn = (await calls()).slice(before);
@@ -280,9 +318,13 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
         else {
           assert.equal(object(input).action, "continue");
           await emit("before_agent_start", { prompt: text, systemPrompt: "base" });
-          await assert.rejects(projectPi(text), new RegExp(code!));
+          const projected = await projectPi(text);
+          assert.match(JSON.stringify(projected), new RegExp(code!));
+          assert.match(JSON.stringify(projected), /context-broker-preparation-warning/);
+          assert.ok(notices.some(notice => notice.includes(code!)));
+          assert.equal(aborts, 0, "A failed Skill preparation cannot abort Pi's user turn");
         }
-        assert.equal(sent.length, before, "Known failure cannot dispatch a submission");
+        assert.equal(sent.length, before, "A failed selection must not dispatch a duplicate submission");
         if (host === "omp") {
           assert.equal(drafts.at(-1), text);
           assert.ok(notices.some(notice => notice.includes(code!)), fault + " stays a visible failure");
@@ -297,7 +339,7 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
         await emit("before_agent_start", { prompt: "$ui-alpha@skill delayed material", systemPrompt: "base" });
         await projectPi("$ui-alpha@skill delayed material");
       });
-      const settled = host === "pi" ? assert.rejects(pending, /cancelled/i) : pending;
+      const settled = pending;
       await delayed.promise;
       await emit("session_before_switch", {});
       await settled;

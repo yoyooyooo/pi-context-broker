@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot } from "../src/native-reference";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
@@ -33,10 +34,10 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
   // A canonical owner reaches exact metadata lookup directly. A physical page
   // UUID instead requires the authorized page-to-owner resolver, which this
   // focused discovery fixture deliberately does not provide.
-  const owner = "shared_skill:startup:entry";
+  const owner = "skill://entry?library=6a001315-53e9-5ef7-b414-6aa7f715ad7a";
   const record: SkillRecord = {
     kind: "skill", id: owner, sourceId: "fixture", source: "notion", sourceScope: "startup-scope",
-    ref: "skill://" + encodeURIComponent(owner) + "/SKILL.md", entrypoint: "SKILL.md",
+    ref: nativeFileRef(owner, "SKILL.md"), entrypoint: "SKILL.md",
     name: "startup", token: "fixture/startup", path, description: "Startup fixture", aliases: [],
     normalizedName: "startup", normalizedAliases: [], normalizedDescription: "startup fixture", autoloadEnabled: false, defaultDiscovery: false,
   };
@@ -182,7 +183,8 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       } else {
         await f.emit("session_before_switch");
         f.move();
-        await assert.rejects(bounded(context, "The old print operation must settle at session replacement"), /cancelled/i);
+        const retired = await bounded(context, "The old print operation must settle at session replacement without an extension error");
+        assert.ok(!JSON.stringify(retired).includes(body));
         assert.equal(f.aborts(), 0, "The replaced operation cannot abort the new session");
       }
       assert.deepEqual(f.loads, []);
@@ -198,7 +200,10 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       await turn();
       assert.equal(finished, false, "Explicit acquisition waits inside the cancellable context boundary");
       assert.deepEqual(f.loads, []);
-      assert.deepEqual(await f.emit("input", { source: "rpc", text }), [{ action: "handled" }], "A quick second Enter cannot acquire a second submission");
+      const images = [{ type: "image" as const, mimeType: "image/png", data: "queued-image" }];
+      const queued = await f.emit("input", { source: "rpc", text, images, streamingBehavior: "followUp" });
+      assert.deepEqual(queued, text.startsWith("/skill:") ? [{ action: "transform", text: "\n" + text, images }] : [{ action: "continue" }],
+        "A second submission and its images remain owned by Pi's native queue");
       f.resolve();
       const [projection] = await bounded(context, "Selected context must finish after metadata");
       assert.equal(f.loads.length, 1);
@@ -210,6 +215,13 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
         assert.equal(original, text);
         assert.deepEqual(prepared?.map(value => [value.id, value.snapshotId]), [[record.id, "startup-v1"]]);
       });
+      const queuedContent = [{ type: "text", text: submitted }, ...images];
+      const [queuedContext] = await f.emit("context", { messages: [{ role: "user", content: queuedContent }] });
+      assert.equal(f.loads.length, 2, "A queued selection is prepared when its message reaches context, without another input hook");
+      const queuedMessages = object(queuedContext).messages;
+      assert.ok(Array.isArray(queuedMessages));
+      assert.deepEqual(queuedMessages.find(message => object(message).role === "user")?.content, queuedContent);
+      assert.equal(f.aborts(), 0);
       await f.end();
       f.setLoaded();
       const refreshing = f.host().refresh(f.ctx);
@@ -217,12 +229,12 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       await bounded(f.emit("before_agent_start", { prompt: "continue with the active rules", systemPrompt: "base" }), "Active ordinary provider setup stays nonblocking");
       const messages = [{ role: "user" as const, content: body }];
       assert.deepEqual(await f.emit("context", { messages }), [{ messages }], "Ordinary input preserves already active conversation bodies");
-      assert.equal(f.loads.length, 1);
+      assert.equal(f.loads.length, 2);
       f.resolve();
       await refreshing;
     } finally { await f.close(); }
   }
-  for (const code of ["RATE_LIMITED", "NOTION_UNAVAILABLE", "ACCESS_DENIED"]) {
+  for (const code of ["RATE_LIMITED", "NOTION_UNAVAILABLE", "ACCESS_DENIED", "CURRENT_SOURCE_NOT_READY"]) {
     const f = fixture();
     try {
       await f.installed;
@@ -234,15 +246,20 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       assert.match(await bounded(f.systemPrompt(), "Failed discovery must not block final system projection"), /status="unavailable"/);
       for (const text of ["$startup@fixture task", "/skill:fixture-startup task"]) {
         const accepted = await bounded(f.begin(text), "Failed metadata cannot block input acceptance");
-        await assert.rejects(accepted.project(), new RegExp(code));
-        assert.equal(f.ctx.signal?.aborted, true, "An accurate acquisition failure must abort before provider dispatch");
+        const projection = await accepted.project();
+        assert.match(JSON.stringify(projection), new RegExp(code));
+        assert.match(JSON.stringify(projection), /context-broker-preparation-warning/);
+        assert.ok(JSON.stringify(projection).includes(accepted.submitted.replaceAll("\n", "\\n")));
+        assert.equal(f.ctx.signal?.aborted, false, "An acquisition failure must not cancel the user's turn");
+        assert.ok(f.notices.some(notice => notice.includes(code)));
+        assert.ok(!JSON.stringify(projection).includes(body));
         await f.end();
       }
       const [read] = await f.emit("tool_call", { toolName: "read", input: { path: record.ref } });
       assert.equal(object(read).block, true);
       assert.match(String(object(read).reason), new RegExp(code));
       assert.deepEqual(f.loads, []);
-      assert.equal(f.aborts(), 2, "Both failed selected operations were stopped at context");
+      assert.equal(f.aborts(), 0, "Both failed selections continue with warnings");
     } finally { await f.close(); }
   }
   {
@@ -256,8 +273,8 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const context = accepted.project();
       await turn();
       assert.deepEqual(f.loads, []);
-      const replacement = "shared_skill:startup:replacement";
-      f.resolve(1, [{ ...record, id: replacement, ref: "skill://" + encodeURIComponent(replacement) + "/SKILL.md" }]);
+      const replacement = "skill://replacement?library=6a001315-53e9-5ef7-b414-6aa7f715ad7a";
+      f.resolve(1, [{ ...record, id: replacement, ref: nativeFileRef(replacement, "SKILL.md") }]);
       await refreshing;
       await context;
       assert.match(accepted.submitted, /accepted identity/);
@@ -301,7 +318,7 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       const context = accepted.project();
       const settled = boundary === "cancel"
         ? context.then(result => { assert.deepEqual(result, [undefined], "An already aborted Pi operation must not produce an extension error"); })
-        : assert.rejects(context, /cancelled/i);
+        : context.then(result => { assert.ok(!JSON.stringify(result).includes(body), "A retired session cannot publish its late source body"); });
       await turn();
       if (boundary === "cancel") { f.stop(); assert.equal(f.ctx.signal?.aborted, true); }
       else { f.move(); await f.emit(boundary); }
@@ -351,8 +368,9 @@ async function pendingMetadataRegressions(root: string): Promise<void> {
       assert.deepEqual(object(search.details).failures, [{ source: "fixture", code: "ACCESS_DENIED" }]);
       assert.deepEqual(await f.emit("input", { source: "rpc", text: "ordinary with a failed source" }), [{ action: "continue" }]);
       const accepted = await f.begin("/skill:fixture-startup forbidden");
-      await assert.rejects(accepted.project(), /ACCESS_DENIED/);
-      assert.equal(f.ctx.signal?.aborted, true);
+      const projection = await accepted.project();
+      assert.match(JSON.stringify(projection), /ACCESS_DENIED/);
+      assert.equal(f.ctx.signal?.aborted, false);
       assert.deepEqual(f.loads, [], "A known candidate cannot bypass current source permission failure");
     } finally { await f.close(); }
   }

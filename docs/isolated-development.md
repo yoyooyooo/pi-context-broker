@@ -7,6 +7,7 @@ that exact build for each run. A checkout used by the normal CLI or Pi
 installation must not double as a scratch build directory.
 
 - [Create the pair](#create-the-pair)
+- [Move an existing session into a pair](#move-an-existing-session-into-a-pair)
 - [Build and select a generation](#build-and-select-a-generation)
 - [Run with separate state](#run-with-separate-state)
 - [Choose remote and model inputs](#choose-remote-and-model-inputs)
@@ -71,11 +72,63 @@ the branch includes a unique environment suffix to avoid cross-machine collision
 so an index lock or branch change in one task does not affect another. Ordinary
 edits remain available in the task's source trees.
 
+## Move an existing session into a pair
+
+1. Have the current owner record both repositories' origin, branch, HEAD, working
+   status and actual CLI/Broker entries. Include unfinished runs and their remote
+   object scopes before moving any work.
+2. Transfer only that owner's committed changes, or an explicitly reviewed patch
+   with a list of untracked files. Do not collect another session's edits. Create
+   the new pair through the entry above, apply the selected changes and compare
+   the resulting source against the intended commits or patch.
+3. Build a new generation in the pair. Do not copy old `dist`, `node_modules`,
+   Store, scheduler or Pi Session state into it. A stateful recovery of an existing
+   remote operation requires its separately reviewed original-state procedure;
+   it is not a fresh isolated run.
+4. Start a new process with the new explicit generation and verify its identity.
+   Do not replace an entry used by a running process. Continue the same issue or
+   PR with the new pair, build and run coordinates.
+5. Keep the old directory until its owner, unpushed work, active processes and
+   unique evidence are accounted for. Retire only reviewed, owned material through
+   system Trash. A successful new run does not authorize removing the old state.
+
 ## Build and select a generation
+
+Private source, build and run directories still share the host's disk capacity.
+Before a large build or a command run that copies dependencies, check free space
+on the destination volume, for example `df -h /absolute/owned/feature-env`.
+If space is insufficient, stop starting new writes and preserve source, run state
+and first-failure evidence. Continue on another machine in a new owned pair,
+transferring only reviewed commits or patches and checking their commit, tree
+and file hashes before building. Moving files to Trash on the same volume does
+not release capacity. Do not clear another task's directories or permanently
+delete files to make room.
 
 ```sh
 node scripts/paired-environment.mjs build --root /absolute/owned/feature-env
 ```
+
+For a candidate that must come from a published package shape, select the explicit
+packed installation mode:
+
+```sh
+node scripts/paired-environment.mjs build --root /absolute/owned/feature-env \
+  --id onboarding-packed --install-mode packed
+```
+
+This uses the existing npm pack and clean consumer installation convention. It
+packs both built packages with lifecycle scripts disabled, installs each archive
+in its own new consumer, and uses the same archive-to-installed byte check as
+the daily verifier. Every packed file must also match its selected build input.
+`build.json.candidate` records package versions, archives, installed bin/SDK/Broker
+entries and the complete installed dependency inventory. The archives and consumer
+trees are frozen alongside the original source and package inventories.
+
+`run` selects those recorded installed entries for the direct CLI target, private
+CLI wrapper and Broker extension. Do not overwrite a wrapper or edit a frozen
+package to select a candidate. The default `directory` mode keeps the existing
+build layout and behavior. Packed installation is package identity evidence;
+controlled HTTP, actual model behavior and daily acceptance keep their own gates.
 
 If dependency installation requires the machine's configured network proxy,
 name those existing variables explicitly, for example `--pass-env HTTPS_PROXY`.
@@ -84,6 +137,40 @@ If that proxy requires an existing CA bundle, also pass
 This does not permit `NODE_OPTIONS` or disabling TLS verification.
 Builds use the same environment allowlist as runs and record only the passed
 variable names. They do not inherit credentials or proxy settings implicitly.
+
+When an earlier owned build has a useful Bun or npm cache, explicitly pin its inventory
+and copy it into a new build's private cache:
+
+```sh
+node scripts/paired-environment.mjs build --root /absolute/owned/feature-env \
+  --id next-build --bun-cache-from /absolute/owned/prior-env/builds/prior-build \
+  --bun-cache-sha256 REVIEWED_BUN_INVENTORY_SHA256 \
+  --npm-cache-from /absolute/owned/prior-env/builds/prior-build \
+  --npm-cache-sha256 REVIEWED_NPM_INVENTORY_SHA256
+```
+
+Obtain that SHA-256 from this module's exported `inventory` function over the
+selected build's `build-state/cache/bun` or `build-state/cache/npm`. Each cache's
+`--*-cache-from` and `--*-cache-sha256` options are required together; either cache
+can be selected independently.
+The source must be an owned paired build with a terminal build or failure receipt
+and no surviving recorded build process group. A failed build can supply cache
+bytes without becoming a successful build. The source stays unchanged; the new
+cache must not already exist. Every file is copied, including nested
+`node_modules` paths. Internal symlinks are relocated into the new cache;
+external links are refused. Copies have separate inodes, including on APFS.
+
+`bun-cache-seed.json` and `npm-cache-seed.json` record the source hash, relocated target hash, link mapping,
+process evidence and both source/target lock hashes. Each receipt is bound into
+`build.json` and checked with the build; later checks do not require the old cache to remain.
+The hash proves the selected local bytes, not package archive SRI authenticity.
+Different lockfiles are allowed: normal frozen-lockfile, ignore-scripts,
+copyfile installation still runs and fetches missing packages normally. Package
+builds, typechecks and the complete pairing checks remain required. Runtime and
+packed npm consumer installs use `--prefer-offline`, retaining normal dependency
+resolution and integrity checks. Missing metadata or package bytes are fetched
+through the normal registry path. Without cache inputs, each build retains its
+existing fresh-cache behavior.
 
 Each build gets a new ID. It copies the current tracked files and nonignored
 untracked files from both task clones into private source snapshots, using the
@@ -100,6 +187,14 @@ paired package identity and complete runtime file inventory. Its `source_tree`
 inventory also covers the finished source snapshots and all installed build
 dependencies. Treat those build directories as frozen; command runs receive
 separate writable copies.
+
+Build and check both compare the complete selected CLI inventory with the
+Broker's actual receipt. They use `selectedCliInputs` from the frozen Broker
+source when exported. A snapshot without that export uses the original four
+inputs: `package.json`, `dist/ntn-skills.js`, `dist/sdk.js` and `skills`.
+An explicit declaration must include all four; additional declared inputs such
+as `THIRD_PARTY_NOTICES.md` remain required. Missing or changed selected bytes
+fail even when the outer package inventories match.
 
 A successful build returns `build_id` and its `root`. Copy that `build_id` into
 the following commands:
@@ -242,6 +337,12 @@ changing only the working directory is insufficient. The scheduler needs its
 own explicit root because its default uses the operating-system user's home,
 independently of the CLI state root.
 
+Owned candidate prechecks and fresh candidate print runs also bind all five CLI
+roots below their own state directory, including `ntn/scheduler`. The isolated
+host fixture uses `base/ntn/scheduler`. These paths replace an inherited scheduler
+root. The explicit `normal-management` print mode keeps its existing shared
+user Store and scheduler policy; it does not transfer those paths to owned cleanup.
+
 This is process configuration, not a filesystem sandbox. A program can still
 address other paths explicitly. Keep commands within task-owned paths, and use
 an explicit shell template such as `mktemp -d "${TMPDIR%/}/work.XXXXXX"` when
@@ -338,33 +439,35 @@ normal config. This is the default for help, package and local behavior checks.
 
 Use repeated `--pass-env NAME` to pass only the approved credential variables
 needed for a selected scenario. The option names an existing variable; it does
-not accept a secret value. Selecting an entry or parent alone does not pass a
+not accept a secret value. Selecting a Library or parent alone does not pass a
 Notion credential.
 
-To read an authorized test library, provide its canonical Skills database UUID
-as the launcher's `--entry`. This records the intended scope, sets
-`PAIRED_NOTION_ENTRY`, and adds the matching Broker source. Also select that
-database in the public CLI command. Consumption commands use `--database`:
+To read an authorized test library, provide its canonical root page UUID
+as the launcher's `--library`. This records the intended scope, sets
+`PAIRED_NOTION_LIBRARY`, adds the matching Broker source, and writes that root as
+`default_library` in the run's private CLI config. Public CLI commands accept
+the same `--library` selector:
 
 ```sh
 node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
-  --build BUILD_ID --target cli --entry TEST_ENTRY_UUID \
-  --pass-env NOTION_API_TOKEN -- list --database TEST_ENTRY_UUID --json
+  --build BUILD_ID --target cli --library TEST_LIBRARY_ROOT_UUID \
+  --pass-env NOTION_API_TOKEN -- list --library TEST_LIBRARY_ROOT_UUID --json
 ```
 
 For management, follow the selected command's help. For example, validate an
-existing library with `ctl library init --entry`:
+existing library with `ctl library init --library`:
 
 ```sh
 node scripts/paired-environment.mjs run --root /absolute/owned/feature-env \
-  --build BUILD_ID --target cli --entry TEST_ENTRY_UUID \
-  --pass-env NOTION_API_TOKEN -- ctl library init --entry TEST_ENTRY_UUID
+  --build BUILD_ID --target cli --library TEST_LIBRARY_ROOT_UUID \
+  --pass-env NOTION_API_TOKEN -- ctl library init --library TEST_LIBRARY_ROOT_UUID
 ```
 
 The same rule applies inside a command run. For example, a harness can invoke
-`ntn-skills list --database "$PAIRED_NOTION_ENTRY" --json`. The wrapper only
-selects the private executable; it does not choose command flags. A bare `list`
-does not become database-scoped because the launcher received `--entry`.
+`ntn-skills list --library "$PAIRED_NOTION_LIBRARY" --json`. The wrapper only
+selects the private executable; it does not rewrite command flags. A bare `list`
+uses the run's private `default_library`; an explicit command `--library` takes
+precedence. The launcher never changes the user's global default.
 
 For a new-library scenario, select an authorized test parent explicitly.
 `--parent` records the scope and sets `PAIRED_NOTION_PARENT`; it leaves Broker
@@ -382,7 +485,7 @@ by itself. Supply credentials through the approved process environment; do not
 put them in command arguments, examples or committed files. Do not copy the
 user's saved configuration, SQLite Store or cache into a new run.
 
-`--entry` and `--parent` express the intended object scope. They do not narrow a
+`--library` and `--parent` express the intended object scope. They do not narrow a
 Notion integration's API permissions. A caller with broader credentials could
 still issue other requests. Use task-owned remote objects, preserve unknown
 write outcomes, and avoid concurrent writers to one Skill or Source. Runs using
@@ -482,12 +585,20 @@ normal repository workflow. Do not force-push `next` or change a daily package
 pointer merely to test a feature branch. Pair CLI and Broker revisions explicitly
 when the shared contract changes.
 
-The [next delivery gate](next-worktree-delivery.md) still requires clean `next`
-checkouts, exact current remote commits, matching builds and actual normal Pi
-processes. Its branch and freshness checks must not be weakened for task
-branches or dirty development sources. The existing natural workflow
-`candidate-plan` / `candidate-run` path retains its normal-environment contract;
-an isolated run cannot be relabelled as a daily or natural acceptance result.
+The [daily next installation](next-worktree-delivery.md) uses independent packages
+built from the selected merged CLI/Broker commits. Keep normal Pi registrations
+and CLI commands outside development checkouts and worktrees. For a temporary
+candidate, use `pi -ne -e /absolute/task/extension.ts` or the isolated run entry;
+do not change the daily pointer. The existing worktree verification remains a
+separate, explicitly selected check. Its branch, freshness and build guards must
+not be weakened for task branches, dirty sources or installed package directories.
+The existing natural workflow
+`candidate-plan` / `candidate-run` path retains its normal-environment contract
+for daily/no-native-skills. The explicit
+[native-onboarding profile](../.agents/skills/verify-notion-agent-workflows/references/running.md#空父页首次使用)
+uses a packed build, an empty parent and a fresh independent grader through that
+same candidate entry. An isolation smoke cannot be relabelled as a natural result,
+and native onboarding cannot be relabelled as daily acceptance.
 
 Retain run state needed by unfinished operations. Once the task no longer needs
 its owned directories, follow the existing system-Trash cleanup policy. Do not
@@ -515,12 +626,18 @@ Create an owned `control/source-closeout.json` manifest with `version: 1`,
 and a `sources` object containing both `cli` and `broker`. Each source has:
 
 - `head`: its exact current commit, with a clean tracked and untracked state.
-- `integration`: `target_ref` (an explicit local `refs/remotes/origin/...` ref),
+- `integration`: `target_ref` (an explicit local `refs/remotes/REMOTE/BRANCH` ref
+  belonging to one already configured remote),
   exact `target_commit`, `merged_commit`, and `method` (`ancestor` or `tree_equal`).
-  The merged commit must belong to the declared target. `tree_equal` supports a
-  squash merge without pretending the task commit became a target ancestor.
-  This checks local refs; fetch and confirm remote freshness through the existing
-  integration workflow before recording closeout.
+  The merged commit must belong to the declared target. `tree_equal` can prove
+  identical complete trees after an integration rebase without pretending the
+  original task commit became a target ancestor. Follow the repository's
+  permitted integration methods. Keep existing remote identities: for example,
+  use `refs/remotes/github/next` when `origin` remains the local seed and `github`
+  is the actual integration remote. Do not rename remotes or manufacture tracking
+  refs to pass closeout. This checks configured names and local refs, not their
+  remote freshness or fetch provenance; fetch and confirm the actual target
+  through the existing integration workflow before recording closeout.
 - `references`: all frozen-build references from the snapshot, plus any explicitly
   declared owned JSON references. A build retains both source paths because the
   current `check` contract reads their Git HEADs. Its recorded source HEAD may

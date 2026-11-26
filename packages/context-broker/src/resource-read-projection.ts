@@ -115,10 +115,9 @@ export function validateResourceReadProjection(text: string, value: unknown): Re
     try {
       const ref = parseNativeReference(item.ref), requested = parseNativeReference(item.requested_ref);
       if (ref.selector !== value.selection.owner || ref.snapshot !== value.selection.snapshot_id
-        || ref.path !== file.path || ref.fileId !== item.file_id
+        || ref.path !== file.path
         || requested.selector !== ref.selector || requested.snapshot !== ref.snapshot
-        || requested.fileId !== undefined && requested.fileId !== ref.fileId
-        || requested.fileId === undefined && requested.path !== ref.path
+        || requested.path !== ref.path
         || file.ref !== item.ref && !/^sr:R[A-Za-z0-9_-]{22}$/.test(file.ref)) return undefined;
     } catch { return undefined; }
     paths.add(file.path);

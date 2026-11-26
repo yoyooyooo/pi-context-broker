@@ -153,7 +153,7 @@ function verifiedResourceReadProof(message: AgentMessage) {
   try {
     const reference = parseNativeReference(proof.ref);
     if (reference.selector !== proof.id || reference.snapshot !== proof.snapshot_id
-      || reference.fileId !== proof.file_id || reference.path !== proof.path) return undefined;
+      || reference.path !== proof.path) return undefined;
   } catch { return undefined; }
   const text = sourceMessageText(message.content);
   if (proof.version === 2) {
@@ -275,7 +275,7 @@ export function injectedSourceBodies(messages: readonly AgentMessage[]): Array<{
         || identity[3] !== binding.record.locator.type || identity[4] !== binding.record.id) return;
       const reference = parseNativeReference(binding.ref), canonical = parseNativeReference(binding.record.ref);
       if (reference.selector !== canonical.selector || reference.snapshot !== binding.snapshot_id || reference.path !== binding.record.entrypoint
-        || canonical.path !== binding.record.entrypoint || canonical.snapshot !== undefined || canonical.fileId !== undefined) return;
+        || canonical.path !== binding.record.entrypoint || canonical.snapshot !== undefined) return;
       bodies.push({ source: identity[0], scope: binding.scope, body, directory: proof.directory });
     } catch { /* An unverifiable source identity cannot replace directory metadata. */ }
   });
@@ -472,7 +472,7 @@ export function inspectedResource(messages: readonly AgentMessage[], record: Ski
       try {
         const ref = parseNativeReference(file.ref);
         return file.path !== binding.record.entrypoint && ref.selector === reference.selector && ref.snapshot === reference.snapshot
-          && ref.path === file.path && (reference.fileId === undefined ? ref.path === reference.path : ref.fileId === reference.fileId);
+          && ref.path === file.path && ref.path === reference.path;
       } catch { return false; }
     });
     if (files.length === 1) return { binding, file: files[0]! };
@@ -575,7 +575,7 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
   messages.forEach((message, index) => {
     const proof = verifiedResourceReadProof(message);
     if (proof) {
-      const fileIdentity = proof.file_id === undefined ? ["path", proof.path] : ["file_id", proof.file_id];
+      const fileIdentity = ["file", proof.path, proof.file_id ?? null];
       const key = JSON.stringify([proof.scope, proof.id, proof.snapshot_id, fileIdentity, proof.sha256]);
       if (!resources.has(key)) resources.add(key);
       else if (proof.bytes !== 0) replace(index, 0, proof.version === 2 && object(proof.delivery) ? Number(proof.delivery.end) : sourceMessageText(message.content).length, resourceConfirmation);
@@ -585,7 +585,7 @@ export function deduplicateSourceReads(messages: AgentMessage[]): AgentMessage[]
     if (!batch) return;
     for (const file of batch.files) {
       if (!file.delivered_complete_text || !file.delivery) continue;
-      const fileIdentity = file.file_id === undefined ? ["path", file.path] : ["file_id", file.file_id];
+      const fileIdentity = ["file", file.path, file.file_id ?? null];
       const key = JSON.stringify([batch.selection.scope, batch.selection.owner, batch.selection.snapshot_id, fileIdentity, file.sha256]);
       if (!resources.has(key)) { resources.add(key); continue; }
       // An empty source is already minimal. Its zero-length span is still fully

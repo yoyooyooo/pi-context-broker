@@ -152,7 +152,7 @@ test('SDK observations retain explicit zero-attempt metrics and failed or pendin
 
 test('SDK routing attribution is retained exactly and never inferred when absent', async t => {
   const item = fixture(), observer = observe(item); t.after(observer.finish);
-  const cases = [{ source_id: 'notion-eu', database: '01234567-89ab-cdef-0123-456789abcdef' }, { source_id: null, database: null }, {}];
+  const cases = [{ source_id: 'notion-eu', library: '01234567-89ab-cdef-0123-456789abcdef' }, { source_id: null, library: null }, {}];
   const ids = [];
   for (const attribution of cases) {
     const id = crypto.randomUUID(); ids.push(id);
@@ -164,7 +164,7 @@ test('SDK routing attribution is retained exactly and never inferred when absent
   const trace = await readSourceObservation(item.output);
   assert.equal(trace.complete, true);
   for (const [index, id] of ids.entries()) for (const row of trace.events.filter(row => ['started', 'completed'].includes(row.phase) && row.requestId.endsWith(id))) {
-    assert.deepEqual(Object.fromEntries(['source_id', 'database'].filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]])), cases[index]);
+    assert.deepEqual(Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]])), cases[index]);
   }
   assert.equal(fs.readFileSync(item.output, 'utf8').includes(secret), false);
   const changed = reseal(trace.events.map(row => row.phase === 'completed' && row.requestId.endsWith(ids[0]) ? { ...row, source_id: 'different-source' } : row));
@@ -177,9 +177,9 @@ test('SDK routing attribution is retained exactly and never inferred when absent
 
 test('contradictory SDK source attribution remains an observation error', async t => {
   const item = fixture(), observer = observe(item); t.after(observer.finish);
-  const id = crypto.randomUUID(), database = '01234567-89ab-cdef-0123-456789abcdef';
-  publishSdk(id, 'start', { source_id: 'source-a', database });
-  publishSdk(id, 'end', { source_id: 'source-b', database, elapsed_ms: 1, status: 'completed', sdk_started: true,
+  const id = crypto.randomUUID(), library = '01234567-89ab-cdef-0123-456789abcdef';
+  publishSdk(id, 'start', { source_id: 'source-a', library });
+  publishSdk(id, 'end', { source_id: 'source-b', library, elapsed_ms: 1, status: 'completed', sdk_started: true,
     metrics_observed: true, request_metrics: { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [] } });
   observer.finish();
   const trace = await readSourceObservation(item.output);
@@ -188,7 +188,7 @@ test('contradictory SDK source attribution remains an observation error', async 
   assert.equal(trace.events.filter(row => row.phase === 'observer_error').length, 1);
 });
 
-for (const operation of ['list', 'files', 'read-resources', 'resolve']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
+for (const operation of ['library-selection', 'library', 'list', 'files', 'read-resources', 'resolve']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
   const item = fixture(), observer = observe(item); t.after(observer.finish);
   const id = crypto.randomUUID();
   publishSdk(id, 'start', { operation });
@@ -217,6 +217,20 @@ test('an unknown SDK operation remains an observation error instead of a complet
   assert.equal(trace.events.filter(row => row.phase === 'metrics').length, 0);
 });
 
+test('content-search lifecycle is observed while unmeasured MCP HTTP stays unknown', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const id = crypto.randomUUID(), operation = 'content-search';
+  publishSdk(id, 'start', { operation });
+  publishSdk(id, 'end', { operation, elapsed_ms: 1, status: 'completed', sdk_started: true,
+    metrics_observed: false, request_metrics: null });
+  observer.finish();
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
+  assert.deepEqual(trace.events.filter(row => ['started', 'completed'].includes(row.phase)).map(row => row.operation), [operation, operation]);
+  const metrics = trace.events.find(row => row.phase === 'metrics');
+  assert.equal(metrics.observed, false); assert.equal(metrics.complete, false); assert.equal(metrics.total_requests, null);
+});
+
 test('evidence write failure cannot escape a source event or change host exit behavior', async () => {
   const item = fixture(); let writes = 0;
   const observer = observe(item, { fs: { ...fs, writeSync(...args) {
@@ -242,30 +256,6 @@ test('serialized preload runs only in the intended owner and leaves the inheriti
   const trace = await readSourceObservation(item.output);
   assert.equal(trace.complete, true); assert.equal(trace.events.filter(row => row.phase === 'source_observer_start').length, 1);
   assert.equal(trace.events.at(-1).operations, 1); assert.equal(trace.events.at(-1).cliStarts, 1);
-});
-
-test('serialized preload retains a completed resolve with zero HTTP attempts', async () => {
-  const item = fixture(), owner = path.join(item.base, 'resolve-owner.mjs'), preload = path.join(item.base, 'resolve-preload.mjs');
-  fs.writeFileSync(owner, `import { channel } from 'node:diagnostics_channel';
-import { randomUUID } from 'node:crypto';
-const common = { version: 1, id: randomUUID(), operation: 'resolve', pid: process.pid, source_id: 'notion', database: 'fixture-database' };
-channel('context-broker.notion-sdk').publish({ ...common, event: 'start', monotonic_ns: process.hrtime.bigint().toString() });
-channel('context-broker.notion-sdk-result').publish({ version: 1, id: common.id, operation: 'resolve', value: { version: 1, ref: 'skill://fixture/SKILL.md' } });
-channel('context-broker.notion-sdk').publish({ ...common, event: 'end', monotonic_ns: process.hrtime.bigint().toString(), status: 'completed',
-  elapsed_ms: 0, sdk_started: true, metrics_observed: true, request_metrics: { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [] } });
-process.stdout.write('resolved\\n');
-`);
-  fs.writeFileSync(preload, sourceObserverPreloadSource({ output: item.output, checkoutRoot: process.cwd(), clockId: 'resolve-preload-test',
-    cliPath: item.cli, ownerEntry: owner, ownerParentPid: process.pid }));
-  const actual = await consume(owner, [], { ...process.env, NODE_OPTIONS: '--import=' + pathToFileURL(preload).href });
-  assert.deepEqual(actual, { code: 0, signal: null, stdout: 'resolved\n', stderr: '' });
-  const trace = await readSourceObservation(item.output);
-  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
-  assert.deepEqual(trace.events.filter(row => ['started', 'completed'].includes(row.phase)).map(row => row.operation), ['resolve', 'resolve']);
-  assert.equal(trace.events.at(-1).sdkStarts, 1); assert.equal(trace.events.at(-1).operations, 1);
-  assert.equal(trace.events.find(row => row.phase === 'metrics').complete, true);
-  assert.equal(trace.events.find(row => row.phase === 'metrics').total_requests, 0);
-  assert.equal(trace.events.filter(row => row.phase === 'attempt').length, 0);
 });
 
 function reseal(rows) {
@@ -461,4 +451,25 @@ test('legacy unmatched starts remain readable without inventing lifecycle receip
   const actual=await readSourceObservation(file);
   assert.equal(actual.complete,true);assert.deepEqual(actual.errors,[]);assert.equal(actual.unmatchedChildLifecycle,null);
   assert.equal(actual.events.at(-1).unmatchedChildren,1);
+});
+
+
+test('directory inventory proof is attached to the actual passive child ledger without changing output or privacy', async t => {
+  const { captureDirectoryInventorySpawn } = await import('./notion-agent-inventory-evidence.mjs');
+  const item = fixture(), cwd = fs.realpathSync(item.base), env = { PATH: '/bin:/usr/bin', SOURCE_TEST_SECRET: secret };
+  const expected = await localChild('/bin/bash', ['-c', 'pwd'], { cwd, env }).closed;
+  const original = cp.spawn, observer = observe(item, { captureDirectoryInventorySpawn }); t.after(observer.finish);
+  const actual = await localChild('/bin/bash', ['-c', 'pwd'], { cwd, env }).closed;
+  await localChild('/bin/bash', ['-c', 'pwd'], { cwd, env: { ...env, BASH_ENV: '/unreviewed/startup' } }).closed;
+  observer.finish();
+  assert.deepEqual(actual, expected); assert.equal(cp.spawn, original);
+  const trace = await readSourceObservation(item.output), starts = trace.events.filter(row => row.phase === 'unmatched_child_start');
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []); assert.equal(starts.length, 2);
+  assert.equal(starts[0].directoryInventory.kind, 'bounded-directory-inventory');
+  assert.equal(starts[0].directoryInventory.cwd, cwd);
+  assert.equal(starts[1].directoryInventory, undefined);
+  const close = trace.events.find(row => row.phase === 'unmatched_child_close' && row.childId === starts[0].childId);
+  assert.equal(close.directoryInventoryUnchanged, true);
+  assert.equal(starts[0].transport, 'unknown');
+  assert.equal(fs.readFileSync(item.output, 'utf8').includes(secret), false);
 });

@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
+import { checkAgentContractCoverage } from "./notion-agent-scenarios.mjs"
 
 const root = fileURLToPath(new URL("../", import.meta.url))
 const read = (path) => readFileSync(resolve(root, path), "utf8")
@@ -117,6 +118,12 @@ test("paired CLI contract owners and Broker commands resolve in this actual chec
     }
   }
   check(map)
+  const corpus = JSON.parse(read("scripts/notion-agent-scenarios.json"))
+  checkAgentContractCoverage(corpus, map)
+  const staleLibraryJourney = structuredClone(corpus)
+  const libraryJourney = staleLibraryJourney.scenarios.find(scenario => scenario.id === "library-b-management-consumption")
+  libraryJourney.contract_ids = libraryJourney.contract_ids.map(id => id === "T24" ? "T22" : id)
+  assert.throws(() => checkAgentContractCoverage(staleLibraryJourney, map), /T22 maps none/u)
   assert.throws(() => check({ ...map, external_domains: map.external_domains.slice(1) }))
   const changed = structuredClone(map)
   changed.contracts[0].entrypoints.push({ repository: "broker", command: "node scripts/nonexistent-current-contract.mjs" })

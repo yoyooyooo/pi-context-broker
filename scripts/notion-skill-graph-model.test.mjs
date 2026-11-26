@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { skillIdentity, skillFileRef, pinSkillRef, nativeReferenceSettings } from './skill-ref-fixture.mjs';
 import * as graphModel from './notion-skill-graph-model.mjs';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -90,24 +91,26 @@ test('discovery-only observation cannot seed a private root or an unknown entry 
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
   const originalFetch = globalThis.fetch;
   const api = { on() {}, setActiveTools: async () => {} };
-  const settings = { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task' };
+  const settings = { fs, crypto, path, ...nativeReferenceSettings, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task' };
   try {
     assert.throws(() => observeGraphGate(api, { ...settings, entryMode: 'discovery-only', rootRef: 'skill://private-target/SKILL.md' }), /cannot seed/);
     assert.throws(() => observeGraphGate(api, { ...settings, entryMode: 'automatic-private-seed' }), /Unknown graph entry mode/);
   } finally { globalThis.fetch = originalFetch; }
 });
 
-for (const selector of ['canonical', 'display-name', 'alias', 'alias-root', 'alias-after-candidate']) test('discovery-only observation authorizes ' + selector + ' only after actual visible catalogue metadata', async () => {
+for (const selector of ['canonical', 'stable-root', 'short-handle', 'display-name', 'alias', 'alias-root', 'alias-after-candidate']) test('discovery-only observation preserves exact identities for ' + selector + ' after visible catalogue metadata', async () => {
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-discovery-visible-'));
   const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
-  const record = { id: 'shared_skill:controlled:visible', ref: 'skill://shared_skill%3Acontrolled%3Avisible/SKILL.md', kind: 'skill', name: 'Visible Skill', alias: 'visible-skill', description: 'Visible candidate', enabled: true };
-  const selectedRef = selector === 'canonical' ? record.ref : 'skill://' + encodeURIComponent(selector === 'display-name' ? record.name : record.alias) + (selector === 'alias-root' ? '/' : '/SKILL.md');
+  const record = { id: 'skill://visible?library=controlled', ref: 'skill://visible/SKILL.md?library=controlled', kind: 'skill', name: 'Visible Skill', alias: 'visible-skill', description: 'Visible candidate', enabled: true };
+  const accepted = ['canonical', 'stable-root', 'short-handle'].includes(selector);
+  const selectedRef = selector === 'canonical' ? record.ref : selector === 'stable-root' ? record.id : selector === 'short-handle' ? 'sr:C' + 'N'.repeat(22)
+    : 'skill://' + encodeURIComponent(selector === 'display-name' ? record.name : record.alias) + (selector === 'alias-root' ? '/' : '/SKILL.md');
   await save(path.join(responses, 'list.json'), { command: 'list', code: 0, response: { ok: true, scope: 'a'.repeat(64), records: [record] } });
   const handlers = new Map(), originalFetch = globalThis.fetch;
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-      { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
+      { fs, crypto, path, ...nativeReferenceSettings, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
     const invoke = (id, tool = 'read') => {
       const input = tool === 'read' ? { path: selectedRef } : { ref: selectedRef };
       handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: tool, arguments: input }] } });
@@ -115,7 +118,7 @@ for (const selector of ['canonical', 'display-name', 'alias', 'alias-root', 'ali
     };
     assert.equal(invoke('hidden-source-metadata').block, true, 'Observer source receipts alone must not authorize a model reference');
     const short = 'sr:C' + 'N'.repeat(22);
-    const system = '<ntn-skills-view-catalog><catalog-cards><group kind="skill" source="notion"><card name="Visible Skill" location="' + (selector === 'alias-after-candidate' ? short : record.ref) + '">Visible candidate</card></group></catalog-cards></ntn-skills-view-catalog>';
+    const system = '<ntn-skills-view-catalog><catalog-cards><group kind="skill" source="notion"><card name="Visible Skill" location="' + (['alias-after-candidate', 'short-handle'].includes(selector) ? short : record.ref) + '">Visible candidate</card></group></catalog-cards></ntn-skills-view-catalog>';
     const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref',
       data: { version: 1, ref: short, target: { kind: 'candidate', identity: { source: 'notion', scope: 'a'.repeat(64),
         id: record.id, kind: record.kind, ref: record.ref.replace('/SKILL.md', '') } } } }] } };
@@ -125,8 +128,8 @@ for (const selector of ['canonical', 'display-name', 'alias', 'alias-root', 'ali
     assert.equal(invoke('context-section-only')?.block, true, 'A public context section remains diagnostic until the provider payload contains it');
     const payload = { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'system', content: system }] };
     handlers.get('before_provider_request')({ payload }, ctx);
-    assert.equal(invoke('visible-native-entry'), undefined);
-    assert.equal(invoke('visible-native-use', 'notion_use'), undefined);
+    assert.equal(invoke('visible-native-entry')?.block, accepted ? undefined : true);
+    assert.equal(invoke('visible-native-use', 'notion_use')?.block, accepted ? undefined : true);
     const events = (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse);
     const catalog = events.find(event => event.phase === 'catalog');
     assert.equal(catalog.skills[0].provenance.ownerId, record.id);
@@ -135,8 +138,8 @@ for (const selector of ['canonical', 'display-name', 'alias', 'alias-root', 'ali
     assert.equal(catalog.systemPromptSha256, hash(system));
     const call = events.find(event => event.phase === 'tool-call' && event.toolCallId === 'visible-native-entry');
     assert.equal(call.input, selectedRef, 'The observer must not rewrite actual model arguments');
-    assert.equal(call.claim.ownerId, record.id);
-    assert.equal(call.claim.scope, 'a'.repeat(64));
+    if (accepted) { assert.equal(call.claim.ownerId, record.id); assert.equal(call.claim.scope, 'a'.repeat(64)); }
+    else { assert.equal(call.allowed, false); assert.equal(call.claim, undefined); }
     assert.ok(events.some(event => event.phase === 'catalog-before-agent-start'));
   } finally { globalThis.fetch = originalFetch; }
 });
@@ -147,7 +150,7 @@ async function observedMetadataCatalog(kind, metadata, overrides = {}, t) {
   const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
   const scope = 'a'.repeat(64), short = 'sr:C' + 'M'.repeat(22), entrypoint = kind === 'router' ? 'ROUTER.md' : 'SKILL.md';
-  const record = { id: 'shared_skill:controlled:metadata', ref: 'skill://shared_skill%3Acontrolled%3Ametadata/' + entrypoint,
+  const record = { id: 'skill://metadata?library=controlled', ref: skillFileRef('skill://metadata?library=controlled', entrypoint),
     kind, alias: 'metadata', enabled: true, entrypoint, source: 'notion', sourceId: 'controlled', ...metadata };
   await save(path.join(responses, 'list.json'), { transport: 'sdk', requestId: 'metadata', operation: 'list', status: 'completed',
     resultObserved: true, value: { scope, count: 1, records: [record] } });
@@ -157,10 +160,10 @@ async function observedMetadataCatalog(kind, metadata, overrides = {}, t) {
   const handlers = new Map(), originalFetch = globalThis.fetch;
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-      { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
+      { fs, crypto, path, ...nativeReferenceSettings, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
     const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref',
       data: { version: 1, ref: short, target: { kind: 'candidate', identity: { source: 'notion', scope: overrides.scope ?? scope,
-        id: overrides.ownerId ?? record.id, kind, ref: record.ref.slice(0, record.ref.lastIndexOf('/')) } } } }] } };
+        id: overrides.ownerId ?? record.id, kind, ref: record.id } } } }] } };
     const payload = { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
       messages: [{ role: overrides.messageRole ?? 'system', content: overrides.textParts ? [{ type: 'text', text: system }] : system }] };
     const before = JSON.stringify(payload);
@@ -210,7 +213,7 @@ for (const kind of ['skill', 'router']) test('catalogue metadata rejects altered
     { shown: { name: 'Literal " name' } },
     { shown: { description: 'Keep " and author whitespace.\n' } },
     { shown: { description: metadata.description.trim() } },
-    { ownerId: 'shared_skill:controlled:another' },
+    { ownerId: 'skill://another?library=controlled' },
     { scope: 'b'.repeat(64) },
   ]) {
     const result = await observedMetadataCatalog(kind, metadata, overrides);
@@ -224,8 +227,8 @@ async function routerDiscoveryProjectionFixture(t, change = '') {
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
   t.diagnostic('Router description observer fixture: ' + base);
   const scope = 'a'.repeat(64), shorts = ['L', 'R', 'M'].map(value => 'sr:C' + value.repeat(22));
-  const records = ['left', 'router', 'right'].map((name, index) => ({ id: 'shared_skill:controlled:' + name,
-    ref: 'skill://shared_skill%3Acontrolled%3A' + name + (index === 1 ? '/ROUTER.md' : '/SKILL.md'),
+  const records = ['left', 'router', 'right'].map((name, index) => ({ id: skillIdentity('controlled', name),
+    ref: skillFileRef(skillIdentity('controlled', name), index === 1 ? 'ROUTER.md' : 'SKILL.md'),
     kind: index === 1 ? 'router' : 'skill', name: index === 1 ? 'Router "quoted" &quot;' : name,
     description: index === 1 ? ' Route "quoted", keep &quot; and <cards>.\n' : name + ' complete metadata.\n',
     enabled: true, entrypoint: index === 1 ? 'ROUTER.md' : 'SKILL.md', source: 'notion' }));
@@ -233,7 +236,7 @@ async function routerDiscoveryProjectionFixture(t, change = '') {
     resultObserved: true, value: { scope, count: records.length, records } });
   const branches = records.map((record, index) => ({ type: 'custom', customType: 'context-broker-short-ref', data: {
     version: 1, ref: shorts[index], target: { kind: 'candidate', identity: { source: 'notion', scope,
-      id: record.id, kind: record.kind, ref: record.ref.slice(0, record.ref.lastIndexOf('/')) } } } }));
+      id: record.id, kind: record.kind, ref: record.id } } } }));
   const details = { ok: true, state: 'known', count: 3, has_more: false, total_count: 3, next_cursor: null,
     coverage: { exhaustive: true, sources: [{ source: 'notion', exhaustive: true }] }, records: records.map((record, index) => ({
       id: record.id, ref: shorts[index], kind: record.kind, name: record.name, description: record.description,
@@ -251,7 +254,7 @@ async function routerDiscoveryProjectionFixture(t, change = '') {
   const handlers = new Map(), originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-    { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, sourceMode: 'sdk',
+    { fs, crypto, path, ...nativeReferenceSettings, cwd: base, responses, cache, output, sourceMode: 'sdk',
       model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
   const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => branches } };
   const projected = [];
@@ -317,13 +320,13 @@ async function shortRefValidationFixture(t, sourceMode = 'sdk') {
   t.diagnostic('Short-ref validation observer fixture: ' + base);
   const scope = 'a'.repeat(64), snapshot = 's_' + 'b'.repeat(64), body = 'Complete source instructions.\n', resource = 'Complete resource.\n';
   const refs = Object.fromEntries(['C', 'S', 'R', 'hidden'].map((kind, index) => [kind, 'sr:' + (kind === 'hidden' ? 'C' : kind) + String(index).repeat(22)]));
-  const records = ['visible', 'hidden'].map(name => ({ id: 'shared_skill:controlled:' + name, kind: 'skill', name,
-    entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3A' + name + '/SKILL.md', enabled: true }));
+  const records = ['visible', 'hidden'].map(name => ({ id: skillIdentity('controlled', name), kind: 'skill', name,
+    entrypoint: 'SKILL.md', ref: skillFileRef(skillIdentity('controlled', name), 'SKILL.md'), enabled: true }));
   const files = ['SKILL.md', 'references/checklist.md'].map((file, index) => ({ path: file, bytes: Buffer.byteLength(index ? resource : body),
-    sha256: hash(index ? resource : body), ref: records[0].ref.replace('SKILL.md', file) + '?snapshot=' + snapshot + '&file_id=file-' + index }));
+    sha256: hash(index ? resource : body), ref: skillFileRef(records[0].id, file, snapshot) }));
   const identity = record => ({ source: 'notion', scope, id: record.id, kind: record.kind, ref: record.ref.replace('/SKILL.md', '') });
   const selected = { kind: 'selected', identity: identity(records[0]), snapshot_id: snapshot, version_id: 'version',
-    body_sha256: hash(body), entrypoint: 'SKILL.md', ref: files[0].ref, file_id: 'file-0' };
+    body_sha256: hash(body), entrypoint: 'SKILL.md', ref: files[0].ref };
   const branches = [
     { ref: refs.C, target: { kind: 'candidate', identity: identity(records[0]) } },
     { ref: refs.S, target: selected },
@@ -333,7 +336,8 @@ async function shortRefValidationFixture(t, sourceMode = 'sdk') {
   ].map(data => ({ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ...data } }));
   for (const [operation, value] of [
     ['list', { scope, records }],
-    ['read', { scope, record: records[0], snapshot_id: snapshot, version_id: 'version', path: 'SKILL.md', ref: files[0].ref, content: body }],
+    ['read', { scope, record: records[0], snapshot_id: snapshot, version_id: 'version', path: 'SKILL.md', ref: files[0].ref, content: body,
+      file_bindings: files.map((file, index) => ({ path: file.path, file_id: 'file-' + index, page_id: String(index + 1).repeat(8) + '-2222-4333-8444-555555555555' })) }],
     ['prepare', { scope, status: 'ready', purpose: 'inspect', nodes: [{ state: 'prepared', id: records[0].id,
       record: records[0], path: 'SKILL.md', binding: { snapshot_id: snapshot, version_id: 'version', ref: files[0].ref }, files }] }],
   ]) await save(path.join(responses, operation + '.json'), { transport: 'sdk', requestId: 'observed-' + operation,
@@ -341,7 +345,7 @@ async function shortRefValidationFixture(t, sourceMode = 'sdk') {
   const prompt = 'Inspect the exact references ' + [refs.C, refs.S, refs.R].join(' '), handlers = new Map(), originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-    { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, sourceMode,
+    { fs, crypto, path, ...nativeReferenceSettings, cwd: base, responses, cache, output, sourceMode,
       model: 'controlled/fake', prompt, entryMode: 'discovery-only' });
   const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => branches } };
   const payload = { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'user', content: prompt }] };
@@ -430,7 +434,7 @@ test('owned project paths use public mutable sections without forcing the earlie
   const handlers = new Map(), originalFetch = globalThis.fetch;
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-      { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only',
+      { fs, crypto, path, ...nativeReferenceSettings, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only',
         project: { files: [{ path: 'package.json' }, { path: 'src/server.mjs' }] } });
     const event = { prompt: 'Natural task', systemPrompt: 'Earlier native prompt', systemPromptOptions: { sections: { independent: 'Preserve this section.' } } };
     assert.equal(handlers.get('before_agent_start')(event, { model: { provider: 'controlled', id: 'fake' } }), undefined);
@@ -445,10 +449,10 @@ async function discoveryExperimentFixture(t, mode, state = 'ready', includeRoute
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
   const scope = 'a'.repeat(64), short = 'sr:C' + 'E'.repeat(22);
   t.diagnostic('SC06 owned local fixture: ' + base);
-  const record = { id: 'shared_skill:controlled:experiment', ref: 'skill://shared_skill%3Acontrolled%3Aexperiment/SKILL.md',
+  const record = { id: 'skill://experiment?library=controlled', ref: 'skill://experiment/SKILL.md?library=controlled',
     kind: 'skill', alias: 'experiment', name: 'Authored " title', description: 'Keep "quotes" and the final newline.\n',
     enabled: true, entrypoint: 'SKILL.md', source: 'notion', sourceId: 'controlled' };
-  const router = { ...record, id: 'shared_skill:controlled:router', ref: 'skill://shared_skill%3Acontrolled%3Arouter/ROUTER.md',
+  const router = { ...record, id: 'skill://router?library=controlled', ref: 'skill://router/ROUTER.md?library=controlled',
     kind: 'router', entrypoint: 'ROUTER.md', name: 'Router', description: 'Metadata route, not loaded.' };
   await save(path.join(responses, 'list.json'), { transport: 'sdk', requestId: 'metadata', operation: 'list', status: 'completed',
     resultObserved: true, value: { scope, count: includeRouter ? 2 : 1, records: includeRouter ? [record, router] : [record] } });
@@ -469,11 +473,11 @@ async function discoveryExperimentFixture(t, mode, state = 'ready', includeRoute
   const handlers = new Map(), originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-    { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, sourceMode: 'sdk',
+    { fs, crypto, path, ...nativeReferenceSettings, cwd: base, responses, cache, output, sourceMode: 'sdk',
       model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only', discoveryExperiment: { version: 1, mode } });
   const ctx = { model: { provider: 'controlled', id: 'fake' }, sessionManager: { getBranch: () => [{ type: 'custom', customType: 'context-broker-short-ref',
     data: { version: 1, ref: short, target: { kind: 'candidate', identity: { source: 'notion', scope,
-      id: record.id, kind: record.kind, ref: record.ref.slice(0, record.ref.lastIndexOf('/')) } } } }] } };
+      id: record.id, kind: record.kind, ref: record.id } } } }] } };
   handlers.get('before_agent_start')({ prompt: 'Natural task', systemPrompt: 'Earlier native prompt' }, ctx);
   const payload = selected => ({ model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
     messages: [{ role: 'system', content: selected.filter(message => message.role === 'system')
@@ -598,7 +602,7 @@ test('SC06 on-demand removes Router cards in the same owned section without chan
   assert.ok(!messages[0].sections['context-broker-notion-catalog'].includes('<catalog-cards>'));
   assert.deepEqual(messages.slice(1), fixture.messages.slice(1));
   const input = (await fixture.events()).find(event => event.phase === 'discovery-input-catalog');
-  assert.equal(input.routers[0].provenance.ownerId, 'shared_skill:controlled:router');
+  assert.equal(input.routers[0].provenance.ownerId, 'skill://router?library=controlled');
   assert.equal(input.routers[0].provenance.loaded, false);
 });
 
@@ -614,7 +618,7 @@ test('SC06 provider gate rejects missing public projection and later payload sub
 
 test('SC06 refuses an unknown presentation or a private/command-source entry at the observer boundary', async t => {
   const fixture = await discoveryExperimentFixture(t, 'full-cards');
-  const settings = { fs, crypto, path, parseNativeReference, cwd: fixture.base, responses: fixture.responses, cache: path.join(fixture.base, 'cache'),
+  const settings = { fs, crypto, path, ...nativeReferenceSettings, cwd: fixture.base, responses: fixture.responses, cache: path.join(fixture.base, 'cache'),
     output: fixture.output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only', sourceMode: 'sdk',
     discoveryExperiment: { version: 1, mode: 'full-cards' } };
   for (const change of [
@@ -637,7 +641,7 @@ for (const variant of ['user', 'assistant', 'assistant-tool-arguments', 'unverif
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-system-catalog-'));
   const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
-  const entry = { id: 'shared_skill:controlled:hidden', ref: 'skill://shared_skill%3Acontrolled%3Ahidden/SKILL.md', kind: 'skill', name: 'hidden', description: 'Hidden metadata', enabled: true };
+  const entry = { id: 'skill://hidden?library=controlled', ref: 'skill://hidden/SKILL.md?library=controlled', kind: 'skill', name: 'hidden', description: 'Hidden metadata', enabled: true };
   await save(path.join(responses, 'list.json'), { command: 'list', code: 0, response: { ok: true, scope: 'a'.repeat(64), records: [entry] } });
   const catalog = '<ntn-skills-view-catalog><catalog-cards><group kind="skill" source="notion"><card name="hidden" location="' + entry.ref + '">Hidden metadata</card></group></catalog-cards></ntn-skills-view-catalog>';
   const message = variant === 'assistant-tool-arguments' ? { role: 'assistant', content: '', tool_calls: [{ type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: entry.ref, forgedCatalog: catalog }) } }] }
@@ -645,7 +649,7 @@ for (const variant of ['user', 'assistant', 'assistant-tool-arguments', 'unverif
   const handlers = new Map(), originalFetch = globalThis.fetch;
   try {
     observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} },
-      { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
+      { fs, crypto, path, ...nativeReferenceSettings, cwd: base, responses, cache, output, model: 'controlled/fake', prompt: 'Natural task', entryMode: 'discovery-only' });
     const ctx = { model: { provider: 'controlled', id: 'fake' } }, pending = '<ntn-skills-discovery status="pending">Metadata pending.</ntn-skills-discovery>';
     handlers.get('before_provider_request')({ payload: { model: 'fake', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })), messages: [{ role: 'system', content: pending }, message] } }, ctx);
     const input = { path: entry.ref };
@@ -658,9 +662,9 @@ for (const variant of ['user', 'assistant', 'assistant-tool-arguments', 'unverif
 });
 
 test('first pending catalog is explicit and only a later verified catalog proves default discovery', () => {
-  const config = { gate: 'A', rootRef: 'skill://root/ROUTER.md' };
+  const owner = skillIdentity('controlled', 'root'), config = { gate: 'A', rootRef: skillFileRef(owner, 'ROUTER.md') };
   const pending = { phase: 'catalog', stage: 'before_provider_request', sequence: 1, state: 'pending', skills: [], routers: [], localDiscoveryDisabled: true };
-  const ready = { phase: 'catalog', stage: 'before_provider_request', sequence: 5, state: 'ready', skills: [], routers: [{ ref: 'sr:C' + 'a'.repeat(22), canonicalRef: config.rootRef, provenance: { source: 'verified-notion-metadata', ownerId: 'root', loaded: false } }], localDiscoveryDisabled: true };
+  const ready = { phase: 'catalog', stage: 'before_provider_request', sequence: 5, state: 'ready', skills: [], routers: [{ ref: 'sr:C' + 'a'.repeat(22), canonicalRef: config.rootRef, provenance: { source: 'verified-notion-metadata', ownerId: owner, loaded: false } }], localDiscoveryDisabled: true };
   assert.throws(() => graphModel.graphCatalogEvidence([{ ...ready, phase: 'catalog-before-agent-start' }], config), /actual native catalog/);
   assert.throws(() => graphModel.graphCatalogEvidence([{ ...ready, stage: 'before_agent_start' }], config), /actual provider system payload/);
   assert.equal(graphModel.graphCatalogEvidence([pending], config).status, 'pending');
@@ -689,7 +693,7 @@ test('batch resources retain one exact outer provider output and cannot pass on 
   const value = contractFixture('B'), resource = value.trace.reads[1];
   resource.role = 'resource'; resource.toolCallId = 'batch';
   resource.resourceBatchProof = { index: 0, publicRequestId: 'actual-sdk-batch', deliveryVerified: true,
-    selection: { owner: 'fixture-leaf', scope: resource.scope, snapshot_id: resource.snapshot },
+    selection: { owner: value.oracle.target.logicalId, scope: resource.scope, snapshot_id: resource.snapshot },
     delivery: { encoding: 'json', start: 10, end: 10 + resource.content.length },
     toolResultSha256: hash('complete-batch-output'), toolResultBytes: 1000 };
   value.trace.providerRequests.at(-1).toolResults = [{ toolCallId: 'batch', tool: 'read', exactToolOutputCopies: 1,
@@ -732,7 +736,7 @@ test('default SDK cannot silently accept a profile-only source or unknown transp
 
 async function workerConfigFixture() {
   const base = await mkdtemp(path.join(await systemTempRoot(), 'graph-worker-authorization-'));
-  const config = { version: 1, gate: 'B', selection: '$poteto-mode@notion', rootRef: 'skill://controlled-ordinary/SKILL.md', database: uuid, viewId: uuid,
+  const config = { version: 1, gate: 'B', selection: '$poteto-mode@notion', rootRef: 'skill://controlled-ordinary/SKILL.md', library: uuid, viewId: uuid,
     extension: path.join(base, 'installed/index.ts'), packagePath: path.join(base, 'package.tgz'), cliCommand: [process.execPath, path.join(base, 'installed/cli.mjs')],
     oraclePath: path.join(base, 'oracle.json'), evidenceRoot: path.join(base, 'evidence'), model: 'magpie/group/worker', previousFailures: [], mode: 'matrix' };
   const receipt = { version: 1, kind: 'explicit-user-worker-authorization', model: 'magpie/group/worker',
@@ -758,7 +762,7 @@ async function dailyRouteObserverFixture(t) {
   globalThis.fetch = async () => { forwarded++; return new Response('{}', { status: 200 }); };
   t.after(() => { globalThis.fetch = original; });
   observeGraphGate({ on: (name, handler) => handlers.set(name, handler), setActiveTools: async () => {} },
-    { fs, crypto, path, parseNativeReference, cwd: base, responses, cache, output, model: profile.model,
+    { fs, crypto, path, ...nativeReferenceSettings, cwd: base, responses, cache, output, model: profile.model,
       modelProfile: profile, prompt: 'Natural task', sourceMode: 'sdk', entryMode: 'discovery-only' });
   const ctx = { model: { provider: 'magpie', id: 'group/flash' } };
   const payload = { model: 'group/flash', reasoning_effort: 'high', tools: GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } })),
@@ -926,14 +930,14 @@ test('the safe transport ledger retains bounded target identity and fails closed
 
 function attributionFixture(entityIds) {
   const scope = 'controlled-scope';
-  const id = name => 'shared_skill:controlled:' + name;
-  const ref = name => 'skill://' + encodeURIComponent(id(name)) + '/SKILL.md';
+  const id = name => skillIdentity('controlled', name);
+  const ref = name => skillFileRef(id(name), 'SKILL.md');
   const record = name => ({ id: id(name), ref: ref(name), locator: { skill_id: name } });
-  const node = name => ({ id: id(name), state: 'prepared', record: record(name), content: name, bytes: Buffer.byteLength(name), body_sha256: hash(name), binding: { snapshot_id: 'snapshot-' + name, ref: ref(name) + '?snapshot=snapshot-' + name } });
+  const node = name => ({ id: id(name), state: 'prepared', record: record(name), content: name, bytes: Buffer.byteLength(name), body_sha256: hash(name), binding: { snapshot_id: 's_' + hash('snapshot-' + name), ref: pinSkillRef(ref(name), 's_' + hash('snapshot-' + name)) } });
   const nodes = ['root', 'required'].map(node); nodes[0].candidates = [{ id: id('member'), ref: ref('member'), availability: 'available' }];
   const response = { status: 'ready', purpose: 'use', scope, roots: [{ id: id('root') }], nodes, required: [{ from: id('root'), to: id('required'), ref: ref('required') }] };
   const observation = [{ phase: 'provider-request', at: '2026-01-01T00:00:01.000Z', sequence: 1, contents: nodes.map(value => ({ ownerId: value.id, scope, snapshot: value.binding.snapshot_id, sha256: value.body_sha256, bytes: value.bytes, role: 'entrypoint' })) }];
-  const responses = [{ command: 'prepare', requestId: 'prepare-1', response, metrics: { complete: true, trace: [{ event: 'attempt', request_kind: 'notion_body', http_status: 200, request_id: 'observed-request', request_bytes: 1, response_bytes: 1, body_kind: 'retained_body', target: { data_source_id: uuid, entity_ids: entityIds } }] } }, ...['root', 'required', 'member'].map(name => ({ command: 'read', response: { ok: true, scope, record: record(name), snapshot_id: 'snapshot-' + name, file_bindings: [{ file_id: 'file-' + name, page_id: name === 'root' ? uuid : uuid.replace('11111111', name === 'required' ? '22222222' : '33333333'), path: 'SKILL.md' }] }, metrics: { complete: true, trace: [] } }))];
+  const responses = [{ command: 'prepare', requestId: 'prepare-1', response, metrics: { complete: true, trace: [{ event: 'attempt', request_kind: 'notion_body', http_status: 200, request_id: 'observed-request', request_bytes: 1, response_bytes: 1, body_kind: 'retained_body', target: { data_source_id: uuid, entity_ids: entityIds } }] } }, ...['root', 'required', 'member'].map(name => ({ command: 'read', response: { ok: true, scope, record: record(name), snapshot_id: 's_' + hash('snapshot-' + name), file_bindings: [{ file_id: 'file-' + name, page_id: name === 'root' ? uuid : uuid.replace('11111111', name === 'required' ? '22222222' : '33333333'), path: 'SKILL.md' }] }, metrics: { complete: true, trace: [] } }))];
   return { config: { gate: 'B', rootRef: ref('root'), model: 'magpie/group/flash-free', mode: 'cold' }, oracle: { target: { logicalId: id('member'), scope, ref: ref('member') }, preparations: { B: nodes.map(value => ({ logicalId: value.id, ref: value.binding.ref, snapshot: value.binding.snapshot_id, scope, sha256: value.body_sha256, bytes: value.bytes, role: value.id === id('root') ? 'root' : 'required' })) } }, observation, responses, sourceLedger: [{ phase: 'spawn', requestId: 'prepare-1', at: '2026-01-01T00:00:00.100Z' }, { phase: 'close', requestId: 'prepare-1', at: '2026-01-01T00:00:00.900Z' }], hostLedger: [], isolation: {} };
 }
 
@@ -949,7 +953,7 @@ test('every Entity in an actual batch must map; early member and unknown ownersh
 test('a model selection authorizes only its observed owner and must precede the actual source process', () => {
   const value = attributionFixture(['file-member']);
   const selected = { phase: 'tool-call', toolCallId: 'model-read', at: '2026-01-01T00:00:00.050Z', sequence: 2, origin: 'model', allowed: true };
-  const read = { phase: 'tool-result', toolCallId: 'model-read', at: '2026-01-01T00:00:02.000Z', sequence: 3, callSequence: 2, ownerId: 'shared_skill:controlled:member', logicalId: 'shared_skill:controlled:member', scope: 'controlled-scope', ref: value.oracle.target.ref, complete: true };
+  const read = { phase: 'tool-result', toolCallId: 'model-read', at: '2026-01-01T00:00:02.000Z', sequence: 3, callSequence: 2, ownerId: 'skill://member?library=controlled', logicalId: 'skill://member?library=controlled', scope: 'controlled-scope', ref: value.oracle.target.ref, complete: true };
   value.observation.push(selected, read);
   assert.equal(graphTrace(value).memberBodyReadsBeforeSelection, 0);
   selected.at = '2026-01-01T00:00:00.200Z';
@@ -959,7 +963,7 @@ test('a model selection authorizes only its observed owner and must precede the 
 function authoredSelectionFixture() {
   const value = attributionFixture(['file-member']), owner = value.oracle.target.logicalId, scope = value.oracle.target.scope;
   const input = { path: value.oracle.target.ref }, argumentsSha256 = hash(JSON.stringify(input));
-  const identity = { scope, ownerId: owner, path: 'SKILL.md', snapshot: 'snapshot-member', fileId: 'file-member', sha256: hash('member'), bytes: 6 };
+  const identity = { scope, ownerId: owner, path: 'SKILL.md', snapshot: 's_' + hash('snapshot-member'), fileId: 'file-member', sha256: hash('member'), bytes: 6 };
   const author = { phase: 'authored-tool-call', source: 'assistant-message-end', at: '2026-01-01T00:00:00.050Z', sequence: 2,
     toolCallId: 'native-read', tool: 'read', input, argumentsSha256, discovered: true };
   const admission = { phase: 'tool-call', at: '2026-01-01T00:00:00.950Z', sequence: 3, toolCallId: author.toolCallId, tool: 'read',
@@ -1009,14 +1013,14 @@ function submittedNameSelectionFixture() {
   Object.assign(sourceRead.response.record, { name: 'Visible member', alias: selector, kind: 'skill', entrypoint: 'SKILL.md' });
   const catalog = { requestId: 'named-catalog', command: 'list', code: 0, response: { ok: true, scope: f.read.scope,
     count: 1, records: [structuredClone(sourceRead.response.record)],
-    coverage: { method: 'explicit_database', exhaustive: true, search_index_limited: false, failed_sources: [] } }, metrics: { complete: true, trace: [] } };
+    coverage: { method: 'explicit_library', exhaustive: true, search_index_limited: false, failed_sources: [] } }, metrics: { complete: true, trace: [] } };
   f.value.responses.push(catalog);
   return { ...f, catalog, sourceRead, provider };
 }
 
-test('submitted-name source attribution uses the original authored time only after its catalog and read bind the name', () => {
+test('retired submitted-name claims cannot backdate source attribution even with matching catalog and read evidence', () => {
   const f = submittedNameSelectionFixture();
-  assert.equal(graphTrace(f.value).memberBodyReadsBeforeSelection, 0);
+  assert.equal(graphTrace(f.value).memberBodyReadsBeforeSelection, 1);
   for (const mutate of [
     v => { delete v.read.nameResolution; },
     v => { v.author.nameSelection.claim.selector = 'another-name'; },
@@ -1027,7 +1031,7 @@ test('submitted-name source attribution uses the original authored time only aft
     v => { v.catalog.response.scope = 'another-scope'; },
     v => { v.catalog.response.coverage.exhaustive = false; },
     v => { v.catalog.response.coverage.failed_sources.push({ id: 'failed', code: 'API_ERROR' }); },
-    v => { v.sourceRead.response.record.id = 'shared_skill:controlled:another'; },
+    v => { v.sourceRead.response.record.id = 'skill://another?library=controlled'; },
     v => { v.sourceRead.response.path = 'another.md'; },
     v => { v.value.sourceLedger[0].at = '2026-01-01T00:00:00.010Z'; },
   ]) {
@@ -1101,7 +1105,7 @@ test('the installed observer policy admits actual owned source reads and blocks 
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
   const handlers = new Map(), originalFetch = globalThis.fetch;
   try {
-    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} }, { fs, crypto, path, parseNativeReference, project, cwd: project.root, responses, cache, output, rootRef: 'skill://controlled-root/SKILL.md', model: 'controlled/fake', prompt: 'controlled task' });
+    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} }, { fs, crypto, path, ...nativeReferenceSettings, project, cwd: project.root, responses, cache, output, rootRef: 'skill://controlled-root/SKILL.md', model: 'controlled/fake', prompt: 'controlled task' });
     handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'project', name: 'read', arguments: { path: 'src/tickets.mjs' } }] } });
     assert.equal(handlers.get('tool_call')({ toolName: 'read', toolCallId: 'project', input: { path: 'src/tickets.mjs' } }), undefined);
     const content = await readFile(path.join(project.root, 'src/tickets.mjs'), 'utf8');
@@ -1128,14 +1132,14 @@ test('actual metadata may introduce an exact ref while guessed roots, forged res
   const project = await createOwnedGraphProject(path.join(base, 'project'));
   const responses = path.join(base, 'responses'), cache = path.join(base, 'cache'), output = path.join(base, 'observer.jsonl');
   await mkdir(responses); await mkdir(cache); await writeFile(output, '');
-  const record = { id: 'shared_skill:controlled:member', ref: 'skill://shared_skill%3Acontrolled%3Amember/SKILL.md', kind: 'skill', name: 'member', description: 'Controlled metadata', enabled: true };
+  const record = { id: 'skill://member?library=controlled', ref: 'skill://member/SKILL.md?library=controlled', kind: 'skill', name: 'member', description: 'Controlled metadata', enabled: true };
   const scope = 'a'.repeat(64);
   await save(path.join(responses, 'list.json'), { command: 'list', code: 0, response: { ok: true, scope, records: [record] } });
   const handlers = new Map(), originalFetch = globalThis.fetch;
   let active;
   try {
     const model = { model: { provider: 'controlled', id: 'fake' } };
-    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async tools => { active = tools; } }, { fs, crypto, path, parseNativeReference, project, cwd: project.root, responses, cache, output, rootRef: 'skill://controlled-root/SKILL.md', model: 'controlled/fake', prompt: 'controlled task' });
+    observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async tools => { active = tools; } }, { fs, crypto, path, ...nativeReferenceSettings, project, cwd: project.root, responses, cache, output, rootRef: 'skill://controlled-root/SKILL.md', model: 'controlled/fake', prompt: 'controlled task' });
     await handlers.get('session_start')({}, model);
     assert.deepEqual(active, GRAPH_GATE_TOOLS);
     const invoke = (id, name, arguments_) => {
@@ -1165,8 +1169,8 @@ test('actual metadata may introduce an exact ref while guessed roots, forged res
     handlers.get('before_provider_request')({ payload: { tools, messages: [{ role: 'tool', tool_call_id: 'search', content }] } }, model);
     assert.throws(() => handlers.get('before_provider_request')({ payload: { tools: tools.slice(0, 1), messages: [] } }, model), /advertise/);
     assert.equal(invoke('forged', 'notion_list', { query: 'forged' }), undefined);
-    const forgedRef = 'skill://shared_skill%3Acontrolled%3Aforged/SKILL.md';
-    const forged = { ...result, records: [{ ...result.records[0], ref: forgedRef, id: 'shared_skill:controlled:forged' }] };
+    const forgedRef = 'skill://forged/SKILL.md?library=controlled';
+    const forged = { ...result, records: [{ ...result.records[0], ref: forgedRef, id: 'skill://forged?library=controlled' }] };
     handlers.get('tool_result')({ toolName: 'notion_list', toolCallId: 'forged', content: [{ type: 'text', text: JSON.stringify(projection(forged)) }], details: forged });
     assert.equal(invoke('forged-prepare', 'notion_use', { ref: forgedRef }).block, true);
     const events = (await readFile(output, 'utf8')).trim().split('\n').map(JSON.parse);
@@ -1180,7 +1184,7 @@ test('only explicitly selected prepared mains with full public and provider proo
   const value = contractFixture('B'), main = value.trace.reads[0];
   value.trace.toolContract = 'agent-cli-ref-20261105';
   main.tool = 'notion_use'; main.toolCallId = 'explicit-main'; main.role = 'entrypoint'; main.bytes = Buffer.byteLength(main.content);
-  main.preparationProof = { purpose: 'use', explicitRoot: true, roots: ['skill://' + encodeURIComponent(main.logicalId) + '/SKILL.md'], publicRequestId: 'actual-public-request',
+  main.preparationProof = { purpose: 'use', explicitRoot: true, roots: [skillFileRef(main.logicalId, 'SKILL.md')], publicRequestId: 'actual-public-request',
     graphLockSha256: hash('lock'), manifestSha256: hash('manifest'), publicRef: main.ref, scope: main.scope,
     ownerId: main.logicalId, snapshot: main.snapshot, sha256: main.sha256, bytes: main.bytes,
     toolResultSha256: hash('complete-json-result'), toolResultBytes: main.bytes + 1000, deliveryVerified: true };
@@ -1205,10 +1209,10 @@ test('only explicitly selected prepared mains with full public and provider proo
 async function literalObserverFixture(body, transport, selectedSurface, fileId, options = {}) {
   const directory = await mkdtemp(path.join(await systemTempRoot(), 'graph-literal-observer-'));
   const cache = path.join(directory, 'cache'), responses = path.join(directory, 'responses'), output = path.join(directory, 'observer.jsonl');
-  const owner = 'shared_skill:controlled:literal-root', scope = 'a'.repeat(64), snapshot = 's_' + hash(body);
+  const owner = 'skill://literal-root?library=controlled', scope = 'a'.repeat(64), snapshot = 's_' + hash(body);
   const root = path.join(cache, 'scopes', scope, 'records', hash(owner), 'snapshots', snapshot);
   await mkdir(cache); await mkdir(responses); await writeFile(output, '');
-  const record = { id: owner, kind: 'skill', ...(options.record ?? {}) };
+  const record = { id: owner, kind: 'skill', entrypoint: 'SKILL.md', ref: skillFileRef(owner, 'SKILL.md'), ...(options.record ?? {}) };
   const publish = async () => {
     await mkdir(root, { recursive: true }); await writeFile(path.join(root, 'SKILL.md'), body);
     await save(path.join(root, '.broker-snapshot.json'), { version: 3, projection: 'snapshot', scope, snapshot, entry: 'SKILL.md', record, files: [{ path: 'SKILL.md', bytes: Buffer.byteLength(body), hash: hash(body) }] });
@@ -1219,8 +1223,8 @@ async function literalObserverFixture(body, transport, selectedSurface, fileId, 
   if (toolSurfaceFile) await save(toolSurfaceFile, { surface: selectedSurface });
   const handlers = new Map(), originalFetch = globalThis.fetch;
   if (transport) globalThis.fetch = transport;
-  observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} }, { fs, crypto, path, parseNativeReference, cwd: directory, nativeHome: directory, responses, cache, output,
-    ...(options.deferred ? { entryMode: 'discovery-only' } : { rootRef: 'skill://' + encodeURIComponent(owner) + '/SKILL.md' }), model: 'controlled/fake', prompt: options.prompt ?? 'controlled task', ...(toolSurfaceFile ? { toolSurfaceFile } : {}) });
+  observeGraphGate({ on: (event, handler) => handlers.set(event, handler), setActiveTools: async () => {} }, { fs, crypto, path, ...nativeReferenceSettings, cwd: directory, nativeHome: directory, responses, cache, output,
+    ...(options.deferred ? { entryMode: 'discovery-only' } : { rootRef: skillFileRef(owner, 'SKILL.md') }), model: 'controlled/fake', prompt: options.prompt ?? 'controlled task', ...(toolSurfaceFile ? { toolSurfaceFile } : {}) });
   const tools = GRAPH_GATE_TOOLS.map(name => ({ type: 'function', function: { name } }));
   const payload = content => ({ model: 'fake', tools, messages: [{ role: 'user', content }] });
   return { handlers, payload, toolSurfaceFile, directory, root, owner, scope, snapshot, record, responses, publish, ctx: { model: { provider: 'controlled', id: 'fake' } },
@@ -1229,17 +1233,17 @@ async function literalObserverFixture(body, transport, selectedSurface, fileId, 
 }
 
 const nameCatalog = fixture => ({ requestId: 'new-name-selection', command: 'list', code: 0,
-  response: { ok: true, scope: fixture.scope, count: 1, records: [fixture.record], coverage: { method: 'explicit_database', exhaustive: true, failed_sources: [], search_index_limited: false } } });
+  response: { ok: true, scope: fixture.scope, count: 1, records: [fixture.record], coverage: { method: 'explicit_library', exhaustive: true, failed_sources: [], search_index_limited: false } } });
 
 async function nativeMemberObserverFixture(t, resumed = false) {
-  const member = { id: 'shared_skill:controlled:member', ref: 'skill://shared_skill%3Acontrolled%3Amember/SKILL.md',
+  const member = { id: 'skill://member?library=controlled', ref: 'skill://member/SKILL.md?library=controlled',
     kind: 'skill', name: 'Member', description: 'Complete authored member description.', availability: 'available' };
   const body = '\ufeff# Root\r\nKeep <author>, "quotes" & 中文😀 bytes.\r\n- [' + member.name + '](' + member.ref + ') — ' + member.description + '\r\n';
   const fixture = await literalObserverFixture(body, undefined, undefined, 'file-literal', { record: {
-    name: 'Root', description: 'Complete root.', entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md',
+    name: 'Root', description: 'Complete root.', entrypoint: 'SKILL.md', ref: 'skill://literal-root/SKILL.md?library=controlled',
     locator: { type: 'shared_skill', library_id: 'controlled', skill_id: 'literal-root', page_id: uuid } } });
   t.after(fixture.close); t.diagnostic('Owned native Members observer fixture: ' + fixture.directory);
-  const ref = fixture.record.ref + '?snapshot=' + fixture.snapshot + '&file_id=file-literal', short = 'sr:C' + 'm'.repeat(22), selected = 'sr:S' + 'r'.repeat(22);
+  const ref = pinSkillRef(fixture.record.ref, fixture.snapshot), short = 'sr:C' + 'm'.repeat(22), selected = 'sr:S' + 'r'.repeat(22);
   const binding = { record: fixture.record, scope: fixture.scope, snapshot_id: fixture.snapshot, version_id: hash(body), body_sha256: hash(body), ref };
   const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
   const prefix = '<context-broker-record kind="skill" name="Root" ref="' + xml(resumed ? ref : selected) + '">\n<body>\n', encoded = xml(body);
@@ -1264,10 +1268,10 @@ async function nativeMemberObserverFixture(t, resumed = false) {
   await mkdir(path.dirname(sessionFile)); await writeFile(sessionFile, '');
   const branches = [{ type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: short,
     target: { kind: 'candidate', identity: { source: 'notion', scope: fixture.scope, id: member.id, kind: member.kind,
-      ref: member.ref.slice(0, member.ref.lastIndexOf('/')) } } } },
+      ref: member.id } } } },
     { type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref: selected, target: { kind: 'selected', ref,
       identity: { source: 'notion', scope: fixture.scope, id: fixture.owner, kind: fixture.record.kind, locator: fixture.record.locator,
-        ref: fixture.record.ref.slice(0, fixture.record.ref.lastIndexOf('/')) }, snapshot_id: fixture.snapshot, version_id: binding.version_id,
+        ref: fixture.record.id }, snapshot_id: fixture.snapshot, version_id: binding.version_id,
       body_sha256: binding.body_sha256, entrypoint: 'SKILL.md', file_id: 'file-literal' } } }];
   const ctx = { ...fixture.ctx, sessionManager: { getSessionFile: () => sessionFile, getLeafId: () => 'leaf', getBranch: () => branches,
     buildSessionProjection: () => ({ entries: resumed ? [{ sourceEntry: machine }] : [] }) } };
@@ -1305,7 +1309,7 @@ test('native Members description rejects untrusted, incomplete or mismatched cur
     'summary-body': f => { f.payload.messages[1].content = 'Root and Member have already been loaded.'; },
     'wrong-source': f => { f.proof.sourceId = 'foreign'; },
     'wrong-scope': f => { f.proof.binding.scope = 'b'.repeat(64); },
-    'wrong-owner': f => { f.proof.binding.record.id = 'shared_skill:controlled:other'; },
+    'wrong-owner': f => { f.proof.binding.record.id = 'skill://other?library=controlled'; },
     'wrong-locator': f => { f.proof.binding.record.locator.library_id = 'foreign'; },
     'wrong-kind': f => { f.proof.binding.record.kind = 'router'; },
     'wrong-pin': f => { f.proof.binding.snapshot_id = 's_' + '0'.repeat(64); },
@@ -1313,7 +1317,7 @@ test('native Members description rejects untrusted, incomplete or mismatched cur
     'wrong-hash': f => { f.proof.bodySha256 = '0'.repeat(64); },
     'wrong-bytes': f => { f.proof.bytes++; },
     'wrong-owner-identity': f => { f.proof.contentIdentity = JSON.stringify([f.scope, 'other']); },
-    'fixed-candidate': f => { f.proof.directory.candidates[0].ref += '?snapshot=' + f.snapshot; },
+    'fixed-candidate': f => { f.proof.directory.candidates[0].ref += '&snapshot=' + f.snapshot; },
     'wrong-card': f => { f.proof.directory.candidates[0].description += ' changed'; },
     'non-effective-history': f => { f.ctx.sessionManager.buildSessionProjection = () => ({ entries: [] });
       const original = f.ctx.sessionManager.getBranch; f.ctx.sessionManager.getBranch = () => [...original(), f.machine]; },
@@ -1337,7 +1341,7 @@ test('native Members description rejects untrusted, incomplete or mismatched cur
 
 for (const changed of ['owner', 'pin']) test('native Members description cannot borrow another valid same-byte ' + changed, async t => {
   const f = await nativeMemberObserverFixture(t), record = { ...f.record, ...(changed === 'owner'
-    ? { id: 'shared_skill:controlled:other-root', ref: 'skill://shared_skill%3Acontrolled%3Aother-root/SKILL.md',
+    ? { id: 'skill://other-root?library=controlled', ref: 'skill://other-root/SKILL.md?library=controlled',
       locator: { ...f.record.locator, skill_id: 'other-root' } } : {}) };
   const snapshot = changed === 'pin' ? 's_' + hash('another snapshot') : f.snapshot;
   const root = path.join(f.directory, 'cache', 'scopes', f.scope, 'records', hash(record.id), 'snapshots', snapshot);
@@ -1347,7 +1351,7 @@ for (const changed of ['owner', 'pin']) test('native Members description cannot 
   await save(path.join(f.responses, 'other-read.json'), { requestId: 'other-public-read', command: 'read', code: 0,
     response: { ok: true, scope: f.scope, snapshot_id: snapshot, version_id: hash(f.body), path: 'SKILL.md', record, content: f.body,
       file_bindings: [{ file_id: 'file-literal', page_id: uuid, path: 'SKILL.md' }] } });
-  Object.assign(f.proof.binding, { record, snapshot_id: snapshot, ref: record.ref + '?snapshot=' + snapshot + '&file_id=file-literal' });
+  Object.assign(f.proof.binding, { record, snapshot_id: snapshot, ref: pinSkillRef(record.ref, snapshot) });
   f.proof.snapshotId = snapshot; f.proof.contentIdentity = JSON.stringify([f.scope, record.id]);
   f.proof.identity = JSON.stringify(['notion', f.scope, record.kind, record.locator.type, record.id]);
   f.handlers.get('context')({ messages: f.messages }, f.ctx);
@@ -1378,10 +1382,10 @@ test('native Members description consumes one matching process, session and bran
   }
 });
 
-for (const selector of ['Visible Skill', 'visible-skill']) test('an actual frozen user name permits only a current main attempt before catalogue discovery: ' + selector, async () => {
+for (const selector of ['Visible Skill', 'visible-skill']) test('a literal user display name cannot authorize a Skill URI before or after catalogue discovery: ' + selector, async () => {
   const body = 'Complete introduced instructions.\n', prompt = '请介绍 ' + selector + '。';
   const fixture = await literalObserverFixture(body, undefined, undefined, undefined, { deferred: true, prompt,
-    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://literal-root/SKILL.md?library=controlled' } });
   const input = 'skill://' + encodeURIComponent(selector) + '/SKILL.md';
   const invoke = (id, target = input, tool = 'read') => {
     const args = tool === 'read' ? { path: target } : { ref: target };
@@ -1394,50 +1398,40 @@ for (const selector of ['Visible Skill', 'visible-skill']) test('an actual froze
     assert.equal(invoke('unselected-use', input, 'notion_use').block, true);
     assert.equal(invoke('guessed-resource', input.replace('/SKILL.md', '/references/guess.md')).block, true);
     assert.equal(invoke('guessed-pin', input + '?snapshot=' + fixture.snapshot).block, true);
-    assert.equal(invoke('named-main'), undefined);
+    assert.equal(invoke('named-main').block, true);
     const before = (await fixture.events()).find(event => event.phase === 'tool-call' && event.toolCallId === 'named-main');
-    assert.equal(before.claim.kind, 'submitted-name'); assert.equal(before.claim.selector, selector);
-    assert.equal(before.claim.ownerId, undefined); assert.equal(before.input, input);
-    assert.equal(before.claim.promptSha256, hash(prompt));
+    assert.equal(before.claim, undefined); assert.equal(before.allowed, false); assert.equal(before.input, input);
     await save(path.join(fixture.responses, 'name-selection.json'), nameCatalog(fixture));
     await fixture.publish();
-    fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'named-main', content: [{ type: 'text', text: body }] });
-    const read = (await fixture.events()).find(event => event.phase === 'tool-result' && event.toolCallId === 'named-main');
-    assert.equal(read.complete, true); assert.equal(read.ownerId, fixture.owner); assert.equal(read.scope, fixture.scope);
-    assert.equal(read.requested, input); assert.equal(read.nameResolution.selectionRequestId, 'new-name-selection');
-    assert.equal(read.nameResolution.readRequestId, 'literal-public-read');
-    fixture.handlers.get('before_provider_request')({ payload: { ...fixture.payload(prompt), messages: [{ role: 'user', content: prompt }, { role: 'tool', tool_call_id: 'named-main', content: body }] } }, fixture.ctx);
-    assert.equal((await fixture.events()).filter(event => event.phase === 'provider-request').at(-1).contents[0].sha256, hash(body));
+    assert.equal(invoke('still-a-name').block, true);
+    assert.equal((await fixture.events()).some(event => event.phase === 'tool-result' && event.complete), false);
   } finally { fixture.close(); }
 });
 
-test('a submitted name freezes its claim before Broker source work in the tool-call preamble', async () => {
+test('new source receipts cannot turn an authored display name into a stable identity', async () => {
   const body = 'Complete instructions from the original named source.\n', prompt = '请介绍 visible-skill。';
   const fixture = await literalObserverFixture(body, undefined, undefined, undefined, { deferred: true, prompt,
-    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://literal-root/SKILL.md?library=controlled' } });
   try {
     fixture.handlers.get('before_provider_request')({ payload: fixture.payload(prompt) }, fixture.ctx);
     const input = { path: 'skill://visible-skill/SKILL.md' };
     fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'early-source-name', name: 'read', arguments: input }] } });
     const authored = (await fixture.events()).find(event => event.phase === 'authored-tool-call');
-    assert.equal(authored.nameSelection?.claim.kind, 'submitted-name');
-    assert.deepEqual(authored.nameSelection.claim.sourceFilesBefore, []);
+    assert.equal(authored.referenceSelection, undefined); assert.equal(authored.discovered, false);
     await save(path.join(fixture.responses, 'name-selection.json'), nameCatalog(fixture));
     await fixture.publish();
-    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'early-source-name', input }), undefined);
-    fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'early-source-name', content: [{ type: 'text', text: body }] });
-    const events = await fixture.events(), call = events.find(event => event.phase === 'tool-call'), read = events.find(event => event.phase === 'tool-result');
-    assert.deepEqual(call.claim, authored.nameSelection.claim);
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'early-source-name', input }).block, true);
+    const events = await fixture.events(), call = events.find(event => event.phase === 'tool-call');
+    assert.equal(call.claim, undefined);
     assert.equal(call.argumentsSha256, hash(JSON.stringify(input))); assert.equal(call.authoredSequence, authored.sequence);
-    assert.equal(read.complete, true); assert.equal(read.ownerId, fixture.owner); assert.equal(read.scope, fixture.scope);
-    assert.equal(read.nameResolution.readRequestId, 'literal-public-read');
+    assert.equal(events.some(event => event.phase === 'tool-result' && event.complete), false);
   } finally { fixture.close(); }
 });
 
-for (const projection of ['view', 'profile', 'query', 'page']) test('a full ordinary name selection remains valid beside a successful background ' + projection + ' projection', async () => {
+for (const projection of ['view', 'profile', 'query', 'page']) test('a successful background ' + projection + ' projection cannot authorize a name URI', async () => {
   const body = 'Complete named instructions.\n', prompt = '请介绍 visible-skill。';
   const fixture = await literalObserverFixture(body, undefined, undefined, undefined, { deferred: true, prompt,
-    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://literal-root/SKILL.md?library=controlled' } });
   try {
     fixture.handlers.get('before_provider_request')({ payload: fixture.payload(prompt) }, fixture.ctx);
     const input = { path: 'skill://visible-skill/SKILL.md' };
@@ -1448,10 +1442,8 @@ for (const projection of ['view', 'profile', 'query', 'page']) test('a full ordi
     await save(path.join(fixture.responses, 'background.json'), projected);
     await save(path.join(fixture.responses, 'ordinary.json'), nameCatalog(fixture));
     await fixture.publish();
-    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'background-projection', input }), undefined);
-    fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'background-projection', content: [{ type: 'text', text: body }] });
-    const read = (await fixture.events()).find(event => event.phase === 'tool-result');
-    assert.equal(read.complete, true); assert.equal(read.nameResolution.selectionRequestId, 'new-name-selection');
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'background-projection', input }).block, true);
+    assert.equal((await fixture.events()).some(event => event.phase === 'tool-result' && event.complete), false);
     const sourceFiles = await fs.promises.readdir(fixture.responses);
     assert.equal(sourceFiles.length, 3, 'Ignoring a projected selection does not erase its actual source receipt');
   } finally { fixture.close(); }
@@ -1460,7 +1452,7 @@ for (const projection of ['view', 'profile', 'query', 'page']) test('a full ordi
 test('notion_use without a received authored selection blocks explicitly', async () => {
   const fixture = await literalObserverFixture('Complete original source.\n');
   try {
-    const input = { ref: 'skill://' + encodeURIComponent(fixture.owner) + '/SKILL.md' };
+    const input = { ref: skillFileRef(fixture.owner, 'SKILL.md') };
     assert.equal(fixture.handlers.get('tool_call')({ toolName: 'notion_use', toolCallId: 'missing-author', input }).block, true);
     assert.equal((await fixture.events()).find(event => event.phase === 'tool-call').allowed, false);
   } finally { fixture.close(); }
@@ -1470,7 +1462,7 @@ for (const variant of ['before-provider', 'assistant', 'unverified-tool', 'diffe
   const selector = 'visible-skill', prompt = variant === 'longer-word' ? '请介绍 prefix-visible-skill-suffix。'
     : variant === 'private-source-only' ? '请完成普通任务。' : '请介绍 visible-skill。';
   const fixture = await literalObserverFixture('Unseen private body.\n', undefined, undefined, undefined, { deferred: true, prompt,
-    record: { name: selector, alias: selector, enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+    record: { name: selector, alias: selector, enabled: true, entrypoint: 'SKILL.md', ref: 'skill://literal-root/SKILL.md?library=controlled' } });
   try {
     await save(path.join(fixture.responses, 'hidden-catalog.json'), nameCatalog(fixture));
     if (variant !== 'before-provider') {
@@ -1488,7 +1480,7 @@ for (const variant of ['before-provider', 'assistant', 'unverified-tool', 'diffe
 for (const variant of ['unresolved', 'ambiguous', 'failed-source', 'failed-list-operation', 'incomplete', 'projected', 'failed-projected-source', 'failed-projected-operation', 'duplicate-id', 'wrong-owner', 'wrong-scope', 'wrong-main', 'old-catalog', 'old-read', 'partial-body']) test('a submitted-name result cannot bind ' + variant + ' source evidence', async () => {
   const body = 'Complete introduced instructions.\n', prompt = '请介绍 visible-skill。';
   const fixture = await literalObserverFixture(body, undefined, undefined, undefined, { deferred: true, prompt,
-    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://literal-root/SKILL.md?library=controlled' } });
   try {
     const catalog = nameCatalog(fixture);
     if (variant === 'old-catalog') await save(path.join(fixture.responses, 'name-selection.json'), catalog);
@@ -1496,15 +1488,15 @@ for (const variant of ['unresolved', 'ambiguous', 'failed-source', 'failed-list-
     fixture.handlers.get('before_provider_request')({ payload: fixture.payload(prompt) }, fixture.ctx);
     const input = { path: 'skill://visible-skill/SKILL.md' };
     fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'named-main', name: 'read', arguments: input }] } });
-    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'named-main', input }), undefined);
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'named-main', input }).block, true);
     const value = catalog.response;
     if (variant === 'unresolved') { value.records = []; value.count = 0; }
-    if (variant === 'ambiguous') { value.records.push({ ...fixture.record, id: 'shared_skill:controlled:other', ref: 'skill://shared_skill%3Acontrolled%3Aother/SKILL.md' }); value.count = 2; }
+    if (variant === 'ambiguous') { value.records.push({ ...fixture.record, id: 'skill://other?library=controlled', ref: 'skill://other/SKILL.md?library=controlled' }); value.count = 2; }
     if (variant === 'failed-source') value.coverage.failed_sources.push({ id: 'another-source', code: 'ACCESS_DENIED' });
     if (variant === 'incomplete') value.coverage.exhaustive = false;
     if (variant === 'projected') value.view = { id: 'a-complete-view-is-not-the-whole-source' };
     if (variant === 'duplicate-id') { value.records.push(structuredClone(fixture.record)); value.count = 2; }
-    if (variant === 'wrong-owner') value.records = [{ ...fixture.record, id: 'shared_skill:controlled:other', ref: 'skill://shared_skill%3Acontrolled%3Aother/SKILL.md' }];
+    if (variant === 'wrong-owner') value.records = [{ ...fixture.record, id: 'skill://other?library=controlled', ref: 'skill://other/SKILL.md?library=controlled' }];
     if (variant === 'wrong-scope') value.scope = 'b'.repeat(64);
     if (variant === 'wrong-main') value.records = [{ ...fixture.record, entrypoint: 'WORKFLOW.md', ref: fixture.record.ref.replace('/SKILL.md', '/WORKFLOW.md') }];
     if (variant !== 'old-catalog') await save(path.join(fixture.responses, 'name-selection.json'), catalog);
@@ -1518,14 +1510,14 @@ for (const variant of ['unresolved', 'ambiguous', 'failed-source', 'failed-list-
     if (variant !== 'old-read') await fixture.publish();
     fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'named-main', content: [{ type: 'text', text: variant === 'partial-body' ? body.slice(0, -3) : body }] });
     const read = (await fixture.events()).find(event => event.phase === 'tool-result' && event.toolCallId === 'named-main');
-    assert.equal(read.complete, false); assert.equal(read.nameResolution, undefined);
+    assert.equal(read, undefined, 'A blocked name must not gain a delivery receipt from a later result');
   } finally { fixture.close(); }
 });
 
 test('the exact provided native path resolves through its verified manifest when the wrapper omits File ID', async () => {
   const body = 'Controlled complete main.\n', fixture = await literalObserverFixture(body, undefined, undefined, 'stable-main');
   const actual = path.join(fixture.root, 'SKILL.md');
-  const ref = 'skill://' + encodeURIComponent(fixture.owner) + '/SKILL.md?snapshot=' + fixture.snapshot;
+  const ref = skillFileRef(fixture.owner, 'SKILL.md', fixture.snapshot);
   const invoke = (id, value) => {
     fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: { path: value } }] } });
     return fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: id, input: { path: value } });
@@ -1536,16 +1528,17 @@ test('the exact provided native path resolves through its verified manifest when
     const wrapper = '<context-broker-record kind="skill" path="' + actual + '">\n<skill-ref>' + ref + '</skill-ref>\n' + body + '</context-broker-record>';
     fixture.handlers.get('before_provider_request')({ payload: fixture.payload(wrapper) }, fixture.ctx);
     assert.equal(invoke('provided-path', actual), undefined);
-    assert.equal(invoke('canonical-ref', ref + '&file_id=stable-main'), undefined);
+    assert.equal(invoke('canonical-ref', ref), undefined);
+    assert.equal(invoke('retired-file-selector', ref + '&file_id=stable-main').block, true);
     fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'provided-path', content: [{ type: 'text', text: body }] });
-    assert.ok((await fixture.events()).some(event => event.phase === 'tool-result' && event.toolCallId === 'provided-path' && event.complete && event.ref.endsWith('&file_id=stable-main')));
+    assert.ok((await fixture.events()).some(event => event.phase === 'tool-result' && event.toolCallId === 'provided-path' && event.complete && event.ref === ref && event.fileId === 'stable-main'));
   } finally { fixture.close(); }
 });
 
 test('an exact advertised home-relative native path resolves to the same verified manifest without rewriting the tool input', async () => {
   const body = 'Controlled home-relative main.\n', fixture = await literalObserverFixture(body, undefined, undefined, 'stable-main');
   const advertised = '~/' + path.relative(fixture.directory, path.join(fixture.root, 'SKILL.md'));
-  const ref = 'skill://' + encodeURIComponent(fixture.owner) + '/SKILL.md?snapshot=' + fixture.snapshot;
+  const ref = skillFileRef(fixture.owner, 'SKILL.md', fixture.snapshot);
   try {
     const wrapper = '<context-broker-record path="' + advertised + '"><skill-ref>' + ref + '</skill-ref>\n' + body + '</context-broker-record>';
     fixture.handlers.get('before_provider_request')({ payload: fixture.payload(wrapper) }, fixture.ctx);
@@ -1554,14 +1547,14 @@ test('an exact advertised home-relative native path resolves to the same verifie
     fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'home-read', content: [{ type: 'text', text: body }] });
     const events = await fixture.events();
     assert.ok(events.some(event => event.phase === 'tool-call' && event.input === advertised && event.allowed));
-    assert.ok(events.some(event => event.phase === 'tool-result' && event.toolCallId === 'home-read' && event.complete && event.ref.endsWith('&file_id=stable-main')));
+    assert.ok(events.some(event => event.phase === 'tool-result' && event.toolCallId === 'home-read' && event.complete && event.ref === ref && event.fileId === 'stable-main'));
   } finally { fixture.close(); }
 });
 
 test('provided-path observation rejects changed owner, pin, File ID, traversal and assistant-only advertisements', async () => {
   const body = 'Controlled protected main.\n', fixture = await literalObserverFixture(body, undefined, undefined, 'stable-main');
   const actual = path.join(fixture.root, 'SKILL.md');
-  const ref = 'skill://' + encodeURIComponent(fixture.owner) + '/SKILL.md?snapshot=' + fixture.snapshot;
+  const ref = skillFileRef(fixture.owner, 'SKILL.md', fixture.snapshot);
   const wrapper = (location, identity) => '<context-broker-record path="' + location + '"><skill-ref>' + identity + '</skill-ref>\n' + body + '</context-broker-record>';
   const invoke = (id, location) => {
     fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id, name: 'read', arguments: { path: location } }] } });
@@ -1569,7 +1562,7 @@ test('provided-path observation rejects changed owner, pin, File ID, traversal a
   };
   try {
     const invalid = [
-      wrapper(actual, ref.replace(encodeURIComponent(fixture.owner), 'different-owner')),
+      wrapper(actual, ref.replace('literal-root', 'different-owner')),
       wrapper(actual, ref.replace(fixture.snapshot, 'different-snapshot')),
       wrapper(actual, ref + '&file_id=different-file'),
       wrapper(fixture.root + '/../' + path.basename(fixture.root) + '/SKILL.md', ref),
@@ -1725,7 +1718,7 @@ test('the frozen graph contract requires README and one actual feature body, val
     const value = contractFixture('B');
     const choices = ['create-note', 'search'].map(name => {
       const content = 'Controlled full feature example: ' + name + '\n';
-      return { ref: `skill://fixture-leaf/references/${name}.md?snapshot=fixture-v1`, logicalId: 'fixture-' + name, scope: value.oracle.target.scope, snapshot: 'fixture-v1', sha256: hash(content), bytes: Buffer.byteLength(content), content };
+      return { ref: skillFileRef(value.oracle.target.logicalId, 'references/' + name + '.md', value.oracle.target.snapshot), logicalId: 'fixture-' + name, scope: value.oracle.target.scope, snapshot: value.oracle.target.snapshot, sha256: hash(content), bytes: Buffer.byteLength(content), content };
     });
     value.oracle.resourceAlternatives = [choices.map(({ content, ...node }) => node)];
     for (const index of picks) {
@@ -1824,7 +1817,7 @@ for (const format of ['html', 'native-wrapper', 'escaped-html', 'markdown']) {
       const hidden = await addLiteralResource(fixture, 'playbooks/unmentioned.md', 'Unmentioned resource.\n');
       const encoded = body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
       const supplied = format === 'native-wrapper'
-        ? '<context-broker-record path="' + path.join(fixture.root, 'SKILL.md') + '"><skill-ref>skill://' + encodeURIComponent(fixture.owner) + '/SKILL.md?snapshot=' + fixture.snapshot + '</skill-ref>\n' + encoded + '</context-broker-record>'
+        ? '<context-broker-record path="' + path.join(fixture.root, 'SKILL.md') + '"><skill-ref>' + skillFileRef(fixture.owner, 'SKILL.md', fixture.snapshot) + '</skill-ref>\n' + encoded + '</context-broker-record>'
         : body;
       fixture.handlers.get('before_provider_request')({ payload: fixture.payload(supplied) }, fixture.ctx);
       assert.equal(authoredRead(fixture, 'explicit-resource', actual), undefined);
@@ -1865,7 +1858,7 @@ test('HTML resource discovery stays within the current scope owner snapshot and 
       let actual;
       if (['traversal', 'absolute'].includes(changed)) actual = await addLiteralResource(fixture, relative, 'Controlled resource.\n');
       else {
-        const owner = changed === 'owner' ? fixture.owner + ':other' : fixture.owner;
+        const owner = changed === 'owner' ? skillIdentity('controlled', 'other') : fixture.owner;
         const scope = changed === 'scope' ? 'b'.repeat(64) : fixture.scope;
         const snapshot = changed === 'snapshot' ? 's_' + hash('different snapshot') : fixture.snapshot;
         const otherRoot = path.join(fixture.directory, 'cache', 'scopes', scope, 'records', hash(owner), 'snapshots', snapshot);
@@ -2009,10 +2002,10 @@ function combinedNameReceipt(receipt) {
   return paired;
 }
 
-test('combined catalog: submitted-name source timing uses only the full facet of the exact SDK operation', () => {
+test('combined catalog: a full SDK catalog does not restore retired submitted-name timing authority', () => {
   const f = submittedNameSelectionFixture(), index = f.value.responses.indexOf(f.catalog);
   f.value.responses[index] = combinedNameReceipt(f.catalog);
-  assert.equal(graphTrace(f.value).memberBodyReadsBeforeSelection, 0);
+  assert.equal(graphTrace(f.value).memberBodyReadsBeforeSelection, 1);
   for (const variant of ['full-failed', 'directory-only', 'directory-failed', 'partial-full', 'ambiguous-full']) {
     const changed = submittedNameSelectionFixture(), paired = combinedNameReceipt(changed.catalog);
     changeCombinedName(paired, variant); changed.value.responses[changed.value.responses.indexOf(changed.catalog)] = paired;
@@ -2026,27 +2019,25 @@ function changeCombinedName(receipt, variant) {
   if (variant === 'directory-only') receipt.value = receipt.value.directory.value;
   if (variant === 'partial-full') receipt.value.catalog.value.coverage.exhaustive = false;
   if (variant === 'ambiguous-full') {
-    const full = receipt.value.catalog.value, other = { ...full.records[0], id: full.records[0].id + ':other' };
-    other.ref = 'skill://' + encodeURIComponent(other.id) + '/SKILL.md'; full.records.push(other); full.count++;
+    const full = receipt.value.catalog.value, other = { ...full.records[0], id: skillIdentity('controlled', 'other') };
+    other.ref = skillFileRef(other.id, 'SKILL.md'); full.records.push(other); full.count++;
   }
 }
 
-for (const variant of ['complete', 'full-failed', 'directory-only', 'directory-failed', 'partial-full', 'ambiguous-full']) test('combined catalog: the live graph observer resolves a submitted name from the full facet: ' + variant, async () => {
+for (const variant of ['complete', 'full-failed', 'directory-only', 'directory-failed', 'partial-full', 'ambiguous-full']) test('combined catalog: the live graph observer never resolves a submitted display name: ' + variant, async () => {
   const body = 'Complete named instructions.\n', prompt = '请介绍 visible-skill。';
   const fixture = await literalObserverFixture(body, undefined, undefined, undefined, { deferred: true, prompt,
-    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://shared_skill%3Acontrolled%3Aliteral-root/SKILL.md' } });
+    record: { name: 'Visible Skill', alias: 'visible-skill', enabled: true, entrypoint: 'SKILL.md', ref: 'skill://literal-root/SKILL.md?library=controlled' } });
   try {
     fixture.handlers.get('before_provider_request')({ payload: fixture.payload(prompt) }, fixture.ctx);
     const input = { path: 'skill://visible-skill/SKILL.md' };
     fixture.handlers.get('message_end')({ message: { role: 'assistant', content: [{ type: 'toolCall', id: 'paired-name', name: 'read', arguments: input }] } });
-    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'paired-name', input }), undefined);
+    assert.equal(fixture.handlers.get('tool_call')({ toolName: 'read', toolCallId: 'paired-name', input }).block, true);
     const paired = combinedNameReceipt(nameCatalog(fixture)); changeCombinedName(paired, variant);
     await save(path.join(fixture.responses, 'combined-name.json'), paired);
     await fixture.publish();
     fixture.handlers.get('tool_result')({ toolName: 'read', toolCallId: 'paired-name', content: [{ type: 'text', text: body }] });
     const read = (await fixture.events()).find(event => event.phase === 'tool-result');
-    assert.equal(read.complete, variant === 'complete');
-    if (variant === 'complete') assert.equal(read.nameResolution.selectionRequestId, 'new-name-selection');
-    else assert.equal(read.nameResolution, undefined);
+    assert.equal(read, undefined, 'A blocked name must not gain a delivery receipt from a later catalog');
   } finally { fixture.close(); }
 });

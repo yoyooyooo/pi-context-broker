@@ -5,24 +5,60 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { verifyBundledRuntime } from './verify-package-closure.mjs';
+import { verifyBundledNotices, verifyBundledRuntime, packageInstallationEnvironment } from './verify-package-closure.mjs';
+
+test('installation transport reaches an actual child without importing host credentials or loaders', () => {
+  const options = { home: '/owned/empty-home', base: '/owned/tmp', cache: '/owned/public-npm-cache', proxy: 'http://127.0.0.1:17893',
+    NOTION_API_TOKEN: 'fixture-secret', NODE_OPTIONS: '--import=/untrusted/loader.mjs', NODE_PATH: '/untrusted/modules' };
+  const result = spawnSync(process.execPath, ['-e', 'process.stdout.write(JSON.stringify(process.env))'], {
+    encoding: 'utf8', env: packageInstallationEnvironment(options),
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const observed = JSON.parse(result.stdout);
+  assert.equal(observed.HOME, options.home);
+  assert.equal(observed.npm_config_cache, options.cache);
+  assert.equal(observed.npm_config_https_proxy, options.proxy);
+  assert.equal(observed.npm_config_prefer_offline, 'true');
+  for (const key of ['NOTION_API_TOKEN', 'NODE_OPTIONS', 'NODE_PATH']) assert.equal(observed[key], undefined);
+  for (const proxy of ['http://user:secret@localhost:7890', 'socks5://localhost:7890', 'https://proxy.example/path', 'https://proxy.example/?token=secret'])
+    assert.throws(() => packageInstallationEnvironment({ ...options, proxy }));
+  assert.throws(() => packageInstallationEnvironment({ ...options, cache: 'relative/cache' }));
+});
+
+test('packaged notices retain the complete selected CLI original and its frozen hash', () => {
+  const original = Buffer.from('# Third-party notices\nCopyright © Example\nAll conditions retained.\n');
+  const expectedSha256 = createHash('sha256').update(original).digest('hex');
+  const input = { selectedNoticesBytes: original, bundledNoticesBytes: Buffer.concat([Buffer.from('Other dependency license\n'), original]), expectedSha256 };
+  assert.equal(verifyBundledNotices(input).source_bytes, original.length);
+  assert.equal(verifyBundledNotices(input).source_sha256, expectedSha256);
+  for (const patch of [{ bundledNoticesBytes: original.subarray(0, original.length - 1) },
+    { bundledNoticesBytes: Buffer.from('Copyright © Example\n') }, { bundledNoticesBytes: Buffer.alloc(0) },
+    { selectedNoticesBytes: Buffer.alloc(0) }, { selectedNoticesBytes: Buffer.from('changed original') },
+    { expectedSha256: '0'.repeat(64) }]) assert.throws(() => verifyBundledNotices({ ...input, ...patch }));
+});
 
 test('a selected source build accepts its frozen version and rejects wrong packages or altered bundle bytes', () => {
   const hash = value => createHash('sha256').update(value).digest('hex');
-  const fixture = { expectedVersion: '0.1.0', cliBytes: Buffer.from('frozen-cli'), sdkBytes: Buffer.from('frozen-sdk'),
-    manifest: { version: 1, package: 'ntn-skills', package_version: '0.1.0', sdk_version: 2,
+  const fixture = { expectedVersion: '0.1.0', cliBytes: Buffer.from('frozen-cli'), sdkBytes: Buffer.from('frozen-sdk'), refBytes: Buffer.from('frozen-ref'),
+    manifest: { version: 1, package: 'ntn-skills', package_version: '0.1.0', sdk_version: 3, skill_ref_version: 2,
       consumer_contract_version: 1, consumption_effects_version: 1, catalog_directory_contract_version: 1,
+      content_search_contract_version: 1,
       read_output_proof_version: 1, resource_read_contract_version: 1, resource_read_effects_version: 1,
-      cli_sha256: hash('frozen-cli'), sdk_sha256: hash('frozen-sdk') } };
-  assert.deepEqual(verifyBundledRuntime(fixture), { cli: fixture.manifest.cli_sha256, sdk: fixture.manifest.sdk_sha256 });
+      cli_sha256: hash('frozen-cli'), sdk_sha256: hash('frozen-sdk'), ref_sha256: hash('frozen-ref') } };
+  assert.deepEqual(verifyBundledRuntime(fixture), { cli: fixture.manifest.cli_sha256, sdk: fixture.manifest.sdk_sha256, ref: fixture.manifest.ref_sha256 });
   for (const change of [
     value => { value.expectedVersion = '0.3.0'; },
     value => { value.manifest.package = 'other-package'; },
     value => { value.manifest.version = 2; },
     value => { value.manifest.sdk_version = 1; },
     value => { delete value.manifest.consumption_effects_version; },
+    value => { delete value.manifest.content_search_contract_version; },
     value => { value.cliBytes = Buffer.from('other-cli'); },
     value => { value.sdkBytes = Buffer.from('other-sdk'); },
+    value => { value.refBytes = Buffer.from('other-ref'); },
+    value => { delete value.refBytes; },
+    value => { value.manifest.skill_ref_version = 1; },
+    value => { delete value.manifest.ref_sha256; },
   ]) {
     const value = structuredClone(fixture); change(value);
     assert.throws(() => verifyBundledRuntime(value));

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { safeRequestMetrics } from './notion-default-context.mjs';
+import { directoryInventoryPlan, reviewedDirectoryInventoryStartup, reviewedDirectoryInventoryProgram, captureDirectoryInventorySpawn } from './notion-agent-inventory-evidence.mjs';
 
 /** Passive public diagnostics in the owned Pi process. No process, stream or SDK
  * method is replaced. Raw CLI stdout is retained only in bounded memory, parsed
@@ -52,13 +53,13 @@ export function observeSourceTransport(settings) {
     unmatchedChildLifecycleVersion: 1,
     coverage: 'owned Pi SDK operations and direct bundled CLI; direct unmatched child lifecycle only, descendant transport remains unknown', wireBytes: null });
   subscribe('context-broker.notion-sdk', event => {
-    if (!event || event.version !== 1 || !['start', 'end'].includes(event.event) || !['list', 'files', 'consume', 'read', 'read-resources', 'resolve'].includes(event.operation)
+    if (!event || event.version !== 1 || !['start', 'end'].includes(event.event) || !['library-selection', 'library', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search'].includes(event.operation)
       || typeof event.id !== 'string' || !/^[a-f0-9-]{36}$/i.test(event.id) || event.pid !== process.pid
       || typeof event.monotonic_ns !== 'string' || !/^\d+$/.test(event.monotonic_ns)) throw new Error('SDK_EVENT_INVALID');
     const requestId = 'sdk:' + process.pid + ':' + event.id;
     // These are the SDK's public routing fields, not inferred configuration.
     // Absence remains absence for older diagnostics; explicit null stays null.
-    const attribution = Object.fromEntries(['source_id', 'database'].filter(key => Object.hasOwn(event, key)).map(key => {
+    const attribution = Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(event, key)).map(key => {
       const value = event[key];
       if (value !== null && (typeof value !== 'string' || !value.trim() || value.length > 1024 || /[\u0000-\u001f\u007f]/u.test(value)))
         throw new Error('SDK_SOURCE_ATTRIBUTION_INVALID');
@@ -92,13 +93,15 @@ export function observeSourceTransport(settings) {
     if (!matched) {
       if (unmatched.has(child)) throw new Error('CHILD_DUPLICATE_START');
       const childId = 'child:' + process.pid + ':' + (++unmatchedChildren);
+      const inventory = settings.captureDirectoryInventorySpawn?.(options, { fs, crypto, path });
       const entry = { childId, childPid: null, closed: false };
       unmatched.set(child, entry);
       const identity = () => ({ kind: 'child', childId, parentPid: process.pid, childPid: entry.childPid });
       const hasArgs = Array.isArray(args) && args.every(value => typeof value === 'string');
       record('unmatched_child_start', { ...identity(), argumentCount: hasArgs ? args.length : null,
         argvSha256: hasArgs ? hash(JSON.stringify(args)) : null, detached: options?.detached === true,
-        executableSha256: typeof options?.file === 'string' ? hash(options.file) : null, transport: 'unknown' });
+        executableSha256: typeof options?.file === 'string' ? hash(options.file) : null, transport: 'unknown',
+        ...(inventory ? { directoryInventory: inventory.proof } : {}) });
       child.once('spawn', guarded('unmatched_child_spawn', () => {
         entry.childPid = Number.isSafeInteger(child.pid) ? child.pid : null;
         record('unmatched_child_spawn', { ...identity(), boundary: 'child-spawn-event' });
@@ -113,7 +116,8 @@ export function observeSourceTransport(settings) {
       }));
       child.once('close', guarded('unmatched_child_close', (code, signal) => {
         entry.closed = true;
-        record('unmatched_child_close', { ...identity(), code, signal, boundary: 'child-close-event' });
+        record('unmatched_child_close', { ...identity(), code, signal, boundary: 'child-close-event',
+          ...(inventory ? { directoryInventoryUnchanged: inventory.unchanged() } : {}) });
       }));
       return;
     }
@@ -338,8 +342,12 @@ export function sourceObserverPreloadSource(settings) {
   return "import diagnostics from 'node:diagnostics_channel';\nimport fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nimport {errorMonitor} from 'node:events';\nimport {isMainThread} from 'node:worker_threads';\nimport {execFileSync} from 'node:child_process';\n"
     + 'const settings = ' + JSON.stringify(settings) + ';\n'
     + 'const identifyPackageEntry = (' + identifySourcePackageEntry.toString() + ');\n'
+    + 'const directoryInventoryPlan = (' + directoryInventoryPlan.toString() + ');\n'
+    + 'const reviewedDirectoryInventoryStartup = (' + reviewedDirectoryInventoryStartup.toString() + ');\n'
+    + 'const reviewedDirectoryInventoryProgram = (' + reviewedDirectoryInventoryProgram.toString() + ');\n'
+    + 'const captureDirectoryInventorySpawn = (' + captureDirectoryInventorySpawn.toString() + ');\n'
     + 'let owned=false; try { owned=isMainThread && process.ppid===settings.ownerParentPid && (settings.ownerPackage ? Boolean(identifyPackageEntry({...settings.ownerPackage,fs,crypto,path})) : fs.realpathSync(process.argv[1])===fs.realpathSync(settings.ownerEntry)); } catch {}\n'
-    + 'if(owned) { try { const safeRequestMetrics = (' + safeRequestMetrics.toString() + '); (' + observeSourceTransport.toString() + ')( {...settings,diagnostics,fs,crypto,path,errorMonitor,safeRequestMetrics} ); } catch { /* Missing observation is reported by the driver. */ } }\n'
+    + 'if(owned) { try { const safeRequestMetrics = (' + safeRequestMetrics.toString() + '); (' + observeSourceTransport.toString() + ')( {...settings,diagnostics,fs,crypto,path,errorMonitor,safeRequestMetrics,captureDirectoryInventorySpawn} ); } catch { /* Missing observation is reported by the driver. */ } }\n'
     + 'const captureSourceProcessAncestry = (' + captureSourceProcessAncestry.toString() + ');\n'
     + 'if(isMainThread&&settings.processDirectory) { try { (' + observeSourceProcess.toString() + ')({...settings,fs,crypto,path,execFileSync,owner:owned}); } catch { /* Missing process identity remains unknown. */ } }\n';
 }
@@ -418,7 +426,7 @@ export function parseSourceObservation(text, { final = true } = {}) {
       }
     } else if (event.phase === 'started') {
       if (!['cli', 'sdk'].includes(event.kind) || typeof event.requestId !== 'string' || operations.has(event.requestId)) errors.push('duplicate-or-invalid-start');
-      const attribution = Object.fromEntries(['source_id', 'database'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
+      const attribution = Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
       if (event.kind === 'sdk' && Object.values(attribution).some(value => value !== null &&
         (typeof value !== 'string' || !value.trim() || value.length > 1024 || /[\u0000-\u001f\u007f]/u.test(value))))
         errors.push('invalid-sdk-source-attribution');
@@ -429,7 +437,7 @@ export function parseSourceObservation(text, { final = true } = {}) {
       if (event.phase === 'completed' && operation) {
         operation.completed++;
         if (event.kind !== operation.kind) errors.push('changed-operation-kind');
-        const attribution = Object.fromEntries(['source_id', 'database'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
+        const attribution = Object.fromEntries(['source_id', 'library'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
         if (operation.kind === 'sdk' && JSON.stringify(attribution) !== JSON.stringify(operation.attribution))
           errors.push('changed-sdk-source-attribution');
       }

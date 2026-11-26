@@ -1,3 +1,4 @@
+import { nativeFileRef, nativeSkillId, withNativeSnapshot, bindNativeReference } from "../src/native-reference";
 import { expect, spyOn, test } from "bun:test";
 import { JsonSchema, Schema, SchemaRepresentation } from "effect";
 import { createHash } from "node:crypto";
@@ -26,26 +27,26 @@ const canonical = (value: unknown): string => value === null || typeof value !==
       .map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
 async function fixture(options: { otherSource?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-resource-host-"));
-  const id = "shared_skill:batch:owner", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
-  const base = "skill://" + encodeURIComponent(id) + "/", ref = (path: string, file?: string) => base + path + "?snapshot=" + snapshot + (file ? "&file_id=" + file : "");
+  const id = "skill://owner?library=e1448f62-7e41-528b-9e42-e9b701cb7d98", scope = hash("scope"), snapshot = "s_" + hash("snapshot"), version = hash("version");
+  const base = id, ref = (path: string) => nativeFileRef(base, String(path), String(snapshot));
   const content: ContentRecord = { id, kind: "skill", name: "Owner", alias: "owner", description: "Resource owner metadata", default_context: false, enabled: true,
-    entrypoint: "SKILL.md", ref: base + "SKILL.md", locator: { type: "shared_skill", library_id: "batch", skill_id: "owner",
+    entrypoint: "SKILL.md", ref: nativeFileRef(base, "SKILL.md"), locator: { type: "shared_skill", library_id: "e1448f62-7e41-528b-9e42-e9b701cb7d98", skill_id: "owner",
       page_id: "00000000-0000-4000-8000-000000000001", database_id: "00000000-0000-4000-8000-000000000010", data_source_id: "00000000-0000-4000-8000-000000000011" } };
   const metadata: SkillRecord = { ...content, source: "notion", sourceId: "notion", sourceScope: scope, path: join(root, "metadata/SKILL.md"),
     aliases: [], normalizedAliases: [], normalizedName: "owner", normalizedDescription: content.description, autoloadEnabled: false, defaultDiscovery: false };
   await mkdir(join(root, "metadata")); await writeFile(metadata.path, "Owner metadata only");
   const binary = Buffer.from([0, 255, 1, 254, 2, 253, 3]), output = join(root, "selected.bin"); await writeFile(output, binary);
   const files: ResourceReadFile[] = [
-    { requested_ref: ref("references/a.md", "a"), ref: ref("references/a.md", "a"), path: "references/a.md", file_id: "a", encoding: "utf8", content: "\ufeffUTF8 雪\r\n", bytes: Buffer.byteLength("\ufeffUTF8 雪\r\n"), sha256: hash("\ufeffUTF8 雪\r\n") },
-    { requested_ref: ref("references/b.md", "b"), ref: ref("references/b.md", "b"), path: "references/b.md", file_id: "b", encoding: "utf8", content: "", bytes: 0, sha256: hash("") },
-    { requested_ref: ref("assets/selected.bin", "binary"), ref: ref("assets/selected.bin", "binary"), path: "assets/selected.bin", file_id: "binary", encoding: "base64", content: binary.toString("base64"), bytes: binary.length, sha256: hash(binary), output },
+    { requested_ref: ref("references/a.md"), ref: ref("references/a.md"), path: "references/a.md", file_id: "a", encoding: "utf8", content: "\ufeffUTF8 雪\r\n", bytes: Buffer.byteLength("\ufeffUTF8 雪\r\n"), sha256: hash("\ufeffUTF8 雪\r\n") },
+    { requested_ref: ref("references/b.md"), ref: ref("references/b.md"), path: "references/b.md", file_id: "b", encoding: "utf8", content: "", bytes: 0, sha256: hash("") },
+    { requested_ref: ref("assets/selected.bin"), ref: ref("assets/selected.bin"), path: "assets/selected.bin", file_id: "binary", encoding: "base64", content: binary.toString("base64"), bytes: binary.length, sha256: hash(binary), output },
   ];
   const scalarOutput = join(root, "selected-text.md"); await writeFile(scalarOutput, files[0]!.content);
-  const ownerBinding = { record: content, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash("unread main"), ref: ref("SKILL.md", "main") };
+  const ownerBinding = { record: content, scope, snapshot_id: snapshot, version_id: version, body_sha256: hash("unread main"), ref: ref("SKILL.md") };
   const manifestFiles = [{ path: "SKILL.md", bytes: 11, sha256: ownerBinding.body_sha256, ref: ownerBinding.ref }, ...files];
   const manifest = { complete: true, scope, snapshot_id: snapshot, version_id: version, record: content, entrypoint: "SKILL.md", files: manifestFiles.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })) };
   const state = { id: "session-one", entries: [] as SessionEntry[], catalog: [metadata], lookupFailures: [] as SourceFailure[], lookupScope: true, calls: [] as string[][], mainReads: 0, persisted: 0,
-    nameCalls: [] as string[], fixedCalls: [] as string[], scalarReads: 0, readOnly: [] as Array<boolean | undefined>, budgets: [] as ResourceReadBudget[],
+    resolutionCalls: [] as string[], fixedCalls: [] as string[], scalarReads: 0, readOnly: [] as Array<boolean | undefined>, budgets: [] as ResourceReadBudget[],
     effects: undefined as ConsumptionEffects | undefined, failure: undefined as Error | undefined,
     transform: (batch: ResourceReadBatch): ResourceReadBatch => batch, wait: undefined as undefined | ((signal?: AbortSignal) => Promise<void>),
     lookupWait: undefined as undefined | ((signal?: AbortSignal) => Promise<void>), signal: undefined as AbortSignal | undefined };
@@ -75,10 +76,10 @@ async function fixture(options: { otherSource?: boolean } = {}) {
       return { records: state.catalog, failures: state.lookupFailures,
         lists: state.lookupScope ? [{ sourceId: "notion", scope, policy: "refresh", exhaustive: true }] : [] };
     },
-    resolveNamedReference: async input => {
-      state.nameCalls.push(input);
-      const parsed = parseNativeReference(input);
-      if (![content.name, content.alias].includes(parsed.selector) || parsed.snapshot !== snapshot) throw new Error("Unexpected fixed name");
+    resolveSkillReference: async input => {
+      state.resolutionCalls.push(input);
+      const parsed = bindNativeReference(parseNativeReference(input), "e1448f62-7e41-528b-9e42-e9b701cb7d98");
+      if (parsed.selector !== id || parsed.snapshot !== snapshot) throw new SourceError("SKILL_NOT_FOUND", "notion");
       return { record: metadata, ref: ref(parsed.path) };
     },
     loadRecord: async () => { state.mainReads++; throw new Error("Resource reads cannot load the main entry"); },
@@ -102,9 +103,9 @@ async function fixture(options: { otherSource?: boolean } = {}) {
       const seen = new Set<string>();
       const selected = refs.map(requested_ref => {
         const parsed = parseNativeReference(requested_ref);
-        if (parsed.fileId === "main" || parsed.fileId === undefined && parsed.path === "SKILL.md") throw Object.assign(new Error("Main excluded"), { code: "RESOURCE_MAIN_NOT_ALLOWED" });
-        const file = files.find(file => parsed.fileId === undefined ? file.path === parsed.path : file.file_id === parsed.fileId);
-        if (!file) throw new Error("Unexpected fixture resource");
+        if (parsed.path === "SKILL.md") throw Object.assign(new Error("Main excluded"), { code: "RESOURCE_MAIN_NOT_ALLOWED" });
+        const file = files.find(file => file.path === parsed.path);
+        if (!file) throw new SourceError("FILE_NOT_FOUND", "notion");
         if (seen.has(file.path)) throw Object.assign(new Error("Duplicate canonical selection"), { code: "RESOURCE_SELECTION_CONFLICT" });
         seen.add(file.path); return { ...file, requested_ref };
       });
@@ -121,12 +122,12 @@ async function fixture(options: { otherSource?: boolean } = {}) {
       manifest_complete: true, local_files_ready: false, materialized_paths: [] } };
   const short = createSessionShortRefHost(api);
   const confirmTask = async () => {
-    const body = "Complete independent task root instructions.\n", taskId = "shared_skill:batch:task";
-    const taskMetadata: ContentRecord = { ...content, id: taskId, name: "Task", alias: "task", ref: "skill://" + encodeURIComponent(taskId) + "/SKILL.md",
+    const body = "Complete independent task root instructions.\n", taskId = "skill://task?library=e1448f62-7e41-528b-9e42-e9b701cb7d98";
+    const taskMetadata: ContentRecord = { ...content, id: taskId, name: "Task", alias: "task", ref: nativeFileRef(taskId, "SKILL.md"),
       locator: { ...content.locator, skill_id: "task", page_id: "00000000-0000-4000-8000-000000000099" } };
     const taskSnapshot = "s_" + hash("task snapshot");
     const taskBinding = { record: taskMetadata, scope, snapshot_id: taskSnapshot, version_id: hash(body), body_sha256: hash(body),
-      ref: taskMetadata.ref + "?snapshot=" + taskSnapshot + "&file_id=task-main" };
+      ref: withNativeSnapshot(taskMetadata.ref, taskSnapshot) };
     const task: SkillRecord = { ...metadata, ...taskMetadata, path: join(root, "task/SKILL.md"), body,
       snapshotId: taskSnapshot, versionId: hash(body), preparationBinding: taskBinding };
     const required = { ...selected, body: "unread main" };
@@ -175,8 +176,12 @@ test("one batch deadline includes metadata lookup and acquisition and timeout le
     const f = await fixture(); await f.confirmTask();
     if (phase === "lookup") { f.state.catalog = []; await f.host.refresh(f.ctx); }
     const selection = structuredClone(sessionSelection(f.ctx)), entered = Promise.withResolvers<void>();
-    const deadline = new AbortController(), durations: number[] = [];
-    const timeout = spyOn(AbortSignal, "timeout").mockImplementation(milliseconds => { durations.push(milliseconds); return deadline.signal; });
+    const durations: number[] = [], nativeTimeout = globalThis.setTimeout;
+    let expire: (() => void) | undefined;
+    const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, milliseconds, ...args) => {
+      if (milliseconds === 120000) { durations.push(milliseconds); expire = () => callback(...args); }
+      return nativeTimeout(callback, milliseconds, ...args);
+    });
     const wait = async (signal?: AbortSignal) => {
       if (!signal) throw new Error("Batch I/O requires the operation signal");
       entered.resolve();
@@ -191,7 +196,7 @@ test("one batch deadline includes metadata lookup and acquisition and timeout le
         .then(result => ({ result }), error => ({ error }));
       await entered.promise;
       expect(durations).toEqual([120000]);
-      deadline.abort(new Error("Controlled whole-operation deadline"));
+      expire?.();
       expect(await outcome).toMatchObject({ error: { code: "RESOURCE_TIME_BUDGET" } });
       expect(f.state.calls).toHaveLength(phase === "lookup" ? 0 : 1);
       if (phase === "acquisition") {
@@ -199,7 +204,7 @@ test("one batch deadline includes metadata lookup and acquisition and timeout le
         expect(f.state.budgets).toEqual([{ maxFiles: 16, maxBytes: 1048576, timeBudgetMs: 120000 }]);
       }
       expect(sessionSelection(f.ctx)).toEqual(selection);
-    } finally { deadline.abort(); timeout.mockRestore(); f.state.lookupWait = undefined; f.state.wait = undefined; }
+    } finally { expire?.(); timeout.mockRestore(); f.state.lookupWait = undefined; f.state.wait = undefined; }
     expect((await f.read({ paths: [f.files[0]!.ref] })).structuredContent).toMatchObject({ status: "ready" });
     expect(sessionSelection(f.ctx)).toEqual(selection);
   }
@@ -220,6 +225,33 @@ test("explicit batch time allowance cannot turn a cancelled late result into del
   expect(f.state.budgets[1]).toEqual(DEFAULT_RESOURCE_READ_BUDGET);
 });
 
+for (const stop of ["deadline", "abort"] as const)
+test(`public Broker resource batch settles on ${stop} while the producer ignores its signal`, async () => {
+  const f = await fixture(), controller = new AbortController();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const original = JSON.stringify(f.state.entries);
+  f.state.effects = noConsumptionWrites();
+  f.state.wait = async () => { entered.resolve(); await release.promise; };
+  const pending = f.read({ paths: [f.files[0]!.ref], budget: { timeBudgetMs: 15 } }, controller.signal)
+    .then(value => ({ value }), error => ({ error }));
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await entered.promise;
+    if (stop === "abort") controller.abort();
+    const result = await Promise.race([pending, new Promise<undefined>(resolve => { watchdog = setTimeout(() => resolve(undefined), 100); })]);
+    expect(result).toBeDefined();
+    if (!result || !("error" in result)) throw new Error("Batch wait must finish before the producer is released");
+    expect(result.error).toMatchObject({ code: stop === "abort" ? "SOURCE_CANCELLED" : "RESOURCE_TIME_BUDGET" });
+    expect(f.state.signal?.aborted).toBe(true); expect(controller.signal.aborted).toBe(stop === "abort");
+    expect(f.state.persisted).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.mainReads).toBe(0);
+    release.resolve(); await new Promise(resolve => setTimeout(resolve, 0));
+    expect(f.state.persisted).toBe(0); expect(JSON.stringify(f.state.entries)).toBe(original);
+    expect(await f.result({ content: [{ type: "text", text: f.files[0]!.content }], isError: false })).toEqual([undefined]);
+    f.state.wait = undefined;
+    expect((await f.read({ paths: [f.files[0]!.ref] })).structuredContent).toMatchObject({ status: "ready" });
+  } finally { if (watchdog) clearTimeout(watchdog); release.resolve(); await pending; await f.emit("session_shutdown"); }
+});
+
 test("a resource result must retain the complete requested budget before provider projection", async () => {
   for (const changed of [{ timeBudgetMs: 30000 }, { maxFiles: 17 }, { maxBytes: 1048577 }]) {
     const f = await fixture(); await f.confirmTask();
@@ -238,7 +270,7 @@ test("one resource batch delivers exact selected text and binary metadata withou
   expect(model.files[2]).toMatchObject({ kind: "binary", output: f.files[2]!.encoding === "base64" ? f.files[2]!.output : "" });
   expect(JSON.stringify(result.content)).not.toContain(f.files[2]!.content);
   expect(f.state.calls).toHaveLength(1); expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
-  expect(f.state.scalarReads).toBe(0); expect(f.state.nameCalls).toHaveLength(0);
+  expect(f.state.scalarReads).toBe(0); expect(f.state.resolutionCalls).toHaveLength(0);
   expect(f.metadata.body).toBeUndefined(); expect(f.metadata.entryManifest).toBeUndefined();
   expect(sessionSourceSnapshot([{ role: "toolResult", toolName: "read", toolCallId: "batch-call", ...result }], f.metadata)).toBeUndefined();
   expect(result.details).toMatchObject({ contextBrokerResource: { version: 2, toolCallId: "batch-call", loaded: false }, contextBrokerResourceSource: { source_id: "notion" } });
@@ -258,6 +290,12 @@ test("every Pi batch forbids writes and preserves complete issued-resource recei
   expect(proof?.files.map(file => file.delivered_complete_text)).toEqual([true, true, false]);
   expect(JSON.parse(text)).toMatchObject({ effects, files: [{ content: f.files[0]!.content }, { content: "" }, { kind: "binary" }] });
   expect(result.details).toHaveProperty("effects", effects);
+  expect(result.details).toHaveProperty("contextBrokerReadDisplay", { version: 1, source: "notion", kind: "file",
+    name: "Owner", sourceId: "notion", scope: f.metadata.sourceScope,
+    files: f.files.map((file, index) => ({ ref: paths[index], path: file.path })) });
+  f.metadata.name = "Renamed catalog owner";
+  expect(JSON.parse(JSON.stringify(result)).details.contextBrokerReadDisplay.name).toBe("Owner");
+  expect(f.state.calls).toEqual([f.files.map(file => file.ref)]);
   expect(f.state.entries).toHaveLength(entries);
   expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
 });
@@ -297,28 +335,28 @@ test("a producer requiring writes fails an ordinary batch without a body deliver
   expect(original.message).toBe("Strict source refused a semantic write");
 });
 
-test("SC25 scalar fixed-name resources deliver the exact file without preparing the main entry", async () => {
-  const f = await fixture(), input = `skill://Owner/references/a.md?${f.files[0]!.ref.split("?")[1]!.split("&")[0]}`;
+test("SC25 scalar stable-ID resources bind the entry Library without preparing the main", async () => {
+  const f = await fixture(), input = `skill://owner/references/a.md?snapshot=${f.selected.snapshotId}`;
   const result = await f.read({ path: input });
   expect(result.content).toEqual([{ type: "text", text: f.files[0]!.content }]);
   expect(await f.result(result)).toEqual(expect.arrayContaining([expect.objectContaining({ details: expect.objectContaining({
     contextBrokerResource: expect.objectContaining({ delivered_complete_text: true, loaded: false, ref: f.files[0]!.ref }),
   }) })]));
-  expect(f.state.nameCalls).toEqual([input]); expect(f.state.fixedCalls).toEqual([f.ref("references/a.md")]);
+  expect(f.state.resolutionCalls).toEqual([input]); expect(f.state.fixedCalls).toEqual([f.ref("references/a.md")]);
   expect(f.state.readOnly).toEqual([true]);
   expect(f.state.scalarReads).toBe(1); expect(f.state.calls).toHaveLength(0); expect(f.state.mainReads).toBe(0); expect(f.state.persisted).toBe(0);
 });
 
-test("SC25 fixed-name resource batches preserve one canonical owner and exclude unfixed names before lookup", async () => {
+test("SC25 contextual resource batches preserve exact owner and reject display names", async () => {
   const f = await fixture(), snapshot = parseNativeReference(f.files[0]!.ref).snapshot;
-  const refs = [`skill://Owner/references/a.md?snapshot=${snapshot}`, `skill://owner/references/b.md?snapshot=${snapshot}`];
+  const refs = [`skill://owner/references/a.md?snapshot=${snapshot}`, `skill://owner/references/b.md?snapshot=${snapshot}`];
   const result = await f.read({ paths: refs });
   expect(result.structuredContent).toHaveProperty("files.0.content", f.files[0]!.content);
   expect(result.structuredContent).toHaveProperty("files.1.content", "");
   expect(f.state.calls).toEqual([[f.ref("references/a.md"), f.ref("references/b.md")]]);
-  expect(f.state.nameCalls).toEqual(refs); expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
+  expect(f.state.resolutionCalls).toEqual(refs); expect(f.state.mainReads).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.persisted).toBe(0);
   await expect(f.read({ paths: ["skill://Owner/references/a.md"] })).rejects.toMatchObject({ code: "SOURCE_REFERENCE_INVALID" });
-  expect(f.state.nameCalls).toEqual(refs); expect(f.state.calls).toHaveLength(1);
+  expect(f.state.resolutionCalls).toEqual(refs); expect(f.state.calls).toHaveLength(1);
 });
 
 test("batch admission rejects invalid modes and identities before any SDK operation", async () => {
@@ -329,22 +367,22 @@ test("batch admission rejects invalid modes and identities before any SDK operat
     { paths: [first], readOnly: "true" }, { paths: [first], readOnly: null },
     { paths: [first], readOnly: true }, { paths: [first], readOnly: false }, { paths: [first], readOnly: undefined },
     { paths: [first.split("?")[0]!] }, { paths: [selected] }, { paths: [first, first] },
-    { paths: [first, first.replace("references/a.md", "old.md")] },
     { paths: [first, f.files[1]!.ref.replace(/snapshot=s_[a-f0-9]+/, "snapshot=s_" + hash("other"))] },
-    { paths: [first, f.files[1]!.ref.replace("shared_skill%3Abatch%3Aowner", "shared_skill%3Abatch%3Aother")] },
+    { paths: [first, f.files[1]!.ref.replace("skill://owner/", "skill://other/")] },
     { paths: [f.ref("SKILL.md")] }, { paths: Array.from({ length: 17 }, (_, index) => f.ref("resources/" + index + ".md")) },
   ]) await expect(f.read(input)).rejects.toThrow();
   expect(f.state.calls).toHaveLength(0); expect(f.state.mainReads).toBe(0);
 });
 
-test("stable File ID resolves old path hints and canonical aliases are rejected after selection", async () => {
+test("fixed resource paths never repair old spellings and reject duplicate selection", async () => {
   const f = await fixture();
-  const sameHint = await f.read({ paths: [f.ref("old.md", "a"), f.ref("old.md", "b")] });
-  expect((sameHint.structuredContent as { files: Array<{ path: string }> }).files.map(file => file.path)).toEqual(["references/a.md", "references/b.md"]);
-  expect(await f.read({ paths: [f.ref("SKILL.md", "a")] })).toHaveProperty("structuredContent.files.0.path", "references/a.md");
+  await expect(f.read({ paths: [f.ref("old.md")] })).rejects.toMatchObject({ code: "FILE_NOT_FOUND" });
+  await expect(f.read({ paths: [f.ref("old.md") + "&file_id=a"] })).rejects.toMatchObject({ code: "SOURCE_REFERENCE_INVALID" });
+  const exact = await f.read({ paths: [f.ref("references/a.md"), f.ref("references/b.md")] });
+  expect((exact.structuredContent as { files: Array<{ path: string }> }).files.map(file => file.path)).toEqual(["references/a.md", "references/b.md"]);
   expect(await f.read({ paths: [f.ref("references/a.md")] })).toHaveProperty("structuredContent.files.0.ref", f.files[0]!.ref);
-  await expect(f.read({ paths: [f.ref("old.md", "a"), f.ref("references/a.md")] })).rejects.toMatchObject({ code: "RESOURCE_SELECTION_CONFLICT" });
-  await expect(f.read({ paths: [f.ref("old.md", "main")] })).rejects.toMatchObject({ code: "RESOURCE_MAIN_NOT_ALLOWED" });
+  await expect(f.read({ paths: [f.ref("references/a.md"), f.ref("references/a.md")] })).rejects.toThrow();
+  await expect(f.read({ paths: [f.ref("SKILL.md")] })).rejects.toMatchObject({ code: "RESOURCE_MAIN_NOT_ALLOWED" });
   expect(f.state.mainReads).toBe(0);
 });
 
@@ -407,9 +445,9 @@ test("confirmed batch fallback checks every requested owner snapshot and File be
   f.state.catalog = f.state.catalog.filter(record => record.id !== required.id); await f.host.refresh(f.ctx);
   const first = f.files[0]!.ref, second = f.files[1]!.ref;
   for (const paths of [
-    [first, second.replace("shared_skill%3Abatch%3Aowner", "shared_skill%3Abatch%3Aforeign")],
+    [first, second.replace("skill://owner/", "skill://foreign/")],
     [first, second.replace(required.snapshotId!, "s_" + hash("foreign snapshot"))],
-    [first, second.replace("file_id=b", "file_id=unconfirmed")],
+    [first, second + "&file_id=unconfirmed"],
     [first, f.ref("references/unconfirmed.md")],
     [first, second.split("?")[0]!],
     Array.from({ length: DEFAULT_RESOURCE_READ_BUDGET.maxFiles + 1 }, (_, n) => f.ref("references/" + n + ".md")),

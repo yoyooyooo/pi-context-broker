@@ -1,16 +1,72 @@
-# Pro / Mini 的 next 日用交付
+# 多机 next 日用安装
 
-本轮由 AH-1197 持有双机入口，AH-637 持有 Mini 独立验收，AH-1198 持有配对后的当前时间线。每次交付都要核对两机实际提交、构建字节和新进程；一次正确的路径或旧回执不能覆盖后续更新。
+Pro、Mini 和 imile-win 的普通 Pi 使用从 `next` 构建的独立 Broker 安装包；普通
+`ntn-skills` 使用同一配对的 CLI 包。全局 package 来源和 CLI 入口不能指向开发
+checkout、worktree 或临时验证目录。这里的 `next` 是 Git 集成分支，不假定 npm
+存在同名 dist-tag。
 
-## 唯一当前代码来源
+## 当前安装约定
+
+更新前读回两仓的远端 `next`，选定已合入且通过相应 gate 的精确提交。
+Broker 的 `.github/ntn-skills-cli-revision` 必须绑定所选 CLI 提交。在自有构建目录
+完成 CLI 和 Broker 构建，沿现有 `npm pack` / `scripts/pack.mjs` 生成完整归档。
+记录两个完整 commit、归档 SHA-256 与随包 `dist/next-build.json`，不能仅凭包的
+version 或目录名判断来源。多机分发相同归档；平台相关依赖在目标机器正常安装。
+
+每次更新使用新的稳定安装目录，例如
+`~/.local/share/notion-skills-next/<cli-commit>-<broker-commit>/install`。
+该目录独立于构建现场，并在仍被日用入口或进程使用时保留。安装命令沿用 npm，
+不新增常驻更新器：
+
+```sh
+# 三个变量分别是本次新的绝对目录和两份已核对归档的绝对路径。
+test ! -e "$NEXT_GENERATION/install"
+npm install --prefix "$NEXT_GENERATION/install" \
+  --ignore-scripts --no-audit --no-fund --prefer-offline \
+  "$CLI_ARCHIVE" "$BROKER_ARCHIVE"
+```
+
+安装完成后核对两包实际文件与归档字节。保留现有其他插件和用户设置，只切换唯一的
+Broker package 来源至 `install/node_modules/pi-context-broker`；CLI 入口选择
+`install/node_modules/ntn-skills/dist/ntn-skills.js`。读回 `pi list` 和普通
+`ntn-skills` 的实际解析结果，检查 PATH 中是否有旧 shim 抢先命中。不能覆盖活动
+代际来更新，或用临时 PATH 证明普通入口已修复。
+
+在每台机器启动新的普通 Pi 进程，核对实际注册路径、Node/Pi 版本，并验证本次修改
+的用户行为。路径切换不改变已经加载代码的旧进程。Source 未就绪时的 warning、
+继续对话和加载展示需要实际验证；安装或 metadata 检查通过不能代替这些结果。
+保留简短的本次来源和结果记录即可，不要求每次日用更新重跑完整模型矩阵或旧双机
+worktree aggregate。严格专项仍按下文原入口执行，结果不能扩大解释。
+
+## 临时验证
+
+开发候选通过进程参数加载，不修改日用注册：
+
+```sh
+pi -ne -e /absolute/task/broker/packages/context-broker/src/index.ts
+```
+
+需要独立应用状态时使用[隔离开发入口](isolated-development.md)和明确的 build ID。
+验证完成后，日用来源仍是已安装的 `next` 包。不得为了通过专项检查把日用来源改回
+worktree。旧安装只有在不再被入口、进程或回滚需要引用后，才按系统 Trash 规则收尾。
+
+## 历史 worktree 专项验收
+
+以下保留原工作树专项的完整取证合同，用于解释现有检查器和历史回执。它要求真实
+worktree 输入，不能把独立安装目录伪装成 worktree，也不是当前日用安装方式。
+需要执行此专项时，原分支、构建、机器身份和 aggregate 守卫保持不变。
+`receipts.pro` / `receipts.mini` 是该双机检查器的配置键，不包含 imile-win。
+一次正确路径或旧回执不能证明后续更新；具体运行范围保留在对应 Issue/PR。
+
+### 专项代码来源
 
 两机使用各自明确的 `next` checkout。CLI 包来自该 checkout 的 `packages/cli`，Broker 来自配对 checkout 的 `packages/context-broker`。不要让普通入口同时保留旧 npm Broker 和新本地 Broker 两份活动扩展。
 
 推进前先核 origin、分支、HEAD 和未提交改动。只对干净的自有 checkout 执行 `git pull --ff-only`；上游已变化或本地有未完成工作时先保存并整合，禁止 force push、merge commit、reset --hard 或覆盖其他会话的改动。
 
-CLI 先完成当前 gate 并提交，Broker 的 CI/publish CLI pin 再绑定该完整 commit。双机都以相同的目标 commit 对齐；不能用 main、发布版本或另一个工作树替代。
+CLI 先完成当前 gate 并提交，Broker 的 `.github/ntn-skills-cli-revision` 再绑定该完整 commit；CI、publish 和 formal workflow 共用这一来源。双机都以相同的目标 commit 对齐；不能用 main、发布版本或另一个工作树替代。
 
-## 构建与来源对应
+### 构建与来源对应
 
 先构建 CLI，再明确选择这份 raw CLI/SDK 构建 Broker：
 
@@ -24,7 +80,7 @@ NTN_SKILLS_BUILD_ENTRY="$CLI_ROOT/packages/cli/dist/ntn-skills.js" bun run build
 
 使用本次已声明的受支持 Node、Bun 与 Git runtime，保留实际 executable/version。临时命令的工具选择与普通 `pi` 的 runtime 分别记录，不能靠临时 PATH 把普通入口的缺项隐藏掉。
 
-两个 build 在 `dist/next-build.json` 写入源文件清单与产物 SHA。Broker 另外绑定所选 raw CLI/SDK 与 Skills。构建途中输入变化会失败。源文件新增、删除、提交后未重建、产物被替换或 Broker 仍嵌入旧 SDK，都会被下列检查拒绝。
+两个 build 在 `dist/next-build.json` 写入源文件清单与产物 SHA。Broker 另外绑定所选 raw CLI、SDK、`ntn-skills/ref` 的纯 CJS 产物与 Skills；内嵌 SDK 版本必须为 3、引用协议版本为 2，装载时核对所选模块的实际字节。构建途中输入变化会失败。源文件新增、删除、提交后未重建、产物被替换或 Broker 仍嵌入旧 SDK，都会被下列检查拒绝。
 
 ```json
 {
@@ -46,7 +102,7 @@ node scripts/verify-next-worktrees.mjs --config /absolute/owned/current-pair.jso
 
 回执版本为 2，含稳定的实际机器指纹。macOS 使用平台 UUID，Linux 使用 machine-id；原值只在进程内读取，回执仅保存带固定域前缀的 SHA-256 和平台名。无法取得受支持的机器身份时 `blocked`，不以 hostname 替代。该结果固定标为 `actual_pi_process:not_run`；它没有启动 Pi。
 
-## 普通入口与新进程
+### 普通入口与新进程
 
 源/包检查完成后，使用 Pi 的公开安装/配置入口选择实际 Broker 工作树。先读回现有 package 来源，再做唯一来源切换，最后再次读回；不要覆盖其他插件、认证、模型或用户会话。包管理器的删除行为也必须符合系统 Trash 约束。
 
@@ -61,17 +117,25 @@ node scripts/verify-pi-daily-installation.mjs plan --config /absolute/owned/curr
 node scripts/verify-pi-daily-installation.mjs run --config /absolute/owned/current-daily.json
 ```
 
-daily config 需要配对 worktrees 以及本次归档、CLI/SDK、package 来源等实际身份；先读 `--help` 与 plan 的必需字段。两机在开始本次交付时共同生成并使用同一个 `delivery`：`id` 为新的 UUID，`startedAt` 为本次开始时的 UTC ISO 时间。不能把旧执行的时间或 ID 改写为本次。输入配置仍为 `version:1`，实际日用回执统一为 `version:2`，不兼容旧日用回执。
+daily config 需要预期 `library` 根 UUID、配对 worktrees 以及本次归档、CLI/SDK、package 来源等实际身份；先读 `--help` 与 plan 的必需字段。预期根不覆盖普通 CLI 的 `default_library`，验收核对实际 SDK 的选择及独立 HTTP 归属。两机在开始本次交付时共同生成并使用同一个 `delivery`：`id` 为新的 UUID，`startedAt` 为本次开始时的 UTC ISO 时间。不能把旧执行的时间或 ID 改写为本次。输入配置仍为 `version:1`，实际日用回执统一为 `version:2`，不兼容旧日用回执。
 
-plan 为 `prepared_not_executed`。run 在新普通 `pi -ns` 中检查实际注册入口与 metadata 路径，并在结束后重验机器、真实远端、worktrees 和构建。回执记录本次开始/结束时间、实际机器、注册入口与进程退出。它不替代正文、真实模型或时间线任务。
+plan 为 `prepared_not_executed`。run 在新普通 `pi -ns` 中检查实际注册入口与 metadata 路径，并在结束后重验机器、真实远端、worktrees 和构建。SDK 3 的根 children 请求由独立响应中的 ID/parent/分页证明限定到该根，保持真实 body 计数；Skill/File 正文读取仍为零。显式 doctor CLI 另外绑定 owned Pi 的直接子进程、实际 entry 字节、精确 ctl doctor --library ROOT 参数和该命令的执行窗口；它的完整根分页、直属数据库及 data source 归属必须来自同一子进程的独立 HTTP 响应，不能借用 SDK 结构或把 CLI 请求记成 SDK metrics。根结构请求仍计入真实 body 请求总数，Skill/File 正文保持零读取。联合检查重验这份进程与 HTTP 原件，只有成功摘要或缺失响应结构的旧回执不能通过。回执记录本次开始/结束时间、实际机器、注册入口与进程退出。它不替代正文、真实模型或时间线任务。
+
+标准代理的 `CONNECT` 使用 `host:port` 目标，不是普通 URL。日用观察单独保留代理 origin、目标 authority、进程归属及成功、失败或未完成结果；这些隧道属于传输准备，不计作 Notion metadata 请求，也不能满足 SDK 的独立 HTTP 关联。隧道中的实际 SDK/doctor 请求仍逐项核对，不能通过关闭正常代理或丢弃隧道失败取得通过。
+
+自然模型观察对 OpenAI chat completions 使用所选 `baseUrl` 加 `/chat/completions` 的精确路径；同 origin 的 MCP 请求保留为其他流量，不计入模型调用。请求正文、响应与模型 hook 仍须逐一关联；未实现端点规则的其他 API 保留原有较保守的 origin 范围，不能猜测后忽略请求。
 
 Pi 的 `responseModel` 是可选响应信息。现役 cost observer 区分原始未报告、合法报告和非法值；分析器保留未报告为 unknown，不从请求 model 补值。HTTP/SSE 完成仍需真实传输和同请求的响应证据；缺少这项原始状态的旧观察不能按新规则补成通过。
 
-普通真实模型可能由现役 `pi-compact-ui` 注册 `read`。Broker 的公开 hook 将候选或已选主文（`sr:C…`、`sr:S…`）、单个资源（`sr:R…`）以及已登记的完整固定 File `skill://` 地址解析为不可变文件，再交给该包的内建读取委托。完整地址必须带 snapshot 和 File 身份，精确匹配实际 native 分支中此前唯一的已选主文或资源登记；缺少固定身份、额外 query 或歧义登记均不接受。该有限 profile 只接受单路径完整文本读取；原始 `refresh` 布尔参数必须原样保留，主文显式刷新可查看同 owner 新版，但不改变已激活工作集。task observer 仅在同调用、同轮的当前 v3 主文或 v2 资源回执到达后，保全实际执行参数和完整文件字节。原始引用必须已存在于实际 native 分支；资源还必须唯一关联此前已选 owner，并匹配其 scope、snapshot、version 和固定 File。entry 投影同时保全并核对完整 `.broker-entry.json`；独立 resource 投影没有该 manifest，不猜测或读取不存在的主文清单。分析器重新核验原始与 prepared 参数、当前 Broker 注册、不可变身份、实际 callback/回执顺序及交付的完整字节，并只接受已审阅 `pi-compact-ui@0.1.3` 的精确 package/index 字节。该 profile 不覆盖批量、部分读取、其他插件或其他工具。旧观察缺少原件时继续失败，不能据事后路径或回执补造证明；更新后用新真实模型运行取证。
+普通真实模型可能由现役 `pi-compact-ui` 注册 `read`。Broker 的公开 hook 将候选或已选主文（`sr:C…`、`sr:S…`）、单个资源（`sr:R…`）以及已登记的完整固定 `skill://` 地址解析为不可变文件，再交给该包的内建读取委托。在这个有限 profile 中，完整地址使用 `skill://<stable-skill-id>/<exact-path>?library=<root-page-uuid>&snapshot=<snapshot-id>`，精确匹配实际 native 分支中此前唯一登记的 owner、Library、snapshot 和路径；缺少固定身份、协议之外的 query 或歧义登记均不接受。公开 URI 不包含 `file_id`。所选 manifest 提供唯一的原生 File 绑定，或固定的 Source 路由与字节证明；Source 完整树中的文件可以没有对应的 Notion Files 行。
+
+该 profile 只接受单路径完整文本读取；原始 `refresh` 布尔参数必须原样保留，主文显式刷新可查看同 owner 新版，但不改变已激活工作集。task observer 仅在同调用、同轮的当前 v3 主文或 v2 资源回执到达后，保全实际执行参数和完整文件字节。原始引用必须已存在于实际 native 分支；资源还必须唯一关联此前已选 owner，并匹配其 scope、snapshot、version、精确路径和对应的 manifest 绑定。原生 File 身份继续作为内部证据核验，不由 URI query 提供。entry 投影同时保全并核对完整 `.broker-entry.json`；独立 resource 投影没有这份 host entry manifest，不猜测或读取不存在的主文清单。分析器重新核验原始与 prepared 参数、当前 Broker 注册、不可变身份、实际 callback/回执顺序及交付的完整字节，并只接受已审阅 `pi-compact-ui@0.1.3` 的精确 package/index 字节。该 profile 不覆盖批量、部分读取、其他插件或其他工具。
+
+对绝对本地路径，observer 另行保全同一已审阅 delegate 的实际 package/index 原件及完整 callback 内容；分析器核对 unchanged path/offset/limit、同进程同轮的调用与结果、嵌套原生 census 和内容字节后，给它独立的本地只读归属。该路径可保留原生范围读取，但不能借用 Broker 身份或授权未证明的引用改写，也不覆盖其他插件或其他工具。旧观察缺少原件时继续失败，不能据事后路径或回执补造证明；更新后用新真实模型运行取证。
 
 如果执行环境不允许读取该检查需要的日用配置，记录具体 blocked，不通过另一条文件路径绕读。可使用公开 Pi API 取得独立的部分证据，但不能把该部分回执标为完整 daily runner 通过。
 
-## 每次更新的完成条件
+### 专项的完成条件
 
 每机保留目标 commit、干净状态、构建回执、实际 CLI/SDK/扩展路径与 hash、新进程 executable/version、公开来源读回和本次结果。收齐两份本次日用 `result.json` 后，用原入口进行联合检查：
 
@@ -79,7 +143,7 @@ Pi 的 `responseModel` 是可选响应信息。现役 cost observer 区分原始
 node scripts/verify-pi-daily-installation.mjs aggregate --config /absolute/owned/current-delivery.json
 ```
 
-aggregate config 使用相同的 `version:1`、`delivery`、`worktrees`、`cliRoot` 与 `brokerRoot`，另加两份原始回执的路径：
+aggregate config 使用相同的 `version:1`、`delivery`、`library`、`worktrees`、`cliRoot` 与 `brokerRoot`，另加两份原始回执的路径：
 
 ```json
 {
@@ -95,13 +159,15 @@ aggregate config 使用相同的 `version:1`、`delivery`、`worktrees`、`cliRo
 本合同不自动发布 npm、不合并 main，也不在每次启动时隐式拉代码或改变已有会话版本。新代码通过下一次已核对的新进程生效；既有任务的内容 pin 仍由消费合同管理。
 
 
-## 普通模型观察中的包归属
+### 普通模型观察中的包归属
 
 模型和正文证据仍单独采集，不加入上面的 metadata aggregate。复用现役
 `analyzeNotionAgentTurn` 分析普通安装时，原始 `get_commands.sourceInfo.source`
 可能是用户 settings 中的相对路径，不能将它改写为绝对路径来冒充观测。
 
-分析输入可明确提供 `implementation.ordinaryInstallationArtifact`，指向本次冻结的
+现役自然 workflow 在复用用户已注册的 Broker 时自动保存并传入
+`implementation.ordinaryInstallationArtifact`；独立项目候选继续使用其项目注册证据。
+该字段指向本次冻结的
 JSON 原件（仍用 `path/bytes/sha256` 身份）。内容为：
 
 ```json

@@ -31,9 +31,9 @@ export function agentFixtureRelationArgs({ objects }, version) {
 }
 
 /** Used by initial preparation and guarded absent-object continuation. Never resumes a write. */
-export function agentFixtureCreateArgs({ entry, object, owned, input, objects }) {
+export function agentFixtureCreateArgs({ libraryId, object, owned, input, objects }) {
   validateAgentFixtureAuthoring(object);
-  const identity = ['--entry', entry, '--skill-id', owned.skillId, '--name', owned.name, '--description', object.description];
+  const identity = ['--library', libraryId, '--skill-id', owned.skillId, '--name', owned.name, '--description', object.description];
   if (object.authoring === NATIVE_MAIN_EXACT_RESOURCES) {
     for (const field of ['requires', 'members'])
       assert.ok(input[field] === undefined || Array.isArray(input[field]) && input[field].length === 0, 'Exact-resource input cannot discard ' + field);
@@ -45,12 +45,12 @@ export function agentFixtureCreateArgs({ entry, object, owned, input, objects })
 }
 
 /** Import can replace an owner. Only a complete public absence observation permits fixture creation. */
-export function assertAgentFixtureImportCreation(value, { entry, object, owned, input }) {
+export function assertAgentFixtureImportCreation(value, { libraryId, object, owned, input }) {
   validateAgentFixtureAuthoring(object);
   assert.equal(object.authoring, NATIVE_MAIN_EXACT_RESOURCES);
   assert.equal(value.ok, true); assert.equal(value.contract, 'current'); assert.equal(value.dry_run, true);
   assert.equal(value.remote_writes, 0);
-  assert.equal(value.library?.database_id?.replaceAll('-', ''), entry.replaceAll('-', ''));
+  assert.equal(value.library?.library_id?.replaceAll('-', ''), libraryId.replaceAll('-', ''));
   assert.equal(value.skill_id, owned.skillId);
   assert.equal(value.page_id, null, 'Fixture import cannot replace an existing owner');
   assert.equal(value.state, null, 'Fixture import cannot continue an existing owner state');

@@ -14,6 +14,7 @@ const cases=[
 const summary=[];
 for(const item of cases){
  const dir=path.join(out,item.name);fs.mkdirSync(dir);for(const name of ['src','scripts'])fs.cpSync(path.join(repo,'packages/context-broker',name),path.join(dir,name),{recursive:true,errorOnExist:true,force:false});
+ fs.mkdirSync(path.join(dir,'dist'));for(const name of ['ntn-skills-ref.cjs','ntn-skills-runtime.json'])fs.copyFileSync(path.join(repo,'packages/context-broker/dist',name),path.join(dir,'dist',name));
  fs.copyFileSync(path.join(repo,'packages/context-broker/package.json'),path.join(dir,'package.json'));fs.symlinkSync(path.join(repo,'packages/context-broker/node_modules'),path.join(dir,'node_modules'),'dir');
  const file=path.join(dir,item.file),original=fs.readFileSync(file,'utf8');assert.equal(original.split(item.old).length,2,item.name+' guard changed; review mutation first');
  const run=phase=>{const p=spawnSync('bun',['test',path.join(dir,'scripts',item.test),'--test-name-pattern',item.pattern,'--timeout','30000'],{cwd:dir,encoding:'utf8',timeout:60000});fs.writeFileSync(path.join(dir,phase+'.stdout'),p.stdout??'');fs.writeFileSync(path.join(dir,phase+'.stderr'),p.stderr??'');return p;};

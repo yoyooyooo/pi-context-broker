@@ -7,7 +7,7 @@ description: "验证双仓开发隔离、配对 CLI/SDK 与 Broker 的消费合�
 
 ## 范围和交接
 
-只验证从当前 `next` 演进的单轨。开发使用隔离任务分支；正式日用仍要求严格 `next` 配对。复用现有检查和安装入口，不新增总验证 runner。
+只验证从当前 `next` 演进的单轨。开发使用隔离任务分支；正式日用使用精确 `next` 配对构建的独立安装包，不指向开发 worktree。复用现有检查和安装入口，不新增总验证 runner。
 OMP/Tern 延期；不恢复 `source.command`、CLI 正文消费、完整 export 回退或旧 snapshot reader。
 [验证交接表](../../../docs/verification-routing.md) 指定 CLI 管理、消费、来源接手与 Broker 的负责人。
 本 Skill 检查跨仓消费和安装包，不复制作者操作验收。自然用户旅程、混合来源选路与日常管理闭环交给 [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md)。当前feature地图直接指向现役SDK、安装与实际Pi入口。
@@ -50,6 +50,8 @@ snapshot 与依赖复制到自己的 run/source；`--cwd cli|broker` 及 PAIRED_
 PAIRED_BROKER_SOURCE 指向本 run 副本，默认 workspace 为 run 自有目录。
 command 可修改自己的副本，不能改 build 内冻结目录；CLI/Pi 纯运行不复制源码。
 
+首次初始化候选使用 `build --install-mode packed`。该模式沿现有 npm pack / 空 consumer install 合同，复用 daily 的 archive-to-installed 字节核对，并比较打包前源码产物。检查 build.json.candidate 的 package/version、archive、实际 bin/SDK/Broker entry、完整 installed 与 archive inventory。run 的直接入口和私有 wrapper 必须选同一安装候选；冻结后不能改 wrapper、包或依赖来绕过检查。默认 directory build 不变。针对这一选择运行 scripts/paired-environment.test.mjs 的实际归档安装与篡改反例。
+
 修改隔离机制时，实际创建两个环境并检查 Git 元数据与目录互不共享；核对 create
 没有安装依赖，各 generation 的源码、依赖、完整产物目录独立，build 记录原仓 HEAD、
 snapshot 指纹、完整 source_tree 与 runtime 清单。构建后修改一边源码并生成新 build，
@@ -87,19 +89,23 @@ build 如需既有网络代理，同样显式按名称传入；代理的既有 C
 `--pass-env NODE_EXTRA_CA_CERTS` 传入绝对路径，不能传 NODE_OPTIONS 或关闭 TLS 校验。
 不默认继承，回执仅记录变量名。
 无远端选择时核对 Notion token 不继承且 sources 为空，不能只看目录名推断隔离。
-launcher 的 entry 记录 scope、设置 PAIRED_NOTION_ENTRY 并配置 Broker source；parent
-记录 scope、设置 PAIRED_NOTION_PARENT，不自动创建库。CLI target 和私有 wrapper
-原样传递参数；消费命令显式传 --database，管理命令按各自帮助传 flag 或位置参数，
-例如 ctl library init --entry ENTRY，ctl library inspect ENTRY。
-launcher 不替 CLI 选择或校验这些参数，裸 list 不会因 launcher entry 而限定到该库。
+launcher 的 `--library ROOT` 记录 root scope、设置 `PAIRED_NOTION_LIBRARY`，
+配置 Broker `source.library`，并在本 run 私有 CLI config 写 `{default_library: ROOT}`。
+`--parent OUTER_PAGE` 只记录授权外层容器并设置 `PAIRED_NOTION_PARENT`，不自动建库；
+无 Library 选择时私有 CLI config 是 `{}`，不能把唯一 Source 当作默认库。
+CLI target 和私有 wrapper 原样传递参数。消费和管理使用 `--library ROOT`，
+例如 `ctl library init --library ROOT` 只读 attach，`ctl library inspect --library ROOT`
+只读核验；`ctl library init --parent OUTER_PAGE` 才创建专属 root 及其直属四表。
+裸 `list` 读取该 run 的 `default_library`；显式 `--library` 覆盖本次选择。
+只有明确 `list --all` 才跨库发现，且不能据此声称 workspace-exhaustive。
 用 NTN_SKILLS_BUILD_ENTRY 指定真实配套 CLI 运行环境测试，核对 direct/wrapper 的消费
 与管理参数；缺少该输入时 real CLI 子测试 skipped，不能把 fixture argv 检查当成通过。
-明确 entry/parent 不缩小 API 权限；同 token 仍受共享远端限流.
+明确 Library root/parent 不缩小 API 权限；同 token 仍受共享远端限流.
 只记录凭据是否存在，不输出内容。结束后复核未改变日用来源与全局配置。
 
 隔离 smoke 不等于自然旅程或正常日用验收。不要为让任务分支通过而放宽
 `verify-next-worktrees.mjs` 的 branch、clean、真实远端和构建检查，也不要绕过
-candidate/daily 对正常 HOME、agentDir 与配置的要求。
+candidate/daily 对正常 HOME、agentDir 与配置的要求。现有 candidate 入口的明确 native-onboarding profile 单独使用隔离初态，交给工作流 Skill 判自然业务结果；它不满足 daily 的正常环境要求。
 
 ## 1. 绑定同一份 CLI/SDK
 
@@ -107,7 +113,7 @@ candidate/daily 对正常 HOME、agentDir 与配置的要求。
 可以使用 `package:check` 已独立安装的包，或依赖齐全的 checkout 中 `bun run build` 产物。
 打包目录本身未安装依赖时，不能直接作为 Broker 的构建入口；先核对已安装包与归档的字节一致。
 CI 和 publish 的 CLI pin 必须指向同一完整 commit；不要用发布版或另一工作树代替候选。
-Pro/Mini 每次交付还须按 [next 工作树交付](../../../docs/next-worktree-delivery.md) 核真实 origin/next、机器指纹、构建与普通新进程，再由日用入口 `aggregate` 联合检查同一新 delivery 的两份 version:2 回执。单机、旧回执或 source/build-only 不能完成双机交付；固定路径本身不保证最新产物。
+Pro/Mini/imile-win 的日用更新按 [next 安装合同](../../../docs/next-worktree-delivery.md) 核所选提交、归档、独立安装字节、普通入口及新 Pi 进程，并验证本次修改的用户行为。临时验证用 `-ne -e` 或现有隔离 run，不改日用注册。只有明确执行历史工作树专项时，才使用原 `aggregate` 联合核验不同机器、同一新 delivery 的两份 version:2 回执；该检查的守卫不放宽，也不要求每次日用更新都跑它。固定路径、旧回执或 source/build-only 均不能证明当前实际装载。
 以下命令从 Broker 根目录执行。CLI 路径属于选定的完整包，decoder 源码属于同一提交：
 
 ```sh
@@ -117,7 +123,7 @@ node scripts/skill-consumption-contract.mjs check-gates
 ```
 
 `CONTEXT_BROKER_GRAPH_CORE` 让完整 manifest 负例经过真实 SDK decoder；未设时会 skip，不能算通过。
-只接受 SDK v2 和完整必需 capability。构建检查 runtime manifest 与实际 CLI/SDK bundle hash。
+只接受 SDK v3、SKILL_REF_VERSION=2 和完整必需 capability。构建检查 runtime manifest 与实际 CLI/SDK bundle hash。
 子进程删除 `NTN_SKILLS_DEV_ROOT`，不能赋空值；不得继承开发 shim 绕过所选包。
 
 ## 2. 按变化做当前消费检查
@@ -133,6 +139,12 @@ bun test packages/context-broker/scripts/notion-source-sdk.test.ts packages/cont
 发现阶段只取目录，按实际选择获取完整正文/资源；不截断正文或省略文件来减少请求。
 普通消费恒为零语义写入。旧 `readOnly` 参数应在 I/O 前拒绝，不能恢复隐藏写入分支。
 保留缓存年龄、凭据/Store 隔离、取消和迟到结果的 guard；失败不能延长 TTL 或发布不完整目录。
+`selectLibrary` 只读取本地配置，须在零 Notion I/O 下捕获本轮 root；`resolveLibrary`
+另行检查真实 root、完整 children、四 DB/DS 的 parent/schema/relations。fixture 必须
+独立声明这些物理事实，不能用待测 descriptor 反推。root children 读取仍计实际 body
+请求；不能将它改标 metadata 掩盖请求，也不能因此放开 Skill/File 正文读取。
+Broker 每次 input 重读本地默认，已接纳 turn、固定 ref 和 CLI 写后回执保留原绑定。
+显式 `$name@source` 可选择其他已配置 Source；无 `@source` 名称只查当前默认库。
 只有相关语义改变才扩到现有对应测试；完整 CI 使用 `bun run check:broker`，不要重复跑相同范围。
 
 ## 3. 验证实际安装包
@@ -148,6 +160,7 @@ node scripts/verify-artifacts.mjs --fixture /absolute/new/current-fixture/fixtur
 它复用 `scripts/verify-notion-sdk-installed.mjs`，不预植 snapshot/cache，不运行旧多根 fixture。
 核对分页目录、完整 Files、主文、warm cache、use、标量/批量资源、错误 owner/scope 与两处取消。
 安装包同时检查 runtime 版本/hash、随包资源、消费 schema 和 `ctl library import` 必需参数。
+所选 CLI 的完整 THIRD_PARTY_NOTICES.md 必须按原始字节包含在 Broker dist/NOTICES.txt 中；检查冻结原件 hash、安装包中的完整内容及产物 inventory，不能只匹配依赖名称或版权关键词。
 读取本次 `manifest.json`、`commands.json`、`current-sdk/result.json` 与 HTTP 账本；不能只看退出码。
 确认普通消费语义写入为零、CLI 正文读取子进程为零，且实际加载的是所选包的 CLI/SDK 字节。
 该入口只在自有临时目录安装 loader 依赖，不启动真实 Pi 会话，也不更改现有日用安装。

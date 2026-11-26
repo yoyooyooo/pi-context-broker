@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { parseNativeReference, hasExactNativeOwner, nativeFileBinding } from '../packages/context-broker/src/native-reference.ts';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -37,7 +38,7 @@ const help = [
   '  node scripts/skill-consumption-source-baseline.mjs evidence --run /absolute/frozen-run',
   '  node scripts/skill-consumption-source-baseline.mjs cleanup --run /absolute/frozen-run',
   '',
-  'Config: command (absolute executable argv), database, root (unfixed exact main ref),',
+  'Config: command (absolute executable argv), library, root (unfixed exact main ref),',
   'evidenceRoot (absolute, outside checkout); optional resourcePath, timeoutMs (default 120000),',
   'pipeline (prepare-fixed-main by default, resource-only, or inspect-current),',
   'samples ({cold:5,warm:20,"expired-unchanged":20,partial:5}). Authentication is inherited.',
@@ -140,12 +141,11 @@ async function configuration(path) {
   assert.ok(isAbsolute(path ?? ''), '--config must be absolute');
   const value = JSON.parse(await readFile(path, 'utf8'));
   assert.ok(value && typeof value === 'object' && !Array.isArray(value), 'Config must be an object');
-  assert.ok(Object.keys(value).every(key => ['command', 'database', 'root', 'evidenceRoot', 'resourcePath', 'timeoutMs', 'samples', 'pipeline'].includes(key)), 'Unknown config field');
+  assert.ok(Object.keys(value).every(key => ['command', 'library', 'root', 'evidenceRoot', 'resourcePath', 'timeoutMs', 'samples', 'pipeline'].includes(key)), 'Unknown config field');
   assert.ok(Array.isArray(value.command) && value.command.length > 0 && isAbsolute(value.command[0]) && value.command.every(arg => typeof arg === 'string' && arg.length > 0 && !arg.includes('\0')), 'command must be absolute executable argv');
-  assert.match(value.database, /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i);
-  const root = new URL(value.root);
-  assert.equal(root.protocol, 'skill:');
-  assert.ok(decodeURIComponent(root.hostname).startsWith('shared_skill:') && root.pathname.length > 1 && !root.search && !root.hash, 'root must be an unfixed exact shared main ref');
+  assert.match(value.library, /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i);
+  const root = parseNativeReference(value.root);
+  assert.ok(hasExactNativeOwner(root) && root.path && root.snapshot === undefined, 'root must be an unfixed exact main ref');
   assert.ok(isAbsolute(value.evidenceRoot), 'evidenceRoot must be absolute');
   if (value.resourcePath !== undefined) assert.ok(typeof value.resourcePath === 'string' && value.resourcePath && !isAbsolute(value.resourcePath) && !value.resourcePath.split('/').includes('..') && !/[\\\0?#]/u.test(value.resourcePath), 'resourcePath must be a relative path');
   const samples = value.samples ?? defaults;
@@ -163,7 +163,7 @@ function pipelineMode(config) {
   const mode = config.pipeline ?? 'prepare-fixed-main';
   assert.ok(['prepare-fixed-main', 'resource-only', 'inspect-current'].includes(mode), 'Unknown source pipeline');
   if (mode === 'resource-only') {
-    assert.ok(config.resourcePath && config.resourcePath !== decodeURIComponent(new URL(config.root).pathname.slice(1)), 'Select a resource distinct from the main file');
+    assert.ok(config.resourcePath && config.resourcePath !== parseNativeReference(config.root).path, 'Select a resource distinct from the main file');
     assert.ok(config.samples.cold > 0 && ['warm', 'expired-unchanged', 'partial'].every(group => config.samples[group] === 0), 'resource-only currently measures independent cold samples');
   }
   if (mode === 'inspect-current') {
@@ -193,7 +193,7 @@ export async function doctor(config) {
   const version = probe(['--version']), prepare = probe(config.pipeline === 'inspect-current' ? ['ctl', 'prepare', '--help'] : ['prepare', '--help']), read = probe(['read', '--help']);
   const runtime = spawnSync(config.command[0], ['--version'], { encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
   assert.equal(runtime.status, 0, 'Executable version probe failed');
-  for (const flag of ['--metrics', '--database', '--max-age']) assert.ok(prepare.text.includes(flag) && read.text.includes(flag), 'CLI does not expose ' + flag);
+  for (const flag of ['--metrics', '--library', '--max-age']) assert.ok(prepare.text.includes(flag) && read.text.includes(flag), 'CLI does not expose ' + flag);
   assert.ok(prepare.text.includes('Ns') && read.text.includes('--from'), 'CLI duration or relative read contract unsupported');
   let trashAvailable = true;
   try { await access('/usr/bin/trash', constants.X_OK); } catch { trashAvailable = false; }
@@ -280,14 +280,14 @@ function validateRead(value, node) {
  * Missing other objects remain observations, never evidence that they were delivered. */
 async function observeResource(plan, item, value, state) {
   assert.equal(value?.ok, true); assert.equal(value.has_more, false); assert.equal(typeof value.content, 'string');
-  const requested = new URL(plan.config.root), returned = new URL(value.ref);
-  assert.equal(value.record.id, decodeURIComponent(requested.hostname));
-  assert.equal(value.record.locator.database_id, plan.config.database);
-  assert.equal(value.entrypoint, decodeURIComponent(requested.pathname.slice(1)));
+  const requested = parseNativeReference(plan.config.root), returned = parseNativeReference(value.ref);
+  assert.equal(value.record.id, requested.selector);
+  assert.equal(value.record.locator.library_id, plan.config.library);
+  assert.equal(value.entrypoint, requested.path);
   assert.equal(value.path, plan.config.resourcePath);
-  assert.equal(decodeURIComponent(returned.hostname), value.record.id);
-  assert.equal(returned.protocol, 'skill:'); assert.equal(decodeURIComponent(returned.pathname.slice(1)), value.path);
-  assert.match(value.snapshot_id, /^s_[a-f0-9]{64}$/); assert.equal(returned.searchParams.get('snapshot'), value.snapshot_id);
+  assert.equal(returned.selector, value.record.id);
+  assert.equal(returned.path, value.path);
+  assert.match(value.snapshot_id, /^s_[a-f0-9]{64}$/); assert.equal(returned.snapshot, value.snapshot_id);
   const lines = value.content.split('\n').length;
   assert.deepEqual(value.range, { start: 1, end: lines, total_lines: lines });
   assert.equal(await realpath(state), state);
@@ -298,10 +298,11 @@ async function observeResource(plan, item, value, state) {
   for (const key of ['snapshot_id', 'scope', 'version_id', 'entrypoint']) assert.equal(manifest[key], value[key]);
   for (const key of ['file_bindings', 'native_references', 'members', 'required']) assert.deepEqual(manifest[key] ?? [], value[key] ?? []);
   assert.ok(Array.isArray(manifest.files) && manifest.files.length > 1, 'A resource baseline needs an actual multifile snapshot');
-  const selected = manifest.files.find(file => file.path === value.path);
-  assert.ok(selected); assert.equal(sha(value.content), selected.sha256); assert.equal(Buffer.byteLength(value.content), selected.bytes);
-  const binding = manifest.file_bindings?.find(file => file.path === value.path);
-  if (binding) assert.equal(returned.searchParams.get('file_id'), binding.file_id);
+  const selectedFiles = manifest.files.filter(file => file.path === value.path);
+  assert.equal(selectedFiles.length, 1, 'The selected manifest must bind one exact resource path');
+  const selected = selectedFiles[0];
+  assert.equal(sha(value.content), selected.sha256); assert.equal(Buffer.byteLength(value.content), selected.bytes);
+  nativeFileBinding({ fileBindings: manifest.file_bindings }, value.path);
   const objects = join(state, 'objects'); assert.equal(await realpath(objects), objects);
   const cacheObjects = [];
   for (const name of (await readdir(objects)).sort()) {
@@ -396,8 +397,8 @@ export async function executePlan(plan) {
       return result.value;
     };
     const args = inspectOnly
-      ? ['ctl', 'prepare', target, '--purpose', 'inspect', '--database', plan.config.database, '--metrics']
-      : ['prepare', target, '--purpose', 'use', '--database', plan.config.database, '--metrics'];
+      ? ['ctl', 'prepare', target, '--purpose', 'inspect', '--library', plan.config.library, '--metrics']
+      : ['prepare', target, '--purpose', 'use', '--library', plan.config.library, '--metrics'];
     if (!inspectOnly && !setup && item.group === 'expired-unchanged') args.push('--max-age', '1s');
     else if (!inspectOnly && target === plan.config.root) args.push('--max-age', '5m');
     const graph = await invoke('prepare', args);
@@ -405,10 +406,10 @@ export async function executePlan(plan) {
     if (graph?.ok === true && graph.status === 'ready') try {
       identity = sourceIdentity(graph); nodes = graph.nodes.filter(node => node.state === 'prepared');
       assert.equal(graph.roots.length, 1); assert.equal(graph.roots[0].target, target);
-      const requestedRoot = new URL(plan.config.root), selectedRoot = nodes.find(node => node.id === graph.roots[0].id);
-      assert.equal(selectedRoot?.record?.id, decodeURIComponent(requestedRoot.hostname));
-      assert.equal(selectedRoot?.path, decodeURIComponent(requestedRoot.pathname.slice(1)));
-      assert.equal(selectedRoot?.record?.locator?.database_id, plan.config.database);
+      const requestedRoot = parseNativeReference(plan.config.root), selectedRoot = nodes.find(node => node.id === graph.roots[0].id);
+      assert.equal(selectedRoot?.record?.id, requestedRoot.selector);
+      assert.equal(selectedRoot?.path, requestedRoot.path);
+      assert.equal(selectedRoot?.record?.locator?.library_id, plan.config.library);
       if (inspectOnly) {
         assert.equal(graph.purpose, 'inspect'); assert.equal(graph.graph_lock.purpose, 'inspect');
         assert.equal(nodes.length, 1); assert.equal(graph.usage?.prepared_nodes, 1);
@@ -430,14 +431,14 @@ export async function executePlan(plan) {
       if (!setup && item.group === 'expired-unchanged' && rootNodes.some(node => node?.source !== 'notion' || node.freshness?.policy !== 'max_age' || node.freshness?.max_age_ms !== 1000)) errors.push({ stage: 'initial-state', code: 'TTL_REVALIDATION_NOT_OBSERVED' });
       for (const [index, node] of (inspectOnly ? [] : nodes).entries()) {
         if (stop.signal.aborted) { errors.push({ stage: 'read-' + (index + 1), code: 'RUN_CANCELLED_BEFORE_READ' }); break; }
-        const read = await invoke('read-' + String(index + 1).padStart(3, '0'), ['read', node.ref, '--database', plan.config.database, '--metrics']);
+        const read = await invoke('read-' + String(index + 1).padStart(3, '0'), ['read', node.ref, '--library', plan.config.library, '--metrics']);
         try { validateRead(read, node); } catch (error) { errors.push({ stage: 'read-' + (index + 1), code: 'FIXED_READ_MISMATCH', diagnostic: cleanError(error) }); }
       }
       if (plan.config.resourcePath && !stop.signal.aborted) {
         const root = rootNodes[0], file = root?.files?.find(file => file.path === plan.config.resourcePath);
         if (!root || !file) errors.push({ stage: 'resource', code: 'RESOURCE_NOT_IN_ROOT_MANIFEST' });
         else {
-          const read = await invoke('resource', ['read', plan.config.resourcePath, '--from', root.ref, '--database', plan.config.database, '--metrics']);
+          const read = await invoke('resource', ['read', plan.config.resourcePath, '--from', root.ref, '--library', plan.config.library, '--metrics']);
           if (read?.ok !== true || read.path !== file.path || read.snapshot_id !== root.binding.snapshot_id || typeof read.content !== 'string' ||
             sha(read.content) !== file.sha256 || Buffer.byteLength(read.content) !== file.bytes || read.has_more !== false) errors.push({ stage: 'resource', code: 'RESOURCE_READ_MISMATCH' });
         }
@@ -467,7 +468,7 @@ export async function executePlan(plan) {
     await mkdir(base, { recursive: true, mode: 0o700 });
     const env = { ...verificationCliEnvironment(base), NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000' };
     const { receipt, value } = await operation(item.id + '-resource', plan.config.command,
-      ['read', plan.config.resourcePath, '--from', plan.config.root, '--database', plan.config.database, '--metrics'], { env });
+      ['read', plan.config.resourcePath, '--from', plan.config.root, '--library', plan.config.library, '--metrics'], { env });
     if (receipt.failure) errors.push({ stage: 'resource', code: receipt.failure, errorCode: receipt.errorCode });
     let identity = null, materialization = null;
     if (receipt.failure === null) try {

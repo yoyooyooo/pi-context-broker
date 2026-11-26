@@ -21,7 +21,29 @@ test("custom Notion CLI configuration is retired with an actionable upgrade erro
   for (const command of ["ntn-skills", ["node", "/old/ntn-skills.js"]])
     expect(() => normalizeSources([{ type: "notion", id: "current", command }])).toThrow(expect.objectContaining({ code: "SOURCE_COMMAND_UNSUPPORTED" }));
   expect(sourceFailureMessage("SOURCE_COMMAND_UNSUPPORTED")).toContain("Remove that override");
-  expect(normalizeSources([{ type: "notion", id: "current", database: uuid(10) }])?.[0]).not.toHaveProperty("command");
+  expect(normalizeSources([{ type: "notion", id: "current", library: uuid(10) }])?.[0]).not.toHaveProperty("command");
+});
+
+test("an explicit root routes directly without consulting an unrelated failing Library", async () => {
+  for (const code of ["LIBRARY_SCOPE_MISMATCH", "SKILL_NOT_FOUND", "ACCESS_DENIED", "CATALOG_INCOMPLETE"]) {
+    const f = await fixture(), unrelated = { ...f.source, id: "unrelated", library: uuid(90) };
+    const ownFiles = f.state.listFiles.bind(f.state);
+    f.state.listFiles = (target, options) => {
+      if (options.library === unrelated.library) throw Object.assign(new Error("Foreign Library failure"), { code });
+      return ownFiles(target, options);
+    };
+    const selected = await f.boundary.resolveNotionReference(f.files[1]!.ref, [unrelated, f.source], f.root);
+    expect(selected.ref).toBe(f.files[1]!.ref);
+    expect(selected.record.sourceId).toBe(f.source.id);
+    expect(f.calls.map(call => [call.operation, call.options.library])).toEqual([["files", f.source.library]]);
+  }
+});
+
+test("the selected Library's denial is never hidden by a same-name Skill elsewhere", async () => {
+  const f = await fixture(), unrelated = { ...f.source, id: "unrelated", library: uuid(90) };
+  f.state.listFiles = () => { throw Object.assign(new Error("denied"), { code: "ACCESS_DENIED" }); };
+  await expect(f.boundary.resolveNotionReference(f.files[1]!.ref, [unrelated, f.source], f.root)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+  expect(f.calls.map(call => call.options.library)).toEqual([f.source.library]);
 });
 
 test("current Skill, Router and Prompt loads use one SDK consume and retain the complete file directory", async () => {
@@ -53,7 +75,7 @@ test("Source main and sparse Notion bindings retain every source path and exact 
     expect(loaded.preparationBinding?.ref).not.toContain("file_id=");
     expect(loaded.fileBindings?.map(binding => binding.path)).toEqual(boundPaths);
     expect(loaded.entryManifest?.files).toEqual([...f.files].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-    for (const file of f.files) expect(file.ref.includes("file_id=")).toBe(boundPaths.includes(file.path));
+    for (const file of f.files) expect(file.ref).not.toContain("file_id=");
     for (const file of f.files.slice(1)) {
       const path = await f.boundary.loadNotionResource(loaded, file.path, f.source, f.root);
       expect(await readFile(path)).toEqual(f.bytes.get(file.path));
@@ -122,6 +144,13 @@ test.skipIf(!process.env.CONTEXT_BROKER_GRAPH_CORE)("a partial or inconsistent m
     await expect(f.boundary.loadNotionSkill(f.selected, f.source, f.root)).rejects.toBeDefined();
     expect(f.calls).toHaveLength(1); expect(await exists(f.source.cacheDir!)).toBe(false);
   }
+});
+
+test.skipIf(!process.env.CONTEXT_BROKER_GRAPH_CORE)("current SDK observations cannot reuse a retained content-only snapshot identity", async () => {
+  const f = await fixture("skill", { legacySnapshot: true });
+  await expect(f.boundary.loadNotionSkill(f.selected, f.source, f.root)).rejects.toMatchObject({ code: "CONSUME_INVALID_PROOF" });
+  expect(f.calls).toHaveLength(1); expect(f.state.decoded).toBe(0);
+  expect(await exists(f.source.cacheDir!)).toBe(false);
 });
 
 test("background prefetch uses the same bounded SDK operation without publishing a host tree", async () => {

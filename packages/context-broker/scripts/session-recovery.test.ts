@@ -5,6 +5,13 @@ import { activeNotionSession } from "./fixtures/active-notion-session";
 import { createActiveSourceRestorer } from "../src/session-recovery";
 import { sourceDeliveryReceipt } from "../src/session-source-snapshot";
 import { DEFAULT_RESOURCE_READ_BUDGET } from "../src/resource-read-types";
+import { parseNativeReference } from "../src/native-reference";
+
+const requestImage = { type: "image" as const, mimeType: "image/png",
+  data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5m8AAAAASUVORK5CYII=" };
+const providerUser = (text: string) => ({ role: "user", content: [
+  { type: "text", text }, { type: "image_url", image_url: { url: `data:${requestImage.mimeType};base64,${requestImage.data}` } },
+] });
 
 test("restored bodies retain active task roots and the shared Required ownership after compact", async () => {
   const h = await activeNotionSession();
@@ -70,7 +77,7 @@ test("a missing shared Required withholds incomplete roots and restores an indep
   const h = await activeNotionSession();
   try {
     const graph = await h.seed(["root", "second", "independent"]), history = JSON.stringify(h.branch);
-    h.f.state.consume = async input => input.targets.some(target => target.includes(encodeURIComponent(h.record("required").id!)))
+    h.f.state.consume = async input => input.targets.some(target => parseNativeReference(target).selector === h.record("required").id)
       ? h.failed("SNAPSHOT_MISSING") : h.ready(input);
     const turn = await h.turn("Continue whatever is available.", graph.records.filter(record => record.name === "root" || record.name === "second"));
     expect(turn.error).toBeUndefined(); expect(turn.provider).toBe(true); expect(turn.aborts).toBe(0);
@@ -104,19 +111,27 @@ test("a restoration denial remains authoritative on following turns while unrela
   } finally { await h.close(); }
 });
 
-test("authorization discovered after context still blocks that unsafe payload and the next request continues safely", async () => {
+test("authorization discovered after context still blocks denied instructions while the user request continues", async () => {
   const h = await activeNotionSession();
   try {
     const graph = await h.seed(["root", "independent"]);
-    const unsafe = await h.turn("Continue.", graph.records, async () => {
+    const history = JSON.stringify(h.branch), pins = structuredClone(h.selected()), active = structuredClone(h.active());
+    const text = "Continue with my original question and attached image.";
+    const safe = await h.turn(text, graph.records, async () => {
       const required = h.record("required");
       h.f.state.consume = async () => h.failed("ACCESS_DENIED", required);
       // Refresh the task root; the observed refusal belongs to its Required child.
       const denied = await h.tool("notion_use").execute("late-denial", { ref: h.record("root").ref, refresh: true }, undefined, undefined, h.ctx).catch(error => error);
       expect(denied.code).toBe("ACCESS_DENIED");
       expect(denied.details.denials).toEqual([{ scope: required.sourceScope, id: required.id, ref: required.ref, code: "ACCESS_DENIED" }]);
-    });
-    expect(unsafe.provider).toBe(false); expect(unsafe.aborted).toBe(true);
+    }, undefined, [], { status: 200, images: [requestImage] });
+    expect(safe.error).toBeUndefined(); expect(safe.provider).toBe(true); expect(safe.aborted).toBe(false); expect(safe.aborts).toBe(0);
+    expect(safe.payload!.messages.filter(message => JSON.stringify(message) === JSON.stringify(providerUser(text)))).toHaveLength(1);
+    const sent = JSON.stringify(safe.payload);
+    expect(sent).not.toContain(h.record("root").body!.trim());
+    expect(sent).not.toContain(h.record("required").body!.trim());
+    expect(sent).toContain("not loaded"); expect(safe.notices.some(notice => notice.level === "warning")).toBe(true);
+    expect(h.selected()).toEqual(pins); expect(h.active()).toEqual(active); expect(JSON.stringify(h.branch)).toBe(history);
     const next = await h.turn("Continue the independent task.", graph.records);
     expect(next.error).toBeUndefined(); expect(next.provider).toBe(true); expect(next.aborts).toBe(0);
     expect(JSON.stringify(next.messages)).not.toContain(h.record("required").body!.trim());
@@ -124,30 +139,70 @@ test("authorization discovered after context still blocks that unsafe payload an
   } finally { await h.close(); }
 });
 
-test("a changed serialized restored body still fails the final payload guard", async () => {
+test("a changed serialized restored body is withheld while the original user and image reach the provider", async () => {
   const h = await activeNotionSession();
   try {
     await h.seed();
-    const history = JSON.stringify(h.branch);
-    const turn = await h.turn("Restore the original instructions.", [], payload => {
-      for (const message of payload.messages) message.content = message.content.replace(h.record("required").body!, "Unproven replacement.");
-    });
-    expect(turn.provider).toBe(false); expect(turn.aborted).toBe(true);
-    expect(JSON.stringify(h.branch)).toBe(history);
+    const history = JSON.stringify(h.branch), pins = structuredClone(h.selected()), active = structuredClone(h.active());
+    const text = "Restore the original instructions and answer my attached image.";
+    const turn = await h.turn(text, [], payload => {
+      for (const message of payload.messages) if (typeof message.content === "string")
+        message.content = message.content.replace(h.record("required").body!, "Unproven replacement.");
+    }, undefined, [], { status: 200, images: [requestImage] });
+    expect(turn.error).toBeUndefined(); expect(turn.provider).toBe(true); expect(turn.aborted).toBe(false); expect(turn.aborts).toBe(0);
+    expect(turn.payload!.messages.filter(message => JSON.stringify(message) === JSON.stringify(providerUser(text)))).toHaveLength(1);
+    const sent = JSON.stringify(turn.payload);
+    expect(sent).not.toContain(h.record("root").body!.trim());
+    expect(sent).not.toContain(h.record("required").body!.trim()); expect(sent).not.toContain("Unproven replacement.");
+    expect(sent).toContain("not loaded"); expect(turn.notices.some(notice => notice.level === "warning")).toBe(true);
+    expect(h.selected()).toEqual(pins); expect(h.active()).toEqual(active); expect(JSON.stringify(h.branch)).toBe(history);
   } finally { await h.close(); }
 });
 
 test("a Required dropped before final system context is not accepted as a complete delivery", async () => {
   const h = await activeNotionSession();
   try {
-    const graph = await h.seed(), history = JSON.stringify(h.branch);
-    const turn = await h.turn("Continue.", graph.records, undefined,
-      messages => messages.filter(message => message.content !== h.record("required").body));
-    expect(turn.error).toMatchObject({ code: "SOURCE_CONTEXT_CLOSURE_INCOMPLETE" });
-    expect(turn.provider).toBe(false); expect(turn.aborted).toBe(true);
-    expect(JSON.stringify(h.branch)).toBe(history);
+    const graph = await h.seed(), history = JSON.stringify(h.branch), pins = structuredClone(h.selected()), active = structuredClone(h.active());
+    const text = "Continue with this question and attached image.";
+    const turn = await h.turn(text, graph.records, undefined,
+      messages => messages.filter(message => message.content !== h.record("required").body), [], { status: 200, images: [requestImage] });
+    expect(turn.error).toBeUndefined(); expect(turn.provider).toBe(true); expect(turn.aborted).toBe(false); expect(turn.aborts).toBe(0);
+    expect(turn.payload!.messages.filter(message => JSON.stringify(message) === JSON.stringify(providerUser(text)))).toHaveLength(1);
+    const sent = JSON.stringify(turn.payload);
+    expect(sent).not.toContain(h.record("root").body!.trim()); expect(sent).not.toContain(h.record("required").body!.trim());
+    expect(sent).toContain("SOURCE_CONTEXT_CLOSURE_INCOMPLETE"); expect(sent).toContain("not loaded");
+    expect(turn.notices.some(notice => notice.level === "warning")).toBe(true);
+    expect(h.selected()).toEqual(pins); expect(h.active()).toEqual(active); expect(JSON.stringify(h.branch)).toBe(history);
     const next = await h.turn("Continue normally.", graph.records);
     expect(next.provider).toBe(true); expect(next.error).toBeUndefined();
+  } finally { await h.close(); }
+});
+
+test("a selection persistence failure after provider acceptance warns without aborting or claiming activation", async () => {
+  const h = await activeNotionSession();
+  try {
+    const pins = structuredClone(h.selected()), active = structuredClone(h.active());
+    const append = h.api.appendEntry!;
+    let persistenceAttempts = 0;
+    h.api.appendEntry = (customType, data) => {
+      if (customType === "context-broker-selected-graph") {
+        persistenceAttempts++;
+        throw Object.assign(new Error("Controlled session persistence failure"), { code: "SESSION_WRITE_FAILED" });
+      }
+      append(customType, data);
+    };
+    const text = "$root@notion explain this image using the selected instructions.";
+    const turn = await h.turn(text, [], undefined, undefined, [], { status: 200, images: [requestImage] });
+    expect(turn.error).toBeUndefined(); expect(turn.provider).toBe(true); expect(turn.aborted).toBe(false); expect(turn.aborts).toBe(0);
+    expect(persistenceAttempts).toBe(1);
+    expect(turn.payload!.messages.filter(message => JSON.stringify(message) === JSON.stringify(providerUser(text)))).toHaveLength(1);
+    // The complete instructions were already sent before persistence failed.
+    // The warning must not turn that accepted response into host cancellation.
+    expect(JSON.stringify(turn.payload)).toContain(h.record("root").body!.trim());
+    expect(JSON.stringify(turn.payload)).toContain(h.record("required").body!.trim());
+    expect(turn.notices.some(notice => notice.level === "warning")).toBe(true);
+    expect(h.selected()).toEqual(pins); expect(h.active()).toEqual(active);
+    expect(h.branch.some(entry => entry.type === "custom" && ["context-broker-selected-graph", "context-broker-active-sources"].includes(entry.customType))).toBe(false);
   } finally { await h.close(); }
 });
 
@@ -165,7 +220,13 @@ test("cancelled or released fixed restoration cannot publish its late result", a
       const afterAction = JSON.stringify(h.branch);
       finish.resolve();
       const late = await pending;
-      expect(late.provider).toBe(false);
+      expect(late.provider).toBe(action === "release");
+      expect(late.aborted).toBe(action === "cancel");
+      if (action === "release") {
+        expect(late.error).toBeUndefined(); expect(late.aborts).toBe(0);
+        expect(JSON.stringify(late.payload)).not.toContain(h.record("root").body!.trim());
+        expect(late.payload!.messages).toContainEqual({ role: "user", content: "Restore." });
+      }
       expect(JSON.stringify(late.messages)).not.toContain(h.record("root").body!.trim());
       expect(JSON.stringify(h.branch)).toBe(afterAction);
       const next = await h.turn("Answer another question.", graph.records.filter(record => action === "cancel" || record.name === "independent"));

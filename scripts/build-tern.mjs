@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { brokerInputs, fileInventory } from "./next-build-identity.mjs";
+import { brokerInputs, fileInventory, selectedCliInputs } from "./next-build-identity.mjs";
+import { selectedSkillRef } from "./prepare-skill-ref.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const sourceInputs = await fileInventory(root, brokerInputs);
@@ -45,7 +46,15 @@ async function findPackage(name, entry) {
   }
 }
 const selectedCli = await findPackage("ntn-skills", ntnEntry);
-const selectedInputs = await fileInventory(selectedCli.directory, ["package.json", "dist/ntn-skills.js", "dist/sdk.js", "skills"]);
+const selectedNotices = await readFile(join(selectedCli.directory, "THIRD_PARTY_NOTICES.md")).catch(error => {
+  if (error.code === "ENOENT") throw new Error("The selected ntn-skills package must include THIRD_PARTY_NOTICES.md; select a complete CLI package");
+  throw error;
+});
+if (selectedNotices.length === 0) throw new Error("The selected ntn-skills THIRD_PARTY_NOTICES.md must not be empty");
+const selectedInputs = await fileInventory(selectedCli.directory, selectedCliInputs);
+const referenceProtocol = await selectedSkillRef(selectedCli.directory);
+if (createHash("sha256").update(selectedNotices).digest("hex") !== selectedInputs.files.find(file => file.path === "THIRD_PARTY_NOTICES.md").sha256)
+  throw new Error("Selected CLI third-party notices changed while freezing the build input");
 const selectedRequire = createRequire(selectedCli.manifest);
 const sdkExport = selectedCli.metadata.exports?.["./sdk"];
 const sdkImport = typeof sdkExport === "string" ? sdkExport : sdkExport?.import;
@@ -53,14 +62,16 @@ if (typeof sdkImport !== "string" || !sdkImport.startsWith("./")) throw new Erro
 const sdkEntry = resolve(selectedCli.directory, sdkImport);
 const selectedSdkApi = await import(pathToFileURL(sdkEntry).href);
 const requiredConstants = {
-  SDK_VERSION: 2, CONSUMER_CONTRACT_VERSION: 1, CONSUMPTION_EFFECTS_VERSION: 1,
+  SKILL_REF_VERSION: 2,
+  SDK_VERSION: 3, CONSUMER_CONTRACT_VERSION: 1, CONSUMPTION_EFFECTS_VERSION: 1,
   CATALOG_DIRECTORY_CONTRACT_VERSION: 1, READ_OUTPUT_PROOF_VERSION: 1,
   RESOURCE_READ_CONTRACT_VERSION: 1, RESOURCE_READ_EFFECTS_VERSION: 1,
+  CONTENT_SEARCH_CONTRACT_VERSION: 1,
 };
 for (const [name, version] of Object.entries(requiredConstants)) {
   if (selectedSdkApi[name] !== version) throw new Error(`The current paired ntn-skills SDK requires ${name}=${version}; upgrade the complete selected package`);
 }
-for (const name of ['consume', 'decodeConsumeResult', 'listCatalog', 'listSkill', 'resolveCatalogReference', 'readSkill', 'readResources', 'decodeResourceReadResult', 'parseDuration']) {
+for (const name of ['selectLibrary', 'resolveLibrary', 'consume', 'decodeConsumeResult', 'listCatalog', 'listSkill', 'resolveCatalogReference', 'readSkill', 'readResources', 'decodeResourceReadResult', 'parseDuration', 'contentSearch']) {
   if (typeof selectedSdkApi[name] !== 'function') throw new Error(`The current paired ntn-skills SDK must export ${name}`);
 }
 if (selectedSdkApi.PACKAGE_VERSION !== selectedCli.metadata.version) throw new Error('CLI and SDK package versions differ');
@@ -69,6 +80,7 @@ const readOutputProofVersion = selectedSdkApi.READ_OUTPUT_PROOF_VERSION;
 const catalogDirectoryVersion = selectedSdkApi.CATALOG_DIRECTORY_CONTRACT_VERSION;
 const consumptionEffectsVersion = selectedSdkApi.CONSUMPTION_EFFECTS_VERSION;
 const resourceEffectsVersion = selectedSdkApi.RESOURCE_READ_EFFECTS_VERSION;
+const contentSearchVersion = selectedSdkApi.CONTENT_SEARCH_CONTRACT_VERSION;
 const commandOutputProofVersion = selectedSdkApi.COMMAND_OUTPUT_PROOF_VERSION;
 if (commandOutputProofVersion !== undefined && commandOutputProofVersion !== 1) throw new Error('The selected CLI output observation contract is incompatible');
 const selectedSdk = await findPackage("ntn-skills", sdkEntry);
@@ -119,12 +131,14 @@ const sdkResult = await build({
 if (!sdkResult.success || !sdkResult.outputs[0]) throw new AggregateError(sdkResult.logs, "Notion SDK build failed");
 const sdkCode = await sdkResult.outputs[0].text();
 const runtimeManifest = { version: 1, package: "ntn-skills", package_version: selectedCli.metadata.version,
-  sdk_version: 2, consumer_contract_version: 1, ...(resourceReadVersion === undefined ? {} : { resource_read_contract_version: resourceReadVersion }),
+  skill_ref_version: 2, ref_sha256: referenceProtocol.ref_sha256,
+  sdk_version: 3, consumer_contract_version: 1, ...(resourceReadVersion === undefined ? {} : { resource_read_contract_version: resourceReadVersion }),
   ...(readOutputProofVersion === undefined ? {} : { read_output_proof_version: readOutputProofVersion }),
   ...(catalogDirectoryVersion === undefined ? {} : { catalog_directory_contract_version: catalogDirectoryVersion }),
   ...(commandOutputProofVersion === undefined ? {} : { command_output_proof_version: commandOutputProofVersion }),
   ...(consumptionEffectsVersion === undefined ? {} : { consumption_effects_version: consumptionEffectsVersion }),
   ...(resourceEffectsVersion === undefined ? {} : { resource_read_effects_version: resourceEffectsVersion }),
+  content_search_contract_version: contentSearchVersion,
   cli_sha256: createHash("sha256").update(cliCode).digest("hex"), sdk_sha256: createHash("sha256").update(sdkCode).digest("hex") };
 const licenseFiles = new Map();
 async function collectLicenses(name, from) {
@@ -148,6 +162,13 @@ async function collectLicenses(name, from) {
   for (const dependency of Object.keys(metadata.dependencies ?? {})) await collectLicenses(dependency, join(directory, "package.json"));
 }
 await collectLicenses("ntn-skills", join(broker, "package.json"));
+// The selected CLI already bundles dependencies absent from its public runtime
+// dependency graph. Preserve its complete notice file without rewriting it.
+const notices = Buffer.concat([
+  Buffer.from([...licenseFiles].map(([name, license]) => `Bundled dependency: ${name}\n${license.trim()}\n`).join("\n")),
+  Buffer.from("\nBundled dependency notices: ntn-skills / THIRD_PARTY_NOTICES.md\n"),
+  selectedNotices,
+]);
 if (brokerOutput !== broker) {
   await mkdir(dirname(brokerOutput), { recursive: true });
   // A separate package build never overwrites a prior artifact or checkout output.
@@ -183,8 +204,9 @@ for (const directory of [join(brokerOutput, "dist"), ...(buildTern ? [query] : [
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, "ntn-skills.mjs"), cliCode);
   await writeFile(join(directory, "ntn-skills-sdk.mjs"), sdkCode);
+  await writeFile(join(directory, "ntn-skills-ref.cjs"), referenceProtocol.bytes);
   await writeFile(join(directory, "ntn-skills-runtime.json"), JSON.stringify(runtimeManifest, null, 2) + "\n");
-  await writeFile(join(directory, "NOTICES.txt"), [...licenseFiles].map(([name, license]) => `Bundled dependency: ${name}\n${license.trim()}\n`).join("\n"));
+  await writeFile(join(directory, "NOTICES.txt"), notices);
   const builtinRoot = join(directory, "builtin-skills");
   try {
     await readdir(builtinRoot);
@@ -235,12 +257,12 @@ if (buildTern) {
 }
 if ((await fileInventory(root, brokerInputs)).sha256 !== sourceInputs.sha256)
   throw new Error("Broker inputs changed while building; rebuild before next delivery");
-if ((await fileInventory(selectedCli.directory, ["package.json", "dist/ntn-skills.js", "dist/sdk.js", "skills"])).sha256 !== selectedInputs.sha256)
+if ((await fileInventory(selectedCli.directory, selectedCliInputs)).sha256 !== selectedInputs.sha256)
   throw new Error("Selected CLI/SDK changed while building; rebuild the paired candidate");
 await writeFile(join(brokerOutput, "dist/next-build.json"), JSON.stringify({
   version: 1, kind: "broker-build", input_roots: brokerInputs, source: sourceInputs,
   selected_cli: selectedInputs,
-  artifacts: await fileInventory(brokerOutput, ["dist/ntn-skills.mjs", "dist/ntn-skills-sdk.mjs", "dist/ntn-skills-runtime.json", "dist/completion.mjs", "dist/builtin-skills"]),
+  artifacts: await fileInventory(brokerOutput, ["dist/ntn-skills.mjs", "dist/ntn-skills-sdk.mjs", "dist/ntn-skills-ref.cjs", "dist/ntn-skills-runtime.json", "dist/completion.mjs", "dist/builtin-skills", "dist/NOTICES.txt"]),
   toolchain: { bun: Bun.version, node: process.version },
 }, null, 2) + "\n");
 console.log(buildTern ? "Built standalone broker query and Tern plugin query" : `Built standalone broker package at ${brokerOutput}`);

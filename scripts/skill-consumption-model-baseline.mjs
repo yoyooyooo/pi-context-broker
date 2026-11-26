@@ -24,7 +24,7 @@ const rows = async path => { try { return (await readFile(path, 'utf8')).trim().
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const comparisonRoles = ['previous-broker', 'notion-candidate', 'pi-native-local'];
 const nativeLocal = config => config.role === 'pi-native-local';
-const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|selection|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Legacy defaults remain magpie/group/flash-free and 120000ms. Explicit modelContract daily-route-v1 requires model magpie/group/flash, thinkingLevel high, rpcTimeoutMs 300000 and counts cold:1,warm:0|1; controller retries 0 and no fallback. Only owned project retry settings change; actual get_state, sent high effort and per-request response usage must verify. Normal Pi tools; source consumption may perform adoption/Records writes, no generated task guidance or forced tool choices. Broker config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],database,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?,toolProfile?:"standard"|"native-skills"|"legacy-skills"}. Standard preserves the original seven tools; native-skills adds notion_list/notion_use without removing normal tools; legacy-skills is explicit historical compatibility. Deferred notion_ctl is absent by default. Missing transport preserves legacy CLI mode; explicit sdk forbids command. Comparison roles previous-broker|notion-candidate|pi-native-local require comparison:ABS_FROZEN_MANIFEST. Pure pi-native-local omits extension/transport/command/database/packagePath, uses standard tools and Pi native --skill/read, and loads no Broker. Comparison v1 freezes one candidate; v2 preserves the complete existing View and inspects one same-byte Skill plus required UTF-8 resources. Run selection on the v2 Notion config for separate metadata-only installed-Pi evidence before Doctor; actual catalog name/description differences fail Doctor before model calls. Comparison visibilityPolicy defaults to strict; v2 native-default-policy retains the full authored inventory and installed native visibility rules, while each arm checks its own actual provider catalog. This measures system-default workflow cost, not Broker net cost under identical visibility. Automatic Requires and /skill expansion are separate semantics. Cold=new isolated process/cache (native files already exist; OS page cache is uncontrolled); warm=ordinary turns in the final cold process with history counted. All attempts and unrun planned samples remain recorded.';
+const usage = 'Usage: node scripts/skill-consumption-model-baseline.mjs doctor|selection|run --config ABSOLUTE_JSON [--evidence-root ABSOLUTE_DIR]; evidence|cleanup --evidence ABSOLUTE_DIR. Legacy defaults remain magpie/group/flash-free and 120000ms. Explicit modelContract daily-route-v1 requires model magpie/group/flash, thinkingLevel high, rpcTimeoutMs 300000 and counts cold:1,warm:0|1; controller retries 0 and no fallback. Only owned project retry settings change; actual get_state, sent high effort and per-request response usage must verify. Normal Pi tools; source consumption may perform adoption/Records writes, no generated task guidance or forced tool choices. Broker config: {version:1,extension,transport?:"cli"|"sdk",command?:[absoluteNode,absoluteCLI],library,prompt,expectedAnswers:[string],counts:{cold:5,warm:20},packagePath?,toolProfile?:"standard"|"native-skills"|"legacy-skills"}. Standard preserves the original seven tools; native-skills adds notion_list/notion_use without removing normal tools; legacy-skills is explicit historical compatibility. Deferred notion_ctl is absent by default. Missing transport preserves legacy CLI mode; explicit sdk forbids command. Comparison roles previous-broker|notion-candidate|pi-native-local require comparison:ABS_FROZEN_MANIFEST. Pure pi-native-local omits extension/transport/command/library/packagePath, uses standard tools and Pi native --skill/read, and loads no Broker. Comparison v1 freezes one candidate; v2 preserves the complete existing View and inspects one same-byte Skill plus required UTF-8 resources. Run selection on the v2 Notion config for separate metadata-only installed-Pi evidence before Doctor; actual catalog name/description differences fail Doctor before model calls. Comparison visibilityPolicy defaults to strict; v2 native-default-policy retains the full authored inventory and installed native visibility rules, while each arm checks its own actual provider catalog. This measures system-default workflow cost, not Broker net cost under identical visibility. Automatic Requires and /skill expansion are separate semantics. Cold=new isolated process/cache (native files already exist; OS page cache is uncontrolled); warm=ordinary turns in the final cold process with history counted. All attempts and unrun planned samples remain recorded.';
 
 async function tree(directory) {
   const output = {};
@@ -41,14 +41,14 @@ async function tree(directory) {
 export function validateModelBaselineConfig(config) {
   assert.equal(config.version, 1);
   const modelProfile=dailyRouteContract(config);
-  assert.ok(Object.keys(config).every(key => ['version','extension','transport','command','database','prompt','expectedAnswers','counts','packagePath','toolProfile','role','comparison',
+  assert.ok(Object.keys(config).every(key => ['version','extension','transport','command','library','prompt','expectedAnswers','counts','packagePath','toolProfile','role','comparison',
     ...(modelProfile?['modelContract','model','thinkingLevel','rpcTimeoutMs']:[])].includes(key)));
   if (config.role !== undefined) {
     assert.ok(comparisonRoles.includes(config.role), 'Unknown comparison role');
     assert.ok(typeof config.comparison === 'string' && isAbsolute(config.comparison), 'Comparison roles require a frozen absolute comparison manifest');
   } else assert.equal(Object.hasOwn(config, 'comparison'), false, 'A comparison must name its role');
   if (nativeLocal(config)) {
-    for (const key of ['extension','transport','command','database','packagePath'])
+    for (const key of ['extension','transport','command','library','packagePath'])
       assert.equal(Object.hasOwn(config, key), false, 'Pure Pi native local must omit ' + key);
     assert.ok(config.toolProfile === undefined || config.toolProfile === 'standard', 'Pure Pi native local uses the ordinary Pi tool profile');
   } else {
@@ -56,7 +56,7 @@ export function validateModelBaselineConfig(config) {
     assert.ok(config.transport === undefined || ['cli','sdk'].includes(config.transport));
     if(config.transport==='sdk') assert.equal(Object.hasOwn(config,'command'),false,'SDK mode must omit command, not wrap the default source');
     else assert.ok(Array.isArray(config.command) && config.command.length === 2 && config.command.every(isAbsolute));
-    assert.match(config.database, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i);
+    assert.match(config.library, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i);
   }
   assert.ok(typeof config.prompt === 'string' && config.prompt.trim() && Array.isArray(config.expectedAnswers) && config.expectedAnswers.length
     && config.expectedAnswers.every(value => typeof value === 'string' && value.trim()));
@@ -83,7 +83,7 @@ async function configAt(path) {
 }
 export function modelBaselineSource(config, { cacheDir, command, viewId } = {}) {
   assert.equal(nativeLocal(config), false, 'Pure Pi native local has no Broker source');
-  const source={id:'notion',namespace:'notion',type:'notion',database:config.database,prefetch:false,cacheDir};
+  const source={id:'notion',namespace:'notion',type:'notion',library:config.library,prefetch:false,cacheDir};
   if (viewId !== undefined) source.default_view_id = viewId;
   if(config.transport==='sdk') {
     assert.equal(Object.hasOwn(config,'command'),false,'SDK mode must omit command');
@@ -300,7 +300,7 @@ export async function modelBaselineComparison(config, host) {
     assert.equal(await realpath(skill.filePath),join(candidate.directory,candidate.manifest.entrypoint),'Native metadata must belong to its exact frozen owner');
   }
   if (!nativeLocal(config)) {
-    assert.equal(config.database, selection.database);
+    assert.equal(config.library, selection.library);
     if (config.role === 'notion-candidate') {
       assert.equal(config.transport, 'sdk');
       assert.equal(hash(await readFile(config.extension)), selection.artifacts.extension.sha256, 'Candidate catalog must use this actual installed extension');
@@ -354,7 +354,7 @@ export function modelBaselineSelectionArgs(config,{provider,controlledModel,...o
  * instruction bodies. A body becomes known only after the actual read result;
  * the exact same outer tool output must subsequently reach the provider. */
 export function observeNativeInspection(api, settings) {
-  const {fs,crypto,path,diagnostics,output,files,catalog,clockId,source,rawDirectory,validateResourceReadProjection,unselectedFiles=[],unselectedSources=[]} = settings;
+  const {fs,crypto,path,diagnostics,output,files,catalog,clockId,source,rawDirectory,validateResourceReadProjection,parseNativeReference,unselectedFiles=[],unselectedSources=[]} = settings;
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
   const fd = fs.openSync(output, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
   const expected = new Map(files.map(file => [file.absolutePath, file])), calls = new Map(), delivered = new Map(), subscriptions = [];
@@ -394,7 +394,7 @@ export function observeNativeInspection(api, settings) {
     const inputRefs=[call.input?.path,...(Array.isArray(call.input?.paths)?call.input.paths:[])].filter(value=>typeof value==='string');
     const otherRef=inputRefs.find(ref=>unselectedRefs.has(ref));
     let canonicalOwner;
-    if(source)for(const ref of inputRefs)try{const parsed=new URL(ref),id=decodeURIComponent(parsed.hostname);if(parsed.protocol==='skill:'&&id.startsWith('shared_skill:')&&id!==source.recordId)canonicalOwner=id;}catch{}
+    if(source)for(const ref of inputRefs)try{const parsed=parseNativeReference(ref);if(parsed.selector!==source.recordId)canonicalOwner=parsed.selector;}catch{}
     if(valid&&outputText&&(call.other||source&&owner&&owner!==source.recordId||otherRef||canonicalOwner)) {
       const rejected={recordId:call.other?.recordId??canonicalOwner??owner??unselectedRefs.get(otherRef),path:call.other?.path??null,
         toolCallIdSha256:sha(event.toolCallId),bytes:Buffer.byteLength(outputText),sha256:sha(outputText)};
@@ -407,9 +407,8 @@ export function observeNativeInspection(api, settings) {
     };
     if(!source)remember(call.file,outputText,{start:0,end:outputText.length,encoding:'raw'},true);
     else if(valid) {
-      const canonical=(ref,file)=>{try{const parsed=new URL(ref);return parsed.protocol==='skill:'&&decodeURIComponent(parsed.hostname)===source.recordId
-        &&decodeURIComponent(parsed.pathname.slice(1))===file.path&&parsed.searchParams.get('snapshot')===source.snapshotId
-        &&(file.fileId===undefined||parsed.searchParams.get('file_id')===file.fileId);}catch{return false;}};
+      const canonical=(ref,file)=>{try{const parsed=parseNativeReference(ref);return parsed.selector===source.recordId
+        &&parsed.path===file.path&&parsed.snapshot===source.snapshotId;}catch{return false;}};
       const sameSelection=(value,ownerKey='owner')=>value?.scope===source.scope&&value[ownerKey]===source.recordId
         &&value.snapshot_id===source.snapshotId&&value.version_id===source.versionId;
       const main=event.details?.contextBrokerRead,binding=main?.binding;
@@ -488,10 +487,10 @@ export function observeNativeInspection(api, settings) {
 }
 
 export function nativeInspectionExtensionSource(settings) {
-  const validator=settings.validatorPath?"import {validateResourceReadProjection} from "+JSON.stringify(pathToFileURL(settings.validatorPath).href)+";\n":'';
+  const validator=settings.validatorPath?"import {validateResourceReadProjection} from "+JSON.stringify(pathToFileURL(settings.validatorPath).href)+";\nimport {parseNativeReference} from "+JSON.stringify(pathToFileURL(join(dirname(settings.validatorPath),'native-reference.ts')).href)+";\n":'';
   return "import fs from 'node:fs';\nimport crypto from 'node:crypto';\nimport path from 'node:path';\nimport diagnostics from 'node:diagnostics_channel';\n"
     +validator+'export default api => (' + observeNativeInspection.toString() + ')(api,{fs,crypto,path,diagnostics,'
-    +(settings.validatorPath?'validateResourceReadProjection,':'')+'...' + JSON.stringify(settings) + '});\n';
+    +(settings.validatorPath?'validateResourceReadProjection,parseNativeReference,':'')+'...' + JSON.stringify(settings) + '});\n';
 }
 
 export function verifyNativeInspectionEvents(events) {
@@ -587,7 +586,9 @@ async function bundledRuntimeAt(extension) {
   return {cli,sdk,manifest:{path:await realpath(manifestPath),sha256:hash(manifestBytes),packageVersion:manifest.package_version}};
 }
 async function doctor(config) {
-  assert.ok(Number(process.versions.node.split('.')[0]) >= 24 && !process.versions.bun, 'Use supported Node runtime');
+  const [major, minor, patch] = process.versions.node.split('.').map(Number);
+  assert.ok(!process.versions.bun && ((major === 24 && (minor > 22 || minor === 22 && patch >= 3)) ||
+    (major === 26 && (minor > 13 || minor === 13 && patch >= 1))), 'Use Node ^24.22.3 or ^26.13.1');
   const host = await resolveHost('pi');
   const version = await runCommand('pi', ['--version'], { cwd: root, env: process.env, timeoutMs: 10000 });
   const comparison = await modelBaselineComparison(config, host);
@@ -752,7 +753,7 @@ async function selection(config,parent) {
   const output=join(evidence,'catalog-hooks.jsonl'),ledger=join(evidence,'source.jsonl'),wire=join(evidence,'wire.jsonl'),owned=join(evidence,'owned-processes.jsonl');
   await Promise.all([output,wire].map(path=>writeFile(path,'',{flag:'wx',mode:0o600})));
   const report={version:1,kind:'installed-pi-catalog-preflight',status:'running',runId,evidence,scratch,sourceMode:'sdk',
-    database:config.database,viewId:descriptor.viewId,visibilityPolicy,artifacts,pi,bodyRequests:null,realModelRequests:0,
+    library:config.library,viewId:descriptor.viewId,visibilityPolicy,artifacts,pi,bodyRequests:null,realModelRequests:0,
     input:{path:config.comparison,sha256:hash(await readFile(config.comparison))},
     driverSha256:hash(await readFile(fileURLToPath(import.meta.url))),processes:[]};
   await save(join(scratch,'owner.json'),{runId,evidence});
@@ -788,6 +789,8 @@ async function selection(config,parent) {
   await writeFile(provider,"export default api=>api.registerProvider('skill-model-catalog',{name:'Metadata-only catalog observation',baseUrl:"
     +JSON.stringify('http://127.0.0.1:'+server.address().port+'/v1')+",api:'openai-completions',apiKey:'controlled-no-secret',models:[{id:'metadata',name:'Controlled metadata observer',input:['text'],contextWindow:1000000,maxTokens:256,cost:{input:0,output:0,cacheRead:0,cacheWrite:0}}]});\n",{flag:'wx',mode:0o600});
   const env=verificationCliEnvironment(join(scratch,'cli'));
+  await mkdir(env.NTN_SKILLS_CONFIG_HOME,{recursive:true,mode:0o700});
+  await save(join(env.NTN_SKILLS_CONFIG_HOME,'config.json'),{default_library:config.library});
   Object.assign(env,{CONTEXT_BROKER_CONFIG:brokerConfig,CONTEXT_BROKER_HOST:'pi',CONTEXT_BROKER_LOG_FILE:join(evidence,'broker.jsonl'),
     BROKER_E2E_PROCESS_LEDGER:owned,NTN_SKILLS_REQUEST_TRACE_LIMIT:'10000',NTN_SKILLS_SCHEDULER_ROOT:join(scratch,'request-engine'),PWD:scratch});
   for(const key of ['NODE_OPTIONS','CONTEXT_BROKER_ROOTS','CONTEXT_BROKER_EXTRA_ROOTS','CONTEXT_BROKER_DISCOVERY_CATALOGS','CONTEXT_BROKER_EXTRA_DISCOVERY_CATALOGS','OLDPWD','INIT_CWD'])delete env[key];
@@ -1068,6 +1071,10 @@ async function run(config, parent) {
     await writeFile(observer,consumptionCostExtensionSource({output:observation,checkoutRoot:root,runId,sampleId:id,clockId}),{mode:0o600,flag:'wx'});
     await writeFile(transport,providerTransportExtensionSource({output:network,checkoutRoot:root,clockId}),{mode:0o600,flag:'wx'});
     const env=verificationCliEnvironment(join(base,'cli'));
+    if(!nativeLocal(config)){
+      await mkdir(env.NTN_SKILLS_CONFIG_HOME,{recursive:true,mode:0o700});
+      await save(join(env.NTN_SKILLS_CONFIG_HOME,'config.json'),{default_library:config.library});
+    }
     Object.assign(env,{CONTEXT_BROKER_CONFIG:brokerConfig,CONTEXT_BROKER_HOST:'pi',CONTEXT_BROKER_LOG_FILE:join(processEvidence,'broker.jsonl'),
       BROKER_E2E_PROCESS_LEDGER:join(processEvidence,'owned-processes.jsonl'),NTN_SKILLS_REQUEST_TRACE_LIMIT:'10000',
       NTN_SKILLS_SCHEDULER_ROOT:join(base,'request-engine'),PWD:base});

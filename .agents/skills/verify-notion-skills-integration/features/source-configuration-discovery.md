@@ -2,7 +2,7 @@
 
 [当前 integration 入口](../SKILL.md) 负责配对 SDK 与安装；本页只列来源边界。
 
-远端 `type: notion` 配置使用当前库入口与明确 Source/namespace，消费通过同包 SDK v2。旧 custom command、cache identity fallback、notion_page/subscription locator 不可用。UUID/URL 可作为用户输入，经当前目录和精确物理归属检查后才成为 current identity。
+远端 `type: notion` 配置使用当前库入口与明确 Source/namespace，消费通过同包 SDK v3。旧 custom command、cache identity fallback、notion_page/subscription locator 不可用。UUID/URL 可作为用户输入，经当前目录和精确物理归属检查后才成为 current identity。
 
 核对 source-connection、notion-entry、notion-source-sdk、remote-catalog、shared-notion-adapter 与 catalog-cache 的现有回归：多 Source 隔离；同名消歧；未认证/拒绝/缺失页保留错误；false-enabled 不曝光；完整分页后才声称目录完整；一处失败不能掩盖其他来源或恢复错误来源的旧正文。
 

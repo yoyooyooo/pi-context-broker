@@ -1,9 +1,10 @@
+import { notionPageId } from "./native-reference";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { buildRegistryFromRoots, normalizeKey } from "./skill-records";
 import { discoverNotionSource, discoverNotionCatalogAndDirectory, loadNotionSkill, SourceError, ReferenceMiss, sourceFailureMessage } from "./notion-source";
-import { validSharedIdentity } from "./shared-skill-identity";
+import { validSharedRecordId } from "./shared-skill-identity";
 import type { ConsumptionPolicy } from "./consumption-effects";
 import type { ConfigFile, NotionDirectorySelection, NotionDirectoryObservation, NotionListObservation, SkillRecord, SourceConfig, SourcePolicy, ScanConfig, DiscoveryResult, SourceFailure } from "./types";
 
@@ -97,11 +98,15 @@ export function normalizeSources(value: unknown): SourceConfig[] | undefined {
     if (raw.type !== "notion") invalid();
     if (raw.command !== undefined) throw new SourceError("SOURCE_COMMAND_UNSUPPORTED", id);
     if (raw.requestTimeoutMs !== undefined && (!Number.isSafeInteger(raw.requestTimeoutMs) || (raw.requestTimeoutMs as number) <= 0 || (raw.requestTimeoutMs as number) > 2_147_483_647)) invalid();
-    const database = optionalString(raw.database), profileId = optionalString(raw.profile_id);
-    if (profileId !== undefined && (!database || !validSharedIdentity(profileId))) invalid();
+    if (raw.database !== undefined) throw new SourceError("SOURCE_LIBRARY_REQUIRED", id);
+    const libraryInput = optionalString(raw.library);
+    const library = libraryInput === undefined ? undefined : notionPageId(libraryInput);
+    if (libraryInput !== undefined && !library) invalid();
+    const profileId = optionalString(raw.profile_id);
+    if (profileId !== undefined && !validSharedRecordId(profileId)) invalid();
     return {
       ...common, type: "notion",
-      database, default_view_id: optionalString(raw.default_view_id), ...(profileId === undefined ? {} : { profile_id: profileId }), cacheDir: optionalString(raw.cacheDir),
+      library, default_view_id: optionalString(raw.default_view_id), ...(profileId === undefined ? {} : { profile_id: profileId }), cacheDir: optionalString(raw.cacheDir),
       discovery: policy(raw.discovery), activation: policy(raw.activation), requestTimeoutMs: raw.requestTimeoutMs as number | undefined,
       preparation: preparation(raw.preparation),
       prefetch: prefetch(raw.prefetch),
@@ -226,7 +231,7 @@ export async function loadSourceSkill(record: SkillRecord, config: ConfigFile, c
   const source = (normalizeSources(config.sources) ?? []).find((candidate) => candidate.id === record.sourceId);
   if (!source || source.enabled === false) throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId);
   if (source.type === "notion") {
-    try { return await loadNotionSkill(record, source, cwd, options); }
+    try { return await loadNotionSkill(record, bindNotionSource(source, record), cwd, options); }
     catch (error) {
       if (error instanceof SourceError || error instanceof ReferenceMiss) throw error;
       throw new SourceError("SOURCE_STORAGE_ERROR", source.id);
@@ -240,4 +245,11 @@ export async function loadSourceSkill(record: SkillRecord, config: ConfigFile, c
   if (!records.some((candidate) => candidate.locator?.type === "local" && candidate.locator.id === path)) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
   const body = await selectedFile(path, source.id, () => readFile(path, "utf8"));
   return { ...record, path, body };
+}
+
+/** A retained record keeps the root that originally qualified it, even after a default switch. */
+export function bindNotionSource(source: Extract<SourceConfig, { type: "notion" }>, record: SkillRecord) {
+  if (record.locator?.type !== "shared_skill" || source.library !== undefined && source.library !== record.locator.library_id)
+    throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  return { ...source, library: record.locator.library_id };
 }

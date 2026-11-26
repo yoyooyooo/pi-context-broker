@@ -29,7 +29,9 @@ async function fixture({ build = true } = {}) {
   for (const name of ['cli', 'broker']) {
     const path = join(root, name); await mkdir(path); git(path, 'init', '--initial-branch=next');
     await writeFile(join(path, 'source.txt'), name + '\n'); git(path, 'add', 'source.txt'); git(path, 'commit', '-m', 'fixture');
-    heads[name] = git(path, 'rev-parse', 'HEAD'); git(path, 'update-ref', 'refs/remotes/origin/next', heads[name]);
+    heads[name] = git(path, 'rev-parse', 'HEAD');
+    const origin = join(root, 'control', name + '-origin.git');
+    git(root, 'clone', '--bare', path, origin); git(path, 'remote', 'add', 'origin', origin); git(path, 'fetch', 'origin');
     repositories[name] = { path };
   }
   const environment = { version: 1, kind: 'paired-development-environment', root, environment_id: randomUUID(), repositories };
@@ -94,6 +96,58 @@ test('retained current clean sources may differ from historical build heads', as
   assert.equal(result.status, 'reviewed_with_retained_sources');
   assert.equal(result.sources.cli.head, f.heads.cli); assert.equal(result.sources.cli.references.length, 1);
   const build = JSON.parse(await readFile(join(f.root, 'builds/retained-1/build.json'))); assert.notEqual(build.sources.cli.commit, result.sources.cli.head);
+});
+
+test('configured named remotes use real fetched refs without rewriting origin', async () => {
+  const f = await fixture(), source = join(f.root, 'cli');
+  const origin = git(source, 'config', '--null', '--get-regexp', '^remote\\.origin\\.');
+  await writeFile(join(source, 'feature.txt'), 'delivered feature\n'); git(source, 'add', 'feature.txt'); git(source, 'commit', '-m', 'feature');
+  f.heads.cli = git(source, 'rev-parse', 'HEAD');
+  const published = join(f.root, 'control', 'cli-published.git'); git(f.root, 'clone', '--bare', source, published);
+  git(source, 'remote', 'add', 'github', published); git(source, 'fetch', 'github');
+  assert.notEqual(git(source, 'rev-parse', 'refs/remotes/origin/next'), f.heads.cli);
+  const config = await readFile(join(source, '.git/config')), m = await manifest(f);
+  m.value.sources.cli.integration.target_ref = 'refs/remotes/github/next';
+  const result = await run(f, m);
+  assert.equal(result.status, 'reviewed_with_retained_sources');
+  assert.equal(result.sources.cli.integration.target_ref, 'refs/remotes/github/next');
+  assert.equal(result.coverage.remote_ref_freshness, 'local_refs_only');
+  assert.equal(git(source, 'config', '--null', '--get-regexp', '^remote\\.origin\\.'), origin);
+  assert.deepEqual(await readFile(join(source, '.git/config')), config);
+});
+
+test('unconfigured or malformed remote refs and incorrect fetched commits are rejected', async () => {
+  const f = await fixture(), source = join(f.root, 'cli'), m = await manifest(f);
+  git(source, 'update-ref', 'refs/remotes/unconfigured/next', f.heads.cli);
+  m.value.sources.cli.integration.target_ref = 'refs/remotes/unconfigured/next';
+  await assert.rejects(run(f, m), /configured remote/);
+  m.value.sources.cli.integration.target_ref = 'refs/heads/next';
+  await assert.rejects(run(f, m), /remote-tracking ref/);
+  m.value.sources.cli.integration.target_ref = 'refs/remotes/origin/bad..branch';
+  await assert.rejects(run(f, m), /Invalid integration target ref/);
+  m.value.sources.cli.integration.target_ref = 'refs/remotes/origin/next';
+  m.value.sources.cli.integration.target_commit = '0'.repeat(40);
+  await assert.rejects(run(f, m), /Local target ref changed/);
+});
+
+test('tree equality proves a real integration rebase and rejects a changed published tree', async () => {
+  const f = await fixture(), source = join(f.root, 'cli'), base = f.heads.cli;
+  await writeFile(join(source, 'feature.txt'), 'rebased feature\n'); git(source, 'add', 'feature.txt'); git(source, 'commit', '-m', 'feature');
+  f.heads.cli = git(source, 'rev-parse', 'HEAD');
+  const published = join(f.root, 'control', 'cli-rebased'); git(f.root, 'clone', source, published);
+  git(published, 'checkout', '-b', 'integration-base', base); git(published, 'commit', '--allow-empty', '-m', 'integration base');
+  git(published, 'checkout', 'next'); git(published, 'rebase', '--onto', 'integration-base', base, 'next');
+  const rebased = git(published, 'rev-parse', 'next'); assert.notEqual(rebased, f.heads.cli);
+  git(source, 'remote', 'add', 'github', published); git(source, 'fetch', 'github');
+  assert.throws(() => git(source, 'merge-base', '--is-ancestor', f.heads.cli, rebased), error => error.status === 1);
+  const m = await manifest(f);
+  m.value.sources.cli.integration = { target_ref: 'refs/remotes/github/next', target_commit: rebased, merged_commit: rebased, method: 'tree_equal' };
+  const result = await run(f, m); assert.equal(result.sources.cli.integration.verified, true);
+  m.value.sources.cli.integration.method = 'ancestor'; await assert.rejects(run(f, m), /Source HEAD is not integrated/);
+  await writeFile(join(published, 'feature.txt'), 'different published content\n'); git(published, 'add', 'feature.txt'); git(published, 'commit', '-m', 'different tree');
+  git(source, 'fetch', 'github'); const changed = git(published, 'rev-parse', 'next');
+  m.value.sources.cli.integration = { target_ref: 'refs/remotes/github/next', target_commit: changed, merged_commit: changed, method: 'tree_equal' };
+  await assert.rejects(run(f, m), /Source and integrated commit trees differ/);
 });
 
 test('an explicit receipt is exclusive and missing disposition remains review_required', async () => {

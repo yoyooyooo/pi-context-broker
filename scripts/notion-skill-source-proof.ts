@@ -1,3 +1,4 @@
+import { skillRefProtocol } from '../packages/context-broker/src/skill-ref-protocol.ts';
 // Read-only supplementary evidence for an observed retained-source bundle.
 // Run with Node 24 against the same CLI source tree used by the installed CLI.
 // This collector never prepares a Skill, downloads chunks, or writes Notion.
@@ -33,7 +34,7 @@ export function sourceProofSelection(input) {
     for (const owner of run.owners) {
       assert.match(owner.page_id, uuid); assert.match(owner.database_id, uuid);
       assert.match(owner.scope, /^[0-9a-f]{64}$/u);
-      assert.ok(typeof owner.library_id === 'string' && owner.id.startsWith('shared_skill:' + owner.library_id + ':'));
+      assert.equal(skillRefProtocol().parseSkillIdentity(owner.id).libraryId, owner.library_id);
       const previous = owners.get(owner.page_id);
       if (previous) for (const field of ['id', 'scope', 'library_id', 'database_id']) assert.equal(previous[field], owner[field]);
       owners.set(owner.page_id, owner);

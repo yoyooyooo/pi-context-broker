@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { skillIdentity, skillFileRef, pinSkillRef } from './skill-ref-fixture.mjs';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { selectLiveCatalogRecord, projectedResourceRef, measuredConsumptionArgs } from './notion-integration-hosts.mjs';
 import { nativeEntries, verifyPreparedDiagnostic, verifyPreparedProviderBody, defaultContextVerificationBudget, defaultContextResourceEntry } from './notion-default-context.mjs';
-import { createNotionFixture, database, firstViewId, missingRef, missingPageId } from './notion-integration-fixture.mjs';
+import { createNotionFixture, database, libraryId, firstViewId, missingRef, missingPageId } from './notion-integration-fixture.mjs';
 import { confirmedViewActivation, verifyPartialViewCoverage } from './notion-view-discovery.mjs';
 
 test('the controlled management fixture accepts only current ctl views and retains exact argv', async t => {
@@ -15,13 +16,15 @@ test('the controlled management fixture accepts only current ctl views and retai
   t.after(() => { if (process.platform === 'darwin') assert.equal(spawnSync('/usr/bin/trash', [base]).status, 0); });
   const fixture = await createNotionFixture(base);
   const call = args => spawnSync(fixture.command[0], [...fixture.command.slice(1), ...args], { encoding: 'utf8', timeout: 10000 });
-  const args = ['ctl', 'views', '--database', database, '--offline'];
+  const args = ['ctl', 'views', '--library', libraryId, '--offline'];
   const listed = call(args); assert.equal(listed.status, 0, listed.stderr);
   const response = JSON.parse(listed.stdout);
   assert.equal(response.ok, true); assert.equal(response.count, 2); assert.equal(response.views[0].id, firstViewId);
   await fixture.setScenario('normal', { noViews: true });
   assert.deepEqual(JSON.parse(call(args).stdout), { ok: true, views: [], count: 0 });
-  for (const retired of [['views'], ['doctor'], ['cache', 'identity'], ['list'], ['ctl', 'prepare', fixture.skillRef], ['read', fixture.skillRef], ['export', fixture.snapshotId]]) {
+  for (const retired of [['views'], ['doctor'], ['cache', 'identity'], ['list'], ['ctl', 'prepare', fixture.skillRef], ['read', fixture.skillRef], ['export', fixture.snapshotId],
+    ['ctl', 'views'], ['ctl', 'views', '--database', database], ['ctl', 'views', '--entry', libraryId],
+    ['ctl', 'views', '--library', database], ['ctl', 'views', '--library', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']]) {
     const rejected = call(retired); assert.equal(rejected.status, 1);
     assert.equal(JSON.parse(rejected.stdout).error.code, 'UNSUPPORTED_CONTROLLED_OPERATION');
   }
@@ -30,8 +33,8 @@ test('the controlled management fixture accepts only current ctl views and retai
 });
 
 function partialViewSample() {
-  const page = '11111111-1111-4111-8111-111111111111', id = 'shared_skill:fixture:' + page, ref = 'sr:C' + 'x'.repeat(22);
-  const fixture = { scope: 'b'.repeat(64), skillRef: 'skill://' + encodeURIComponent(id) + '/SKILL.md', name: 'UI Alpha', alias: 'ui-alpha', canary: 'ROOT_BODY', resourceCanary: 'RESOURCE_BODY' };
+  const page = '11111111-1111-4111-8111-111111111111', id = skillIdentity('fixture', page), ref = 'sr:C' + 'x'.repeat(22);
+  const fixture = { scope: 'b'.repeat(64), skillRef: skillFileRef(id, 'SKILL.md'), name: 'UI Alpha', alias: 'ui-alpha', canary: 'ROOT_BODY', resourceCanary: 'RESOURCE_BODY' };
   const record = { id, kind: 'skill', enabled: true, default_context: true, name: fixture.name, alias: fixture.alias, entrypoint: 'SKILL.md', ref: fixture.skillRef,
     description: 'Use the selected workflow.', locator: { type: 'shared_skill', library_id: 'fixture', skill_id: page, page_id: page, database_id: database, data_source_id: '44444444-4444-4444-8444-444444444444' } };
   const response = { ok: true, scope: fixture.scope, view: { id: firstViewId, database_id: database }, count: 1, records: [record],
@@ -39,7 +42,7 @@ function partialViewSample() {
   const directory = '<ntn-skills-view-catalog><view source="notion" id="' + firstViewId + '" database="' + database + '" origin="first" partial="true">Default work</view>'
     + '<catalog-cards><group kind="skill" source="notion"><card name="UI Alpha" location="' + ref + '">Use the selected workflow.</card></group></catalog-cards></ntn-skills-view-catalog>';
   const entries = [{ id: 'candidate', type: 'custom', customType: 'context-broker-short-ref', data: { version: 1, ref,
-    target: { kind: 'candidate', identity: { source: 'notion', scope: fixture.scope, id: record.id, kind: record.kind, locator: record.locator, ref: 'skill://' + encodeURIComponent(id) } } } },
+    target: { kind: 'candidate', identity: { source: 'notion', scope: fixture.scope, id: record.id, kind: record.kind, locator: record.locator, ref: id } } } },
     { id: 'message', parentId: 'candidate', type: 'message', message: { role: 'user', content: 'Describe available names.' } }];
   return { host: 'pi', context: { messages: [{ role: 'system', content: directory }] }, response, entries, fixture };
 }
@@ -116,7 +119,7 @@ test('partial View evidence rejects empty, complete, all-library, body and forge
     value => { value.context.messages.push({ role: 'user', content: value.fixture.canary }); },
     value => { value.entries = []; },
     value => { value.entries[0].data.target.identity.scope = 'c'.repeat(64); },
-    value => { value.entries[0].data.target.identity.id = 'shared_skill:fixture:other'; },
+    value => { value.entries[0].data.target.identity.id = 'skill://other?library=fixture'; },
     value => { value.entries[0].data.target.identity.ref += '/SKILL.md'; },
     value => { value.entries[0].data.target.kind = 'selected'; },
     value => { value.entries.push({ id: 'fork-before-candidate', type: 'message' }); },
@@ -126,7 +129,7 @@ test('partial View evidence rejects empty, complete, all-library, body and forge
 });
 
 test('bounded prepared diagnostics reject foreground delivery, wrong scope and oversized results', () => {
-  const identity = { id: 'shared_skill:fixture:owner', scope: 'b'.repeat(64) };
+  const identity = { id: 'skill://owner?library=fixture', scope: 'b'.repeat(64) };
   const job = { purpose: 'prefetch', state: 'prepared', sourceId: 'notion', loaded: false, epoch: 0,
     budget: { ...defaultContextVerificationBudget }, preparedNodes: 1, instructionBytes: 17, contextBytes: 1000,
     records: [{ ...identity, snapshotId: 's_' + 'a'.repeat(64), bodySha256: 'c'.repeat(64), bytes: 17 }] };
@@ -134,7 +137,7 @@ test('bounded prepared diagnostics reject foreground delivery, wrong scope and o
   for (const changed of [
     { ...job, purpose: 'foreground', state: 'ready' }, { ...job, loaded: true }, { ...job, body: 'secret' },
     { ...job, records: [{ ...job.records[0], scope: 'd'.repeat(64) }] },
-    { ...job, records: [{ ...job.records[0], id: 'shared_skill:fixture:unselected' }] },
+    { ...job, records: [{ ...job.records[0], id: 'skill://unselected?library=fixture' }] },
     { ...job, contextBytes: job.budget.maxBytes + 1 }, { ...job, preparedNodes: 2 },
   ]) assert.throws(() => verifyPreparedDiagnostic(changed, identity));
 });
@@ -159,7 +162,7 @@ test('a prepared hash proves delivery only when the full body is in the provider
 });
 
 test('View compaction restoration requires a confirmation on the current branch and its exact fixed vector', () => {
-  const expected = { id: 'shared_skill:fixture:owner', scope: 'b'.repeat(64), snapshotId: 's_' + 'a'.repeat(64), bodySha256: 'c'.repeat(64), bytes: 204 };
+  const expected = { id: 'skill://owner?library=fixture', scope: 'b'.repeat(64), snapshotId: 's_' + 'a'.repeat(64), bodySha256: 'c'.repeat(64), bytes: 204 };
   const binding = { record: { id: expected.id }, scope: expected.scope, snapshot_id: expected.snapshotId, body_sha256: expected.bodySha256 };
   const graph = { purpose: 'use', scope: expected.scope, roots: [expected.id], required: [], bindings: [binding] };
   const source = { ...expected, record: { id: expected.id, source: 'notion', sourceId: 'notion', sourceScope: expected.scope, preparationBinding: binding } };
@@ -176,23 +179,24 @@ test('View compaction restoration requires a confirmation on the current branch 
 
 test('provider metadata preserves author names, explicit sources and distinct same-name handles', () => {
   const entry = (source, location) => '<catalog-cards><group kind="skill" source="' + source + '"><card name="真实 Skill &amp; A" location="' + location + '">A &lt; B</card></group></catalog-cards>';
-  const context = { messages: [{ role: 'system', content: entry('notion', 'sr:C' + 'a'.repeat(22)) + entry('notion', 'sr:C' + 'b'.repeat(22)) + entry('other', 'skill://shared_skill%3Aowner/SKILL.md?snapshot=s_fixed&amp;file_id=main') }] };
+  const fixed = skillFileRef('skill://owner?library=other', 'SKILL.md', 's_' + 'a'.repeat(64));
+  const context = { messages: [{ role: 'system', content: entry('notion', 'sr:C' + 'a'.repeat(22)) + entry('notion', 'sr:C' + 'b'.repeat(22)) + entry('other', fixed.replaceAll('&', '&amp;')) }] };
   assert.deepEqual(nativeEntries('pi', context), [
     { name: '真实 Skill & A', source: 'notion', filePath: 'sr:C' + 'a'.repeat(22), catalog: 'prompt-metadata' },
     { name: '真实 Skill & A', source: 'notion', filePath: 'sr:C' + 'b'.repeat(22), catalog: 'prompt-metadata' },
-    { name: '真实 Skill & A', source: 'other', filePath: 'skill://shared_skill%3Aowner/SKILL.md?snapshot=s_fixed&file_id=main', catalog: 'prompt-metadata' },
+    { name: '真实 Skill & A', source: 'other', filePath: fixed, catalog: 'prompt-metadata' },
   ]);
 });
 
 test('fixed public refs select their exact owner without replacing the requested version', () => {
-  const id = 'shared_skill:library-a:owner', page = '11111111-1111-4111-8111-111111111111';
-  const record = { id, name: '真实 Skill & A', alias: 'shared-alias', locator: { type: 'shared_skill', page_id: page, library_id: 'library-a', skill_id: 'owner', database_id: database, data_source_id: '44444444-4444-4444-8444-444444444444' }, ref: 'skill://' + encodeURIComponent(id) + '/SKILL.md' };
-  const other = { ...record, id: 'shared_skill:other:owner', locator: { ...record.locator, library_id: 'other', page_id: '22222222-2222-4222-8222-222222222222' }, ref: 'skill://shared_skill%3Aother%3Aowner/SKILL.md' };
-  const fixed = record.ref + '?snapshot=s_' + 'a'.repeat(64) + '&file_id=main';
+  const id = 'skill://owner?library=library-a', page = '11111111-1111-4111-8111-111111111111';
+  const record = { id, name: '真实 Skill & A', alias: 'shared-alias', locator: { type: 'shared_skill', page_id: page, library_id: 'library-a', skill_id: 'owner', database_id: database, data_source_id: '44444444-4444-4444-8444-444444444444' }, ref: skillFileRef(id, 'SKILL.md') };
+  const other = { ...record, id: 'skill://owner?library=other', locator: { ...record.locator, library_id: 'other', page_id: '22222222-2222-4222-8222-222222222222' }, ref: 'skill://owner/SKILL.md?library=other' };
+  const fixed = pinSkillRef(record.ref, 's_' + 'a'.repeat(64));
   assert.equal(selectLiveCatalogRecord([record, other], fixed), record);
-  assert.equal(selectLiveCatalogRecord([record, other], 'skill://' + page.replaceAll('-', '') + '/SKILL.md'), record);
-  assert.equal(selectLiveCatalogRecord([record], 'skill://' + encodeURIComponent(record.name) + '/SKILL.md'), record);
-  assert.throws(() => selectLiveCatalogRecord([record, other], 'skill://shared-alias/SKILL.md'), /exactly one/);
+  assert.throws(() => selectLiveCatalogRecord([record, other], 'skill://' + page.replaceAll('-', '') + '/SKILL.md'));
+  assert.throws(() => selectLiveCatalogRecord([record], 'skill://' + encodeURIComponent(record.name) + '/SKILL.md'));
+  assert.throws(() => selectLiveCatalogRecord([record, other], 'skill://shared-alias/SKILL.md'));
   assert.throws(() => selectLiveCatalogRecord([record], other.ref), /exactly one/);
   assert.throws(() => selectLiveCatalogRecord([{ ...record, locator: { type: 'notion_page', page_id: page } }], fixed), /exactly one/);
   assert.equal(record.ref.includes('snapshot='), false, 'The selected metadata is not rewritten into a current or fixed ref');
