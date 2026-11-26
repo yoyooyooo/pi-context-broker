@@ -39,7 +39,7 @@
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "84d3fb8a58b0fd203cffe45a29442b5363666ecfd0997f55c001d8d8197c1959",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "5a906e9a1468c0764999557f0e4f8cf011345f4708eeec7a7622581cc3765cf7",
     "packages/context-broker/scripts/notion-source-sdk.test.ts": "81007f711d35cf1e058d2f4f7f0e5fbad0d7970a5245437ab87bb0af89edad92",
-    "packages/context-broker/scripts/pi-read-adapter.test.ts": "fe3aaac44d90c4610addc8cb26a64fa17414cb9619d0e8e7da15ebebf529355c",
+    "packages/context-broker/scripts/pi-read-adapter.test.ts": "5c8f69c40967a41e42fc3f09355992b58605875408b53987cd9ab56079f54e87",
     "packages/context-broker/scripts/fixtures/active-notion-session.ts": "26132aa2f28fbb21a8586bb102abbd41907922e1eb9ced6da659369346c25f8e",
     "packages/context-broker/scripts/notion-entry.test.ts": "7ff3897a2cd5aebed74786139c1d565e63ce58023c25774b0757f4ff5e1fc238",
     "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
