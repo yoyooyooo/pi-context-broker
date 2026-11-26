@@ -153,7 +153,7 @@ test('a legal resolve sequence retains all five SDK operations and zero-request 
   assert.equal(source.at(-1).operations, 5); assert.equal(source.at(-1).sdkStarts, 5);
   assert.equal(source.at(-1).errors, 0); assert.equal(source.at(-1).complete, true);
   const accounting = graphSourceAccounting(ledger, receipts, { sourceMode: 'sdk', requireConsumption: true });
-  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 0, consume: 1, read: 1, 'read-resources': 1, resolve: 1 });
+  assert.deepEqual(accounting.sdk_calls, { list: 1, files: 0, consume: 1, read: 1, 'read-resources': 1, resolve: 1, 'content-search': 0 });
   assert.equal(accounting.actual_http_attempts, 0);
 });
 
