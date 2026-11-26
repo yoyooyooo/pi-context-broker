@@ -9,8 +9,9 @@ build. The ordinary daily `next` verification gate remains separate.
 
 Start with the latest project narrative, then inspect both repositories and the
 actual Mini installation. A completed historical ticket does not establish the
-current product state. The [SDK3 product cycle](../benchmark/results/2026-11-26-sdk3-read-description-cycle/README.md)
-keeps the first concrete decision, frozen model conditions and evidence limits.
+current product state. The [product adoption record](benchmark-product-adoption-2026-11-26.md)
+links the concrete changes, separately frozen comparisons, evidence limits and
+ordinary-profile delivery. Its original evidence packages remain immutable.
 
 1. **Select the product and the question.** Fetch and compare `next` and
    `benchmark` in both isolated checkouts. Bring accepted shared changes into
@@ -66,7 +67,7 @@ explicit states; repair the measurement only where it affects this decision.
 ## Current source and retained experiments
 
 The shared product and verification base now follows `next`
-`3c78765ff82c36bbb2b0e2d75a1157180e00b59c`, with CLI
+`c3a880071996429e615bd66de74b86b462c669c3`, with CLI
 `ba092a531a64633c31e648b4f9f806e606a78f4e` (SDK v3 and Library root).
 This is a new linear integration commit on the Benchmark history. Existing
 plans, product builds, raw observations and published scores retain their
