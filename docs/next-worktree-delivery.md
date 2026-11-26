@@ -188,3 +188,7 @@ source 与实际 settings slot 及 user scope 注册原样相同。
 不是解析基准。解析结果、真实注册的 entry/baseDir、干净提交和冻结 package/entry 字节
 必须仍属于同一 Broker。原先候选绝对来源的判定不变；缺绑定、改动过的原件、错误目录、
 其他来源或包均不能借用归属证明。该可选分析输入不创建新的执行入口，也不修改日用配置。
+
+## compact-ui read 兼容
+
+现役 compact-ui profile 的完整 read schema 与执行归属修复，按 [compact-ui 的完整 read 合同](compact-ui-read-compatibility.md) 复现补丁、验证和采用。旧单路径 delegate 证据保留其原范围；新版本必须以 fresh 普通 Pi 实际注册与受控 dispatch 读回。
