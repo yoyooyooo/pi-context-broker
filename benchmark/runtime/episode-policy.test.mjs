@@ -180,17 +180,50 @@ test('final request contract removes only the exact public user input', () => {
   assert.throws(() => requestContract(make('probe'), 'openai-completions', 'missing prompt', {}), /NOT_UNIQUELY_LOCATED/);
 });
 
-function candidateFixture(byte = 1) {
+const fixtureLibrary = '4215636c-236e-81e8-8168-ee2ac696f73a';
+const fixtureRoot = 'skill://fixture-skill?library=' + fixtureLibrary;
+const fixtureOtherRoot = 'skill://fixture-other?library=' + fixtureLibrary;
+const encodedEntrypoint = 'references/说明 guide.md';
+// Declared boundary examples, not a second implementation of the SDK URI codec.
+const referenceExamples = new Map([
+  [JSON.stringify([fixtureRoot, 'SKILL.md']), 'skill://fixture-skill/SKILL.md?library=' + fixtureLibrary],
+  [JSON.stringify([fixtureRoot, encodedEntrypoint]), 'skill://fixture-skill/references/%E8%AF%B4%E6%98%8E%20guide.md?library=' + fixtureLibrary],
+  [JSON.stringify([fixtureOtherRoot, 'SKILL.md']), 'skill://fixture-other/SKILL.md?library=' + fixtureLibrary],
+]);
+const fixtureReference = (identity, path) => referenceExamples.get(JSON.stringify([identity, path]));
+
+function candidateFixture(byte = 1, entrypoint = 'SKILL.md') {
   const ref = 'sr:C' + Buffer.alloc(16, byte).toString('base64url');
-  const locator = { type: 'shared_skill', database_id: 'db', data_source_id: 'source', page_id: 'page', library_id: 'library', skill_id: 'skill' };
-  const identity = { source: 'notion', scope: 'a'.repeat(64), id: 'shared_skill:library:skill', kind: 'skill', locator,
-    ref: 'skill://shared_skill%3Alibrary%3Askill' };
+  const locator = { type: 'shared_skill', database_id: 'db', data_source_id: 'source', page_id: 'page', library_id: fixtureLibrary, skill_id: 'fixture-skill' };
+  const identity = { source: 'notion', scope: 'a'.repeat(64), id: fixtureRoot, kind: 'skill', locator, ref: fixtureRoot };
   const record = { id: identity.id, kind: identity.kind, locator, name: 'same-name', description: 'Original catalog body',
-    entrypoint: 'SKILL.md', ref: identity.ref + '/SKILL.md', enabled: true };
+    entrypoint, ref: fixtureReference(identity.ref, entrypoint), enabled: true };
   const shortRefs = { bindings: new Map([[ref, { kind: 'candidate', identity }]]) };
   const catalogs = { observed: true, catalogs: [{ facets: [{ facet: 'catalog', ok: true, value: { scope: identity.scope, records: [record] } }] }] };
-  return { ref, identity, record, shortRefs, catalogs };
+  return { ref, identity, record, shortRefs, catalogs, formatReference: fixtureReference };
 }
+
+test('candidate references delegate Library queries and encoded paths while retaining exact owner and entrypoint checks', () => {
+  for (const entrypoint of ['SKILL.md', encodedEntrypoint]) {
+    const f = candidateFixture(1, entrypoint), calls = [];
+    f.formatReference = (identity, path) => { calls.push({ identity, path }); return fixtureReference(identity, path); };
+    assert.equal(catalogCandidateReferences(f).length, 1);
+    assert.deepEqual(calls, [{ identity: fixtureRoot, path: entrypoint }]);
+    assert.ok(f.record.ref.endsWith('?library=' + fixtureLibrary));
+  }
+  for (const mutate of [
+    f => { f.identity.ref = f.identity.ref.replace(fixtureLibrary, 'ffffffff-ffff-4fff-bfff-ffffffffffff'); },
+    f => { f.record.ref = f.record.ref.replace(fixtureLibrary, 'ffffffff-ffff-4fff-bfff-ffffffffffff'); },
+    f => { f.record.entrypoint = 'references/another.md'; },
+    f => { f.record.ref = f.identity.ref + '/' + f.record.entrypoint; },
+    f => { f.record.ref += '&snapshot=fixed-other'; },
+    f => { f.record.ref = f.record.ref.replace('%20', '%2520'); },
+    f => { f.shortRefs.bindings.get(f.ref).identity = { ...f.identity, locator: { ...f.identity.locator, library_id: 'ffffffff-ffff-4fff-bfff-ffffffffffff' } }; },
+  ]) {
+    const wrong = candidateFixture(1, encodedEntrypoint); mutate(wrong);
+    assert.throws(() => catalogCandidateReferences(wrong), /IDENTITY_MISMATCH/);
+  }
+});
 
 const catalogText = (ref, body = 'Original catalog body') => '<ntn-skills-view-catalog>\n<catalog-cards>\n<group kind="skill" source="notion">\n'
   + '<card name="same-name" location="' + ref + '">' + body + '</card>\n</group>\n</catalog-cards>\n</ntn-skills-view-catalog>';
@@ -262,8 +295,8 @@ test('same-name owner changes and changed catalog bodies remain contract differe
   const f = candidateFixture(), api = 'openai-completions', refs = catalogCandidateReferences(f);
   const expected = requestContract(catalogPayload(f.ref, api), api, 'task', {}, refs);
   const other = candidateFixture(2);
-  other.identity.id = other.record.id = 'shared_skill:library:other';
-  other.identity.locator.skill_id = 'other'; other.identity.ref = 'skill://shared_skill%3Alibrary%3Aother'; other.record.ref = other.identity.ref + '/SKILL.md';
+  other.identity.id = other.record.id = fixtureOtherRoot;
+  other.identity.locator.skill_id = 'fixture-other'; other.identity.ref = fixtureOtherRoot; other.record.ref = fixtureReference(fixtureOtherRoot, 'SKILL.md');
   assert.ok(candidateDifferences(expected, requestContract(catalogPayload(other.ref, api), api, 'task', {}, catalogCandidateReferences(other))).length);
   const changedCatalog = candidateFixture(); changedCatalog.record.description = 'Changed independently observed body';
   assert.ok(candidateDifferences(expected, requestContract(catalogPayload(changedCatalog.ref, api), api, 'task', {}, catalogCandidateReferences(changedCatalog))).length);
