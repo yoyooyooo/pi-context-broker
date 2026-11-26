@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { canonicalJson, fingerprint } from './protocol.mjs';
 import { validateBatchPlan } from './batch.mjs';
 import { executionImplementation, instrumentationIdentity } from './implementation.mjs';
 import { inventoryPublicInputs } from './subject.mjs';
 import { prepareMaterialOwnership, verifyMaterialOwnership } from './material-ownership.mjs';
+import { readProviderTransport } from '../scripts/skill-consumption-provider.mjs';
+import { numericStandingNames } from './standing-campaign.mjs';
 
 const moduleRoot = dirname(fileURLToPath(import.meta.url));
 const registrationName = 'collection-repair-registration.json';
@@ -23,7 +25,15 @@ const allowedChanges = new Set(['cli.mjs', 'controller.mjs', 'pilot-scope.mjs', 
 const additions = new Set(['collection-recovery.mjs', 'material-ownership.mjs']);
 const registrationKeys = new Set(['version', 'kind', 'created_at', 'reason', 'plan', 'ledger_prefix', 'frozen_controller',
   'before_implementation', 'implementation', 'source_changes', 'before_sources', 'implementation_sources',
-  'instrumentation', 'frozen_inputs', 'repairs', 'material_bindings', 'registration_sha256']);
+  'instrumentation', 'frozen_inputs', 'repairs', 'material_bindings', 'adapter_projection', 'supersedes', 'registration_sha256']);
+const standingCloseout = plan => plan.execution.standing_scope?.kind === 'benchmark-standing-campaign';
+const standingChanges = new Set(['configure.mjs', 'batch.mjs', 'standing-campaign.mjs']);
+function registrationPath(plan, path) {
+  absolute(path);
+  assert.ok(path === fixedPath(plan) || standingCloseout(plan) && dirname(path) === plan.execution.control_root
+    && /^collection-repair-registration-[1-9][0-9]*\.json$/.test(basename(path)), 'Collection recovery must use the fixed explicit registration or a numbered standing replacement');
+  return path;
+}
 
 function absolute(path) {
   assert.ok(typeof path === 'string' && isAbsolute(path) && resolve(path) === path, 'Collection recovery needs canonical absolute paths');
@@ -85,6 +95,22 @@ async function writeOnce(path, bytes, environmentRoot) {
   catch (error) { if (error.code !== 'EEXIST') throw error; assert.deepEqual(await bytesAt(path, environmentRoot), bytes, 'Collection recovery refuses to overwrite an existing artifact'); }
   return { path, sha256: sha(bytes), bytes: bytes.length };
 }
+
+/** Preserve the verified proof bytes while giving collection an owned path. */
+export async function prepareAdapterEvidenceOwnership({ source, sha256, directory, environmentRoot }) {
+  const original = await referenceAt(source);
+  assert.equal(original.sha256, sha256, 'Frozen adapter evidence changed');
+  const bytes = await verifiedBytes(original);
+  const owned = await writeOnce(join(directory, sha256 + '.json'), bytes, environmentRoot);
+  return { version: 1, kind: 'benchmark-adapter-evidence-ownership', original, owned };
+}
+async function verifyAdapterEvidenceOwnership({ projection, source, sha256, directory, environmentRoot }) {
+  const original = await referenceAt(source), owned = { ...original, path: join(directory, sha256 + '.json') };
+  assert.equal(original.sha256, sha256, 'Frozen adapter evidence changed');
+  assert.deepEqual(projection, { version: 1, kind: 'benchmark-adapter-evidence-ownership', original, owned });
+  assert.deepEqual(await verifiedBytes(owned, environmentRoot), await verifiedBytes(original));
+  return projection;
+}
 function parseLedger(bytes) {
   assert.ok(bytes.length && bytes.at(-1) === 10, 'Collection recovery requires complete ledger appends');
   return bytes.toString('utf8').split('\n').slice(0, -1).map((line, index) => {
@@ -103,7 +129,7 @@ function slotFor(plan, event) {
 }
 
 /** A narrowly scoped first-gate collection failure, not a retry or an unknown-cost exemption. */
-export function validateCollectionRecoveryLedger({ plan, bytes, prefix, reference, repairs = [] }) {
+export function validateCollectionRecoveryLedger({ plan, bytes, prefix, reference, repairs = [], closeoutOnly = false }) {
   const rows = parseLedger(bytes), boundary = prefix?.through_seq ?? rows.length;
   if (prefix) {
     descriptor(prefix); assert.ok(Number.isSafeInteger(prefix.bytes) && prefix.bytes > 0 && bytes.length >= prefix.bytes);
@@ -138,6 +164,7 @@ export function validateCollectionRecoveryLedger({ plan, bytes, prefix, referenc
     if (row.type === 'episode_started') {
       assert.ok(!allStarts.has(row.run_id), 'Collection recovery cannot restart an existing run');
       if (row.seq > boundary) {
+        assert.equal(closeoutOnly, false, 'Standing zero-send collection recovery cannot dispatch another episode');
         assert.equal(zeroSendBatchClosed, true, 'Original recovery must close a zero-send batch before any new dispatch');
         assert.ok([...allStarts.keys()].every(runId => completed.has(runId)), 'Collection recovery cannot dispatch past an unresolved execution');
         assert.equal(retainedStop, false, 'Collection recovery cannot dispatch past a retained stop or unknown usage');
@@ -157,6 +184,11 @@ export function validateCollectionRecoveryLedger({ plan, bytes, prefix, referenc
     if (row.run_id === started.run_id) {
       assert.equal(row.reconciled, true); assert.equal(newInBatch, 0);
       if (prefix) assert.deepEqual(row.result.budget_usage, repairs[0].budget_usage, 'Recovered completion must retain actual original usage');
+      if (closeoutOnly) {
+        assert.equal(row.result.status, 'invalid', 'Standing closeout must retain the invalid execution');
+        assert.equal(row.result.stop_batch, true, 'Standing closeout must retain the stop');
+        for (const key of ['model_requests', 'input_tokens', 'output_tokens']) assert.equal(row.result.budget_usage[key], 0);
+      }
       originalRecovered = true;
     }
     else assert.equal(zeroSendBatchClosed, true);
@@ -170,7 +202,7 @@ export function validateCollectionRecoveryLedger({ plan, bytes, prefix, referenc
 }
 
 /** Every changed byte is fixed by the registration; collector/runtime/scoring sources cannot change. */
-export function collectionRecoverySourceChanges(before, after) {
+export function collectionRecoverySourceChanges(before, after, { closeoutOnly = false } = {}) {
   for (const value of [before, after]) {
     assert.equal(value?.version, 1); assert.ok(Array.isArray(value.files) && value.files.length);
     assert.equal(value.sha256, fingerprint(value.files));
@@ -186,7 +218,7 @@ export function collectionRecoverySourceChanges(before, after) {
   for (const [path, file] of old) {
     assert.ok(next.has(path), 'Collection recovery cannot remove frozen source files');
     if (file.sha256 === next.get(path).sha256 && file.bytes === next.get(path).bytes) continue;
-    assert.ok(allowedChanges.has(path), 'Collection recovery cannot alter ' + path);
+    assert.ok(allowedChanges.has(path) || closeoutOnly && standingChanges.has(path), 'Collection recovery cannot alter ' + path);
     changes.push({ path, before: file, after: next.get(path) });
   }
   for (const [path, file] of next) if (!old.has(path)) {
@@ -245,8 +277,77 @@ export function validateCollectionRecoveryRaw({ plan, slot, run, shared, runtime
   assert.ok(requests <= budget.max_http_attempts); return usage;
 }
 
+/** This closes one observed startup rejection; it never grants a replacement send. */
+export async function validateStandingZeroSendCollectionRaw({ plan, slot, run, shared, runtime, transportPath }) {
+  assert.equal(standingCloseout(plan), true);
+  const candidate = plan.execution.conditions[slot.condition_id];
+  const runId = plan.id + '-' + String(slot.order + 1).padStart(3, '0');
+  const root = join(plan.execution.environment_root, 'runs', runId);
+  for (const item of [run, shared]) {
+    assert.equal(item.run_id, runId); assert.equal(item.root, root); assert.equal(item.build_id, candidate.build_id);
+  }
+  assert.equal(run.build_root, join(plan.execution.environment_root, 'builds', candidate.build_id));
+  assert.equal(run.pi_launch?.mode, candidate.mode);
+  assert.equal(shared.status, 'failed'); assert.equal(shared.exit_code, 1); assert.equal(shared.spawned, true);
+  assert.equal(shared.timed_out, false); assert.equal(shared.signal ?? null, null);
+  assert.equal(shared.frozen_artifacts, 'passed'); assert.equal(shared.runtime_check?.status, 'unchanged');
+  assert.equal(runtime.status, 'invalid'); assert.equal(runtime.entry_kind, 'pi-sdk');
+  assert.deepEqual(runtime.correlation, { run_id: runId, episode_id: runId, candidate_id: slot.condition_id, task_id: slot.case_id });
+  assert.equal(runtime.admission?.status, 'pending');
+  assert.equal(runtime.error?.name, 'AssertionError'); assert.equal(runtime.error.code, 'ERR_ASSERTION');
+  assert.equal(runtime.error.message, 'BENCHMARK_NOTION_STARTUP_PENDING');
+  assert.deepEqual(runtime.requests, []); assert.deepEqual(runtime.turns, []);
+  assert.deepEqual(runtime.interventions, []); assert.equal(runtime.completion?.agent_settled, false);
+  for (const key of ['abort_settled', 'shutdown_emitted', 'dispose_called']) assert.equal(runtime.completion.cleanup?.[key], true);
+  for (const key of ['attempts', 'tools', 'interventions', 'notion_sdk', 'notion_owned_http']) assert.equal(runtime.coverage?.[key], 'complete');
+  assert.equal(runtime.budget?.usage_unknown, false); assert.equal(runtime.budget.stop ?? null, null);
+  for (const key of ['requests', 'attempts', 'tools', 'input_tokens', 'output_tokens', 'tokens']) assert.equal(runtime.budget[key], 0);
+  assert.equal(transportPath, join(root, 'benchmark/runtime/transport.jsonl'));
+  const transport = await readProviderTransport(transportPath);
+  assert.ok(transport.every(row => row.clockId === runId));
+  assert.equal(transport.at(-1).complete, true); assert.equal(transport.at(-1).errors, 0);
+  assert.ok(!transport.some(row => row.category === 'model'), 'Standing collection closeout requires independently proved zero model transport');
+  assert.ok(Number.isFinite(runtime.timing?.duration_ms) && runtime.timing.duration_ms >= 0);
+  return { model_requests: 0, input_tokens: 0, output_tokens: 0, duration_ms: runtime.timing.duration_ms };
+}
+
+async function standingPlanContext(plan, planFile) {
+  const e = plan.execution;
+  assert.equal(plan.protocol.policies.campaign?.kind, 'benchmark-standing-campaign');
+  assert.equal(e.pilot_scope, undefined); assert.equal(e.resumption, undefined); assert.equal(e.episode_fixtures, undefined);
+  await ordinaryDirectory(e.environment_root); await ordinaryDirectory(e.control_root);
+  assert.ok(inside(e.environment_root, e.control_root) && e.control_root !== e.environment_root);
+  assert.equal(planFile, join(e.control_root, 'plan.json'));
+  const planRef = await referenceAt(planFile, e.environment_root);
+  assert.deepEqual(JSON.parse(await verifiedBytes(planRef, e.environment_root)), plan);
+  const inputFiles = [await referenceAt(e.case_bindings_file, e.environment_root), await referenceAt(e.models_file, e.environment_root),
+    await referenceAt(e.adapter_evidence_file), await referenceAt(e.standing_scope.amendment.path, e.environment_root)];
+  assert.equal(inputFiles[0].sha256, e.case_bindings_sha256); assert.equal(inputFiles[1].sha256, e.models_sha256);
+  assert.equal(inputFiles[3].sha256, e.standing_scope.amendment.sha256);
+  for (const model of plan.protocol.models) assert.equal(inputFiles[2].sha256, model.adapter.evidence_sha256);
+  const bindings = JSON.parse(await verifiedBytes(inputFiles[0], e.environment_root));
+  assert.ok(Array.isArray(bindings) && bindings.length);
+  assert.equal(new Set(bindings.map(binding => binding.id)).size, bindings.length);
+  assert.deepEqual(bindings.map(binding => binding.id).sort(), [...new Set(plan.slots.map(slot => slot.case_id))].sort());
+  const identities = [];
+  for (const binding of bindings) {
+    inputFiles.push(await referenceAt(binding.oracle_path, e.environment_root)); assert.equal(inputFiles.at(-1).sha256, binding.oracle_sha256);
+    await ordinaryDirectory(binding.input_root); assert.ok(inside(e.environment_root, binding.input_root));
+    assert.equal(sha(JSON.stringify(await inventoryPublicInputs(binding.input_root))), binding.input_inventory_sha256);
+    identities.push({ case_id: binding.id, binding_sha256: fingerprint(binding), input_inventory_sha256: binding.input_inventory_sha256 });
+  }
+  for (const condition of Object.values(e.conditions)) for (const ref of Object.values(condition.expectations)) {
+    await verifiedBytes(ref, e.environment_root); inputFiles.push(await referenceAt(ref.path, e.environment_root));
+  }
+  const files = [...new Map(inputFiles.map(ref => [ref.path, ref])).values()].sort((a, b) => a.path.localeCompare(b.path));
+  const firstBuild = e.conditions[plan.slots[0].condition_id].build_id;
+  return { planRef: { ...planRef, plan_sha256: plan.plan_sha256 }, bindings, frozenInputs: { files, bindings: identities },
+    frozenController: join(e.environment_root, 'builds', firstBuild, 'source/broker/benchmark/cli.mjs') };
+}
+
 async function planContext(plan, planFile = join(plan.execution.control_root, 'plan.json')) {
   validateBatchPlan(plan); const e = plan.execution;
+  if (standingCloseout(plan)) return standingPlanContext(plan, planFile);
   assert.equal(plan.protocol.phase, 'pilot'); assert.equal(e.pilot_scope?.role, 'gate', 'Collection recovery is gate-only');
   assert.equal(e.resumption, undefined); assert.equal(e.episode_fixtures, undefined, 'Collection recovery cannot hide turn fixtures');
   await ordinaryDirectory(e.environment_root); await ordinaryDirectory(e.control_root);
@@ -339,7 +440,7 @@ async function partialCollection(root, environmentRoot) {
   }
   await visit(join(root, 'benchmark/normalized')); return files;
 }
-async function rawRepair(plan, started, failed) {
+async function rawRepair(plan, started, failed, standingThrough = null) {
   const e = plan.execution, root = join(e.environment_root, 'runs', started.run_id); await ordinaryDirectory(root);
   const runRef = await referenceAt(join(root, 'run.json'), root), sharedRef = await referenceAt(join(root, 'result.json'), root),
     runtimeRef = await referenceAt(join(root, 'benchmark/runtime/episode-result.json'), root);
@@ -350,70 +451,100 @@ async function rawRepair(plan, started, failed) {
   for (const ref of runtime.artifacts) { assert.equal(ref.realpath, ref.path); await verifiedBytes(ref, root); artifacts.push({ id: ref.id, ...await referenceAt(ref.path, root), kind: ref.kind }); }
   const artifact = id => { const ref = artifacts.find(item => item.id === id); assert.ok(ref, 'Raw recovery artifact is missing: ' + id); return ref; };
   const readArtifact = async id => JSON.parse(await verifiedBytes(artifact(id), root));
-  const candidate = e.conditions[started.condition_id], expectationRef = candidate.expectations[started.case_id];
-  const expectation = JSON.parse(await verifiedBytes(expectationRef, e.environment_root));
-  const comparison = await readArtifact('admission-comparison'); assert.deepEqual(comparison.differences, []); assert.ok(sameRef(comparison.expected_file, expectationRef));
-  const payloads = [];
-  for (const request of runtime.requests) {
-    const ref = artifact(request.payload_ref?.artifact_id); assert.equal(ref.sha256, request.payload_ref.sha256);
-    // Artifact SHA binds retained JSON bytes; payload_sha256 binds compact wire JSON.
-    payloads.push(JSON.parse(await verifiedBytes(ref, root)));
+  const closeoutOnly = standingCloseout(plan);
+  if (standingThrough !== null) assert.ok(closeoutOnly && Number.isSafeInteger(standingThrough) && standingThrough > 0,
+    'Standing recovery needs its registered accounting boundary');
+  let usage;
+  if (closeoutOnly) usage = await validateStandingZeroSendCollectionRaw({ plan, slot: started, run, shared, runtime, transportPath: artifact('transport').path });
+  else {
+    const candidate = e.conditions[started.condition_id], expectationRef = candidate.expectations[started.case_id];
+    const expectation = JSON.parse(await verifiedBytes(expectationRef, e.environment_root));
+    const comparison = await readArtifact('admission-comparison'); assert.deepEqual(comparison.differences, []); assert.ok(sameRef(comparison.expected_file, expectationRef));
+    const payloads = [];
+    for (const request of runtime.requests) {
+      const ref = artifact(request.payload_ref?.artifact_id); assert.equal(ref.sha256, request.payload_ref.sha256);
+      // Artifact SHA binds retained JSON bytes; payload_sha256 binds compact wire JSON.
+      payloads.push(JSON.parse(await verifiedBytes(ref, root)));
+    }
+    usage = validateCollectionRecoveryRaw({ plan, slot: started, run, shared, runtime, observed: await readArtifact('candidate-observed'), expectation, payloads });
   }
-  const usage = validateCollectionRecoveryRaw({ plan, slot: started, run, shared, runtime, observed: await readArtifact('candidate-observed'), expectation, payloads });
-  const reservations = [];
-  for (const name of (await readdir(e.pilot_ledger_root)).filter(name => /^\d{3}\.json$/.test(name)).sort()) {
+  const reservations = [], reservationInventory = [];
+  const names = await readdir(e.pilot_ledger_root);
+  for (const name of closeoutOnly ? numericStandingNames(names).map(item => item.name) : names.filter(name => /^\d{3}\.json$/.test(name)).sort()) {
     const ref = await referenceAt(join(e.pilot_ledger_root, name), e.pilot_ledger_root), value = JSON.parse(await verifiedBytes(ref, e.pilot_ledger_root));
+    // A completed recovery binds the registered prefix, while later standing
+    // attempts may append. Still scan every reservation for a duplicate run.
+    if (standingThrough === null || Number(basename(name, '.json')) <= standingThrough) reservationInventory.push(ref);
     if (value.run_id !== started.run_id) continue;
     assert.equal(value.experiment_id, plan.id); assert.equal(value.slot_id, started.slot_id); assert.equal(value.plan_sha256, plan.plan_sha256);
-    assert.equal(value.scope_id, e.pilot_scope.id); assert.equal(value.scope_role, 'gate');
+    const scope = closeoutOnly ? e.standing_scope : e.pilot_scope;
+    assert.equal(value.scope_id, scope.id); assert.equal(value.scope_role, closeoutOnly ? scope.role : 'gate');
+    if (closeoutOnly) assert.equal(value.scope_kind, scope.kind);
     assert.ok(sameRef(value.plan, await referenceAt(join(e.control_root, 'plan.json'), e.environment_root))); reservations.push(ref);
   }
   assert.equal(reservations.length, 1, 'Recovered execution needs exactly one existing shared reservation');
+  const accounting = closeoutOnly ? { baseline: await referenceAt(join(e.pilot_ledger_root, 'ledger-baseline.json'), e.pilot_ledger_root),
+    reservations: reservationInventory, inventory_sha256: fingerprint(reservationInventory),
+    last_observation: Math.max(...reservationInventory.map(ref => Number(basename(ref.path, '.json')))) } : null;
   return { run_id: started.run_id, slot_id: started.slot_id, episode_started_seq: started.seq, episode_unresolved_seq: failed.seq,
     original_error: failed.error, run: runRef, shared: sharedRef, runtime: runtimeRef, raw_artifacts: artifacts,
-    original_partial_collection: await partialCollection(root, e.environment_root), reservation: reservations[0], budget_usage: usage };
+    original_partial_collection: await partialCollection(root, e.environment_root), reservation: reservations[0], budget_usage: usage,
+    ...(accounting ? { standing_accounting: accounting } : {}) };
 }
 function materialFingerprint(binding) {
   return fingerprint({ materialization_proof: binding.materialization_proof, skills_root: binding.skills_root, skill_inventory: binding.skill_inventory });
 }
 
 /** Read-only preparation; this never creates a registration, output, lease or model request. */
-export async function preflightCollectionRecovery({ planFile, frozenController }) {
+export async function preflightCollectionRecovery({ planFile, frozenController, outputFile, supersedes }) {
   absolute(planFile);
   const plan = validateBatchPlan(JSON.parse(await bytesAt(planFile))), e = plan.execution;
-  const context = await planContext(plan, planFile), destination = fixedPath(plan), assetRoot = join(e.control_root, 'collection-repair-evidence');
+  const context = await planContext(plan, planFile), destination = registrationPath(plan, outputFile ?? fixedPath(plan));
+  const assetRoot = join(e.control_root, destination === fixedPath(plan) ? 'collection-repair-evidence' : basename(destination, '.json') + '-evidence');
   assert.equal(frozenController, context.frozenController, 'Before source must be the frozen subject build controller');
   await noFile(destination); await noActiveLease(plan);
   const ledgerPath = join(e.control_root, 'ledger.jsonl'), ledgerBytes = await bytesAt(ledgerPath, e.environment_root);
-  const original = validateCollectionRecoveryLedger({ plan, bytes: ledgerBytes }); assert.equal(original.active, false);
-  const implementation = await executionImplementation(), sourceChanges = collectionRecoverySourceChanges(e.implementation, implementation);
+  const closeoutOnly = standingCloseout(plan);
+  const original = validateCollectionRecoveryLedger({ plan, bytes: ledgerBytes, closeoutOnly }); assert.equal(original.active, false);
+  let previousRegistration = null;
+  if (destination !== fixedPath(plan)) {
+    assert.equal(closeoutOnly, true); assert.equal(supersedes, fixedPath(plan), 'A numbered standing registration must explicitly retain the original unapplied registration');
+    previousRegistration = await referenceAt(supersedes, e.environment_root);
+    const previous = await verifyCollectionRecovery({ reference: previousRegistration, plan });
+    assert.equal(previous.closeout_only, true); assert.equal(previous.original_recovered, false);
+    assert.equal(previous.ledger_prefix.sha256, sha(ledgerBytes)); assert.equal(previous.ledger_prefix.bytes, ledgerBytes.length);
+  } else assert.equal(supersedes, undefined);
+  const implementation = await executionImplementation(), sourceChanges = collectionRecoverySourceChanges(e.implementation, implementation, { closeoutOnly });
   assert.deepEqual(await instrumentationIdentity(e), e.instrumentation, 'Collection recovery cannot change runtime or collector instrumentation');
   for (const file of e.implementation.files) {
     const path = resolve(dirname(frozenController), file.path);
     assert.ok(inside(dirname(dirname(frozenController)), path)); await verifiedBytes({ ...file, path }, e.environment_root);
   }
   const repair = await rawRepair(plan, original.started, original.failed);
-  return { plan, context, destination, assetRoot, ledgerPath, ledgerBytes, original, implementation, sourceChanges, repair };
+  return { plan, context, destination, assetRoot, ledgerPath, ledgerBytes, original, implementation, sourceChanges, repair, previousRegistration };
 }
 
 /** Explicit one-time registration. It preserves original plan, failure, raw run and shared accounting. */
-export async function createCollectionRecovery({ planFile, frozenController, reason }) {
+export async function createCollectionRecovery({ planFile, frozenController, reason, outputFile, supersedes }) {
   assert.ok(typeof reason === 'string' && reason.trim().length >= 10, 'Collection recovery needs an explicit reason');
-  const { plan, context, destination, assetRoot, ledgerPath, ledgerBytes, original, implementation, sourceChanges, repair }
-    = await preflightCollectionRecovery({ planFile, frozenController });
+  const { plan, context, destination, assetRoot, ledgerPath, ledgerBytes, original, implementation, sourceChanges, repair, previousRegistration }
+    = await preflightCollectionRecovery({ planFile, frozenController, outputFile, supersedes });
   const e = plan.execution;
   const beforeSources = await archiveSources(e.implementation, dirname(frozenController), join(assetRoot, 'source-before'), e.environment_root);
   const implementationSources = await archiveSources(implementation, moduleRoot, join(assetRoot, 'source-after'), e.environment_root);
-  const materialBindings = [];
-  for (const binding of context.bindings) {
+  const materialBindings = [], closeoutOnly = standingCloseout(plan);
+  for (const binding of closeoutOnly ? [] : context.bindings) {
     const result = await prepareMaterialOwnership({ binding, directory: join(assetRoot, 'materials', materialFingerprint(binding)), environmentRoot: e.environment_root });
     materialBindings.push({ case_id: binding.id, original_binding_sha256: fingerprint(binding), reference: result.reference });
   }
-  const value = { version: 1, kind, created_at: new Date().toISOString(), reason, plan: context.planRef,
+  const adapterProjection = closeoutOnly ? await prepareAdapterEvidenceOwnership({ source: e.adapter_evidence_file,
+    sha256: plan.protocol.models[0].adapter.evidence_sha256, directory: join(assetRoot, 'adapter'), environmentRoot: e.environment_root }) : null;
+  const value = { version: closeoutOnly ? 2 : 1, kind, created_at: new Date().toISOString(), reason, plan: context.planRef,
     ledger_prefix: { path: ledgerPath, sha256: sha(ledgerBytes), bytes: ledgerBytes.length, through_seq: original.rows.length },
     frozen_controller: await referenceAt(frozenController, e.environment_root), before_implementation: e.implementation,
     implementation, source_changes: sourceChanges, before_sources: beforeSources, implementation_sources: implementationSources,
-    instrumentation: e.instrumentation, frozen_inputs: context.frozenInputs, repairs: [repair], material_bindings: materialBindings, registration_sha256: null };
+    instrumentation: e.instrumentation, frozen_inputs: context.frozenInputs, repairs: [repair], material_bindings: materialBindings,
+    ...(adapterProjection ? { adapter_projection: adapterProjection } : {}), ...(previousRegistration ? { supersedes: previousRegistration } : {}), registration_sha256: null };
   value.registration_sha256 = fingerprint(value);
   // Last preflight before the exclusive registration write; no ledger or model action occurs here.
   await noActiveLease(plan); assert.deepEqual(await bytesAt(ledgerPath, e.environment_root), ledgerBytes);
@@ -427,30 +558,47 @@ export async function createCollectionRecovery({ planFile, frozenController, rea
 }
 
 /** Read-only validation, also valid while the original batch holds its normal lease. */
-export async function verifyCollectionRecovery({ reference, plan }) {
-  descriptor(reference); assert.equal(reference.path, fixedPath(plan), 'Collection recovery must use the fixed explicit registration');
-  const e = plan.execution, context = await planContext(plan), assetRoot = join(e.control_root, 'collection-repair-evidence');
+export async function verifyCollectionRecovery(input) { return verifyCollectionRecoveryAt(input); }
+async function verifyCollectionRecoveryAt({ reference, plan }, prefixOnly = false) {
+  descriptor(reference); registrationPath(plan, reference.path);
+  const e = plan.execution, context = await planContext(plan);
+  const assetRoot = join(e.control_root, reference.path === fixedPath(plan) ? 'collection-repair-evidence' : basename(reference.path, '.json') + '-evidence');
   const value = JSON.parse(await verifiedBytes(reference, e.environment_root));
   assert.ok(Object.keys(value).every(key => registrationKeys.has(key)), 'Unknown collection recovery override');
-  assert.equal(value.version, 1); assert.equal(value.kind, kind);
+  const closeoutOnly = standingCloseout(plan);
+  assert.equal(value.version, closeoutOnly ? 2 : 1); assert.equal(value.kind, kind);
+  if (!closeoutOnly) { assert.equal(value.adapter_projection, undefined); assert.equal(value.supersedes, undefined); }
+  if (reference.path !== fixedPath(plan)) {
+    assert.equal(value.supersedes?.path, fixedPath(plan));
+    const previous = await verifyCollectionRecoveryAt({ reference: value.supersedes, plan }, true);
+    assert.equal(previous.closeout_only, true); assert.equal(previous.original_recovered, false);
+    assert.deepEqual(value.ledger_prefix, previous.ledger_prefix);
+  } else assert.equal(value.supersedes, undefined);
   assert.equal(value.registration_sha256, fingerprint({ ...value, registration_sha256: null }), 'Collection recovery registration changed');
   assert.deepEqual(value.plan, context.planRef); assert.deepEqual(value.before_implementation, e.implementation);
   assert.deepEqual(value.frozen_inputs, context.frozenInputs); assert.deepEqual(value.instrumentation, e.instrumentation);
   assert.equal(value.frozen_controller.path, context.frozenController);
   const beforeCli = value.before_implementation.files.find(file => file.path === 'cli.mjs');
   assert.equal(value.frozen_controller.sha256, beforeCli.sha256); assert.equal(value.frozen_controller.bytes, beforeCli.bytes);
-  assert.deepEqual(collectionRecoverySourceChanges(value.before_implementation, value.implementation), value.source_changes);
+  assert.deepEqual(collectionRecoverySourceChanges(value.before_implementation, value.implementation, { closeoutOnly }), value.source_changes);
   const beforeSources = await verifyArchives(value.before_implementation, value.before_sources, join(assetRoot, 'source-before'), e.environment_root);
   const afterSources = await verifyArchives(value.implementation, value.implementation_sources, join(assetRoot, 'source-after'), e.environment_root);
   assert.deepEqual(await archivedCollectionInstrumentation(e, beforeSources), e.instrumentation, 'Original archived collector instrumentation changed');
   assert.deepEqual(await archivedCollectionInstrumentation(e, afterSources), e.instrumentation, 'Recovery archived collector instrumentation changed');
   assert.equal(value.ledger_prefix.path, join(e.control_root, 'ledger.jsonl'));
-  const ledger = validateCollectionRecoveryLedger({ plan, bytes: await bytesAt(value.ledger_prefix.path, e.environment_root),
-    prefix: value.ledger_prefix, reference, repairs: value.repairs });
-  assert.deepEqual(value.repairs, [await rawRepair(plan, ledger.started, ledger.failed)], 'Original failed raw execution or reservation changed');
-  assert.equal(value.material_bindings.length, context.bindings.length);
+  const ledgerBytes = await bytesAt(value.ledger_prefix.path, e.environment_root);
+  const ledger = validateCollectionRecoveryLedger({ plan, bytes: prefixOnly ? ledgerBytes.subarray(0, value.ledger_prefix.bytes) : ledgerBytes,
+    prefix: value.ledger_prefix, reference, repairs: value.repairs, closeoutOnly });
+  const standingThrough = closeoutOnly ? value.repairs[0]?.standing_accounting?.last_observation : null;
+  assert.deepEqual(value.repairs, [await rawRepair(plan, ledger.started, ledger.failed, standingThrough)], 'Original failed raw execution or reservation changed');
+  assert.equal(value.material_bindings.length, closeoutOnly ? 0 : context.bindings.length);
   const projectedBindings = [];
-  for (let i = 0; i < context.bindings.length; i++) {
+  if (closeoutOnly) {
+    await verifyAdapterEvidenceOwnership({ projection: value.adapter_projection, source: e.adapter_evidence_file,
+      sha256: plan.protocol.models[0].adapter.evidence_sha256, directory: join(assetRoot, 'adapter'), environmentRoot: e.environment_root });
+    projectedBindings.push(...context.bindings.map(binding => ({ case_id: binding.id, binding })));
+  }
+  for (let i = 0; !closeoutOnly && i < context.bindings.length; i++) {
     const binding = context.bindings[i], item = value.material_bindings[i];
     assert.equal(item.case_id, binding.id); assert.equal(item.original_binding_sha256, fingerprint(binding));
     assert.equal(item.reference.path, join(assetRoot, 'materials', materialFingerprint(binding), 'material-ownership.json'));
@@ -458,12 +606,14 @@ export async function verifyCollectionRecovery({ reference, plan }) {
     projectedBindings.push({ ...item, binding: projected.binding });
   }
   return { ...value, reference: { path: reference.path, sha256: reference.sha256 }, projectedBindings,
-    original_recovered: ledger.original_recovered, zero_send_batch_closed: ledger.zero_send_batch_closed };
+    closeout_only: closeoutOnly, original_recovered: ledger.original_recovered, zero_send_batch_closed: ledger.zero_send_batch_closed };
 }
 
 /** Result consumers must verify the same registration, even when a caller dropped its reference. */
 export async function verifyCollectionRecoveryResults(plan, completed) {
-  assert.ok(Array.isArray(completed)); const path = fixedPath(plan);
+  assert.ok(Array.isArray(completed));
+  const explicit = completed.find(row => row.result?.collection_recovery)?.result.collection_recovery;
+  const path = explicit?.path ?? fixedPath(plan);
   // Legacy plans without a repair need no new ownership constraint. Existence
   // is checked first; an existing repair still receives the full strict guard.
   try { await lstat(path); }

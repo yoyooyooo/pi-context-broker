@@ -68,6 +68,13 @@ requires a new template and work plan. That uses the same standing grant.
 `planned_episodes` must equal the frozen schedule. It describes the sample,
 not how many observations the user permits across this task.
 
+Use the immutable paired build's `source/broker` directory as
+`work_plan.controller.source_root` when that build contains the reviewed
+controller. Compute its implementation identity with that directory's producer
+and verify that it equals the controller executing the plan. This keeps later
+working-copy edits from changing the source locator of a retained plan; it does
+not permit execution with a different implementation.
+
 ## Resource policy and condition identity
 
 Standing budgets have `mode: "unbounded"`. Episode request, input-token,
@@ -193,3 +200,34 @@ The runner receipt is `standing-campaign-runner-receipt`. It binds the plan,
 grant, work plan, item and attempt, and records the actual ledger and checkpoints.
 The receipt does not label a failed invocation as zero sends merely because
 the runner threw an exception.
+
+### Close a retained zero-send collection failure
+
+`configure` copies the verified adapter proof into the owned control directory
+before freezing the execution input. The receipt retains both original and
+owned references, and their bytes must match. This allows the collector to
+reuse an existing proof without referencing evidence outside the current
+environment.
+
+For an older standing attempt that failed during collection, recovery is
+limited to a retained invalid run with complete independent transport evidence
+of zero model sends and known zero model usage. Register the original frozen
+controller and the exact path projection, then close the existing run:
+
+```sh
+node benchmark/cli.mjs register-collection-recovery --plan ABS_OLD_PLAN --frozen-controller ABS_ORIGINAL_FROZEN_CLI --reason 'Recorded collection defect and exact evidence projection'
+node benchmark/cli.mjs run --plan ABS_OLD_PLAN --collection-recovery ABS_REGISTRATION --limit 0
+```
+
+This standing recovery cannot reserve or execute another episode. It preserves
+the original plan, work plan, raw evidence, partial collection, reservation and
+ledger prefix. The repaired collector writes separate results and retains the
+invalid outcome and actual duration. A changed implementation or an ambiguous
+send cannot turn that run into a successful scientific observation.
+Later standing reservations may append after the registered accounting
+boundary; the original reservation prefix and baseline remain byte-bound.
+
+If an unapplied registration itself needs a reviewed repair, create another
+immutable registration with `--out ABS_NEW_REGISTRATION --supersedes
+ABS_UNAPPLIED_REGISTRATION`. Keep the previous registration and failed closure
+receipt. The separate historical paid-pilot recovery contract remains unchanged.

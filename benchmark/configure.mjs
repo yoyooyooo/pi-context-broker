@@ -24,6 +24,7 @@ import { assertObserverRepairSetup } from './campaign-observer-repair-continuati
 import { ENGINEERING_WINDOW_DRAFT, assertEngineeringWindowSetup, isEngineeringContinuationAuthority } from './campaign-engineering-window-continuation.mjs';
 import { ENGINEERING_PREFLIGHT_REPAIR_DRAFT } from './campaign-engineering-preflight-repair.mjs';
 import { assertStandingSetup, standingCampaignPolicy } from './standing-campaign.mjs';
+import { prepareAdapterEvidenceOwnership } from './collection-recovery.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = async (path, value) => {
@@ -177,6 +178,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const proofBytes = await readFile(setup.models.adapter_evidence_file), proof = JSON.parse(proofBytes);
   assert.equal(proof.kind, 'controlled-http-maintained-pi-adapter-proof'); assert.equal(proof.status, 'passed');
   for (const file of [proof.pi_manifest, proof.sdk_entry, ...proof.source_modules]) assert.equal(sha(await readFile(file.path)), file.sha256, 'Verified adapter module changed');
+  const adapterOwnership = await prepareAdapterEvidenceOwnership({ source: setup.models.adapter_evidence_file, sha256: sha(proofBytes),
+    directory: join(root, 'adapter-evidence'), environmentRoot: setup.environment_root });
   const adapterReceipts = [...new Set(registry.models.map(model => model.api))].map(api => ({ api, id: 'maintained-pi-' + api,
     version: '1.0.0', status: 'passed', sha256: sha(proofBytes) }));
   const models = verifiedModelConditions({ registry, adapterReceipts, parameters: setup.models.parameters, window: setup.models.window,
@@ -290,7 +293,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     implementation: await executionImplementation(),
     case_bindings_file: bindingsFile, case_bindings_sha256: sha(await readFile(bindingsFile)),
     models_file: modelsFile, models_sha256: registry.sha256, model_base_url: registry.base_url, credential,
-    adapter_evidence_file: setup.models.adapter_evidence_file,
+    adapter_evidence_file: adapterOwnership.owned.path,
     ...(snapshot ? { corpus_snapshot: structuredClone(setup.corpus.snapshot) } : {}),
     ...(prepared.registration ? { episode_fixtures: prepared.registration } : {}),
     ...(standing ? { pilot_ledger_root: standing.ledgerRoot }
@@ -306,7 +309,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     status: 'ready', capture_count: results.length, covered_case_conditions: expanded.length, actual_model_requests: 0,
     ...([CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION].includes(setup.campaign_scope?.role) ? { capture_design_slots: captureSlots.length, selected_dispatch_slots: scheduled.length } : {}),
     capture_scope: 'shared-identical-startup-inputs; every episode independently verifies public-input bytes and actual startup/final-request contracts',
-    material_original_bindings: materialOriginalBindings, material_ownership: materialOwnership,
+    material_original_bindings: materialOriginalBindings, material_ownership: materialOwnership, adapter_ownership: adapterOwnership,
     frozen_slot_materializations: prepared.slots.size,
     capture_refs: results.map(result => ({ run_id: result.raw.run_id, case_ids: result.members.map(member => member.binding.id),
       ...(result.slot ? { slot_id: result.slot.slot_id, materialization: prepared.slots.get(result.slot.slot_id).ref } : {}), expectation: result.expectation })) });
