@@ -301,7 +301,8 @@ export async function run(options) {
       await save(join(directory, 'launch.json'), { command, args, cwd: base, runtime: result.identity.node, source, source_origin: sourceOrigin, shared_owned_state: cold ? null : state,
         host_startup_network: 'Pi --offline disables only package/catalog/tool/version startup network; SDK and provider use actual controlled loopback HTTP.' });
       active = new PiTerminal({ command, args, env, cwd: base, directory });
-      await active.wait(text => text.includes('PTY_READY') || text.includes('Trust project folder?'), 'startup', 60000);
+      // A PTY read can end after the dialog title, before its choice rows.
+      await active.wait(text => text.includes('PTY_READY') || text.includes('Trust project folder?') && text.includes('Trust (this session only)'), 'startup', 60000);
       if (active.text().includes('Trust project folder?')) {
         assert.ok(active.text().includes('Trust (this session only)'), 'Unexpected Pi project trust choices');
         await active.key('\x1b[B\x1b[B\r', 'trust-owned-project-session-only');
