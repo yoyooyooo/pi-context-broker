@@ -1089,6 +1089,12 @@
     "pi_failure_boundary": "Current Pi Broker failures retire unconfirmed source instructions and continue the original conversation with a warning. Existing qualification, graph, authorization and delivery guards still reject source publication and confirmation. See current_review.pi_nonblocking_context for reviewed ownership, native payload repair, queued input, deadline and presentation obligations; none adds a finite model action or wire-verification capability."
   },
   "current_review": {
+    "pi_read_description": {
+      "reviewed_from": "cbe36c332b16c4286afe9d1782e87a9b618a6300",
+      "scope": "Only two consecutive refresh tutorial sentences are deleted from the reviewed cbe36c3 Pi read description (219 UTF-8 bytes). All other description bytes, including the root/Requires explanation and the explicit batch-together instruction, match that base. Removing the description line leaves pi-host-adapter.ts byte-identical to the base. The refresh parameter still specifies requested current-version inspection, unchanged active selection and a supplied Notion main ref; notion_use owns latest adoption. The read adapter regression checks refresh in the complete definition and retains the root/Requires and batch-together guidance.",
+      "preserved_guards": "Tool registration and ownership, parameter schemas, native execution, relative and fixed references, source authorization, resource batches, cancellation, graph selection and provider delivery are unchanged. No other tool or host guidance changes.",
+      "proof_limit": "Tool wording is outside the finite model variables. Models, configs, views, bounds, cases, expected_rules, tool locks and mutation targets are unchanged. This hash binds reviewed source bytes; real request payload and model behavior require the separate Benchmark comparison. The earlier 355-byte candidate and its results remain retained; they do not validate this narrower 219-byte candidate."
+    },
     "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
     "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
     "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted.",
