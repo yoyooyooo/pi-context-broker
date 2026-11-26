@@ -14,7 +14,7 @@
     "packages/context-broker/src/host-skills.ts": "096b2a93e409a048ddc73ec4ca1520cc91098100f570a02a9990d95781f68044",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
-    "packages/context-broker/scripts/host-prepare.test.ts": "fa65af1465159de3497073292ecadd77ef1e26700fe86660d5d4388b5dc6d444",
+    "packages/context-broker/scripts/host-prepare.test.ts": "637d8fee22265c1fbb925eab5303fb29c24b9fef59845a8118dee13eae76f31b",
     "scripts/check-consumer-observation-mutations.mjs": "3ee2b6cc2909687ad54b619eff64b5722cfae5ead0c7a12c21bd013f8157801f",
     "packages/context-broker/scripts/host-refresh.test.ts": "ab39fb9d470ba931e41425cf55ffe403f21c05d9c0c79756b2df250e44159654",
     "packages/context-broker/scripts/resource-read-host.test.ts": "744ad53cedf6eae020fcea1a94a969eb3c25fc96c9b4b96fd761cb6abaf6014c",
@@ -31,7 +31,7 @@
     "packages/context-broker/src/shared-skill-identity.ts": "2495065caf4cb7b81227b60bc0c97d50ada7bdfa14a7824750cb9326583f9186",
     "packages/context-broker/src/library-selection.ts": "4c43c6b3d53b175ac2cd266696fcbe1335c6bc05de96194db904c09d894f9657",
     "packages/context-broker/scripts/library-selection.test.ts": "2dccea88ef3a6561513b32ed9523c96b4dd2712e13c3d529cdfe29e65f92ab36",
-    "packages/context-broker/scripts/skill-guidance.test.ts": "04bfcebdba25a1e9d22d018974743a98eac19cfe998e327a3de0ce2571189673",
+    "packages/context-broker/scripts/skill-guidance.test.ts": "d2b9b25544d5f43d99c4520b50682b2d421e3f72e88dcfc0e8e02bfa0d37f9c9",
     "packages/context-broker/src/cli-write-invalidation.ts": "b320091423e2d3da7e073cda2d58c46f20ddec8ea8a1bd12d770963a2a9b30f6",
     "packages/context-broker/scripts/cli-write-invalidation.test.ts": "1469fd9eb3eac1ee2760a86f617091f76d4936836e0da0e0650da6b653cb8466",
     "packages/context-broker/src/sources.ts": "30572f81f9e6a8c314c6c4f595a95ec75f43767dbd8a280db3abab7bc907dedb",
@@ -45,7 +45,7 @@
     "packages/context-broker/src/types.ts": "1c0114476ee68660b440537209ac98b960509a69fc730e63e84a4745c918cddc",
     "packages/context-broker/scripts/nonblocking-context.test.ts": "6d949157c04cf39bd712c0fdca024a9ce803d15e37de5f5a7ec9fa3ebfe8a3b2",
     "packages/context-broker/scripts/activation-feedback.test.ts": "9f15a1bbbad5f5a12e8c0544ef10037d85b44d0dbe127ecff08cd000c2dac6ce",
-    "packages/context-broker/src/index.ts": "8cd7961dfaa97d3acc44d031762b6bd52eb7f462588047019bac0e5d83e8c7b6",
+    "packages/context-broker/src/index.ts": "c843770c8ce96fa666208b0920a0a7a086c6b57c30bdff6736e47ff66b872bec",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "84d3fb8a58b0fd203cffe45a29442b5363666ecfd0997f55c001d8d8197c1959"
   },
   "models": {
@@ -556,6 +556,14 @@
         "evidence": "Actual Pi Editor regressions cover initial input handoff, early Escape, unknown history, cursor/draft/scope changes, focused-instance ownership, native return/throw behavior, foreign method/descriptor changes and provider rebinding. AH-1327 separately retains full-configuration native startup success and early-Escape terminal replays, with their source identities and observed latency. A warm controlled PTY sample does not substitute for an earlier full-configuration startup keypress.",
         "proof_limit": "MenuPublication starts with an already-open dropdown in one fixed scope. Initial native handoff occurs before that model's Init; waiting-intent preservation, provider installation/rebinding, native focus, Promise scheduling and terminal latency are not represented. Passing NoDismissedReopen or ChoiceIdentityPreserved does not prove this startup handoff or its latency."
       }
+    },
+    "bundled_skills_command": {
+      "reviewed_from": "dea80807459b559cb939fef03556a07bbfcdf704",
+      "scope": "Only buildCliGuidance, packagedWorkflowGuidance and buildToolGuidance instruction strings and packaged-command argv change: the paired CLI exposes skills get with unprefixed names and Markdown output by default; Notion commands retain their JSON guidance. host-prepare.test.ts and skill-guidance.test.ts update only the corresponding guidance and argv expectations.",
+      "byte_review": "Re-reviewed the rebased working tree against this upstream HEAD. The complete index.ts bytes match that baseline after six explicit string/argv substitutions; both complete test files also match after only the reviewed guidance/argv expectation substitutions. All other bytes, including upstream startup and recovery changes, source and Library scope, capability branches, native-read preference, installSkillGuidance, catalog publication, fixed recovery and cancellation guards, are unchanged. The two test diffs retain their state, selection and delivery assertions.",
+      "source_binding": "Rebind only index.ts, host-prepare.test.ts and skill-guidance.test.ts in this suite. Every other protected source and regression file retains its reviewed hash; both guard mutation runners and all mutation targets are unchanged.",
+      "finite_scope": "Guidance text, command syntax and packaged output are concrete implementation and integration obligations outside the finite-state variables. Model/config/view bytes, bounds, cases, independent expected_rules, negative configurations, tool lock and coverage membership are unchanged. These whole-file hashes bind the reviewed bytes without claiming a new refinement proof.",
+      "verification": "Source review and byte/hash checks only. Finite models and guard mutations were not rerun for this guidance-only change. Direct guidance/host regressions and actual package closure are tracked by their existing integration checks; this review record does not claim their execution results."
     }
   },
   "library_root_review": {

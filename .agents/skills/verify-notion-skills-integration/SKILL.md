@@ -168,6 +168,7 @@ node scripts/verify-artifacts.mjs --fixture /absolute/new/current-fixture/fixtur
 它复用 `scripts/verify-notion-sdk-installed.mjs`，不预植 snapshot/cache，不运行旧多根 fixture。
 核对分页目录、完整 Files、主文、warm cache、use、标量/批量资源、错误 owner/scope 与两处取消。
 安装包同时检查 runtime 版本/hash、随包资源、消费 schema 和 `ctl library import` 必需参数。
+内嵌 CLI 的 `skills list/get/path` 必须从安装包离线提供目录、原始 Markdown、JSON、完整支持文件和匹配字节的实际路径；`skills` 默认列目录，包读取不得创建独立安装状态。退役命令的 schema 必须失败，不能保留独立安装生命周期。
 所选 CLI 的完整 THIRD_PARTY_NOTICES.md 必须按原始字节包含在 Broker dist/NOTICES.txt 中；检查冻结原件 hash、安装包中的完整内容及产物 inventory，不能只匹配依赖名称或版权关键词。
 读取本次 `manifest.json`、`commands.json`、`current-sdk/result.json` 与 HTTP 账本；不能只看退出码。
 确认普通消费语义写入为零、CLI 正文读取子进程为零，且实际加载的是所选包的 CLI/SDK 字节。

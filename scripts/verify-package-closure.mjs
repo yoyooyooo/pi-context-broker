@@ -183,7 +183,8 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
   ]) {
     const cwd = join(base, label + "-cwd");
     await mkdir(cwd);
-    const cli = async (args, expectedExit = 0) => JSON.parse(await run([process.execPath, entry, ...args], cwd, expectedExit));
+    const cliText = (args, expectedExit = 0) => run([process.execPath, entry, ...args], cwd, expectedExit);
+    const cli = async (args, expectedExit = 0) => JSON.parse(await cliText(args, expectedExit));
     for (const command of ["list", "read", "use", "files", "export"])
       assert.equal((await cli(["schema", command])).ok, true);
     const currentImport = await cli(["schema", "ctl", "library", "import"]);
@@ -205,30 +206,50 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
         { kind, type, required }, `${label}: current Skill import parameter ${name} has an invalid schema`);
     }
     assert.ok(!currentImport.schema.parameters.some(parameter => parameter.name === "entry"), `${label}: retired table-entry selection must not remain available`);
-    // These public fallbacks must resolve package resources with an empty HOME,
-    // outside the checkout and without a global CLI or installed central Skills.
-    const catalog = await cli(["ctl", "builtin", "list"]);
+    // Package reads work with an empty HOME, outside the checkout and without
+    // a global CLI, Notion connection or a separate Skill installation.
+    const homeBefore = (await readdir(home, { recursive: true })).sort();
+    const catalog = await cli(["skills", "list", "--json"]);
     assert.equal(catalog.ok, true);
+    assert.equal(catalog.source, "builtin");
+    assert.equal(catalog.count, builtinNames.length);
     assert.deepEqual(catalog.skills.map(skill => skill.id).sort(), builtinNames.map(name => "notion/" + name));
-    assert.ok(catalog.skills.every(skill => skill.installation.state === "not_installed"), `${label}: builtin reads must not require a central installation`);
+    assert.deepEqual(catalog.skills.map(skill => skill.name).sort(), builtinNames);
+    assert.ok(catalog.skills.every(skill => !Object.hasOwn(skill, "installation")), `${label}: packaged Skills must not expose an installation lifecycle`);
+    assert.deepEqual(await cli(["skills", "--json"]), catalog);
+    const rootPath = await cli(["skills", "path", "--json"]);
+    assert.equal(rootPath.ok, true);
+    assert.equal(rootPath.path, await realpath(builtinRoot), `${label}: the embedded CLI must locate its own package directory`);
     for (const name of builtinNames) {
       const directory = join(builtinRoot, name);
       const resources = (await readdir(join(directory, "references"), { withFileTypes: true }))
         .filter(entry => entry.isFile() && entry.name.endsWith(".md"))
         .map(entry => "references/" + entry.name).sort();
       assert.ok(resources.length > 0, `${label}/${name}: no readable packaged reference`);
+      assert.equal(await cliText(["skills", "get", name]), await readFile(join(directory, "SKILL.md"), "utf8"), `${label}/${name}: default output must be exact Markdown`);
+      assert.equal(await cliText(["skills", "path", name]), await realpath(directory) + "\n", `${label}/${name}: path must name this installed Skill`);
       for (const file of ["SKILL.md", ...resources]) {
-        const result = await cli(["ctl", "builtin", "read", "notion/" + name, ...(file === "SKILL.md" ? [] : ["--path", file])]);
+        const result = await cli(["skills", "get", name, ...(file === "SKILL.md" ? [] : ["--path", file]), "--json"]);
         assert.equal(result.ok, true, `${label}/${name}/${file}: package read failed`);
         assert.equal(result.builtin.origin, "builtin");
-        assert.equal(result.content, await readFile(join(directory, file), "utf8"), `${label}/${name}/${file}: package fallback did not consume the exact distributed bytes`);
+        assert.equal(result.builtin.name, name);
+        assert.equal(result.path, file);
+        assert.equal(result.content, await readFile(join(directory, file), "utf8"), `${label}/${name}/${file}: package read did not consume the exact distributed bytes`);
+      }
+      const complete = await cli(["skills", "get", name, "--full", "--json"]);
+      assert.equal(complete.ok, true);
+      assert.deepEqual(complete.files.map(file => file.path).sort(), ["SKILL.md", ...resources].sort());
+      for (const file of complete.files) {
+        const bytes = await readFile(join(directory, file.path));
+        assert.equal(file.bytes, bytes.length);
+        assert.equal(file.content, bytes.toString("utf8"), `${label}/${name}/${file.path}: --full must include complete supporting files`);
       }
     }
-    assert.ok((await cli(["ctl", "builtin", "list"])).skills.every(skill => skill.installation.state === "not_installed"), `${label}: reading packaged resources must not install central Skills`);
+    assert.deepEqual((await readdir(home, { recursive: true })).sort(), homeBefore, `${label}: packaged Skills commands must not create local installation state`);
     assert.equal((await cli(["ctl", "config", "set", "cache_policy.read_max_age_ms", "0"])).ok, true);
     assert.equal((await cli(["ctl", "config", "show"])).config.cache_policy.read_max_age_ms, 0);
     // Retired mutation/history routes must not return a usable schema.
-    for (const command of ["operation", "ctl backup", "ctl repair", "ctl sources"])
+    for (const command of ["operation", "ctl backup", "ctl repair", "ctl sources", "ctl builtin", "skills install", "skills update", "skills status", "skills export"])
       assert.equal((await cli(["schema", ...command.split(" ")], 2)).ok, false);
   }
   console.log(`Strict default-peer ${tern ? "Broker/Tern" : "Broker"} closure verified: ${base}`);

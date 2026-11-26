@@ -530,7 +530,7 @@ test("explicit Notion workflow discovery stays scoped while its default director
   expect(sourceMessageText(guidance.content)).toContain("Explicit Notion workflow: read exact ref in chosen source; notion_list there if needed.");
   expect(sourceMessageText(guidance.content)).toContain("Pending/failed: no builtin fallback.");
   expect(sourceMessageText(guidance.content)).toContain("Default product maintenance/sync:");
-  expect(sourceMessageText(guidance.content)).not.toContain("ctl builtin read");
+  expect(sourceMessageText(guidance.content)).not.toContain('"skills","get"');
   metadata.resolve({ records: [{ ...f.root, name: "ntn-skills-maintain", alias: "ntn-skills-maintain",
     normalizedName: "ntn-skills-maintain", body: undefined, preparationBinding: undefined, defaultDiscovery: true }], failures: [] });
   const listed = await search.execute("maintenance-discovery", { query: "ntn-skills-maintain", source: "controlled" }, undefined, undefined, f.ctx);
