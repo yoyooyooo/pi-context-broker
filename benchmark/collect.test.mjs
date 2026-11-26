@@ -11,7 +11,7 @@ import { assertCompletedStandingEvidence } from './standing-campaign.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture({ outcome='pass', missingUsage=false, tools=[], source=false, opaque=false, capture=false, budgetStopped=false, adapter=true,
-  routing, reportedModels=[], api='openai-completions', providerError=false }={}) {
+  routing, reportedModels=[], api='openai-completions', providerError=false, sourceFrom }={}) {
   const root=await mkdtemp(join(tmpdir(),'benchmark-collect-unit-')),runRoot=join(root,'runs','unit-run'),workspace=join(runRoot,'workspace');
   await mkdir(join(workspace,'output'),{recursive:true});
   const save=async(path,value)=>{await mkdir(join(path,'..'),{recursive:true});const text=typeof value==='string'?value:canonicalJson(value)+'\n';await writeFile(path,text);return {path,sha256:sha(text),bytes:Buffer.byteLength(text)};};
@@ -59,7 +59,8 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
       :{usage:{prompt_tokens:100,completion_tokens:20,total_tokens:120,prompt_tokens_details:{cached_tokens:30}}}},'request-1');
   if(source) {
     const copied=join(run.pi_launch.native_corpus.root,'unit-skill','SKILL.md');await save(copied,body);
-    tools=[...tools,{id:'read-skill',name:'read',args:{path:copied},result:{content:[{type:'text',text:body}],structuredContent:body},isError:false}];
+    tools=[...tools,{id:'read-skill',name:'read',args:{path:copied,...(sourceFrom===undefined?{}:{from:sourceFrom})},
+      result:{content:[{type:'text',text:body}],structuredContent:body},isError:false}];
   }
   if(opaque)tools=[...tools,{id:'shell',name:'bash',args:{command:'opaque behavior'},result:{content:[{type:'text',text:''}]},isError:false}];
   for(const t of tools){record('session_event',{type:'tool_execution_start',toolCallId:t.id,toolName:t.name,args:t.args,...(t.parent?{parentToolCallId:t.parent}:{})});
@@ -97,7 +98,7 @@ test('standing verifier accepts the actual collector 1.2 normalized shape withou
   for(const api of ['openai-completions','openai-responses']){
     const f=await fixture({routing,api,reportedModels:['grok-4.7']}),result=await collect(f);
     t.diagnostic('Retained task-owned collector fixture: '+f.root);
-    assert.equal(result.collector_version,'1.2.0');assert.equal(result.bundle.episode.identity.collector_version,'1.2.0');
+    assert.equal(result.collector_version,'1.2.1');assert.equal(result.bundle.episode.identity.collector_version,'1.2.1');
     assert.equal(Object.hasOwn(result.bundle.episode,'core_evidence'),false);
     assert.deepEqual(result.bundle.episode.admission.completeness,{attempts:'complete',tools:'complete',interventions:'complete'});
     const {plan,event}=standingEvidenceInput(f,result);
@@ -192,6 +193,31 @@ test('native source consumption needs exact returned bytes and an observed path 
   assert.equal(result.verified_success,true);
   assert.equal(result.readback.evidence.resource_reads[0].skill_id,'unit-skill');
   assert.equal(result.readback.evidence.selections[0].skill_id,'unit-skill');
+});
+test('an unresolved source-relative read makes source coverage partial instead of proving no consumption',async()=>{
+  const result=await collect(await fixture({tools:[{id:'relative-read',name:'read',
+    args:{path:'references/rules.md',from:'sr:S'+'x'.repeat(22)},
+    result:{content:[{type:'text',text:'Unbound resource bytes'}]},isError:false}]}));
+  assert.equal(result.grade.business_outcome,'pass');assert.equal(result.outcome,'unknown');
+  assert.equal(result.readback.evidence.coverage.resource_reads,'partial');
+  assert.equal(result.readback.evidence.coverage.selections,'partial');
+  assert.equal(result.readback.unmatched_reads[0].tool_call_id,'relative-read');
+  assert.equal(result.readback.evidence.resource_reads.length,0);
+});
+test('an unresolved from binding cannot fall back to a matching local material',async()=>{
+  for(const sourceFrom of ['sr:S'+'x'.repeat(22),null]) {
+    const result=await collect(await fixture({source:true,sourceFrom}));
+    assert.equal(result.outcome,'unknown');assert.equal(result.readback.evidence.coverage.resource_reads,'partial');
+    assert.equal(result.grade.contracts.find(c=>c.id==='main-source').status,'unknown');
+    assert.equal(result.readback.evidence.resource_reads.length,0);
+    assert.equal(result.readback.unmatched_reads[0].tool_call_id,'read-skill');
+  }
+});
+test('ordinary local input reads do not create an unknown source binding',async()=>{
+  const result=await collect(await fixture({tools:[{id:'input-read',name:'read',args:{path:'input/data.json'},
+    result:{content:[{type:'text',text:'{"input":7}'}]},isError:false}]}));
+  assert.equal(result.verified_success,true);assert.equal(result.readback.evidence.coverage.resource_reads,'complete');
+  assert.deepEqual(result.readback.unmatched_reads,[]);
 });
 test('opaque shell filesystem use cannot prove that no Skill was consumed',async()=>{
   const result=await collect(await fixture({opaque:true}));

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { verifyPreparationEvidence } from './retained-source-views.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { collectRuntimeTools, deliveredSourceBodies, preparedSourceMatches, verifiedCodeModeRuntime } from './collect.mjs';
@@ -104,18 +105,21 @@ test('only the reviewed builtin wrapper with matching frozen admission and after
   ]) { const value = runtimeFixture(); mutate(value); assert.equal(verifiedCodeModeRuntime(value), false); }
 });
 
-function preparationFixture({ owner = 'shared_skill:fixture:one', token = 'sr:R' + 'r'.repeat(22), body = '完整 resource\n', snapshot = 's_' + sha('snapshot'), version = sha('version') } = {}) {
+function preparationFixture({ owner = 'shared_skill:fixture:one', token = 'sr:R' + 'r'.repeat(22), body = '完整 resource\n', snapshot = 's_' + sha('snapshot'), version = sha('version'), compactDescription = false } = {}) {
   const scope = sha('scope'), main = '# Source\n', path = 'references/rules.md';
   const fixed = resource => 'skill://' + encodeURIComponent(owner) + '/' + resource + '?snapshot=' + snapshot;
   const binding = { record: { id: owner, entrypoint: 'SKILL.md' }, scope, snapshot_id: snapshot, version_id: version, body_sha256: sha(main) };
-  const directory = { files: [{ path, ref: token, bytes: Buffer.byteLength(body) }], required: [], candidates: [], references: [] };
+  const description = 'Exact fixed resource description';
+  const directory = { files: [{ path, ref: token, bytes: Buffer.byteLength(body), ...(compactDescription ? { description } : {}) }],
+    required: [], candidates: [], references: compactDescription ? [{ ref: token }] : [] };
   const record = { name: 'fixture', kind: 'skill', ref: 'sr:S' + 's'.repeat(22), content: main, directory };
   const model = { ok: true, status: 'ready', purpose: 'use', roots: [record.ref], records: [record] }, content = JSON.stringify(model);
   const encoded = JSON.stringify(main).slice(1, -1), start = content.indexOf('"content":') + '"content":"'.length;
   const delivery = { start, end: start + encoded.length, encoding: 'json' }, identity = JSON.stringify(['notion', scope, 'skill', 'shared_skill', owner]);
   const receipt = { version: 2, identity, contentIdentity: JSON.stringify([scope, owner]), loaded: true,
     snapshotId: snapshot, bodySha256: sha(main), bytes: Buffer.byteLength(main), binding, delivery,
-    directory: { ...directory, files: [{ path, ref: fixed(path), ...measure(body) }] } };
+    directory: { ...directory, files: [{ path, ref: fixed(path), ...measure(body) }],
+      references: compactDescription ? [{ ref: fixed(path), kind: 'file', name: path, description, availability: 'available' }] : [] } };
   const proof = { version: 2, toolCallId: 'prepare', purpose: 'use', records: [receipt], graphs: [{ scope }],
     projection: { version: 1, compiler: 'context-broker/skill-prepare/v1', sourceProjection: 'source-identity/v1', rendered: measure(content),
       records: [{ index: 0, ref: record.ref, source: { identity, ...measure(main) }, rendered: measure(encoded), delivery, state: 'source' }] } };
@@ -158,6 +162,69 @@ test('one token cannot silently acquire a second owner, snapshot, version or pat
   other.model.records[0].directory.files[0].path = 'other.md';
   other.prep.result.content[0].text = JSON.stringify(other.model); other.proof.projection.rendered = measure(other.prep.result.content[0].text);
   assert.deepEqual(deliveredSourceBodies(first.read, [first.prep, other.prep]), []);
+});
+test('relative source read uses the prepared record identity and complete directory bytes', () => {
+  const f = preparationFixture(), direct = deliveredSourceBodies(f.read, [f.prep]);
+  f.read.args = { from: f.model.records[0].ref, path: f.path };
+  assert.deepEqual(deliveredSourceBodies(f.read, [f.prep]), direct);
+  assert.deepEqual(deliveredSourceBodies(f.read), []);
+  for (const mutate of [
+    value => { value.read.args.from = 'sr:S' + 'x'.repeat(22); },
+    value => { value.read.args.path = 'other/rules.md'; },
+    value => { value.read.result.content[0].text = value.body.slice(0, -1); },
+    value => { value.read.result.structuredContent = 'different bytes'; },
+    value => { value.read.turn_id = 'turn-2'; },
+    value => { value.prep.end_sequence = value.read.sequence; },
+    value => { value.proof.projection.rendered.sha256 = sha('forged'); },
+  ]) {
+    const value = preparationFixture(); value.read.args = { from: value.model.records[0].ref, path: value.path };
+    mutate(value); assert.deepEqual(deliveredSourceBodies(value.read, [value.prep]), []);
+  }
+});
+test('a relative source read cannot borrow identical bytes from another owner or snapshot', () => {
+  const first = preparationFixture(); first.read.args = { from: first.model.records[0].ref, path: first.path };
+  for (const options of [{ owner: 'shared_skill:fixture:other' }, { snapshot: 's_' + sha('other snapshot') }, { version: sha('other version') }]) {
+    const other = preparationFixture(options);
+    assert.deepEqual(deliveredSourceBodies(first.read, [first.prep, other.prep]), []);
+  }
+});
+test('retained compact file descriptions keep their exact fixed reference evidence', () => {
+  const fixture = () => {
+    const value = preparationFixture({ compactDescription: true });
+    value.read.args = { from: value.model.records[0].ref, path: value.path };
+    return value;
+  };
+  const complete = fixture();
+  assert.equal(deliveredSourceBodies(complete.read, [complete.prep])[0]?.body, complete.body);
+  for (const mutate of [
+    value => { value.proof.records[0].directory.references[0].ref = value.proof.records[0].directory.references[0].ref.split('?')[0]; },
+    value => { value.proof.records[0].directory.references[0].ref += '&library=11111111-1111-4111-8111-111111111111'; },
+    value => { value.proof.records[0].directory.references[0].ref = value.proof.records[0].directory.references[0].ref.replace('fixture', 'foreign'); },
+    value => { value.proof.records[0].directory.references[0].description = 'Different description'; },
+    value => { value.model.records[0].directory.references[0].ref = 'sr:R' + 'x'.repeat(22); },
+    value => { value.model.records[0].directory.files[0].description = 'Different description'; },
+  ]) {
+    const value = fixture(); mutate(value);
+    value.prep.result.content[0].text = JSON.stringify(value.model);
+    value.proof.projection.rendered = measure(value.prep.result.content[0].text);
+    assert.deepEqual(deliveredSourceBodies(value.read, [value.prep]), []);
+  }
+});
+test('retained preparation verification preserves local source references', () => {
+  for (const reference of ['/owned/skills/eligibility/SKILL.md', 'file:///owned/skills/eligibility/SKILL.md', 'local:/owned/catalog#eligibility']) {
+    const f = preparationFixture({ owner: 'local:/owned/skills/eligibility/SKILL.md' }), receipt = f.proof.records[0];
+    receipt.binding.record.ref = reference; receipt.binding.ref = reference;
+    receipt.directory.files[0].ref = reference;
+    assert.equal(verifyPreparationEvidence(f.prep.result.content[0].text, f.proof, f.prep.id).records.length, 1, reference);
+    for (const mutate of [
+      value => { value.binding.record.id = 'skill://eligibility?library=11111111-1111-4111-8111-111111111111'; },
+      value => { value.binding.ref = 'skill://eligibility/SKILL.md?library=11111111-1111-4111-8111-111111111111'; },
+      value => { value.directory.files[0].ref = 'skill://eligibility/rules.md?library=11111111-1111-4111-8111-111111111111'; },
+    ]) {
+      const proof = structuredClone(f.proof); mutate(proof.records[0]);
+      assert.throws(() => verifyPreparationEvidence(f.prep.result.content[0].text, proof, f.prep.id), /Library-qualified/);
+    }
+  }
 });
 test('prepared identity must independently match material version and observed SDK source identity', () => {
   const f = preparationFixture(), delivered = deliveredSourceBodies(f.read, [f.prep])[0], binding = delivered.source_binding;

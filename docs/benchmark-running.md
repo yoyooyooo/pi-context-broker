@@ -5,6 +5,36 @@ run state. It adds public business cases, private grading, actual Pi SDK episode
 and evidence analysis. Use the maintained runtime and an explicitly named frozen
 build. The ordinary daily `next` verification gate remains separate.
 
+## Current source and retained experiments
+
+The shared product and verification sources now follow `next`
+`41cce74bbe360327a7947ccba83f9ea722bf475f`, with CLI
+`6727bea66a3aaea3368a5cc8f84fad83e67d21c1` (SDK v3 and Library root).
+This is a new linear integration commit on the Benchmark history. Existing
+plans, product builds, raw observations and published scores retain their
+original identities; synchronizing source does not migrate an experiment.
+
+Offline `reanalysis` can correct the interpretation of retained raw evidence
+without rebuilding or executing the product. Its historical source contracts
+remain explicit and separate from the current production protocol. Verify the
+original business result, requests, usage, duration and subject identity before
+using a changed contract grade in a product decision.
+
+Collector `1.2.1` fixes the retained SDK-v2 interpretation through
+`benchmark/retained-source-views.mjs`: resource-read v1, Skill references v1
+and preparation evidence v2. It preserves those historical validators and
+rejects Library-qualified protocol-v2 identities. Before applying this
+interpreter, verify the plan's build receipt, its runtime-manifest hash and
+the selected SDK hash. This is an applicability check for old evidence, not
+a parser fallback or support for new SDK-v3 experiments.
+
+The private Benchmark live fixture still uses the earlier `--entry` and
+`--database` interfaces. Before a new live journey uses this source baseline,
+adapt that journey and its analysis contract to the current Library protocol,
+select a new immutable build and complete the normal zero-model loading/admission
+checks. Source synchronization and offline reanalysis do not establish that
+this live migration has passed.
+
 ## Choose the authorized execution path
 
 For a user grant that authorizes all later task-related batches without resource
@@ -127,6 +157,12 @@ node benchmark/cli.mjs reanalysis --root /absolute/task/batch --out /absolute/en
 private oracle again, and saves a new analysis identity. Both make zero model
 requests. A new product, prompt, runtime or model behavior needs a new frozen
 comparison and real execution; rescoring old behavior does not test that change.
+
+A report-only reanalysis needs no `register-reanalysis` or zero-limit `run`.
+Those commands change a stopped batch's accounting/adoption state and are used
+only when that continuation is actually needed. Keep the original report and
+write the new analysis to a distinct owned directory with its original
+denominator, including failures and unknowns.
 
 When an analysis defect hid usage that is present in the raw evidence, correct
 the collector and reanalyze the existing run. Register that new bundle before
