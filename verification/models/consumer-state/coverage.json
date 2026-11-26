@@ -11,13 +11,13 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "395617ddc0e879abfcd10df93515437587a9c130731227d01011e4a3d6a33700",
+    "packages/context-broker/src/host-skills.ts": "c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "dc3c97493542f11345aadbc35e2b49e351f1047cf5063ed50e09b2177b312622",
     "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
-    "packages/context-broker/scripts/host-prepare.test.ts": "b53edafa76a27e9ac809277472855d2b90ed730f1fcd12dbc8d22f58bbf94268",
+    "packages/context-broker/scripts/host-prepare.test.ts": "88fbe60781d503b2146aeb1717c8a9c2471d43b878d6e74fd208227f67605194",
     "packages/context-broker/scripts/session-active.test.ts": "9e6b85e7db03965db5dbe5a2741472c2eee9c32e09f80c484f92f093d0d17186",
     "packages/context-broker/scripts/native-read-session.test.ts": "a00f16b9c35e3a3a03e31665aff043534bd8385d97e15e4948af9703ff1fcab1",
     "packages/context-broker/scripts/skill-context-session.test.ts": "f9917449d7af5c0f1c111b8966b8b98717bf8e2cd709f0ba9fd3eb9a7eb891c6",
@@ -32,14 +32,14 @@
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
     "packages/context-broker/src/notion-source.ts": "a8a77d98b33a9b6dc4968fbd4ff30c336e87aa45d29ab343d9c76f1ed92b610e",
-    "packages/context-broker/src/pi-host-adapter.ts": "3230ccb80a90f1374b08559a432df6d15736c2cb58634bdcf6274108f7c021d2",
+    "packages/context-broker/src/pi-host-adapter.ts": "c74fafae1e11164a1c1ecc161d3e33c76fa906bdd90721957a207eaba0372462",
     "packages/context-broker/scripts/host-refresh.test.ts": "92a34ff905b50f1586133c1e0863ca4750e64d67dfad9fbb64b23ef373711fc5",
     "packages/context-broker/scripts/session-refresh.test.ts": "5e3f715774593d8a95cdf4c9869bf010a70c2e792943350b08d2657b6dfe8cf4",
     "packages/context-broker/scripts/session-recovery.test.ts": "01c5c745744d8233f2f25757dd61b0cfcb75e4c70d7e355d60f2e1bc66031db5",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "84d3fb8a58b0fd203cffe45a29442b5363666ecfd0997f55c001d8d8197c1959",
     "packages/context-broker/scripts/resource-read-projection.test.ts": "5a906e9a1468c0764999557f0e4f8cf011345f4708eeec7a7622581cc3765cf7",
     "packages/context-broker/scripts/notion-source-sdk.test.ts": "3786836128bb0a4c1b82b49f671e9a7112868a847a383d553381959b2e0c9c9d",
-    "packages/context-broker/scripts/pi-read-adapter.test.ts": "fe3aaac44d90c4610addc8cb26a64fa17414cb9619d0e8e7da15ebebf529355c",
+    "packages/context-broker/scripts/pi-read-adapter.test.ts": "5c8f69c40967a41e42fc3f09355992b58605875408b53987cd9ab56079f54e87",
     "packages/context-broker/scripts/fixtures/active-notion-session.ts": "26132aa2f28fbb21a8586bb102abbd41907922e1eb9ced6da659369346c25f8e",
     "packages/context-broker/scripts/notion-entry.test.ts": "7ff3897a2cd5aebed74786139c1d565e63ce58023c25774b0757f4ff5e1fc238",
     "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
@@ -73,11 +73,11 @@
     "packages/context-broker/scripts/input-guard.test.ts": "d02f124ced351a8eb33015884a9a76555b8d93e50b1a6a9ad3f09c2b24614976",
     "packages/context-broker/src/skill-preparation.ts": "7df435552f987159a4810d60256f264148816b493ee0de0a098a70ea77ad1785",
     "packages/context-broker/src/nonblocking-context.ts": "eb4b70618333384415ba03c62d4aa9d738cd61044ffd8864f75e6a63bacd84e7",
-    "packages/context-broker/src/activation-feedback.ts": "2551dce358edafb2f39648799fed11ab4b43dc4d392d7db1d9493bac66692469",
+    "packages/context-broker/src/activation-feedback.ts": "607ef6f22e7c40106b6048f14a3863876a78db5ca307345a70117f1cdaa78d5b",
     "packages/context-broker/src/host-text.ts": "89d0c4d1591667ab71ee0b8b41e8dba7d9f7aae12f778590149ef49425a3b77c",
-    "packages/context-broker/src/types.ts": "303b455599ee195d10f21e3602081922eaaed1f5ff9a9b4417ba0636465a5d62",
+    "packages/context-broker/src/types.ts": "430c23c611c5c2ec9d824c0f027c7f2a5eab52f65f7eac081889934fe12d65cd",
     "packages/context-broker/scripts/nonblocking-context.test.ts": "96888a84d5e132f0c4ebac4956c4559ec737ca64c52538635695da62b6abaf39",
-    "packages/context-broker/scripts/activation-feedback.test.ts": "3ea125a3bf1dc4729842fc568990900b7e2751f8e6beb73d10dd030c5b83a4b0"
+    "packages/context-broker/scripts/activation-feedback.test.ts": "9f15a1bbbad5f5a12e8c0544ef10037d85b44d0dbe127ecff08cd000c2dac6ce"
   },
   "models": {
     "FreshnessPublication": {
@@ -985,6 +985,12 @@
     "pi_failure_boundary": "Current Pi Broker failures retire unconfirmed source instructions and continue the original conversation with a warning. Existing qualification, graph, authorization and delivery guards still reject source publication and confirmation. See current_review.pi_nonblocking_context for reviewed ownership, native payload repair, queued input, deadline and presentation obligations; none adds a finite model action or wire-verification capability."
   },
   "current_review": {
+    "pi_read_description": {
+      "reviewed_from": "cbe36c332b16c4286afe9d1782e87a9b618a6300",
+      "scope": "Only the Pi read tool description changes. Removing that exact description line leaves pi-host-adapter.ts byte-identical to the reviewed base. The refresh parameter still specifies requested current-version inspection, unchanged active selection and a supplied Notion main ref; notion_use owns latest adoption. The read adapter regression checks the complete tool definition instead of requiring the repeated tutorial in its top-level description.",
+      "preserved_guards": "Tool registration and ownership, parameter schemas, native execution, relative and fixed references, source authorization, resource batches, cancellation, graph selection and provider delivery are unchanged. No other tool or host guidance changes.",
+      "proof_limit": "Tool wording is outside the finite model variables. Models, configs, views, bounds, cases, expected_rules, tool locks and mutation targets are unchanged. This hash binds reviewed source bytes; real request payload and model behavior require the separate Benchmark comparison."
+    },
     "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
     "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
     "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted.",
@@ -1256,6 +1262,24 @@
       "replay": "The same existing test keeps two independent waiters, confirms that the valid waiter still returns its content result, releases the cancelled producer with a late hit, and checks that no authorization was presented, no late candidate appears in a later metadata query, and the session branch is unchanged. Content search currently returns raw records and does not mint candidate short refs; this review does not invent such an implementation side effect.",
       "validation": "host-content-search.test.ts: 15 tests / 85 assertions; TypeScript typecheck passed. The unchanged complete consumer-state real-guard runner passes all 41 baseline/mutated/restored cases (0/1/0), including content-cancelled-publication and content-error-publication; the cancellation mutant fails the observable authorizations: 0 assertion with authorizations: 1. Active source checkout remains unchanged.",
       "proof_limit": "This adds a concrete runtime authorization-cancellation replay to the existing NoCancelledPublication obligation. Finite model/config/view bytes, bounds, cases, expected_rules, owners and mutation definitions remain unchanged. Reviewed test hashes are correspondence metadata, not a new finite-model or live OAuth proof."
+    },
+    "pi_transcript_loading": {
+      "reviewed_from": "41cce74bbe360327a7947ccba83f9ea722bf475f",
+      "scope": "Independently reviewed the complete activation-feedback, ExtensionAPI/types, host-skills wiring, activation-feedback tests, host-prepare tests and README diff. Pi now selects entry presentation; the only host-skills production change is that presentation argument. The provider, selection, scope, generation, cancellation and body-delivery owner functions retain their original logic.",
+      "presentation": "This supersedes the current Pi message-only presentation described in pi_nonblocking_context. Pi appends one custom session entry immediately and registers its entry renderer; state-only result entries repaint that same transcript component. No editor widget or sendMessage fallback is used for Pi. The existing message renderer still reads historical custom-message records and supports the other host with content:[]. Entry data is display-only, not Skill content, model input, a queued turn or a second selection owner.",
+      "state_and_lifecycle": "Running changes to ready only after preparation; loaded still comes only from the original successful provider-acceptance path, while inspection reports read. Stop preserves a cancelled row, failure preserves unavailable, and a retired late producer cannot republish success. Restoration reads result state only from the selected branch; an unfinished original row without that state is interrupted. Current-session/live-entry fences and optional-UI failure isolation remain intact.",
+      "concrete_replays": [
+        "activation-feedback.test.ts checks immediate single-row rendering, stable component updates, host key hints and expanded details, pending/success backgrounds, provider confirmation, failure/timeout retirement, Stop, selected-branch restore, optional UI errors, missing entry support and historical message records.",
+        "host-prepare.test.ts retains cancelled and revoked-context late-result assertions. Its new actual installHostSkills replay holds prepareGraph unresolved, requires the custom entry before completion with zero widget/message calls, checks complete root plus Requires delivery, distinguishes ready from 503 and accepted 2xx, and verifies the display entry does not appear in the returned model messages."
+      ],
+      "proof_limit": "Transcript placement, scrolling, keyboard expansion, native entry events and renderer repainting are concrete Pi runtime obligations outside the finite-model variables. These reviewed whole-file hashes do not prove UI position, actual installed bytes, live Notion or model behavior. Model/config/view bytes, bounds, case inventories, independent expected_rules, negative configurations and all guard mutation selectors are unchanged; their existing gates and actual Pi acceptance remain separate."
+    },
+    "pi_completed_preparation_stop": {
+      "reviewed_from": "5cca66bdef4c469bb526db89fe54eb5a85c3ab9c",
+      "scope": "Independently reviewed the complete activation-feedback, activation-feedback tests, host-prepare tests and README diff. clearPending now changes only running preparation to cancelled; an acquired ready record retains its historical result, and provider-confirmed loaded remains loaded. All ended entries still leave the live map, so late finish, failure or confirmation cannot update them.",
+      "delivery_boundary": "Ready continues to mean prepared bytes, not provider acceptance. host-skills production bytes are unchanged: the operation signal and agent_end retirement still fence late provider responses, and graph persistence, delivery confirmation and completed-turn projection keep their original guards. Preserving a display record grants no selection, activation or persistence receipt.",
+      "concrete_replays": "activation-feedback.test.ts checks ready and loaded before and after Stop, no appended cancellation result, rejected late updates and branch restoration. host-prepare.test.ts exercises the actual host hooks with an abort before or after provider acceptance, retains complete root plus Requires and 503 assertions, and requires a late 200 to leave confirmation and persistence counts unchanged. Existing unfinished-preparation cancellation remains covered.",
+      "proof_limit": "This is display lifecycle behavior outside the finite-model variables. These reviewed hashes bind the changed implementation and tests; they do not prove actual terminal behavior or installation identity. Model/config/view bytes, bounds, cases, independent expected_rules, negative configurations and guard mutation selectors are unchanged."
     }
   },
   "library_session_design": {
