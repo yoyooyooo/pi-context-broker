@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { continueWithoutBrokerPayload, withoutBrokerInstructions } from "../src/nonblocking-context";
+import { brokerToolResultDigest, continueWithoutBrokerPayload, withoutBrokerInstructions } from "../src/nonblocking-context";
 import { withPreparationDeadline } from "../src/skill-preparation";
 import { nativeReadReceipt, sourceDeliveryReceipt, sourceMessageText } from "../src/session-source-snapshot";
 import type { AgentMessage, MessageContent, SkillRecord } from "../src/types";
@@ -33,6 +33,37 @@ test("fallback removes owned instructions and source reads while preserving user
   expect(sourceMessageText(result.find(message => message.toolCallId === "source-read")?.content)).not.toContain(body);
   expect(result.some(message => message.customType === "context-broker")).toBe(false);
   expect(JSON.stringify(input)).toBe(saved);
+});
+
+test("fallback preserves native array tool results for serializers while withholding source images and text", () => {
+  const native: AgentMessage = { ...read, content: [{ type: "text", text: body }, image("SOURCE_IMAGE")] };
+  const [result] = withoutBrokerInstructions([native]);
+  expect(result).toMatchObject({ role: "toolResult", toolCallId: native.toolCallId, isError: true });
+  expect(Array.isArray(result?.content)).toBe(true);
+  expect(result?.content).toEqual([{ type: "text", text: expect.stringContaining("could not verify") }]);
+  expect(JSON.stringify(result)).not.toContain("SOURCE_IMAGE");
+  expect(JSON.stringify(result)).not.toContain(body);
+  expect(native.content).toEqual([{ type: "text", text: body }, image("SOURCE_IMAGE")]);
+});
+
+test("recovery retains exact source bytes and proof, independently of host display metadata", () => {
+  const native: AgentMessage = { ...read, content: [{ type: "text", text: body }] };
+  const retained = new Map([[native.toolCallId!, brokerToolResultDigest(native)]]);
+  const copied = structuredClone(native);
+  copied.timestamp = 123;
+  copied.isError = false;
+  copied.details = { ...native.details as object, hostDisplay: "ordinary host metadata" };
+  expect(withoutBrokerInstructions([copied], [], retained)).toEqual([copied]);
+  for (const changed of [
+    { ...copied, isError: true },
+    { ...copied, content: [{ type: "text" as const, text: "Unverified replacement instructions" }] },
+    { ...copied, details: { contextBrokerRead: { ...nativeReadReceipt(record, native.toolCallId!, native.content), bodySha256: "0".repeat(64) } } },
+  ]) {
+    const [withheld] = withoutBrokerInstructions([changed], [], retained);
+    expect(withheld).toMatchObject({ isError: true });
+    expect(sourceMessageText(withheld?.content)).not.toContain(body);
+    expect(sourceMessageText(withheld?.content)).not.toContain("Unverified replacement instructions");
+  }
 });
 
 test("inline native receipts remove only their verified user body even when session projection is unavailable", () => {
