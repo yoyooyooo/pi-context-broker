@@ -176,8 +176,12 @@ test("one batch deadline includes metadata lookup and acquisition and timeout le
     const f = await fixture(); await f.confirmTask();
     if (phase === "lookup") { f.state.catalog = []; await f.host.refresh(f.ctx); }
     const selection = structuredClone(sessionSelection(f.ctx)), entered = Promise.withResolvers<void>();
-    const deadline = new AbortController(), durations: number[] = [];
-    const timeout = spyOn(AbortSignal, "timeout").mockImplementation(milliseconds => { durations.push(milliseconds); return deadline.signal; });
+    const durations: number[] = [], nativeTimeout = globalThis.setTimeout;
+    let expire: (() => void) | undefined;
+    const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, milliseconds, ...args) => {
+      if (milliseconds === 120000) { durations.push(milliseconds); expire = () => callback(...args); }
+      return nativeTimeout(callback, milliseconds, ...args);
+    });
     const wait = async (signal?: AbortSignal) => {
       if (!signal) throw new Error("Batch I/O requires the operation signal");
       entered.resolve();
@@ -192,7 +196,7 @@ test("one batch deadline includes metadata lookup and acquisition and timeout le
         .then(result => ({ result }), error => ({ error }));
       await entered.promise;
       expect(durations).toEqual([120000]);
-      deadline.abort(new Error("Controlled whole-operation deadline"));
+      expire?.();
       expect(await outcome).toMatchObject({ error: { code: "RESOURCE_TIME_BUDGET" } });
       expect(f.state.calls).toHaveLength(phase === "lookup" ? 0 : 1);
       if (phase === "acquisition") {
@@ -200,7 +204,7 @@ test("one batch deadline includes metadata lookup and acquisition and timeout le
         expect(f.state.budgets).toEqual([{ maxFiles: 16, maxBytes: 1048576, timeBudgetMs: 120000 }]);
       }
       expect(sessionSelection(f.ctx)).toEqual(selection);
-    } finally { deadline.abort(); timeout.mockRestore(); f.state.lookupWait = undefined; f.state.wait = undefined; }
+    } finally { expire?.(); timeout.mockRestore(); f.state.lookupWait = undefined; f.state.wait = undefined; }
     expect((await f.read({ paths: [f.files[0]!.ref] })).structuredContent).toMatchObject({ status: "ready" });
     expect(sessionSelection(f.ctx)).toEqual(selection);
   }
@@ -219,6 +223,33 @@ test("explicit batch time allowance cannot turn a cancelled late result into del
   f.state.wait = undefined;
   expect((await f.read({ paths: [f.files[0]!.ref] })).structuredContent).toMatchObject({ status: "ready" });
   expect(f.state.budgets[1]).toEqual(DEFAULT_RESOURCE_READ_BUDGET);
+});
+
+for (const stop of ["deadline", "abort"] as const)
+test(`public Broker resource batch settles on ${stop} while the producer ignores its signal`, async () => {
+  const f = await fixture(), controller = new AbortController();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const original = JSON.stringify(f.state.entries);
+  f.state.effects = noConsumptionWrites();
+  f.state.wait = async () => { entered.resolve(); await release.promise; };
+  const pending = f.read({ paths: [f.files[0]!.ref], budget: { timeBudgetMs: 15 } }, controller.signal)
+    .then(value => ({ value }), error => ({ error }));
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await entered.promise;
+    if (stop === "abort") controller.abort();
+    const result = await Promise.race([pending, new Promise<undefined>(resolve => { watchdog = setTimeout(() => resolve(undefined), 100); })]);
+    expect(result).toBeDefined();
+    if (!result || !("error" in result)) throw new Error("Batch wait must finish before the producer is released");
+    expect(result.error).toMatchObject({ code: stop === "abort" ? "SOURCE_CANCELLED" : "RESOURCE_TIME_BUDGET" });
+    expect(f.state.signal?.aborted).toBe(true); expect(controller.signal.aborted).toBe(stop === "abort");
+    expect(f.state.persisted).toBe(0); expect(f.state.scalarReads).toBe(0); expect(f.state.mainReads).toBe(0);
+    release.resolve(); await new Promise(resolve => setTimeout(resolve, 0));
+    expect(f.state.persisted).toBe(0); expect(JSON.stringify(f.state.entries)).toBe(original);
+    expect(await f.result({ content: [{ type: "text", text: f.files[0]!.content }], isError: false })).toEqual([undefined]);
+    f.state.wait = undefined;
+    expect((await f.read({ paths: [f.files[0]!.ref] })).structuredContent).toMatchObject({ status: "ready" });
+  } finally { if (watchdog) clearTimeout(watchdog); release.resolve(); await pending; await f.emit("session_shutdown"); }
 });
 
 test("a resource result must retain the complete requested budget before provider projection", async () => {

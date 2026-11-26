@@ -568,6 +568,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       || input.cursor !== undefined || Number(input.limit ?? 20) > CONTENT_SEARCH_MAX_RESULTS) throw hostError("INVALID_ARGUMENT");
     const enabledSources = () => (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false);
     const selectedLibrary = await options.librarySelection?.selected(ctx);
+    checkPreparationSignal(readSignal);
     const sources = selectedLibrary?.sources ?? enabledSources();
     if (input.source === undefined && !selectedLibrary && sources.length !== 1)
       throw Object.assign(new Error("Choose one configured Notion source for content search."), { code: "CONTENT_SOURCE_REQUIRED" });
@@ -646,7 +647,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     sourcePath: import.meta.url, defaultInactive: false,
     async execute(_id, input, signal, _onUpdate, ctx) {
       ctx = turnContext(ctx);
-      const readSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
+      const parent = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
+      try { return await withPreparationDeadline(parent, async readSignal => {
       checkPreparationSignal(readSignal);
       if ((input.query !== undefined || !piConsumption) && (typeof input.query !== "string" || input.query.length > 512)
         || input.source !== undefined && typeof input.source !== "string"
@@ -661,12 +663,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const sourceIds = (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false).map(source => source.id);
       if (piConsumption && input.source !== undefined && !sourceIds.includes(String(input.source))) throw hostError("SOURCE_UNAVAILABLE");
       const selectedLibrary = options.librarySelection ? await options.librarySelection.selected(ctx) : undefined;
+      checkPreparationSignal(readSignal);
       const selectedSources = input.source === undefined ? selectedLibrary ? [selectedLibrary.source.id] : sourceIds : [String(input.source)];
       const listGeneration = generation, listMetadataGeneration = metadataGeneration;
       const explicitSource = input.source !== undefined && selectedLibrary && input.source !== selectedLibrary.source.id ? String(input.source) : undefined;
       const isolated = explicitSource !== undefined || options.librarySelection && !options.librarySelection.isCurrent(ctx)
         ? await options.getRecords(ctx, readSignal, input.refresh === true ? selectedSources : undefined, explicitSource) : undefined;
       if (!isolated) { revalidateMetadata(ctx, input.refresh === true ? selectedSources : undefined); await ready(readSignal); }
+      checkPreparationSignal(readSignal);
       if (!isolated && discoveryError) throw discoveryError;
       const listedRecords = isolated?.records ?? [...hostRecords.values()];
       const listedFailures = isolated?.failures ?? sourceFailures;
@@ -716,6 +720,14 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         ? { ...result, records: result.records.map(({ id: _id, scope: _scope, ...record }) => record) }
         : result;
       return { content: [{ type: "text", text: JSON.stringify(model) }], details: result };
+      }, input.search_in === "content" ? CONTENT_SEARCH_TIMEOUT_MS : undefined); }
+      catch (error) {
+        if (input.search_in === "content" && error && typeof error === "object" && "code" in error) {
+          if (error.code === "SOURCE_PREPARATION_TIMEOUT") throw hostError("CONTENT_SEARCH_TIMEOUT");
+          if (error.code === "SOURCE_ACTIVATION_CANCELLED") throw hostError("SOURCE_CANCELLED");
+        }
+        throw error;
+      }
     },
   });
 
@@ -2059,7 +2071,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       const observedEffects: ConsumptionEffects[] = [];
       let acquiring = false;
       try {
-      const combined = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
+      const parent = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
+      return await withPreparationDeadline(parent, async combined => {
       const requested = piConsumption ? typeof input.ref === "string" ? [input.ref] : input.ref : input.roots;
       if ((!piConsumption && !["use", "inspect"].includes(String(input.purpose))) || !Array.isArray(requested) || !requested.length || requested.length > 64
         || requested.some(value => typeof value !== "string") || input.refresh !== undefined && typeof input.refresh !== "boolean"
@@ -2151,6 +2164,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         details: { contextBrokerPreparation: { version: compilation ? 2 : 1, toolCallId: id, purpose,
           records: receipts, graphs, effects, ...(compilation ? { projection: compilation.projection } : {}) } },
       };
+      });
       } catch (error) {
         if (!acquiring) throw error;
         const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
@@ -2232,14 +2246,19 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
         if (input.cli_source !== null && (typeof input.cli_source !== "string" || !input.cli_source.length) || input.refs !== undefined) throw hostError("INVALID_ARGUMENT");
         const active = host.getActiveTools?.();
         if (!active?.includes("bash") || !piConsumption && !active.includes(controlToolName)) throw hostError("HOST_CLI_TOOL_UNAVAILABLE");
-        const selected = input.cli_source === null ? await options.librarySelection?.selected(ctx) : undefined;
+        const parent = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
+        return withPreparationDeadline(parent, async owned => {
+        const scoped = { ...ctx, signal: owned };
+        const selected = input.cli_source === null ? await options.librarySelection?.selected(scoped) : undefined;
+        checkPreparationSignal(owned);
         const configured = input.cli_source === null ? selected ? [selected.source] : []
           : (options.config.sources ?? []).filter(source => source.type === "notion" && source.enabled !== false && source.id === input.cli_source);
         if (!configured.length) throw hostError("HOST_SOURCE_UNAVAILABLE");
         if (configured.length !== 1 || configured[0]!.type !== "notion") throw hostError("HOST_SOURCE_AMBIGUOUS");
         const source = configured[0];
-        const library = selected?.library ?? (options.librarySelection ? await options.librarySelection.verify(source, ctx)
-          : await resolveNotionLibrarySdk({ library: source.library, cwd: ctx.cwd, env: { ...process.env }, signal }));
+        const library = selected?.library ?? (options.librarySelection ? await options.librarySelection.verify(source, scoped)
+          : await resolveNotionLibrarySdk({ library: source.library, cwd: ctx.cwd, env: { ...process.env }, signal: owned }));
+        checkPreparationSignal(owned);
         const sources = [{ ...source, library: library.library_id }];
         const result = { kind: "host_cli_scope", ...hostCliScope(sources), executed: false,
           execution: {
@@ -2250,6 +2269,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
               + "and await the same process's terminal result. A short polling timeout is not completion; do not kill or repeat the write just because a wait ended.",
           } };
         return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
+        });
       }
       const graph = options.sessionGraph!(ctx);
       const result = Array.isArray(input.refs) ? { graph, references: input.refs.map(ref => shortRefs.export(ctx, ref)) } : graph;
@@ -2672,28 +2692,35 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const executionSignal = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
     if (Object.hasOwn(input, "paths")) {
       const budget = normalizeResourceReadBudget(input.budget);
-      const deadline = AbortSignal.timeout(budget.timeBudgetMs);
       const observedEffects: ConsumptionEffects[] = [];
-      try { return await readResourceBatch(input, budget, ctx, AbortSignal.any([executionSignal, deadline]), toolCallId,
-        { readOnly: true, observeEffects: effects => observedEffects.push(effects) }); }
+      try { return await withPreparationDeadline(executionSignal, owned => readResourceBatch(input, budget, ctx, owned, toolCallId,
+        { readOnly: true, observeEffects: effects => observedEffects.push(effects) }), budget.timeBudgetMs); }
       catch (error) {
-        const cause = executionSignal.aborted ? hostError("SOURCE_CANCELLED") : deadline.aborted ? hostError("RESOURCE_TIME_BUDGET") : error;
+        const timedOut = error && typeof error === "object" && "code" in error && error.code === "SOURCE_PREPARATION_TIMEOUT";
+        const cause = executionSignal.aborted ? hostError("SOURCE_CANCELLED") : timedOut ? hostError("RESOURCE_TIME_BUDGET") : error;
         const effects = combineConsumptionEffects([...observedEffects, errorConsumptionEffects(error)]);
         throw consumptionFailure(cause, JSON.stringify({ error: failure(cause), effects }), effects);
       }
     }
     checkPreparationSignal(executionSignal);
-    const prepared = await prepareRead({ toolName: "read", toolCallId, input }, ctx, executionSignal, "execute");
-    if (prepared && "block" in prepared) throw Object.assign(new Error(prepared.reason), { details: { effects: prepared.effects, admission: prepared.admission } });
+    let prepared: PreparedReadResult | undefined;
     try {
-      checkPreparationSignal(executionSignal);
-      const result = await read(prepared?.input ?? input, executionSignal);
-      checkPreparationSignal(executionSignal);
-      prepared?.assertCurrent?.();
-      return withReadDisplay(result, prepared?.display);
+      const ownedResult = await withPreparationDeadline(executionSignal, async owned => {
+        prepared = await prepareRead({ toolName: "read", toolCallId, input }, ctx, owned, "execute");
+        checkPreparationSignal(owned);
+        if (prepared && "block" in prepared) throw Object.assign(new Error(prepared.reason), { details: { effects: prepared.effects, admission: prepared.admission } });
+        // An ordinary native read keeps its own execution contract and budget.
+        if (!prepared) return undefined;
+        const result = await read(prepared.input, owned);
+        checkPreparationSignal(owned);
+        prepared.assertCurrent?.();
+        return withReadDisplay(result, prepared.display);
+      });
+      return ownedResult ?? read(input, executionSignal);
     } catch (error) {
       pendingResourceReads.delete(toolCallId);
       pendingNativeReads.delete(toolCallId);
+      if (prepared && "block" in prepared) throw error;
       if (prepared?.effects) throw consumptionFailure(error, JSON.stringify({ error: failure(error), effects: prepared.effects }), prepared.effects);
       throw error;
     }
@@ -2703,10 +2730,18 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   }) : undefined;
   host.on("tool_call", async (event, ctx): Promise<ToolCallResult | undefined> => {
     if (event.toolName === "read" && readRunsInTool?.()) return undefined;
+    if (event.toolName !== "read") return undefined;
     const operationSignal = deferredPiDiscovery && event.toolName === "read" ? ctx.signal : undefined;
     const readSignal = operationSignal ? AbortSignal.any([operationSignal, lifecycleController.signal]) : lifecycleController.signal;
     const started = generation;
-    const prepared = await prepareRead(event, ctx, readSignal, "hook");
+    let prepared: PreparedReadResult | undefined, owned = readSignal;
+    try { prepared = await withPreparationDeadline(readSignal, signal => {
+      owned = signal;
+      return prepareRead(event, ctx, signal, "hook");
+    }); } catch (error) {
+      if (event.toolCallId) { pendingResourceReads.delete(event.toolCallId); pendingNativeReads.delete(event.toolCallId); }
+      return blockedRead(error, "hook", "admission", started, owned);
+    }
     if (prepared && "block" in prepared) return prepared;
     if (event.toolName === "read" && readSignal.aborted) return blockedRead(preparationCancelled(), "hook", "admission", started, readSignal, prepared?.effects);
     if (prepared) { Object.assign(event.input, prepared.input); delete event.input.from; }
