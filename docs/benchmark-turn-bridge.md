@@ -24,11 +24,14 @@ the same source inventory. The controller-only `fixture-turn-adapter.mjs` and
 
 `verifyTurnRuntimeBuild` requires a completed shared build with consistent
 environment ownership, selected CLI and source/package inventory identities.
-The frozen `subject.mjs`, `turn-bridge.mjs` and `runtime/episode-runner.mjs` bytes
+The frozen `subject.mjs`, `turn-bridge.mjs`, `runtime/episode-runner.mjs` and
+`runtime/episode-visibility.mjs` bytes
 must match the common implementation making the call. Both configuration and
 `runSubject` enforce this boundary, including zero-model capture. Configuration
-does so before remote preparation. Historical single-turn cases without turn
-controls retain their existing build requirements.
+does so before remote preparation. Every new subject dispatch, including a
+single-turn case without turn controls, requires this runtime-only source
+contract. A previously frozen build must be rebuilt under a new identity before
+new dispatch; its historical evidence remains unchanged and readable.
 
 The controller binding uses the following fields. Only `public_case.turns` and
 the bridge's small public channel configuration reach the subject:

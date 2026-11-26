@@ -54,9 +54,10 @@ export async function phaseZero(options) {
   let receipt;
   try {
     receipt = await runEnvironment({ root, build: options.build, target: 'command', cwd: 'workspace', id: runId,
+      'command-source': 'none',
       'pi-mode': options.mode, ...(options.mode === 'native' ? { 'native-skills': options.skills } : { skills: options.skills }),
       'pi-extension': [observer], 'pass-env': [], 'timeout-ms': '180000', stdin: 'ignore',
-      args: ['node', join(plannedRunRoot, 'source/broker/benchmark/runtime/probe-child.mjs'), nonce, observer] });
+      args: ['node', runner, nonce, observer] });
     const runPath = join(receipt.root, 'run.json'), nativeResultPath = join(receipt.root, 'result.json');
     const run = await json(runPath), childPath = join(receipt.root, 'benchmark/probe.json');
     const probe = await json(childPath);
