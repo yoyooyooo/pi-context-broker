@@ -13,9 +13,9 @@
     "index.ts": "bac76ae9ed99a3790d8a728cc6e9b5463927ac427a1462ffe59c6adf9e4d4509"
   },
   "patch": "read-renderer.patch",
-  "patch_sha256": "b5b7810ee475bcb3b038e8f0770e18a9543fa532078262814a89548e42c78fda",
+  "patch_sha256": "1b6edb05a815b643cbb58082e4d031cbd95df921b3dd73e45197953660dba601",
   "result_files": {
-    "README.md": "c6fe64b285e4fd744d468c5e37ff2ea6f6564c8aff3fe67b855373d143b19fce",
+    "README.md": "b6ab7169276f4cfdb4f410f90a9aa994daa464509dc34b15c979d148178e1149",
     "index.ts": "8bce09851becbf9730a4e8e6b3a7dba0e55bba7f95e72ac18923c11c112a9675",
     "package.json": "8bd740a6a44109d18a53515ff404a83037a7f6a77aeb8b30c40d210fba31e805"
   },

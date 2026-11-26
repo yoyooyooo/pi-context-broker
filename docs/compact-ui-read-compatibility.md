@@ -2,7 +2,7 @@
 
 `pi-compact-ui@0.1.3` 为隐藏原生工具行而重新注册 `read`，只向模型提供原生 `path/offset/limit`。Broker 尊重第三方执行所有权，因此这个 profile 不能暴露 Broker 的 `paths/from/refresh/budget` 合同。原有已登记引用的单路径 delegate 仍有其限定范围，不能据此把所有 Notion 读取判成失效。
 
-本兼容构建只将 `read` 改用 Pi 1.6 的 `registerToolRenderer`：当前工具提供者保留说明、参数和执行，compact-ui 保留分组、折叠、主题和用户偏好。其他六项原生工具继续使用上游委托。批量读取的人类摘要显示文件数，完整参数与结果仍在展开分组中。
+本兼容构建只将 `read` 改用 Pi 1.6 的 `registerToolRenderer`：当前工具提供者保留说明、参数和执行，compact-ui 保留分组、折叠、主题和用户偏好。其他六项原生工具继续使用上游委托。批量读取的人类摘要显示文件数；展开分组继续按原配置和显示限制展示结果文本预览。
 
 ## 可复现准备
 
