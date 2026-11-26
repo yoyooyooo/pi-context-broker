@@ -29,6 +29,14 @@ fresh 普通 Pi 必须读回实际 `read` 的 `sourceInfo`、完整说明与 sch
 
 使用实际 Pi 1.6 registry 和工具调度验证：compact-only 保留 builtin `read`；compact/Broker 两种顺序保留 Broker 的完整合同；已有第三方 `read` 的 owner、schema 与执行次数保持不变。单路径、批量和拒绝输入沿真实注册的执行入口验证，不发送模型请求。
 
+实际注册与受控派发入口（`--library`/`--skill-ref` 指向有 `references/eligibility.md`、`references/tables/regions.json` 和 `references/tables/caps.json` 的既有测试语料）：
+
+```sh
+node scripts/compat/pi-compact-ui/verify-dispatch.mjs --pi-root /absolute/pi-package --compact-package /absolute/derived-package --broker-package /absolute/latest-broker-package --output /absolute/new-owned-dispatch-evidence --library TEST_LIBRARY_UUID --skill-ref 'skill://TEST_SKILL?library=TEST_LIBRARY_UUID'
+```
+
+该入口使用全新私有配置、缓存和内存 session，读取指定测试 Library，不写远端。它沿 Pi 公开 `runToolCall` 经过实际注册、参数验证、before/after hook 和执行器，检查两种装载顺序、builtin 与第三方所有权；模型 stream 被禁用并计数为零。结果是受控调用证据，不能写成自然模型测试或日用采用。
+
 使用实际 `ToolExecutionComponent` 和 `Container` 验证分组，而非只检查空 renderer：pending、success、error，折叠和展开，普通和窄宽度，两种 resolver 顺序都应每条 read 只出现一行、正文只出现一次，批量显示文件数。
 
 可复用的实际组件验证入口：
