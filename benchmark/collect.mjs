@@ -760,7 +760,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     const expected = await addFile('collection-provider-binding-expectation', comparison.expected_file.path, comparison.expected_file.sha256);
     const buildArtifact = await addFile('collection-metadata-build', captured.snapshot.build.path, captured.snapshot.build.sha256);
     const build = JSON.parse(fileBytes.get(buildArtifact.id)), files = [];
-    for (const name of Object.keys(notionMetadataProducer)) {
+    for (const name of ['src/index.ts', 'src/host-skills.ts']) {
       const declarations = build.packages.broker.files.filter(file => file.path === name); assert.equal(declarations.length, 1);
       const artifact = await addFile('collection-metadata-producer-' + files.length, join(run.build_root, 'broker', name), declarations[0].sha256, 'implementation');
       files.push({ name, ...artifact });

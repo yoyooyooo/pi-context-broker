@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { collectRuntimeTools, notionMetadataEvidence, verifiedNotionListRuntime } from './collect.mjs';
+import { collectEpisode, collectRuntimeTools, notionMetadataEvidence, verifiedNotionListRuntime } from './collect.mjs';
 import { loadCurrentSourceViews } from './current-source-views.mjs';
+import { readSubjectTurnControl } from './execute.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
 const ref = { artifact_id: 'metadata-fixture', sha256: sha('metadata'), pointer: '' };
@@ -100,8 +101,8 @@ for (const [name, change] of Object.entries(refusals)) test('metadata classifica
   const f = metadataFixture(); change(f); assert.equal(notionMetadataEvidence(f.tool, f.context), null);
 });
 
-test('retained actual SDK3 run uses the reviewed owner and real directory; no model is called',
-  { skip: !process.env.BENCHMARK_METADATA_REAL_RUN }, async () => {
+test('retained actual SDK3 run passes the full collector, normalization and grade pipeline without a model call',
+  { skip: !process.env.BENCHMARK_METADATA_REAL_RUN && 'Set BENCHMARK_METADATA_REAL_RUN and BENCHMARK_METADATA_REAL_PLAN to the retained metadata-only case and its frozen plan.' }, async t => {
     const root = process.env.BENCHMARK_METADATA_REAL_RUN;
     const json = async path => JSON.parse(await readFile(path, 'utf8'));
     const episode = await json(join(root, 'benchmark/runtime/episode-result.json'));
@@ -153,4 +154,39 @@ test('retained actual SDK3 run uses the reviewed owner and real directory; no mo
     const original = await json(join(root, 'benchmark/normalized/readback.json'));
     assert.deepEqual(original.opaque_tools, [lists[0].id]); assert.deepEqual(original.unmatched_reads, []);
     assert.equal(original.evidence.coverage.selections, 'partial');
+
+    // Exercise the complete producer-file collection branch as well as its
+    // classifier. A caught ReferenceError must not silently restore unknown.
+    assert.ok(process.env.BENCHMARK_METADATA_REAL_PLAN, 'The complete collector regression requires the original frozen plan');
+    const plan = await json(process.env.BENCHMARK_METADATA_REAL_PLAN);
+    const bindingBytes = await readFile(plan.execution.case_bindings_file);
+    assert.equal(sha(bindingBytes), plan.execution.case_bindings_sha256);
+    const slot = plan.slots.find(slot => slot.case_id === episode.correlation.task_id && slot.condition_id === episode.correlation.candidate_id);
+    assert.ok(slot);
+    const binding = JSON.parse(bindingBytes).find(binding => binding.id === slot.case_id);
+    const condition = plan.protocol.conditions.find(condition => condition.id === slot.condition_id);
+    const model = { ...plan.protocol.models.find(model => model.id === condition.model_id), adapter_evidence_path: plan.execution.adapter_evidence_file };
+    const normalizedRoot = join(root, 'benchmark/normalized');
+    const preserved = new Map(await Promise.all(['collection.json', 'readback.json', 'grade.json', 'normalized/episode.json']
+      .map(async name => [name, sha(await readFile(join(normalizedRoot, name)))])));
+    const previous = await json(join(normalizedRoot, 'collection.json'));
+    const raw = { root, run_id: episode.correlation.run_id, result_path: join(root, 'benchmark/runtime/episode-result.json'),
+      shared: await json(join(root, 'result.json')), episode, status: episode.status };
+    const required = binding.public_case.turns.length > 1 || (binding.events?.length ?? 0) > 0 || (binding.clarification?.length ?? 0) > 0;
+    raw.turn_control_verification = await readSubjectTurnControl({ controlRoot: plan.execution.control_root, runRoot: root, runId: raw.run_id, required });
+    raw.turn_control = raw.turn_control_verification.result;
+    const outputDirectory = await mkdtemp(join(plan.execution.environment_root, 'control', 'metadata-collector-regression-'));
+    const collected = await collectEpisode({ raw, binding, protocol: plan.protocol, slot, condition, model,
+      outputDirectory, environmentRoot: plan.execution.environment_root, reanalysisOf: previous.episode_sha256 });
+    t.diagnostic('Retained complete collector regression: ' + outputDirectory);
+    for (const [name, expected] of preserved) assert.equal(sha(await readFile(join(normalizedRoot, name))), expected);
+    assert.deepEqual(collected.budget_usage, previous.budget_usage);
+    assert.equal(collected.readback.metadata_runtime.status, 'verified', collected.readback.metadata_runtime.reason);
+    assert.deepEqual(collected.readback.metadata_only_tools.map(tool => tool.tool_call_id), [lists[0].id]);
+    assert.deepEqual(collected.readback.opaque_tools, []);
+    assert.equal(collected.grade.contracts.find(contract => contract.id === 'legal-selection').status, 'pass');
+    assert.equal(collected.grade.business_outcome, 'pass'); assert.equal(collected.validity, 'valid');
+    assert.equal(collected.verified_success, true);
+    assert.equal(collected.bundle.episode.result.verified_success, true);
+    assert.equal(collected.bundle.episode.result.outcome, 'pass');
   });
