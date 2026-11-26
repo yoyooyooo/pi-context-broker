@@ -325,23 +325,32 @@ export function reviewCandidateCliCommand(command, policy, observedAudits = []) 
     check(args.slice(1).every(arg => /^[a-z][a-z-]*$/u.test(arg)), 'Schema inspection must name only a public command path');
     return { kind: 'schema', argv: words };
   }
-  if (maintenance && args.slice(0, 2).join(' ') === 'ctl builtin') {
-    if (args[2] === 'list') {
-      check(args.length === 3, 'List only this frozen package catalog without installation options');
-      return { kind: 'builtin-list', argv: words };
-    }
-    check(args[2] === 'read', 'Builtin installation or status is outside this task');
-    const positional = []; let path;
-    for (let index = 3; index < args.length; index++) {
-      if (!args[index].startsWith('-')) positional.push(args[index]);
+  if (maintenance && args[0] === 'skills') {
+    const [subcommand, ...parameters] = args.length === 1 || args[1] === '--json'
+      ? ['list', ...args.slice(1)] : args.slice(1);
+    check(['list', 'get', 'path'].includes(subcommand), 'Use only the public packaged Skills commands');
+    const positional = [], flags = new Map();
+    for (let index = 0; index < parameters.length; index++) {
+      const parameter = parameters[index];
+      if (!parameter.startsWith('-')) positional.push(parameter);
       else {
-        check(args[index] === '--path' && path === undefined && typeof args[index + 1] === 'string', 'Use only one packaged builtin path');
-        path = args[++index];
+        check(!flags.has(parameter), 'Do not repeat packaged Skills options');
+        if (parameter === '--json' || subcommand === 'get' && parameter === '--full') flags.set(parameter, true);
+        else {
+          check(subcommand === 'get' && parameter === '--path' && typeof parameters[index + 1] === 'string', 'Use only one packaged file path');
+          flags.set(parameter, parameters[++index]);
+        }
       }
     }
-    check(positional.length === 1 && positional[0] === 'notion/ntn-skills-maintain', 'Read only the reviewed maintenance builtin');
+    if (subcommand === 'list') {
+      check(positional.length === 0, 'List only this frozen package catalog');
+      return { kind: 'skills-list', argv: words };
+    }
+    check(positional.length === 1 && positional[0] === 'ntn-skills-maintain', 'Select only the reviewed maintenance Skill');
+    const path = flags.get('--path');
+    check(!flags.has('--full') || path === undefined, 'Choose a complete Skill or one packaged file');
     check(path === undefined || ['SKILL.md', 'references/operations.md', 'references/setup.md'].includes(path), 'Read only the protected maintenance files');
-    return { kind: 'builtin-read', argv: words };
+    return { kind: subcommand === 'get' ? 'skills-get' : 'skills-path', argv: words };
   }
   if (maintenance && args.slice(0, 3).join(' ') === 'ctl library init') {
     check(args.length === 5 && args[3] === '--library' && ownsLibrary(args[4]),

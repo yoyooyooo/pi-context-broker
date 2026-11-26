@@ -338,29 +338,41 @@ test('read-only maintenance rejects another owner, library, operation, mutations
   ]) assert.throws(() => reviewCandidateCliCommand(command, maintenanceCli), command);
 });
 
-test('maintenance public builtin discovery admits the installed local interface and only its protected files', () => {
-  for (const suffix of ['ctl builtin list', 'ctl builtin read notion/ntn-skills-maintain',
-    'ctl builtin read notion/ntn-skills-maintain --path SKILL.md',
-    'ctl builtin read --path references/operations.md notion/ntn-skills-maintain']) {
-    assert.ok(reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli).kind.startsWith('builtin-'));
+test('maintenance packaged Skills discovery admits the public interface and only its protected files', () => {
+  for (const suffix of ['skills', 'skills --json', 'skills list', 'skills list --json',
+    'skills get ntn-skills-maintain', 'skills get ntn-skills-maintain --json',
+    'skills get ntn-skills-maintain --full', 'skills get ntn-skills-maintain --full --json',
+    'skills get ntn-skills-maintain --path SKILL.md',
+    'skills get --path references/operations.md ntn-skills-maintain --json',
+    'skills path ntn-skills-maintain', 'skills path --json ntn-skills-maintain']) {
+    assert.ok(reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli).kind.startsWith('skills-'));
     assert.throws(() => reviewCandidateCliCommand(cliCommand + ' ' + suffix, publicCli));
   }
   for (const suffix of [
-    'ctl builtin list --agent-dir /another/root', 'ctl builtin list --json',
-    'ctl builtin read notion/ntn-skills', 'ctl builtin read notion/ntn-skills-sync',
-    'ctl builtin read notion/ntn-skills-maintain --path ../SKILL.md',
-    'ctl builtin read notion/ntn-skills-maintain --path /etc/passwd',
-    'ctl builtin read notion/ntn-skills-maintain --path references/other.md',
-    'ctl builtin read notion/ntn-skills-maintain --path SKILL.md --path SKILL.md',
-    'ctl builtin read notion/ntn-skills-maintain --agent-dir /another/root',
-    'ctl builtin read notion/ntn-skills-maintain --json',
+    'skills list --agent-dir /another/root', 'skills list --json --json',
+    'skills list ntn-skills-maintain', 'skills list --full',
+    'skills get ntn-skills', 'skills get ntn-skills-sync', 'skills get --all',
+    'skills get ntn-skills-maintain ntn-skills-sync', 'skills get notion/ntn-skills-maintain',
+    'skills get ntn-skills-maintain --path ../SKILL.md',
+    'skills get ntn-skills-maintain --path /etc/passwd',
+    'skills get ntn-skills-maintain --path references/other.md',
+    'skills get ntn-skills-maintain --path SKILL.md --path SKILL.md',
+    'skills get ntn-skills-maintain --path SKILL.md --full',
+    'skills get ntn-skills-maintain --full --full',
+    'skills get ntn-skills-maintain --json --json',
+    'skills get ntn-skills-maintain --agent-dir /another/root',
+    'skills get ntn-skills-maintain --path', 'skills get',
+    'skills path', 'skills path ntn-skills-sync', 'skills path ntn-skills-maintain --full',
+    'skills path ntn-skills-maintain --path SKILL.md',
+    'skills install ntn-skills-maintain', 'skills status ntn-skills-maintain',
+    'ctl builtin list', 'ctl builtin read notion/ntn-skills-maintain',
     'ctl builtin install notion/ntn-skills-maintain', 'ctl builtin status notion/ntn-skills-maintain',
   ]) assert.throws(() => reviewCandidateCliCommand(cliCommand + ' ' + suffix, maintenanceCli), suffix);
 });
 
 test('an onboarding inspection reads the setup reference and validates only its existing library', () => {
   for (const suffix of [
-    'ctl builtin read notion/ntn-skills-maintain --path references/setup.md',
+    'skills get ntn-skills-maintain --path references/setup.md',
     'ctl library init --library 76ecd927-8be5-5526-b4d7-18906713e206',
     'ctl library inspect --library 76ecd927-8be5-5526-b4d7-18906713e206',
     'ctl library sources list --library 76ecd927-8be5-5526-b4d7-18906713e206',

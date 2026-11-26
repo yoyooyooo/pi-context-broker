@@ -823,13 +823,13 @@ function buildCliGuidance(config: ConfigFile, activeTools?: readonly string[]): 
     }),
     "Append an argument array to its cli executable argv, replacing TERM/EXACT_REF/SNAPSHOT/RELATIVE with task values. Keep the supplied Library root scope on list/read/files.",
     "Each cli scope belongs to the named source and Library. Choose the write target separately from the workflow's origin; never choose the first source implicitly. Keep selected Notion content in its exact source. Failed or partial discovery does not prove absence.",
-    ...(sources.length ? [packagedWorkflowGuidance(new Set(["read"])), notionWorkflowGuidance("read", "CLI list", "the supplied prepared host entry")] : [`For explicitly requested bootstrap or offline help, append ctl builtin read notion/ntn-skills-maintain or ctl builtin read notion/ntn-skills-sync to ${JSON.stringify(hostCliScope().command)}. This reads packaged instructions.`]),
+    ...(sources.length ? [packagedWorkflowGuidance(new Set(["read"])), notionWorkflowGuidance("read", "CLI list", "the supplied prepared host entry")] : [`For explicitly requested bootstrap or offline help, append skills get ntn-skills-maintain or skills get ntn-skills-sync to ${JSON.stringify(hostCliScope().command)}. This reads packaged Markdown instructions.`]),
     ...(!scopes.length ? ["No verified Library scope is ready for remote CLI commands. Obtain cli_source:null from notion_ctl or skill_graph, or select an accessible Library before using remote CLI operations."] : []),
-    "A successful read returns top-level content (the body), pinned ref, and snapshot_id (the files/resource-read target). The record field is metadata. Keep JSON output so ok/error and snapshot identity can be checked.",
+    "A successful Notion read returns top-level content (the body), pinned ref, and snapshot_id (the files/resource-read target). The record field is metadata. Keep JSON output for Notion commands so ok/error and snapshot identity can be checked. Packaged skills get returns Markdown by default; --json is optional.",
     "Choose from supplied metadata; otherwise search with a short name or keyword, broadening an empty query. Select one suitable record before reading its body. Discover through metadata or the CLI, not cache directories.",
     "A complete Skill body supplied by the host/Broker or a successful read is already read. Use it directly. For introductions and summaries, do not reread the entry, list its cache directory, or inspect package/agent metadata.",
     "Read referenced resources only when the current task needs their contents. Resolve a requested relative file directly from a visible Skill directory, without first listing directories or searching the cwd. For CLI resources, pass the quoted canonical fixed reference to read REF or files REF. Keep the selected snapshot and supplied Library root scope.",
-    "Check CLI ok/error before using results. Use COMMAND --help for syntax details or an invalid option. When asked to inspect, introduce or summarize a Skill without adoption, describe its instructions as content; do not adopt its workflow, style, prerequisite discovery, repository checks or delegation steps unless the user asks to perform them.",
+    "Check ok/error in JSON results before using them. Use COMMAND --help for syntax details or an invalid option. When asked to inspect, introduce or summarize a Skill without adoption, describe its instructions as content; do not adopt its workflow, style, prerequisite discovery, repository checks or delegation steps unless the user asks to perform them.",
     "</ntn-skills-guidance>",
   ].join("\n");
   return { customType: CLI_GUIDANCE_TYPE, content, display: false };
@@ -847,7 +847,7 @@ function packagedWorkflowGuidance(tools: ReadonlySet<string>): string {
     const entry = root && join(root, name, "SKILL.md");
     return tools.has("read")
       ? entry && existsSync(entry) ? `read(${JSON.stringify(entry)})` : `${name} is unavailable; report it`
-      : `run argv ${JSON.stringify([...hostCliScope().command, "ctl", "builtin", "read", `notion/${name}`, "--json"])}`;
+      : `run argv ${JSON.stringify([...hostCliScope().command, "skills", "get", name])}`;
   });
   return `Default product maintenance/sync: ${routes.join("; ")}. Paired package; no Notion copy needed. Select write source separately; never search other installations.`;
 }
@@ -901,7 +901,7 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
     ...(fallback ? [
       "The following CLI fallback covers currently unavailable native discovery/read/use operations. It is not a request to run commands or check the environment. Use only the selected source and its supplied Library root scope; keep JSON output and check ok/error.",
       "Failed or partial discovery does not prove absence. An explicitly selected Notion workflow keeps its source and identity; failure never switches it to a packaged workflow.",
-      ...(!sources.some(source => source.library !== undefined) ? [`No verified Library scope is ready for remote CLI operations. Obtain cli_source:null from notion_ctl or skill_graph, or select an accessible Library. Explicit bootstrap/offline help can append ctl builtin read notion/ntn-skills-maintain or ctl builtin read notion/ntn-skills-sync to ${JSON.stringify(hostCliScope().command)}.`] : []),
+      ...(!sources.some(source => source.library !== undefined) ? [`No verified Library scope is ready for remote CLI operations. Obtain cli_source:null from notion_ctl or skill_graph, or select an accessible Library. Explicit bootstrap/offline help can append skills get ntn-skills-maintain or skills get ntn-skills-sync to ${JSON.stringify(hostCliScope().command)}.`] : []),
       "CLI commands cannot resolve session sr: handles. Use a canonical ref returned by that source's CLI metadata or a fixed snapshot/path from a successful preparation. If native read and prepare are unavailable, use this source's list command to obtain the same candidate's canonical ref, matching its exact record identity rather than guessing a name.",
       ...sources.filter(source => source.library !== undefined).map(source => hostCliScope([source])).map(scope => {
         const library = scope.library ? ["--library", scope.library] : [];

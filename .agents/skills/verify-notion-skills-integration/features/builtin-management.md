@@ -20,6 +20,8 @@ Broker 与 Tern 分发三份完整的本地 Skill，经普通发现、选择与�
 
 维护任务由普通 Agent 加载内建 Skill 后执行 public CLI：当前读取 → pinned apply；首次 connect → 后续 run。真实 Notion 验证使用本次有归属的内容与原操作，核对内容、恢复和冲突；不要求日常用户执行额外证明步骤。
 
-产品维护与同步默认使用实际配对包；Notion 团队副本是可选的用户 native Skill，包升级不覆盖、不删除，也不替换当前任务的选择。`skill-guidance.test.ts` 核对各工具分支、零来源 gate、两份包内入口及正文未预加载；真实模型使用 `verify-notion-agent-workflows` 的默认咨询、明确远端流程与失败场景，不能以文字断言替代实际正文和来源证据。
+产品维护与同步默认使用实际配对包；明确选中的 Notion 团队流程保留独立身份，包升级不替换当前任务的选择。`skill-guidance.test.ts` 核对各工具分支、零来源 gate、两份包内入口及正文未预加载；真实模型使用 `verify-notion-agent-workflows` 的默认咨询、明确远端流程与失败场景，不能以文字断言替代实际正文和来源证据。
 
-`/ntn-skills` 父子命令、管理/schema palette、专用 save 工作流和中央安装管理 runner 已移除。CLI 的显式 `ctl builtin install/update` 仍用于用户主动管理的本地副本，其验证归 CLI 仓库；不再是 Broker 安装或发现的前置条件。
+CLI 的一级 `skills` 命令读取随包内容：默认列目录，`get NAME` 输出原始 Markdown，`get NAME --path RELATIVE_FILE` 读取参考文件，`get NAME --full` 包含所有支持文件，`path NAME` 返回当前包的实际目录。`--json` 提供结构化结果。内置 Skill 随 CLI/Broker 升级，没有独立的安装、状态、更新或 Notion 导入流程。
+
+独立安装检查沿 `scripts/verify-package-closure.mjs` 核对内嵌 CLI 的目录、原始正文、JSON、完整支持文件和实际包路径。所有内容必须等于本次归档中的字节，读取不得新增 HOME 下的安装状态。旧命令及独立安装管理命令不应有可用 schema。只读维护 candidate 的允许范围同步到新命令，同时保持所选维护 Skill、受保护文件与 Library 范围。
