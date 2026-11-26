@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { canonicalJson, fingerprint } from './protocol.mjs';
+import { CURRENT_SOURCE_CONTRACT } from './current-source-views.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const hashPattern = /^[a-f0-9]{64}$/;
@@ -10,7 +11,7 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const inside = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
 const encode = value => Buffer.from(canonicalJson(value) + '\n');
 const manifestName = 'material-ownership.json';
-const proofKeys = new Set(('schema_version status completed_at scope_id evidence_scope public_sha256 entry parent_page_id candidate_count actual_remote_candidates actual_local_candidates initially_absent_skill_ids case_ids catalog_skill_ids parity canonical_to_actual identity_map public_cases files evidence visibility catalog source_materials native_root native_skill_root fixture_bindings fidelity controller_git model_calls remote_repairs preparation_reconciled').split(' '));
+const proofKeys = new Set(('schema_version status completed_at scope_id evidence_scope public_sha256 entry parent_page_id candidate_count actual_remote_candidates actual_local_candidates initially_absent_skill_ids case_ids catalog_skill_ids parity canonical_to_actual identity_map public_cases files evidence visibility catalog source_materials native_root native_skill_root fixture_bindings fidelity controller_git model_calls remote_repairs preparation_reconciled source_contract library_id source_sdk readonly_refresh').split(' '));
 const itemKeys = new Set(('skill_id path canonical_sha256 prepared_sha256 actual_sha256 canonical_source prepared_source actual_source receipt raw_receipt matched comparison method public_name_binding public_sdk_path public_sdk_sha256 frontmatter_matches_prepared actual_header_sha256 prepared_header_sha256 canonical_body_comparison prepared_body_comparison').split(' '));
 const fileKeys = new Set(['path', 'sha256', 'bytes', 'relative_path', 'skill_id', 'resource_path', 'mode']);
 const sourceKeys = ['canonical_source', 'prepared_source', 'actual_source', 'receipt', 'raw_receipt'];
@@ -108,6 +109,13 @@ function projection(material, proof, directory) {
     if (location) locations.push({ location, origin_path: ref.path });
   };
   add(material.materialization_proof, null);
+  if (proof.source_contract !== undefined) {
+    assert.equal(proof.source_contract, CURRENT_SOURCE_CONTRACT, 'Unknown material source contract');
+    assert.equal(proof.library_id, proof.entry, 'Current material selects its exact Library root');
+    add(proof.source_sdk, '/source_sdk/path');
+  } else {
+    for (const key of ['library_id', 'source_sdk', 'readonly_refresh']) assert.equal(proof[key], undefined, 'Current material fields require the current source contract');
+  }
   for (const [index, item] of proof.canonical_to_actual.entries()) {
     keys(item, itemKeys, 'parity item');
     assert.ok(typeof item.skill_id === 'string' && item.skill_id && typeof item.path === 'string' && item.path);

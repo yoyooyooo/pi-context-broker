@@ -97,7 +97,7 @@ Analysis success thresholds are measurement criteria. They must be explicitly
 declared for an unbounded condition, rather than inferred from a null execution
 duration. They never stop execution.
 
-## Historical baseline and the new ledger
+## Historical baseline and continued accounting
 
 Create a baseline once with the historical controller that originally verified
 the historical authority:
@@ -113,7 +113,7 @@ accounting and registration references. Future live checks bind the baseline
 receipt and its direct provenance references. They do not recursively replay
 the full historical campaign at each reservation.
 
-The standing ledger is a new directory. `ledger-baseline.json` binds its grant
+The first standing ledger is a new directory. `ledger-baseline.json` binds its grant
 and baseline. Reservations use global ordinals after the historical prefix:
 for a 104-observation baseline, the next filename is `105.json`. Registration
 filenames use local sequence numbers such as `scope-registration-001.json`;
@@ -123,6 +123,18 @@ Both sequences accept three or more digits and sort numerically.
 `inspectStandingLedger({ ledgerRoot, baseline })` reports the history counts,
 local and global counts, exact reservation and registration references, and
 any active lease. It does not infer a remaining allowance.
+
+When work moves to a new task-owned CLI/Broker pair, keep the original grant,
+historical baseline and existing standing ledger. The new work plan names the
+new environment and controller closure; its setup and run state live under that
+environment's `control` directory. The ledger stays under the historical
+baseline environment. Cross-environment continuation requires an existing ledger
+with at least one registration and the same grant. It cannot start another empty
+ledger from the historical prefix, copy a ledger into the new environment, or
+discard intervening observations. Existing lease, reservation and recovery
+checks still apply. Source/build copies may be retired only when no retained
+plan or evidence still references their bytes. Keep the full artifact closure
+as well as the accounting needed by later work.
 
 ## Execution and recovery
 

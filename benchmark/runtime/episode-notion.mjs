@@ -11,7 +11,7 @@ import { canonical } from './episode-evidence.mjs';
 
 const metricChannel = 'context-broker.notion-sdk';
 const resultChannel = 'context-broker.notion-sdk-result';
-const operationsAllowed = new Set(['list', 'files', 'consume', 'read', 'read-resources', 'resolve']);
+const operationsAllowed = new Set(['library-selection', 'library', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search']);
 const validId = id => typeof id === 'string' && /^[a-f0-9-]{36}$/i.test(id);
 
 /** Only these documented observation clocks/metrics are non-semantic. Catalog
@@ -80,7 +80,7 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
       assert.ok(!operations.has(event.id), 'BENCHMARK_NOTION_DUPLICATE_START');
       const observedContext = structuredClone(context());
       const operation = { operation_id: event.id, source_request_id: 'sdk:' + event.pid + ':' + event.id,
-        operation: event.operation, source_id: event.source_id ?? null, database: event.database ?? null,
+        operation: event.operation, source_id: event.source_id ?? null, library: event.library ?? null,
         ...observedContext, tool_call_id: null, tool_association: 'active calls are temporal context; causal tool binding requires returned source proof',
         status: 'pending', result_observed: false };
       operation.start_ref = recorder.record('notion_sdk_event', { ...operation, event });
@@ -137,8 +137,8 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
       for (const operation of operations.values()) {
         if (operation.operation !== 'list' || operation.status !== 'completed' || !operation.result_observed) continue;
         const facets = stableNotionCatalog(operation.value);
-        selected.set(JSON.stringify(canonical([operation.source_id, operation.database])), {
-          source_id: operation.source_id, database: operation.database, facets,
+        selected.set(JSON.stringify(canonical([operation.source_id, operation.library])), {
+          source_id: operation.source_id, library: operation.library, facets,
         });
         evidence.push({ operation_id: operation.operation_id, start_ref: operation.start_ref, end_ref: operation.end_ref, result_ref: operation.result_ref });
       }
@@ -193,7 +193,8 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
       const ref = recorder.record('notion_observation_end', { coverage, operations: own.length,
         observed_owned_http_attempts: observed.events.filter(row => row.phase === 'attempt' && row.kind === 'http').length,
         errors, source_validation_errors: observed.errors, refs });
-      finished = { operations: own, coverage, refs: { ...refs, end: ref },
+      finished = { source_contract: 'notion-sdk-v3/library-root-v1/resource-read-v1/skill-ref-v2/preparation-evidence-v2',
+        operations: own, coverage, refs: { ...refs, end: ref },
         source_scope: 'owned Pi SDK operations and directly observed bundled CLI; other descendants transport remains unknown',
         paths: { source: paths.source, sdk: paths.ledger, responses: paths.responses } };
       return finished;

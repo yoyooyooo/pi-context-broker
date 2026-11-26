@@ -8,7 +8,7 @@ build. The ordinary daily `next` verification gate remains separate.
 ## Current source and retained experiments
 
 The shared product and verification sources now follow `next`
-`41cce74bbe360327a7947ccba83f9ea722bf475f`, with CLI
+`cbe36c332b16c4286afe9d1782e87a9b618a6300`, with CLI
 `6727bea66a3aaea3368a5cc8f84fad83e67d21c1` (SDK v3 and Library root).
 This is a new linear integration commit on the Benchmark history. Existing
 plans, product builds, raw observations and published scores retain their
@@ -40,12 +40,33 @@ The [2026-11-26 resource-read reanalysis](benchmark-relative-source-reanalysis-2
 records the original, intermediate and corrected outcomes across the six retained
 engineering scopes, unchanged actual costs, and the resulting product decision.
 
-The private Benchmark live fixture still uses the earlier `--entry` and
-`--database` interfaces. Before a new live journey uses this source baseline,
-adapt that journey and its analysis contract to the current Library protocol,
-select a new immutable build and complete the normal zero-model loading/admission
-checks. Source synchronization and offline reanalysis do not establish that
-this live migration has passed.
+Current live collection uses collector `1.3.0` and explicitly binds SDK v3,
+Library-root v1, resource-read v1, Skill-ref v2 and preparation-evidence v2.
+The subject includes only the public observer dependencies and the exact paired
+reference producer. Its embedded SDK hash is checked against the Broker bundle;
+the public SDK hash and reference bytes are checked against the paired CLI.
+Current collection cannot interpret old material proofs as newly verified data.
+
+Reuse a retained shared read-only corpus through
+`refreshReadonlyBenchmarkFixture` (CLI `benchmark/fixture.mjs refresh-readonly
+--plan ABS_REQUEST`). The request contains `retainedBinding: { path, sha256 }`,
+`controlRoot`, `buildRoot`, `node` and `git`. Select the completed current build
+and a new control directory. The refresh verifies the existing Library root,
+preserves its catalog identity, rereads the actual source with the current SDK,
+and writes a new material proof and native-equivalent copy. It makes no model
+calls or remote repairs. A root that still needs a schema migration must be
+migrated through its reviewed management workflow before this read-only step.
+
+For a product iteration, compare the smallest existing cases that exercise the
+changed behavior. Freeze reference and candidate builds with the same Benchmark
+runtime, model condition and refreshed material. `configure` captures the actual
+serialized requests without sending them. Inspect that difference before
+`run-standing`. Keep all real outcomes and usage, then decide whether to adopt
+the product change; completing an unrelated historical matrix is not a gate.
+Source synchronization and offline reanalysis alone do not establish a new live
+baseline. Fresh preparation and stateful fixture writes are not supported by
+this current read-only path. They must reject before remote dispatch until their
+own current-contract implementation and readiness check are complete.
 
 ## Choose the authorized execution path
 

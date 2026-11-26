@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { buildCorpus, sealCorpus } from './corpus/index.mjs';
-import { planBenchmarkFixture, prepareBenchmarkFixture, inspectBenchmarkFixture, applyBenchmarkFixtureEvent, preparationResumeDecision, readPreparationDispatches } from './fixture.mjs';
+import { planBenchmarkFixture, prepareBenchmarkFixture, inspectBenchmarkFixture, applyBenchmarkFixtureEvent, reconcileBenchmarkFixtureEvent,
+  resumeBenchmarkFixturePreparation, preparationResumeDecision, readPreparationDispatches, refreshReadonlyBenchmarkFixture } from './fixture.mjs';
 
 const corpus = buildCorpus({ seed: 'benchmark-route-gate-v1', split: 'development', materialVersion: '2' });
 const sharedCases = ['no-skill-01-a','no-skill-02-a','no-skill-03-a','explicit-01-a',
@@ -38,6 +41,17 @@ function offlineWorkerCredential(t) {
     else process.env.NOTION_API_TOKEN = previous;
   });
 }
+
+test('current read-only refresh rejects a mutable retained plan before allocating a new control root', async () => {
+  const root = await scratch(), plan = planBenchmarkFixture(options(['continuation-02-a'], {
+    controlRoot: join(root, 'old'), access: 'episode-owned', episodeId: 'mutable-retained' }));
+  await retainPlan(plan);
+  const path = join(root, 'binding.json'), bytes = JSON.stringify({ status: 'ready', control_root: plan.control_root, access: 'episode-owned' });
+  await writeFile(path, bytes);
+  await assert.rejects(refreshReadonlyBenchmarkFixture({ retainedBinding: { path, sha256: sha(bytes) },
+    controlRoot: join(root, 'new'), buildRoot: '/unused-build', node: process.execPath }), /shared-readonly/);
+  assert.ok(!(await readdir(root)).includes('new'));
+});
 
 test('all forty cases have complete plans and mutable journeys require independent episodes', () => {
   for (const item of corpus.publicCorpus.cases) {
@@ -189,14 +203,12 @@ test('an interrupted preparation never invokes a new public create or init', asy
   await retainPlan(plan);
   await writeFile(join(controlRoot, 'library.json'), JSON.stringify({ entry: '12345678-1234-1234-1234-123456789abc', parent_page_id: '12345678-1234-1234-1234-123456789abc' }));
   await writeFile(join(controlRoot, 'objects-started.json'), JSON.stringify({ dispatched: true }));
-  const result = await prepareBenchmarkFixture(plan);
-  assert.equal(result.status, 'unknown');
-  assert.equal(result.effect_unknown, true);
+  await assert.rejects(prepareBenchmarkFixture(plan), { code: 'BENCHMARK_FIXTURE_CURRENT_PATH_UNSUPPORTED' });
   const entries = await readdir(controlRoot);
   assert.ok(!entries.includes('remote-parent') && !entries.includes('commands'));
   assert.equal((await inspectBenchmarkFixture({ controlRoot })).status, 'pending-reconciliation');
-  const second = await prepareBenchmarkFixture(plan);
-  assert.equal(second.status, 'unknown');
+  await assert.rejects(prepareBenchmarkFixture(plan), { code: 'BENCHMARK_FIXTURE_CURRENT_PATH_UNSUPPORTED' });
+  await assert.rejects(resumeBenchmarkFixturePreparation({ controlRoot }), { code: 'BENCHMARK_FIXTURE_CURRENT_PATH_UNSUPPORTED' });
   assert.ok(!(await readdir(controlRoot)).includes('commands'));
 });
 
@@ -242,15 +254,40 @@ test('operation not_found cannot substitute for independently observed owner abs
 });
 
 
-test('source runtime preflight creates private temp roots and stops before remote allocation without selected Git', async t => {
+test('unmigrated fresh and stateful entry points reject before local allocation or remote dispatch', async t => {
   offlineWorkerCredential(t);
   const root=await scratch(), controlRoot=join(root,'control'), buildRoot=join(root,'build');
   const plan=planBenchmarkFixture(options(['scripts-assets-01-a'],{controlRoot,buildRoot,
     sourceBindings:{'scripts-assets-01-a-manifest':sourceBinding('scripts-assets-01-a-manifest')}}));
-  const result=await prepareBenchmarkFixture(plan);
-  assert.equal(result.status,'unknown');
-  assert.match(result.error.message,/explicitly selected supported Git/);
-  assert.ok((await readdir(join(controlRoot,'controller'))).includes('tmp'));
-  assert.ok(!(await readdir(controlRoot)).includes('remote-parent'));
-  assert.ok(!(await readdir(controlRoot)).includes('init-started.json'));
+  await assert.rejects(prepareBenchmarkFixture(plan), error => error.code === 'BENCHMARK_FIXTURE_CURRENT_PATH_UNSUPPORTED'
+    && error.details.remote_dispatched === false);
+  assert.ok(!(await readdir(root)).includes('control'));
+  const mutable = planBenchmarkFixture(options(['continuation-02-a'], { controlRoot, buildRoot, access: 'episode-owned', episodeId: 'one-episode' }));
+  await retainPlan(mutable);
+  for (const invoke of [applyBenchmarkFixtureEvent, reconcileBenchmarkFixtureEvent])
+    await assert.rejects(invoke({ controlRoot, eventId: 'policy-v2', episodeId: 'one-episode' }), { code: 'BENCHMARK_FIXTURE_CURRENT_PATH_UNSUPPORTED' });
+  assert.deepEqual((await readdir(controlRoot)).sort(), ['owner.json', 'plan.json']);
+});
+
+test('direct worker dispatch cannot bypass the unsupported current mutation boundary', async t => {
+  offlineWorkerCredential(t);
+  const root = await scratch(), controlRoot = join(root, 'control'), buildRoot = join(root, 'build');
+  const plan = planBenchmarkFixture(options(['continuation-02-a'], { controlRoot, buildRoot, access: 'episode-owned', episodeId: 'one-episode' }));
+  await retainPlan(plan); await mkdir(join(controlRoot, 'requests'));
+  const marker = join(root, 'remote-dispatched'), preload = join(root, 'deny-remote.mjs');
+  await writeFile(preload, `import{writeFileSync}from'node:fs';globalThis.fetch=async()=>{writeFileSync(${JSON.stringify(marker)},'fetch');throw new Error('Remote dispatch forbidden in this test');};`);
+  await mkdir(dirname(plan.cli), { recursive: true });
+  await writeFile(plan.cli, `import{writeFileSync}from'node:fs';writeFileSync(${JSON.stringify(marker)},'cli');process.exitCode=1;`);
+  for (const action of ['prepare', 'resume', 'event', 'reconcile-event']) {
+    const requestPath = join(controlRoot, 'requests', action + '.json');
+    await writeFile(requestPath, JSON.stringify({ action, control_root: controlRoot, eventId: 'policy-v2', episodeId: 'one-episode' }));
+    const child = spawnSync(process.execPath, ['--import', preload, fileURLToPath(new URL('./fixture.mjs', import.meta.url)), '--fixture-worker', requestPath],
+      { env: process.env, encoding: 'utf8' });
+    assert.equal(child.status, 0, child.stderr);
+    const result = JSON.parse(await readFile(requestPath + '.result.json', 'utf8'));
+    assert.equal(result.status, 'blocked'); assert.equal(result.effect_unknown, false); assert.equal(result.remote_dispatched, false);
+    assert.equal(result.error.code, 'BENCHMARK_FIXTURE_CURRENT_PATH_UNSUPPORTED');
+  }
+  assert.ok(!(await readdir(root)).includes('remote-dispatched'));
+  assert.ok(!(await readdir(controlRoot)).some(path => ['commands', 'remote-parent', 'init-started.json'].includes(path)));
 });

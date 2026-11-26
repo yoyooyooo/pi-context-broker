@@ -74,6 +74,7 @@ export async function bindMaterializedCases({ cases, materialization }) {
     assert.deepEqual([...binding.public_case.catalog.skill_ids].sort(), [...materialization.catalog_skill_ids].sort());
     const bound = bindPublicCaseToFixture({ publicCase: binding.public_case, skillMapping: mapping, bindings: fixtureBindings });
     return { ...binding, public_case: bound.publicCase, identity_map: bound.identity_map,
+      ...(materialization.source_contract ? { source_contract: materialization.source_contract } : {}),
       materialization_proof: materialization.materialization_proof, skills_root: materialization.native_skill_root,
       skill_inventory: files, notion_entry: materialization.entry,
       protocol_case: { ...binding.protocol_case, prompt_sha256: fingerprint(bound.publicCase.turns),

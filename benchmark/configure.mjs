@@ -41,8 +41,8 @@ export function verifyRetainedSlotCapture({ launch, run, binding, candidate, con
   assert.equal(launch.runtime_config.correlation.candidate_id, conditionId);
   assert.equal(launch.runtime_config.correlation.task_id, binding.id);
   assert.equal(run.build_id, candidate.build_id); assert.equal(run.pi_launch.mode, candidate.mode);
-  if (candidate.mode === 'broker') assert.equal(run.remote.entry, binding.notion_entry);
-  else { assert.equal(run.remote.entry, null); assert.equal(run.pi_launch.native_corpus.source, binding.skills_root); }
+  if (candidate.mode === 'broker') assert.equal(run.remote.library, binding.notion_entry);
+  else { assert.equal(run.remote.library, null); assert.equal(run.pi_launch.native_corpus.source, binding.skills_root); }
 }
 
 /** Owned clean diagnostic arms need their own capture even with no state events. */

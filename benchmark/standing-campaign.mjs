@@ -132,7 +132,7 @@ export async function readStandingWorkPlan({ authorization, workPlan }) {
   assert.deepEqual(value.resource_policy, grant.value.resource_policy); assert.ok(canonical(value.environment_root)); timestamp(value.created_at);
   keys(value.condition_epoch, ['id', 'started_at', 'authorization']); assert.ok(safe(value.condition_epoch.id)); timestamp(value.condition_epoch.started_at);
   assert.deepEqual(value.condition_epoch.authorization, authorization);
-  const baseline = await readStandingHistoryBaseline(value.baseline); assert.equal(baseline.value.environment_root, value.environment_root);
+  const baseline = await readStandingHistoryBaseline(value.baseline);
   await verifyControllerFiles(value.controller); await verifyExecutionImplementation(value.controller.implementation);
   assert.ok(Array.isArray(value.entries) && value.entries.length > 0);
   assert.equal(new Set(value.entries.map(item => item.id)).size, value.entries.length, 'STANDING_DUPLICATE_WORK_ITEM');
@@ -167,9 +167,16 @@ export async function assertStandingSetup(setup) {
   assert.ok(safe(input.attempt_id)); assert.equal(setup.id, input.attempt_id);
   assert.ok(canonical(input.ledger_root) && canonical(setup.control_root));
   const context = await readStandingWorkPlan({ authorization: input.authorization, workPlan: input.work_plan });
-  assert.ok(input.ledger_root.startsWith(context.workPlan.value.environment_root + '/control/'));
+  assert.ok(input.ledger_root.startsWith(context.baseline.value.environment_root + '/control/'));
   assert.ok(setup.control_root.startsWith(context.workPlan.value.environment_root + '/control/'));
   assert.notEqual(input.ledger_root, context.baseline.value.ledger_root, 'STANDING_HISTORY_LEDGER_IMMUTABLE');
+  // A new execution pair continues the existing accounting history. It cannot
+  // create another empty ledger and restart ordinals from the historical prefix.
+  if (context.workPlan.value.environment_root !== context.baseline.value.environment_root) {
+    const ledger = await inspectStandingLedger({ ledgerRoot: input.ledger_root, baseline: context.workPlan.value.baseline });
+    assert.ok(ledger.exists && ledger.local_registrations > 0, 'STANDING_EXISTING_LEDGER_REQUIRED');
+    assert.deepEqual(ledger.authorization, context.authorization.reference, 'STANDING_LEDGER_AUTHORIZATION_CHANGED');
+  }
   const item = context.items.find(item => item.id === input.work_item_id); assert.ok(item, 'STANDING_WORK_ITEM_REQUIRED');
   const template = await verified(item.setup);
   assert.deepEqual(standingSetupProjection(setup), standingSetupProjection(template), 'STANDING_SCIENTIFIC_TEMPLATE_CHANGED');

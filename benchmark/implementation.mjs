@@ -13,7 +13,8 @@ const files = ['implementation.mjs', 'revision.mjs', 'cli.mjs', 'configure.mjs',
   'schemas/environment-manifest.schema.json', 'metrics.json', '../scripts/paired-environment.mjs',
   '../scripts/notion-default-context.mjs', '../scripts/notion-integration-hosts.mjs',
   '../scripts/notion-skill-graph-model-evidence.mjs', '../scripts/skill-consumption-provider.mjs',
-  '../scripts/skill-consumption-source-observer.mjs', '../scripts/skill-preparation-evidence.mjs'];
+  '../scripts/skill-consumption-source-observer.mjs', '../scripts/skill-preparation-evidence.mjs',
+  '../packages/context-broker/src/skill-ref-protocol.ts'];
 
 // Ignore generated-program strings and comments when following static imports.
 // A regex over the whole file would falsely treat bundled replay templates as
