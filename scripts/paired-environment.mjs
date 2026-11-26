@@ -13,6 +13,7 @@ import { promisify } from 'node:util';
 import { captureRuntimeIdentity, compareRuntimeIdentity } from './paired-runtime-identity.mjs';
 import { closeoutEnvironment } from './paired-closeout.mjs';
 import { verifyArchiveInstallation, verifyBundledNotices } from './verify-package-closure.mjs';
+import { inventoryCopyBytes, preflightCapacity } from './paired-capacity.mjs';
 
 const DEFAULTS = {
   cli: 'https://github.com/yoyooyooo/notion-skills-cli.git',
@@ -33,15 +34,19 @@ export const HELP = `Usage:
   node scripts/paired-environment.mjs create --root ABSOLUTE_NEW_DIRECTORY
     [--cli-repository URL --broker-repository URL --cli-ref next --broker-ref next]
     [--pi-entry ABSOLUTE_PI_JS]
+    [--capacity-policy ABSOLUTE_JSON] [--capacity-estimate-bytes BYTES]
   node scripts/paired-environment.mjs build --root ROOT [--id BUILD_ID]
     [--install-mode directory|packed] [--pass-env ENV_NAME ...]
     [--bun-cache-from ABSOLUTE_PRIOR_BUILD --bun-cache-sha256 SHA256]
     [--npm-cache-from ABSOLUTE_PRIOR_BUILD --npm-cache-sha256 SHA256]
+    [--capacity-policy ABSOLUTE_JSON] [--capacity-estimate-bytes BYTES]
   node scripts/paired-environment.mjs check --root ROOT --build BUILD_ID
   node scripts/paired-environment.mjs closeout --root ROOT
     [--manifest ABSOLUTE_SOURCE_DISPOSITIONS_JSON] [--receipt ABSOLUTE_NEW_JSON]
   node scripts/paired-environment.mjs run --root ROOT --build BUILD_ID
     --target cli|pi|command [--id RUN_ID] [--cwd workspace|cli|broker]
+    [--command-source copy|none]
+    [--capacity-policy ABSOLUTE_JSON] [--capacity-estimate-bytes BYTES]
     [--library TEST_LIBRARY_ROOT_UUID | --parent TEST_PARENT_UUID]
     [--skills ABSOLUTE_DIRECTORY] [--models ABSOLUTE_MODELS_JSON]
     [--pi-mode broker|native] [--native-skills ABSOLUTE_DIRECTORY]
@@ -90,7 +95,16 @@ use --pi-entry if your normal command is a custom shell wrapper. Upgrade the sha
 baseline normally; each build/run records and uses the current tool identities.
 Command stdout/stderr go to runs/<id>/*.log; the launcher prints a JSON result.
 Command tests receive their own copy of both source snapshots and dependencies;
---cwd cli|broker selects that run's copy. Stdin defaults to ignore for headless
+--cwd cli|broker selects that run's copy. Runtime-only commands can explicitly
+select --command-source none: no source paths are exposed and cwd must be workspace.
+The selected frozen packages, private wrappers and state are unchanged.
+Capacity is checked before new roots or copies, using actual available bytes and
+known logical copy lengths. capacity-policy.json in the environment and its
+ancestors sets host-specific min_free_bytes and review_below_bytes. All policies,
+including an explicit policy, combine using the stricter limits.
+Unknown clone/install growth stays unknown. Below the review line it requires a
+reviewed --capacity-estimate-bytes budget. Checks are not concurrent reservations.
+Stdin defaults to ignore for headless
 commands; use --stdin inherit for RPC or explicit piped input. The run timeout
 defaults to 10 minutes; positive values may be at most 1 hour. --timeout-ms none
 starts no run deadline timer. Signals still stop only this run's owned process
@@ -105,11 +119,11 @@ This is isolated-development evidence, not the strict current-next/daily gate.
 export function parseArgs(args) {
   const [command, ...rest] = args;
   const allowed = {
-    create: ['root', 'cli-repository', 'broker-repository', 'cli-ref', 'broker-ref', 'pi-entry'],
-    build: ['root', 'id', 'pass-env', 'install-mode', 'bun-cache-from', 'bun-cache-sha256', 'npm-cache-from', 'npm-cache-sha256'], check: ['root', 'build'],
+    create: ['root', 'cli-repository', 'broker-repository', 'cli-ref', 'broker-ref', 'pi-entry', 'capacity-policy', 'capacity-estimate-bytes'],
+    build: ['root', 'id', 'pass-env', 'install-mode', 'bun-cache-from', 'bun-cache-sha256', 'npm-cache-from', 'npm-cache-sha256', 'capacity-policy', 'capacity-estimate-bytes'], check: ['root', 'build'],
     closeout: ['root', 'manifest', 'receipt'],
     run: ['root', 'build', 'target', 'id', 'cwd', 'library', 'parent', 'skills', 'models', 'pass-env', 'timeout-ms', 'stdin',
-      'pi-mode', 'native-skills', 'pi-extension'],
+      'pi-mode', 'native-skills', 'pi-extension', 'command-source', 'capacity-policy', 'capacity-estimate-bytes'],
   };
   assert.ok(allowed[command], 'Choose create, build, check, run, or closeout; see --help');
   const options = { command, args: [], 'pass-env': [], 'pi-extension': [] };
@@ -456,6 +470,7 @@ async function step(command, args, options) {
 export async function createEnvironment(options) {
   supportedNode();
   const root = options.root;
+  const capacity = await preflightCapacity(options, 'create', { known_copy_bytes: 0, unknown: ['repository clone and checkout growth'] });
   const environmentId = randomUUID();
   const node = await toolIdentity(process.execPath), bun = await toolIdentity(await executable('bun'));
   const selectedGit = await toolIdentity(await executable('git'));
@@ -464,6 +479,8 @@ export async function createEnvironment(options) {
   assert.ok(npm.endsWith('.js'), 'The selected Node must provide its npm JavaScript entry');
   const pi = await findPi(options['pi-entry'], npm);
   await fresh(root);
+  try {
+  await save(join(root, 'capacity.json'), capacity);
   await mkdir(join(root, 'logs'));
   const repositories = {};
   for (const name of ['cli', 'broker']) {
@@ -473,6 +490,8 @@ export async function createEnvironment(options) {
     const ref = options[name + '-ref'] ?? 'next';
     assert.ok(!ref.startsWith('-'), 'Invalid ref');
     const path = join(root, name);
+    await save(join(root, 'logs/capacity-clone-' + name + '.json'),
+      await preflightCapacity({ ...options, 'capacity-estimate-bytes': undefined }, 'clone-' + name, { known_copy_bytes: 0, unknown: [] }, path));
     await step('git', ['clone', '--no-hardlinks', '--no-checkout', '--', repository, path],
       { cwd: root, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, log: join(root, 'logs/clone-' + name) });
     const commit = git(path, 'rev-parse', '--verify', (ref.match(/^[a-f0-9]{40}$/) ? ref : 'origin/' + ref) + '^{commit}');
@@ -488,11 +507,16 @@ export async function createEnvironment(options) {
     tools: { node: { ...node, version: process.version }, bun, git: selectedGit, npm, pi } };
   await save(join(root, 'environment.json'), environment);
   return { status: 'created', root, environment_id: environment.environment_id, repositories };
+  } catch (error) { await retainFailure(root, 'create', error); throw error; }
+}
+
+function sourceNames(source) {
+  return [...new Set(execFileSync('git', ['-C', source, 'ls-files', '-c', '-o', '--exclude-standard', '-z'],
+    { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).split('\0').filter(Boolean))].sort();
 }
 
 async function snapshot(source, destination) {
-  const names = [...new Set(execFileSync('git', ['-C', source, 'ls-files', '-c', '-o', '--exclude-standard', '-z'],
-    { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).split('\0').filter(Boolean))].sort();
+  const names = sourceNames(source);
   const commit = git(source, 'rev-parse', 'HEAD'), files = [];
   await mkdir(destination, { recursive: true });
   for (const name of names) {
@@ -508,8 +532,7 @@ async function snapshot(source, destination) {
   }
   for (const file of files) assert.equal(hash(await readFile(join(source, file.path))), file.sha256, 'Source changed while snapshotting: ' + file.path);
   assert.equal(git(source, 'rev-parse', 'HEAD'), commit, 'HEAD changed while snapshotting');
-  const namesAfter = [...new Set(execFileSync('git', ['-C', source, 'ls-files', '-c', '-o', '--exclude-standard', '-z'],
-    { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).split('\0').filter(Boolean))].sort();
+  const namesAfter = sourceNames(source);
   assert.deepEqual(namesAfter, names, 'Source file list changed while snapshotting');
   return { commit, branch: git(source, 'branch', '--show-current'), files, sha256: hash(JSON.stringify(files)) };
 }
@@ -580,10 +603,21 @@ export async function buildEnvironment(options) {
   const environment = await readEnvironment(options.root);
   environment.tools = await currentTools(environment);
   const buildId = validId(options.id ?? id('build')), root = join(options.root, 'builds', buildId);
+  let knownCopyBytes = 0;
+  for (const name of ['cli', 'broker']) for (const file of sourceNames(join(options.root, name))) {
+    try { const info = await lstat(join(options.root, name, file)); assert.ok(info.isFile(), 'Source snapshots require ordinary files'); knownCopyBytes += info.size; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  for (const kind of ['bun', 'npm']) if (options[kind + '-cache-from']) {
+    const cache = join(options[kind + '-cache-from'], 'build-state/cache', kind);
+    knownCopyBytes += await inventoryCopyBytes(cache, await inventory(cache));
+  }
+  const capacity = await preflightCapacity(options, 'build', { known_copy_bytes: knownCopyBytes, unknown: ['dependency downloads, caches, build and package outputs'] }, root);
   await fresh(root);
-  await mkdir(join(root, 'logs')); await mkdir(join(root, 'cache'));
   const sources = {};
   try {
+    await save(join(root, 'capacity.json'), capacity);
+    await mkdir(join(root, 'logs')); await mkdir(join(root, 'cache'));
     for (const name of ['cli', 'broker']) sources[name] = await snapshot(join(options.root, name), join(root, 'source', name));
     const env = runtimeEnvironment(join(root, 'build-state'), root, process.env, options['pass-env'] ?? [], environment.tools.node.path);
     // Git authentication is not needed for the public locked dependency installs.
@@ -596,13 +630,19 @@ export async function buildEnvironment(options) {
     const npmCacheSeed = options['npm-cache-from'] === undefined ? undefined
       : await seedNpmCache(options['npm-cache-from'], root, options['npm-cache-sha256']);
     for (const name of ['cli', 'broker']) {
+      await save(join(root, 'logs/capacity-install-source-' + name + '.json'),
+        await preflightCapacity({ ...options, 'capacity-estimate-bytes': undefined }, 'install-source-' + name, { known_copy_bytes: 0, unknown: [] }, root));
       await step(environment.tools.bun.path, ['install', '--frozen-lockfile', '--ignore-scripts', '--backend', 'copyfile', '--cache-dir', join(root, 'cache', name)],
         { cwd: join(root, 'source', name), env, log: join(root, 'logs/install-source-' + name) });
     }
     await step(environment.tools.bun.path, ['packages/cli/build.ts', '--outdir', join(root, 'cli')],
       { cwd: join(root, 'source/cli'), env, log: join(root, 'logs/build-cli') });
-    const install = async name => step(environment.tools.node.path, [environment.tools.npm, 'install', '--prefer-offline', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
-      { cwd: join(root, name), env, log: join(root, 'logs/install-runtime-' + name) });
+    const install = async name => {
+      await save(join(root, 'logs/capacity-install-runtime-' + name + '.json'),
+        await preflightCapacity({ ...options, 'capacity-estimate-bytes': undefined }, 'install-runtime-' + name, { known_copy_bytes: 0, unknown: [] }, root));
+      return step(environment.tools.node.path, [environment.tools.npm, 'install', '--prefer-offline', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
+        { cwd: join(root, name), env, log: join(root, 'logs/install-runtime-' + name) });
+    };
     await install('cli');
     await step(environment.tools.bun.path, ['run', '--cwd', 'packages/context-broker', 'typecheck'],
       { cwd: join(root, 'source/broker'), env, log: join(root, 'logs/typecheck-broker') });
@@ -613,6 +653,8 @@ export async function buildEnvironment(options) {
     await verifyCurrentBuild(join(root, 'source/cli'), join(root, 'cli'), 'cli-build');
     const brokerReceipt = await verifyCurrentBuild(join(root, 'source/broker'), join(root, 'broker'), 'broker-build');
     await verifySelectedCliPair(root, brokerReceipt);
+    if (installMode === 'packed') await save(join(root, 'logs/capacity-install-packed.json'),
+      await preflightCapacity({ ...options, 'capacity-estimate-bytes': undefined }, 'install-packed', { known_copy_bytes: 0, unknown: [] }, root));
     const candidate = installMode === 'packed' ? await installPackedPair(root, environment.tools, env) : { mode: 'directory' };
     const packages = {};
     for (const name of ['cli', 'broker']) packages[name] = await inventory(join(root, name));
@@ -626,7 +668,7 @@ export async function buildEnvironment(options) {
       launcher: await toolIdentity(fileURLToPath(import.meta.url)) });
     return { status: 'built', root, build_id: buildId, selected_cli_sha256: brokerReceipt.selected_cli.sha256 };
   } catch (error) {
-    await save(join(root, 'failure.json'), { status: 'failed', error: error.message }); throw error;
+    await retainFailure(root, 'build', error); throw error;
   }
 }
 
@@ -768,6 +810,10 @@ export async function runEnvironment(options) {
   const cwdChoice = options.cwd ?? 'workspace';
   assert.ok(['workspace', 'cli', 'broker'].includes(cwdChoice), '--cwd must be workspace, cli, or broker');
   assert.ok(options.target === 'command' || cwdChoice === 'workspace', '--cwd is only for command tests');
+  const commandSource = options['command-source'] ?? 'copy';
+  assert.ok(['copy', 'none'].includes(commandSource), '--command-source must be copy or none');
+  assert.ok(options.target === 'command' || options['command-source'] === undefined, '--command-source is only for command tests');
+  assert.ok(commandSource !== 'none' || cwdChoice === 'workspace', '--command-source none requires --cwd workspace');
   if (options.target === 'pi') validatePiArguments(options.args);
   const timeoutInput = options['timeout-ms'];
   const timeout = timeoutInput === undefined ? 600_000
@@ -778,8 +824,21 @@ export async function runEnvironment(options) {
   const stdin = options.stdin ?? 'ignore';
   assert.ok(['inherit', 'ignore'].includes(stdin), '--stdin must be inherit or ignore');
   const runId = validId(options.id ?? id('run')), root = join(options.root, 'runs', runId);
+  let knownCopyBytes = 0;
+  if (options.target === 'command' && commandSource === 'copy') {
+    const build = await json(join(buildRoot, 'build.json'));
+    knownCopyBytes += await inventoryCopyBytes(join(buildRoot, 'source'), build.source_tree);
+  }
+  for (const path of [options.skills, options['native-skills']].filter(Boolean)) knownCopyBytes += await inventoryCopyBytes(path, await inventory(path));
+  const capacity = await preflightCapacity(options, 'run-preparation', { known_copy_bytes: knownCopyBytes, unknown: [] }, root);
   await fresh(root);
+  let phase = 'run-preparation';
+  try {
+  await save(join(root, 'capacity.json'), capacity);
   const env = runtimeEnvironment(root, buildRoot, process.env, options['pass-env'], environment.tools.node.path, checked.selected_entries);
+  if (options.target === 'command' && commandSource === 'none') {
+    delete env.PAIRED_CLI_SOURCE; delete env.PAIRED_BROKER_SOURCE;
+  }
   for (const path of ['bin', 'tmp', 'config/cli', 'state/cli', 'cache/cli', 'data/cli', 'state/scheduler', 'cache/broker',
     'xdg/config', 'xdg/state', 'xdg/cache', 'xdg/data', 'pi-agent', 'sessions', 'skills', 'workspace']) await mkdir(join(root, path), { recursive: true });
   await writeFile(env.npm_config_userconfig, '', { mode: 0o600, flag: 'wx' });
@@ -787,9 +846,9 @@ export async function runEnvironment(options) {
   const skillRoots = [];
   if (options.skills) {
     assert.ok(isAbsolute(options.skills), '--skills must be absolute');
-    await inventory(options.skills); // Reject links into shared trees before copying.
+    const selected = await inventory(options.skills); // Reject links into shared trees before copying.
     const destination = join(root, 'skills/selected');
-    await cp(options.skills, destination, { recursive: true, dereference: true, errorOnExist: true, force: false });
+    await copyTree(options.skills, destination, selected);
     skillRoots.push(destination);
   }
   const sources = options.library ? [{ id: 'notion', type: 'notion', namespace: 'notion', library: options.library,
@@ -816,7 +875,7 @@ export async function runEnvironment(options) {
     else if (command === 'bun') command = environment.tools.bun.path;
     else if (command === 'ntn-skills' || command === 'pi' || command === 'git') command = join(root, 'bin', command);
   }
-  if (options.target === 'command') {
+  if (options.target === 'command' && commandSource === 'copy') {
     const build = await json(join(buildRoot, 'build.json'));
     await copyTree(join(buildRoot, 'source'), join(root, 'source'), build.source_tree);
     env.PAIRED_CLI_SOURCE = join(root, 'source/cli');
@@ -833,12 +892,17 @@ export async function runEnvironment(options) {
   const runtime = await captureRuntimeIdentity(runtimeSelection);
   await save(join(root, 'run.json'), { version: VERSION, kind: 'isolated-development-run', environment_id: environment.environment_id,
     run_id: runId, root, build_id: options.build, build_root: buildRoot, target: options.target, cwd,
+    command_source: options.target === 'command' ? commandSource : 'none', capacity,
     runtime, pi_launch: piLaunch, candidate: { mode: checked.candidate_mode, entries: checked.selected_entries }, launcher: await toolIdentity(fileURLToPath(import.meta.url)),
     runtime_observer: await toolIdentity(fileURLToPath(new URL('./paired-runtime-identity.mjs', import.meta.url))), stdin, timeout_ms: timeout,
     argument_sha256: hash(JSON.stringify(args)), passed_environment_names: options['pass-env'],
     remote: { library: options.library ?? null, parent: options.parent ?? null },
     paths: Object.fromEntries(Object.entries(env).filter(([name, value]) => name !== 'PATH' && typeof value === 'string' && own(root, value))) });
+  phase = 'run-execution';
+  await save(join(root, 'capacity-before-command.json'),
+    await preflightCapacity({ ...options, 'capacity-estimate-bytes': undefined }, 'run-before-command', { known_copy_bytes: 0, unknown: [] }, root));
   const result = await child(command, args, { cwd, env, log: join(root, 'command'), timeout, stdin: stdin === 'inherit' });
+  phase = 'run-verification';
   const runtimeAfter = await captureRuntimeIdentity(runtimeSelection);
   const runtimeCheck = { ...compareRuntimeIdentity(runtime, runtimeAfter), before: runtime, after: runtimeAfter };
   let artifactStatus = 'passed';
@@ -851,6 +915,13 @@ export async function runEnvironment(options) {
     stdout: join(root, 'command.stdout.log'), stderr: join(root, 'command.stderr.log') };
   await save(join(root, 'result.json'), receipt);
   return receipt;
+  } catch (error) { await retainFailure(root, phase, error); throw error; }
+}
+
+async function retainFailure(root, phase, error) {
+  try { await save(join(root, 'failure.json'), { status: 'failed', phase, error: error.message, code: error.code ?? null,
+    capacity: error.capacity ?? null, retained_root: root, continuation: 'Inspect original state; use a new build/run ID for a retry.' }); }
+  catch (retentionError) { error.retention_error = retentionError.message; }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -862,6 +933,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       const result = await action(options); output(result);
       if (result.status === 'failed') process.exitCode = result.exit_code || 1;
       if (result.status === 'review_required') process.exitCode = 2;
-    } catch (error) { output({ status: 'failed', error: error.message }); process.exitCode = 1; }
+    } catch (error) { output({ status: 'failed', error: error.message, ...(error.code ? { code: error.code } : {}),
+      ...(error.capacity ? { capacity: error.capacity } : {}), ...(error.retention_error ? { retention_error: error.retention_error } : {}) }); process.exitCode = 1; }
   }
 }

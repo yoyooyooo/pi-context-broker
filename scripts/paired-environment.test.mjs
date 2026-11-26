@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { test } from 'node:test';
 import {
-  checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, seedBunCache, seedNpmCache, validatePiArguments, verifySelectedCliPair,
+  buildEnvironment, checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, seedBunCache, seedNpmCache, validatePiArguments, verifySelectedCliPair,
 } from './paired-environment.mjs';
 import { fileInventory, selectedCliInputs } from './next-build-identity.mjs';
 
@@ -185,6 +185,94 @@ test('paired environments isolate writable state and detect artifact changes', a
   ]))));
   const [rootA, rootB] = roots;
   const [buildA, buildB] = await Promise.all(roots.map(root => sealedBuild(root)));
+
+  await t.test('capacity policy blocks create, build and run before reserving their destination or launching work', async () => {
+    const policy = join(retained, 'refusal-policy.json');
+    await writeJson(policy, { version: 1, min_free_bytes: Number.MAX_SAFE_INTEGER });
+    const denied = { 'capacity-policy': policy };
+    const newRoot = join(retained, 'capacity-refused-create');
+    await assert.rejects(createEnvironment({ root: newRoot, ...denied }), error => error.code === 'PAIRED_CAPACITY_REFUSED');
+    await assert.rejects(stat(newRoot), { code: 'ENOENT' });
+    await assert.rejects(buildEnvironment({ root: rootA, id: 'capacity-refused-build', ...denied }), error => error.code === 'PAIRED_CAPACITY_REFUSED');
+    await assert.rejects(stat(join(rootA, 'builds/capacity-refused-build')), { code: 'ENOENT' });
+    for (const source of ['copy', 'none']) {
+      await assert.rejects(runEnvironment({ root: rootA, build: 'fixture', target: 'command', id: 'capacity-refused-' + source,
+        'command-source': source, args: ['node', '-e', 'throw new Error("must not launch")'], ...denied }), error => error.code === 'PAIRED_CAPACITY_REFUSED');
+      await assert.rejects(stat(join(rootA, 'runs/capacity-refused-' + source)), { code: 'ENOENT' });
+    }
+    assert.equal((await checkEnvironment({ root: rootA, build: 'fixture' })).status, 'passed');
+  });
+
+  await t.test('runtime-only commands retain private CLI/Pi launch and state without source or dependency copies', async () => {
+    const skill = join(retained, 'runtime-only-native-skills'); await mkdir(skill);
+    await writeFile(join(skill, 'SKILL.md'), '---\nname: runtime-fixture\ndescription: runtime fixture\n---\n# Selected runtime fixture\n');
+    const payload = `const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+const run=process.env.PAIRED_RUN_ROOT;
+if(fs.existsSync(path.join(run,'source')))throw new Error('Unexpected source copy');
+for(const key of ['PAIRED_CLI_SOURCE','PAIRED_BROKER_SOURCE','CONTEXT_BROKER_GRAPH_CORE','NTN_SKILLS_BUILD_ENTRY'])if(process.env[key])throw new Error('Unexpected source binding '+key);
+const cli=cp.spawnSync('ntn-skills',['--help'],{encoding:'utf8'});if(cli.status!==0)throw new Error(cli.stderr);
+const pi=cp.spawnSync('pi',['--version'],{encoding:'utf8'});if(pi.status!==0)throw new Error(pi.stderr);
+fs.writeFileSync(path.join(process.env.NTN_SKILLS_HOME,'owner'),run);
+console.log(JSON.stringify({cwd:process.cwd(),state:process.env.NTN_SKILLS_HOME,cli:JSON.parse(cli.stdout),pi:pi.stdout.trim()}));`;
+    const receipts = await Promise.all(['broker', 'native'].map((mode, index) => runEnvironment({ root: roots[index], build: 'fixture',
+      target: 'command', id: 'runtime-only-' + mode, 'command-source': 'none', 'pi-mode': mode,
+      ...(mode === 'native' ? { 'native-skills': skill } : {}), args: ['node', '-e', payload] })));
+    for (const receipt of receipts) {
+      assert.equal(receipt.status, 'passed');
+      const record = await readJson(join(receipt.root, 'run.json'));
+      assert.equal(record.command_source, 'none');
+      assert.ok(record.capacity.estimated_additional_bytes < 1024, 'Runtime-only preparation must not include the frozen source tree');
+      assert.equal(record.capacity.status, 'allowed');
+      await assert.rejects(stat(join(receipt.root, 'source')), { code: 'ENOENT' });
+      const result = await readJson(receipt.stdout);
+      assert.equal(result.cwd, join(receipt.root, 'workspace'));
+      assert.ok(inside(receipt.root, result.state));
+      assert.deepEqual(result.cli.args, ['--help']);
+      assert.equal(result.pi, '0.0.0-fixture');
+      assert.equal(await readFile(join(result.state, 'owner'), 'utf8'), receipt.root);
+    }
+    for (const cwd of ['cli', 'broker']) await assert.rejects(runEnvironment({ root: rootA, build: 'fixture', target: 'command',
+      'command-source': 'none', cwd, id: 'invalid-runtime-cwd-' + cwd, args: ['node', '--version'] }), /requires --cwd workspace/);
+    await assert.rejects(runEnvironment({ root: rootA, build: 'fixture', target: 'cli', 'command-source': 'none', args: [] }), /only for command/);
+    assert.equal((await checkEnvironment({ root: rootA, build: 'fixture' })).status, 'passed');
+    assert.equal((await checkEnvironment({ root: rootB, build: 'fixture' })).status, 'passed');
+  });
+
+  await t.test('preparation failure preserves its phase and original error and never retries over the root', async () => {
+    const broken = join(retained, 'broken-models.json'); await writeFile(broken, 'not JSON');
+    const options = { root: rootA, build: 'fixture', target: 'command', 'command-source': 'none', id: 'failed-preparation', models: broken,
+      args: ['node', '-e', 'throw new Error("must not launch")'] };
+    await assert.rejects(runEnvironment(options), /JSON/);
+    const failurePath = join(rootA, 'runs/failed-preparation/failure.json'), before = await readFile(failurePath, 'utf8');
+    const failure = JSON.parse(before);
+    assert.equal(failure.phase, 'run-preparation'); assert.match(failure.error, /JSON/);
+    await assert.rejects(stat(join(rootA, 'runs/failed-preparation/command.process.json')), { code: 'ENOENT' });
+    await assert.rejects(runEnvironment(options), /EEXIST/);
+    assert.equal(await readFile(failurePath, 'utf8'), before);
+  });
+
+  await t.test('Broker Skill copies preserve internal links without duplicating bytes or exposing the input', async () => {
+    const selected = join(retained, 'linked-skill-input'); await mkdir(selected);
+    const skillText = '---\nname: linked-fixture\ndescription: linked input fixture\n---\nRead [fixture](alias/payload).\n';
+    await writeFile(join(selected, 'SKILL.md'), skillText);
+    await mkdir(join(selected, 'resources'));
+    await writeFile(join(selected, 'resources/payload'), Buffer.alloc(65536, 42));
+    await symlink('resources', join(selected, 'alias'));
+    const payload = `const fs=require('node:fs'),path=require('node:path');
+const selected=JSON.parse(fs.readFileSync(process.env.CONTEXT_BROKER_CONFIG)).skillRoots[0];
+const alias=path.join(selected,'alias');
+if(!fs.lstatSync(alias).isSymbolicLink())throw new Error('Skill target was duplicated');
+if(fs.realpathSync(alias)!==path.join(selected,'resources'))throw new Error('Skill link escaped');
+const referenced=path.join(selected,fs.readFileSync(path.join(selected,'SKILL.md'),'utf8').split('](')[1].split(')')[0]);
+if(fs.readFileSync(referenced).length!==65536)throw new Error('Relative Skill reference failed');
+fs.writeFileSync(referenced,'run-owned change');console.log('private skill link');`;
+    const receipt = await runEnvironment({ root: rootA, build: 'fixture', target: 'command', id: 'linked-runtime-input',
+      'command-source': 'none', skills: selected, args: ['node', '-e', payload] });
+    assert.equal(receipt.status, 'passed');
+    const capacity = await readJson(join(receipt.root, 'capacity.json'));
+    assert.equal(capacity.estimated_additional_bytes, 65536 + Buffer.byteLength(skillText));
+    assert.deepEqual(await readFile(join(selected, 'resources/payload')), Buffer.alloc(65536, 42));
+  });
 
   await t.test('the caller-selected Git remains selected after the run PATH is isolated', async () => {
     const originalPath = process.env.PATH;

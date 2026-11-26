@@ -3,7 +3,7 @@
 // This proves loading and isolation, not model cognition or remote Notion behavior.
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { checkEnvironment, runEnvironment } from './paired-environment.mjs';
@@ -14,7 +14,7 @@ const HELP = `Usage:
     --other-root B --other-build BUILD_B
 
 Requires two independently created and built environments. Executes both private
-CLIs, then Broker/native Pi modes through the direct target and private pi wrapper.
+CLIs, then Broker/native Pi modes through the direct target and runtime-only private pi wrapper.
 Each of the four Pi conditions runs both environments concurrently. The existing
 deterministic provider captures the final context. An observer records the actual
 argv, settings, commands, tools and state paths after resources have loaded.
@@ -158,6 +158,7 @@ try {
         const prompt = (mode === 'broker' ? '$paired-isolation-probe' : '/skill:paired-isolation-probe') + ' State the selected isolation marker.';
         const args = ['--provider', 'context-broker-e2e', '--model', 'fake', '--thinking', 'off', '-p', '--mode', 'json', prompt];
         return { root: item.root, build: item.build, target, id: proofId + '-' + mode + '-' + target + '-' + index,
+          ...(target === 'command' ? { 'command-source': 'none' } : {}),
           'pi-mode': mode, ...(mode === 'broker' ? { skills: item.corpus } : { 'native-skills': item.corpus }),
           'pi-extension': [item.provider], 'pass-env': [], 'timeout-ms': '120000',
           args: target === 'pi' ? args : ['pi', ...args] };
@@ -175,6 +176,11 @@ try {
         const observed = await rows(join(result.root, 'pi-loaded.jsonl'));
         assert.ok(observed.length > 0, 'Missing actual Pi resource observation');
         const probe = observed.at(-1), run = await json(join(result.root, 'run.json'));
+        if (target === 'command') {
+          assert.equal(run.command_source, 'none');
+          await assert.rejects(lstat(join(result.root, 'source')), { code: 'ENOENT' });
+          assert.ok(!('PAIRED_CLI_SOURCE' in run.paths) && !('PAIRED_BROKER_SOURCE' in run.paths));
+        }
         const launch = run.pi_launch;
         assert.equal(launch.mode, mode);
         assert.equal(await realpath(probe.node), run.runtime.node.path, 'Pi used another Node entry');
