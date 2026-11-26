@@ -283,6 +283,12 @@ test('content discovery uses independent native and supporting-file material wit
   assert.throws(() => validateAgentCorpus(invalid), /Only an explicit content-search scenario/u);
 });
 
+test('candidate operation assertions keep explicit nonnegative count boundaries', () => {
+  assert.doesNotThrow(() => validateAgentAssertion({ kind: 'source-operation-attempts', operation: 'candidates', min: 1, max: 2 }));
+  for (const bounds of [{}, { min: -1 }, { max: 0.5 }, { min: 2, max: 1 }])
+    assert.throws(() => validateAgentAssertion({ kind: 'source-operation-attempts', operation: 'candidates', ...bounds }));
+});
+
 test('content assertions and authorization preparation reject implicit or invented selectors', () => {
   assert.doesNotThrow(() => validateAgentAssertion({ kind: 'content-search', object: 'target', query: 'business.phrase', body: 'target@A/SKILL.md' }));
   assert.doesNotThrow(() => validateAgentAssertion({ kind: 'source-operation-attempts', operation: 'content-search', max: 0 }));

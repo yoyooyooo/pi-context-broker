@@ -71,7 +71,7 @@ for (const kind of ['native', 'wrapper']) test('ordinary ' + kind + ' binds the 
   const loader = await workflowHostLoader(f.host, f.owned, f.observed, f.args);
   assert.deepEqual(loader.hostProcess, proof);
   assert.equal(loader.loaderArtifact.realpath, await realpath(f.loader));
-  assert.equal(loader.createJiti().origin, f.loader, 'Workflow loading must follow the observed Pi package, including through a shell launcher');
+  assert.equal(loader.createJiti().origin, await realpath(f.loader), 'Workflow loading must follow the observed Pi package, including through a shell launcher');
   const source = await readSourceObservation(f.sourceLedger);
   assert.equal(source.complete, true);
   assert.equal(source.events.find(row => row.phase === 'source_observer_start').pid, proof.pid);
@@ -665,23 +665,32 @@ test('doctor cannot borrow SDK structure or authorize missing, foreign, partial 
 });
 
 test('daily SDK3 selection is local and remote metadata keeps the exact expected root', () => {
-  const operations = ['library-selection', 'library', 'list'].map(operation => ({ operation, source_id: 'same-source-name', library: operation === 'library-selection' ? null : libraryRoot }));
+  const operations = ['library-selection', 'candidates', 'library', 'list'].map(operation => ({ operation, source_id: 'same-source-name', library: operation === 'library-selection' ? null : libraryRoot }));
   assert.doesNotThrow(() => validateDailySdkOperations(operations, libraryRoot));
-  for (const operation of ['library', 'list']) assert.throws(() => validateDailySdkOperations(
+  for (const operation of ['candidates', 'library', 'list']) assert.throws(() => validateDailySdkOperations(
     operations.map(row => row.operation === operation ? { ...row, library: foreignRoot } : row), libraryRoot), /another Library/u);
-  for (const operation of ['consume', 'read', 'files', 'read-resources', 'resolve'])
+  assert.throws(() => validateDailySdkOperations(operations.map(row => row.operation === 'candidates' ? { ...row, library: null } : row), libraryRoot), /another Library/u);
+  assert.throws(() => validateDailySdkOperations(operations.filter(row => row.operation !== 'list'), libraryRoot), /Actual SDK catalog discovery/u);
+  for (const operation of ['consume', 'read', 'files', 'read-resources', 'resolve', 'content-search', 'future-operation'])
     assert.throws(() => validateDailySdkOperations([...operations, { operation, library: libraryRoot }], libraryRoot), /cannot consume/u);
+});
+
+for (const operation of ['library-selection', 'candidates']) test(operation + ' cannot attribute HTTP to a local operation', () => {
   const local = sdkObservation();
-  local.events = local.events.map(row => row.operation ? { ...row, operation: 'library-selection' } : row);
+  local.events = local.events.map(row => row.operation ? { ...row, operation } : row);
   assert.throws(() => classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: local }), /cannot perform HTTP/u);
   local.events = local.events.filter(row => row.phase !== 'attempt').map(row => row.phase === 'metrics' ? { ...row, total_requests: 0 } : row);
   assert.equal(classifyDailyHttp([], new Set(), new Set([10]), { sourceObservation: local }).source.length, 0);
+  assert.throws(() => classifyDailyHttp(sdkHttp, new Set(), new Set([10]), { sourceObservation: local }), /no exact SDK request ID match/u);
+  const waited = structuredClone(local);
+  waited.events.splice(2, 0, { phase: 'wait', kind: 'http', requestId: 'sdk:10:one', wait_kind: 'queue', milliseconds: 1 });
+  assert.throws(() => classifyDailyHttp([], new Set(), new Set([10]), { sourceObservation: waited }), /HTTP trace/u);
 });
 
-test('local selection still requires observed complete zero-request metrics', () => {
+for (const operation of ['library-selection', 'candidates']) test(operation + ' still requires observed complete zero-request metrics', () => {
   const local = sdkObservation();
   local.events = local.events.filter(row => row.phase !== 'attempt').map(row => row.operation
-    ? { ...row, operation: 'library-selection' }
+    ? { ...row, operation }
     : row.phase === 'metrics' ? { ...row, total_requests: 0 } : row);
   assert.equal(classifyDailyHttp([], new Set(), new Set([10]), { sourceObservation: local }).sdk.length, 0);
   for (const metrics of [

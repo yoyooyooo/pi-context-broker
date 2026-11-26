@@ -203,6 +203,39 @@ for (const operation of ['library-selection', 'library', 'list', 'files', 'read-
   assert.equal(trace.events.find(row => row.phase === 'metrics').total_requests, 2);
 });
 
+test('candidate snapshots retain exact local SDK attribution and zero-request metrics without candidate bodies', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const id = crypto.randomUUID(), operation = 'candidates', source_id = 'source-a';
+  const library = '01234567-89ab-cdef-0123-456789abcdef';
+  publishSdk(id, 'start', { operation, source_id, library, candidates: [{ body: secret, url: privateUrl }] });
+  publishSdk(id, 'end', { operation, source_id, library, elapsed_ms: 1, status: 'completed', sdk_started: true,
+    metrics_observed: true, request_metrics: { trace_enabled: true, total_requests: 0, trace_dropped: 0, trace: [], credentials: secret } });
+  observer.finish();
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
+  assert.deepEqual(trace.events.filter(row => ['started', 'completed'].includes(row.phase))
+    .map(row => ({ operation: row.operation, source_id: row.source_id, library: row.library })),
+  [{ operation, source_id, library }, { operation, source_id, library }]);
+  assert.equal(trace.events.filter(row => ['attempt', 'wait'].includes(row.phase)).length, 0);
+  const metrics = trace.events.find(row => row.phase === 'metrics');
+  assert.equal(metrics.observed, true); assert.equal(metrics.complete, true); assert.equal(metrics.total_requests, 0);
+  const saved = fs.readFileSync(item.output, 'utf8');
+  assert.equal(saved.includes(secret), false); assert.equal(saved.includes(privateUrl), false);
+});
+
+test('candidate HTTP remains observed evidence instead of being hidden as a local zero-request result', async t => {
+  const item = fixture(), observer = observe(item); t.after(observer.finish);
+  const id = crypto.randomUUID(), operation = 'candidates';
+  publishSdk(id, 'start', { operation });
+  publishSdk(id, 'end', { operation, elapsed_ms: 4, status: 'completed', sdk_started: true,
+    metrics_observed: true, request_metrics: requestMetrics() });
+  observer.finish();
+  const trace = await readSourceObservation(item.output);
+  assert.equal(trace.complete, true); assert.deepEqual(trace.errors, []);
+  assert.equal(trace.events.filter(row => row.phase === 'attempt').length, 2);
+  assert.equal(trace.events.find(row => row.phase === 'metrics').total_requests, 2);
+});
+
 test('an unknown SDK operation remains an observation error instead of a complete zero-cost ledger', async t => {
   const item = fixture(), observer = observe(item); t.after(observer.finish);
   const id = crypto.randomUUID(), operation = 'future-operation';
