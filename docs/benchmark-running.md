@@ -40,23 +40,34 @@ The [2026-11-26 resource-read reanalysis](benchmark-relative-source-reanalysis-2
 records the original, intermediate and corrected outcomes across the six retained
 engineering scopes, unchanged actual costs, and the resulting product decision.
 
-Current collection uses collector `1.3.1` and explicitly binds SDK v3,
+Current collection uses collector `1.3.2` and explicitly binds SDK v3,
 Library-root v1, resource-read v1, Skill-ref v2 and preparation-evidence v2.
 The subject includes only the public observer dependencies and the exact paired
 reference producer. Its embedded SDK hash is checked against the Broker bundle;
 the public SDK hash and reference bytes are checked against the paired CLI.
 Current collection cannot interpret old material proofs as newly verified data.
 
-Collector `1.3.1` recognizes a successful `notion_list` metadata response only
-when its captured owner and admission match the reviewed Broker producer, its
+Collector `1.3.2` recognizes a successful `notion_list` metadata response only
+when its captured owner and admission match a reviewed Broker producer, its
 closed output matches the delivered metadata projection, and the record identity
 matches an actually observed SDK directory. The reviewed hashes for
-`src/index.ts` and `src/host-skills.ts` are pinned in the collector. A change to
-either producer returns this tool to unknown coverage until reviewed. Content
+`src/index.ts` and `src/host-skills.ts` are pinned as complete pairs in the
+collector: the retained `cbe36c3` producer and the reviewed `3c78765f` producer
+with local candidate snapshots. The list output branch and its metadata
+readiness checks are unchanged between those revisions. Mixing hashes across
+pairs or changing either file returns this tool to unknown coverage until
+reviewed. Content
 search, added body fields, unknown shapes and arbitrary shell calls remain
 opaque. This evidence excludes metadata delivery from Skill consumption; it does
 not prove Skill adoption or an exhaustive absence result. Apply the correction
 to existing runs through report-only `reanalysis`, preserving original bundles.
+
+The `candidates` SDK operation reads local discovery metadata. The observer
+retains its paired start, result, end, raw receipt and request metrics, including
+misses, denials, staleness and partial coverage. These receipts do not populate
+catalog, directory, body, adoption or absence evidence; startup admission still
+requires the actual `list` result. Zero HTTP use requires complete observed
+metrics and is never inferred from the operation name.
 
 Reuse a retained shared read-only corpus through
 `refreshReadonlyBenchmarkFixture` (CLI `benchmark/fixture.mjs refresh-readonly

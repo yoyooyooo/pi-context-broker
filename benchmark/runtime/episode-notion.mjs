@@ -11,7 +11,7 @@ import { canonical } from './episode-evidence.mjs';
 
 const metricChannel = 'context-broker.notion-sdk';
 const resultChannel = 'context-broker.notion-sdk-result';
-const operationsAllowed = new Set(['library-selection', 'library', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search']);
+const operationsAllowed = new Set(['library-selection', 'library', 'candidates', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search']);
 const validId = id => typeof id === 'string' && /^[a-f0-9-]{36}$/i.test(id);
 
 const currentViewDirectory = value => validId(value.library_id) && value.coverage?.method === 'explicit_view'
@@ -166,6 +166,8 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
     candidate(sources = []) {
       const selected = new Map(), evidence = [];
       for (const operation of operations.values()) {
+        // Local candidate snapshots are retained as receipts, never substituted
+        // for actual catalog/directory observations, body delivery or adoption.
         if (operation.operation !== 'list' || operation.status !== 'completed' || !operation.result_observed) continue;
         const facets = stableNotionCatalog(operation.value);
         const key = JSON.stringify(canonical([operation.source_id, operation.library]));
