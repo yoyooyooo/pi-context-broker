@@ -45,7 +45,8 @@ test('capacity probes the actual destination ancestor and refuses before creatin
   await writeFile(join(root, 'explicit.json'), JSON.stringify({ version: 1, min_free_bytes: 0, review_below_bytes: 0 }));
   const inherited = await capacityPolicy(join(root, 'environment'), join(root, 'explicit.json'));
   assert.equal(inherited.min_free_bytes, Number.MAX_SAFE_INTEGER, 'An explicit weaker policy cannot bypass an ancestor');
-  assert.equal(inherited.sources.length, 2);
+  assert.ok(inherited.sources.some(source => source.path === policyPath));
+  assert.ok(inherited.sources.some(source => source.path === join(root, 'explicit.json')));
   const nestedRoot = join(root, 'nested/environment');
   await mkdir(nestedRoot, { recursive: true });
   await writeFile(join(nestedRoot, 'capacity-policy.json'), JSON.stringify({ version: 1, min_free_bytes: 0 }));
