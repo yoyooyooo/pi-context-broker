@@ -1488,7 +1488,6 @@ async function dispatchContextBrokerCommand(args: string, ctx: ExtensionContext,
 }
 
 export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
-  if (pi.pi === undefined) await preparePiDollarAutocompleteEditor(pi);
   const adapter = pi.pi !== undefined ? createOmpHostAdapter(pi) : createPiHostAdapter(pi);
   const paths = adapter.paths;
   const config = readConfig(paths);
@@ -2135,7 +2134,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     },
   };
   pi.registerCommand?.("context-broker", command);
-
+  if (pi.pi === undefined) await preparePiDollarAutocompleteEditor(pi);
 }
 
 export {

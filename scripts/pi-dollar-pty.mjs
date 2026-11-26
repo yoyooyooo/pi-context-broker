@@ -318,7 +318,8 @@ export async function run(options) {
     let current = await start('cold-local-first');
     let written = await active.key('$', 'first-dollar');
     let shown = await active.wait(menu, 'first-dollar-menu');
-    const localFirstMs = ms(shown, written); assert.match(active.text(), /\$aa-pty-local/u);
+    const localFirstMs = ms(shown, written);
+    await active.wait(text => /\$aa-pty-local/u.test(text), 'local-scan-joined-first-menu');
     assert.match(active.text(), /\$ntn-skills@builtin \[skill\]/u, 'Offline maintenance must be discoverable while the source is held');
     assert.equal(remote(active.text()), false, 'Cold remote cannot appear before its HTTP boundary');
     await active.key('ntn-skills', 'offline-builtin-filter');
@@ -392,7 +393,8 @@ export async function run(options) {
     current = await start('cold-source-unavailable', { cold: true, sourceOrigin: outage.origin });
     written = await active.key('$', 'offline-first-dollar'); shown = await active.wait(menu, 'offline-local-menu');
     const unavailableFirstMs = ms(shown, written);
-    assert.match(active.text(), /\$aa-pty-local/u); assert.match(active.text(), /\$ntn-skills@builtin \[skill\]/u);
+    await active.wait(text => /\$aa-pty-local/u.test(text), 'offline-local-scan-joined-menu');
+    assert.match(active.text(), /\$ntn-skills@builtin \[skill\]/u);
     const failedDeadline = Date.now() + 30000;
     let failed;
     while (!(failed = (await rows(join(current.directory, 'sdk.jsonl'))).find(row => row.event === 'end' && row.status === 'failed' && row.operation === 'library'))) {

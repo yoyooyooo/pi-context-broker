@@ -11,13 +11,13 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "eb9153cdc6e3b6665633d80e6bca804bb72df7447eccd5ab98510640798da205",
+    "packages/context-broker/src/host-skills.ts": "096b2a93e409a048ddc73ec4ca1520cc91098100f570a02a9990d95781f68044",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
     "packages/context-broker/src/session-source-snapshot.ts": "dc3c97493542f11345aadbc35e2b49e351f1047cf5063ed50e09b2177b312622",
     "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
-    "packages/context-broker/scripts/host-prepare.test.ts": "651aa20540dcbabed282c8600cfc8a1c732bfbfed042fc9538ce493484a44061",
+    "packages/context-broker/scripts/host-prepare.test.ts": "fa65af1465159de3497073292ecadd77ef1e26700fe86660d5d4388b5dc6d444",
     "packages/context-broker/scripts/session-active.test.ts": "9e6b85e7db03965db5dbe5a2741472c2eee9c32e09f80c484f92f093d0d17186",
     "packages/context-broker/scripts/native-read-session.test.ts": "a00f16b9c35e3a3a03e31665aff043534bd8385d97e15e4948af9703ff1fcab1",
     "packages/context-broker/scripts/skill-context-session.test.ts": "f9917449d7af5c0f1c111b8966b8b98717bf8e2cd709f0ba9fd3eb9a7eb891c6",
@@ -28,7 +28,7 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "bf57522e3cd63a398f05085dbfd04068eade37018a897bf269ee3c2d68836fbd",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "453d30268dc2bbe1f70202f919fd80e31d2f570b5848820bbd0e8da28e951169",
-    "packages/context-broker/src/index.ts": "e76e3c3ac75e5c6f1ca9668e60f5addc625471ce68cb3a7cec20b02f4ea60482",
+    "packages/context-broker/src/index.ts": "8cd7961dfaa97d3acc44d031762b6bd52eb7f462588047019bac0e5d83e8c7b6",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
     "packages/context-broker/src/notion-source.ts": "b63c5cb8f9a5d3a2d053e228e8fc6d9d70b9af454b57db8108325c4a17c6a28d",
@@ -44,7 +44,7 @@
     "packages/context-broker/scripts/notion-entry.test.ts": "7ff3897a2cd5aebed74786139c1d565e63ce58023c25774b0757f4ff5e1fc238",
     "packages/context-broker/src/skill-catalog-projection.ts": "6d26296f67f8fd54374ee0c3dd0078173ad1c2b5da09499fabfafaf89b584c2e",
     "packages/context-broker/scripts/read-intent-status.test.ts": "80314e6d13cd6dd90b797e125d0cccef777da57b5b10bffa95c83a3c1383b624",
-    "packages/context-broker/scripts/resource-read-host.test.ts": "7e7104c90791aa5cc34e65db4cf0d78d358768769543f5fb155a2e72284562b1",
+    "packages/context-broker/scripts/resource-read-host.test.ts": "744ad53cedf6eae020fcea1a94a969eb3c25fc96c9b4b96fd761cb6abaf6014c",
     "packages/context-broker/scripts/fixed-resource-source.test.ts": "0b49d9e14ac4f4c1fe5289714f3f1ecbb9c69baa15f3eb1c4cc2e9b793023275",
     "packages/context-broker/src/resource-read-types.ts": "83bbf31109482048a472e58d580d6a09dcc605435db71528e33343570cbbeebd",
     "packages/context-broker/src/content-publication.ts": "0dbb3fb6e12798474d08856649ebb4282483b7241e9830ac3f55daef81ddd4f8",
@@ -72,20 +72,20 @@
     "packages/context-broker/scripts/soft-miss-regressions.test.ts": "f7c3b733733b122d8fb4e7fca4ea48e0c6f1672cab9a85018e111f29c1fbe880",
     "packages/context-broker/scripts/input-guard.test.ts": "957d10624ebb248a05c5ed63bef528b7fc46418f6cafe41a61e4e3977e57190d",
     "packages/context-broker/src/skill-preparation.ts": "195ca6ded47974e2f1a2f6a150557e2c18f90afe5068816318fdd9b5516c87d4",
-    "packages/context-broker/src/nonblocking-context.ts": "eb4b70618333384415ba03c62d4aa9d738cd61044ffd8864f75e6a63bacd84e7",
+    "packages/context-broker/src/nonblocking-context.ts": "c996a55b1e14abfb4e69e198bf244c44d372fb67c6d3242dff62a3ea5c412c06",
     "packages/context-broker/src/activation-feedback.ts": "607ef6f22e7c40106b6048f14a3863876a78db5ca307345a70117f1cdaa78d5b",
     "packages/context-broker/src/host-text.ts": "89d0c4d1591667ab71ee0b8b41e8dba7d9f7aae12f778590149ef49425a3b77c",
     "packages/context-broker/src/types.ts": "1c0114476ee68660b440537209ac98b960509a69fc730e63e84a4745c918cddc",
-    "packages/context-broker/scripts/nonblocking-context.test.ts": "96888a84d5e132f0c4ebac4956c4559ec737ca64c52538635695da62b6abaf39",
+    "packages/context-broker/scripts/nonblocking-context.test.ts": "6d949157c04cf39bd712c0fdca024a9ce803d15e37de5f5a7ec9fa3ebfe8a3b2",
     "packages/context-broker/scripts/activation-feedback.test.ts": "9f15a1bbbad5f5a12e8c0544ef10037d85b44d0dbe127ecff08cd000c2dac6ce",
     "packages/context-broker/src/accepted-selections.ts": "792eeb195d47c3a925e9cc56224af1bcf512584a13483cf9db2e37f14fa0d19e",
     "packages/context-broker/src/completion-candidates.ts": "270b111a87596f60c0026411fc71d87b438588495a0a6403b121c932e53f2724",
     "packages/context-broker/src/dollar.ts": "325dc550c88d7ad7e3b1c6db2768f29bcefde441c622ea391409bf423f2ad7d9",
-    "packages/context-broker/src/pi-dollar-editor.ts": "cb1f2ac59e3a5b10e8ef79ba1d81b7c0055d827c44ec732fbe3d99be1da47290",
+    "packages/context-broker/src/pi-dollar-editor.ts": "3ef381720a6ca482cdba1ce9f06dc0d5a4788942c7e163a463284b23269a6016",
     "packages/context-broker/scripts/accepted-selections.test.ts": "5854988f8d8c2e4db46abb73a456a8e31dc39e2ddfd5d2edbc60e7c2ce729a83",
     "packages/context-broker/scripts/catalog-menu.test.ts": "45dfd4b3918898fb088f9c04425977c1221767036e6ac4d0a6cd9fe10e829410",
     "packages/context-broker/scripts/catalog-menu-session.test.ts": "1cea4b2637f3b1e0f430e44ee173aa3658deac9442a3b5db90fb35a8425980a3",
-    "packages/context-broker/scripts/pi-dollar-editor.test.ts": "9d9b1cd39e9b4b631ef46fa7bb2e6df4009c91814563eb1b0e844f46e932fc4a",
+    "packages/context-broker/scripts/pi-dollar-editor.test.ts": "8fa1ad413620bd8381c61a5643cacabcb79e4ea25c233341990035262deca613",
     "packages/context-broker/scripts/fixtures/completion-menu.ts": "982e2cc09ee665c6d24df5b4b0ba544775e5ce56f926a5a115b306b7ced3612b",
     "packages/context-broker/scripts/pi-queued-input.test.ts": "6f00d63e07082cdab7e60e6916758d6dd621d5ee25b38fb5ef472585826ea090",
     "packages/context-broker/scripts/notion-sdk.test.ts": "0bebac7afc04079cf6229d4a51d559a68e653a6d1acbbc5ca79db1ff5c4dbeb3"
@@ -137,7 +137,8 @@
         "final-request.ts assessFinalRequestPayload/createFinalRequestLedger; concrete request roles and entity digests outside finite variables",
         "session-graph.ts applyRootRelease; host-skills.ts notion_ctl working_set release resets pending graphs/candidates and advances generation",
         "host-skills.ts warnAndRetire/continueContext and nonblocking-context.ts withoutBrokerInstructions/continueWithoutBrokerPayload; concrete source retirement without new delivery proof",
-        "host-skills.ts run.preparations: per-receipt graphs persist only at provider acceptance; warning retires all unconfirmed preparation owners"
+        "host-skills.ts run.preparations: per-receipt graphs persist only at provider acceptance; warning retires all unconfirmed preparation owners",
+        "host-skills.ts captured recovery episode and nonblocking-context.ts exact-result digest; a new successful result only retries the original context/closure/provider boundary"
       ],
       "atomicity": "Headers, turn completion, draft return, host apply/drop and later public projection acknowledgement are separate transitions. A 2xx response proves request acceptance and may record active delivery before stream completion. A later failed turn does not erase that historical acceptance. No draft is a persisted projection until observed in the public branch.",
       "replays": [
@@ -153,7 +154,8 @@
         "consumer-state.test.ts FV05: different-session late provider callback followed by completed turn returns no old-source drafts; provider-session-identity mutation remains an actual guard check",
         "nonblocking-context.test.ts and activation-feedback.test.ts: native payload ownership and display-only readiness/confirmation are concrete obligations outside finite variables",
         "scalar-resource-read-host.test.ts: a final AUTH_REQUIRED keeps original user text, withholds inspected resource bytes and grants no new persistence after 2xx",
-        "host-prepare.test.ts and resource-read-host.test.ts: interrupted scalar/batch reads clear pending receipts, withhold late bodies and add no active delivery proof; ordinary native read stays unchanged"
+        "host-prepare.test.ts and resource-read-host.test.ts: interrupted scalar/batch reads clear pending receipts, withhold late bodies and add no active delivery proof; ordinary native read stays unchanged",
+        "nonblocking-context.test.ts and host-prepare.test.ts: native array shape, normalized error status, changed same-ID results, old episode retirement and missing Requires after fresh recovery; actual installed Responses conversion is separate offline evidence"
       ]
     },
     "RecoveryClosure": {
@@ -163,7 +165,8 @@
         "index.ts restoreActive source acquisition and original snapshot checks",
         "host-skills.ts fixed-restoration observations and final context publication",
         "session-graph.ts selectedClosure",
-        "skill-preparation.ts withPreparationDeadline and host-skills.ts context/continueContext; concrete whole-context timeout and instruction retirement without host cancellation"
+        "skill-preparation.ts withPreparationDeadline and host-skills.ts context/continueContext; concrete whole-context timeout and instruction retirement without host cancellation",
+        "host-skills.ts toolResultRecovery and nonblocking-context.ts brokerToolResultDigest/withoutBrokerInstructions; same-turn recovery episodes and native result shape are concrete obligations outside the three-prompt model"
       ],
       "atomicity": "Restore start, SDK completion, final closure/permission projection and next prompt are separate transitions. Current Notion edits and observed denial may interleave before projection. An epoch change cancels this operation; it cannot publish old bytes. A failed fixed read becomes a local capability warning, not a persistent prompt abort.",
       "fairness": "Weak fairness for local start/restore completion/projection and supplying the next prompt. Assumes every external acquisition terminates with bytes, failure, timeout or cancellation. ConversationCanContinue proves that all three prompts can reach a provider request or explicit cancellation under those assumptions; it does not prove arbitrary provider completion, model task quality, UI input, or eventual Notion availability.",
@@ -175,7 +178,10 @@
         "session-recovery.test.ts: restored root/Requires ownership follows active plus pending use, not an undelivered newer selected graph; original bodies remain exact",
         "notion-page-url.test.ts: authorized exact owner from physical page URLs, same fixed pins and explicit current refresh; URL parsing is outside finite-model variables",
         "host-refresh.test.ts and resource-read-host.test.ts: confirmed scalar/batch originals after directory omission; scope, physical/stable denial and lookup AUTH continuation. Exact identity relationships are concrete obligations, not modeled alias states.",
-        "host-prepare.test.ts and nonblocking-context.test.ts: suspended metadata/restoration, non-cooperative producer, cancellation and late completion; original request continues and no partial source state is published"
+        "host-prepare.test.ts and nonblocking-context.test.ts: suspended metadata/restoration, non-cooperative producer, cancellation and late completion; original request continues and no partial source state is published",
+        "nonblocking-context.test.ts: native array tool-result fallback; exact content/source receipt/isError binding with ordinary host metadata preserved",
+        "host-prepare.test.ts: a fresh verified use/main read/resource read recovers only in its captured episode; old results, late old-episode reads, partial resources, AUTH_REQUIRED and missing final Requires stay refused",
+        "resource-read-host.test.ts: complete text/empty/binary batch recovery; truncated batch cannot reopen a failed context"
       ]
     },
     "LibrarySession": {
@@ -207,15 +213,17 @@
         "completion-candidates.ts createCompletionSnapshot.accept owner/order/refreshed checks",
         "index.ts menuIsCurrent/readMenuCache/activateMenu and lifecycle fences",
         "pi-dollar-editor.ts request/publish/valid/dismiss and identity-based selection",
-        "dollar.ts memory filtering and displayed item acceptance"
+        "dollar.ts memory filtering and displayed item acceptance",
+        "index.ts preparePiDollarAutocompleteEditor after successful extension setup and before TUI input; pi-dollar-editor.ts observePiEditorStartup/take/dispose and same-scope provider replacement are concrete native lifecycle boundaries"
       ],
-      "atomicity": "ReturnCache/ReturnFresh admit memory snapshots after asynchronous acquisition. UpdateMenu separately changes the screen; the user can accept old displayed B between these actions. Escape/Accept end one intent. SDK refusal filtering is an input contract, not atomic Store I/O or authorization.",
+      "atomicity": "ReturnCache/ReturnFresh admit memory snapshots after asynchronous acquisition. UpdateMenu separately changes the screen; the user can accept old displayed B between these actions. Escape/Accept end one intent. SDK refusal filtering is an input contract, not atomic Store I/O or authorization. At the retained-intent abstraction, valid same-scope/same-draft provider replacement is stutter before UpdateMenu; native widget rebuilding and waiting are not modeled. Initial native handoff precedes this model Init.",
       "replays": [
         "catalog-menu.test.ts: late cache/refresh, foreign/retired owner, complete-empty removal and displayed target",
         "notion-source-sdk.test.ts: denied metadata grants no projection/current/body authority",
-        "pi-dollar-editor.test.ts: actual Editor/SelectList update, waiting/open Esc, stable/withdrawn highlight, silent replacement and noncooperative producer"
+        "pi-dollar-editor.test.ts: actual Editor/SelectList update, waiting/open Esc, stable/withdrawn highlight, silent replacement and noncooperative producer",
+        "pi-dollar-editor.test.ts: initial native input handoff, early Escape/unknown history, exact focused instance/draft/cursor/scope, native return/throw and foreign method/descriptor changes; same-scope open/waiting provider rebinding and no implicit Tab acceptance"
       ],
-      "limitations": "The historical 18-state design run is not this maintained model. Cold/partial snapshots, arbitrary removals, source/session changes, Promise termination, terminal frames, milliseconds and actual Skill use require separate implementation/host evidence."
+      "limitations": "The historical 18-state design run is not this maintained model. Cold/partial snapshots, arbitrary removals, source/session changes, Promise termination, terminal frames, milliseconds and actual Skill use require separate implementation/host evidence. Native startup observation, waiting-intent preservation and provider installation/rebinding require actual Editor and full-configuration terminal replays; these safety invariants do not establish them."
     }
   },
   "cases": [
@@ -1326,7 +1334,7 @@
       "admission_and_deadline": "Pi preserves native editor and queue ownership. Each accepted queued input retains its Library context, session, generation, text and images; preparation is adopted when the native user message reaches a later context, without a second input hook. The context stage before each model request has one shared 60-second deadline covering Library identity, print/JSON metadata, explicit preflight/task prompt and active restoration. Timeout retires Broker acquisition without aborting the operation; each asynchronous source continuation still checks its captured cancellation and current run before publication. User Stop and session replacement keep their original authority. This is a per-context-stage budget, not one budget for an agent turn containing multiple model/tool round trips; the existing internal fixed-restoration 30-second read budget is unchanged.",
       "retirement": "warnAndRetire releases only the unconfirmed preparation, removes its owned loaded records, pending graphs, candidates, source projections and pending persistence, and records one warning. It does not manufacture a new selected vector, authorization observation, activation receipt or boundary draft. Existing confirmed history is not rewritten. assertPiRun, precise source access, complete closure/body checks, graph validation and public projection acknowledgement remain enforced.",
       "payload_ownership": "withoutBrokerInstructions retains inline receipts until verified owned body spans are removed, including when public projection cannot be read; raw native input restoration binds timestamp and complete content. continueWithoutBrokerPayload changes known native message slots using original logical ownership, exact text/images and tool-call IDs. Replays preserve ordinary quotations, user/tool images, tool pairs, native reasoning/signatures and schemas; same-count swaps, changed source roles, mixed tool/text blocks and repeated warnings are covered. It never recursively replaces matching strings across an opaque payload.",
-      "provider_and_persistence": "A failed final guard continues the original user request with unverified Skill instructions withheld and no new confirmation/persistence eligibility. A later 2xx cannot revive a degraded run. A session write failure after accepted delivery warns without cancelling the response or claiming already-sent instructions were never loaded. Original complete delivery, current session/generation, completed turn, original branch user and actual applied-projection checks still decide active and persistent state.",
+      "provider_and_persistence": "A failed final guard continues the original user request with unverified Skill instructions withheld and no new confirmation/persistence eligibility. A later 2xx alone cannot revive a degraded run; a new verified result must re-enter the complete context and delivery guards. A session write failure after accepted delivery warns without cancelling the response or claiming already-sent instructions were never loaded. Original complete delivery, current session/generation, completed turn, original branch user and actual applied-projection checks still decide active and persistent state.",
       "presentation": "activation-feedback records display-only content:[] rows. Explicit preparation is compact while loading, ready after acquisition, loaded only on the provider-acceptance path, read for inspection and unavailable on failure. Expanded limits and source details do not enter model input. Optional UI errors cannot turn a source warning into a failed user turn. The existing list/use/read tool renderers remain separate unchanged execution paths.",
       "replays": [
         "host-prepare.test.ts: suspended print metadata and active restoration share the production 60000ms context deadline; original user/image and warning survive the actual returned provider payload; late producer cannot publish body, selected/active entries or delivery confirmation",
@@ -1337,10 +1345,22 @@
         "consumer-state.test.ts FV05: different-session late headers are followed by turn_end and must return no old-source drafts; provider-session-identity still targets the actual unique assertPiRun guard",
         "activation-feedback.test.ts: ready versus loaded, provider confirmation, expanded limits, resumed display, one unavailable row, late result retirement, Stop/session clearing and optional UI failure",
         "host-refresh.test.ts: production index shutdown completes before an uncooperative catalog producer; its signal is aborted, late output is rejected and branch/notifications remain unchanged",
-        "scalar-resource-read-host.test.ts: AUTH_REQUIRED still rejects the resource read and withholds exact inspected bytes at final request; the original request continues, a subsequent 2xx does not persist selection, and the original snapshot remains unchanged"
+        "scalar-resource-read-host.test.ts: AUTH_REQUIRED still rejects the resource read and withholds exact inspected bytes at final request; the original request continues, a subsequent 2xx does not persist selection, and the original snapshot remains unchanged",
+        "nonblocking-context.test.ts: native array tool-result fallback; exact content/source receipt/isError binding with ordinary host metadata preserved",
+        "host-prepare.test.ts: a fresh verified use/main read/resource read recovers only in its captured episode; old results, late old-episode reads, partial resources, AUTH_REQUIRED and missing final Requires stay refused",
+        "resource-read-host.test.ts: complete text/empty/binary batch recovery; truncated batch cannot reopen a failed context"
       ],
       "proof_limit": "Finite model/config/view bytes, bounds, cases, independent expected_rules, negative configurations, tool lock and all mutation targets are unchanged. Native queue order, image preservation, wall-clock deadlines, display rendering and known-provider payload repair are concrete implementation obligations outside the finite variables. Unknown provider shapes receive no guessed native repair or wire proof and rely on the earlier safe logical context. Exact entity confirmation remains limited to the existing OpenAI-completions/Undici ledger. Reviewed hashes bind these bytes, not implementation refinement, live Notion, actual Pi rendering or model task success; execute the existing formal, actual-guard and runtime gates separately.",
-      "shutdown": "Reviewed index ownCatalog and session_shutdown: shutdown advances refreshGeneration, aborts the catalog owner and clears catalog references without joining uncooperative producers. The unused pendingCatalogs Set is removed; the returned original promise still has a rejection observer, checks its combined signal before/after acquisition, and publishCatalog retains owner plus exact-entry fences. Production-index host-refresh replay holds the SDK list operation past shutdown, requires bounded shutdown while the producer is unfinished, then verifies late tool rejection and no new branch entry or notification."
+      "shutdown": "Reviewed index ownCatalog and session_shutdown: shutdown advances refreshGeneration, aborts the catalog owner and clears catalog references without joining uncooperative producers. The unused pendingCatalogs Set is removed; the returned original promise still has a rejection observer, checks its combined signal before/after acquisition, and publishCatalog retains owner plus exact-entry fences. Production-index host-refresh replay holds the SDK list operation past shutdown, requires bounded shutdown while the producer is unfinished, then verifies late tool rejection and no new branch entry or notification.",
+      "native_result_recovery": {
+        "reviewed_from": "3c78765ff82c36bbb2b0e2d75a1157180e00b59c",
+        "native_shape": "withoutBrokerInstructions preserves an incoming native tool-result array when replacing owned source text/images with a warning. It retains tool-call identity and valid effects, without changing ordinary user/tool images or the original branch. A direct context fallback must remain valid before the native serializer runs; post-serialization payload repair cannot establish that earlier obligation.",
+        "episode_owner": "Each warning retires the previous acquisition episode. toolResultRecovery captures the current Pi run and the episode Map before acquisition. Only a complete successful use/main read/scalar resource read/batch result can register its tool-call ID and exact owned-result digest, and only while that captured run, session, generation, signal and Map remain current. A later failure replaces the Map, so a previously admitted late result cannot reopen the new failure episode.",
+        "exact_result": "brokerToolResultDigest binds content, the three owned source receipt fields and normalized isError=true. Native undefined/false error flags are equivalent; timestamps and unrelated display metadata are not proof inputs. A retained call with modified text, receipt or error status is withheld. Scalar partial reads, truncated batches and failed authorization never register a recovery receipt. Native details-only result patches bind the original event content plus the returned receipt.",
+        "authority": "Recovery permits a new context attempt; it grants no availability, authorization, activation or persistence. Retired calls and inline source spans remain withheld. The new result still passes context projection, restoration, current access, complete body/Requires, final closure and the original provider/turn/projection boundaries. A later 2xx alone cannot revive failed source delivery. Responses remains on the existing logical boundary; this change adds no wire-verification capability.",
+        "evidence": "The existing nonblocking-context, host-prepare and resource-read-host regressions cover native array shape, exact-result mutation, complete use/root/Requires and read recovery, denied/partial acquisition, an old episode's late result and Required removal before final delivery. AH-1327 also retains an offline replay of the original failed native session through installed Pi 1.6 session projection, context clone, convertToLlm and the actual Responses converter, including its original TypeError and corrected payload. That offline replay is not a new provider request or natural-model success.",
+        "proof_limit": "Same-turn failure episodes, native content representations and result digests are not finite state variables in RecoveryClosure or DeliveryBoundary. Existing models, bounds, cases, independent expected_rules and mutation targets remain unchanged. Their reruns check the existing bounded contracts; the new obligations require these implementation and actual-host replays."
+      }
     },
     "pi_public_tool_deadlines": {
       "reviewed_from": "9eae1bf2d806ddb219149e1971331f4d2e23be01",
@@ -1404,7 +1424,15 @@
         "pi-dollar-editor.test.ts against a selected real Pi package",
         "pi-queued-input.test.ts: real host resize, original SessionEntry message identity, cloned context and repeated projection"
       ],
-      "mutations": "The three accepted-candidate-* isolated baseline/assertion-failure/restored checks cover directory waiting, physical rebinding and own-source refusal as concrete_obligations. Existing library, graph commit, provider/session, turn and public projection mutations remain."
+      "mutations": "The three accepted-candidate-* isolated baseline/assertion-failure/restored checks cover directory waiting, physical rebinding and own-source refusal as concrete_obligations. Existing library, graph commit, provider/session, turn and public projection mutations remain.",
+      "native_startup": {
+        "owner": "index prepares the Pi startup observer after successful extension setup and command registration, while the extension factory is still running and before native TUI input starts. A preceding configuration/setup failure never installs this observer whose cleanup handlers the loader would discard. The adapter records only actual input handled by the focused native Editor, keyed by that instance. Initial handoff requires the same TUI/focused instance, unchanged input method, exact draft/cursor/prefix and an unchanged scope when one was known. An existing copied dollar draft without an observed input episode grants no open intent.",
+        "retirement": "Early Escape, interrupt/submission, changed draft/cursor/scope/focus or replacement of the observed input method cannot become a startup intent. Observation delegates native input exactly once and preserves its return value and exception; observation failures only discard the optional record. Handoff, no-UI startup and shutdown retire observation. Restoration checks the complete installed method descriptor and never overwrites another extension's replacement, wrapper or flags; any remaining captured observer is inert.",
+        "provider_rebinding": "For a current same-scope/same-draft intent, native provider replacement retains the intent and highlighted identity, renews the subscription and request, and never turns a delayed result into implicit Tab acceptance. A dismissed, withdrawn, foreign-scope or changed-draft selection stays fenced. At the retained-intent abstraction this replacement is stutter before the existing UpdateMenu action; native widget rebuilding and waiting phases remain concrete behavior.",
+        "local_first": "activateMenu immediately publishes configured bundled local records into the same memory owner, then merges that same bundled array with the asynchronous local scan under the existing deduplication and owner fences. The existing cache/remote publication path is unchanged; visible candidates grant no source-consumption authority.",
+        "evidence": "Actual Pi Editor regressions cover initial input handoff, early Escape, unknown history, cursor/draft/scope changes, focused-instance ownership, native return/throw behavior, foreign method/descriptor changes and provider rebinding. AH-1327 separately retains full-configuration native startup success and early-Escape terminal replays, with their source identities and observed latency. A warm controlled PTY sample does not substitute for an earlier full-configuration startup keypress.",
+        "proof_limit": "MenuPublication starts with an already-open dropdown in one fixed scope. Initial native handoff occurs before that model's Init; waiting-intent preservation, provider installation/rebinding, native focus, Promise scheduling and terminal latency are not represented. Passing NoDismissedReopen or ChoiceIdentityPreserved does not prove this startup handoff or its latency."
+      }
     }
   },
   "library_session_design": {
