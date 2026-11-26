@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rename, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, realpath, rename, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { verifyTurnRuntimeBuild, runSubject } from './execute.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-const names = ['subject.mjs', 'turn-bridge.mjs', 'runtime/episode-runner.mjs'];
+const names = ['subject.mjs', 'turn-bridge.mjs', 'runtime/episode-runner.mjs', 'runtime/episode-visibility.mjs'];
 const binding = { public_case: { turns: [{ id: 'turn-1', prompt: 'Read.' }, { id: 'turn-2', prompt: 'Continue.' }] } };
 async function fixture() {
   const environmentRoot = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-turn-runtime-build-'))), buildId = 'owned-build';
@@ -33,7 +33,7 @@ test('every declared turn-control feature requires the current frozen common run
   for (const current of [binding, { public_case: { turns: [{ id: 'turn-1' }] }, events: [{ id: 'policy-v2' }] },
     { public_case: { turns: [{ id: 'turn-1' }] }, clarification: [{ topic_id: 'delivery-mode' }] }]) {
     const proof = await verifyTurnRuntimeBuild({ ...f, binding: current });
-    assert.equal(proof.status, 'verified'); assert.equal(proof.files.length, 3);
+    assert.equal(proof.status, 'verified'); assert.equal(proof.files.length, 4); assert.equal(proof.command_source, 'none');
     assert.ok(proof.files.every(file => file.current.sha256 === file.build.sha256 && file.build.sha256 === file.frozen_sha256));
   }
 });
@@ -62,10 +62,11 @@ test('a large legal source inventory passes both build reads while source and en
     && error.details.reason === 'TURN_RUNTIME_ORDINARY_FILE');
 });
 
-test('historical single-turn work does not acquire a new turn-runtime requirement', async () => {
-  const proof = await verifyTurnRuntimeBuild({ environmentRoot: await realpath(tmpdir()), buildId: 'not-read',
+test('new single-turn dispatch also requires a current frozen runtime-only subject', async () => {
+  const f = await fixture();
+  const proof = await verifyTurnRuntimeBuild({ ...f,
     binding: { public_case: { turns: [{ id: 'turn-1' }] }, events: [], clarification: [] } });
-  assert.equal(proof.status, 'not_required'); assert.deepEqual(proof.files, []);
+  assert.equal(proof.status, 'verified'); assert.equal(proof.required, true); assert.equal(proof.files.length, 4);
 });
 
 test('changed or missing subject, bridge and episode runner cannot pass via a fresh manifest', async () => {
@@ -92,9 +93,10 @@ test('a partial or foreign build receipt cannot authorize fixture preparation', 
   }
 });
 
-test('an incomplete build or bytes no longer matching its frozen manifest fail before credentials and dispatch', async () => {
-  for (const captureOnly of [true, false]) {
+test('an old or incomplete subject fails before credentials, control directories and dispatch, including one-turn work', async () => {
+  for (const captureOnly of [true, false]) for (const turns of [1, 2]) {
     const f = await fixture(); let credentialReads = 0, dispatches = 0;
+    f.binding = { public_case: { turns: binding.public_case.turns.slice(0, turns) } };
     await writeFile(join(f.buildRoot, 'source/broker/benchmark/subject.mjs'), '// old wrapper\n');
     await assert.rejects(runSubject({ ...f, mode: 'native', modelsFile: join(f.environmentRoot, 'models-not-read.json'),
       controlRoot: join(f.environmentRoot, 'control-not-created'), runId: 'no-dispatch', captureOnly,
@@ -103,6 +105,7 @@ test('an incomplete build or bytes no longer matching its frozen manifest fail b
       runEnvironment: async () => { dispatches++; throw new Error('Subject must not be dispatched'); },
     }), { code: 'BENCHMARK_TURN_RUNTIME_BUILD_MISMATCH' });
     assert.equal(credentialReads, 0); assert.equal(dispatches, 0);
+    await assert.rejects(lstat(join(f.environmentRoot, 'control-not-created')), { code: 'ENOENT' });
     await rename(join(f.buildRoot, 'build.json'), join(f.buildRoot, 'build-retained.json'));
     await assert.rejects(verifyTurnRuntimeBuild(f), { code: 'BENCHMARK_TURN_RUNTIME_BUILD_MISMATCH' });
   }

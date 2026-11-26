@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { cp, lstat, mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { cp, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { inventory } from '../scripts/paired-environment.mjs';
+import { assertRunSourceAbsent, assertSourceEnvironmentAbsent, RUNTIME_ONLY_SOURCE } from './runtime/episode-visibility.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-const within = (parent, child) => { const rel = relative(parent, child); return rel !== '..' && !rel.startsWith('..' + sep) && !isAbsolute(rel); };
 
 async function filesAt(root, prefix = '', includeMode = false) {
   const files = [];
@@ -63,27 +62,20 @@ export async function launchSubject(launch) {
   const sharedRun = JSON.parse(await readFile(join(runRoot, 'run.json'), 'utf8'));
   assert.equal(sharedRun.run_id, launch.run_id);
   assert.equal(sharedRun.build_root, buildRoot);
-  assert.ok(isAbsolute(launch.source_retention_root) && !within(runRoot, launch.source_retention_root));
+  assert.equal(sharedRun.command_source, 'none', 'Benchmark subjects require a runtime-only shared command run');
+  await assertRunSourceAbsent(runRoot);
+  assertSourceEnvironmentAbsent();
   assert.ok(isAbsolute(launch.input_root));
-  const source = join(runRoot, 'source'), retained = join(launch.source_retention_root, launch.run_id);
-  assert.ok((await lstat(source)).isDirectory());
-  await mkdir(launch.source_retention_root, { recursive: true });
-  const sourceFiles = await inventory(source);
-  await rename(source, retained);
-  await save(join(launch.source_retention_root, launch.run_id + '.json'), { version: 1, run_id: launch.run_id,
-    from: source, to: retained, disposition: 'retained_outside_subject_run', inventory_sha256: sourceFiles.sha256,
-    file_count: sourceFiles.files.length, at: new Date().toISOString(), isolation: 'declared-visibility-not-os-sandbox' });
   const projectionRoot = join(runRoot, 'subject-runtime');
   const projection = await projectSubjectRuntime({ buildRoot, projectionRoot });
   const visibility = join(runRoot, 'subject-visibility.json');
-  await save(visibility, { version: 1, source_moved_outside_run: true, projection_root: 'subject-runtime', files: projection });
+  await save(visibility, { version: 1, ...RUNTIME_ONLY_SOURCE, projection_root: 'subject-runtime', files: projection });
   const inputsBefore = await inventoryPublicInputs(launch.input_root);
   assert.equal(sha(JSON.stringify(inputsBefore)), launch.input_inventory_sha256, 'Frozen public task inputs changed');
   const workspace = join(runRoot, 'workspace');
   for (const item of await readdir(launch.input_root)) await cp(join(launch.input_root, item), join(workspace, item), { recursive: true, dereference: false, errorOnExist: true, force: false });
   assert.deepEqual(await inventoryPublicInputs(workspace), inputsBefore, 'Public task copy differs');
   await save(join(runRoot, 'subject-inputs.json'), { version: 1, files: inputsBefore, inventory_sha256: launch.input_inventory_sha256 });
-  for (const key of ['PAIRED_CLI_SOURCE', 'PAIRED_BROKER_SOURCE', 'CONTEXT_BROKER_GRAPH_CORE', 'NTN_SKILLS_BUILD_ENTRY']) delete process.env[key];
   const config = { ...launch.runtime_config, runRoot, buildRoot, workspace, agentDir: join(runRoot, 'pi-agent'),
     controlDir: join(runRoot, 'benchmark/runtime'), visibility };
   const { runEpisode } = await import(pathToFileURL(join(projectionRoot, 'benchmark/runtime/episode-runner.mjs')).href);

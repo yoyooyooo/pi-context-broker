@@ -8,6 +8,7 @@ import test from 'node:test';
 import { deliveredSourceBodies } from './collect.mjs';
 import { CURRENT_SOURCE_CONTRACT, loadCurrentSourceViews } from './current-source-views.mjs';
 import { projectSubjectRuntime } from './subject.mjs';
+import { RUNTIME_ONLY_SOURCE } from './runtime/episode-visibility.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const measure = text => ({ sha256: sha(text), bytes: Buffer.byteLength(text) });
@@ -23,6 +24,12 @@ test('current source views reject a changed projection before reading its files'
   const visibility = { source_moved_outside_run: true, projection: { files: [{ path: 'unread-file', sha256: 'a'.repeat(64) }] } };
   await assert.rejects(loadCurrentSourceViews({ runRoot: '/unread-run', buildRoot: '/unread-build',
     candidate: { snapshot: { visibility }, projection: { visibility: { ...visibility, projection: { files: [] } } } } }), { code: 'ERR_ASSERTION' });
+});
+
+test('current source views reject a changed source disposition even when the projected files match', async () => {
+  const visibility = { ...RUNTIME_ONLY_SOURCE, projection: { files: [] } };
+  await assert.rejects(loadCurrentSourceViews({ runRoot: '/unread-run', buildRoot: '/unread-build',
+    candidate: { snapshot: { visibility }, projection: { visibility: { source_moved_outside_run: true, projection: { files: [] } } } } }), /visibility changed/);
 });
 
 test('current collection binds the captured SDK3 parser and resolves Library-qualified prepared resources without SDK2 fallback', {
