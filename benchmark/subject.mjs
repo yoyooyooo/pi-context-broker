@@ -25,6 +25,36 @@ async function filesAt(root, prefix = '', includeMode = false) {
 }
 export const inventoryPublicInputs = root => filesAt(root, '', true);
 
+/** Exact public runtime dependencies, including the paired SDK's reference protocol. */
+export async function projectSubjectRuntime({ buildRoot, projectionRoot }) {
+  const origin = join(buildRoot, 'source/broker');
+  const selected = (await readdir(join(origin, 'benchmark/runtime'))).filter(name => /^episode-.*\.mjs$/.test(name) && !name.endsWith('.test.mjs'));
+  assert.ok(selected.includes('episode-runner.mjs'));
+  const sourcePaths = [
+    ...selected.map(name => 'benchmark/runtime/' + name), 'benchmark/turn-bridge.mjs', 'benchmark/reported-model.mjs',
+    ...['skill-consumption-provider.mjs', 'skill-consumption-source-observer.mjs', 'notion-skill-graph-model-evidence.mjs',
+      'notion-default-context.mjs', 'notion-integration-hosts.mjs', 'notion-agent-inventory-evidence.mjs',
+      'skill-preparation-evidence.mjs'].map(name => 'scripts/' + name),
+    'packages/context-broker/src/native-reference.ts', 'packages/context-broker/src/skill-ref-protocol.ts',
+  ];
+  for (const path of sourcePaths) {
+    await mkdir(dirname(join(projectionRoot, path)), { recursive: true });
+    await cp(join(origin, path), join(projectionRoot, path), { errorOnExist: true, force: false });
+  }
+  const packaged = join(buildRoot, 'broker/dist');
+  const manifest = JSON.parse(await readFile(join(packaged, 'ntn-skills-runtime.json'), 'utf8'));
+  assert.equal(manifest.version, 1); assert.equal(manifest.package, 'ntn-skills');
+  assert.equal(manifest.sdk_version, 3); assert.equal(manifest.skill_ref_version, 2);
+  assert.equal(manifest.sdk_sha256, sha(await readFile(join(packaged, 'ntn-skills-sdk.mjs'))), 'Reference protocol must belong to the paired SDK bundle');
+  assert.equal(manifest.ref_sha256, sha(await readFile(join(buildRoot, 'cli/dist/ref.cjs'))), 'Reference protocol must match the paired CLI export');
+  assert.equal(manifest.ref_sha256, sha(await readFile(join(packaged, 'ntn-skills-ref.cjs'))), 'Paired reference bytes changed');
+  for (const name of ['ntn-skills-ref.cjs', 'ntn-skills-runtime.json'])
+    await cp(join(packaged, name), join(projectionRoot, 'packages/context-broker/src', name), { errorOnExist: true, force: false });
+  const projection = await filesAt(projectionRoot);
+  assert.ok(projection.every(file => !/(?:^|\/)(?:corpus|analysis|evidence|tests?)(?:\/|$)|(?:oracle|grader|\.test\.)/.test(file.path)));
+  return projection;
+}
+
 /** Controller wrapper inside one shared-isolator command run. It never contains the grading oracle. */
 export async function launchSubject(launch) {
   const runRoot = process.env.PAIRED_RUN_ROOT, buildRoot = process.env.PAIRED_BUILD_ROOT;
@@ -44,21 +74,7 @@ export async function launchSubject(launch) {
     from: source, to: retained, disposition: 'retained_outside_subject_run', inventory_sha256: sourceFiles.sha256,
     file_count: sourceFiles.files.length, at: new Date().toISOString(), isolation: 'declared-visibility-not-os-sandbox' });
   const projectionRoot = join(runRoot, 'subject-runtime');
-  await mkdir(join(projectionRoot, 'benchmark/runtime'), { recursive: true });
-  await mkdir(join(projectionRoot, 'scripts'));
-  const origin = join(buildRoot, 'source/broker');
-  const selected = (await readdir(join(origin, 'benchmark/runtime'))).filter(name => /^episode-.*\.mjs$/.test(name) && !name.endsWith('.test.mjs'));
-  assert.ok(selected.includes('episode-runner.mjs'));
-  for (const name of selected) await cp(join(origin, 'benchmark/runtime', name), join(projectionRoot, 'benchmark/runtime', name), { errorOnExist: true, force: false });
-  // These modules have only Node dependencies. Private fixture APIs and policies
-  // remain in the parent controller and are not part of the subject projection.
-  for (const name of ['turn-bridge.mjs', 'reported-model.mjs'])
-    await cp(join(origin, 'benchmark', name), join(projectionRoot, 'benchmark', name), { errorOnExist: true, force: false });
-  for (const name of ['skill-consumption-provider.mjs', 'skill-consumption-source-observer.mjs', 'notion-skill-graph-model-evidence.mjs',
-    'notion-default-context.mjs', 'notion-integration-hosts.mjs'])
-    await cp(join(origin, 'scripts', name), join(projectionRoot, 'scripts', name), { errorOnExist: true, force: false });
-  const projection = await filesAt(projectionRoot);
-  assert.ok(projection.every(file => !/(?:^|\/)(?:corpus|analysis|evidence|tests?)(?:\/|$)|(?:oracle|grader|\.test\.)/.test(file.path)));
+  const projection = await projectSubjectRuntime({ buildRoot, projectionRoot });
   const visibility = join(runRoot, 'subject-visibility.json');
   await save(visibility, { version: 1, source_moved_outside_run: true, projection_root: 'subject-runtime', files: projection });
   const inputsBefore = await inventoryPublicInputs(launch.input_root);

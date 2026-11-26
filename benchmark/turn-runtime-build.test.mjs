@@ -38,6 +38,30 @@ test('every declared turn-control feature requires the current frozen common run
   }
 });
 
+test('a large legal source inventory passes both build reads while source and environment limits stay narrow', async () => {
+  const f = await fixture(), path = join(f.buildRoot, 'build.json');
+  const manifest = JSON.parse(await readFile(path, 'utf8'));
+  manifest.source_tree.files.push(...Array.from({ length: 90000 }, (_, index) => ({
+    path: 'broker/node_modules/' + index + '/' + 'nested-package-'.repeat(8) + '/entry.js', sha256: 'b'.repeat(64), executable: false,
+  })));
+  manifest.source_tree.sha256 = hash(JSON.stringify(manifest.source_tree.files));
+  const bytes = Buffer.from(JSON.stringify(manifest));
+  assert.ok(bytes.length > 16 * 1024 * 1024 && bytes.length < 64 * 1024 * 1024);
+  await writeFile(path, bytes);
+  const proof = await verifyTurnRuntimeBuild(f);
+  assert.equal(proof.status, 'verified'); assert.equal(proof.build.bytes, bytes.length); assert.equal(proof.build.sha256, hash(bytes));
+  for (const target of [join(f.environmentRoot, 'environment.json'), join(f.buildRoot, 'source/broker/benchmark/subject.mjs')]) {
+    const previous = await readFile(target);
+    await writeFile(target, Buffer.alloc(16 * 1024 * 1024 + 1, 32));
+    await assert.rejects(verifyTurnRuntimeBuild(f), error => error.code === 'BENCHMARK_TURN_RUNTIME_BUILD_MISMATCH'
+      && error.details.reason === 'TURN_RUNTIME_ORDINARY_FILE');
+    await writeFile(target, previous);
+  }
+  await writeFile(path, Buffer.alloc(64 * 1024 * 1024 + 1, 32));
+  await assert.rejects(verifyTurnRuntimeBuild(f), error => error.code === 'BENCHMARK_TURN_RUNTIME_BUILD_MISMATCH'
+    && error.details.reason === 'TURN_RUNTIME_ORDINARY_FILE');
+});
+
 test('historical single-turn work does not acquire a new turn-runtime requirement', async () => {
   const proof = await verifyTurnRuntimeBuild({ environmentRoot: await realpath(tmpdir()), buildId: 'not-read',
     binding: { public_case: { turns: [{ id: 'turn-1' }] }, events: [], clarification: [] } });

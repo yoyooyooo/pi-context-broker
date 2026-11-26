@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { canonicalJson, fingerprint } from './protocol.mjs';
 import { prepareMaterialOwnership, verifyMaterialOwnership } from './material-ownership.mjs';
+import { CURRENT_SOURCE_CONTRACT } from './current-source-views.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const encode = value => Buffer.from(canonicalJson(value) + '\n');
@@ -62,6 +63,22 @@ test('owned projection preserves original bytes, SDK closure, executable modes a
   }
   assert.equal(result.manifest.native_relative_paths[0].unchanged, true);
   assert.deepEqual(await verifyMaterialOwnership({ binding: before, reference: result.reference, environmentRoot: f.environmentRoot }), result);
+});
+
+test('current material projection owns its SDK3 producer while preserving explicit contract and Library identity', async () => {
+  const f = await fixture({ structural: true });
+  const item = f.proof.canonical_to_actual[0], bytes = await readFile(item.public_sdk_path);
+  await replaceProof(f, proof => Object.assign(proof, { source_contract: CURRENT_SOURCE_CONTRACT,
+    library_id: '4215636c-236e-81e8-8168-ee2ac696f73a', entry: '4215636c-236e-81e8-8168-ee2ac696f73a',
+    source_sdk: { path: item.public_sdk_path, sha256: item.public_sdk_sha256, bytes: bytes.length } }));
+  f.binding.source_contract = CURRENT_SOURCE_CONTRACT;
+  const result = await prepare(f), derived = JSON.parse(await readFile(result.binding.materialization_proof.path));
+  assert.equal(result.binding.source_contract, CURRENT_SOURCE_CONTRACT);
+  assert.equal(derived.source_sdk.path, derived.canonical_to_actual[0].public_sdk_path);
+  assert.notEqual(derived.source_sdk.path, f.proof.source_sdk.path);
+  assert.equal(derived.source_sdk.sha256, f.proof.source_sdk.sha256);
+  await rename(f.source, f.source + '-retired');
+  assert.deepEqual(await verifyMaterialOwnership({ binding: f.binding, reference: result.reference, environmentRoot: f.environmentRoot }), result);
 });
 
 test('same material is shared across cases and verifies after all original sources are moved away', async () => {

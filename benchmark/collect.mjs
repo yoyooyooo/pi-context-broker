@@ -14,8 +14,11 @@ import { verifyArtifactFiles, writeEvidenceBundle } from './evidence/store.mjs';
 import { readProviderTransport } from '../scripts/skill-consumption-provider.mjs';
 import { parseSourceObservation } from '../scripts/skill-consumption-source-observer.mjs';
 import { graphSourceViews, verifyPreparationEvidence, retainedMaterialSelection, retainedSelectionSnapshots, RETAINED_SOURCE_CONTRACT } from './retained-source-views.mjs';
+import { CURRENT_SOURCE_CONTRACT, loadCurrentSourceViews } from './current-source-views.mjs';
 
 export const COLLECTOR_VERSION = '1.2.2';
+export const CURRENT_COLLECTOR_VERSION = '1.3.0';
+const retainedSourceViews = { contract: RETAINED_SOURCE_CONTRACT, graphSourceViews, verifyPreparationEvidence };
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const inside = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
@@ -232,7 +235,7 @@ function bodySpan(text, proof, defaultHashKey = 'bodySha256') {
   return hash(body) === proof[defaultHashKey] && Buffer.byteLength(body) === proof.bytes ? body : null;
 }
 
-function preparedResourceBodies(tool, preparations) {
+function preparedResourceBodies(tool, preparations, sourceViews) {
   const relativeToRecord = Object.hasOwn(tool.args ?? {}, 'from');
   const reference = relativeToRecord ? tool.args.from : tool.args?.path;
   if (tool.name !== 'read' || !/^sr:[SR][A-Za-z0-9_-]{22}$/u.test(reference ?? '') || !tool.turn_id) return [];
@@ -241,7 +244,7 @@ function preparedResourceBodies(tool, preparations) {
   try {
     for (const preparation of preparations.filter(item => item.status === 'pass' && ['skill_prepare', 'notion_use'].includes(item.name) &&
       item.turn_id === tool.turn_id && Number.isSafeInteger(item.end_sequence) && item.end_sequence < tool.sequence)) {
-      const verified = verifyPreparationEvidence(textContent(preparation.result?.content), preparation.result?.details?.contextBrokerPreparation, preparation.id);
+      const verified = sourceViews.verifyPreparationEvidence(textContent(preparation.result?.content), preparation.result?.details?.contextBrokerPreparation, preparation.id);
       for (const { model, receipt, mapping } of verified.records) {
         if (mapping.state !== 'source' || !model.directory) continue;
         const binding = receipt.binding, owner = binding.record.id;
@@ -250,11 +253,17 @@ function preparedResourceBodies(tool, preparations) {
         assert.equal(receipt.contentIdentity, JSON.stringify([binding.scope, owner]));
         const paths = new Set(), tokens = new Set();
         for (const [index, file] of receipt.directory.files.entries()) {
-          const projected = model.directory.files[index], fixed = new URL(file.ref);
-          assert.equal(fixed.protocol, 'skill:'); assert.equal(decodeURIComponent(fixed.hostname), owner);
-          assert.equal(fixed.pathname.slice(1).split('/').map(decodeURIComponent).join('/'), file.path);
-          assert.deepEqual(fixed.searchParams.getAll('snapshot'), [binding.snapshot_id]);
-          assert.ok(!fixed.username && !fixed.password && !fixed.port && !fixed.hash);
+          const projected = model.directory.files[index];
+          if (sourceViews.contract === CURRENT_SOURCE_CONTRACT) {
+            const fixed = sourceViews.parseReference(file.ref);
+            assert.equal(fixed.selector, owner); assert.equal(fixed.path, file.path); assert.equal(fixed.snapshot, binding.snapshot_id);
+          } else {
+            const fixed = new URL(file.ref);
+            assert.equal(fixed.protocol, 'skill:'); assert.equal(decodeURIComponent(fixed.hostname), owner);
+            assert.equal(fixed.pathname.slice(1).split('/').map(decodeURIComponent).join('/'), file.path);
+            assert.deepEqual(fixed.searchParams.getAll('snapshot'), [binding.snapshot_id]);
+            assert.ok(!fixed.username && !fixed.password && !fixed.port && !fixed.hash);
+          }
           assert.match(file.sha256, /^[a-f0-9]{64}$/u); assert.ok(finite(file.bytes));
           assert.ok(!paths.has(file.path) && !tokens.has(projected.ref)); paths.add(file.path); tokens.add(projected.ref);
           const addressed = relativeToRecord ? model.ref === reference && file.path === tool.args.path : projected.ref === reference;
@@ -297,7 +306,8 @@ export function preparedSourceMatches(binding, material, sdk, bytes) {
 }
 
 /** Complete delivered bytes backed by product receipts; declarations without bytes are excluded. */
-export function deliveredSourceBodies(tool, preparations = []) {
+export function deliveredSourceBodies(tool, preparations = [], sourceViews = retainedSourceViews) {
+  if (!sourceViews) return [];
   if (tool.status !== 'pass' || !object(tool.result)) return [];
   const text = textContent(tool.result.content), details = tool.result.details ?? {}, output = [];
   const main = details.contextBrokerRead;
@@ -322,14 +332,14 @@ export function deliveredSourceBodies(tool, preparations = []) {
   const preparation = details.contextBrokerPreparation;
   if (['skill_prepare', 'notion_use'].includes(tool.name) && preparation?.toolCallId === tool.id && [1, 2].includes(preparation.version)) {
     try {
-      const prepared = verifyPreparationEvidence(text, preparation, tool.id);
+      const prepared = sourceViews.verifyPreparationEvidence(text, preparation, tool.id);
       for (const record of prepared.records.filter(record => record.mapping.state === 'source')) {
         const item = record.receipt, body = bodySpan(text, item);
         if (body !== null) output.push({ path: item.binding.record.entrypoint, body, owner: item.binding.record.id, kind: 'broker-prepared-main' });
       }
     } catch { /* An unverified projection does not prove source consumption. */ }
   }
-  if (!main && !resource) output.push(...preparedResourceBodies(tool, preparations));
+  if (!main && !resource) output.push(...preparedResourceBodies(tool, preparations, sourceViews));
   return output;
 }
 
@@ -430,11 +440,29 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
   const notionRequired = (protocol.environments ?? []).some(env => env.id === condition.environment_id &&
     (env.pi?.sources ?? []).some(source => source.kind === 'notion')) ||
     Boolean(binding.materialization_proof && run.pi_launch?.mode === 'broker');
-  const notion = { status: 'unavailable', source_contract: RETAINED_SOURCE_CONTRACT,
+  const sourceContract = episode?.notion?.source_contract ?? binding.source_contract ?? RETAINED_SOURCE_CONTRACT;
+  const currentSource = sourceContract === CURRENT_SOURCE_CONTRACT;
+  const collectorVersion = currentSource ? CURRENT_COLLECTOR_VERSION : COLLECTOR_VERSION;
+  let sourceViews = currentSource ? null : retainedSourceViews;
+  const notion = { status: 'unavailable', source_contract: sourceContract,
     operations: [], source_bodies: [], owned_http: { status: 'unknown', value: null },
     coverage: episode?.notion?.coverage ?? null, descendant_transport: 'unobserved',
     scope: 'Owned SDK and directly observed bundled CLI only; SDK reads do not prove delivery to the agent.',
     errors: [], refs: [] };
+  if (currentSource) {
+    try {
+      assert.ok(!binding.materialization_proof || binding.source_contract === CURRENT_SOURCE_CONTRACT, 'Current runtime requires refreshed current material');
+      const candidateArtifact = registry.get('candidate-observed'); assert.ok(candidateArtifact, 'Current source provenance needs the actual captured candidate');
+      sourceViews = await loadCurrentSourceViews({ runRoot, buildRoot: run.build_root, candidate: JSON.parse(fileBytes.get(candidateArtifact.id)) });
+      for (const [index, file] of sourceViews.artifacts.entries()) {
+        const artifact = await addFile('collection-current-source-' + index, file.path, file.sha256, 'implementation');
+        notion.refs.push(ref(artifact));
+      }
+      notion.producer = sourceViews.producer;
+    } catch (error) {
+      sourceViews = null; notion.errors.push(error.message); problems.push('current_source_contract_unverified');
+    }
+  } else assert.equal(sourceContract, RETAINED_SOURCE_CONTRACT, 'Unknown source evidence contract');
   const sdkBodyRows = [];
   if (episode?.notion) {
     try {
@@ -484,7 +512,8 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
           tool_call_id: null, tool_association: 'unproven; matching source bytes establish material identity, not causal attribution',
           http_attempts: attempts.length, result_observed: receipt.resultObserved, refs });
       }
-      const views = graphSourceViews(receipts);
+      assert.ok(sourceViews, 'Current source interpreter provenance is unavailable');
+      const views = sourceViews.graphSourceViews(receipts);
       for (const entry of views.entries) {
         const value = entry.value, output = entry.outputEvidence;
         const body = typeof value.content === 'string' ? value.content : typeof output?.content === 'string' ? output.content : null;
@@ -512,8 +541,9 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       notion.status = 'observed'; notion.source_bodies = sdkBodyRows;
       notion.owned_http = { status: 'known', value: attempts.length, by_request_kind: kinds,
         refs: attempts.map(row => ({ artifact_id: sourceArtifact.id, sha256: sourceArtifact.sha256, line: row.sequence })) };
-      notion.refs = uniqueRefs(Object.values(episode.notion.refs ?? {}).map(cleanRef));
-      for (const item of notion.refs) resolveRef(item);
+      const runtimeRefs = uniqueRefs(Object.values(episode.notion.refs ?? {}).map(cleanRef));
+      for (const item of runtimeRefs) resolveRef(item);
+      notion.refs = uniqueRefs([...notion.refs, ...runtimeRefs]);
     } catch (error) {
       notion.errors.push(error.message); notion.status = 'partial'; problems.push('core_notion_evidence_incomplete');
     }
@@ -525,6 +555,11 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     const artifact = await addFile('collection-material-parity', descriptor.path, descriptor.sha256);
     const proof = JSON.parse(fileBytes.get(artifact.id));
     assert.equal(proof.status, 'passed'); assert.equal(proof.parity?.status, 'valid');
+    if (currentSource) {
+      assert.equal(proof.source_contract, CURRENT_SOURCE_CONTRACT, 'Current collection cannot reuse a historical material proof');
+      if (sourceViews) assert.equal(proof.source_sdk.sha256, sourceViews.producer.public_sdk_sha256, 'Material and runtime must use the same paired SDK');
+      await addFile('collection-current-material-sdk', proof.source_sdk.path, proof.source_sdk.sha256, 'implementation');
+    }
     for (const [index, item] of (proof.canonical_to_actual ?? []).entries()) {
       const references = [ref(artifact, '/canonical_to_actual/' + index)];
       const files = {};
@@ -549,7 +584,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       }
       const native = (proof.files ?? []).find(file => file.skill_id === item.skill_id && file.resource_path === item.path);
       if (native) await addFile('collection-native-material-' + index, native.path, native.sha256, 'source-bytes');
-      const selection = retainedMaterialSelection({ receiptBytes: fileBytes.get(files.receipt.id), rawBytes: fileBytes.get(files.raw_receipt.id),
+      const selection = currentSource ? null : retainedMaterialSelection({ receiptBytes: fileBytes.get(files.receipt.id), rawBytes: fileBytes.get(files.raw_receipt.id),
         material: { path: item.path, sha256: item.actual_sha256, bytes: files.actual_source.bytes },
         boundIdentity: identityMap[item.skill_id], proofIdentity: proof.identity_map?.[item.skill_id] });
       if (selection) selection.refs = [ref(artifact, '/identity_map/' + item.skill_id.replaceAll('~', '~0').replaceAll('/', '~1')),
@@ -670,7 +705,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     if (tool.execution === 'rejected_before_execution') continue;
     if (tool.container?.complete && codeModeRuntime.status === 'verified') { tool.refs = uniqueRefs([...tool.refs, ...codeModeRuntime.refs, ...tool.container.refs]); continue; }
     if (tool.status !== 'pass') { if (!['read', 'write', 'edit'].includes(tool.name)) opaqueTools.push(tool.id); continue; }
-    const delivered = deliveredSourceBodies(tool, tools);
+    const delivered = deliveredSourceBodies(tool, tools, sourceViews);
     for (const item of delivered) observeSource({ ...tool, refs: uniqueRefs([...tool.refs, ...(item.refs ?? [])]) }, item.body, item.path, item.owner, null, item.kind, item.source_binding);
     if (delivered.length) continue;
     if (tool.name === 'read' && Object.hasOwn(tool.args ?? {}, 'from')) {
@@ -742,7 +777,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
   const protocolCapabilities = protocol.corpus.capabilities ?? [];
   const capabilities = protocolCapabilities.map(item => ({ id: item.id, supported: item.environment_ids.includes(condition.environment_id) }));
   const grade = gradeEpisode({ oracle, evidence, capabilities });
-  const readback = { schema_version: 1, kind: 'benchmark-independent-readback', collector_version: COLLECTOR_VERSION,
+  const readback = { schema_version: 1, kind: 'benchmark-independent-readback', collector_version: collectorVersion,
     runtime_result_sha256: resultArtifact?.sha256 ?? null, launcher_result_sha256: sharedArtifact.sha256,
     protocol_sha256: protocol.protocol_sha256, oracle: oracleIdentity, reanalysis_of: reanalysisOf,
     analysis_implementation: implementation, collector_source_sha256: collectorSourceSha256, notion, turn_control: turnControl.summary,
@@ -760,7 +795,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     uniqueRefs([...(evidenceRefs.get(item.evidence_id) ?? []), ref(readbackArtifact, '/evidence/artifacts/' + index)]));
   for (const [index, item] of evidence.resource_reads.entries()) evidenceRefs.set(item.evidence_id,
     uniqueRefs([...(evidenceRefs.get(item.evidence_id) ?? []), ref(readbackArtifact, '/evidence/resource_reads/' + index)]));
-  const gradeArtifact = await save('collection-grade', 'grade.json', { ...grade, derivation: oracleIdentity, collector_version: COLLECTOR_VERSION });
+  const gradeArtifact = await save('collection-grade', 'grade.json', { ...grade, derivation: oracleIdentity, collector_version: collectorVersion });
   const baseRefs = uniqueRefs([ref(sharedArtifact), ref(readbackArtifact), ...(resultArtifact ? [ref(resultArtifact)] : []),
     ...turnControl.summary.refs]);
 
@@ -912,7 +947,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       case_id: slot.case_id, material_id: caseInfo.material_id, cluster_id: caseInfo.cluster_id, family: caseInfo.family,
       pair_id: slot.pair_id ?? null, repeat: slot.repeat, seed: slot.seed ?? null, split: caseInfo.split, phase: protocol.phase,
       build_id: shared.build_id ?? null, budget_id: condition.budget_id, goal: binding.public_case.title,
-      collector_version: COLLECTOR_VERSION, collector_source_sha256: collectorSourceSha256,
+      collector_version: collectorVersion, collector_source_sha256: collectorSourceSha256,
       analysis_implementation: implementation, reanalysis_of: reanalysisOf },
     admission: { status: validity, reasons, refs: baseRefs, completeness: { attempts: requestCoverage,
       tools: toolsComplete ? 'complete' : 'partial', interventions: interventionCoverage } },
@@ -936,7 +971,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     output_tokens: bundle.episode.measurements.output_total.value.status === 'known' ? bundle.episode.measurements.output_total.value.value : null,
     duration_ms: duration.status === 'known' ? duration.value : null };
   const stop_batch = validity === 'invalid' || usageUnknown;
-  const result = { schema_version: 1, kind: 'benchmark-collected-episode', collector_version: COLLECTOR_VERSION,
+  const result = { schema_version: 1, kind: 'benchmark-collected-episode', collector_version: collectorVersion,
     run_id: run.run_id, validity, outcome: bundle.episode.result.outcome, verified_success: bundle.episode.result.verified_success,
     budget_usage, stop_batch, stop_reason: stop_batch ? reasons[0] ?? 'unknown_actual_usage' : null,
     turn_control: turnControl.summary,

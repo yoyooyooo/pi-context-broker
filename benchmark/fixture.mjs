@@ -9,6 +9,8 @@ import { prepareAgentFixtures, readAgentFixture, runAgentFixtureEvent, planAgent
 import { NATIVE_MAIN_EXACT_RESOURCES, agentFixtureCreateArgs, assertAgentFixtureImportCreation,
   isAgentFixtureCreationArgs } from '../scripts/notion-agent-authoring.mjs';
 import { ensureRemoteParent } from './remote.mjs';
+import { CURRENT_SOURCE_CONTRACT } from './current-source-views.mjs';
+export { CURRENT_SOURCE_CONTRACT } from './current-source-views.mjs';
 import { validateCorpus, planCaseVariant, rebindCorpusCatalog, buildFixtureRecipe, bindPublicCaseToFixture,
   verifyMaterialization, auditVisibleMaterial, writeCorpus } from './corpus/index.mjs';
 
@@ -28,6 +30,12 @@ const eventKinds = new Set(['publish-version', 'set-enabled', 'readback', 'fault
 const byteArtifact = async path => { const bytes = await readFile(path); return { path, sha256: sha(bytes), bytes: bytes.length }; };
 const errorValue = error => ({ code: error.code ?? null, message: error.message, ...(error.details ? { details: error.details } : {}) });
 const failure = (code, message, details) => Object.assign(new Error(message), { code, ...(details ? { details } : {}) });
+const currentPathUnsupported = 'BENCHMARK_FIXTURE_CURRENT_PATH_UNSUPPORTED';
+function assertCurrentFixtureAction(plan, action) {
+  if (!plan.readonly_refresh || plan.source_contract !== CURRENT_SOURCE_CONTRACT || !['verify', 'reconcile'].includes(action))
+    throw failure(currentPathUnsupported, 'This controller supports SDK3 read-only refresh only. Fresh setup, historical recovery and stateful actions have not been migrated.',
+      { action, source_contract: plan.source_contract ?? 'retained-unmigrated', remote_dispatched: false });
+}
 
 async function save(path, value) {
   assert.equal(await canonicalTarget(dirname(path)), dirname(path), 'Evidence cannot escape through a symlink');
@@ -404,7 +412,8 @@ async function resumePreparationWorker(plan) {
 }
 /** Explicit continuation is allowed only for independently absent, never-dispatched or confirmed prewrite-rejected objects. */
 export async function resumeBenchmarkFixturePreparation({controlRoot}={}) {
-  await readPlan(controlRoot); return isolatedWorker(controlRoot,'resume');
+  const plan = await readPlan(controlRoot); assertCurrentFixtureAction(plan, 'resume');
+  return isolatedWorker(controlRoot,'resume');
 }
 
 
@@ -438,6 +447,7 @@ async function installPrivateGitSelection(plan,env) {
 
 async function isolatedWorker(root, action, request = {}) {
   const plan = await readPlan(root);
+  assertCurrentFixtureAction(plan, action);
   const requestPath = join(root, 'requests', action + '-' + randomUUID() + '.json');
   const implementationBytes = await readFile(modulePath);
   const implementation = await put(join(root, 'implementations', sha(implementationBytes) + '.mjs'), implementationBytes);
@@ -462,12 +472,80 @@ async function isolatedWorker(root, action, request = {}) {
 /** Preparation may allocate only a new task-owned child scope. Re-entry reconciles retained writes. */
 export async function prepareBenchmarkFixture(options) {
   const plan = options?.kind === 'benchmark-controller-fixture' ? options : planBenchmarkFixture(options);
+  assertCurrentFixtureAction(plan, 'prepare');
   await initializePlan(plan);
   if(plan.git)await bindBenchmarkFixtureGit({controlRoot:plan.control_root,git:plan.git});
   return isolatedWorker(plan.control_root, 'prepare');
 }
 export async function verifyBenchmarkFixture({ controlRoot } = {}) {
   await readPlan(controlRoot);
+  return isolatedWorker(controlRoot, 'verify');
+}
+/** Re-read an existing immutable catalog with the current SDK. No remote setup or repair is dispatched. */
+export async function refreshReadonlyBenchmarkFixture({ retainedBinding, controlRoot, buildRoot, node, git = null } = {}) {
+  assert.ok(retainedBinding?.path && retainedBinding.sha256, 'Select one retained material binding by content hash');
+  assert.equal((await byteArtifact(retainedBinding.path)).sha256, retainedBinding.sha256);
+  const previous = await json(retainedBinding.path), oldPlan = await readPlan(previous.control_root);
+  assert.equal(previous.status, 'ready'); assert.equal(previous.access, 'shared-readonly');
+  assert.equal(oldPlan.access, 'shared-readonly'); assert.deepEqual(oldPlan.events, []);
+  assert.deepEqual(oldPlan.initially_absent_skill_ids, []); assert.equal(oldPlan.candidate_count, 16);
+  assert.ok(oldPlan.fixture.recipe.objects.every(object => ['notion', 'source'].includes(object.placement)), 'This refresh supports only the existing remote read-only catalog');
+  assert.ok(oldPlan.fixture.recipe.objects.every(object => Object.keys(object.versions).length === 1), 'Stateful material is outside this refresh');
+  assert.equal((await byteArtifact(previous.materialization_proof.path)).sha256, previous.materialization_proof.sha256);
+  const proof = await json(previous.materialization_proof.path);
+  assert.equal(proof.status, 'passed'); assert.equal(proof.parity.status, 'valid');
+  assert.equal(proof.parent_page_id, previous.parent_page_id);
+  const libraryId = previous.parent_page_id;
+  assert.match(libraryId, /^[a-f0-9-]{32,36}$/iu);
+  controlRoot = await canonicalTarget(controlRoot); buildRoot = await realpath(buildRoot); node = await realpath(node);
+  validatePrivateRoot(controlRoot, buildRoot);
+  assert.ok(!inside(previous.control_root, controlRoot) && !inside(controlRoot, previous.control_root), 'Refresh must preserve the original evidence directory');
+  const { plan_sha256: _oldHash, ...declaration } = oldPlan;
+  const value = { ...declaration, control_root: controlRoot, build_root: buildRoot, node,
+    cli: join(buildRoot, 'cli/dist/ntn-skills.js'), git, source_contract: CURRENT_SOURCE_CONTRACT,
+    readonly_refresh: { retained_binding: retainedBinding, retained_proof: previous.materialization_proof, library_id: libraryId } };
+  const plan = { ...value, plan_sha256: digest(value) };
+  await initializePlan(plan);
+  if (git) await bindBenchmarkFixtureGit({ controlRoot, git });
+  const fixtureRoot = join(controlRoot, 'objects');
+  if (await exists(join(fixtureRoot, 'bindings.json'))) return isolatedWorker(controlRoot, 'verify');
+  assert.ok(!(await exists(fixtureRoot)), 'An incomplete local refresh must be inspected before retrying');
+  const reference = previous.prepared_bindings;
+  assert.ok(reference?.path && reference.sha256);
+  assert.equal((await byteArtifact(reference.path)).sha256, reference.sha256);
+  const bindings = await json(reference.path), context = bindings.private.fixture;
+  assert.equal(context.runId, plan.scope_id); assert.deepEqual(context.recipe, plan.fixture.recipe);
+  const oldDatabase = context.library.skills.database_id;
+  context.root = fixtureRoot; context.node = node; context.cli = plan.cli; context.libraryId = libraryId; delete context.entry;
+  delete context.nativeMarkdownSdk; // The new readback binds the newly selected SDK; the old snapshot stays intact.
+  context.env = { NTN_SKILLS_HOME: join(fixtureRoot, 'state'), NTN_SKILLS_CONFIG_HOME: join(fixtureRoot, 'config'),
+    NTN_SKILLS_CACHE_HOME: join(fixtureRoot, 'cache'), NTN_SKILLS_DATA_HOME: join(fixtureRoot, 'data'), NTN_SKILLS_SCHEDULER_ROOT: join(fixtureRoot, 'scheduler') };
+  context.projectRoot = join(fixtureRoot, 'project'); context.observedReadbacks = {}; bindings.private.bodies = {};
+  context.ownership = { runId: context.runId, root: fixtureRoot, token: randomUUID(), createdAt: now(),
+    globalDirectories: [], temporaryRoot: join(fixtureRoot, 'temporary') };
+  for (const directory of ['commands', 'readbacks', 'inputs', 'quarantine', 'temporary', 'project/.agents/skills'])
+    await mkdir(join(fixtureRoot, directory), { recursive: true, mode: 0o700 });
+  await save(join(fixtureRoot, 'ownership.json'), context.ownership);
+  for (const [alias, owned] of Object.entries(context.objects)) {
+    for (const [version, input] of Object.entries(owned.versionInputs)) {
+      const directory = join(fixtureRoot, 'inputs', alias, version);
+      for (const file of input.files) {
+        const bytes = await readFile(file.input); assert.equal(sha(bytes), file.sha256);
+        const path = join(directory, file.path); assert.ok(inside(directory, path));
+        await put(path, bytes, file.mode); file.input = path;
+      }
+      input.directory = directory;
+    }
+    bindings.private.objects[alias].versions = {};
+  }
+  const env = fixtureEnvironment(plan, bindings); await preparePrivateEnvironment(plan, env); await installPrivateGitSelection(plan, env);
+  const inspected = await command(plan, ['ctl', 'library', 'inspect', '--library', libraryId], 'refresh-inspect-library', env);
+  context.library = inspected.value.library;
+  assert.equal(context.library.library_id.replaceAll('-', ''), libraryId.replaceAll('-', ''));
+  assert.equal(context.library.skills.database_id, oldDatabase, 'Refresh cannot silently substitute a different remote catalog');
+  await save(join(controlRoot, 'library.json'), { parent_page_id: libraryId, entry: libraryId,
+    source_contract: CURRENT_SOURCE_CONTRACT, command: inspected.receipt, retained_binding: retainedBinding });
+  await save(join(fixtureRoot, 'bindings.json'), bindings);
   return isolatedWorker(controlRoot, 'verify');
 }
 export async function reconcileBenchmarkFixture({ controlRoot } = {}) {
@@ -556,6 +634,8 @@ async function saveOperationResult(plan, action, value) {
 }
 async function verifyWorker(plan, { refresh = true, preparationRecovery = false } = {}) {
   const root = plan.control_root, original = await bindingsFor(plan), bindings = original.bindings, context = bindings.private.fixture;
+  assert.equal(plan.source_contract, CURRENT_SOURCE_CONTRACT, 'Current verification requires an explicit SDK3 read-only refresh binding');
+  assert.match(context.libraryId ?? '', /^[a-f0-9-]{32,36}$/iu, 'Current consumption selects a Library root');
   const aliases = Object.values(plan.fixture.skill_mapping).map(item => item.object_id);
   if (refresh) {
     for (const alias of aliases) {
@@ -577,7 +657,7 @@ async function verifyWorker(plan, { refresh = true, preparationRecovery = false 
     if(!plan.initially_absent_skill_ids.includes(skillId))assert.equal(actual,mapping.placement==='source'?mapping.name:context.objects[mapping.object_id].name,'Actual invocation names differ from the declared source/native binding');
   }
   const remoteIds = plan.catalog_skill_ids.filter(id => !['project', 'global'].includes(plan.fixture.skill_mapping[id].placement) && !plan.initially_absent_skill_ids.includes(id));
-  const listed = await command(plan, ['list', '--database', context.entry, '--refresh', '--limit', '500', '--json'], 'catalog', fixtureEnvironment(plan, bindings), { timeoutMs: 240000 });
+  const listed = await command(plan, ['list', '--library', context.libraryId, '--refresh', '--limit', '500', '--json'], 'catalog', fixtureEnvironment(plan, bindings), { timeoutMs: 240000 });
   const catalog = listed.value;
   assert.equal(catalog.coverage?.exhaustive, true, 'Catalog coverage must be exhaustive');
   assert.deepEqual(catalog.coverage.failed_sources, []); assert.equal(catalog.has_more, false);
@@ -585,6 +665,7 @@ async function verifyWorker(plan, { refresh = true, preparationRecovery = false 
   const packageRoot = dirname(dirname(plan.cli)), manifest = await json(join(packageRoot, 'package.json'));
   const exported = manifest.exports['./sdk'], sdkPath = join(packageRoot, typeof exported === 'string' ? exported : exported.import ?? exported.default);
   const sdk = await import(pathToFileURL(sdkPath).href), sdkArtifact = await byteArtifact(sdkPath);
+  assert.equal(sdk.SDK_VERSION, 3, 'The refreshed material must be read by the selected current SDK');
   const expected = plan.fixture.expected_inventory.filter(item => !plan.initially_absent_skill_ids.includes(item.skill_id));
   const observedFiles = [], comparisons = [], evidence = [];
   for (const wanted of expected) {
@@ -650,7 +731,9 @@ async function verifyWorker(plan, { refresh = true, preparationRecovery = false 
     url: item.source.declaration.definition.adapter.url, member_key: item.source.memberKey, verified: !plan.initially_absent_skill_ids.some(id => plan.fixture.skill_mapping[id].object_id === item.id),
   }));
   const proof = { schema_version: 1, status: 'passed', completed_at: now(), scope_id: plan.scope_id, evidence_scope: plan.evidence_scope,
-    public_sha256: plan.corpus.publicCorpus.content_sha256, entry: context.entry, parent_page_id: (await json(join(root, 'library.json'))).parent_page_id,
+    public_sha256: plan.corpus.publicCorpus.content_sha256, entry: context.libraryId, library_id: context.libraryId,
+    source_contract: CURRENT_SOURCE_CONTRACT, source_sdk: sdkArtifact, readonly_refresh: plan.readonly_refresh,
+    parent_page_id: (await json(join(root, 'library.json'))).parent_page_id,
     candidate_count: plan.candidate_count, actual_remote_candidates: remoteIds.length, actual_local_candidates: plan.catalog_skill_ids.length - remoteIds.length - plan.initially_absent_skill_ids.length,
     initially_absent_skill_ids: plan.initially_absent_skill_ids, case_ids: plan.case_ids, catalog_skill_ids: plan.catalog_skill_ids,
     parity, canonical_to_actual: comparisons, identity_map: identity, public_cases: publicCases, files, evidence, visibility,
@@ -665,17 +748,19 @@ async function verifyWorker(plan, { refresh = true, preparationRecovery = false 
   const saved = await writeCorpus({ corpus: plan.corpus, publicRoot: join(root, 'public-corpus'), controlRoot: join(root, 'private-corpus') });
   const binding = { schema_version: 1, status: 'ready', public_corpus_path: saved.public_path, control_path: saved.control_path,
     public_sha256: plan.corpus.publicCorpus.content_sha256, control_root: root, scope_id: plan.scope_id, access: plan.access, episode_id: plan.episode_id,
-    entry: context.entry, parent_page_id: proof.parent_page_id, case_ids: plan.case_ids, catalog_skill_ids: plan.catalog_skill_ids,
+    entry: context.libraryId, library_id: context.libraryId, source_contract: CURRENT_SOURCE_CONTRACT,
+    parent_page_id: proof.parent_page_id, case_ids: plan.case_ids, catalog_skill_ids: plan.catalog_skill_ids,
     placements:Object.fromEntries(Object.entries(plan.fixture.skill_mapping).map(([id,item])=>[id,item.placement])),
     local_skill_ids:plan.catalog_skill_ids.filter(id=>['project','global'].includes(plan.fixture.skill_mapping[id].placement)),
     identity_map: identity, materialization_proof: proofRef, native_root: nativeRoot, native_skill_root: nativeSkillRoot,
-    fixture_bindings_path: original.path, prepared_bindings: bindingsSnapshot,
+    fixture_bindings_path: bindingsSnapshot.path, prepared_bindings: bindingsSnapshot,
     events: plan.events.map(event => ({ id: event.id, ...(event.case_id ? { case_id: event.case_id } : {}), before_turn: event.before_turn ?? null, logical_operation: event.logical_operation })),
     clarification: plan.case_plans.flatMap(item => item.clarification ?? []).map(({ topic_id, max_questions, response }) => ({ topic_id, max_questions, response })),
     evidence_scope: plan.evidence_scope };
   const bindingRef = await save(join(versionRoot, 'binding.json'), binding);
   const result = { status: 'ready', effect_unknown: false, binding_path: bindingRef.path, binding: bindingRef, materialization_proof: proofRef,
-    entry: context.entry, native_skill_root: nativeSkillRoot, case_ids: plan.case_ids, source_materials: source,
+    entry: context.libraryId, library_id: context.libraryId, source_contract: CURRENT_SOURCE_CONTRACT,
+    native_skill_root: nativeSkillRoot, case_ids: plan.case_ids, source_materials: source,
     actual_remote_candidates: remoteIds.length, actual_local_candidates: proof.actual_local_candidates, model_calls: 0, remote_repairs: 0 };
   if (!(await exists(join(root, 'prepared.json')))) await save(join(root, 'prepared.json'), result);
   return saveOperationResult(plan, 'verification', result);
@@ -964,6 +1049,7 @@ async function reconcileEventWorker(plan, { eventId, episodeId }) {
 async function eventCall(action, { controlRoot, eventId, episodeId } = {}) {
   const plan = await readPlan(controlRoot), event = await frozenEvent(plan, eventId, episodeId);
   if (action === 'event') { const prior = await retainedTerminal(plan, event, episodeId); if (prior) return prior; }
+  assertCurrentFixtureAction(plan, action);
   const result = await isolatedWorker(controlRoot, action, { eventId, episodeId });
   if (result.event_id === eventId && result.episode_id === episodeId && result.receipt) return result;
   const prior = await retainedTerminal(plan, event, episodeId);
@@ -983,6 +1069,7 @@ async function worker(requestPath) {
   const release = await takeLease(plan.control_root, request.action);
   let result;
   try {
+    assertCurrentFixtureAction(plan, request.action);
     if (request.action === 'prepare') result = await prepareWorker(plan);
     else if (request.action === 'verify' || request.action === 'reconcile') result = await verifyWorker(plan, { preparationRecovery: request.action === 'reconcile' });
     else if (request.action === 'resume') result = await resumePreparationWorker(plan);
@@ -990,7 +1077,9 @@ async function worker(requestPath) {
     else if (request.action === 'reconcile-event') result = await reconcileEventWorker(plan, request);
     else throw failure('BENCHMARK_FIXTURE_ACTION', 'Unknown controller worker action');
   } catch (error) {
-    result = await saveOperationResult(plan, request.action, { status: 'unknown', effect_unknown: true, error: errorValue(error),
+    const blocked = error.code === currentPathUnsupported;
+    result = await saveOperationResult(plan, request.action, { status: blocked ? 'blocked' : 'unknown', effect_unknown: !blocked,
+      ...(blocked ? { remote_dispatched: false } : {}), error: errorValue(error),
       recovery: 'Retained owned state requires read-only reconciliation or explicit public product recovery. No new scope or duplicate write is created.' });
   } finally { await release(); }
   await save(requestPath + '.result.json', result);
@@ -1007,12 +1096,13 @@ async function cliMain(argv) {
   if (action === 'plan') {
     const options = await json(flags['--plan']); result = planBenchmarkFixture(options);
   } else if (action === 'prepare') result = await prepareBenchmarkFixture(await json(flags['--plan']));
+  else if (action === 'refresh-readonly') result = await refreshReadonlyBenchmarkFixture(await json(flags['--plan']));
   else if (action === 'resume') result = await resumeBenchmarkFixturePreparation({ controlRoot: flags['--root'] });
   else if (action === 'verify') result = await verifyBenchmarkFixture({ controlRoot: flags['--root'] });
   else if (action === 'reconcile') result = await reconcileBenchmarkFixture({ controlRoot: flags['--root'] });
   else if (action === 'status') result = await inspectBenchmarkFixture({ controlRoot: flags['--root'] });
   else if (action === 'event' || action === 'reconcile-event') result = await eventCall(action, { controlRoot: flags['--root'], eventId: flags['--event'], episodeId: flags['--episode'] });
-  else throw failure('BENCHMARK_FIXTURE_USAGE', 'Usage: fixture.mjs plan|prepare --plan PRIVATE_JSON; status|verify|reconcile --root OWNED_ROOT; event|reconcile-event --root OWNED_ROOT --event ID --episode ID');
+  else throw failure('BENCHMARK_FIXTURE_USAGE', 'Usage: fixture.mjs plan|prepare|refresh-readonly --plan PRIVATE_JSON; status|verify|reconcile --root OWNED_ROOT; event|reconcile-event --root OWNED_ROOT --event ID --episode ID');
   process.stdout.write(JSON.stringify(result) + '\n');
   if (result.status === 'unknown' || result.status === 'blocked' || result.status === 'failed') process.exitCode = 1;
 }

@@ -69,6 +69,15 @@ async function fixture({ clarifications = true, kind = 'publish-version', malfor
   for (const file of (await executionImplementation()).files)
     if (file.path !== 'runtime/episode-runner.mjs') await copy(join('benchmark', file.path));
   await save(join(source, 'benchmark/runtime/episode-runner.mjs'), runtimeSource);
+  // The apparatus replaces the runtime, so these declared bytes only exercise
+  // projection provenance. The real reference implementation is checked separately.
+  const sdkBytes = 'apparatus-only-sdk', refBytes = 'apparatus-only-ref';
+  await save(join(buildRoot, 'cli/dist/sdk.js'), sdkBytes);
+  await save(join(buildRoot, 'cli/dist/ref.cjs'), refBytes);
+  await save(join(buildRoot, 'broker/dist/ntn-skills-sdk.mjs'), sdkBytes);
+  await save(join(buildRoot, 'broker/dist/ntn-skills-ref.cjs'), refBytes);
+  await save(join(buildRoot, 'broker/dist/ntn-skills-runtime.json'), { version: 1, package: 'ntn-skills', sdk_version: 3,
+    skill_ref_version: 2, sdk_sha256: sha(sdkBytes), ref_sha256: sha(refBytes) });
   const skillRoot = join(controlRoot, 'initial-skills'), initial = [
     { resource_path: 'SKILL.md', content: '---\nname: owned-skill\ndescription: Controlled apparatus\n---\nVersion one.\n', mode: '100644' },
     { resource_path: 'routing.json', content: '{"version":1}\n', mode: '100644' },
@@ -211,6 +220,19 @@ test('unknown write stops the child and preserves both actual terminal and cost 
   assert.equal(again.status, 'unknown'); assert.deepEqual(f.counts(), { apply: 1, reconcile: 0, child: 1 });
   const restored = await readSubjectTurnControl({ controlRoot: f.controlRoot, runRoot: f.runRoot, runId: f.runId, required: true });
   assert.equal(restored.status, 'verified'); assert.equal(restored.result.status, 'stopped');
+});
+
+test('ordinary Broker dispatch selects the current Library argument in the shared launcher', async () => {
+  const f = await fixture({ clarifications: false });
+  f.binding.events = []; f.options.mode = 'broker'; f.options.notionEntry = '4215636c-236e-81e8-8168-ee2ac696f73a';
+  const launch = f.deps.runEnvironment;
+  let selected = false;
+  f.deps.runEnvironment = async options => {
+    assert.equal(options.library, f.options.notionEntry); assert.equal(options.entry, undefined);
+    selected = true; return launch(options);
+  };
+  const result = await run(f);
+  assert.equal(selected, true); assert.equal(result.status, 'completed'); assert.equal(result.episode.requests.length, 0);
 });
 
 test('Notion Store fault has no native counterpart and is blocked before any mutation', async () => {

@@ -216,17 +216,17 @@ test('read-only cases require no fixture policy or effects; unsupported placemen
   assert.equal(writes, 0);
 });
 
-test('retained slot captures bind the actual entry, native root, physical prompt and input inventory', () => {
+test('retained slot captures bind the actual Library root, native root, physical prompt and input inventory', () => {
   const binding = { id: 'case', input_root: '/owned/inputs', input_inventory_sha256: 'a'.repeat(64), notion_entry: 'entry-one',
     skills_root: '/owned/native-one', public_case: { turns: [{ id: 'one', prompt: 'Use owned-material-one' }] } };
   const launch = { input_root: binding.input_root, input_inventory_sha256: binding.input_inventory_sha256,
     runtime_config: { turns: structuredClone(binding.public_case.turns), correlation: { candidate_id: 'm0-e0', task_id: binding.id } } };
-  const candidate = { build_id: 'build', mode: 'broker' }, run = { build_id: 'build', pi_launch: { mode: 'broker' }, remote: { entry: 'entry-one' } };
+  const candidate = { build_id: 'build', mode: 'broker' }, run = { build_id: 'build', pi_launch: { mode: 'broker' }, remote: { library: 'entry-one' } };
   const args = { binding, launch, candidate, run, conditionId: 'm0-e0' };
   verifyRetainedSlotCapture(args);
-  for (const mutate of [value => { value.run.remote.entry = 'entry-two'; }, value => { value.launch.runtime_config.turns[0].prompt = 'another physical fixture'; },
+  for (const mutate of [value => { value.run.remote.library = 'entry-two'; }, value => { value.launch.runtime_config.turns[0].prompt = 'another physical fixture'; },
     value => { value.launch.input_inventory_sha256 = 'b'.repeat(64); }]) { const wrong = structuredClone(args); mutate(wrong); assert.throws(() => verifyRetainedSlotCapture(wrong)); }
-  const native = structuredClone(args); native.candidate.mode = 'native'; native.run.pi_launch = { mode: 'native', native_corpus: { source: binding.skills_root } }; native.run.remote.entry = null;
+  const native = structuredClone(args); native.candidate.mode = 'native'; native.run.pi_launch = { mode: 'native', native_corpus: { source: binding.skills_root } }; native.run.remote.library = null;
   verifyRetainedSlotCapture(native); native.run.pi_launch.native_corpus.source = '/owned/native-two'; assert.throws(() => verifyRetainedSlotCapture(native));
 });
 

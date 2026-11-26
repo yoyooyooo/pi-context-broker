@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -208,4 +208,48 @@ test('real files bind a unique attempt, exclusive registration, reservation and 
   await assert.rejects(verifyStandingPlan(p, { forReservation: true }), /STANDING_ORPHAN_RESERVATION/);
   const changed = structuredClone(setup); changed.budget.episode.max_model_requests = 99;
   await assert.rejects(assertStandingSetup(changed), /STANDING_SCIENTIFIC_TEMPLATE_CHANGED/);
+
+  const nextEnvironment = join(environmentRoot, 'next-pair'), nextControl = join(nextEnvironment, 'control');
+  await mkdir(nextControl, { recursive: true });
+  const nextTemplate = { ...structuredClone(template), id: 'next-template', environment_root: nextEnvironment,
+    control_root: join(nextControl, 'template') };
+  const nextTemplateReference = await write(join(nextControl, 'template.json'), nextTemplate);
+  const nextWorkPlan = { ...JSON.parse(await readFile(workPlan.path)), id: 'next-work-plan', environment_root: nextEnvironment,
+    entries: [{ id: 'case-design', setup: nextTemplateReference, planned_episodes: 2 }] };
+  const nextWorkPlanReference = await write(join(nextControl, 'work-plan.json'), nextWorkPlan);
+  const nextSetup = { ...nextTemplate, id: 'next-attempt', control_root: join(nextControl, 'attempt'),
+    standing: { ...setup.standing, work_plan: nextWorkPlanReference, attempt_id: 'next-attempt' } };
+  const nextContext = await assertStandingSetup(nextSetup);
+  assert.equal(nextContext.workPlan.value.environment_root, nextEnvironment);
+  assert.equal(nextContext.baseline.value.environment_root, environmentRoot);
+  assert.equal(nextContext.ledgerRoot, ledgerRoot);
+  const continued = await inspectStandingLedger({ ledgerRoot: nextContext.ledgerRoot, baseline });
+  assert.equal(continued.global_observations, 999);
+  assert.equal(continued.local_registrations, 1);
+  assert.equal(continued.lease.id, 'lease-fixture', 'Cross-environment setup must not release another owner');
+  await assert.rejects(verifyStandingPlan(p, { forReservation: true }), /STANDING_ORPHAN_RESERVATION/);
+
+  const withLedger = path => ({ ...nextSetup, standing: { ...nextSetup.standing, ledger_root: path } });
+  await assert.rejects(assertStandingSetup(withLedger(join(control, 'new-ledger'))), /STANDING_EXISTING_LEDGER_REQUIRED/);
+  const headerOnly = join(control, 'header-only-ledger'); await mkdir(headerOnly);
+  await cp(join(ledgerRoot, 'ledger-baseline.json'), join(headerOnly, 'ledger-baseline.json'));
+  await assert.rejects(assertStandingSetup(withLedger(headerOnly)), /STANDING_EXISTING_LEDGER_REQUIRED/);
+  const copied = join(control, 'copied-ledger'); await cp(ledgerRoot, copied, { recursive: true, errorOnExist: true });
+  const headerSha = sha(await readFile(join(ledgerRoot, 'ledger-baseline.json')));
+  await assert.rejects(assertStandingSetup(withLedger(copied)), { code: 'ERR_ASSERTION',
+    actual: { path: join(ledgerRoot, 'ledger-baseline.json'), sha256: headerSha },
+    expected: { path: join(copied, 'ledger-baseline.json'), sha256: headerSha } });
+  await assert.rejects(assertStandingSetup(withLedger(join(nextControl, 'new-ledger'))), { code: 'ERR_ASSERTION', actual: false, expected: true });
+  await assert.rejects(assertStandingSetup(withLedger(join(control, 'historical-ledger'))), /STANDING_HISTORY_LEDGER_IMMUTABLE/);
+
+  const otherAuthorization = await write(join(nextControl, 'other-grant.json'), { ...grant(), id: 'other-standing-grant' });
+  const otherGrantPlan = await write(join(nextControl, 'other-grant-work-plan.json'), { ...nextWorkPlan,
+    authorization: otherAuthorization, condition_epoch: { ...epoch, authorization: otherAuthorization } });
+  await assert.rejects(assertStandingSetup({ ...nextSetup, standing: { ...nextSetup.standing,
+    authorization: otherAuthorization, work_plan: otherGrantPlan } }), /STANDING_LEDGER_AUTHORIZATION_CHANGED/);
+  const otherBaseline = await write(join(nextControl, 'other-baseline.json'), {
+    ...JSON.parse(await readFile(baseline.path)), id: 'other-history-baseline' });
+  const otherBaselinePlan = await write(join(nextControl, 'other-baseline-work-plan.json'), { ...nextWorkPlan, baseline: otherBaseline });
+  await assert.rejects(assertStandingSetup({ ...nextSetup, standing: { ...nextSetup.standing, work_plan: otherBaselinePlan } }), {
+    code: 'ERR_ASSERTION', actual: baseline, expected: otherBaseline });
 });

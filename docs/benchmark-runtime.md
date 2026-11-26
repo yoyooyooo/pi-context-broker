@@ -156,9 +156,16 @@ SDK operations and their metrics remain separate from provider requests and Pi
 tools. The public metrics contain actual HTTP attempt kinds, targets, status,
 byte counts and timing; they do not claim TCP/TLS byte counts.
 
-The retained Benchmark SDK v2 operation set is `list`, `files`, `consume`, `read`,
-`read-resources`, and `resolve`. Mainline `next` uses SDK v3 with additional
-Library and content-search behavior. Resolve observation is backported from
+The current SDK v3 observer includes `library-selection`, `library`, `list`,
+`files`, `consume`, `read`, `read-resources`, `resolve`, and `content-search`.
+It records the Library identity and marks the terminal source contract explicitly.
+Its public dependency projection includes the exact paired Skill-ref-v2 parser;
+private corpus, oracle and grading code remain outside the subject projection.
+The collector verifies those captured bytes against the frozen paired build.
+
+The retained SDK v2 operation set is `list`, `files`, `consume`, `read`,
+`read-resources`, and `resolve`. Its historical interpretation stays separate.
+Resolve observation was backported from
 [next commit b2c441b](https://github.com/yoyooyooo/pi-context-broker/commit/b2c441ba8fe8ed695ff2cf6e6a6579b3895cf31a)
 without changing the frozen experiment's input or attribution schema.
 A completed resolution with a paired start, result and end plus complete

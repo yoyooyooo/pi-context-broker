@@ -22,11 +22,13 @@ export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding
   const result = { version: 1, required, status: required ? 'unverified' : 'not_required', build_id: buildId,
     scope: 'exact common Benchmark turn instrumentation; product tool implementations are outside this comparison', files: [] };
   if (!required) return result;
-  async function file(path) {
+  const buildManifestLimit = 64 * 1024 * 1024;
+  async function file(path, byteLimit = 16 * 1024 * 1024) {
     const info = await lstat(path);
-    assert.ok(info.isFile() && !info.isSymbolicLink() && info.size <= 16 * 1024 * 1024, 'TURN_RUNTIME_ORDINARY_FILE');
+    assert.ok(info.isFile() && !info.isSymbolicLink() && info.size <= byteLimit, 'TURN_RUNTIME_ORDINARY_FILE');
     assert.equal(await realpath(path), path, 'TURN_RUNTIME_SOURCE_SYMLINK');
     const bytes = await readFile(path);
+    assert.ok(bytes.length <= byteLimit, 'TURN_RUNTIME_ORDINARY_FILE');
     return { path, sha256: sha(bytes), bytes: bytes.length };
   }
   try {
@@ -37,7 +39,7 @@ export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding
     assert.ok(typeof environment.environment_id === 'string' && environment.environment_id.length > 0, 'TURN_RUNTIME_ENVIRONMENT_IDENTITY');
     const buildRoot = join(environmentRoot, 'builds', buildId);
     assert.equal(await realpath(buildRoot), buildRoot, 'TURN_RUNTIME_BUILD_ALIAS');
-    const buildFile = join(buildRoot, 'build.json'); result.build = await file(buildFile);
+    const buildFile = join(buildRoot, 'build.json'); result.build = await file(buildFile, buildManifestLimit);
     const manifest = JSON.parse(await readFile(buildFile, 'utf8'));
     assert.equal(manifest.version, 1); assert.equal(manifest.kind, 'paired-build', 'TURN_RUNTIME_COMPLETED_BUILD_REQUIRED');
     assert.equal(manifest.build_id, buildId, 'TURN_RUNTIME_BUILD_IDENTITY');
@@ -62,7 +64,7 @@ export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding
       assert.equal(selected.sha256, frozen[0].sha256, 'TURN_RUNTIME_BUILD_SOURCE_CHANGED:' + path);
       assert.equal(selected.sha256, current.sha256, 'TURN_RUNTIME_INSTRUMENTATION_MISMATCH:' + path);
     }
-    assert.equal((await file(buildFile)).sha256, result.build.sha256, 'TURN_RUNTIME_BUILD_CHANGED_DURING_CHECK');
+    assert.equal((await file(buildFile, buildManifestLimit)).sha256, result.build.sha256, 'TURN_RUNTIME_BUILD_CHANGED_DURING_CHECK');
     assert.equal((await file(environmentFile)).sha256, result.environment.sha256, 'TURN_RUNTIME_ENVIRONMENT_CHANGED_DURING_CHECK');
     for (const item of result.files) assert.equal((await file(item.current.path)).sha256, item.current.sha256, 'TURN_RUNTIME_CONTROLLER_SOURCE_CHANGED');
     result.status = 'verified'; return result;
@@ -191,7 +193,7 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
     // process terminal or its actual request/usage artifacts.
     const subject = Promise.resolve().then(() => (apparatus.runEnvironment ?? runEnvironment)({ root: environmentRoot, build: buildId, target: 'command', id: runId,
       'pi-mode': mode, ...(mode === 'native' ? { 'native-skills': binding.skills_root }
-        : notionEntry ? { entry: notionEntry } : { skills: binding.skills_root }),
+        : notionEntry ? { library: notionEntry } : { skills: binding.skills_root }),
       models: modelsFile, 'pass-env': [credential.api_key_env, ...(notionEntry ? ['NOTION_API_TOKEN'] : [])],
       'timeout-ms': unbounded ? 'none' : Math.min(3600000, budget.max_duration_ms + 60000),
       args: ['node', join(environmentRoot, 'builds', buildId, 'source/broker/benchmark/subject.mjs'), launchFile] }));
