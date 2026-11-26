@@ -32,7 +32,7 @@
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
     "packages/context-broker/src/notion-source.ts": "b63c5cb8f9a5d3a2d053e228e8fc6d9d70b9af454b57db8108325c4a17c6a28d",
-    "packages/context-broker/src/pi-host-adapter.ts": "3230ccb80a90f1374b08559a432df6d15736c2cb58634bdcf6274108f7c021d2",
+    "packages/context-broker/src/pi-host-adapter.ts": "c74fafae1e11164a1c1ecc161d3e33c76fa906bdd90721957a207eaba0372462",
     "packages/context-broker/scripts/host-refresh.test.ts": "ab39fb9d470ba931e41425cf55ffe403f21c05d9c0c79756b2df250e44159654",
     "packages/context-broker/scripts/session-refresh.test.ts": "5e3f715774593d8a95cdf4c9869bf010a70c2e792943350b08d2657b6dfe8cf4",
     "packages/context-broker/scripts/session-recovery.test.ts": "01c5c745744d8233f2f25757dd61b0cfcb75e4c70d7e355d60f2e1bc66031db5",
@@ -1089,6 +1089,12 @@
     "pi_failure_boundary": "Current Pi Broker failures retire unconfirmed source instructions and continue the original conversation with a warning. Existing qualification, graph, authorization and delivery guards still reject source publication and confirmation. See current_review.pi_nonblocking_context for reviewed ownership, native payload repair, queued input, deadline and presentation obligations; none adds a finite model action or wire-verification capability."
   },
   "current_review": {
+    "pi_read_description": {
+      "reviewed_from": "cbe36c332b16c4286afe9d1782e87a9b618a6300",
+      "scope": "Only the Pi read tool description changes. Removing that exact description line leaves pi-host-adapter.ts byte-identical to the reviewed base. The refresh parameter still specifies requested current-version inspection, unchanged active selection and a supplied Notion main ref; notion_use owns latest adoption. The read adapter regression checks the complete tool definition instead of requiring the repeated tutorial in its top-level description.",
+      "preserved_guards": "Tool registration and ownership, parameter schemas, native execution, relative and fixed references, source authorization, resource batches, cancellation, graph selection and provider delivery are unchanged. No other tool or host guidance changes.",
+      "proof_limit": "Tool wording is outside the finite model variables. Models, configs, views, bounds, cases, expected_rules, tool locks and mutation targets are unchanged. This hash binds reviewed source bytes; real request payload and model behavior require the separate Benchmark comparison."
+    },
     "reviewed_from": "8cce7fa105b8df6a485fe2b8ef419fc6ab597cb0",
     "method": "Read changed owner functions, delayed commits, exact identity guards, source projection, failed recovery isolation and actual regression assertions before binding these source hashes. Hash correspondence is not an implementation refinement proof.",
     "unchanged_guards": "Current evidence original validation time, request order, generation, cancellation and precise source denial ownership remain intact. Business Enabled is exempted only for intact previously confirmed fixed bytes; authorization is never exempted.",
