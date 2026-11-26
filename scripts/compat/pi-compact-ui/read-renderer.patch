@@ -1,5 +1,5 @@
 diff --git a/README.md b/README.md
-index 7f5470c..680e8ee 100644
+index 7f5470c..2e0974d 100644
 --- a/README.md
 +++ b/README.md
 @@ -128,6 +128,20 @@ Its main responsibilities are:
@@ -21,8 +21,8 @@ index 7f5470c..680e8ee 100644
 +derivative does not add or change one.
 +
 +The existing compact group and saved UI preferences remain in use. A `read`
-+call with a `paths` batch shows its file count; full arguments and results
-+remain available in the expanded group. Tool definitions, parameters, and
++call with a `paths` batch shows its file count. The expanded group retains
++the existing result-preview limits and settings. Tool definitions, parameters, and
 +execution belong to the active `read` provider. Install the derived package
 +through an isolated generation and preserve the original package setting for
 +rollback; do not edit the global npm package in place.
