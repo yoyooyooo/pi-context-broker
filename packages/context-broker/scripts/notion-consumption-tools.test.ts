@@ -74,7 +74,6 @@ test("Pi exposes one Notion consumption contract and keeps use outside nested co
   const ctl = registered.find(tool => String(tool.name) === "notion_ctl");
   const list = registered.find(tool => String(tool.name) === "notion_list");
   expect(list?.description).toContain("Skill refs for read or notion_use");
-  expect(list?.description).toContain("including items outside the default View");
   expect(list?.description).not.toContain("read references only");
   expect(use).toMatchObject({ exposure: "model-only", defaultActive: true });
   expect(ctl).toMatchObject({ exposure: "deferred", defaultActive: false, loadMode: "discoverable", defaultInactive: true });

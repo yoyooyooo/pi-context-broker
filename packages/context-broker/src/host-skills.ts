@@ -662,7 +662,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       limit: { type: "integer", minimum: 1, maximum: 100, description: piConsumption ? "Maximum entries, default 20. Content search accepts at most 50 and has no pagination." : "Maximum metadata entries, default 20." },
       ...(piConsumption ? {
         search_in: { type: "string", enum: ["metadata", "content"], description: "Default metadata searches names and descriptions without MCP or authorization UI. Content explicitly searches remote Notion content in one configured source." },
-        refresh: { type: "boolean", description: "Default false for ordinary discovery or applying a named Skill. Set true for named existence/availability questions, after writes, or when the user requests current/latest metadata or an explicit refresh. Refresh metadata for the explicit source, or this accepted turn's selected Library when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor." },
+        refresh: { type: "boolean", description: "Refresh metadata for the explicit source, or this accepted turn's selected Library when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor." },
         cursor: { type: "string", description: "Metadata only: copy next_cursor to continue the same query and metadata publication; restart after refresh. Content mode rejects all cursors." },
       } : {}),
     }, required: piConsumption ? [] : ["query"], additionalProperties: false },
