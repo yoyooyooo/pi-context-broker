@@ -234,11 +234,51 @@ sources:
 
 Policy `maxAge` accepts `0` or an integer followed by `s`, `m`, `h`, or `d`. Omitted policies use the CLI's defaults. `offline: true` uses existing CLI cache and takes precedence over `maxAge`; unavailable/incomplete cache fails instead of silently fetching. The [schema](../examples/config.schema.json) rejects unknown source fields and invalid type-specific values; duplicate source ids are checked by the broker.
 
-Each source network attempt receives its own timeout; pagination and rate-limit waits can extend an SDK operation. Broker bounds each background catalog request and Pi's context stage before each model request to 60 seconds, including metadata, preparation and fixed restoration. Failure or timeout cannot keep input blocked. An explicit `requestTimeoutMs` sets the SDK operation or management CLI environment. Escape, Stop and session cancellation abort the owned SDK operation or management process tree. Discovery and activation keep their own freshness policies; Broker does not maintain another persistent catalog cache or renew the SDK validation time.
+Each source network attempt receives its own timeout; pagination and rate-limit waits can extend an SDK operation. Broker bounds each background catalog request to 60 seconds. A Pi context has 60 seconds of cumulative read time; an authorized Source materialization wait has a separate cumulative allowance of 180 seconds, with a 240-second total limit. Failure or timeout cannot keep input blocked. An explicit `requestTimeoutMs` sets the SDK operation or management CLI environment. Escape, Stop and session cancellation end the owned SDK wait and publication eligibility. An accepted fixed-manager request keeps its original operation and Store; cancelling the foreground wait does not kill that writer or prove its writes settled. Discovery and activation keep their own freshness policies; Broker does not maintain another persistent catalog cache or renew the SDK validation time.
 
 Pi filters an in-memory candidate snapshot on every `$` keystroke. Session startup reads local Skills, bundled maintenance Skills and the SDK's local candidate snapshot independently while online discovery continues in the background. The snapshot reuses the most recent complete catalog, newer partial records and current denial facts from the existing persistent cache. It proves neither current authorization nor complete bodies or Requires; a partial empty result does not prove absence. A refreshed catalog updates the current open menu without waiting for the Default View or file projections. Reordering preserves the highlighted identity; removal clears selection until the user chooses again. Esc dismisses both waiting and open menus, and late results cannot reopen them. Ordinary and queued input each freeze their displayed Skill identity, Library and Source at admission, so later drafts and refreshes cannot rebind them.
 
 Online Notion metadata uses `listCatalog`; completion startup uses the local `readCandidateSnapshot` operation. Skill/Router preparation, direct Prompt loading and bounded prefetch all use `consume`; supporting files use `readSkill` or the current batch resource operation. The paired SDK returns the complete manifest and exact main body once. Broker initially materializes the main entry and retains every declared File binding for on-demand reads; `manifest_complete` does not mean every file is local. Each explicit Prompt submission obtains its own material. `source.command`, CLI prepare/read fallback and full-export snapshots are removed. Old or incomplete packages fail explicitly; upgrade the paired CLI/SDK and Broker together. OMP/Tern evolution is deferred.
+
+### First explicit selection of a registered Source member
+
+A literal `$` submitted by the user can prepare a registered upstream member that
+has no current consumable content yet. Broker first resolves its exact Library,
+registered Source, member and stable Skill identity. A member without a Skill row
+remains a metadata candidate; it never receives a fabricated page ID or `skill://`
+reference. Cached candidates expose `ready`, `materializable`, `preparing`,
+`blocked` or `unknown` readiness. A complete directory is required for unique
+alias matching; a partial result does not authorize a write.
+
+The configured manager performs the finite, incremental operation through the
+separate paired management entry. It retains existing materialized members,
+prepares the necessary Requires closure for use, and leaves Members lazy. It
+writes only the persistent consumption contract; Notion reading projections are
+not part of this path. Missing manager configuration, ambiguous identity, blocked
+policy and unresolved writes fail explicitly. Broker does not substitute an
+arbitrary local CLI or follow a new upstream revision to make the request pass.
+
+If a native root has no registered Source but its Required dependencies include
+unready registered Skills, the SDK supplies a fresh complete Requires observation
+for that exact physical root. The manager rechecks the root and relation digest
+before preparing only those dependencies. Error messages and Members never grant
+this authority. Broker then consumes the original root again.
+
+After a validated management receipt, the CLI retires affected persistent facts
+and Broker retires its scoped metadata and source jobs. The ordinary readonly
+`consume` operation must then prove the complete graph, body and file directory
+before Pi receives any instructions. A management receipt is not a loaded or
+delivered receipt. Its `scope` is verified under the consuming client; `manager_scope`
+retains the fixed writer attribution when the credentials differ. Management effects are recorded separately from consumption
+effects; pending or unknown writes remain pending or unknown.
+
+Ready selections keep the normal cached consumption path without a discovery or
+management call. Lists, completions, model reads, prefetch, restoration and
+configurable rule injections do not acquire management authority. Code examples
+and quoted Markdown `$` text do not grant it either. Cancellation ends the
+foreground wait and retires that input's publication authority; an accepted
+management operation keeps its durable recovery state. Existing session pins
+are preserved.
 
 The paired runtime accepts SDK v3 only, with matching SDK/runtime capabilities. Consumption performs no remote semantic writes and has no `readOnly` option. Candidate-snapshot v1 provides discovery metadata and a catalog-settled notification before the same combined operation reads its View; both the SDK and manifest must declare the capability. Catalog-directory v1 provides full-catalog and Default View projections in one operation. Each projection keeps its own result, so an unrelated catalog failure does not hide an accessible View. Missing capability fails before dispatch.
 
@@ -276,7 +316,7 @@ Current eligibility, fixed selection and delivered text are separate. Disabled c
 
 `Default Context` is retained as an optional author-managed organization/View-filter attribute, not a second availability or body-injection switch. Existing values, stable schema and author APIs remain because real Views and integrations may use them. In an unfiltered View, changing it has no independent effect; in a View that explicitly filters it, normal View freshness determines membership. `Enabled=false` always wins for new ordinary consumption. No global field rename, deletion or forced UI hiding is performed.
 
-Pi retains a selected submission's original text, images and accepted identity at the input boundary. After `agent_start` supplies its operation signal, the `context` hook acquires metadata, the selected graph and bodies. The context stage before each model request, including print/JSON metadata, preparation and fixed-context restoration, has a shared 60-second deadline even when a source ignores cancellation. Broker failures discard unconfirmed instructions and report a non-blocking warning while the original user request continues. Permission, integrity, projection, final-payload and persistence guards keep rejecting invalid Skill content or activation receipts; they do not abort the user's conversation. Pi keeps its native editor and follow-up queue available. **Stop**, Escape, RPC `abort` and session replacement still cancel the owned acquisition, and late results cannot become a new selection or delivery.
+Pi retains a selected submission's original text, images and accepted identity at the input boundary. After `agent_start` supplies its operation signal, the `context` hook acquires metadata, the selected graph and bodies. The context stage before each model request shares 60 seconds of read time across Library identity, print/JSON metadata, preparation, task prompts and fixed-context restoration. Only the paired management SDK await, after a current literal `$` input passes its Source and readiness guards, uses a separate 180-second management allowance. Both allowances are cumulative across all roots and queued inputs in that context; changing phase does not replenish either one, and the context cannot exceed 240 seconds. Receipt handling, complete catalog rebuilding and ordinary graph consumption use the remaining read allowance. Without an authorized management call, the original 60-second deadline remains. These bounds also end waiting on a producer that ignores cancellation. They do not change the fixed manager's own configured execution limit or OMP's separate command path. Broker failures discard unconfirmed instructions and report a non-blocking warning while the original user request continues. Permission, integrity, projection, final-payload and persistence guards keep rejecting invalid Skill content or activation receipts; they do not abort the user's conversation. Pi keeps its native editor and follow-up queue available. **Stop**, Escape, RPC `abort` and session replacement still cancel the owned acquisition, and late results cannot become a new selection or delivery.
 
 Public `notion_list` metadata calls, `notion_use` calls and `notion_ctl cli_source` verification each have a 60-second operation budget. A Broker-owned scalar read shares that budget across lookup, preparation and its native file read; if the native read executor cannot be installed, the read-hook acquisition is still bounded. An ordinary native read keeps its original arguments, result and execution budget. Content search retains a 360-second total budget, now including initial Library resolution. Resource batches retain their explicit `timeBudgetMs` (default 30000, maximum 120000) and `RESOURCE_TIME_BUDGET` error. Both deadlines and user cancellation settle the Broker boundary even if a producer ignores its signal. A timeout becomes a controlled tool failure while the conversation continues; late results cannot add source receipts or activation. The `cli_source` limit covers root verification; a separately authorized CLI process retains its own timeout.
 

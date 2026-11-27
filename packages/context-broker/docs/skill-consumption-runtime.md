@@ -79,6 +79,16 @@ span；生成 effects footer 仍须精确匹配该次操作，未知不能变成
 
 Pi `read` 与 `notion_use` 不公开 `readOnly`。携带该旧参数时，无论值为 true 或 false，都在 I/O 前返回 `INVALID_ARGUMENT`。随包 SDK v3 不接收这个参数，当前消费恒零语义写入，不通过首次读取 retention/adoption 或写 Records。旧选择缺少所需本地字节时，明确获取当前候选并重新选择，不承诺远端历史恢复。
 
+### 显式输入的管理准备边界
+
+真实 InputReceipt 中的字面 `$` 可以为尚未就绪的登记 Source member 授予一次有限管理准备。该授权绑定输入、session、branch、配置来源、Library scope 与精确 root，并在 preflight 结束后撤销。它不放进 SkillRecord、消费策略或会话 pin；通用 read/use、补全、预取与恢复不继承它。
+
+未建行的 Source member 只在 Catalog/CompletionCandidate 中存在。管理端返回真实 ContentRecord 后才能进入原消费者；旧行缺 current schema 时，只有该次显式 root 或其 Requires 的确定缺项允许一次修复。认证失败、身份冲突、无效作者内容和普通网络失败不触发管理。已就绪热路径不调用管理。
+
+根本身没有登记 Source 时，只接受 SDK 针对该真实 root 的新鲜完整 `requires_of` 结果。`authorization_root` 绑定稳定 Skill ID、page 与 Requires 摘要；manager 在固定作用域内重新核验，再准备仍属于该闭包的登记依赖。Members、错误字符串或模型补出的名称都不增加范围。
+
+`context-broker-materialization` 会话条目及独立 `context-broker.notion-materialization` observation 记录 request、operation、Source revision 和管理 effects。它们与 `context-broker-consumption-effects` 分离。有效回执使 CLI 持久 facts 与 Broker 内存失效，随后普通 SDK consume 重新证明完整内容；回执本身不参与 provider 指令投递。取消不能把未知远端写解释成零写，也不能让迟到的结果复活旧回合。
+
 SDK 与构建 manifest 必须具备匹配的消费能力，缺失时在操作前拒绝；旧 `source.command` 同样在配置入口拒绝。此边界由 `notion-sdk.test.ts` 的无 readOnly 能力门槛和当前独立安装 HTTP 检查验证，不依赖用户选一个保护开关。
 
 version-1 `effects` 只包含 `version`、`remote_writes` 和 `author_content`。确认零写时必须是 `none` 与 `unchanged`；缺失或不完整的观察保守报告 `unknown`，后续零写结果不能覆盖它。旧 `retained` 状态和 `retention` 字段均拒绝，包括空数组。`notion_use`、原生 read 和注入的效果文字保留原正文 span；多源失败与取消继续携带本轮已观察的结果。实际 SDK 写入拒绝边界、HTTP 记录和 `host-prepare.test.ts` 等回归共同验证零写，不能仅凭输出字段宣称通过。

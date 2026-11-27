@@ -162,7 +162,7 @@ Broker 每次 input 重读本地默认，已接纳 turn、固定 ref 和 CLI 写
 用同一提交的 CLI 源码生成新的 current HTTP fixture，输出目录必须属于本轮且未被旧结果占用：
 
 ```sh
-node /absolute/current/notion-skills-cli/scripts/sdk-fixture.ts --outdir /absolute/new/current-fixture --catalog
+node /absolute/current/notion-skills-cli/scripts/sdk-fixture.ts --outdir /absolute/new/current-fixture --catalog --materialization
 node scripts/verify-artifacts.mjs --fixture /absolute/new/current-fixture/fixture.json --source-http-helper /absolute/current/notion-skills-cli/scripts/sdk-source-fixture.mjs
 ```
 
@@ -177,6 +177,8 @@ node scripts/verify-artifacts.mjs --fixture /absolute/new/current-fixture/fixtur
 该入口只在自有临时目录安装 loader 依赖，不启动真实 Pi 会话，也不更改现有日用安装。
 
 ## 4. 区分通过范围
+
+首次 `$` 引用、Source readiness、管理 binding、receipt 或失效交接改变时，执行 [Source 物化](features/source-materialization.md) 的 source-materialize-legacy、source-materialize-first、source-materialize-legacy-source、source-materialize-growth、source-materialize-native-root，以及独立取消迟到场景 source-materialize-cancel-late。同包固定 manager 实际落地后必须再走普通 consume，核完整 provider 正文、五分钟新 PID 和独立空客户端；projection 调用为 0。模型/代码围栏美元名不授权管理，取消不让迟到结果发布。对应 authority/receipt 单测和 CLI 原未知写故障回放分别保留，管理回执不充当消费证明。
 
 源码检查通过，只证明所执行的当前消费回归；安装包通过，只证明独立包与受控 HTTP 服务的交互。
 Source ready、目录完整、本地有文件、正文已交付、当前 turn 成功必须分别判断。

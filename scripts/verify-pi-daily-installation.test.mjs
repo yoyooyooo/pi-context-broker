@@ -268,10 +268,13 @@ test('daily plan and launched host receive -ns without replacing normal HOME or 
   const embeddedCli = 'throw new Error("Fixture CLI must not execute");\n', embeddedSdk = 'throw new Error("Fixture SDK must not execute");\n';
   await writeFile(join(f.broker, 'dist/ntn-skills.mjs'), embeddedCli);
   await writeFile(join(f.broker, 'dist/ntn-skills-sdk.mjs'), embeddedSdk);
+  const embeddedManagement = 'throw new Error("Fixture management module must not execute");\n';
+  await writeFile(join(f.cliRoot, 'dist/management.js'), embeddedManagement);
+  await writeFile(join(f.broker, 'dist/ntn-skills-management.mjs'), embeddedManagement);
   const embeddedRef = 'throw new Error("Fixture pure module must not execute");\n';
   await writeFile(join(f.broker, 'dist/ntn-skills-ref.cjs'), embeddedRef);
   await writeFile(join(f.cliRoot, 'dist/ref.cjs'), embeddedRef);
-  await writeFile(join(f.broker, 'dist/ntn-skills-runtime.json'), JSON.stringify({ version: 1, package: 'ntn-skills', cli_sha256: digest(embeddedCli), sdk_sha256: digest(embeddedSdk), sdk_version: 3, skill_ref_version: 2, ref_sha256: digest(embeddedRef) }));
+  await writeFile(join(f.broker, 'dist/ntn-skills-runtime.json'), JSON.stringify({ version: 1, package: 'ntn-skills', cli_sha256: digest(embeddedCli), sdk_sha256: digest(embeddedSdk), sdk_version: 3, skill_ref_version: 2, ref_sha256: digest(embeddedRef), source_materialization_version: 1, management_sha256: digest(embeddedManagement) }));
   const config = { ...f.config, version: 1, library: source.sources[0].library, packageCount: 2, packageIndex: 1, brokerRoot: f.broker,
     delivery: { id: randomUUID(), startedAt: new Date().toISOString() },
     embeddedCliSha256: digest(embeddedCli), embeddedSdkSha256: digest(embeddedSdk), evidenceRoot: join(f.root, 'evidence') };
@@ -289,8 +292,8 @@ test('daily plan and launched host receive -ns without replacing normal HOME or 
     await mkdir(join(root, 'src'));
     await writeFile(join(root, 'src/current.ts'), 'export const fixture = true;\n');
     const build = { version: 1, kind: name + '-build', input_roots: ['src'], source: await fileInventory(root, ['src']),
-      artifacts: await fileInventory(pkg, name === 'cli' ? ['dist/ntn-skills.js', 'dist/sdk.js', 'dist/ref.cjs', 'skills'] : ['dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-ref.cjs', 'dist/ntn-skills-runtime.json']) };
-    if (name === 'broker') build.selected_cli = await fileInventory(f.cliRoot, ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'dist/ref.cjs', 'skills', 'THIRD_PARTY_NOTICES.md']);
+      artifacts: await fileInventory(pkg, name === 'cli' ? ['dist/ntn-skills.js', 'dist/sdk.js', 'dist/management.js', 'dist/ref.cjs', 'skills'] : ['dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-management.mjs', 'dist/ntn-skills-ref.cjs', 'dist/ntn-skills-runtime.json']) };
+    if (name === 'broker') build.selected_cli = await fileInventory(f.cliRoot, ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'dist/management.js', 'dist/ref.cjs', 'skills', 'THIRD_PARTY_NOTICES.md']);
     await writeFile(join(pkg, 'dist/next-build.json'), JSON.stringify(build));
     git('init', '--initial-branch=next'); git('init', '--bare', '--initial-branch=next', origin); git('remote', 'add', 'origin', origin);
     git('add', '.'); git('-c', 'user.name=Daily launch fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'controlled daily inputs');

@@ -237,7 +237,9 @@ Broker's actual receipt. They use `selectedCliInputs` from the frozen Broker
 source when exported. A snapshot without that export uses the original four
 inputs: `package.json`, `dist/ntn-skills.js`, `dist/sdk.js` and `skills`.
 An explicit declaration must include all four; additional declared inputs such
-as `THIRD_PARTY_NOTICES.md` remain required. Missing or changed selected bytes
+as `THIRD_PARTY_NOTICES.md` remain required. The current declaration also freezes
+`dist/management.js`; Broker bundles and verifies that separate management entry
+with the same selected CLI package. Missing or changed selected bytes
 fail even when the outer package inventories match.
 
 A successful build returns `build_id` and its `root`. Copy that `build_id` into

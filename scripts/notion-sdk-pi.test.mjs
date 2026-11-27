@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { parseArgs, validateCurrentFixture, currentServiceFacts, selectProviderCall, assertWireSources, verifyEvidence } from './notion-sdk-pi.mjs';
+import { assertCancellationCausality, assertNoCancellationPublication, assertPositiveManagerTransports, assertWarmMaterializationGraph, readManagerState } from './notion-sdk-pi-materialization.mjs';
 
 const options = ['--package', '/owned/installed', '--fixture', '/owned/current.json', '--source-http-helper', '/owned/current-http.mjs'];
 test('current command boundary rejects retired or ambiguous invocation before I/O', () => {
@@ -12,7 +13,7 @@ test('current command boundary rejects retired or ambiguous invocation before I/
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-cache-recovery'])['--scenario'], 'http-cache-recovery');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-warm-restart'])['--scenario'], 'http-warm-restart');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-warm-directory-expired'])['--scenario'], 'http-warm-directory-expired');
-  for (const scenario of ['http-smart-revalidate', 'http-smart-current'])
+  for (const scenario of ['http-smart-revalidate', 'http-smart-current', 'source-materialize-legacy', 'source-materialize-first', 'source-materialize-legacy-source', 'source-materialize-growth', 'source-materialize-native-root', 'source-materialize-cancel-late'])
     assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', scenario])['--scenario'], scenario);
   for (const args of [
     ['cleanup', '--evidence', '/owned/result'], ['run', ...options], ['run', ...options, '--out', 'relative'],
@@ -359,4 +360,248 @@ test('smart current evidence rejects missing dirty acquisition, incomplete closu
     const modified = structuredClone(fixture.files[name]); mutate(modified); await fixture.save(name, modified);
     await assert.rejects(verifyEvidence(fixture.directory), name); await fixture.save(name, fixture.files[name]);
   }
+});
+
+
+function cancellationCausality() {
+  const names = ['accepted', 'abort-requested', 'abort-completed', 'session-replaced', 'release-requested', 'manager-completed', 'recovery-started', 'recovery-completed'];
+  const accepted = { database: '/owned/manager/state.sqlite', dev: 1, ino: 2, identities: [{ id: 'manager', scope: 'manager-scope' }], rows: [
+    { key: 'operations/current-source-materialization/request', payload: { request: { request_id: 'original-request' }, plans: [{ operation_id: 'original-operation' }] } },
+    { key: 'operations/current-write-pending/owner', payload: { intent: { operation_id: 'original-operation', owner: { kind: 'source', id: 'source' } } } },
+  ] };
+  return {
+    points: names.map((event, i) => ({ event, monotonic_ns: String([20, 30, 50, 60, 70, 100, 120, 130][i]) })),
+    held: { method: 'PATCH', request_bytes_complete: true, response_bytes_complete: true, semantic_write: true, terminal: 'finished', status: 200,
+      started_monotonic_ns: '10', ended_monotonic_ns: '80', closed_monotonic_ns: '90' },
+    cancelled: { event: 'result', status: 'cancelled', effects: { remote_writes: 'unknown' }, observer_monotonic_ns: '40', request_id: 'original-request' },
+    response: { close: { code: 0, signal: null, observer_monotonic_ns: '95' }, envelope: { ok: true, request_id: 'original-request', result: {
+      request_id: 'original-request', operation_id: 'original-operation', status: 'ready', effects: { remote_writes: 'management', projection: 'none' } } } },
+    accepted, retained: structuredClone(accepted), settled: { ...structuredClone(accepted), rows: [] },
+  };
+}
+
+test('cancelled actual-Pi evidence needs the original causal manager receipt and retained Store', () => {
+  assertCancellationCausality(cancellationCausality());
+  const corruptions = [
+    value => { value.cancelled.effects.remote_writes = 'none'; },
+    value => { value.held.ended_monotonic_ns = '65'; },
+    value => { value.response.close.signal = 'SIGTERM'; value.response.close.code = null; },
+    value => { value.response.envelope.request_id = 'replacement-request'; },
+    value => { value.response.envelope.result.operation_id = 'replacement-operation'; },
+    value => { value.retained.rows = []; },
+    value => { value.settled.rows = structuredClone(value.accepted.rows); },
+    value => { value.settled.ino = 3; },
+    value => { value.accepted.rows[1].payload.settled_action = { success: true }; },
+    value => { value.points[3].monotonic_ns = '75'; },
+  ];
+  for (const corrupt of corruptions) {
+    const value = cancellationCausality(); corrupt(value);
+    assert.throws(() => assertCancellationCausality(value));
+  }
+});
+
+test('a cancelled or replacement session cannot hide selected graphs, receipts or serialized original bodies', () => {
+  const body = '---\nname: late\n---\n\nComplete original with newline 中文 😀\n';
+  assertNoCancellationPublication({ branch: [{ type: 'message', message: { role: 'user', content: 'An unrelated task.' } }] }, [body], assertWireSources);
+  for (const customType of ['context-broker-selected-graph', 'context-broker-materialization'])
+    assert.throws(() => assertNoCancellationPublication({ branch: [{ type: 'custom', customType, data: {} }] }, [body], assertWireSources));
+  for (const content of [body, JSON.stringify({ content: body })])
+    assert.throws(() => assertNoCancellationPublication({ branch: [{ type: 'message', message: { content } }] }, [body], assertWireSources));
+});
+
+function positiveManagerEvidence(count = 2) {
+  const base = '/owned/positive', piPid = 700, managerScope = 'a'.repeat(64), consumerScope = 'b'.repeat(64);
+  const binding = { version: 1, kind: 'local', command: base + '/manager/launch', execution_id: 'c'.repeat(64), library: '00000000-0000-4000-8000-000000000002' };
+  const value = { base, binding, piPid, sourceId: 'current-sdk', managerScope, consumerScope, managerPids: [], events: [], sessionReceipts: [], outputs: [] };
+  for (let i = 0; i < count; i++) {
+    const pid = 800 + i, input = 'input-' + i, request = input + ':request-' + i, time = 100 + i * 100;
+    const receipt = { version: 1, request_id: request, library_id: binding.library, scope: managerScope,
+      target: { source_id: 'source', member_key: 'skills/member-' + i, expected_skill_id: 'stable-' + i, registration_digest: 'd'.repeat(64) },
+      status: i === 0 ? 'ready' : 'already_ready', ...(i === 0 ? { operation_id: 'original-operation-' + i } : {}),
+      affected_skill_ids: ['stable-' + i], source_revisions: [{ source_id: 'source', revision: 'e'.repeat(64) }],
+      effects: { remote_writes: i === 0 ? 'management' : 'none', projection: 'none' } };
+    const bytes = Buffer.from(JSON.stringify({ version: 1, request_id: request, execution_id: binding.execution_id, library: binding.library, ok: true, result: receipt }) + '\n');
+    const attribution = { kind: 'context-broker.notion-materialization', observer_pid: piPid, phase: 'management', source_id: 'current-sdk',
+      request_id: request, library: binding.library, registered_source_id: receipt.target.source_id, member_key: receipt.target.member_key };
+    value.managerPids.push(pid); value.outputs.push({ pid, bytes });
+    value.sessionReceipts.push({ ...structuredClone(receipt), source_id: 'current-sdk', input_receipt: input, scope: consumerScope, manager_scope: managerScope });
+    value.events.push(
+      { ...attribution, event: 'start', observer_monotonic_ns: String(time) },
+      { kind: 'manager_transport', event: 'spawn', child_pid: pid, command: binding.command, observer_pid: piPid, observer_monotonic_ns: String(time + 10) },
+      { kind: 'manager_transport', event: 'close', child_pid: pid, observer_pid: piPid, observer_monotonic_ns: String(time + 20), code: 0, signal: null,
+        output_file: join(base, 'manager-response-' + pid + '.json'), output_bytes: bytes.length, output_sha256: createHash('sha256').update(bytes).digest('hex') },
+      { ...attribution, event: 'result', observer_monotonic_ns: String(time + 30), status: receipt.status, operation_id: receipt.operation_id,
+        effects: receipt.effects, manager_scope: managerScope },
+    );
+  }
+  return value;
+}
+
+function rewriteManagerStdout(value, index, change) {
+  const output = value.outputs[index], envelope = JSON.parse(output.bytes.toString('utf8'));
+  const replacement = change(envelope);
+  output.bytes = Buffer.from(replacement ?? JSON.stringify(envelope) + '\n');
+  const close = value.events.find(row => row.kind === 'manager_transport' && row.event === 'close' && row.child_pid === output.pid);
+  close.output_bytes = output.bytes.length; close.output_sha256 = createHash('sha256').update(output.bytes).digest('hex');
+}
+const firstManagerClose = value => value.events.find(row => row.kind === 'manager_transport' && row.event === 'close');
+
+test('positive manager evidence binds actual exits and original receipts for one or multiple managers', () => {
+  for (const count of [1, 2]) {
+    const value = positiveManagerEvidence(count), proof = assertPositiveManagerTransports(value);
+    assert.deepEqual(proof.map(row => row.pid), value.managerPids);
+    assert.deepEqual(proof.map(row => row.request_id), value.sessionReceipts.map(row => row.request_id));
+    assert.ok(proof.every(row => row.close.code === 0 && row.close.signal === null && row.manager_scope !== value.consumerScope));
+    assert.equal(proof[0].operation_id, 'original-operation-0');
+    if (count === 2) { assert.equal(proof[1].status, 'already_ready'); assert.equal(proof[1].operation_id, null); }
+  }
+});
+
+const managerEvidenceCorruptions = [
+  ['missing actual close even when a PID is marked exited', value => { const close = firstManagerClose(value); value.events.splice(value.events.indexOf(close), 1); value.observed_exit = true; }],
+  ['missing exit code', value => { delete firstManagerClose(value).code; }],
+  ['nonzero exit', value => { firstManagerClose(value).code = 1; }],
+  ['signal exit', value => { firstManagerClose(value).signal = 'SIGTERM'; }],
+  ['a close observed by another Pi process', value => { firstManagerClose(value).observer_pid++; }],
+  ['duplicate accepted PID', value => { value.managerPids[1] = value.managerPids[0]; }],
+  ['duplicate close hiding another manager', value => { value.events.filter(row => row.kind === 'manager_transport' && row.event === 'close')[1].child_pid = value.managerPids[0]; }],
+  ['an extra orphan spawn', value => { value.events.push({ ...value.events.find(row => row.event === 'spawn'), child_pid: 999 }); }],
+  ['observer failure', value => { value.events.push({ kind: 'manager_transport', event: 'observer-error' }); }],
+  ['missing original stdout', value => { value.outputs.pop(); }],
+  ['altered stdout with a stale byte hash', value => { value.outputs[0].bytes = Buffer.from('{}'); }],
+  ['a substituted stdout file path', value => { firstManagerClose(value).output_file = '/owned/another-response.json'; }],
+  ['wrong execution identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.execution_id = 'f'.repeat(64); }); }],
+  ['wrong Library identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.library = 'another-library'; }); }],
+  ['wrong outer request identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.request_id = 'another-request'; }); }],
+  ['wrong inner request identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.request_id = 'another-request'; }); }],
+  ['wrong operation identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.operation_id = 'replacement-operation'; }); }],
+  ['consumer scope impersonating the manager', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.scope = value.consumerScope; }); }],
+  ['wrong member identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.target.member_key = 'skills/other'; }); }],
+  ['wrong configured Source identity', value => { value.events.find(row => row.kind === 'context-broker.notion-materialization' && row.event === 'result').source_id = 'another-sdk'; }],
+  ['a configured Source replaced in both SDK events and session receipts', value => {
+    for (const row of value.events.filter(row => row.kind === 'context-broker.notion-materialization')) row.source_id = 'another-sdk';
+    for (const row of value.sessionReceipts) row.source_id = 'another-sdk';
+  }],
+  ['changed Source revision', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.source_revisions[0].revision = 'f'.repeat(64); }); }],
+  ['a pending receipt presented as success', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.status = 'pending'; }); }],
+  ['a missing session receipt', value => { value.sessionReceipts.pop(); }],
+  ['a replaced stable Skill identity', value => { value.sessionReceipts[0].target.expected_skill_id = 'replacement-skill'; }],
+  ['a duplicate SDK result hiding another request', value => { const results = value.events.filter(row => row.kind === 'context-broker.notion-materialization' && row.event === 'result'); Object.assign(results[1], results[0]); }],
+  ['a close arriving after the SDK result', value => { firstManagerClose(value).observer_monotonic_ns = '131'; }],
+  ['another valid request stdout mixed in after the original', value => { rewriteManagerStdout(value, 0, envelope => JSON.stringify(envelope) + '\n' + value.outputs[1].bytes.toString('utf8')); }],
+  ['two individually valid stdout receipts swapped between children', value => {
+    const first = value.outputs[0].bytes, second = value.outputs[1].bytes;
+    rewriteManagerStdout(value, 0, () => second); rewriteManagerStdout(value, 1, () => first);
+  }],
+  ['the same stdout request reused by overlapping managers while another request is left unbound', value => {
+    const pid = value.managerPids[1], request = value.sessionReceipts[1].request_id;
+    value.events.find(row => row.event === 'spawn' && row.child_pid === pid).observer_monotonic_ns = '115';
+    value.events.find(row => row.event === 'close' && row.child_pid === pid).observer_monotonic_ns = '125';
+    value.events.find(row => row.event === 'start' && row.request_id === request).observer_monotonic_ns = '105';
+    value.events.find(row => row.event === 'result' && row.request_id === request).observer_monotonic_ns = '135';
+    rewriteManagerStdout(value, 1, () => value.outputs[0].bytes);
+  }],
+];
+for (const [label, corrupt] of managerEvidenceCorruptions) test('positive manager evidence rejects ' + label, () => {
+  const value = positiveManagerEvidence(); corrupt(value); assert.throws(() => assertPositiveManagerTransports(value));
+});
+
+function materializationWarmGraph(mode = 'member') {
+  const scope = 'a'.repeat(64), library = 'library', validated = '2026-11-27T12:00:00.000Z';
+  const directory = id => ({ id, ref: 'skill://' + id + '/SKILL.md', kind: 'skill', name: id, description: id + ' metadata', availability: 'available' });
+  const prepared = (id, role) => {
+    const record = { id, kind: 'skill', locator: { type: 'shared_skill', skill_id: id, page_id: 'page-' + id, library_id: library } };
+    const content = id + ' 完整正文\n', digest = createHash('sha256').update(content).digest('hex');
+    return { id, ref: 'skill://' + id + '/SKILL.md?snapshot=s_' + id, roles: [role], state: 'prepared', record,
+      binding: { record: structuredClone(record), scope, snapshot_id: 's_' + id, version_id: 'version-' + id, body_sha256: digest },
+      content, bytes: Buffer.byteLength(content), body_sha256: digest, required: [], candidates: [], references: [], source: 'notion',
+      freshness: { policy: 'max_age', max_age_ms: 300000, age_ms: 0, stale: false, validated_at: validated } };
+  };
+  const root = prepared('root', 'root'), required = prepared('required', 'required'), member = directory('member');
+  root.required.push(directory('required')); root.candidates.push(member);
+  const nodes = [root, required, { ...member, state: 'known', roles: ['member'] }];
+  if (mode === 'reference') { const ref = directory('reference'); root.references.push(ref); nodes.push({ ...ref, state: 'known', roles: ['reference'] }); }
+  if (mode === 'member-reference') { root.references.push(member); nodes[2].roles.push('reference'); }
+  if (mode === 'required-member') { root.candidates.push(directory('required')); required.roles.push('member'); }
+  const edges = [{ from: 'root', to: 'required', ref: directory('required').ref }], bindings = [root.binding, required.binding];
+  const cold = { status: 'ready', entries: [root, required].map(node => ({ id: node.id,
+    manifest: { record: structuredClone(node.record), scope, snapshot_id: node.binding.snapshot_id, version_id: node.binding.version_id },
+    source_body: { sha256: node.body_sha256, bytes: node.bytes } })),
+    preparation: { status: 'ready', purpose: 'use', scope, roots: [{ id: 'root', readiness: 'ready' }], nodes, required: edges,
+      required_closure: ['root', 'required'], usage: { prepared_nodes: 2 }, session_bindings: structuredClone(bindings),
+      graph_lock: { purpose: 'use', scope, roots: ['root'], required: structuredClone(edges), bindings: structuredClone(bindings), sha256: 'f'.repeat(64) } } };
+  const warm = structuredClone(cold);
+  for (const node of warm.preparation.nodes.filter(node => node.state === 'prepared')) { node.source = 'local_cache'; node.freshness.age_ms = 150; }
+  return { warm, cold, expected: { library_id: library, root_ids: ['root'], prepared: [root, required].map(node => ({
+    id: node.id, skill_id: node.record.locator.skill_id, page_id: node.record.locator.page_id })) } };
+}
+
+test('warm materialization proves only the exact prepared closure while declared Members and References remain known', () => {
+  for (const mode of ['member', 'reference', 'member-reference', 'required-member']) {
+    const { warm, cold, expected } = materializationWarmGraph(mode);
+    assert.equal(warm.preparation.nodes.every(node => node.state === 'prepared'), false, 'The old all-nodes oracle rejects valid metadata');
+    assertWarmMaterializationGraph(warm, cold, expected);
+  }
+});
+
+const warmGraphCorruptions = [
+  ['a non-ready root', value => { value.warm.preparation.roots[0].readiness = 'not_ready'; }],
+  ['a different selected root with the same entire closure', value => { value.expected.root_ids = ['required']; }],
+  ['a Required left known', value => { value.warm.preparation.nodes[1].state = 'known'; }],
+  ['a missing Required', value => { value.warm.preparation.nodes.splice(1, 1); }],
+  ['a missing global Required edge', value => { value.warm.preparation.required = []; }],
+  ['a Required directory hidden from the graph', value => { value.warm.preparation.nodes[0].required = []; }],
+  ['a changed graph-lock edge', value => { value.warm.preparation.graph_lock.required[0].ref = 'another-ref'; }],
+  ['an extra prepared Member', value => { value.warm.preparation.nodes[2].state = 'prepared'; }],
+  ['an undeclared known identity', value => { value.warm.preparation.nodes.push({ ...value.warm.preparation.nodes[2], id: 'stranger' }); }],
+  ['a substituted stable identity with the same prepared count', value => { value.warm.preparation.nodes[1].record.locator.skill_id = 'stranger'; }],
+  ['a substituted physical page', value => { value.warm.preparation.nodes[1].binding.record.locator.page_id = 'another-page'; }],
+  ['a failed metadata node', value => { value.warm.preparation.nodes[2].state = 'failed'; }],
+  ['a known node promoted to Required by its roles', value => { value.warm.preparation.nodes[2].roles = ['required']; }],
+  ['metadata without the declared description', value => { value.warm.preparation.nodes[2].description = 'different'; }],
+  ['a metadata node carrying hidden content', value => { value.warm.preparation.nodes[2].content = ''; }],
+  ['a metadata node carrying an acquired binding', value => { value.warm.preparation.nodes[2].binding = {}; }],
+  ['a metadata node claiming freshness', value => { value.warm.preparation.nodes[2].freshness = {}; }],
+  ['a duplicate consume entry', value => { value.warm.entries[1] = structuredClone(value.warm.entries[0]); }],
+  ['a duplicate session binding', value => { value.warm.preparation.session_bindings[1] = structuredClone(value.warm.preparation.session_bindings[0]); }],
+  ['a missing graph-lock binding', value => { value.warm.preparation.graph_lock.bindings.pop(); }],
+  ['an incomplete required_closure', value => { value.warm.preparation.required_closure.pop(); }],
+  ['remote Required acquisition', value => { value.warm.preparation.nodes[1].source = 'notion'; }],
+  ['expired Required freshness', value => { value.warm.preparation.nodes[1].freshness.age_ms = 300000; }],
+  ['negative cache age', value => { value.warm.preparation.nodes[1].freshness.age_ms = -1; }],
+  ['non-finite cache age', value => { value.warm.preparation.nodes[1].freshness.age_ms = NaN; }],
+  ['a different TTL', value => { value.warm.preparation.nodes[1].freshness.max_age_ms = 3600000; }],
+  ['stale cache content', value => { value.warm.preparation.nodes[1].freshness.stale = true; }],
+  ['missing validation instants on both cold and warm nodes', value => { delete value.warm.preparation.nodes[1].freshness.validated_at; delete value.cold.preparation.nodes[1].freshness.validated_at; }],
+  ['a changed validation instant without HTTP', value => { value.warm.preparation.nodes[1].freshness.validated_at = '2026-11-27T12:00:01.000Z'; }],
+  ['a changed cold body hash', value => { value.cold.preparation.nodes[1].body_sha256 = 'e'.repeat(64); }],
+  ['cold and warm bindings agreeing on a hash that differs from the actual node body', value => {
+    for (const plan of [value.warm.preparation, value.cold.preparation]) {
+      plan.nodes[1].binding.body_sha256 = 'e'.repeat(64);
+      for (const group of [plan.session_bindings, plan.graph_lock.bindings]) group.find(binding => binding.record.id === 'required').body_sha256 = 'e'.repeat(64);
+    }
+  }],
+];
+for (const [label, corrupt] of warmGraphCorruptions) test('warm materialization evidence rejects ' + label, () => {
+  const value = materializationWarmGraph(); corrupt(value);
+  assert.throws(() => assertWarmMaterializationGraph(value.warm, value.cold, value.expected));
+});
+
+
+test('retained SQLite evidence preserves exact fields through JSON replay', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const root = await mkdtemp(join(tmpdir(), 'materialization-sqlite-replay-')), path = join(root, 'state.sqlite');
+  const database = new DatabaseSync(path);
+  try {
+    database.exec("PRAGMA application_id=0x4e544e43; CREATE TABLE identities(id TEXT,scope TEXT); CREATE TABLE shared_local_records(key TEXT,category TEXT,payload TEXT,retired INTEGER)");
+    database.prepare('INSERT INTO identities VALUES (?,?)').run('original-manager', 'exact-scope');
+    database.prepare('INSERT INTO shared_local_records VALUES (?,?,?,?)').run('operations/current-write-pending/exact', 'pending',
+      JSON.stringify({ intent: { operation_id: 'original-operation', owner: { kind: 'source', id: 'source' } } }), 0);
+    assert.equal(Object.getPrototypeOf(database.prepare('SELECT id,scope FROM identities').get()), null);
+  } finally { database.close(); }
+  const observed = await readManagerState(path), retained = JSON.parse(JSON.stringify(observed));
+  assert.deepEqual(observed, retained);
+  assert.deepEqual(observed.identities, [{ id: 'original-manager', scope: 'exact-scope' }]);
+  assert.equal(observed.rows[0].retired, 0); assert.equal(observed.rows[0].payload.intent.operation_id, 'original-operation');
+  retained.identities[0].scope = 'another-scope'; assert.notDeepEqual(await readManagerState(path), retained);
 });

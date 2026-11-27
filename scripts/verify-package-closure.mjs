@@ -42,16 +42,18 @@ export function verifyBundledNotices({ selectedNoticesBytes, bundledNoticesBytes
   assert.ok(bundled.indexOf(selected) >= 0, 'Bundled NOTICES.txt must contain the complete selected CLI THIRD_PARTY_NOTICES.md unchanged');
   return { source_sha256: expectedSha256, source_bytes: selected.length, bundled_sha256: hash(bundled), bundled_bytes: bundled.length };
 }
-export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, refBytes, expectedVersion }) {
+export function verifyBundledRuntime({ manifest, cliBytes, sdkBytes, managementBytes, refBytes, expectedVersion }) {
   assert.equal(manifest.version, 1, "Unknown bundled runtime manifest");
   assert.equal(manifest.package, "ntn-skills", "Unexpected bundled package identity");
   assert.equal(manifest.package_version, expectedVersion, "Bundled runtime must match its frozen build input version");
   assert.equal(manifest.sdk_version, 3, "Only the current SDK v3 is supported");
   assert.equal(manifest.skill_ref_version, 2, "Only the current Skill reference protocol is supported");
   assert.ok(refBytes instanceof Uint8Array && refBytes.length > 0, "The selected pure reference artifact is required");
-  for (const capability of ["consumer_contract_version", "consumption_effects_version", "catalog_directory_contract_version", "read_output_proof_version", "resource_read_contract_version", "resource_read_effects_version", "content_search_contract_version", "candidate_snapshot_contract_version"])
+  for (const capability of ["consumer_contract_version", "consumption_effects_version", "catalog_directory_contract_version", "read_output_proof_version", "resource_read_contract_version", "resource_read_effects_version", "content_search_contract_version", "candidate_snapshot_contract_version", "source_materialization_version"])
     assert.equal(manifest[capability], 1, `Current runtime capability is required: ${capability}`);
-  const hashes = { cli: createHash("sha256").update(cliBytes).digest("hex"), sdk: createHash("sha256").update(sdkBytes).digest("hex"), ref: createHash("sha256").update(refBytes).digest("hex") };
+  assert.ok(managementBytes instanceof Uint8Array && managementBytes.length > 0, "The paired management artifact is required");
+  const hashes = { management: createHash("sha256").update(managementBytes).digest("hex"), cli: createHash("sha256").update(cliBytes).digest("hex"), sdk: createHash("sha256").update(sdkBytes).digest("hex"), ref: createHash("sha256").update(refBytes).digest("hex") };
+  assert.equal(manifest.management_sha256, hashes.management, "Bundled management bytes do not match its frozen runtime manifest");
   assert.equal(manifest.cli_sha256, hashes.cli, "Bundled CLI bytes do not match its frozen runtime manifest");
   assert.equal(manifest.sdk_sha256, hashes.sdk, "Bundled SDK bytes do not match its frozen runtime manifest");
   assert.equal(manifest.ref_sha256, hashes.ref, "Bundled reference bytes do not match the frozen runtime manifest");
@@ -157,7 +159,7 @@ export async function verifyPackageClosure({ brokerArchive, ternArchive, brokerM
   }
   await writeFile(join(base, "official-inventory.json"), JSON.stringify(inventories, null, 2) + "\n");
   if (query) {
-    for (const file of ["ntn-skills.mjs", "ntn-skills-sdk.mjs", "ntn-skills-ref.cjs", "ntn-skills-runtime.json"]) {
+    for (const file of ["ntn-skills.mjs", "ntn-skills-sdk.mjs", "ntn-skills-management.mjs", "ntn-skills-ref.cjs", "ntn-skills-runtime.json"]) {
       assert.deepEqual(await readFile(join(installed, "dist", file)), await readFile(join(query, file)),
         `${file}: Broker and Tern must ship the same complete consumption runtime`);
     }

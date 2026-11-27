@@ -55,6 +55,79 @@ export async function withPreparationDeadline<T>(parent: AbortSignal, work: (sig
   finally { clearTimeout(timer); parent.removeEventListener("abort", cancel); }
 }
 
+/** Only the accepted context passes this capability to a guarded management
+ * call. It changes accounting, never input authority or a writer's lifetime. */
+export type ContextPreparationBudget = {
+  waitForManagement<T>(work: () => Promise<T>): Promise<T>;
+};
+
+/** One Pi context shares cumulative read/management time across all accepted
+ * inputs and roots. Ordinary tools keep withPreparationDeadline unchanged. */
+export async function withContextPreparationDeadline<T>(
+  parent: AbortSignal,
+  work: (signal: AbortSignal, budget: ContextPreparationBudget) => Promise<T>,
+): Promise<T> {
+  checkPreparationSignal(parent);
+  const controller = new AbortController(), signal = AbortSignal.any([parent, controller.signal]);
+  const stopped = Promise.withResolvers<never>();
+  const remaining = { read: 60_000, management: 180_000 }, started = performance.now();
+  let phase: "read" | "management" | "closed" = "read", changedAt = started;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const close = () => { phase = "closed"; clearTimeout(timer); };
+  const expire = () => {
+    if (phase === "closed") return;
+    close();
+    stopped.reject(Object.assign(new Error("Skill preparation timed out"), { code: "SOURCE_PREPARATION_TIMEOUT" }));
+    controller.abort();
+  };
+  const cancel = () => { close(); stopped.reject(preparationCancelled()); };
+  parent.addEventListener("abort", cancel, { once: true });
+  const charge = () => {
+    const now = performance.now();
+    if (phase !== "closed") {
+      remaining[phase] -= Math.max(0, now - changedAt);
+      if (remaining[phase] <= 0 || now - started >= 240_000) expire();
+    }
+    changedAt = now;
+    return now;
+  };
+  const arm = (now: number) => {
+    clearTimeout(timer);
+    if (phase === "closed") return;
+    const delay = Math.min(remaining[phase], 240_000 - (now - started));
+    if (delay <= 0) expire();
+    else timer = setTimeout(expire, delay);
+  };
+  const budget: ContextPreparationBudget = Object.freeze({
+    async waitForManagement<T>(operation: () => Promise<T>): Promise<T> {
+      // A closed capability, nested call or overlapping call cannot dispatch.
+      if (phase !== "read") throw preparationCancelled();
+      const now = charge();
+      checkPreparationSignal(signal);
+      phase = "management"; arm(now);
+      checkPreparationSignal(signal);
+      try { return await operation(); }
+      finally {
+        // The outer race retires foreground waiting. A late durable receipt is
+        // still returned for fact invalidation; it cannot reopen this budget.
+        if (phase === "management") {
+          const now = charge();
+          if (!signal.aborted) { phase = "read"; arm(now); }
+        }
+      }
+    },
+  });
+  // Keep exactly the original single 60000ms timer when no manager is entered.
+  arm(started);
+  try {
+    return await Promise.race([stopped.promise, (async () => {
+      const result = await work(signal, budget);
+      charge(); checkPreparationSignal(signal);
+      return result;
+    })()]);
+  } finally { close(); parent.removeEventListener("abort", cancel); }
+}
+
 export function createPreparationGate(lockSubmission = true) {
   let active: ActivePreparation | undefined;
   let generation = 0;

@@ -50,6 +50,7 @@ async function sealedBuild(root, buildId = 'fixture', realCliEntry) {
       'if(result.error)console.error(result.error.message);process.exitCode=result.status??1;\n'
     : 'console.log(JSON.stringify({fixture:"cli",args:process.argv.slice(2)}));\n');
   await writeFile(join(buildRoot, 'cli/dist/sdk.js'), 'export const fixture = true;\n');
+  await writeFile(join(buildRoot, 'cli/dist/management.js'), 'export const SOURCE_MATERIALIZATION_VERSION = 1;\n');
   await writeFile(join(buildRoot, 'cli/dist/ref.cjs'), selectedRefBytes);
   await writeFile(join(buildRoot, 'cli/skills/SKILL.md'), '# Fixture\n');
   await writeJson(join(buildRoot, 'broker/package.json'), { name: 'paired-broker-fixture', version: '0.0.0', type: 'module' });
@@ -406,7 +407,7 @@ fs.writeFileSync(referenced,'run-owned change');console.log('private skill link'
     await assert.rejects(checkEnvironment({ root: rootA }), /simple build\/run ID|type string/);
   });
 
-  await t.test('selected CLI pairing accepts absent legacy export and the explicit six-input contract', async () => {
+  await t.test('selected CLI pairing accepts absent legacy export and the explicit management-inclusive input contract', async () => {
     await verifySelectedCliPair(buildA, await readJson(join(buildA, 'broker/dist/next-build.json')));
     const buildId = 'explicit-cli-inputs', root = await sealedBuild(rootA, buildId);
     await writeFile(join(root, 'cli/THIRD_PARTY_NOTICES.md'), 'Selected notice bytes\n');
@@ -457,9 +458,10 @@ fs.writeFileSync(referenced,'run-owned change');console.log('private skill link'
   await t.test('packed candidates run actual clean-installed entries and freeze archives and dependencies', async () => {
     const buildId = 'packed-candidate', root = await sealedBuild(rootA, buildId);
     await writeJson(join(root, 'cli/package.json'), { name: 'ntn-skills', version: '0.0.0', type: 'module',
-      bin: { 'ntn-skills': './dist/ntn-skills.js' }, exports: { './sdk': { import: './dist/sdk.js' }, './ref': { require: './dist/ref.cjs' } } });
+      bin: { 'ntn-skills': './dist/ntn-skills.js' }, exports: { './sdk': { import: './dist/sdk.js' }, './management': { import: './dist/management.js' }, './ref': { require: './dist/ref.cjs' } } });
     await writeJson(join(root, 'broker/package.json'), { name: 'pi-context-broker', version: '0.0.0', type: 'module', pi: { extensions: ['./src/index.ts'] } });
     await writeFile(join(root, 'broker/dist/ntn-skills-sdk.mjs'), 'export const SDK_VERSION=3;\n');
+    await writeFile(join(root, 'broker/dist/ntn-skills-management.mjs'), 'export const SOURCE_MATERIALIZATION_VERSION=1;\n');
     await writeFile(join(root, 'cli/THIRD_PARTY_NOTICES.md'), 'Complete selected CLI notice fixture\n');
     await writeFile(join(root, 'broker/dist/NOTICES.txt'), 'Other notices\nComplete selected CLI notice fixture\n');
     await writeFile(join(root, 'source/broker/scripts/next-build-identity.mjs'), identitySource);

@@ -244,7 +244,7 @@ export async function softMissRegressions(parentRoot: string): Promise<void> {
         const before = (await calls()).length;
         const literal = await submit(text);
         assert.equal(literal.submitted, text);
-        assert.deepEqual((await calls()).slice(before).filter(call => ["consume", "read"].includes(call.operation)), []);
+        assert.deepEqual((await calls()).slice(before).filter(call => ["source-members", "consume", "read"].includes(call.operation)), [], "Literal variables and currency do not discover or prepare Source members");
       }
       for (const text of ["$missing@nowhere $also-missing", "$bunfs/root/chunks/cli-nxfh2cp0.js"]) {
         const before = (await calls()).length;

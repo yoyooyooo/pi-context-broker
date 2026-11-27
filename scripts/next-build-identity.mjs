@@ -4,7 +4,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-export const selectedCliInputs = ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'dist/ref.cjs', 'skills', 'THIRD_PARTY_NOTICES.md'];
+export const selectedCliInputs = ['package.json', 'dist/ntn-skills.js', 'dist/sdk.js', 'dist/management.js', 'dist/ref.cjs', 'skills', 'THIRD_PARTY_NOTICES.md'];
 export const brokerInputs = ['packages/context-broker/src', 'packages/context-broker/package.json',
   'packages/context-broker/docs', 'packages/context-broker/examples', 'scripts/build-tern.mjs',
   'scripts/next-build-identity.mjs', 'scripts/prepare-skill-ref.mjs', 'package.json', 'bun.lock', 'README.md', 'README.zh-CN.md',

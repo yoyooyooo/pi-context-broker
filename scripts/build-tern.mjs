@@ -67,15 +67,22 @@ const requiredConstants = {
   CATALOG_DIRECTORY_CONTRACT_VERSION: 1, READ_OUTPUT_PROOF_VERSION: 1,
   RESOURCE_READ_CONTRACT_VERSION: 1, RESOURCE_READ_EFFECTS_VERSION: 1,
   CONTENT_SEARCH_CONTRACT_VERSION: 1,
-  CANDIDATE_SNAPSHOT_CONTRACT_VERSION: 1,
+  CANDIDATE_SNAPSHOT_CONTRACT_VERSION: 1, SOURCE_MATERIALIZATION_VERSION: 1,
 };
 for (const [name, version] of Object.entries(requiredConstants)) {
   if (selectedSdkApi[name] !== version) throw new Error(`The current paired ntn-skills SDK requires ${name}=${version}; upgrade the complete selected package`);
 }
-for (const name of ['selectLibrary', 'resolveLibrary', 'consume', 'decodeConsumeResult', 'listCatalog', 'readCandidateSnapshot', 'listSkill', 'resolveCatalogReference', 'readSkill', 'readResources', 'decodeResourceReadResult', 'parseDuration', 'contentSearch']) {
+for (const name of ['selectLibrary', 'resolveLibrary', 'consume', 'decodeConsumeResult', 'listCatalog', 'readCandidateSnapshot', 'listSkill', 'resolveCatalogReference', 'readSkill', 'readResources', 'decodeResourceReadResult', 'parseDuration', 'contentSearch', 'discoverSourceMembers']) {
   if (typeof selectedSdkApi[name] !== 'function') throw new Error(`The current paired ntn-skills SDK must export ${name}`);
 }
 if (selectedSdkApi.PACKAGE_VERSION !== selectedCli.metadata.version) throw new Error('CLI and SDK package versions differ');
+const managementExport = selectedCli.metadata.exports?.["./management"];
+const managementImport = typeof managementExport === "string" ? managementExport : managementExport?.import;
+if (managementImport !== "./dist/management.js") throw new Error("The selected ntn-skills package must expose its independent management entry");
+const managementEntry = resolve(selectedCli.directory, managementImport);
+const selectedManagementApi = await import(pathToFileURL(managementEntry).href);
+if (selectedManagementApi.SOURCE_MATERIALIZATION_VERSION !== 1 || selectedManagementApi.PACKAGE_VERSION !== selectedCli.metadata.version
+  || typeof selectedManagementApi.materializeSource !== "function") throw new Error("The selected management entry is not paired with the current CLI");
 const resourceReadVersion = selectedSdkApi.RESOURCE_READ_CONTRACT_VERSION;
 const readOutputProofVersion = selectedSdkApi.READ_OUTPUT_PROOF_VERSION;
 const catalogDirectoryVersion = selectedSdkApi.CATALOG_DIRECTORY_CONTRACT_VERSION;
@@ -131,6 +138,12 @@ const sdkResult = await build({
 });
 if (!sdkResult.success || !sdkResult.outputs[0]) throw new AggregateError(sdkResult.logs, "Notion SDK build failed");
 const sdkCode = await sdkResult.outputs[0].text();
+const managementResult = await build({
+  entrypoints: [managementEntry], target: "node", format: "esm", packages: "bundle", minify: true,
+  external: runtimeNames.flatMap(name => [name, `${name}/*`]),
+});
+if (!managementResult.success || !managementResult.outputs[0]) throw new AggregateError(managementResult.logs, "Notion management build failed");
+const managementCode = await managementResult.outputs[0].text();
 const runtimeManifest = { version: 1, package: "ntn-skills", package_version: selectedCli.metadata.version,
   skill_ref_version: 2, ref_sha256: referenceProtocol.ref_sha256,
   sdk_version: 3, consumer_contract_version: 1, ...(resourceReadVersion === undefined ? {} : { resource_read_contract_version: resourceReadVersion }),
@@ -141,6 +154,8 @@ const runtimeManifest = { version: 1, package: "ntn-skills", package_version: se
   ...(resourceEffectsVersion === undefined ? {} : { resource_read_effects_version: resourceEffectsVersion }),
   content_search_contract_version: contentSearchVersion,
   candidate_snapshot_contract_version: selectedSdkApi.CANDIDATE_SNAPSHOT_CONTRACT_VERSION,
+  source_materialization_version: selectedManagementApi.SOURCE_MATERIALIZATION_VERSION,
+  management_sha256: createHash("sha256").update(managementCode).digest("hex"),
   cli_sha256: createHash("sha256").update(cliCode).digest("hex"), sdk_sha256: createHash("sha256").update(sdkCode).digest("hex") };
 const licenseFiles = new Map();
 async function collectLicenses(name, from) {
@@ -206,6 +221,7 @@ for (const directory of [join(brokerOutput, "dist"), ...(buildTern ? [query] : [
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, "ntn-skills.mjs"), cliCode);
   await writeFile(join(directory, "ntn-skills-sdk.mjs"), sdkCode);
+  await writeFile(join(directory, "ntn-skills-management.mjs"), managementCode);
   await writeFile(join(directory, "ntn-skills-ref.cjs"), referenceProtocol.bytes);
   await writeFile(join(directory, "ntn-skills-runtime.json"), JSON.stringify(runtimeManifest, null, 2) + "\n");
   await writeFile(join(directory, "NOTICES.txt"), notices);
@@ -264,7 +280,7 @@ if ((await fileInventory(selectedCli.directory, selectedCliInputs)).sha256 !== s
 await writeFile(join(brokerOutput, "dist/next-build.json"), JSON.stringify({
   version: 1, kind: "broker-build", input_roots: brokerInputs, source: sourceInputs,
   selected_cli: selectedInputs,
-  artifacts: await fileInventory(brokerOutput, ["dist/ntn-skills.mjs", "dist/ntn-skills-sdk.mjs", "dist/ntn-skills-ref.cjs", "dist/ntn-skills-runtime.json", "dist/completion.mjs", "dist/builtin-skills", "dist/NOTICES.txt"]),
+  artifacts: await fileInventory(brokerOutput, ["dist/ntn-skills.mjs", "dist/ntn-skills-sdk.mjs", "dist/ntn-skills-management.mjs", "dist/ntn-skills-ref.cjs", "dist/ntn-skills-runtime.json", "dist/completion.mjs", "dist/builtin-skills", "dist/NOTICES.txt"]),
   toolchain: { bun: Bun.version, node: process.version },
 }, null, 2) + "\n");
 console.log(buildTern ? "Built standalone broker query and Tern plugin query" : `Built standalone broker package at ${brokerOutput}`);

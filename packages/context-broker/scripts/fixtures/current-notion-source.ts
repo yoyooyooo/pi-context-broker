@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { noConsumptionWrites } from "../../src/consumption-effects";
+import type { SourceMemberDiscoveryInput } from "../../src/notion-sdk";
 import type { ContentSearchOptions, ContentSearchRequest } from "../../src/content-search";
 import type { ContentKind, ContentRecord, SkillRecord, SourceConfig } from "../../src/types";
 
@@ -17,7 +18,7 @@ const canonical = (value: unknown): string => value === null || typeof value !==
 const uuid = (n: number) => "00000000-0000-4000-8000-" + n.toString().padStart(12, "0");
 type Input = { version: 1; targets: string[]; purpose: "use" | "inspect"; freshness: { policy: string }; budget?: Record<string, number> };
 type Runtime = { library?: string; directory?: { view?: string; profile?: string }; defaultView?: boolean; view?: string; profile?: string; maxAge?: number; refresh?: boolean; offline?: boolean; output?: string; from?: string; signal?: AbortSignal; deadline?: number; onCatalogSettled?: () => void; onAuthorize?: ContentSearchOptions["onAuthorize"]; execution?: Record<string, unknown> };
-type Call = { operation: string; input?: Input; contentInput?: ContentSearchRequest; target?: string; options: Runtime };
+type Call = { operation: string; input?: Input; contentInput?: ContentSearchRequest; sourceMembersInput?: SourceMemberDiscoveryInput; target?: string; options: Runtime };
 
 // Only the external SDK operation is controlled. The source adapter, graph
 // decoder, entry/file manifest checks and materialization run unchanged.
@@ -30,7 +31,7 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
   await writeFile(module, [
     "export const SKILL_REF_VERSION=2, SDK_VERSION=3, CONSUMER_CONTRACT_VERSION=1, PACKAGE_VERSION='current-source-fixture';",
     "export const CONSUMPTION_EFFECTS_VERSION=1, READ_OUTPUT_PROOF_VERSION=1, CATALOG_DIRECTORY_CONTRACT_VERSION=1;",
-    "export const CONTENT_SEARCH_CONTRACT_VERSION=1, CANDIDATE_SNAPSHOT_CONTRACT_VERSION=1;",
+    "export const CONTENT_SEARCH_CONTRACT_VERSION=1, CANDIDATE_SNAPSHOT_CONTRACT_VERSION=1, SOURCE_MATERIALIZATION_VERSION=1;",
     "export const calls=[]; let state; export function configure(value){state=value;}",
     "export async function selectLibrary(options){calls.push({operation:'library-selection',options});return state.selectLibrary(options);}",
     "export async function resolveLibrary(options){calls.push({operation:'library',options});return state.resolveLibrary(options);}",
@@ -43,10 +44,11 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
     "export async function resolveReference(target,options){calls.push({operation:'resolve',target,options}); return state.resolveRelative(target,options);}",
     "export async function listCatalog(options){calls.push({operation:'list',options}); try { const result=await state.list(options); state.catalogFailure=undefined; return result; } catch(error) { state.catalogFailure=error?.code; throw error; }}",
     "export async function readCandidateSnapshot(options){calls.push({operation:'candidates',options}); return state.candidates(options);}",
+    "export async function discoverSourceMembers(input,options){calls.push({operation:'source-members',sourceMembersInput:input,options}); return state.sourceMembers(input,options);}",
     "export async function contentSearch(input,options){calls.push({operation:'content-search',contentInput:input,options}); return state.contentSearch(input,options);}",
   ].join("\n"));
   await writeFile(join(root, "src/ntn-skills-runtime.json"), JSON.stringify({ ...(await copyReferenceProtocol(join(root, "src"))), version: 1, package: "ntn-skills", package_version: "current-source-fixture",
-    sdk_version: 3, consumer_contract_version: 1, consumption_effects_version: 1, read_output_proof_version: 1, catalog_directory_contract_version: 1, content_search_contract_version: 1, candidate_snapshot_contract_version: 1 }));
+    sdk_version: 3, consumer_contract_version: 1, consumption_effects_version: 1, read_output_proof_version: 1, catalog_directory_contract_version: 1, content_search_contract_version: 1, candidate_snapshot_contract_version: 1, source_materialization_version: 1 }));
   const sdk = await import(pathToFileURL(module).href);
   const boundary: typeof import("../../src/notion-source") = await import(pathToFileURL(join(root, "src/notion-source.ts")).href);
   const offset = (fixture.identity ?? 0) * 100, library = uuid(offset + 99);
@@ -120,6 +122,9 @@ export async function currentNotionFixture(kind: ContentKind = "skill", fixture:
       if (options.library !== undefined && options.library !== library) throw Object.assign(new Error("Foreign Library"), { code: "LIBRARY_SCOPE_MISMATCH" });
       return descriptor;
     },
+    // This fixture has physical content but no registered Source members.
+    sourceMembers: async (input: SourceMemberDiscoveryInput, _options: Runtime): Promise<unknown> => ({ version: 1,
+      library_id: input.library, scope, coverage: "complete", candidates: [], failures: [], effects: { remote_writes: "none" } }),
     contentSearch: async (_input: ContentSearchRequest, _options: Runtime): Promise<unknown> => { throw new Error("Unexpected content search in source fixture"); },
     directory: undefined as unknown,
     paired: undefined as unknown,

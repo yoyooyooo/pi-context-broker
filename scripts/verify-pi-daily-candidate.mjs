@@ -1390,6 +1390,7 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   const cli = await packageClosure(config.cliRoot, config.cliArchive, config.cliArchiveSha256);
   const embedded = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills.mjs'));
   const sdk = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills-sdk.mjs'));
+  const management = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills-management.mjs'));
   const ref = await fileIdentity(join(config.brokerRoot, 'dist/ntn-skills-ref.cjs'));
   const standalone = await fileIdentity(join(config.cliRoot, 'dist/ntn-skills.js'));
   const runtime = await json(join(config.brokerRoot, 'dist/ntn-skills-runtime.json'));
@@ -1405,16 +1406,17 @@ export async function runCandidate(config, { packageClosure, fileIdentity }) {
   const refEntry = cliManifest.exports?.['./ref']?.require;
   assert.ok(typeof refEntry === 'string' && refEntry.startsWith('./'));
   const inputRef = await fileIdentity(resolve(config.cliRoot, refEntry));
+  const inputManagement = await fileIdentity(join(config.cliRoot, 'dist/management.js'));
   assert.ok(inside(await realpath(config.cliRoot), inputRef.realpath));
   assert.equal(ref.sha256, inputRef.sha256, 'Bundled and selected pure protocol bytes must match');
   const brokerManifest = await json(join(config.brokerRoot, 'package.json'));
   assert.equal(brokerManifest.name, 'pi-context-broker');
   const receiptIdentity = file => ({ path: file.realpath, bytes: file.bytes, sha256: file.sha256 });
   const hashes = verifyBundledRuntime({ manifest: runtime, expectedVersion: cliManifest.version,
-    cliBytes: await readFile(embedded.path), sdkBytes: await readFile(sdk.path), refBytes: await readFile(ref.path) });
+    cliBytes: await readFile(embedded.path), sdkBytes: await readFile(sdk.path), managementBytes: await readFile(management.path), refBytes: await readFile(ref.path) });
   validateCandidateArtifactReceipt(artifact, {
     buildInput: { package: cliManifest.name, version: cliManifest.version, manifest: receiptIdentity(await fileIdentity(cliManifestPath)),
-      cli: receiptIdentity(standalone), sdk: receiptIdentity(inputSdk), ref: receiptIdentity(inputRef),
+      cli: receiptIdentity(standalone), sdk: receiptIdentity(inputSdk), ref: receiptIdentity(inputRef), management: receiptIdentity(inputManagement),
       notices: receiptIdentity(await fileIdentity(join(config.cliRoot, "THIRD_PARTY_NOTICES.md"))) },
     package: { name: brokerManifest.name, version: brokerManifest.version, installed: await realpath(config.brokerRoot), archive: receiptIdentity(broker.archive) },
     runtime: { ...runtime, hashes },
@@ -1777,7 +1779,7 @@ export async function runCandidatePrint(config) {
     const actual = await identity(body.path);
     assert.equal(actual.sha256, body.sha256); assert.equal(actual.bytes, body.bytes); assert.ok(body.bytes > 0);
   }
-  const baselineFiles = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json', 'dist/ntn-skills-ref.cjs'].map(path => identity(join(config.brokerRoot, path))));
+  const baselineFiles = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json', 'dist/ntn-skills-ref.cjs', 'dist/ntn-skills-management.mjs'].map(path => identity(join(config.brokerRoot, path))));
   const runtime = await json(join(config.brokerRoot, 'dist/ntn-skills-runtime.json'));
   assert.equal(runtime.cli_sha256, baselineFiles[2].sha256); assert.equal(runtime.sdk_sha256, baselineFiles[3].sha256);
   if (cliPolicy?.mode === 'owned-maintenance-readonly') assert.deepEqual(cliProtected[0], baselineFiles[2], 'The discovered maintenance CLI must be this candidate bundled runtime');
