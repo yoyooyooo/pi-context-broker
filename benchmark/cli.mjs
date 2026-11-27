@@ -211,18 +211,23 @@ export async function benchmarkMain(args) {
     const { verifyCollectionRecoveryResults } = await import('./collection-recovery.mjs');
     await verifyCollectionRecoveryResults(plan, status.episodes);
     if (options.action === 'status') return { ...status, ledger: undefined, execution_performed: false };
-    const { readEvidenceBundle, buildEvidenceIndex, queryEvidenceIndex } = await import('./evidence/store.mjs');
+    const { readEvidenceBundle, readEpisodeDecision, buildEvidenceIndex, queryEvidenceIndex } = await import('./evidence/store.mjs');
     if (options.action === 'journey') {
       assert.ok(options.run, '--run must name one retained episode');
       const item = status.episodes.find(item => item.run_id === options.run);
       assert.ok(item, 'Episode has no completed normalization receipt; inspect status for unresolved execution');
       const bundle = await readEvidenceBundle({ directory: item.result.normalized_directory, rawRoot: plan.execution.environment_root });
-      return { journey: bundle.journey, text: await readFile(join(item.result.normalized_directory, 'journey.md'), 'utf8'), model_requests: 0 };
+      return { journey: bundle.journey, text: await readFile(join(item.result.normalized_directory, 'journey.md'), 'utf8'),
+        decision: await readEpisodeDecision(bundle.episode, { root: plan.execution.environment_root }), model_requests: 0 };
     }
     assert.ok(options.outcome === undefined || ['pass', 'fail', 'unknown'].includes(options.outcome));
     const episodes = await Promise.all(status.episodes.map(async item => (await readEvidenceBundle({ directory: item.result.normalized_directory, rawRoot: plan.execution.environment_root })).episode));
-    return { rows: queryEvidenceIndex(buildEvidenceIndex(episodes), { ...(options.condition ? { condition_id: options.condition } : {}),
-      ...(options.outcome ? { outcome: options.outcome } : {}) }), model_requests: 0 };
+    const selected = queryEvidenceIndex(buildEvidenceIndex(episodes), { ...(options.condition ? { condition_id: options.condition } : {}),
+      ...(options.outcome ? { outcome: options.outcome } : {}) });
+    const byId = new Map(episodes.map(episode => [episode.identity.episode_id, episode]));
+    return { rows: await Promise.all(selected.map(async row => ({ ...row,
+      decision: await readEpisodeDecision(byId.get(row.episode_id), { root: plan.execution.environment_root }),
+    }))), model_requests: 0 };
   }
   const path = options.action === 'validate' ? options.protocol : options.file;
   assert.ok(path && isAbsolute(path), 'Input file must be absolute');

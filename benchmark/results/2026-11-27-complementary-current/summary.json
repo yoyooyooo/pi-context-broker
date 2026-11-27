@@ -1,0 +1,717 @@
+{
+  "version": 1,
+  "kind": "current-complementary-product-baseline",
+  "recorded_at": "2026-11-27T12:47:29.682239+00:00",
+  "owner": "AH-1217",
+  "environment_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126",
+  "environment_id": "8cb2b3cc-218d-4598-b40d-e0a1c2b76d99",
+  "purpose": "Current accepted product joint Skill consumption and discovery-cost baseline; one descriptive pair, no adoption or population inference.",
+  "product": {
+    "cli_commit": "4ef03aa9859e5d5c74594626c0bdb3f2dcd88040",
+    "benchmark_apparatus_commit": "e4eb222b66334bf0a6ce659924208ef51ce53dba",
+    "accepted_broker_next": "7f87b9242c45714f12e70b7745f9ec1a340c3655",
+    "ordinary_installed_generation": "4ef03aa9859e-0d255482feea",
+    "build_manifest": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/benchmark-complementary-current-20261127-1/build.json",
+      "sha256": "24dc04b654dff0eb6142a8fa4487b50d9164e780876b146405761b19a2d09478",
+      "bytes": 9918845
+    },
+    "sdk_sha256": "69ee468d0200075ae3d5cb58608b77d8feb2c299845b68199151d72a4dc9de2b",
+    "product_runtime_unchanged_by_shared_verifier": true
+  },
+  "design": {
+    "plan_id": "current-complementary-own-pair-2",
+    "plan_sha256": "3ccf11daa0b7535a602ca049d79bb7f1673e4a327b522516a1a63ec4adcbce42",
+    "case_id": "complementary-01-a-n16-r1",
+    "candidates": 16,
+    "execution_order": [
+      "broker",
+      "native"
+    ],
+    "analysis_direction": "Broker minus Native; Broker divided by Native where defined",
+    "model_condition": "magpie/auto/gpt-6.2-sol",
+    "effort": "high",
+    "code_mode": "off",
+    "standing_grant_reused": true,
+    "artificial_cumulative_model_token_cost_caps": null
+  },
+  "inputs": {
+    "setup": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/attempt-2/setup.json",
+      "sha256": "9155ede651fd1f7b07699d7892d525ff9cbfb2cb111517af5e82658553a3d19b"
+    },
+    "plan": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/attempt-2/plan.json",
+      "sha256": "ea9e212911dd051c784467b9a8de2bae8150ebbea5fc5df704e935564d0a0943"
+    },
+    "work_plan": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/work-plan-2.json",
+      "sha256": "1412175d4a82c3cdd24c2ddd9a5b14e0dc98dba98757d9c684217ff9a95f2a47"
+    },
+    "material_binding": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-library-title-material-20261127-1/verified/6c8d4457-de90-464e-9b6e-cac3cfec78b8/binding.json",
+      "sha256": "554dcdde21af845ddeced99d922de6228c3f9c0c7756db15ac23b4775a09abb2"
+    },
+    "controller_sha256": "c2dee05b19914706a8a43f678467e4f31a040e77989c3033a49ad52ed4a47ffe"
+  },
+  "observations": [
+    {
+      "run_id": "current-complementary-own-pair-2-001",
+      "mode": "broker",
+      "bundle_verification": {
+        "run_id": "current-complementary-own-pair-2-001",
+        "status": "passed",
+        "episode_sha256": "ead9b3fa9ba72bd78cfa0c5688aa0e018d041d37847384623d55cc1643ed40c4",
+        "raw_artifacts": 227
+      },
+      "runtime_status": "completed",
+      "admission": "valid",
+      "business": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-external-reconciliation",
+          "kind": "artifact-json",
+          "critical": true,
+          "status": "pass",
+          "reason": "Observed business values satisfy the declared output contract"
+        },
+        {
+          "id": "reconcile-and-privacy-read",
+          "kind": "resources",
+          "critical": true,
+          "status": "pass",
+          "reason": "Observed a complete legal resource path with matching content identities"
+        }
+      ],
+      "noncritical_contracts": [
+        {
+          "id": "legal-selection",
+          "kind": "selection",
+          "critical": false,
+          "status": "unknown",
+          "reason": "Selection evidence is incomplete"
+        }
+      ],
+      "complete_outcome": "unknown",
+      "verified_success": false,
+      "model": {
+        "configured_condition": "magpie/auto/gpt-6.2-sol",
+        "requested_route": "auto/gpt-6.2-sol",
+        "actual_reported_labels": [
+          "group/auto-gpt-6-2-sol"
+        ],
+        "all_route_checks_matched": true,
+        "backend_attribution": null,
+        "assurance": "provider-reported route labels; not physical backend attestation"
+      },
+      "usage": {
+        "logical_requests": 6,
+        "actual_attempts": 6,
+        "retry_count": 0,
+        "input_tokens": 31923,
+        "output_tokens": 673,
+        "complete": true,
+        "money_amount": null,
+        "money_currency": null,
+        "money_status": "unknown",
+        "money_reason": "Missing, unpriced or mixed currency costs"
+      },
+      "timing": {
+        "runtime_duration_ms": 122244.804708,
+        "normalized_duration_ms": 122244.804708,
+        "verified_success_time_ms": null,
+        "verified_success_time_status": "unknown",
+        "scope": "original runtime elapsed, not user-interface latency; unknown verified-success time is not observed timeout"
+      },
+      "source_http": {
+        "observed_owned_attempts": 117,
+        "operations": 10,
+        "coverage": {
+          "sdk": "complete",
+          "owned_http": "complete",
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved"
+        },
+        "errors": 0,
+        "source_validation_errors": [],
+        "boundary": "owned Pi SDK operations and directly observed bundled CLI; other descendants transport unobserved",
+        "evidence": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/events.jsonl",
+          "sha256": "aa48325b92412b3efcd3eb5aea0a8a361dffaa0d707820ea8d75e5e877c6d0af",
+          "line": 1034
+        }
+      },
+      "business_artifact": {
+        "rows": 2,
+        "sha256": "cedc93dc71df214c23a40f0d9069cce51d30f15d543887892b2b1f66d27f86c3",
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/workspace/output/external-reconciliation.json",
+        "forbidden_fields_present": false
+      },
+      "evidence": {
+        "runtime": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/episode-result.json",
+          "sha256": "386dd30f5575e1d67db622932780ac94bef542624f782d79c050ba9065453b6f"
+        },
+        "normalized_episode": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/normalized/normalized/episode.json",
+          "sha256": "0a14f25a97dabec33a8bb7ef3856f0e518bd36ec3fb748bf6a18f36699c3fbf0"
+        },
+        "bundle_receipt": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/normalized/normalized/bundle.json",
+          "sha256": "29e05e168cc07b62e0d77ac966c4b9f14904b2bfbdc0d30718a55282a0477af9"
+        },
+        "collection": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/normalized/collection.json",
+          "sha256": "9ae8d740cbacab5c0d9a69c0a48c7acffed83ba1336002e9175593b05c7c3404"
+        },
+        "grade": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/normalized/grade.json",
+          "sha256": "42a1a337bf267828e57725a1487660bd19380450161e5758244a5285aa03f2b6"
+        },
+        "readback": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/normalized/readback.json",
+          "sha256": "27b8ae3368b4602b4c0c60f32d75a48a2c3a41e5593275db693b2d1274442734"
+        },
+        "events": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/events.jsonl",
+          "sha256": "aa48325b92412b3efcd3eb5aea0a8a361dffaa0d707820ea8d75e5e877c6d0af"
+        },
+        "transport": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/transport.jsonl",
+          "sha256": "5a69a7e215bd2bfbaf734085d4c1a075e68c7d989f7ed0fe66a14157b22f9a64"
+        },
+        "notion_source": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-source.jsonl",
+          "sha256": "a71c8f3ddc652454ec95e79d8e6d6e8b7031c6b39968ed79947b7961491c476b"
+        },
+        "notion_sdk": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-sdk.jsonl",
+          "sha256": "f90b50739dbc2872e09417e8283c42dbaddba03f732bbdc1913f85d0c4135919"
+        },
+        "business_output": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/workspace/output/external-reconciliation.json",
+          "sha256": "cedc93dc71df214c23a40f0d9069cce51d30f15d543887892b2b1f66d27f86c3"
+        }
+      },
+      "tools": {
+        "count": 9,
+        "opaque_ids": [
+          "call_32107e667f9f44dbad97a2ba8d3d1d7b",
+          "call_fb90a46ffd884e8bb4fe3d565fa45729",
+          "call_4ed58ade8f2446b59cc91d9b2c3dd0c9"
+        ],
+        "coverage": {
+          "artifacts": "complete",
+          "clarifications": "unavailable",
+          "resource_reads": "partial",
+          "selections": "partial",
+          "state_events": "unavailable"
+        },
+        "single_root_automatic_requires_expansion_demonstrated": false,
+        "requires_interpretation": "Broker explicitly requested two roots; positive Requires relation and complete delivery are observed, single-root expansion was not exercised."
+      }
+    },
+    {
+      "run_id": "current-complementary-own-pair-2-002",
+      "mode": "native",
+      "bundle_verification": {
+        "run_id": "current-complementary-own-pair-2-002",
+        "status": "passed",
+        "episode_sha256": "167374a96651ab6957bedd3df67f43b082d0befeb7f7e4256b67483a39309e95",
+        "raw_artifacts": 212
+      },
+      "runtime_status": "completed",
+      "admission": "valid",
+      "business": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-external-reconciliation",
+          "kind": "artifact-json",
+          "critical": true,
+          "status": "pass",
+          "reason": "Observed business values satisfy the declared output contract"
+        },
+        {
+          "id": "reconcile-and-privacy-read",
+          "kind": "resources",
+          "critical": true,
+          "status": "pass",
+          "reason": "Observed a complete legal resource path with matching content identities"
+        }
+      ],
+      "noncritical_contracts": [
+        {
+          "id": "legal-selection",
+          "kind": "selection",
+          "critical": false,
+          "status": "pass",
+          "reason": "Complete evidence establishes one legal selection set"
+        }
+      ],
+      "complete_outcome": "pass",
+      "verified_success": true,
+      "model": {
+        "configured_condition": "magpie/auto/gpt-6.2-sol",
+        "requested_route": "auto/gpt-6.2-sol",
+        "actual_reported_labels": [
+          "group/auto-gpt-6-2-sol"
+        ],
+        "all_route_checks_matched": true,
+        "backend_attribution": null,
+        "assurance": "provider-reported route labels; not physical backend attestation"
+      },
+      "usage": {
+        "logical_requests": 5,
+        "actual_attempts": 5,
+        "retry_count": 0,
+        "input_tokens": 18043,
+        "output_tokens": 531,
+        "complete": true,
+        "money_amount": null,
+        "money_currency": null,
+        "money_status": "unknown",
+        "money_reason": "Missing, unpriced or mixed currency costs"
+      },
+      "timing": {
+        "runtime_duration_ms": 28716.456667,
+        "normalized_duration_ms": 28716.456667,
+        "verified_success_time_ms": 28710.172166,
+        "verified_success_time_status": "known",
+        "scope": "original runtime elapsed, not user-interface latency; unknown verified-success time is not observed timeout"
+      },
+      "source_http": {
+        "observed_owned_attempts": 0,
+        "operations": 0,
+        "coverage": {
+          "sdk": "complete",
+          "owned_http": "complete",
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved"
+        },
+        "errors": 0,
+        "source_validation_errors": [],
+        "boundary": "owned Pi SDK operations and directly observed bundled CLI; other descendants transport unobserved",
+        "evidence": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/benchmark/runtime/events.jsonl",
+          "sha256": "b7169934683df4b3dda92e3cfa7b26e9c7008d21b3ca4aa5b1682af44935c61d",
+          "line": 705
+        }
+      },
+      "business_artifact": {
+        "rows": 2,
+        "sha256": "cedc93dc71df214c23a40f0d9069cce51d30f15d543887892b2b1f66d27f86c3",
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/workspace/output/external-reconciliation.json",
+        "forbidden_fields_present": false
+      },
+      "evidence": {
+        "runtime": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/benchmark/runtime/episode-result.json",
+          "sha256": "642d308a4ab035998e0195585d4636e17989181f2c33525266a64c71be6136c7"
+        },
+        "normalized_episode": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/benchmark/normalized/normalized/episode.json",
+          "sha256": "1d1c6126990cca3af7d8aeab7a9db2377c919a76ef3399d751fc2dae57299d81"
+        },
+        "bundle_receipt": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/benchmark/normalized/normalized/bundle.json",
+          "sha256": "8057c2bd403469a5c029d935ab8b7f063190f52c63889a800f0de299222d9f83"
+        },
+        "collection": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/benchmark/normalized/collection.json",
+          "sha256": "4e44836939cd1cc7538b309368b1db95963cb4ebbe11f6c9d10646ed76dc29f3"
+        },
+        "grade": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/benchmark/normalized/grade.json",
+          "sha256": "8d3edbde3f21b681faa8380f5b312b955f5f37115b0257d8c1d4a790f578e32f"
+        },
+        "readback": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/benchmark/normalized/readback.json",
+          "sha256": "f201e72d2f0d768abb88c050833e42fbf9cb166c19e9b40c68882f8c900affda"
+        },
+        "events": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/benchmark/runtime/events.jsonl",
+          "sha256": "b7169934683df4b3dda92e3cfa7b26e9c7008d21b3ca4aa5b1682af44935c61d"
+        },
+        "transport": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/benchmark/runtime/transport.jsonl",
+          "sha256": "14648d3106c2601a85e51122ba422dd187ab25e8145536dcf52575ed7a41459c"
+        },
+        "notion_source": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/benchmark/runtime/notion-source.jsonl",
+          "sha256": "a5cf0116075c5f66f2aa4438f899b50f5b0d297f1449384274506d29e792abc4"
+        },
+        "notion_sdk": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/benchmark/runtime/notion-sdk.jsonl",
+          "sha256": "747857fd75701caeec48a63e3ace1d5dfbbfada0d0f6625eca1332b780b861fb"
+        },
+        "business_output": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-002/workspace/output/external-reconciliation.json",
+          "sha256": "cedc93dc71df214c23a40f0d9069cce51d30f15d543887892b2b1f66d27f86c3"
+        }
+      },
+      "tools": {
+        "count": 6,
+        "opaque_ids": [],
+        "coverage": {
+          "artifacts": "complete",
+          "clarifications": "unavailable",
+          "resource_reads": "complete",
+          "selections": "complete",
+          "state_events": "unavailable"
+        },
+        "single_root_automatic_requires_expansion_demonstrated": false,
+        "requires_interpretation": "Native read both Skill bodies explicitly."
+      }
+    }
+  ],
+  "real_model_usage_totals": {
+    "observations": 2,
+    "logical_requests": 11,
+    "actual_attempts": 11,
+    "retry_count": 0,
+    "input_tokens": 49966,
+    "output_tokens": 1204,
+    "money_amount": null,
+    "money_status": "unknown; no verified pricing",
+    "source_owned_http_attempts": 117
+  },
+  "capture_preparation": {
+    "capture_count": 4,
+    "model_requests": 0,
+    "model_http_attempts": 0,
+    "source_owned_http_attempts": 68
+  },
+  "source_operations": {
+    "at": "2026-11-27T12:44:56.252368+00:00",
+    "run_id": "current-complementary-own-pair-2-001",
+    "operations": [
+      {
+        "request_id": "cf69d0db-ce88-4534-b203-731f9ebd160e",
+        "operation": "library-selection",
+        "status": "completed",
+        "result_observed": true,
+        "metrics_complete": true,
+        "http_attempts": 0,
+        "elapsed_ms": 77.476083,
+        "at": "2026-11-27T12:12:46.143Z",
+        "response": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-responses/cf69d0db-ce88-4534-b203-731f9ebd160e.json",
+          "sha256": "233537145a42d914ab665d70eb9380a5c512819d90c30c6f6645f34d054ac08d"
+        }
+      },
+      {
+        "request_id": "af3df180-2b30-4002-9081-5fbb6a3dadb3",
+        "operation": "candidates",
+        "status": "completed",
+        "result_observed": true,
+        "metrics_complete": true,
+        "http_attempts": 0,
+        "elapsed_ms": 5.012166,
+        "at": "2026-11-27T12:12:46.148Z",
+        "response": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-responses/af3df180-2b30-4002-9081-5fbb6a3dadb3.json",
+          "sha256": "6f8a7fa57ba8861523b15e3644908557aa7524245cfee01fae5ca874cc50029c"
+        }
+      },
+      {
+        "request_id": "1f19ec6e-3727-49bb-815f-a50b51036c24",
+        "operation": "candidates",
+        "status": "completed",
+        "result_observed": true,
+        "metrics_complete": true,
+        "http_attempts": 0,
+        "elapsed_ms": 36.322875,
+        "at": "2026-11-27T12:13:02.602Z",
+        "response": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-responses/1f19ec6e-3727-49bb-815f-a50b51036c24.json",
+          "sha256": "fd8d4fe2271606d660a9936a064b180dce1969ce50b2a70e8e1d693165905735"
+        }
+      },
+      {
+        "request_id": "c885b413-cd3e-4f9f-956e-3965233a078b",
+        "operation": "list",
+        "status": "completed",
+        "result_observed": true,
+        "metrics_complete": true,
+        "http_attempts": 34,
+        "elapsed_ms": 26781.132416,
+        "at": "2026-11-27T12:13:12.928Z",
+        "response": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-responses/c885b413-cd3e-4f9f-956e-3965233a078b.json",
+          "sha256": "8d0c23b3a4cc1ae97b23529c95172563e504b209cb7107382984103d1f66905f"
+        }
+      },
+      {
+        "request_id": "4f6b4db5-859e-4d99-a3da-114ff5f820d7",
+        "operation": "candidates",
+        "status": "completed",
+        "result_observed": true,
+        "metrics_complete": true,
+        "http_attempts": 0,
+        "elapsed_ms": 5.013,
+        "at": "2026-11-27T12:13:12.950Z",
+        "response": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-responses/4f6b4db5-859e-4d99-a3da-114ff5f820d7.json",
+          "sha256": "0f5db47d09da65d4f94abf0333a675ac6e5801c409030be620db545e7c5a10ae"
+        }
+      },
+      {
+        "request_id": "83e7b62e-53ef-4955-be4b-e3bd652e3160",
+        "operation": "library-selection",
+        "status": "completed",
+        "result_observed": true,
+        "metrics_complete": true,
+        "http_attempts": 0,
+        "elapsed_ms": 84.029375,
+        "at": "2026-11-27T12:13:13.219Z",
+        "response": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-responses/83e7b62e-53ef-4955-be4b-e3bd652e3160.json",
+          "sha256": "2d686ccd26f22062093155a774eaddaa0c5fb65fab363b85dc5b9017405a2577"
+        }
+      },
+      {
+        "request_id": "66ff1650-9d3d-4d1f-ad98-79788d42ab18",
+        "operation": "list",
+        "status": "completed",
+        "result_observed": true,
+        "metrics_complete": true,
+        "http_attempts": 0,
+        "elapsed_ms": 4.651666,
+        "at": "2026-11-27T12:13:13.224Z",
+        "response": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-responses/66ff1650-9d3d-4d1f-ad98-79788d42ab18.json",
+          "sha256": "7640aadccf85f428b21963b62c4552500cb8cf465eecd4c4a324a1093261ee07"
+        }
+      },
+      {
+        "request_id": "4264cfd5-6ac3-4ea8-838c-7f8c911932d6",
+        "operation": "list",
+        "status": "completed",
+        "result_observed": true,
+        "metrics_complete": true,
+        "http_attempts": 34,
+        "elapsed_ms": 25036.840791,
+        "at": "2026-11-27T12:13:43.212Z",
+        "response": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-responses/4264cfd5-6ac3-4ea8-838c-7f8c911932d6.json",
+          "sha256": "c04bf39f28b7efbadc361a35123748d6a6b4254c5f3147f9fae9d84dfb42dc3d"
+        }
+      },
+      {
+        "request_id": "70efb15d-4608-4720-87e9-a75048711155",
+        "operation": "consume",
+        "status": "completed",
+        "result_observed": true,
+        "metrics_complete": true,
+        "http_attempts": 30,
+        "elapsed_ms": 20800.39,
+        "at": "2026-11-27T12:14:07.941Z",
+        "response": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-responses/70efb15d-4608-4720-87e9-a75048711155.json",
+          "sha256": "1bf3403814367ea93b9bc943bdaac618fa6d7335ed79f717047ff99b5840b95e"
+        }
+      },
+      {
+        "request_id": "aeb7b211-fcb5-4e3b-96b7-90a064de47cb",
+        "operation": "read",
+        "status": "completed",
+        "result_observed": true,
+        "metrics_complete": true,
+        "http_attempts": 19,
+        "elapsed_ms": 15755.362,
+        "at": "2026-11-27T12:14:26.693Z",
+        "response": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-complementary-own-pair-2-001/benchmark/runtime/notion-responses/aeb7b211-fcb5-4e3b-96b7-90a064de47cb.json",
+          "sha256": "25ac723ee77ccd866bba49b7decc3354ddc6f46a6b4875c937e2307b5b265052"
+        }
+      }
+    ],
+    "owned_http_attempts": 117,
+    "other_descendant_transport": "unobserved"
+  },
+  "ledger": {
+    "root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/standing-benchmark-ledger-1",
+    "baseline": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/continue-benchmark-20261125-standing-authorization-1/history-baseline.json",
+      "sha256": "be5f7a1a0420febadf2aa3de662a7f51f05012f05ca2df854fb4c72f64b10da4"
+    },
+    "history_observations": 104,
+    "history_registrations": 13,
+    "local_observations": 141,
+    "local_registrations": 21,
+    "global_observations": 245,
+    "global_registrations": 34,
+    "lease": null,
+    "last_reservation": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/standing-benchmark-ledger-1/245.json",
+      "sha256": "90d4374b13092c0e03f80e66d31ba46de428fed2863110d06439edd0e23410dc"
+    },
+    "last_registration": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/standing-benchmark-ledger-1/scope-registration-021.json",
+      "sha256": "7c70c7737201dd41b299b5bf2a09497196a2eb693f8df0b5b45186df008c5b2a"
+    },
+    "header": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/standing-benchmark-ledger-1/ledger-baseline.json",
+      "sha256": "3ff1af60c19b70516e1b4ed85ddcd3bdbacdfbf95b2103d6cb8932a5376d519f"
+    },
+    "lease_absence": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/standing-benchmark-ledger-1/campaign.lease.json",
+      "state": "absent as read by inspectStandingLedger",
+      "observed_at": "2026-11-27T12:30:50.512Z"
+    }
+  },
+  "verification": {
+    "tests_passed": 45,
+    "tests_failed": 0,
+    "real_originals_read": 2,
+    "legacy_originals_read": 4,
+    "new_model_requests_for_query": 0,
+    "reporting_sources": [
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/broker/benchmark/evidence/store.mjs",
+        "sha256": "aa624154ded2c01f65ce5481eac5f01bf82cb8af9bed08963e4f1fe62a5f874a",
+        "bytes": 24374
+      },
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/broker/benchmark/cli.mjs",
+        "sha256": "9aca598b62807aae169cd23949fb3e7253f8ce71fa89e2ddcd897e7c756d54e2",
+        "bytes": 20951
+      },
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/broker/benchmark/evidence.test.mjs",
+        "sha256": "80246a992e4c24b592de790d34bbc1d28b70e1f52f192c92024c1aa499240be9",
+        "bytes": 35583
+      }
+    ],
+    "grade_or_normalized_identity_changed": false
+  },
+  "resource_closeout": {
+    "superseded_build_paths": 6,
+    "superseded_active_allocated_kib": 1186220,
+    "current_build_and_compile_cache_paths": 6,
+    "current_active_allocated_kib": 601492,
+    "test_fixture_paths": 1,
+    "test_fixture_active_allocated_kib": 768,
+    "current_retained_original_entries_unchanged": 30065,
+    "current_source_links_dangling": 30,
+    "build_disposition": "evidence_only",
+    "free_before_kib": 29072716,
+    "free_after_kib": 28974752,
+    "physical_free_credit_bytes": 0
+  },
+  "product_followups": [
+    "AH-1360",
+    "AH-1361",
+    "AH-1338"
+  ],
+  "boundaries": [
+    "Both business artifacts and both critical contracts per observation pass. Broker noncritical legal-selection remains unknown; no promotion to complete pass.",
+    "Opaque tool calls are measurement evidence limits, not proof of wrong Skill selection.",
+    "No single-root automatic Requires expansion was exercised.",
+    "All 11 model payloads were checked in the prior read-only audit; appended Benchmark README content and README reads were not observed.",
+    "Actual model costs and capture preparation have separate denominators. Configuration attempt-1 and its 34 source HTTP attempts remain retained.",
+    "Source HTTP coverage excludes unobserved descendants and gateway-internal upstream attempts. No monetary, population or general-performance claim is made."
+  ],
+  "source_receipts": {
+    "final_observations": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/final-observations-1.json",
+      "sha256": "4c9520784f5a0a699531c70fea5966f5907418e4eebf9804369292f61d73c786",
+      "bytes": 40013
+    },
+    "source_operations": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/source-operations-1.json",
+      "sha256": "de1d55dbae67c6438374592408cd449cd716b411fee7fd8614ce9000af191562",
+      "bytes": 6607
+    },
+    "plan": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/attempt-2/plan.json",
+      "sha256": "ea9e212911dd051c784467b9a8de2bae8150ebbea5fc5df704e935564d0a0943",
+      "bytes": 82017
+    },
+    "configuration_proof": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/attempt-2/configuration-proof.json",
+      "sha256": "959458434e2824d9e6b7fccec76b068808bc63cada706401873159225295837d",
+      "bytes": 4824
+    },
+    "configuration_correction": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/configuration-correction-1.json",
+      "sha256": "6203bfb90e069bddfc954e6990dccefe1380becaaa3cb9f65865677817cf2263",
+      "bytes": 1946
+    },
+    "capture_review": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/capture-review-2.json",
+      "sha256": "4a0129f901cf5f28a4375e75d85b0c6007750e5c3b88443fd82c541a19a7d391",
+      "bytes": 6415
+    },
+    "actual_product_inputs": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/actual-product-inputs-1.json",
+      "sha256": "9089cf879590f1e0a82cf09a9073d860e7acde21fa4cab6f33b61c59c6e7b8f5",
+      "bytes": 2391
+    },
+    "post_run_paired_check": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/paired-check-after-run-1.json",
+      "sha256": "6c6eae2a7f1aa36521470a42f4b16c26658f5f9aa7cee0295274883ab0e61214",
+      "bytes": 1257
+    },
+    "status": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/status-1.json",
+      "sha256": "d503a08d0ba10b29d7bef3a21a116f66ebe9cdb3808956b68ea532e8f71f2ef7",
+      "bytes": 2365
+    },
+    "targeted_tests": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/decision-view-verification-1/tests.json",
+      "sha256": "d34d97b7a837bfbaed5b545dc35b08bc6216d6bd4247bafd5b9ab58d345bf766",
+      "bytes": 1624
+    },
+    "real_query_verification": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/decision-view-verification-1/real-queries.json",
+      "sha256": "4c8955fb25eed27b35f3e4da7dec75f549bbf30958cb72ca51dfb65323989dd7",
+      "bytes": 27981
+    },
+    "post_retirement_query": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/post-retirement-query-1.json",
+      "sha256": "edf9f5d755d94ca844cea6c172e42fef37862f068a08780f7af72e3cf7f91bdd",
+      "bytes": 1688
+    },
+    "shared_verifier_acceptance": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/sdk-settle-mainline-20261127/accepted-identity.json",
+      "sha256": "e680ae39e63a23198ff0a9981ed4a9cdfd8892c59a9b13fe652c1c03c36b79c2",
+      "bytes": 838
+    },
+    "shared_verifier_ci": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/sdk-settle-mainline-20261127/pr113-independent-gate-1.json",
+      "sha256": "7e0e08d3d45a7cf951f4fd7cf42415d4ef8c55ee27621097595d7bdf282fedcb",
+      "bytes": 7764
+    },
+    "cancelled_title_scope": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-library-title-own-20261127-1/cancel-closeout-1.json",
+      "sha256": "bb302f4e365ea4a66df51834468c03548efa2547bb6f3245179aca2d4765977c",
+      "bytes": 3755
+    },
+    "superseded_build_retirement": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-superseded-title-builds-20261127/closeout.json",
+      "sha256": "c31a9106a6996f6bb8a1fe64cb8918505024ce93711575635e97b69644f03173",
+      "bytes": 44137
+    },
+    "current_build_retirement": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-complementary-current-20261127/closeout.json",
+      "sha256": "6320ed61564f04fd098d3f67721ea55ab8a9861caf92affcaea9f7ff15d2c2ce",
+      "bytes": 24626
+    },
+    "test_fixture_retirement": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/decision-view-verification-1/test-tmp-trash.json",
+      "sha256": "f8c6856cbee1fcae9984d6445bba38fcce40ed85cbf775251375937bcd26a955",
+      "bytes": 828
+    },
+    "prior_retirement_aggregate": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/library-title-resource-closeout-20261127.json",
+      "sha256": "67cd9ff9ce2b068eb59bbc5e48f68091b263ef81933c8e4088796c4a62ab8b37",
+      "bytes": 19280
+    },
+    "prior_query_after_retirement": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-complementary-own-20261127-1/prior-query-after-retirement-1.json",
+      "sha256": "664b0693abaab29a49289b7f6e0cf3b51060f0f874d562874ec247dc20ea09bc",
+      "bytes": 500933
+    }
+  }
+}

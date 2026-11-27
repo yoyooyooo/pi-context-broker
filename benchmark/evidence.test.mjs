@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {normalizeEpisode} from './evidence/normalize.mjs';
 import {assessReportedModel} from './reported-model.mjs';
 import {deriveRedactedProviderBinding} from './provider-binding.mjs';
-import {verifyBundle,writeEvidenceBundle,readEvidenceBundle,buildEvidenceIndex,queryEvidenceIndex,inventoryLegacyEvidence,resolveEvidenceRef} from './evidence/store.mjs';
+import {verifyBundle,writeEvidenceBundle,readEvidenceBundle,readEpisodeDecision,buildEvidenceIndex,queryEvidenceIndex,inventoryLegacyEvidence,resolveEvidenceRef} from './evidence/store.mjs';
 import {exampleEnvelope,exampleEpisode} from './analysis/fixtures.mjs';
 import {fingerprint} from './protocol.mjs';
 
@@ -284,6 +284,77 @@ test('bundle verifies actual bytes and locators and rebuilds without rewriting r
   await writeFile(path,rawText+' ');
   await assert.rejects(()=>verifyBundle(bundle,{root}),/hash or size mismatch/);
 });
+// Synthetic source limitations test the read-only decision view, never a model result.
+async function decisionBundle({readbackChanges={}}={}) {
+  const root=await mkdtemp(join(tmpdir(),'benchmark-decision-test-')),path=join(root,'raw.json');
+  const {input,rawText}=exampleEnvelope({rawPath:path,tools:[{id:'opaque-1',name:'bash',parent_id:null,
+    turn_id:'turn-1',status:'pass',execution:'observed',args:{command:'retained arguments'},result:{text:'retained output'}}]});
+  await writeFile(path,rawText);
+  const readback={schema_version:1,kind:'benchmark-independent-readback',
+    evidence:{coverage:{artifacts:'complete',clarifications:'unavailable',resource_reads:'partial',selections:'partial',state_events:'unavailable'}},
+    opaque_tools:['opaque-1'],unmatched_reads:[{tool_call_id:'opaque-1',path:'unmapped.txt',reason:'No unique material mapping'}],...readbackChanges};
+  const text=JSON.stringify(readback),readbackPath=join(root,'readback.json');await writeFile(readbackPath,text);
+  const artifact={id:'collection-readback',path:readbackPath,kind:'json',
+    sha256:createHash('sha256').update(text).digest('hex'),bytes:Buffer.byteLength(text)};
+  input.artifacts.push(artifact);
+  input.contracts=[{id:'business-contract',kind:'artifact-json',critical:true,status:'pass',reason:'Declared output observed',refs:input.business.refs},
+    {id:'legal-selection',kind:'selection',critical:false,status:'unknown',reason:'Selection evidence is incomplete',
+      refs:[{artifact_id:artifact.id,sha256:artifact.sha256,pointer:'/evidence/coverage/selections'}]}];
+  const directory=join(root,'normalized');
+  await writeEvidenceBundle({directory,bundle:normalizeEpisode(input),rawRoot:root});
+  return {root,directory,readbackPath,bundle:await readEvidenceBundle({directory,rawRoot:root})};
+}
+
+test('decision view separates business and contracts from overall outcome and locates source limitations',async()=>{
+  const f=await decisionBundle(),original=structuredClone(f.bundle);
+  const originalText=await readFile(join(f.directory,'journey.md'),'utf8');
+  const decision=await readEpisodeDecision(f.bundle.episode,{root:f.root});
+  assert.deepEqual(decision.overall,f.bundle.episode.result);
+  assert.equal(decision.overall.outcome,'unknown');assert.equal(decision.business.status,'pass');
+  assert.deepEqual(decision.contracts.map(c=>[c.id,c.critical,c.status,c.reason]),[
+    ['business-contract',true,'pass','Declared output observed'],
+    ['legal-selection',false,'unknown','Selection evidence is incomplete'],
+  ]);
+  assert.deepEqual(decision.contracts.map(c=>c.refs),f.bundle.episode.contracts.map(c=>c.refs));
+  assert.deepEqual(decision.execution_coverage,{attempts:'complete',tools:'complete',interventions:'complete'});
+  const source=decision.source_readback,tool=source.opaque_tools[0];
+  assert.equal(source.status,'available');assert.equal(source.coverage.resource_reads,'partial');
+  assert.equal(source.coverage.selections,'partial');
+  assert.equal(tool.id,'opaque-1');assert.equal(tool.name,'bash');assert.equal(tool.status,'pass');
+  assert.equal(tool.execution,'observed');assert.equal(tool.turn_id,'turn-1');
+  assert.equal(Object.hasOwn(tool,'args'),false);assert.equal(Object.hasOwn(tool,'result'),false);
+  assert.equal(await resolveEvidenceRef(tool.refs.at(-1),f.bundle.episode.artifacts,{root:f.root}),'opaque-1');
+  assert.equal((await resolveEvidenceRef(tool.refs[0],f.bundle.episode.artifacts,{root:f.root})).id,'opaque-1');
+  const unmatched=source.unmatched_reads[0];
+  assert.equal(unmatched.reason,'No unique material mapping');
+  assert.equal((await resolveEvidenceRef(unmatched.refs.at(-1),f.bundle.episode.artifacts,{root:f.root})).path,'unmapped.txt');
+  assert.deepEqual(f.bundle,original);
+  assert.equal(await readFile(join(f.directory,'journey.md'),'utf8'),originalText);
+  const index=buildEvidenceIndex([f.bundle.episode,exampleEpisode({condition:'reference'})]);
+  index.rows.find(row=>row.condition_id==='candidate').decision=decision;
+  assert.deepEqual(queryEvidenceIndex(index,{outcome:'pass'}).map(row=>row.condition_id),['reference']);
+  assert.equal(queryEvidenceIndex(index,{condition_id:'candidate',outcome:'unknown'})[0].decision.business.status,'pass');
+  assert.equal(queryEvidenceIndex(index,{condition_id:'candidate',outcome:'pass'}).length,0);
+});
+
+test('legacy decision view marks missing source readback unavailable without claiming empty diagnostics',async()=>{
+  const {root,bundle}=await reportedBundle();await verifyBundle(bundle,{root});
+  const decision=await readEpisodeDecision(bundle.episode,{root});
+  assert.equal(decision.business.status,'pass');
+  assert.deepEqual(decision.source_readback,{status:'unavailable',reason:'No retained collection-readback artifact',
+    coverage:null,opaque_tools:null,unmatched_reads:null,refs:[]});
+});
+
+test('decision view rejects changed or malformed readback rather than hiding it as unavailable',async()=>{
+  const f=await decisionBundle();await writeFile(f.readbackPath,(await readFile(f.readbackPath,'utf8'))+' ');
+  await assert.rejects(()=>readEpisodeDecision(f.bundle.episode,{root:f.root}),/hash or size mismatch/);
+  await assert.rejects(()=>readEvidenceBundle({directory:f.directory,rawRoot:f.root}),/hash or size mismatch/);
+  const malformed=await decisionBundle({readbackChanges:{opaque_tools:null}});
+  await assert.rejects(()=>readEpisodeDecision(malformed.bundle.episode,{root:malformed.root}),/Malformed independent readback/);
+  const orphan=await decisionBundle({readbackChanges:{opaque_tools:['not-retained']}});
+  await assert.rejects(()=>readEpisodeDecision(orphan.bundle.episode,{root:orphan.root}),/Opaque tool is absent/);
+});
+
 test('existing raw hash cannot bless a nonexistent line or JSON pointer',async()=>{
   const root=await mkdtemp(join(tmpdir(),'benchmark-locator-test-')),path=join(root,'raw.json');
   const {input,rawText}=exampleEnvelope({rawPath:path});await writeFile(path,rawText);
