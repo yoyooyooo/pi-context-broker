@@ -11,14 +11,14 @@ import { assessReportedModel, providerReportedModel, validateRoutingPolicy } fro
 import { deriveRedactedProviderBinding } from './provider-binding.mjs';
 export { deriveRedactedProviderBinding } from './provider-binding.mjs';
 import { verifyArtifactFiles, writeEvidenceBundle } from './evidence/store.mjs';
-import { readProviderTransport } from '../scripts/skill-consumption-provider.mjs';
+import { readProviderTransport, providerApplicationCompletion } from '../scripts/skill-consumption-provider.mjs';
 import { parseSourceObservation } from '../scripts/skill-consumption-source-observer.mjs';
 import { graphSourceViews, verifyPreparationEvidence, retainedMaterialSelection, retainedSelectionSnapshots, RETAINED_SOURCE_CONTRACT } from './retained-source-views.mjs';
 import { CURRENT_SOURCE_CONTRACT, loadCurrentSourceViews } from './current-source-views.mjs';
 import { pairedBrokerEntry } from './paired-broker-entry.mjs';
 
 export const COLLECTOR_VERSION = '1.2.2';
-export const CURRENT_COLLECTOR_VERSION = '1.3.3';
+export const CURRENT_COLLECTOR_VERSION = '1.3.4';
 const retainedSourceViews = { contract: RETAINED_SOURCE_CONTRACT, graphSourceViews, verifyPreparationEvidence };
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -82,6 +82,27 @@ export function collectRawUsage(api, event) {
     cache_write: number(inputDetails?.cache_write_tokens), reasoning: number(outputDetails?.reasoning_tokens ?? source.reasoning_tokens),
     complete: input !== null && output !== null && (source.total_tokens === undefined || total === input + output),
     raw_pointer: responses ? '/response/usage' : '/usage', input_semantics: 'includes_cache', output_semantics: 'includes_reasoning' };
+}
+
+/** Bind the actual assistant and provider usage before using the shared protocol
+ * completion rule. A successful response cannot excuse another attempt's error. */
+export function collectProviderApplicationCompletion({ request, attempt, transportEnd, assistantEvent, rawUsage, model, providerBinding }) {
+  const message = assistantEvent?.data?.message;
+  if (request.usage_attempt_id !== attempt.id || transportEnd?.id !== attempt.transport_id
+    || attempt.error_ref || attempt.status >= 400 || assistantEvent?.type !== 'session_event'
+    || assistantEvent.request_id !== request.id || assistantEvent.data?.type !== 'message_end'
+    || message?.role !== 'assistant' || message.errorMessage || message.api !== model.api
+    || message.model !== (model.route ?? model.id) || message.provider !== model.provider
+      && !(message.provider === '[REDACTED_CREDENTIAL]' && providerBinding?.status === 'known' && providerBinding.value === model.provider)
+    || rawUsage?.complete !== true || !message.usage
+    || message.usage.input + message.usage.cacheRead + message.usage.cacheWrite !== rawUsage.input
+    || message.usage.output !== rawUsage.output || message.usage.totalTokens !== rawUsage.input + rawUsage.output) return null;
+  // The shared helper consumes the cost observer's explicit raw-model status.
+  // Preserve absent versus invalid fields when adapting a raw Pi message.
+  const responseModel = typeof message.responseModel === 'string'
+    && /^[A-Za-z0-9][A-Za-z0-9._/:@+-]{0,255}$/u.test(message.responseModel) ? message.responseModel : null;
+  return providerApplicationCompletion(transportEnd, { ...message, responseModel,
+    responseModelStatus: message.responseModel == null ? 'unreported' : responseModel === null ? 'invalid' : 'reported' });
 }
 
 /** Recover only the exact recorder marker from an independently observed, unique
@@ -980,6 +1001,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
   let attemptSeq = 0, usageUnknown = false;
   for (const request of episode?.requests ?? []) {
     let observedUsage = null, usageRef = null, providerBinding = null;
+    const assistantSource = currentSource ? resolveRef(request.assistant?.ref) : null;
     if (request.usage_ref) {
       const source = resolveRef(request.usage_ref), row = source?.value;
       if (row?.type === 'provider_stream_event' && row.data?.request_id === request.id &&
@@ -1016,10 +1038,14 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
           if (!reported) continue;
           observations.push({ ...reported, bound, ref: sourceRef });
         }
+        const applicationCompletion = assistantSource?.ref.artifact_id === eventArtifact.id
+          ? collectProviderApplicationCompletion({ request, attempt, transportEnd: end, assistantEvent: assistantSource.value,
+            rawUsage, model, providerBinding: attemptProviderBinding }) : null;
         reportedModel = assessReportedModel({ routing: model.routing, sent: sendStatus, observations,
-          providerError: Boolean(attempt.error_ref) || attempt.status >= 400 || Boolean(end && end.outcome !== 'completed'),
+          providerError: Boolean(attempt.error_ref) || attempt.status >= 400 || Boolean(end && end.outcome !== 'completed' && !applicationCompletion),
           refs: uniqueRefs([cleanRef(attempt.start_ref), actualSend ? transportRef(actualSend) : null, end ? transportRef(end) : null,
-            ...(resultArtifact ? [ref(resultArtifact, '/requests')] : []), ...bindingRefs]) });
+            ...(resultArtifact ? [ref(resultArtifact, '/requests')] : []), ...bindingRefs,
+            ...(applicationCompletion ? [assistantSource.ref, attemptUsageRef] : [])]) });
         if (reportedModel.reason) problems.push(reportedModel.reason);
       }
       if (sendStatus === true && (!rawUsage?.complete || !adapterVerified)) usageUnknown = true;

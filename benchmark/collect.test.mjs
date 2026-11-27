@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { canonicalJson, fingerprint } from './protocol.mjs';
-import { collectEpisode, collectRawUsage, deliveredSourceBodies, deriveRedactedProviderBinding } from './collect.mjs';
+import { collectEpisode, collectRawUsage, collectProviderApplicationCompletion, deliveredSourceBodies, deriveRedactedProviderBinding } from './collect.mjs';
 import { exampleProtocol } from './analysis/fixtures.mjs';
 import { assertCompletedStandingEvidence } from './standing-campaign.mjs';
 
@@ -151,6 +151,51 @@ test('a failed provider response is distinguishable from an otherwise complete r
   assert.equal(result.validity,'invalid');assert.equal(result.stop_batch,true);
   assert.ok(result.bundle.episode.admission.reasons.includes('reported_model_unavailable_after_provider_error'));
   assert.equal(result.budget_usage.model_requests,1);assert.equal(result.budget_usage.input_tokens,100);
+});
+function completedThenCancelled() {
+  return { request: { id: 'request-1', usage_attempt_id: 'attempt-1' }, attempt: { id: 'attempt-1', transport_id: 1, status: 200, error_ref: null },
+    transportEnd: { id: 1, category: 'model', status: 200, outcome: 'failure', errorName: 'AbortError', errorCode: 20,
+      modelApi: 'openai-completions', contentEncoding: 'identity', contentType: 'text/event-stream',
+      sseCompletion: { method: 'bounded-sse-data-done-v1', doneEvents: 1 } },
+    assistantEvent: { type: 'session_event', request_id: 'request-1', data: { type: 'message_end', message: {
+      role: 'assistant', api: 'openai-completions', provider: 'unit-provider', model: 'unit-route', stopReason: 'toolUse',
+      responseModel: 'grok-4.7', usage: { input: 70, output: 20, cacheRead: 30, cacheWrite: 0, totalTokens: 120 } } } },
+    rawUsage: collectRawUsage('openai-completions', { usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 } }),
+    model: { provider: 'unit-provider', route: 'unit-route', api: 'openai-completions' } };
+}
+test('current collection recognizes the shared completed-before-cancel proof for the same request and usage attempt', () => {
+  const f = completedThenCancelled();
+  assert.equal(collectProviderApplicationCompletion(f), 'sse-done-before-http-cancel');
+  f.assistantEvent.data.message.provider = '[REDACTED_CREDENTIAL]';
+  assert.equal(collectProviderApplicationCompletion(f), null);
+  f.providerBinding = { status: 'known', value: 'unit-provider' };
+  assert.equal(collectProviderApplicationCompletion(f), 'sse-done-before-http-cancel');
+});
+test('current completion proof preserves real errors, incomplete SSE and unrelated assistant results', () => {
+  for (const change of [
+    f => { f.transportEnd.status = 503; },
+    f => { f.transportEnd.errorName = 'TimeoutError'; },
+    f => { f.transportEnd.errorCode = 'ECONNRESET'; },
+    f => { delete f.transportEnd.sseCompletion; },
+    f => { f.transportEnd.sseCompletion.doneEvents = 0; },
+    f => { f.transportEnd.sseCompletion.doneEvents = 2; },
+    f => { f.assistantEvent.data.message.stopReason = 'error'; },
+    f => { f.assistantEvent.data.message.stopReason = 'aborted'; },
+    f => { f.assistantEvent.data.message.errorMessage = 'provider failed'; },
+    f => { f.assistantEvent.data.message.responseModel = '# invalid'; },
+    f => { f.assistantEvent.request_id = 'another-request'; },
+    f => { f.assistantEvent.data.type = 'message_update'; },
+    f => { f.request.usage_attempt_id = 'another-attempt'; },
+    f => { f.transportEnd.id = 2; },
+    f => { f.attempt.status = 500; },
+    f => { f.attempt.error_ref = { artifact_id: 'events', line: 1 }; },
+    f => { f.assistantEvent.data.message.model = 'another-route'; },
+    f => { f.assistantEvent.data.message.provider = 'another-provider'; },
+    f => { f.assistantEvent.data.message.api = 'openai-responses'; },
+    f => { f.rawUsage = null; },
+    f => { f.rawUsage.complete = false; },
+    f => { f.assistantEvent.data.message.usage.output = 21; },
+  ]) { const f = completedThenCancelled(); change(f); assert.equal(collectProviderApplicationCompletion(f), null); }
 });
 test('routing policy does not require server identity before any actual model send',async()=>{
   const result=await collect(await fixture({routing,capture:true}));
