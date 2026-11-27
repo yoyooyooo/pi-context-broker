@@ -4,13 +4,15 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdir, readFile, readdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assertSupportedPiVersion, isolatedEnv, resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { renderHttpWrapper, startLoopbackMock } from './mock-provider-adapter.mjs';
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
 
-export const scenarios = Object.freeze(['default-view', 'http-cache-recovery', 'http-warm-restart', 'http-interruption', 'working-set']);
+export const scenarios = Object.freeze(['default-view', 'http-cache-recovery', 'http-warm-restart', 'http-warm-directory-expired', 'http-interruption', 'working-set']);
+const isWarmRestart = name => name === 'http-warm-restart' || name === 'http-warm-directory-expired';
 export const usage = `Current SDK v3, actual Pi, controlled Notion and provider HTTP.
 node scripts/notion-sdk-pi.mjs doctor|run --package ABS --fixture ABS --source-http-helper ABS [--pi ABS] [--scenario all|${scenarios.join('|')}]
 run additionally requires --out NEW_ABS. --pi selects one explicit installed entry; there is no fallback.
@@ -211,9 +213,10 @@ async function runScenario(name, info, out) {
     onBody: async (record, bytes) => { const file = `provider-${String(wire.length + 1).padStart(3, '0')}.json`; await writeFile(join(base, file), bytes, { mode: 0o600 }); wire.push({ file, sha256: hash(bytes), body: JSON.parse(bytes), record }); } });
   const agentDir = join(base, 'agent'), sessions = join(base, 'sessions');
   await mkdir(join(agentDir, 'context-broker'), { recursive: true }); await mkdir(sessions);
-  const maxAge = name === 'http-warm-restart' ? '5m' : '0';
+  const directoryExpired = name === 'http-warm-directory-expired';
+  const maxAge = isWarmRestart(name) ? '5m' : '0';
   const source = { type: 'notion', id: 'current-sdk', namespace: 'current-sdk', library: sample.notion.library.library_id,
-    discovery: { maxAge }, activation: { maxAge }, cacheDir: join(base, 'broker-cache'), prefetch: false };
+    discovery: { maxAge: directoryExpired ? '1s' : maxAge }, activation: { maxAge }, cacheDir: join(base, 'broker-cache'), prefetch: false };
   const config = join(agentDir, 'context-broker/config.yml'), control = join(base, 'control.json');
   await save(config, { sources: [source] }); await save(control, { action: 'none' });
   await save(join(agentDir, 'settings.json'), { compaction: { enabled: false, keepRecentTokens: 1, reserveTokens: 1024 }, retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } } });
@@ -267,7 +270,7 @@ async function runScenario(name, info, out) {
     rpc = await startRpc({ host: info.host, args, cwd: base, env, timeoutMs: 120000 });
     const a1 = sourceText(service.notion, owners.a), b1 = sourceText(service.notion, owners.b), c1 = sourceText(service.notion, owners.c);
     let records;
-    if (name === 'http-warm-restart') {
+    if (isWarmRestart(name)) {
       await step('cold dollar submission reads the complete root and Requires', async () => {
         checkSources(await ordinary('$current-demo Apply this Skill to the current task.'), [a1, b1], [c1]);
       });
@@ -275,18 +278,23 @@ async function runScenario(name, info, out) {
       await rpc.closeInput();
       await save(join(base, 'cold-rpc.json'), rpc.frames); await save(join(base, 'cold-rpc-lifecycle.json'), rpc.lifecycle);
       const coldRequests = service.requests.length;
+      // Let only the directory TTL expire while neither Pi process is running.
+      // The persisted cache remains untouched; lifecycle clocks prove the gap.
+      if (directoryExpired) await delay(1100);
       service.setPhase('warm-restart');
       rpc = await startRpc({ host: info.host, args, cwd: base, env, timeoutMs: 120000 });
       const warm = await snapshot('warm-empty-session'), warmPid = rpc.lifecycle[0].pid;
       assert.notEqual(warmPid, coldPid); assert.notEqual(warm.session_file, cold.session_file);
       assert.equal(warm.branch.some(entry => entry.customType === 'context-broker-selected-graph'), false);
-      await step('a new Pi process reuses the five-minute cache with no Notion HTTP', async () => {
+      await step(directoryExpired ? 'a new Pi refreshes expired metadata while reusing five-minute originals'
+        : 'a new Pi process reuses the five-minute cache with no Notion HTTP', async () => {
         const started = Date.now();
         checkSources(await ordinary('$current-demo Apply this Skill to the new task.'), [a1, b1], [c1]);
         const elapsed = Date.now() - started;
-        assert.equal(service.requests.length, coldRequests, 'Warm restart issued Notion HTTP');
+        if (!directoryExpired) assert.equal(service.requests.length, coldRequests, 'Warm restart issued Notion HTTP');
         await save(join(base, 'warm-restart.json'), { cold_pid: coldPid, warm_pid: warmPid,
           cold_session: cold.session_file, warm_session: warm.session_file, max_age_ms: 300000,
+          directory_max_age_ms: directoryExpired ? 1000 : 300000,
           elapsed_ms: elapsed, cold_source_requests: coldRequests, warm_source_requests: service.requests.length - coldRequests });
       });
     } else if (name === 'default-view') {
@@ -344,6 +352,11 @@ async function runScenario(name, info, out) {
       }
     }
     await snapshot('final-session'); await rpc.closeInput();
+    if (isWarmRestart(name)) {
+      const receiptPath = join(base, 'warm-restart.json'), receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
+      receipt.warm_source_requests = service.requests.length - receipt.cold_source_requests;
+      await save(receiptPath, receipt);
+    }
     const events = await rows(join(base, 'sdk.jsonl')), starts = events.filter(row => row.kind === 'context-broker.notion-sdk' && row.event === 'start'), ends = events.filter(row => row.kind === 'context-broker.notion-sdk' && row.event === 'end');
     assert.ok(starts.length); assert.equal(starts.length, ends.length); assert.deepEqual(starts.map(row => row.id).sort(), ends.map(row => row.id).sort());
     assert.equal(events.filter(row => row.kind === 'child_process' && row.active_sdk_ids.length > 0).length, 0, 'Broker consumption may not spawn a CLI');
@@ -383,14 +396,38 @@ export async function verifyEvidence(directory) {
     assert.ok(starts.length > 0); assert.deepEqual(starts.map(row => row.id).sort(), ends.map(row => row.id).sort());
     assert.equal(events.filter(row => row.kind === 'child_process' && row.active_sdk_ids.length > 0).length, 0);
     const lifecycle = JSON.parse(await readFile(join(base, 'rpc-lifecycle.json'), 'utf8')); assert.equal(lifecycle.at(-1).event, 'close'); assert.equal(lifecycle.at(-1).code, 0); assert.equal(lifecycle.at(-1).signal, null);
-    if (entry.name === 'http-warm-restart') {
+    if (isWarmRestart(entry.name)) {
+      const directoryExpired = entry.name === 'http-warm-directory-expired';
+      assert.equal(proofs.length, 2, 'Cold and warm provider requests must both prove complete originals');
+      assert.ok(proofs.every(proof => proof.present.length === 2));
+      assert.notEqual(proofs[0].provider_file, proofs[1].provider_file);
+      assert.deepEqual(proofs[0].present.map(original => original.sha256).sort(), proofs[1].present.map(original => original.sha256).sort());
       const restart = JSON.parse(await readFile(join(base, 'warm-restart.json'), 'utf8'));
       const coldLifecycle = JSON.parse(await readFile(join(base, 'cold-rpc-lifecycle.json'), 'utf8'));
+      const launch = JSON.parse(await readFile(join(base, 'launch.json'), 'utf8'));
+      assert.equal(launch.source.activation.maxAge, '5m');
+      assert.equal(launch.source.discovery.maxAge, directoryExpired ? '1s' : '5m');
       assert.equal(coldLifecycle.at(-1).code, 0); assert.equal(coldLifecycle.at(-1).signal, null);
+      assert.equal(coldLifecycle.at(-1).event, 'close');
       assert.equal(coldLifecycle[0].pid, restart.cold_pid); assert.equal(lifecycle[0].pid, restart.warm_pid);
       assert.notEqual(restart.cold_pid, restart.warm_pid); assert.notEqual(restart.cold_session, restart.warm_session);
-      assert.equal(restart.max_age_ms, 300000); assert.equal(restart.warm_source_requests, 0);
-      assert.equal(source.filter(row => row.phase === 'warm-restart').length, 0, 'Warm restart sent Notion HTTP, including background work');
+      const coldSession = JSON.parse(await readFile(join(base, 'cold-session.json'), 'utf8'));
+      const warmSession = JSON.parse(await readFile(join(base, 'warm-empty-session.json'), 'utf8'));
+      assert.equal(coldSession.session_file, restart.cold_session); assert.equal(warmSession.session_file, restart.warm_session);
+      assert.equal(warmSession.branch.some(row => row.customType === 'context-broker-selected-graph'), false);
+      assert.equal(restart.max_age_ms, 300000);
+      assert.equal(restart.directory_max_age_ms, directoryExpired ? 1000 : 300000);
+      const restartGap = BigInt(lifecycle[0].monotonicNs) - BigInt(coldLifecycle.at(-1).monotonicNs);
+      assert.ok(restartGap >= 0n, 'Warm Pi must start after the cold process has exited');
+      const warmSource = source.filter(row => row.phase === 'warm-restart');
+      assert.equal(source.length - warmSource.length, restart.cold_source_requests);
+      assert.equal(warmSource.length, restart.warm_source_requests, 'Receipt must account for HTTP through Pi shutdown');
+      if (directoryExpired) {
+        assert.ok(restartGap > 1000000000n, 'The directory must expire between independent Pi processes');
+        assert.ok(warmSource.length > 0, 'Expired directory must be revalidated online');
+      } else {
+        assert.equal(warmSource.length, 0, 'Warm restart sent Notion HTTP, including background work');
+      }
       const consumed = pid => events.filter(row => row.observer_pid === pid && row.operation === 'consume' && row.kind === 'context-broker.notion-sdk-result');
       const cold = consumed(restart.cold_pid), warm = consumed(restart.warm_pid);
       assert.equal(cold.length, 1); assert.equal(warm.length, 1);
@@ -407,6 +444,22 @@ export async function verifyEvidence(directory) {
       assert.equal(completed?.request_metrics?.total_requests, 0);
       assert.equal(events.filter(row => row.observer_pid === restart.warm_pid && row.operation === 'library').length, 0,
         'Local routing must not trigger separate Library verification');
+      const warmEnds = ends.filter(row => row.observer_pid === restart.warm_pid);
+      const online = warmEnds.filter(row => row.request_metrics?.total_requests > 0);
+      assert.ok(online.every(row => row.operation === 'list' && row.status === 'completed'), 'Only directory list may issue warm HTTP');
+      assert.equal(online.reduce((total, row) => total + row.request_metrics.total_requests, 0), warmSource.length,
+        'All warm HTTP, including identity, Library checks and background discovery, must be attributed');
+      if (directoryExpired) {
+        const rootChildren = '/v1/blocks/' + launch.source.library + '/children';
+        // Preserve the SDK physical body classification for Library root children.
+        // It is directory work, but must never be silently relabelled as metadata.
+        const bodyReads = warmSource.filter(row => row.path === rootChildren);
+        assert.ok(warmSource.every(row => row.path === rootChildren || !/\/markdown$|\/blocks\//.test(row.path)),
+          'Expired directory must not reacquire Skill originals');
+        assert.equal(online.reduce((total, row) => total + row.request_metrics.requests.notion_body, 0), bodyReads.length);
+        assert.equal(online.reduce((total, row) => total + row.request_metrics.body_requests.current_body, 0), bodyReads.length);
+        assert.equal(online.reduce((total, row) => total + row.request_metrics.requests.notion_metadata, 0), warmSource.length - bodyReads.length);
+      }
     }
   }
   return result;
