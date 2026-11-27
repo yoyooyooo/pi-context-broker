@@ -26,5 +26,5 @@ export function pairedBrokerEntry(build, buildRoot = build.root) {
     assert.equal(archived.length, 1, 'The installed Broker entry needs one archive identity');
     assert.equal(archived[0].sha256, files[0].sha256, 'The installed and built Broker entries differ');
   }
-  return { path, sha256: files[0].sha256 };
+  return { path, sha256: files[0].sha256, package_path: name };
 }

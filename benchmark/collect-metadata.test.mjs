@@ -63,6 +63,26 @@ test('packed metadata ownership rejects an unbound package, entry, archive or de
   ]) { const f = producerFixture(producers[2], 'packed'); change(f); assert.equal(verifiedNotionListRuntime(f), false); }
 });
 
+test('matching entry bytes at another package location cannot borrow the reviewed relative imports', () => {
+  const f = producerFixture(producers[2], 'packed');
+  const selected = f.build.candidate.packages.broker;
+  const moved = { path: 'unreviewed-location/index.ts', sha256: localIdentityIndexSha };
+  f.build.packages.broker.files.push(moved, { path: 'src/host-skills.ts', sha256: localIdentityHostSha },
+    { path: 'unreviewed-location/host-skills.ts', sha256: sha('unreviewed relative import') });
+  selected.closure.files.push({ ...moved }, { path: 'src/host-skills.ts', sha256: localIdentityHostSha },
+    { path: 'unreviewed-location/host-skills.ts', sha256: sha('unreviewed relative import') });
+  selected.entry = selected.root + '/unreviewed-location/index.ts';
+  for (const view of [f.candidate.snapshot, f.candidate.projection]) {
+    const path = view.launch_profile.extensions[0].path.replace('/src/index.ts', '/unreviewed-location/index.ts');
+    view.launch_profile.extensions[0].path = path;
+    view.extensions[0].resolved_path = path;
+    view.extensions[0].entry.path = path; view.extensions[0].entry.realpath = path;
+    view.tools.all[0].sourceInfo.path = path;
+  }
+  f.expected.projection = structuredClone(f.candidate.projection);
+  assert.equal(verifiedNotionListRuntime(f), false);
+});
+
 test('separately reviewed source hashes cannot be mixed into an unreviewed producer', () => {
   for (const index of producers) for (const host of producers) {
     if (index === host) continue;
@@ -148,7 +168,7 @@ test('retained actual SDK3 run passes the full collector, normalization and grad
       assert.equal(build.packages.broker.files.find(file => file.path === name).sha256, sha256);
       files.push({ name, sha256 });
     }
-    assert.equal(verifiedNotionListRuntime({ candidate, expected, admission, files }), true);
+    assert.equal(verifiedNotionListRuntime({ candidate, expected, admission, files, build }), true);
     const sourceViews = await loadCurrentSourceViews({ runRoot: root, buildRoot, candidate });
     const receipts = [], directories = [];
     for (const operation of episode.notion.operations) {

@@ -241,6 +241,7 @@ export function verifiedNotionListRuntime({ candidate, expected, admission, file
     }));
     assert.ok(producer, 'The complete Broker metadata producer tuple must be reviewed');
     const selected = pairedBrokerEntry(build, dirname(candidate.snapshot.build.path));
+    assert.equal(selected.package_path, 'src/index.ts', 'The reviewed producer depends on its original relative imports');
     assert.equal(selected.sha256, producer['src/index.ts']);
     for (const [view, path] of [[candidate.snapshot, selected.path],
       [candidate.projection, '$BUILD' + selected.path.slice(build.root.length)]]) {
