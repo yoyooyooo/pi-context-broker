@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "kind": "thin-current-product-evidence-index",
+  "scope": "Selected observed summaries copied unchanged. Raw inputs, requests, responses, failed preparations, frozen builds and the authoritative standing ledger remain on Mini at their indexed paths. This index is not a portable sealed reanalysis package.",
+  "files": [
+    {
+      "file": "operator-results.json",
+      "source": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-product-baseline-20261127-1/operator-results.json",
+      "sha256": "9591f7a15cce12a600299decc3c031221b8ae37faa4a212f662dcc99d40f77d7",
+      "bytes": 52093
+    },
+    {
+      "file": "operator-final-interpretation.json",
+      "source": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-product-baseline-20261127-1/operator-final-interpretation.json",
+      "sha256": "d1559f8988aa8ca263650a47cfc78ab183d1a6e5f2d2ccbd6140ebec09d7ab83",
+      "bytes": 7997
+    },
+    {
+      "file": "latency-attribution.json",
+      "source": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-next-cycle-20261127/latency-attribution.json",
+      "sha256": "65394b8bf38c36f52117eae5419acff5c51d456653368d68f8b4bc0595ee526b",
+      "bytes": 39049
+    },
+    {
+      "file": "actual-relative-entry-check.json",
+      "source": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-next-cycle-20261127/actual-relative-entry-check.json",
+      "sha256": "762a3c1df2a0ca9115fd7c6adc63cb8648d13cf88ad6abf24d8a4e5f0acd4f27",
+      "bytes": 946
+    },
+    {
+      "file": "provider-completion-sidecar.json",
+      "source": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-product-baseline-20261127-1/provider-completion-review-1/sidecar.json",
+      "sha256": "e8729a674851a53f01e851d1a9a36bf24ba3e17aa454cfc22478caec818ae1a5",
+      "bytes": 62858
+    },
+    {
+      "file": "provider-completion-full-collector-proof.json",
+      "source": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-product-baseline-20261127-1/provider-completion-review-1/full-collector-proof.json",
+      "sha256": "22780004163085f821a9b309f75f79968825b7e6359f7f878546d8e41d1ad588",
+      "bytes": 1295
+    }
+  ]
+}

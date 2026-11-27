@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "kind": "retained-packed-entry-reviewed-relative-path",
+  "scope": "Additional negative guard does not alter the applicability of the actual frozen build; original collector and plan identities retained",
+  "build": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-product-runtime-20261127-2/build.json",
+    "sha256": "e7240fad568c9254187586d30deb2102011e7411b5330291133e8bfad55f36e5"
+  },
+  "selected_entry": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-product-runtime-20261127-2/installed/broker/node_modules/pi-context-broker/src/index.ts",
+    "sha256": "bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9",
+    "package_path": "src/index.ts"
+  },
+  "original_broker_commit": "283b2f73dbbcb83526d93ed8890b792ab0046562",
+  "checked_against": "866132fc"
+}
