@@ -50,19 +50,21 @@ verification/models/consumer-state/coverage.json 是当前五个模型的唯一 
 
 管理 transport、SQLite 目录 schema 和 scope/load/invalidate 不在现有有限模型的变量或原子动作中。Source 写完成后本地目录失效失败，是具体实现义务；不得将 Availability、FreshnessPublication 或 DeliveryBoundary 的通过声称为 schema 升级或完整管理协议的形式证明。
 
-CLI 先验证固定 transport binding 与完整 manager receipt，然后才运行消费者收尾。其 consumer_finalization 失败可保留 verified_management；Broker 用 source-materialization-contract 再绑定原 request、Library、target、authorization_root 与严格 receipt，并保持 manager scope。source-materialization 只记录管理事实和实际 effects，拒绝 onReceipt、ready、catalog 与正文发布。实际 SourcePreparationScope.checkpoint 可以到期并 abort，但不改变已验证的管理事实；预算不重新计满。验证前错误、伪造 details 和未知 transport 保持 unknown。
+CLI 先验证固定 transport binding 与完整 manager receipt，然后才运行消费者收尾。其 consumer_finalization 失败可保留 verified_management；Broker 用 source-materialization-contract 再绑定原 request、Library、target、authorization_root 与严格 receipt，并保持 manager scope。正常成功时 manager 与 consumer scope 可以相同或不同，仍须分别通过各自鉴权与当前消费者 scope 验收。source-materialization 只记录管理事实和实际 effects，拒绝 onReceipt、ready、catalog 与正文发布。实际 SourcePreparationScope.checkpoint 可以到期并 abort，但不改变已验证的管理事实；预算不重新计满。验证前失败不带 verified_management。已知未派发的 SourceManagementUnavailable 保持 remote_writes:none；没有可信回执或结果不确定的 transport 保持 unknown。
 
 下图是实现合同示意，不是 TLC 生成的穷尽图：
 
 ~~~mermaid
 stateDiagram-v2
     [*] --> AwaitManager
-    AwaitManager --> Unknown: transport or binding invalid
+    AwaitManager --> NotDispatched: known unavailable before dispatch
+    AwaitManager --> Unknown: outcome not verified
     AwaitManager --> Verified: exact bound receipt
     Verified --> FinalizationFailed: consumer error or cancellation
     Verified --> Catalog: consumer finalization succeeds
     Catalog --> Consume: complete current catalog
     FinalizationFailed --> [*]: retain manager fact; no publication
+    NotDispatched --> [*]: no dispatch; writes none
     Unknown --> [*]: no verified fact
 ~~~
 
