@@ -109,3 +109,31 @@ export function decodeSourceMaterializationReceipt(value: unknown, request: Sour
     ...(typeof value.manager_scope === "string" ? { manager_scope: value.manager_scope } : {}),
     ...(typeof value.reason === "string" ? { reason: value.reason } : {}) };
 }
+
+/** This is a failed consumer outcome, never a consumer-scope ready receipt.
+ * The paired SDK validates execution_id against its transport binding; Broker
+ * binds the retained manager result to this exact request again. */
+export type SourceMaterializationFinalizationFailure = {
+  phase: "consumer_finalization";
+  local_error_code: string;
+  verified_management: {
+    request_id: string; execution_id: string; library: string;
+    receipt: SourceMaterializationReceipt;
+  };
+  local_error_details?: unknown;
+};
+
+export function decodeSourceMaterializationFinalizationFailure(error: unknown, request: SourceMaterializationRequest,
+  decodeRecord: (value: unknown) => ContentRecord): SourceMaterializationFinalizationFailure | undefined {
+  if (!object(error) || !object(error.details) || error.details.phase !== "consumer_finalization") return undefined;
+  const details = error.details, verified = details.verified_management;
+  if (typeof error.code !== "string" || !/^[A-Z][A-Z0-9_]{0,127}$/.test(error.code)
+    || details.local_error_code !== error.code || !object(verified)
+    || verified.request_id !== request.request_id || verified.library !== request.library
+    || !text(verified.execution_id, 256) || !object(verified.receipt)
+    || typeof verified.receipt.scope !== "string" || verified.receipt.manager_scope !== undefined) return invalid();
+  const receipt = decodeSourceMaterializationReceipt(verified.receipt, request, verified.receipt.scope, decodeRecord);
+  return { phase: "consumer_finalization", local_error_code: error.code,
+    verified_management: { request_id: request.request_id, execution_id: verified.execution_id, library: request.library, receipt },
+    ...(details.local_error_details === undefined ? {} : { local_error_details: details.local_error_details }) };
+}

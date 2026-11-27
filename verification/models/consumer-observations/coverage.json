@@ -47,12 +47,13 @@
     "packages/context-broker/scripts/activation-feedback.test.ts": "9f15a1bbbad5f5a12e8c0544ef10037d85b44d0dbe127ecff08cd000c2dac6ce",
     "packages/context-broker/src/index.ts": "22facb24faf8f327b3da9a3ec57e3f7044001782861d7398aaf508660533bc38",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "84d3fb8a58b0fd203cffe45a29442b5363666ecfd0997f55c001d8d8197c1959",
-    "packages/context-broker/src/source-materialization.ts": "ef09138eb2f92a6cd22b3760f60d259eb4b281916359fc4fba7c458ba5056120",
+    "packages/context-broker/src/source-materialization.ts": "1191bc52372a839051a4c95d78d8739868fffecf5ec1a77fb45b4eafad101037",
     "packages/context-broker/scripts/source-materialization-catalog.test.ts": "05dc6b1a2ed5ffc463dd3171dc5cdb140e70afc88cb7a38029599f1d10befd08",
     "packages/context-broker/src/preparation-authority.ts": "3613d92ae24f655ebd6ef46d46a11be62cefb51e5afa2af43b860b2639aae11b",
-    "packages/context-broker/scripts/source-materialization.test.ts": "80d97950dac93803034cfcf967554b23c7dedd6d107b79f13860f01884c36e9e",
+    "packages/context-broker/scripts/source-materialization.test.ts": "ad426640a44d8ecd842273a8f0b926634aeb1fceea14b3ec8726d2792186b4ae",
     "packages/context-broker/scripts/preparation-authority.test.ts": "96870fecd284160eef7b94d8217b0667372abe66b9e2a7a08646e6d59fb98da6",
-    "packages/context-broker/scripts/pi-queued-input.test.ts": "cf885e86c5f3d623ca86978815e7ef11fa6fb92399adc46b8124b7858ad9767d"
+    "packages/context-broker/scripts/pi-queued-input.test.ts": "cf885e86c5f3d623ca86978815e7ef11fa6fb92399adc46b8124b7858ad9767d",
+    "packages/context-broker/src/source-materialization-contract.ts": "ebcd3d79e37b06c5c57e8eb87699506865c8bcb2c8c9e21bc92202ed00b6a259"
   },
   "models": {
     "Availability": {
@@ -616,6 +617,18 @@
           "host-prepare.test.ts, resource-read-host.test.ts, host-content-search.test.ts and nonblocking-context.test.ts retain ordinary 60000ms and independent tool/reader/cancellation obligations"
         ],
         "proof_limit": "No TLA/config/view, finite variable, bound, case, independent expected rule or production guard-mutation target changes. ReadRace, FreshnessPublication and DeliveryBoundary retain their existing publication properties. Cumulative time, lexical scope ownership, Promise races, queue dispatch and manager/Pi timing remain concrete implementation and actual-run obligations. The contract state-transition table describes implementation ownership, not a new finite proof. Hashes bind reviewed bytes; run the existing formal/mutation gates and Source materialization scenarios, including source-materialize-cold-budget with no prewarming, on the final frozen pair."
+      },
+      "consumer_finalization": {
+        "reviewed_from": "1f43e2404cd6e8872ff77db13f66a3e4eab5ccf1",
+        "counterexample": "An actual installed manager completed a bound ready receipt and remote materialization, but consumer catalog invalidation decoded old shared_library v1 rows with the current v2 consumer schema. Local finalization failed before retirement and the Broker collapsed the verified management fact into unknown. No complete provider body or warm process was admitted.",
+        "owners": "The paired CLI alone validates its fixed execution binding and raw manager receipt before attaching consumer_finalization details. Broker source-materialization-contract independently rebinds outer code, phase, current request, Library, target, authorization_root and strict receipt. execution_id is retained as SDK-verified provenance, not claimed to be independently compared with a second Broker configuration.",
+        "publication": "source-materialization retains original manager status, operation, scope and effects in the failed outcome and diagnostics. It never invokes onReceipt or builds consumer scope, ready metadata, catalog or body on this branch. The actual budget checkpoint may expire and abort without replacing the verified failure fact or renewing either allowance.",
+        "replays": [
+          "source-materialization.test.ts: old implementation red; STATE_CORRUPT, post-receipt cancellation and real SourcePreparationScope checkpoint expiry preserve facts without onReceipt or consume; malformed phase/code/request/library/target/authroot/scope/receipt remain unknown",
+          "source-materialize-cache-upgrade: installed actual Pi; two legacy catalogs preceding a current v2 catalog; same-scope unrelated and foreign-scope catalog/fence canaries; real manager stdout/stderr/close and request binding; retirement then full catalog then complete body, fresh PID zero HTTP and independent client zero writes",
+          "notion-sdk-pi-cache-upgrade.test.mjs and notion-sdk-pi.test.mjs: reject missing retirement/fence, changed canaries, detached snapshots, incomplete catalog, early consume, missing/tampered stderr and false manager exits"
+        ],
+        "proof_limit": "Concrete storage-upgrade and management-boundary obligations. Existing TLA models contain no manager transport, local finalization or SQLite schema variables. No model/config/view, finite bound, case, independent expected rule or production mutation target changes; all existing formal and mutation gates remain required."
       }
     }
   },
