@@ -217,8 +217,10 @@ export async function benchmarkMain(args) {
       const item = status.episodes.find(item => item.run_id === options.run);
       assert.ok(item, 'Episode has no completed normalization receipt; inspect status for unresolved execution');
       const bundle = await readEvidenceBundle({ directory: item.result.normalized_directory, rawRoot: plan.execution.environment_root });
+      const { readEpisodeTurns } = await import('./evidence/turns.mjs');
       return { journey: bundle.journey, text: await readFile(join(item.result.normalized_directory, 'journey.md'), 'utf8'),
-        decision: await readEpisodeDecision(bundle.episode, { root: plan.execution.environment_root }), model_requests: 0 };
+        decision: await readEpisodeDecision(bundle.episode, { root: plan.execution.environment_root }),
+        turns: await readEpisodeTurns(bundle.episode, { root: plan.execution.environment_root }), model_requests: 0 };
     }
     assert.ok(options.outcome === undefined || ['pass', 'fail', 'unknown'].includes(options.outcome));
     const episodes = await Promise.all(status.episodes.map(async item => (await readEvidenceBundle({ directory: item.result.normalized_directory, rawRoot: plan.execution.environment_root })).episode));

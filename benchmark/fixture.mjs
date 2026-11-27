@@ -482,7 +482,35 @@ export async function verifyBenchmarkFixture({ controlRoot } = {}) {
   return isolatedWorker(controlRoot, 'verify');
 }
 /** Re-read an existing immutable catalog with the current SDK. No remote setup or repair is dispatched. */
-export async function refreshReadonlyBenchmarkFixture({ retainedBinding, controlRoot, buildRoot, node, git = null } = {}) {
+/** Change business cases while preserving every byte and property of the retained catalog. */
+export function rebindReadonlyFixtureCases(plan, { corpus, caseIds } = {}) {
+  assert.equal(plan.access, 'shared-readonly');
+  assert.deepEqual(plan.events, []); assert.deepEqual(plan.initially_absent_skill_ids, []);
+  assert.equal(plan.candidate_count, 16);
+  assert.equal(corpus === undefined, caseIds === undefined, 'New read-only cases need both corpus and caseIds');
+  if (corpus === undefined) return plan;
+  validateCorpus(corpus);
+  assert.equal(corpus.publicCorpus.split, 'development', 'Case rebinding is a separate development diagnostic');
+  assert.equal(corpus.control.seal.state, 'development');
+  const oldSkills = new Map(plan.corpus.publicCorpus.skills.map(skill => [skill.id, skill]));
+  const newSkills = new Map(corpus.publicCorpus.skills.map(skill => [skill.id, skill]));
+  for (const id of plan.catalog_skill_ids)
+    assert.deepEqual(newSkills.get(id), oldSkills.get(id), 'Read-only case reuse cannot change any catalog Skill: ' + id);
+  const bound = rebindCorpusCatalog({ corpus, caseIds, skillIds: plan.catalog_skill_ids,
+    reason: 'New business cases reuse the unchanged, independently read-back sixteen-Skill catalog' });
+  const casePlans = caseIds.map(caseId => planCaseVariant({ ...bound, caseId, candidateCount: 16 }));
+  for (const selected of casePlans) {
+    assert.deepEqual(selected.events, [], 'Read-only case reuse cannot introduce remote events');
+    assert.deepEqual(selected.clarification, [], 'Read-only case reuse cannot introduce controller clarification');
+    assert.equal(selected.publicCase.authorization.remote_write, false, 'Read-only cases cannot authorize remote writes');
+    assert.deepEqual(selected.publicCase.authorization, plan.case_plans[0].publicCase.authorization,
+      'Read-only case reuse preserves workspace and remote permissions');
+  }
+  return { ...plan, corpus: bound, case_ids: [...caseIds], case_plans: casePlans,
+    required_skill_ids: targetUnion(bound, caseIds) };
+}
+
+export async function refreshReadonlyBenchmarkFixture({ retainedBinding, controlRoot, buildRoot, node, git = null, corpus, caseIds } = {}) {
   assert.ok(retainedBinding?.path && retainedBinding.sha256, 'Select one retained material binding by content hash');
   assert.equal((await byteArtifact(retainedBinding.path)).sha256, retainedBinding.sha256);
   const previous = await json(retainedBinding.path), oldPlan = await readPlan(previous.control_root);
@@ -500,7 +528,7 @@ export async function refreshReadonlyBenchmarkFixture({ retainedBinding, control
   controlRoot = await canonicalTarget(controlRoot); buildRoot = await realpath(buildRoot); node = await realpath(node);
   validatePrivateRoot(controlRoot, buildRoot);
   assert.ok(!inside(previous.control_root, controlRoot) && !inside(controlRoot, previous.control_root), 'Refresh must preserve the original evidence directory');
-  const { plan_sha256: _oldHash, ...declaration } = oldPlan;
+  const { plan_sha256: _oldHash, ...declaration } = rebindReadonlyFixtureCases(oldPlan, { corpus, caseIds });
   const value = { ...declaration, control_root: controlRoot, build_root: buildRoot, node,
     cli: join(buildRoot, 'cli/dist/ntn-skills.js'), git, source_contract: CURRENT_SOURCE_CONTRACT,
     readonly_refresh: { retained_binding: retainedBinding, retained_proof: previous.materialization_proof, library_id: libraryId } };

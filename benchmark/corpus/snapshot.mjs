@@ -4,7 +4,7 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateCorpus } from './index.mjs';
-import { STORE_FIRST_USE_GENERATOR } from '../diagnostic-corpus.mjs';
+import { STORE_FIRST_USE_GENERATOR, LONG_SESSION_GENERATOR } from '../diagnostic-corpus.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const inside = (root, path) => { const child = relative(root, path); return child === '' || child !== '..' && !child.startsWith('../') && !isAbsolute(child); };
@@ -23,8 +23,8 @@ export async function readCorpusSnapshot(setup) {
   assert.ok(['development', 'pilot', 'confirmation'].includes(settings.split), 'Unsupported corpus split');
   assert.ok(['1', '2'].includes(settings.material_version), 'Unknown synthetic material version');
   if (settings.generator !== undefined) {
-    assert.equal(settings.generator, STORE_FIRST_USE_GENERATOR, 'Unknown explicit corpus generator');
-    assert.equal(settings.split, 'development', 'Store diagnostics use separately declared development material');
+    assert.ok([STORE_FIRST_USE_GENERATOR, LONG_SESSION_GENERATOR].includes(settings.generator), 'Unknown explicit corpus generator');
+    assert.equal(settings.split, 'development', 'Diagnostics use separately declared development material');
     assert.equal(settings.material_version, '2');
   }
   for (const root of [repository, setup.control_root, join(setup.environment_root, 'builds'), join(setup.environment_root, 'runs')])
