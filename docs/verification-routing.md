@@ -35,7 +35,7 @@ C01–C11/T01–T24、单一 owner 与实际入口由 CLI `verification/skill-do
 
 仅改文档路由，运行 `node --test scripts/verification-skill-routing.test.mjs` 和已有合同检查。改状态守卫，沿 consumer-state 入口核模型对应和真实反例；改消费 transport 或随包运行时，沿 integration 入口检查实际安装。跨域时执行相交的必要检查，不把一次通过扩成整个系统通过。
 
-缓存、TTL、库选择、启动/SDK 次序及会话复用变化必须交接到 [新进程缓存验证](../.agents/skills/verify-notion-skills-integration/features/session-cache-recovery.md#新进程复用)：执行 `http-warm-restart` 和 `http-warm-directory-expired`，核实际新 Pi 的请求与 provider 全文。T01 的 SDK 回归只覆盖局部实现，不能记作整个宿主时间线通过；普通安装与真实 Notion 另沿 [日用缓存入口](../.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md#普通安装的跨会话缓存) 执行 `cache-plan/cache-run`，不改变 metadata-only run/aggregate 的边界。
+缓存、变化证据、TTL、库选择、启动/SDK 次序及会话复用变化必须交接到 [新进程缓存验证](../.agents/skills/verify-notion-skills-integration/features/session-cache-recovery.md#新进程复用)：执行 `http-warm-restart`、`http-warm-directory-expired`、`http-smart-revalidate` 和 `http-smart-current`，核实际新 Pi 的请求与 provider 全文，并覆盖 metadata 续证、Required 变更后的失败恢复和原 pin 稳定。Core 的持久事实与完整全图准入不会搬进 Broker；T01 的 SDK 回归只覆盖局部实现，不能记作整个宿主时间线通过。普通安装与真实 Notion 另沿 [日用缓存入口](../.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md#普通安装的跨会话缓存) 执行 `cache-plan/cache-run`，不改变 metadata-only run/aggregate 的边界。
 
 保留的有限模型由 observations 与 consumer-state 两套 coverage 维护。SDK capability、当前 import 的目录失效、包 pin/build 和真实 HTTP/serializer 是各自的实现检查，不因被写入 source hash 就获得形式证明。
 

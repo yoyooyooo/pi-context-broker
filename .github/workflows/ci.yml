@@ -68,6 +68,8 @@ jobs:
           PI_ENTRY=$(node -p 'require(process.argv[1]).pi.entry.path' "$RUNNER_TEMP/current-sdk-artifacts.json")
           node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-warm-restart" --scenario http-warm-restart
           node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-warm-directory-expired" --scenario http-warm-directory-expired
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-smart-revalidate" --scenario http-smart-revalidate
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-smart-current" --scenario http-smart-current
       - name: Preserve current SDK results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -79,6 +81,8 @@ jobs:
             ${{ runner.temp }}/current-sdk-artifacts.json
             ${{ runner.temp }}/pi-warm-restart/
             ${{ runner.temp }}/pi-warm-directory-expired/
+            ${{ runner.temp }}/pi-smart-revalidate/
+            ${{ runner.temp }}/pi-smart-current/
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7

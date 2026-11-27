@@ -215,6 +215,7 @@ test("current acquisition failures retain their next action across catalog, body
   for (const [received, code, action] of [
     ["SKILL_DISABLED", "CONTENT_DISABLED", "disabled"],
     ["CACHE_REFRESH_REQUIRED", "CACHE_REFRESH_REQUIRED", "Refresh the source online"],
+    ["CACHE_INVALIDATED", "CACHE_INVALIDATED", "Current facts or cache state changed"],
     ["STATE_CUTOVER_REQUIRED", "STATE_CUTOVER_REQUIRED", "fresh NTN_SKILLS_HOME"],
     ["STATE_UNAVAILABLE", "STATE_UNAVAILABLE", "Restore access to the existing state directory"],
     ["UPSTREAM_GIT_RUNTIME_UNSUPPORTED", "UPSTREAM_GIT_RUNTIME_UNSUPPORTED", "--no-lazy-fetch"],

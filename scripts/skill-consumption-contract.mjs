@@ -116,7 +116,7 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
       const piSteps = main.split(/(?=^      - name: )/mu)
         .filter(value => value.startsWith('      - name: Actual Pi cross-session cache\n'));
       const pi = piSteps.length === 1 ? piSteps[0] : '';
-      const cacheCases = ['http-warm-restart', 'http-warm-directory-expired'];
+      const cacheCases = ['http-warm-restart', 'http-warm-directory-expired', 'http-smart-revalidate', 'http-smart-current'];
       const expected = [
         '      - name: Actual Pi cross-session cache',
         '        run: |',
@@ -166,7 +166,7 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
   return { status: 'gate-wiring-valid', sdkVersion: 3, requiredTests: required.length,
     cliSourceRevision: revision.groups.revision, installedSdk: 'required_current_http',
     piSession: 'not_run', providerModel: 'not_run', deferredHosts: ['OMP', 'Tern'],
-    ciPiCache: ['http-warm-restart', 'http-warm-directory-expired'],
+    ciPiCache: ['http-warm-restart', 'http-warm-directory-expired', 'http-smart-revalidate', 'http-smart-current'],
     boundary: 'Wiring checks do not establish actual package execution or Pi daily-use acceptance.' };
 }
 
