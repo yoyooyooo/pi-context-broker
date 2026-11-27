@@ -11,7 +11,7 @@
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
     "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59",
+    "packages/context-broker/src/host-skills.ts": "d359e2919bc6a259eba2201c808683b04107bdeca249663b304560eaf816a36d",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/scripts/consumer-observation.test.ts": "efe207fb99e5d7db8e2ee63f30e1a2c28914bbf3a3be446931a6076675cd9ffb",
     "packages/context-broker/scripts/host-prepare.test.ts": "69970f77415f7a770cbdae75b583052a8c03a0a9f4c1d7764156703801642290",
@@ -31,7 +31,7 @@
     "packages/context-broker/src/shared-skill-identity.ts": "2495065caf4cb7b81227b60bc0c97d50ada7bdfa14a7824750cb9326583f9186",
     "packages/context-broker/src/library-selection.ts": "64da1c2a9c383f49c4050f9b81ecf4a12fdd880c3f090bdd0c71cad235c79c41",
     "packages/context-broker/scripts/library-selection.test.ts": "a29f802b72ddba4394468355338e0f0d8e4cdce9729ed87021fdd6ec721d07da",
-    "packages/context-broker/scripts/skill-guidance.test.ts": "d2b9b25544d5f43d99c4520b50682b2d421e3f72e88dcfc0e8e02bfa0d37f9c9",
+    "packages/context-broker/scripts/skill-guidance.test.ts": "555aab8ae4a1c9ab391ac08a8a465f8de41e4c0b0b635546fe09911b1cb4222d",
     "packages/context-broker/src/cli-write-invalidation.ts": "b320091423e2d3da7e073cda2d58c46f20ddec8ea8a1bd12d770963a2a9b30f6",
     "packages/context-broker/scripts/cli-write-invalidation.test.ts": "1469fd9eb3eac1ee2760a86f617091f76d4936836e0da0e0650da6b653cb8466",
     "packages/context-broker/src/sources.ts": "30572f81f9e6a8c314c6c4f595a95ec75f43767dbd8a280db3abab7bc907dedb",
@@ -45,7 +45,7 @@
     "packages/context-broker/src/types.ts": "1c0114476ee68660b440537209ac98b960509a69fc730e63e84a4745c918cddc",
     "packages/context-broker/scripts/nonblocking-context.test.ts": "6d949157c04cf39bd712c0fdca024a9ce803d15e37de5f5a7ec9fa3ebfe8a3b2",
     "packages/context-broker/scripts/activation-feedback.test.ts": "9f15a1bbbad5f5a12e8c0544ef10037d85b44d0dbe127ecff08cd000c2dac6ce",
-    "packages/context-broker/src/index.ts": "bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9",
+    "packages/context-broker/src/index.ts": "bedca225968b5abe4b3736785454145f0838b7d2ee331c28f1288b2281bd97f8",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "84d3fb8a58b0fd203cffe45a29442b5363666ecfd0997f55c001d8d8197c1959"
   },
   "models": {
@@ -572,6 +572,12 @@
       "source_binding": "Rebind only index.ts, host-prepare.test.ts and skill-guidance.test.ts in this suite. Every other protected source and regression file retains its reviewed hash; both guard mutation runners and all mutation targets are unchanged.",
       "finite_scope": "Guidance text, command syntax and packaged output are concrete implementation and integration obligations outside the finite-state variables. Model/config/view bytes, bounds, cases, independent expected_rules, negative configurations, tool lock and coverage membership are unchanged. These whole-file hashes bind the reviewed bytes without claiming a new refinement proof.",
       "verification": "Source review and byte/hash checks only. Finite models and guard mutations were not rerun for this guidance-only change. Direct guidance/host regressions and actual package closure are tracked by their existing integration checks; this review record does not claim their execution results."
+    },
+    "ordinary_application_metadata_guidance": {
+      "base": "cd4123f19d0b4e913428502ead5d7f7b51e2cdb3",
+      "scope": "Only notion_list.refresh parameter prose and compressed notion_list guidance clarify ordinary discovery/application. The complete tool description, parameter schema shape, selection/refresh/cache execution and every state guard retain their exact bytes. skill-guidance.test.ts only updates its two existing named-question wording assertions; its 1500-byte bound is unchanged.",
+      "source_binding": "Rebind only host-skills.ts, index.ts and skill-guidance.test.ts after the exact-line review. All other protected file hashes, models, cases, expected rules and mutation targets are unchanged.",
+      "boundary": "This is public instruction correspondence, not a finite-model proof of model choice or latency. Named existence/availability questions, writes and requested current/latest metadata or explicit refresh retain the documented fresh path; notion_use latest-on-request, pins, offline, cursor and content-search semantics remain unchanged. Natural behavior is decided separately by the fixed Benchmark cases."
     }
   },
   "library_root_review": {
