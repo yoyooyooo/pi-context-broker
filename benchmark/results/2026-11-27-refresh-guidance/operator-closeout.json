@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "kind": "operator-scope-closeout",
+  "released_at_utc": "2026-11-27T05:26:15.665Z",
+  "scope": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1",
+  "operator": "current_product_operator",
+  "status": "completed",
+  "scientific_episodes_completed": 4,
+  "additional_model_dispatch_planned": false,
+  "root_decision": "PR105 not adopted in this cycle; preserve all four observations and do not add samples.",
+  "ledger": {
+    "global_observations": 239,
+    "global_registrations": 32,
+    "scope_ordinals": [
+      236,
+      237,
+      238,
+      239
+    ],
+    "lease": null
+  },
+  "source_copies_absent_for_all_6_runs": true,
+  "source_or_repository_changes": false,
+  "retirement_performed": false,
+  "candidate_complete_runtime_consumer": {
+    "build_id": "next-refresh-guidance-20261127-1",
+    "operator_remaining_consumers": 0,
+    "released_at_utc": "2026-11-27T05:26:15.665Z",
+    "qualification": "The operator releases the complete executable candidate build consumer. Original evidence/identity references remain and must be handled by root through the existing evidence_only closure contract; this is not a deletion action."
+  },
+  "reference_build": {
+    "build_id": "next-product-runtime-20261127-2",
+    "retained": "Root identified a future accepted-cache comparison consumer; operator leaves it intact."
+  },
+  "artifacts": {
+    "report": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/operator-results.json",
+      "sha256": "d7f7c33167b1870ab60ea985efcf1fe92050c9aac64c854a8f9815696c7aab5b",
+      "bytes": 67010
+    },
+    "operation_freshness": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/operation-freshness-readback.json",
+      "sha256": "1427267282ad1037421ceec2894d3493f0dff0c68a6b3029a120a8e43b0d104f",
+      "bytes": 131067
+    },
+    "size": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/operator-size-final.json",
+      "sha256": "6e66b2352098ca28c43263c9accb935fc5a0479a49ace5552699e9112b76d3bb",
+      "bytes": 5790
+    },
+    "ledger": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/final-ledger.json",
+      "sha256": "be5629bb0e6fd1e427c5f1e0d253e5f7345429d18240938a5b506e044de9a95d",
+      "bytes": 3363
+    },
+    "status": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/final-status.json",
+      "sha256": "4d99d63c722adffd1ce92c3f3788b7b5c657ec76403e3edcbbfeb14b8be4219b",
+      "bytes": 5194
+    },
+    "plan": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/plan.json",
+      "sha256": "49d78a518ef67e548ce6ff93befb96ba687957679d7678a5901290c8090d8f3a",
+      "bytes": 96158
+    },
+    "runner_receipt": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/runner-1/receipt.json",
+      "sha256": "9930bf25ee8c4d9415c68601189be08359fab0d351a560694d4baf9d2668977a",
+      "bytes": 2087
+    }
+  },
+  "handoff": "No further reads or executions against the complete candidate build are planned by this operator. Next accepted-product task requires a new explicit identity from root."
+}

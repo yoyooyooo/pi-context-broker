@@ -1,0 +1,758 @@
+{
+  "version": 1,
+  "kind": "operator-configure-own-admission-review",
+  "at_utc": "2026-11-27T05:06:47.377Z",
+  "status": "ready_pending_root_model_gate",
+  "configure_exit_code": 0,
+  "plan": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/plan.json",
+    "sha256": "49d78a518ef67e548ce6ff93befb96ba687957679d7678a5901290c8090d8f3a",
+    "bytes": 96158
+  },
+  "plan_internal_sha256": "019467268a5cb6855335c1d68f4dfc27dc2beae9fb08cb2e75da7617d583aefc",
+  "setup": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/setup-1.json",
+    "sha256": "94dc4c04425e02963166f9deae9b9a62101e9e08a3bf1e6bfaeac51f6c13e21f",
+    "bytes": 509290
+  },
+  "work_plan": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/work-plan-1.json",
+    "sha256": "aa8a4c833ec1d54604c1f473ba6c395c8af542c136b435592be72e9f4e32370e",
+    "bytes": 18154
+  },
+  "controller_sha256": "5e7e0a20d2f1eeda84a02375e112060ed2e79377577ef2d66ea3c8e532771e37",
+  "collector_version": "1.3.5",
+  "scheduled_episodes": 4,
+  "actual_model_requests": 0,
+  "condition_builds": {
+    "m0-e0": "next-product-runtime-20261127-2",
+    "m0-e1": "next-refresh-guidance-20261127-1"
+  },
+  "cases": [
+    {
+      "id": "explicit-01-a-n16-r1",
+      "round_count": 1,
+      "prompt_sha256": "afd52b3fae74fd8a287b596f408a2b2906c572617ff14172208b9274756e6fce",
+      "oracle_sha256": "f7ea9d525ea1afa15050a6aae1e0d056bc9c50324218901daaa7f5573a36c178",
+      "input_inventory_sha256": "61eba991510f39ffbd73004aa52838b7e1b3969e0387928d86419b5b1303fb8e",
+      "public_case_identical_to_original_baseline": true
+    },
+    {
+      "id": "continuation-01-a-n16-r2",
+      "round_count": 2,
+      "prompt_sha256": "bd55180189e60919a484e5edfc4e568e8e93e256efcc274257684d9fcc5c7ac8",
+      "oracle_sha256": "ff9d4d022b5e48e49ac9b1a2ae645961d6ef3e0792c802a1447e5de2cef20c03",
+      "input_inventory_sha256": "5362d1e42bc6355569138f7af832e560d2bf0e81e38ec6ba536da5a89430116f",
+      "public_case_identical_to_original_baseline": true
+    }
+  ],
+  "captures": [
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-capture-m0-e0-c0",
+      "build_id": "next-product-runtime-20261127-2",
+      "mode": "broker",
+      "capture": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/current-refresh-guidance-own-pair-1-capture-m0-e0-c0.capture.json",
+        "sha256": "1dd2e6dcf94c215f0ae276f5344b3c302d7f7c70811c9b569fa627358bae101b",
+        "bytes": 49586
+      },
+      "expectation": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/current-refresh-guidance-own-pair-1-capture-m0-e0-c0.expectation.json",
+        "sha256": "646bcbe73aef95fdf6931c83e6057234cc8e22f894da348378e4586a7d6e5d65",
+        "bytes": 137356
+      },
+      "paired_result": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-capture-m0-e0-c0/result.json",
+        "sha256": "650c3bb1e8a5af62122ebed4d5d29a843a0e906e59d84f644139b63e34c7b58d",
+        "bytes": 10344
+      },
+      "candidate_observed": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-capture-m0-e0-c0/benchmark/runtime/candidate-observed.json",
+        "sha256": "1607ec2ad1bb25af98d28ecfa4f304c6435cacc3cd8557cf330e29b7e01a6ec1",
+        "bytes": 294678
+      },
+      "catalog_comparison": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-capture-m0-e0-c0/benchmark/runtime/first-request-catalog-comparison.json",
+        "sha256": "5142713afce08d1a4d1dd134df7dd9d184df8890759a4498636b45a044dc51a5",
+        "bytes": 48564
+      },
+      "first_request_catalog_references": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-capture-m0-e0-c0/benchmark/runtime/first-request-catalog-references.json",
+        "sha256": "53f1d2243bbb94cd6121f122c1c82c0bedb79375d2eb38c49be5c148006a6b0e",
+        "bytes": 70698
+      },
+      "events": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-capture-m0-e0-c0/benchmark/runtime/events.jsonl",
+        "sha256": "8c485944c859d5a74d5d9184e005519c8526da1121078de400802f022724c752",
+        "bytes": 275587
+      },
+      "status": "passed",
+      "runtime_status": "unchanged",
+      "admission": "captured_not_authorized",
+      "budget": {
+        "requests": 0,
+        "attempts": 0,
+        "tools": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "tokens": 0,
+        "usage_unknown": false,
+        "stop": null
+      },
+      "provider_send_blocked": 1,
+      "provider_attempt_start": 0,
+      "request_attempts": 0,
+      "command_source": "none",
+      "source_disposition": "not_copied",
+      "run_source_exists": false,
+      "launch_extensions": [
+        {
+          "path": "$BUILD/installed/broker/node_modules/pi-context-broker/src/index.ts",
+          "role": "broker",
+          "sha256": "bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9"
+        }
+      ],
+      "subject_projection": {
+        "files": [
+          {
+            "bytes": 4716,
+            "path": "benchmark/reported-model.mjs",
+            "sha256": "fae674ff8d8fb8e65953b936ce3c0097a8148f0266a64845325be46a8e793596"
+          },
+          {
+            "bytes": 7224,
+            "path": "benchmark/runtime/episode-evidence.mjs",
+            "sha256": "6b713b14acdca7f5d8b425608bc96da87579f7ca7306b2b50f5e37ccb03c1a6b"
+          },
+          {
+            "bytes": 15380,
+            "path": "benchmark/runtime/episode-notion.mjs",
+            "sha256": "18aba276933dbaf05e5e310a0da666c643e25797d43b74253cba7c05525486c9"
+          },
+          {
+            "bytes": 9041,
+            "path": "benchmark/runtime/episode-policy.mjs",
+            "sha256": "0640be00df0bce97114b6c829da9db4badb763bb06a06df82ba26191f8de6962"
+          },
+          {
+            "bytes": 51177,
+            "path": "benchmark/runtime/episode-runner.mjs",
+            "sha256": "9464413be4a5a8fc3ff167223106a70725561f501eb7c39c677ec2a85f256ded"
+          },
+          {
+            "bytes": 1490,
+            "path": "benchmark/runtime/episode-visibility.mjs",
+            "sha256": "f0f7e4be1a3227b506c613808bb3f27b0fed626290501d9ebe8672aa0597833b"
+          },
+          {
+            "bytes": 33905,
+            "path": "benchmark/turn-bridge.mjs",
+            "sha256": "208fc87e74e74813f0cd855230791850bc3cf8fc011d672968049ccecece207e"
+          },
+          {
+            "bytes": 6667,
+            "path": "packages/context-broker/src/native-reference.ts",
+            "sha256": "37158660edb67b70a97bef4fb6bfdab70dfb7ef6ea4ad1c2765bd2313647207e"
+          },
+          {
+            "bytes": 8970,
+            "path": "packages/context-broker/src/ntn-skills-ref.cjs",
+            "sha256": "189ed2d7deef8afe7d9928833ee6ed0a403f0e47f18c263cf1666531644e9dd8"
+          },
+          {
+            "bytes": 719,
+            "path": "packages/context-broker/src/ntn-skills-runtime.json",
+            "sha256": "d35bde73585c0d7a3dbaab08c6d2e56b9015906634e9c313047b4c51e0d982fe"
+          },
+          {
+            "bytes": 3177,
+            "path": "packages/context-broker/src/skill-ref-protocol.ts",
+            "sha256": "d36ff2d510db5c2d922ef3875d3d0e583d2902c3ea4a0ae6a8b6afff3f17b961"
+          },
+          {
+            "bytes": 14652,
+            "path": "scripts/notion-agent-inventory-evidence.mjs",
+            "sha256": "d2aeeb657113ffa617aa08de534024a649a87f6e3f1218048af82311996c6afc"
+          },
+          {
+            "bytes": 16307,
+            "path": "scripts/notion-default-context.mjs",
+            "sha256": "86af00415f898832a13c576b703c7e23be0a32df58cafc33d1ecdcc2d9e99349"
+          },
+          {
+            "bytes": 2662,
+            "path": "scripts/notion-integration-hosts.mjs",
+            "sha256": "40856493aca8886120d7fbb726aebb1963659df004ff1b26e7ee9b4084313378"
+          },
+          {
+            "bytes": 19458,
+            "path": "scripts/notion-skill-graph-model-evidence.mjs",
+            "sha256": "4fb99a1820e21eedb52ec6a108ef614b19410eac226b0e90e2b67f2534d26927"
+          },
+          {
+            "bytes": 26948,
+            "path": "scripts/skill-consumption-provider.mjs",
+            "sha256": "57941adf463148297ea3012aa9bbfd4d156627f22cfb3715e60bb46806d27c89"
+          },
+          {
+            "bytes": 35039,
+            "path": "scripts/skill-consumption-source-observer.mjs",
+            "sha256": "406deb8fd08a21693f72be9f996406d17457c3b3c93de06d315c4f703ce42023"
+          },
+          {
+            "bytes": 29451,
+            "path": "scripts/skill-preparation-evidence.mjs",
+            "sha256": "cd66d323b0cad3ba05c9fb2e07a42d0ee83acc1e3b37d78308a603d834113a27"
+          }
+        ],
+        "sha256": "52853d277b549a36ba5516ef483fc169655cafe7cadfd7421c9c8668eefa0fda"
+      },
+      "catalogs": [
+        {
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "source_id": "notion",
+          "facets": [
+            {
+              "facet": "catalog",
+              "ok": true,
+              "count": 16,
+              "records": 16,
+              "coverage": {
+                "exhaustive": true,
+                "failed_sources": [],
+                "method": "explicit_library",
+                "queried_data_sources": [
+                  "4215636c-236e-81bb-984e-000b40d2a368"
+                ],
+                "search_index_limited": false
+              },
+              "freshness": {
+                "max_age_ms": 60000,
+                "stale": false
+              },
+              "scope": "5a163d388fb831806a56ba23889f425eaf974d98fae86ad3bb883d40ca956938",
+              "library_id": "4215636c-236e-81e8-8168-ee2ac696f73a"
+            },
+            {
+              "facet": "directory",
+              "ok": true,
+              "count": 16,
+              "records": 16,
+              "coverage": {
+                "exhaustive": true,
+                "failed_sources": [],
+                "method": "explicit_view",
+                "queried_data_sources": [
+                  "4215636c-236e-81bb-984e-000b40d2a368"
+                ],
+                "search_index_limited": false
+              },
+              "freshness": {
+                "max_age_ms": 60000,
+                "stale": false
+              },
+              "scope": "5a163d388fb831806a56ba23889f425eaf974d98fae86ad3bb883d40ca956938",
+              "library_id": "4215636c-236e-81e8-8168-ee2ac696f73a"
+            }
+          ]
+        }
+      ],
+      "catalog_bindings": {
+        "count": 16,
+        "unique_canonical": 16,
+        "all_source_library_scope_match": true,
+        "comparison_differences": 0
+      },
+      "active_tools": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "tool_search",
+        "notion_list",
+        "notion_use"
+      ],
+      "serialized_input_bytes": 15047,
+      "canonical_request_bytes": 14480,
+      "system_prompt_bytes": 2355,
+      "guidance_message_bytes": 1503,
+      "notion_list_guidance_line": {
+        "text": "notion_list: beyond the default View. Named Notion existence/availability: query:name,refresh:true; metadata only, keeping pins. Also after writes. Check freshness/coverage; failed/partial/offline is not absence.",
+        "bytes": 212
+      },
+      "refresh_description": {
+        "text": "Refresh metadata for the explicit source, or this accepted turn's selected Library when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor.",
+        "bytes": 239
+      },
+      "notion_owned_observation": {
+        "coverage": {
+          "sdk": "complete",
+          "owned_http": "complete",
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved"
+        },
+        "source_scope": "owned Pi SDK operations and directly observed bundled CLI; other descendants transport remains unknown",
+        "operations": [
+          {
+            "operation": "library-selection",
+            "stage": "prepare",
+            "library": null,
+            "source_id": null,
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          },
+          {
+            "operation": "candidates",
+            "stage": "prepare",
+            "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+            "source_id": "notion",
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          },
+          {
+            "operation": "list",
+            "stage": "prepare",
+            "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+            "source_id": "notion",
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 36
+          },
+          {
+            "operation": "candidates",
+            "stage": "prepare",
+            "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+            "source_id": "notion",
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          },
+          {
+            "operation": "candidates",
+            "stage": "prepare",
+            "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+            "source_id": "notion",
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          },
+          {
+            "operation": "library-selection",
+            "stage": "admission",
+            "library": null,
+            "source_id": null,
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          },
+          {
+            "operation": "list",
+            "stage": "admission",
+            "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+            "source_id": "notion",
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          }
+        ],
+        "http_attempts": 36
+      }
+    },
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-capture-m0-e1-c0",
+      "build_id": "next-refresh-guidance-20261127-1",
+      "mode": "broker",
+      "capture": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/current-refresh-guidance-own-pair-1-capture-m0-e1-c0.capture.json",
+        "sha256": "d9e138fe38a66b5efca7982a57db2d18a13054d885e0451338fd898a19ef7b9b",
+        "bytes": 49594
+      },
+      "expectation": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/current-refresh-guidance-own-pair-1-capture-m0-e1-c0.expectation.json",
+        "sha256": "0666cfce4357b45f4d26ea37e5ee4e556cefa6c8769990c2840bc114ebdabc1f",
+        "bytes": 137957
+      },
+      "paired_result": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-capture-m0-e1-c0/result.json",
+        "sha256": "af59489e30e9df55c9a4523be2d5cff8d37539942de154db0248034f3d2cfbd7",
+        "bytes": 10345
+      },
+      "candidate_observed": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-capture-m0-e1-c0/benchmark/runtime/candidate-observed.json",
+        "sha256": "b93f51010bb263fdd3bca9c913b537e4f096c82753c8f842dd9944e842285c71",
+        "bytes": 295506
+      },
+      "catalog_comparison": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-capture-m0-e1-c0/benchmark/runtime/first-request-catalog-comparison.json",
+        "sha256": "74d566f6a77a37b06de3497c8bdd98229638fe2a86ca50e74b5b5dbce032c89f",
+        "bytes": 48564
+      },
+      "first_request_catalog_references": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-capture-m0-e1-c0/benchmark/runtime/first-request-catalog-references.json",
+        "sha256": "d58dd1c0c4c018bcdfdd80099cfcec95d949db9e28ce8cf778a2fff38184f79a",
+        "bytes": 70900
+      },
+      "events": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-capture-m0-e1-c0/benchmark/runtime/events.jsonl",
+        "sha256": "41e52c4799488d5a638d1451f868e3c5a6d1837c842fab48113331afb0422519",
+        "bytes": 276177
+      },
+      "status": "passed",
+      "runtime_status": "unchanged",
+      "admission": "captured_not_authorized",
+      "budget": {
+        "requests": 0,
+        "attempts": 0,
+        "tools": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "tokens": 0,
+        "usage_unknown": false,
+        "stop": null
+      },
+      "provider_send_blocked": 1,
+      "provider_attempt_start": 0,
+      "request_attempts": 0,
+      "command_source": "none",
+      "source_disposition": "not_copied",
+      "run_source_exists": false,
+      "launch_extensions": [
+        {
+          "path": "$BUILD/installed/broker/node_modules/pi-context-broker/src/index.ts",
+          "role": "broker",
+          "sha256": "6b08741c97d84ffe34741ce6cebe16c99c6e27834e2d27d2dea4e9e7f39770d2"
+        }
+      ],
+      "subject_projection": {
+        "files": [
+          {
+            "bytes": 4716,
+            "path": "benchmark/reported-model.mjs",
+            "sha256": "fae674ff8d8fb8e65953b936ce3c0097a8148f0266a64845325be46a8e793596"
+          },
+          {
+            "bytes": 7224,
+            "path": "benchmark/runtime/episode-evidence.mjs",
+            "sha256": "6b713b14acdca7f5d8b425608bc96da87579f7ca7306b2b50f5e37ccb03c1a6b"
+          },
+          {
+            "bytes": 15380,
+            "path": "benchmark/runtime/episode-notion.mjs",
+            "sha256": "18aba276933dbaf05e5e310a0da666c643e25797d43b74253cba7c05525486c9"
+          },
+          {
+            "bytes": 9041,
+            "path": "benchmark/runtime/episode-policy.mjs",
+            "sha256": "0640be00df0bce97114b6c829da9db4badb763bb06a06df82ba26191f8de6962"
+          },
+          {
+            "bytes": 51177,
+            "path": "benchmark/runtime/episode-runner.mjs",
+            "sha256": "9464413be4a5a8fc3ff167223106a70725561f501eb7c39c677ec2a85f256ded"
+          },
+          {
+            "bytes": 1490,
+            "path": "benchmark/runtime/episode-visibility.mjs",
+            "sha256": "f0f7e4be1a3227b506c613808bb3f27b0fed626290501d9ebe8672aa0597833b"
+          },
+          {
+            "bytes": 33905,
+            "path": "benchmark/turn-bridge.mjs",
+            "sha256": "208fc87e74e74813f0cd855230791850bc3cf8fc011d672968049ccecece207e"
+          },
+          {
+            "bytes": 6667,
+            "path": "packages/context-broker/src/native-reference.ts",
+            "sha256": "37158660edb67b70a97bef4fb6bfdab70dfb7ef6ea4ad1c2765bd2313647207e"
+          },
+          {
+            "bytes": 8970,
+            "path": "packages/context-broker/src/ntn-skills-ref.cjs",
+            "sha256": "189ed2d7deef8afe7d9928833ee6ed0a403f0e47f18c263cf1666531644e9dd8"
+          },
+          {
+            "bytes": 719,
+            "path": "packages/context-broker/src/ntn-skills-runtime.json",
+            "sha256": "d35bde73585c0d7a3dbaab08c6d2e56b9015906634e9c313047b4c51e0d982fe"
+          },
+          {
+            "bytes": 3177,
+            "path": "packages/context-broker/src/skill-ref-protocol.ts",
+            "sha256": "d36ff2d510db5c2d922ef3875d3d0e583d2902c3ea4a0ae6a8b6afff3f17b961"
+          },
+          {
+            "bytes": 14652,
+            "path": "scripts/notion-agent-inventory-evidence.mjs",
+            "sha256": "d2aeeb657113ffa617aa08de534024a649a87f6e3f1218048af82311996c6afc"
+          },
+          {
+            "bytes": 16307,
+            "path": "scripts/notion-default-context.mjs",
+            "sha256": "86af00415f898832a13c576b703c7e23be0a32df58cafc33d1ecdcc2d9e99349"
+          },
+          {
+            "bytes": 2662,
+            "path": "scripts/notion-integration-hosts.mjs",
+            "sha256": "40856493aca8886120d7fbb726aebb1963659df004ff1b26e7ee9b4084313378"
+          },
+          {
+            "bytes": 19458,
+            "path": "scripts/notion-skill-graph-model-evidence.mjs",
+            "sha256": "4fb99a1820e21eedb52ec6a108ef614b19410eac226b0e90e2b67f2534d26927"
+          },
+          {
+            "bytes": 26948,
+            "path": "scripts/skill-consumption-provider.mjs",
+            "sha256": "57941adf463148297ea3012aa9bbfd4d156627f22cfb3715e60bb46806d27c89"
+          },
+          {
+            "bytes": 35039,
+            "path": "scripts/skill-consumption-source-observer.mjs",
+            "sha256": "406deb8fd08a21693f72be9f996406d17457c3b3c93de06d315c4f703ce42023"
+          },
+          {
+            "bytes": 29451,
+            "path": "scripts/skill-preparation-evidence.mjs",
+            "sha256": "cd66d323b0cad3ba05c9fb2e07a42d0ee83acc1e3b37d78308a603d834113a27"
+          }
+        ],
+        "sha256": "52853d277b549a36ba5516ef483fc169655cafe7cadfd7421c9c8668eefa0fda"
+      },
+      "catalogs": [
+        {
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "source_id": "notion",
+          "facets": [
+            {
+              "facet": "catalog",
+              "ok": true,
+              "count": 16,
+              "records": 16,
+              "coverage": {
+                "exhaustive": true,
+                "failed_sources": [],
+                "method": "explicit_library",
+                "queried_data_sources": [
+                  "4215636c-236e-81bb-984e-000b40d2a368"
+                ],
+                "search_index_limited": false
+              },
+              "freshness": {
+                "max_age_ms": 60000,
+                "stale": false
+              },
+              "scope": "5a163d388fb831806a56ba23889f425eaf974d98fae86ad3bb883d40ca956938",
+              "library_id": "4215636c-236e-81e8-8168-ee2ac696f73a"
+            },
+            {
+              "facet": "directory",
+              "ok": true,
+              "count": 16,
+              "records": 16,
+              "coverage": {
+                "exhaustive": true,
+                "failed_sources": [],
+                "method": "explicit_view",
+                "queried_data_sources": [
+                  "4215636c-236e-81bb-984e-000b40d2a368"
+                ],
+                "search_index_limited": false
+              },
+              "freshness": {
+                "max_age_ms": 60000,
+                "stale": false
+              },
+              "scope": "5a163d388fb831806a56ba23889f425eaf974d98fae86ad3bb883d40ca956938",
+              "library_id": "4215636c-236e-81e8-8168-ee2ac696f73a"
+            }
+          ]
+        }
+      ],
+      "catalog_bindings": {
+        "count": 16,
+        "unique_canonical": 16,
+        "all_source_library_scope_match": true,
+        "comparison_differences": 0
+      },
+      "active_tools": [
+        "read",
+        "bash",
+        "edit",
+        "write",
+        "tool_search",
+        "notion_list",
+        "notion_use"
+      ],
+      "serialized_input_bytes": 15247,
+      "canonical_request_bytes": 14678,
+      "system_prompt_bytes": 2355,
+      "guidance_message_bytes": 1496,
+      "notion_list_guidance_line": {
+        "text": "notion_list: discovery/use omits refresh. refresh:true for named existence/availability questions, after writes or requested current/latest. Check freshness/coverage; failed/partial/offline is not absence.",
+        "bytes": 205
+      },
+      "refresh_description": {
+        "text": "Default false for ordinary discovery or applying a named Skill. Set true for named existence/availability questions, after writes, or when the user requests current/latest metadata or an explicit refresh. Refresh metadata for the explicit source, or this accepted turn's selected Library when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor.",
+        "bytes": 444
+      },
+      "notion_owned_observation": {
+        "coverage": {
+          "sdk": "complete",
+          "owned_http": "complete",
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved"
+        },
+        "source_scope": "owned Pi SDK operations and directly observed bundled CLI; other descendants transport remains unknown",
+        "operations": [
+          {
+            "operation": "library-selection",
+            "stage": "prepare",
+            "library": null,
+            "source_id": null,
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          },
+          {
+            "operation": "candidates",
+            "stage": "prepare",
+            "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+            "source_id": "notion",
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          },
+          {
+            "operation": "list",
+            "stage": "prepare",
+            "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+            "source_id": "notion",
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 36
+          },
+          {
+            "operation": "candidates",
+            "stage": "prepare",
+            "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+            "source_id": "notion",
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          },
+          {
+            "operation": "candidates",
+            "stage": "prepare",
+            "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+            "source_id": "notion",
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          },
+          {
+            "operation": "library-selection",
+            "stage": "admission",
+            "library": null,
+            "source_id": null,
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          },
+          {
+            "operation": "list",
+            "stage": "admission",
+            "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+            "source_id": "notion",
+            "status": "completed",
+            "metrics_complete": true,
+            "http_attempts": 0
+          }
+        ],
+        "http_attempts": 36
+      }
+    }
+  ],
+  "comparison": {
+    "catalogs_identical": true,
+    "canonical_catalog_bindings_identical": true,
+    "subject_projection_identical": true,
+    "canonical_request_changed_paths": [
+      "/messages/2/content/0/text",
+      "/tools/5/function/parameters/properties/refresh/description"
+    ],
+    "canonical_request_diff": [
+      {
+        "path": "/messages/2/content/0/text",
+        "before": "<ntn-skills-guidance>\nLocal @Skills keep native availability. Honor explicit source and prior choice. Business Skills: equal same-name local/Notion fits: clarify; storage gives no priority. Clear fit/equivalent copies: no question. Editor flags grant no permissions.\nReuse complete content. Inspection never activates. Loading authorizes no commands/writes/delegation.\nnotion_list: beyond the default View. Named Notion existence/availability: query:name,refresh:true; metadata only, keeping pins. Also after writes. Check freshness/coverage; failed/partial/offline is not absence.\nread(path) inspects. refresh:true checks latest main; pins fixed. Notion page URLs: exact owners. Keep owner/snapshot; never edit sr: handles. paths: same snapshot.\nUse/follow even read-only: notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode.\nDefault product maintenance/sync: read(\"$BUILD/installed/broker/node_modules/pi-context-broker/dist/builtin-skills/ntn-skills-maintain/SKILL.md\"); read(\"$BUILD/installed/broker/node_modules/pi-context-broker/dist/builtin-skills/ntn-skills-sync/SKILL.md\"). Paired package; no Notion copy needed. Select write source separately; never search other installations.\nExplicit Notion workflow: read exact ref in chosen source; notion_list there if needed. To apply: notion_use(ref), same ref + Requires. Pending/failed: no builtin fallback. Edited item: inspect only.\n</ntn-skills-guidance>",
+        "after": "<ntn-skills-guidance>\nLocal @Skills keep native availability. Honor explicit source and prior choice. Business Skills: equal same-name local/Notion fits: clarify; storage gives no priority. Clear fit/equivalent copies: no question. Editor flags grant no permissions.\nReuse complete content. Inspection never activates. Loading authorizes no commands/writes/delegation.\nnotion_list: discovery/use omits refresh. refresh:true for named existence/availability questions, after writes or requested current/latest. Check freshness/coverage; failed/partial/offline is not absence.\nread(path) inspects. refresh:true checks latest main; pins fixed. Notion page URLs: exact owners. Keep owner/snapshot; never edit sr: handles. paths: same snapshot.\nUse/follow even read-only: notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode.\nDefault product maintenance/sync: read(\"$BUILD/installed/broker/node_modules/pi-context-broker/dist/builtin-skills/ntn-skills-maintain/SKILL.md\"); read(\"$BUILD/installed/broker/node_modules/pi-context-broker/dist/builtin-skills/ntn-skills-sync/SKILL.md\"). Paired package; no Notion copy needed. Select write source separately; never search other installations.\nExplicit Notion workflow: read exact ref in chosen source; notion_list there if needed. To apply: notion_use(ref), same ref + Requires. Pending/failed: no builtin fallback. Edited item: inspect only.\n</ntn-skills-guidance>"
+      },
+      {
+        "path": "/tools/5/function/parameters/properties/refresh/description",
+        "before": "Refresh metadata for the explicit source, or this accepted turn's selected Library when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor.",
+        "after": "Default false for ordinary discovery or applying a named Skill. Set true for named existence/availability questions, after writes, or when the user requests current/latest metadata or an explicit refresh. Refresh metadata for the explicit source, or this accepted turn's selected Library when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor."
+      }
+    ],
+    "projection_diff": [
+      {
+        "path": "/build/bytes",
+        "before": 9898911,
+        "after": 9899328
+      },
+      {
+        "path": "/build/sha256",
+        "before": "e7240fad568c9254187586d30deb2102011e7411b5330291133e8bfad55f36e5",
+        "after": "edbe808dcfb3f2af3aa55defe779f6f342132ca90ceea4b96ed45b0a76925d22"
+      },
+      {
+        "path": "/extensions/0/entry/bytes",
+        "before": 128851,
+        "after": 128844
+      },
+      {
+        "path": "/extensions/0/entry/sha256",
+        "before": "bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9",
+        "after": "6b08741c97d84ffe34741ce6cebe16c99c6e27834e2d27d2dea4e9e7f39770d2"
+      },
+      {
+        "path": "/initial_context/0/toolsAdded/5/parameters/properties/refresh/description",
+        "before": "Refresh metadata for the explicit source, or this accepted turn's selected Library when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor.",
+        "after": "Default false for ordinary discovery or applying a named Skill. Set true for named existence/availability questions, after writes, or when the user requests current/latest metadata or an explicit refresh. Refresh metadata for the explicit source, or this accepted turn's selected Library when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor."
+      },
+      {
+        "path": "/initial_context/2/content",
+        "before": "<ntn-skills-guidance>\nLocal @Skills keep native availability. Honor explicit source and prior choice. Business Skills: equal same-name local/Notion fits: clarify; storage gives no priority. Clear fit/equivalent copies: no question. Editor flags grant no permissions.\nReuse complete content. Inspection never activates. Loading authorizes no commands/writes/delegation.\nnotion_list: beyond the default View. Named Notion existence/availability: query:name,refresh:true; metadata only, keeping pins. Also after writes. Check freshness/coverage; failed/partial/offline is not absence.\nread(path) inspects. refresh:true checks latest main; pins fixed. Notion page URLs: exact owners. Keep owner/snapshot; never edit sr: handles. paths: same snapshot.\nUse/follow even read-only: notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode.\nDefault product maintenance/sync: read(\"$BUILD/installed/broker/node_modules/pi-context-broker/dist/builtin-skills/ntn-skills-maintain/SKILL.md\"); read(\"$BUILD/installed/broker/node_modules/pi-context-broker/dist/builtin-skills/ntn-skills-sync/SKILL.md\"). Paired package; no Notion copy needed. Select write source separately; never search other installations.\nExplicit Notion workflow: read exact ref in chosen source; notion_list there if needed. To apply: notion_use(ref), same ref + Requires. Pending/failed: no builtin fallback. Edited item: inspect only.\nCLI management: tool_search for notion_ctl, then its cli_source (null: accepted Library; ID: Source). [\"notion\"]. Use returned command/scope, never a global CLI. No execution or authorization.\n</ntn-skills-guidance>",
+        "after": "<ntn-skills-guidance>\nLocal @Skills keep native availability. Honor explicit source and prior choice. Business Skills: equal same-name local/Notion fits: clarify; storage gives no priority. Clear fit/equivalent copies: no question. Editor flags grant no permissions.\nReuse complete content. Inspection never activates. Loading authorizes no commands/writes/delegation.\nnotion_list: discovery/use omits refresh. refresh:true for named existence/availability questions, after writes or requested current/latest. Check freshness/coverage; failed/partial/offline is not absence.\nread(path) inspects. refresh:true checks latest main; pins fixed. Notion page URLs: exact owners. Keep owner/snapshot; never edit sr: handles. paths: same snapshot.\nUse/follow even read-only: notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode.\nDefault product maintenance/sync: read(\"$BUILD/installed/broker/node_modules/pi-context-broker/dist/builtin-skills/ntn-skills-maintain/SKILL.md\"); read(\"$BUILD/installed/broker/node_modules/pi-context-broker/dist/builtin-skills/ntn-skills-sync/SKILL.md\"). Paired package; no Notion copy needed. Select write source separately; never search other installations.\nExplicit Notion workflow: read exact ref in chosen source; notion_list there if needed. To apply: notion_use(ref), same ref + Requires. Pending/failed: no builtin fallback. Edited item: inspect only.\nCLI management: tool_search for notion_ctl, then its cli_source (null: accepted Library; ID: Source). [\"notion\"]. Use returned command/scope, never a global CLI. No execution or authorization.\n</ntn-skills-guidance>"
+      },
+      {
+        "path": "/launch_profile/extensions/0/sha256",
+        "before": "bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9",
+        "after": "6b08741c97d84ffe34741ce6cebe16c99c6e27834e2d27d2dea4e9e7f39770d2"
+      },
+      {
+        "path": "/tools/all/8/parameters/properties/refresh/description",
+        "before": "Refresh metadata for the explicit source, or this accepted turn's selected Library when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor.",
+        "after": "Default false for ordinary discovery or applying a named Skill. Set true for named existence/availability questions, after writes, or when the user requests current/latest metadata or an explicit refresh. Refresh metadata for the explicit source, or this accepted turn's selected Library when source is omitted. Keeps task pins; configured offline sources remain offline. Does not refresh the remote full-text index. Cannot combine with cursor."
+      }
+    ],
+    "refresh_description_delta_bytes": 205,
+    "notion_list_guidance_line_delta_bytes": -7,
+    "guidance_message_delta_bytes": -7,
+    "canonical_request_delta_bytes": 198,
+    "observed_serialized_input_delta_bytes": 200
+  },
+  "pre_model_expectation_correction": {
+    "path": "template-1.json#/proposal/allowed_change_interpretation",
+    "expected": "compressed guidance preserves its total length",
+    "observed": "Against actual accepted build2, the notion_list line is 212 to 205 UTF-8 bytes, and the containing guidance message is 1503 to 1496 bytes. Refresh description is 239 to 444 bytes. Canonical serialized request grows by 198 bytes; independently scoped live capture serialization grows by 200 bytes.",
+    "effect": "The observed pair still differs only in the two intended public strings. Preserve the original plan; report this measurement correction before any model dispatch. Current/latest and second-turn policy reuse remain the original decision criteria."
+  },
+  "status_readback": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/configure-1-status.json",
+    "sha256": "7fd40435fbd804731ac6d6f2e55988cbe25c3c49ee66cb8c0ad7080c9f7c27b8",
+    "bytes": 356
+  },
+  "interpretation": "Zero-model capture establishes actual loading, metadata ownership and serialization only. It does not establish business success, adoption, refresh choice or model efficiency.",
+  "next_action": "Await root model gate; do not run-standing yet."
+}

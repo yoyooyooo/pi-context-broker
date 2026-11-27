@@ -1,0 +1,116 @@
+{
+  "id": "current-refresh-guidance-own-pair-1",
+  "plan_sha256": "019467268a5cb6855335c1d68f4dfc27dc2beae9fb08cb2e75da7617d583aefc",
+  "planned": 4,
+  "scheduled": 4,
+  "completed": 4,
+  "not_dispatched": [],
+  "planned_dispatch": 4,
+  "unresolved_runs": [],
+  "last": {
+    "version": 1,
+    "seq": 16,
+    "at": "2026-11-27T05:16:57.462Z",
+    "monotonic_ns": "361390480095583",
+    "clock_domain": "batch-ce191075-ee0f-47e9-b773-cad23f692ea2",
+    "type": "batch_closed",
+    "reason": "planned_slots_completed",
+    "new_episodes": 1
+  },
+  "analysis_revision": null,
+  "episodes": [
+    {
+      "slot_id": "m0-e0--explicit-01-a-n16-r1--r0",
+      "run_id": "current-refresh-guidance-own-pair-1-001",
+      "result": {
+        "status": "completed",
+        "run_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001",
+        "normalized_directory": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/normalized/normalized",
+        "episode_sha256": "a6b46a50437db15056bfe38675acf261eaefe288573ae7993ace075c8a698ca1",
+        "budget_usage": {
+          "model_requests": 5,
+          "input_tokens": 20898,
+          "output_tokens": 310,
+          "duration_ms": 71041.342833
+        },
+        "stop_batch": false,
+        "stop_reason": null
+      }
+    },
+    {
+      "slot_id": "m0-e1--explicit-01-a-n16-r1--r0",
+      "run_id": "current-refresh-guidance-own-pair-1-002",
+      "result": {
+        "status": "completed",
+        "run_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002",
+        "normalized_directory": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/normalized/normalized",
+        "episode_sha256": "b6795a30a65a54bb25907de7106ab365481b4980f567cc474a3e1654875e4569",
+        "budget_usage": {
+          "model_requests": 5,
+          "input_tokens": 20905,
+          "output_tokens": 313,
+          "duration_ms": 70442.37216700001
+        },
+        "stop_batch": false,
+        "stop_reason": null
+      }
+    },
+    {
+      "slot_id": "m0-e1--continuation-01-a-n16-r2--r0",
+      "run_id": "current-refresh-guidance-own-pair-1-003",
+      "result": {
+        "status": "completed",
+        "run_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003",
+        "normalized_directory": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/normalized/normalized",
+        "episode_sha256": "19fa67158a1f067ce801014d65a2a621ec2942e9450edd0cbb76be35ab58c16b",
+        "budget_usage": {
+          "model_requests": 8,
+          "input_tokens": 35600,
+          "output_tokens": 520,
+          "duration_ms": 125723.02375
+        },
+        "stop_batch": false,
+        "stop_reason": null,
+        "turn_control": {
+          "verification": "verified",
+          "status": "completed",
+          "reason": null,
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/turn-control/current-refresh-guidance-own-pair-1-003/result.json",
+            "sha256": "f3728c5991c1ef667608810b395e6d6b5ff610793e339ca34ba742a0c571eedd",
+            "bytes": 1056
+          }
+        }
+      }
+    },
+    {
+      "slot_id": "m0-e0--continuation-01-a-n16-r2--r0",
+      "run_id": "current-refresh-guidance-own-pair-1-004",
+      "result": {
+        "status": "completed",
+        "run_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004",
+        "normalized_directory": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/normalized/normalized",
+        "episode_sha256": "932aef6d79a3dd0fabd4860a26672fb0406c24ccea065eef9f198ba403723702",
+        "budget_usage": {
+          "model_requests": 8,
+          "input_tokens": 35297,
+          "output_tokens": 579,
+          "duration_ms": 117293.923958
+        },
+        "stop_batch": false,
+        "stop_reason": null,
+        "turn_control": {
+          "verification": "verified",
+          "status": "completed",
+          "reason": null,
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/turn-control/current-refresh-guidance-own-pair-1-004/result.json",
+            "sha256": "a8a87cd63c4c6f8e97a7a520ba6f671ded0886d7c0a4c0d05d76b6effa9b8036",
+            "bytes": 1056
+          }
+        }
+      }
+    }
+  ],
+  "execution_performed": false
+}

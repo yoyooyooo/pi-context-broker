@@ -1,0 +1,39 @@
+{
+  "checked_at": "2026-11-27T05:06:08.309341+00:00",
+  "head": "b90e122de6ed2b465d93b2df35cb70769ae96147",
+  "checks": [
+    {
+      "id": 140320748966,
+      "name": "main (26.13.1)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/yoyooyooo/pi-context-broker/actions/runs/45942826352/job/140320748966",
+      "head": "b90e122de6ed2b465d93b2df35cb70769ae96147"
+    },
+    {
+      "id": 140320748936,
+      "name": "Formal consumer-state",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/yoyooyooo/pi-context-broker/actions/runs/45942826332/job/140320748936",
+      "head": "b90e122de6ed2b465d93b2df35cb70769ae96147"
+    },
+    {
+      "id": 140320748656,
+      "name": "main (24.22.3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/yoyooyooo/pi-context-broker/actions/runs/45942826352/job/140320748656",
+      "head": "b90e122de6ed2b465d93b2df35cb70769ae96147"
+    },
+    {
+      "id": 140320748549,
+      "name": "Formal observations",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/yoyooyooo/pi-context-broker/actions/runs/45942826332/job/140320748549",
+      "head": "b90e122de6ed2b465d93b2df35cb70769ae96147"
+    }
+  ],
+  "required_checks_success": true
+}

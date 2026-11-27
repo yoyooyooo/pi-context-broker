@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "at_utc": "2026-11-27T05:21:40.547840+00:00",
+  "decision": "not_adopted_in_this_cycle",
+  "product_pr": "https://github.com/yoyooyooo/pi-context-broker/pull/105",
+  "product_head": "b90e122de6ed2b465d93b2df35cb70769ae96147",
+  "plan_internal_sha256": "019467268a5cb6855335c1d68f4dfc27dc2beae9fb08cb2e75da7617d583aefc",
+  "basis": [
+    "All four planned episodes completed with business and fourteen applicable contracts passing; final raw readback and ledger closeout are recorded separately by the operator.",
+    "Both explicit observations omit refresh on list and use, have five model requests and 79 SDK-owned HTTP requests.",
+    "Both continuation observations refresh list and use and reuse the selected policy in turn 2. Candidate 145 versus reference 152 HTTP differs by a non-tool turn-2 list cancelled at 13 requests versus completed at 20; this is not evidence of improved refresh selection.",
+    "The captured canonical request adds 198 bytes. More explicit wording is not enough to justify this candidate as the proposed performance improvement given the observed pair."
+  ],
+  "claim_boundary": "This narrow descriptive design does not prove equivalence or absence of a population effect. No further sampling is initiated to obtain a win.",
+  "product_action": "Do not merge PR105 or deploy its product strings; preserve the PR branch, candidate, original failures and four observations. Return ordinary Benchmark product source to accepted next when recording this decision.",
+  "next_decision": "Verify the actually merged CLI smart-cache next 31f30db8f960cc4f36d1e02f8e279d641b660718 after checking Broker pairing and other active owners. Preserve current Own and prior baseline identities.",
+  "resource_dispositions": {
+    "guide_candidate_build": "Release complete replay after final interpretation; keep necessary original source/controller/SDK/archive and run evidence, retire reconstructible dependencies/cache with an explicit evidence_only receipt.",
+    "reference_build2": "Retained complete for the explicitly planned next accepted-cache comparison; release after that comparison and required interpretation.",
+    "guide_source_pair": "Preserve unique Git evidence and reuse only if compatible with the next concrete accepted-pair build; otherwise retire."
+  }
+}
