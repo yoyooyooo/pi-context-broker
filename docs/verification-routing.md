@@ -37,6 +37,8 @@ C01–C11/T01–T24、单一 owner 与实际入口由 CLI `verification/skill-do
 
 缓存、变化证据、TTL、库选择、启动/SDK 次序及会话复用变化必须交接到 [新进程缓存验证](../.agents/skills/verify-notion-skills-integration/features/session-cache-recovery.md#新进程复用)：执行 `http-warm-restart`、`http-warm-directory-expired`、`http-smart-revalidate` 和 `http-smart-current`，核实际新 Pi 的请求与 provider 全文，并覆盖 metadata 续证、Required 变更后的失败恢复和原 pin 稳定。Core 的持久事实与完整全图准入不会搬进 Broker；T01 的 SDK 回归只覆盖局部实现，不能记作整个宿主时间线通过。普通安装与真实 Notion 另沿 [日用缓存入口](../.agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md#普通安装的跨会话缓存) 执行 `cache-plan/cache-run`，不改变 metadata-only run/aggregate 的边界。
 
+普通安装的缓存动作单独接受证据完整的 SDK metadata GET 限流恢复：仅限数据库或 data source descriptor 的零正文 GET，429 原因和 Retry-After 必须实际可见；同一成功 operation 中的后续同请求 2xx、retry wait，以及独立 HTTP 和 SDK 的等待时间必须一致满足退避。失败和成功 attempts 均保留在原请求数、字节、时延及限流恢复记录中，不把失败响应当有效 Library 结构。未恢复、缺证据、其他错误、正文或写入请求仍拒绝。默认 HTTP 分类、历史 metadata run/aggregate 的每请求成功要求及 bundled doctor CLI 门禁不变；旧失败结果保持原状，新分析和复验使用新身份。
+
 保留的有限模型由 observations 与 consumer-state 两套 coverage 维护。SDK capability、当前 import 的目录失效、包 pin/build 和真实 HTTP/serializer 是各自的实现检查，不因被写入 source hash 就获得形式证明。
 
 ## 结果交接
