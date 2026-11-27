@@ -11,8 +11,8 @@ import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-
 import { renderHttpWrapper, startLoopbackMock } from './mock-provider-adapter.mjs';
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
 
-export const scenarios = Object.freeze(['default-view', 'http-cache-recovery', 'http-warm-restart', 'http-warm-directory-expired', 'http-interruption', 'working-set']);
-const isWarmRestart = name => name === 'http-warm-restart' || name === 'http-warm-directory-expired';
+export const scenarios = Object.freeze(['default-view', 'http-cache-recovery', 'http-warm-restart', 'http-warm-directory-expired', 'http-smart-revalidate', 'http-smart-current', 'http-interruption', 'working-set']);
+const isWarmRestart = name => ['http-warm-restart', 'http-warm-directory-expired', 'http-smart-revalidate'].includes(name);
 export const usage = `Current SDK v3, actual Pi, controlled Notion and provider HTTP.
 node scripts/notion-sdk-pi.mjs doctor|run --package ABS --fixture ABS --source-http-helper ABS [--pi ABS] [--scenario all|${scenarios.join('|')}]
 run additionally requires --out NEW_ABS. --pi selects one explicit installed entry; there is no fallback.
@@ -213,10 +213,11 @@ async function runScenario(name, info, out) {
     onBody: async (record, bytes) => { const file = `provider-${String(wire.length + 1).padStart(3, '0')}.json`; await writeFile(join(base, file), bytes, { mode: 0o600 }); wire.push({ file, sha256: hash(bytes), body: JSON.parse(bytes), record }); } });
   const agentDir = join(base, 'agent'), sessions = join(base, 'sessions');
   await mkdir(join(agentDir, 'context-broker'), { recursive: true }); await mkdir(sessions);
-  const directoryExpired = name === 'http-warm-directory-expired';
-  const maxAge = isWarmRestart(name) ? '5m' : '0';
+  const metadataRevalidation = name === 'http-smart-revalidate';
+  const directoryExpired = name === 'http-warm-directory-expired' || metadataRevalidation;
+  const maxAge = metadataRevalidation ? '1s' : isWarmRestart(name) || name === 'http-smart-current' ? '5m' : '0';
   const source = { type: 'notion', id: 'current-sdk', namespace: 'current-sdk', library: sample.notion.library.library_id,
-    discovery: { maxAge: directoryExpired ? '1s' : maxAge }, activation: { maxAge }, cacheDir: join(base, 'broker-cache'), prefetch: false };
+    discovery: { maxAge: name === 'http-smart-current' ? '0' : directoryExpired ? '1s' : maxAge }, activation: { maxAge }, cacheDir: join(base, 'broker-cache'), prefetch: false };
   const config = join(agentDir, 'context-broker/config.yml'), control = join(base, 'control.json');
   await save(config, { sources: [source] }); await save(control, { action: 'none' });
   await save(join(agentDir, 'settings.json'), { compaction: { enabled: false, keepRecentTokens: 1, reserveTokens: 1024 }, retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } } });
@@ -240,7 +241,8 @@ async function runScenario(name, info, out) {
     assertWireSources(body, present, absent);
     const captured = wire.find(item => item.body === body); assert.ok(captured);
     const original = text => ({ text, bytes: Buffer.byteLength(text), sha256: hash(text) });
-    wireAssertions.push({ provider_file: captured.file, present: present.map(original), absent: absent.map(original) });
+    const proof = { provider_file: captured.file, present: present.map(original), absent: absent.map(original) };
+    wireAssertions.push(proof); return proof.provider_file;
   };
   const step = async (label, action) => { const before = wire.length, started = Date.now();
     try { const value = await action(); steps.push({ label, status: 'passed', elapsed_ms: Date.now() - started, provider_requests: wire.slice(before).map(item => item.file) }); await save(join(base, 'steps.json'), steps); return value; }
@@ -286,17 +288,96 @@ async function runScenario(name, info, out) {
       const warm = await snapshot('warm-empty-session'), warmPid = rpc.lifecycle[0].pid;
       assert.notEqual(warmPid, coldPid); assert.notEqual(warm.session_file, cold.session_file);
       assert.equal(warm.branch.some(entry => entry.customType === 'context-broker-selected-graph'), false);
-      await step(directoryExpired ? 'a new Pi refreshes expired metadata while reusing five-minute originals'
+      await step(metadataRevalidation ? 'a new Pi revalidates expired current evidence without downloading Skill bodies'
+        : directoryExpired ? 'a new Pi refreshes expired metadata while reusing five-minute originals'
         : 'a new Pi process reuses the five-minute cache with no Notion HTTP', async () => {
         const started = Date.now();
         checkSources(await ordinary('$current-demo Apply this Skill to the new task.'), [a1, b1], [c1]);
         const elapsed = Date.now() - started;
         if (!directoryExpired) assert.equal(service.requests.length, coldRequests, 'Warm restart issued Notion HTTP');
         await save(join(base, 'warm-restart.json'), { cold_pid: coldPid, warm_pid: warmPid,
-          cold_session: cold.session_file, warm_session: warm.session_file, max_age_ms: 300000,
+          cold_session: cold.session_file, warm_session: warm.session_file, max_age_ms: metadataRevalidation ? 1000 : 300000,
           directory_max_age_ms: directoryExpired ? 1000 : 300000,
           elapsed_ms: elapsed, cold_source_requests: coldRequests, warm_source_requests: service.requests.length - coldRequests });
       });
+    } else if (name === 'http-smart-current') {
+      const processes = [], selected = {}, proofs = {};
+      const rememberProcess = async label => {
+        const empty = await snapshot(label + '-empty-session');
+        assert.equal(empty.branch.some(entry => entry.customType === 'context-broker-selected-graph'), false);
+        processes.push({ label, pid: rpc.lifecycle[0].pid, session_file: empty.session_file });
+      };
+      const finishProcess = async label => {
+        await snapshot(label + '-final-session'); await rpc.closeInput();
+        await save(join(base, label + '-rpc.json'), rpc.frames);
+        await save(join(base, label + '-rpc-lifecycle.json'), rpc.lifecycle);
+      };
+      await rememberProcess('cold');
+      await step('cold dollar submission establishes original root and Required pins', async () => {
+        proofs.cold = checkSources(await ordinary('$current-demo Apply this Skill to the current task.'), [a1, b1], [c1]);
+        selected.cold = await show(); assert.equal(selected.cold.nodes.length, 2);
+      });
+      await finishProcess('cold');
+      replaceBody(service, owners.b, '# Required changed\n\nB replacement version 2.\n', 2);
+      const b2 = sourceText(service.notion, owners.b);
+      service.setPhase('dirty-cancel');
+      rpc = await startRpc({ host: info.host, args, cwd: base, env, timeoutMs: 120000 });
+      await rememberProcess('cancelled');
+      await step('a new Pi observes Required-only change before the five-minute body TTL', async () => {
+        await list(); checkSources(wire.at(-1).body, [], [a1, b1, b2, c1]);
+      });
+      await step('cancel changed Required acquisition without delivering old current', async () => {
+        const before = wire.length;
+        const held = service.holdNext({ method: 'GET', path: '/v1/pages/' + owners.b + '/markdown', afterHeaders: true });
+        const pending = ordinary('$current-demo Apply this Skill after the Required edit.')
+          .then(body => ({ body }), error => ({ error: error.message }));
+        let timer;
+        try {
+          const first = await Promise.race([held.reached.then(() => ({ reached: true })), pending,
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Changed Required acquisition exceeded its bounded observation window')), 30000); })]);
+          if (!first.reached) {
+            if (first.body) checkSources(first.body, [a1, b2], [b1]);
+            assert.fail('Known Required change did not reach current body acquisition: ' + (first.error ?? 'old current was admitted'));
+          }
+          await rpc.command('abort'); held.release(); await pending;
+          assert.equal(wire.length, before, 'Cancelled current preparation reached the provider');
+        } finally { clearTimeout(timer); held.release(); }
+        selected.cancelled = await show(); assert.equal(selected.cancelled.nodes.length, 0);
+        proofs.cancelled = checkSources(await ordinary('Continue independent work after cancelling the Skill load.'), [], [a1, b1, b2, c1]);
+      });
+      await finishProcess('cancelled');
+      service.setPhase('dirty-recovery');
+      rpc = await startRpc({ host: info.host, args, cwd: base, env, timeoutMs: 120000 });
+      await rememberProcess('recovered');
+      await list();
+      await step('another new Pi retries 429 and admits the complete changed closure', async () => {
+        const rejected = service.rejectNext({ method: 'GET', path: '/v1/pages/' + owners.b + '/markdown', status: 429, retryAfterSeconds: 0.01 });
+        proofs.recovered = checkSources(await ordinary('$current-demo Apply this Skill after the interrupted acquisition.'), [a1, b2], [b1, c1]);
+        await rejected.closed;
+        selected.recovered = await show(); assert.equal(selected.recovered.nodes.length, 2);
+      });
+      service.setPhase('pin-stable');
+      replaceBody(service, owners.a, '# Root changed\n\nA replacement version 3.\n', 3);
+      replaceBody(service, owners.b, '# Required changed again\n\nB replacement version 3.\n', 3);
+      property(service.notion.skills.find(row => row.id === owners.a), 'requires').relation = [{ id: owners.c }];
+      property(service.notion.skills.find(row => row.id === owners.c), 'requires').relation = [];
+      const a3 = sourceText(service.notion, owners.a), b3 = sourceText(service.notion, owners.b);
+      await step('later current and Requires changes preserve already accepted pins', async () => {
+        await list();
+        proofs.pinned = checkSources(await ordinary('Continue the accepted task after the remote dependency change.'), [a1, b2], [a3, b1, b3, c1]);
+        selected.pinned = await show();
+        assert.deepEqual(selected.pinned.nodes.map(node => node.snapshot_id).sort(), selected.recovered.nodes.map(node => node.snapshot_id).sort());
+      });
+      await finishProcess('recovered');
+      service.setPhase('membership-current');
+      rpc = await startRpc({ host: info.host, args, cwd: base, env, timeoutMs: 120000 });
+      await rememberProcess('replacement');
+      await step('a new current selection replaces the complete Requires membership', async () => {
+        proofs.replacement = checkSources(await ordinary('$current-demo Apply the current Skill to a new task.'), [a3, c1], [a1, b1, b2, b3]);
+        selected.replacement = await show(); assert.equal(selected.replacement.nodes.length, 2);
+        assert.deepEqual(selected.replacement.nodes.map(node => node.name).sort(), ['Current acceptance C', 'Current demo']);
+      });
+      await save(join(base, 'smart-current.json'), { version: 1, max_age_ms: 300000, processes, proofs, selected, owners });
     } else if (name === 'default-view') {
       await step('default metadata only before activation', async () => { const body = await ordinary('Describe the available capabilities.'); checkSources(body, [], [a1, b1, c1]); records = await list(); const row = records.find(row => row.ref === refFor(records, 'a')); assert.equal(row.in_default_view, true); });
       await step('Default Context removal does not consume a body', async () => { property(service.notion.main, 'default').checkbox = false; service.setPhase('default-off', { viewObservationId: 'off' }); records = await list(); const row = records.find(row => row.ref === refFor(records, 'a')); assert.equal(row.in_default_view, false); checkSources(wire.at(-1).body, [], [a1, b1, c1]); });
@@ -396,8 +477,70 @@ export async function verifyEvidence(directory) {
     assert.ok(starts.length > 0); assert.deepEqual(starts.map(row => row.id).sort(), ends.map(row => row.id).sort());
     assert.equal(events.filter(row => row.kind === 'child_process' && row.active_sdk_ids.length > 0).length, 0);
     const lifecycle = JSON.parse(await readFile(join(base, 'rpc-lifecycle.json'), 'utf8')); assert.equal(lifecycle.at(-1).event, 'close'); assert.equal(lifecycle.at(-1).code, 0); assert.equal(lifecycle.at(-1).signal, null);
+    if (entry.name === 'http-smart-current') {
+      const receipt = JSON.parse(await readFile(join(base, 'smart-current.json'), 'utf8'));
+      const launch = JSON.parse(await readFile(join(base, 'launch.json'), 'utf8'));
+      assert.equal(receipt.version, 1); assert.equal(receipt.max_age_ms, 300000);
+      assert.equal(launch.source.activation.maxAge, '5m'); assert.equal(launch.source.discovery.maxAge, '0');
+      assert.deepEqual(receipt.processes.map(process => process.label), ['cold', 'cancelled', 'recovered', 'replacement']);
+      assert.equal(new Set(receipt.processes.map(process => process.pid)).size, 4);
+      assert.equal(new Set(receipt.processes.map(process => process.session_file)).size, 4);
+      let previousExit;
+      for (const process of receipt.processes) {
+        const processLife = process.label === 'replacement' ? lifecycle
+          : JSON.parse(await readFile(join(base, process.label + '-rpc-lifecycle.json'), 'utf8'));
+        assert.equal(processLife[0].event, 'spawn'); assert.equal(processLife[0].pid, process.pid);
+        assert.equal(processLife.at(-1).event, 'close'); assert.equal(processLife.at(-1).code, 0); assert.equal(processLife.at(-1).signal, null);
+        if (previousExit !== undefined) assert.ok(BigInt(processLife[0].monotonicNs) >= previousExit);
+        previousExit = BigInt(processLife.at(-1).monotonicNs);
+        const empty = JSON.parse(await readFile(join(base, process.label + '-empty-session.json'), 'utf8'));
+        assert.equal(empty.session_file, process.session_file);
+        assert.equal(empty.branch.some(row => row.customType === 'context-broker-selected-graph'), false);
+      }
+      const proof = label => {
+        const matching = proofs.filter(proof => proof.provider_file === receipt.proofs[label]);
+        assert.equal(matching.length, 1, 'Each smart current boundary needs its own complete wire proof');
+        return matching[0];
+      };
+      const cold = proof('cold'), cancelled = proof('cancelled'), recovered = proof('recovered'), pinned = proof('pinned'), replacement = proof('replacement');
+      const hashes = proof => proof.present.map(body => body.sha256).sort();
+      assert.equal(new Set(Object.values(receipt.proofs)).size, 5);
+      for (const stage of [cold, recovered, pinned, replacement]) assert.equal(stage.present.length, 2);
+      assert.equal(cancelled.present.length, 0); assert.ok(cancelled.absent.length >= 4);
+      assert.equal(hashes(cold).filter(hash => hashes(recovered).includes(hash)).length, 1, 'Only Required may change during the interrupted acquisition');
+      assert.deepEqual(hashes(recovered), hashes(pinned), 'A later current observation may not rewrite accepted pins');
+      assert.ok(hashes(replacement).every(hash => !hashes(pinned).includes(hash)), 'New selection must replace both the root version and Required member');
+      assert.ok(cold.present.some(body => recovered.absent.some(retired => retired.sha256 === body.sha256)));
+      assert.ok(pinned.present.every(body => replacement.absent.some(retired => retired.sha256 === body.sha256)));
+      const bodyPath = '/v1/pages/' + receipt.owners.b + '/markdown';
+      const interrupted = source.filter(row => row.phase === 'dirty-cancel' && row.path === bodyPath);
+      assert.ok(interrupted.length > 0, 'Known dirty Required must attempt current acquisition');
+      const retried = source.filter(row => row.phase === 'dirty-recovery' && row.path === bodyPath);
+      assert.ok(retried.some(row => row.status === 429) && retried.some(row => row.status === 200), 'Recovery must include the actual 429 and successful body read');
+      assert.equal(source.filter(row => row.phase === 'membership-current' && row.path === bodyPath).length, 0, 'Removed Required must not be reacquired');
+      const cancelledPid = receipt.processes[1].pid;
+      assert.ok(ends.some(row => row.observer_pid === cancelledPid && row.operation === 'consume' && row.status !== 'completed'));
+      const consumed = label => events.filter(row => row.observer_pid === receipt.processes.find(process => process.label === label).pid
+        && row.operation === 'consume' && row.kind === 'context-broker.notion-sdk-result' && row.value?.status === 'ready');
+      for (const label of ['cold', 'recovered', 'replacement']) {
+        const result = consumed(label); assert.equal(result.length, 1);
+        const nodes = result[0].value.preparation.nodes.filter(node => node.state === 'prepared');
+        assert.equal(nodes.length, 2);
+        assert.deepEqual(nodes.map(node => node.body_sha256).sort(), hashes(proof(label)));
+        assert.ok(nodes.every(node => typeof node.freshness?.validated_at === 'string'));
+      }
+      assert.equal(consumed('cancelled').length, 0, 'Cancelled acquisition cannot create a ready current result');
+      const coldRoot = consumed('cold')[0].value.preparation.nodes.find(node => node.record?.name === 'Current demo');
+      const recoveredRoot = consumed('recovered')[0].value.preparation.nodes.find(node => node.record?.name === 'Current demo');
+      assert.ok(coldRoot && recoveredRoot);
+      assert.equal(coldRoot.binding.snapshot_id, recoveredRoot.binding.snapshot_id, 'Required-only change may not replace an unchanged root snapshot');
+      assert.equal(coldRoot.body_sha256, recoveredRoot.body_sha256);
+      assert.equal(source.filter(row => ['dirty-cancel', 'dirty-recovery'].includes(row.phase)
+        && row.path === '/v1/pages/' + receipt.owners.a + '/markdown').length, 0, 'Required-only change must not download unchanged root bytes');
+    }
     if (isWarmRestart(entry.name)) {
-      const directoryExpired = entry.name === 'http-warm-directory-expired';
+      const metadataRevalidation = entry.name === 'http-smart-revalidate';
+      const directoryExpired = entry.name === 'http-warm-directory-expired' || metadataRevalidation;
       assert.equal(proofs.length, 2, 'Cold and warm provider requests must both prove complete originals');
       assert.ok(proofs.every(proof => proof.present.length === 2));
       assert.notEqual(proofs[0].provider_file, proofs[1].provider_file);
@@ -405,7 +548,7 @@ export async function verifyEvidence(directory) {
       const restart = JSON.parse(await readFile(join(base, 'warm-restart.json'), 'utf8'));
       const coldLifecycle = JSON.parse(await readFile(join(base, 'cold-rpc-lifecycle.json'), 'utf8'));
       const launch = JSON.parse(await readFile(join(base, 'launch.json'), 'utf8'));
-      assert.equal(launch.source.activation.maxAge, '5m');
+      assert.equal(launch.source.activation.maxAge, metadataRevalidation ? '1s' : '5m');
       assert.equal(launch.source.discovery.maxAge, directoryExpired ? '1s' : '5m');
       assert.equal(coldLifecycle.at(-1).code, 0); assert.equal(coldLifecycle.at(-1).signal, null);
       assert.equal(coldLifecycle.at(-1).event, 'close');
@@ -415,7 +558,7 @@ export async function verifyEvidence(directory) {
       const warmSession = JSON.parse(await readFile(join(base, 'warm-empty-session.json'), 'utf8'));
       assert.equal(coldSession.session_file, restart.cold_session); assert.equal(warmSession.session_file, restart.warm_session);
       assert.equal(warmSession.branch.some(row => row.customType === 'context-broker-selected-graph'), false);
-      assert.equal(restart.max_age_ms, 300000);
+      assert.equal(restart.max_age_ms, metadataRevalidation ? 1000 : 300000);
       assert.equal(restart.directory_max_age_ms, directoryExpired ? 1000 : 300000);
       const restartGap = BigInt(lifecycle[0].monotonicNs) - BigInt(coldLifecycle.at(-1).monotonicNs);
       assert.ok(restartGap >= 0n, 'Warm Pi must start after the cold process has exited');
@@ -436,17 +579,25 @@ export async function verifyEvidence(directory) {
       const previous = prepared(cold[0].value), current = prepared(warm[0].value);
       assert.equal(previous.length, 2); assert.equal(current.length, 2);
       assert.ok(previous.every(node => node.source === 'notion'));
-      assert.ok(current.every(node => node.source === 'local_cache' && node.freshness?.max_age_ms === 300000
-        && node.freshness.age_ms >= 0 && node.freshness.age_ms < 300000 && node.freshness.stale === false));
+      assert.ok(current.every(node => node.source === (metadataRevalidation ? 'notion' : 'local_cache')
+        && node.freshness?.max_age_ms === restart.max_age_ms
+        && node.freshness.age_ms >= 0 && node.freshness.age_ms < restart.max_age_ms && node.freshness.stale === false));
       const observed = node => [node.id, node.binding.snapshot_id, node.freshness.validated_at];
-      assert.deepEqual(current.map(observed), previous.map(observed), 'Cache reuse must retain original validation times and fixed versions');
+      if (metadataRevalidation) {
+        assert.deepEqual(current.map(node => [node.id, node.binding.snapshot_id, node.body_sha256]), previous.map(node => [node.id, node.binding.snapshot_id, node.body_sha256]));
+        assert.ok(current.every((node, index) => node.freshness.validation === 'metadata'
+          && Date.parse(node.freshness.validated_at) - Date.parse(previous[index].freshness.validated_at) >= 1000),
+          'Expired evidence must receive a real metadata validation, with unchanged complete bodies');
+      } else assert.deepEqual(current.map(observed), previous.map(observed), 'Cache reuse must retain original validation times and fixed versions');
       const completed = ends.find(row => row.id === warm[0].id);
-      assert.equal(completed?.request_metrics?.total_requests, 0);
+      if (metadataRevalidation) assert.ok(completed?.request_metrics?.total_requests > 0);
+      else assert.equal(completed?.request_metrics?.total_requests, 0);
       assert.equal(events.filter(row => row.observer_pid === restart.warm_pid && row.operation === 'library').length, 0,
         'Local routing must not trigger separate Library verification');
       const warmEnds = ends.filter(row => row.observer_pid === restart.warm_pid);
       const online = warmEnds.filter(row => row.request_metrics?.total_requests > 0);
-      assert.ok(online.every(row => row.operation === 'list' && row.status === 'completed'), 'Only directory list may issue warm HTTP');
+      assert.ok(online.every(row => (row.operation === 'list' || metadataRevalidation && row.operation === 'consume') && row.status === 'completed'),
+        'Only directory list and declared metadata revalidation may issue warm HTTP');
       assert.equal(online.reduce((total, row) => total + row.request_metrics.total_requests, 0), warmSource.length,
         'All warm HTTP, including identity, Library checks and background discovery, must be attributed');
       if (directoryExpired) {

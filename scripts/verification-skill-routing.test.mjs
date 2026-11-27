@@ -22,7 +22,7 @@ const routes = [
 ]
 const cacheFeature = ".agents/skills/verify-notion-skills-integration/features/session-cache-recovery.md"
 const dailyFeature = ".agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md"
-const cacheScenarios = ["http-warm-restart", "http-warm-directory-expired"]
+const cacheScenarios = ["http-warm-restart", "http-warm-directory-expired", "http-smart-revalidate", "http-smart-current"]
 
 function verify(document, contents, scripts) {
   for (const route of routes) {
@@ -106,7 +106,7 @@ function verifyCacheCommands(document) {
   }
 }
 
-test("cache verification instructions execute both public Pi scenarios and recheck their evidence", () => {
+test("cache verification instructions execute all current public Pi scenarios and recheck their evidence", () => {
   const guide = read(cacheFeature)
   verifyCacheCommands(guide)
   for (const scenario of cacheScenarios)
