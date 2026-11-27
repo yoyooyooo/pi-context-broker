@@ -174,7 +174,8 @@ async function inspect(options) {
 
 function lifecycleObserver(api) {
   const record = (type, value = {}) => appendFileSync(process.env.CURRENT_NATIVE_EVENTS, JSON.stringify({ type, pid: process.pid, monotonic_ns: process.hrtime.bigint().toString(), ...value }) + '\n');
-  for (const name of ['session_start', 'session_shutdown', 'session_compact']) api.on(name, (_event, ctx) => record(name, { leaf_id: ctx.sessionManager.getLeafId() }));
+  for (const name of ['session_start', 'session_shutdown', 'session_compact', 'session_before_switch', 'session_switch'])
+    api.on(name, (event, ctx) => record(name, { leaf_id: ctx.sessionManager.getLeafId(), session_id: ctx.sessionManager.getSessionId(), session_file: ctx.sessionManager.getSessionFile(), reason: event.reason, previous_session_file: event.previousSessionFile }));
   api.on('session_before_compact', event => {
     const plan = JSON.parse(readFileSync(process.env.CURRENT_CONTROL, 'utf8'));
     if (plan.action !== 'compact') return;

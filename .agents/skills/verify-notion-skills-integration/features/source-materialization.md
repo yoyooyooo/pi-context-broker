@@ -47,13 +47,28 @@ node scripts/notion-sdk-pi.mjs run --package /absolute/selected/broker \
   --pi /absolute/installed/pi/dist/bundle/cli.js \
   --scenario source-materialize-native-root --out /absolute/owned/materialize-native-root
 node scripts/notion-sdk-pi.mjs evidence --evidence /absolute/owned/materialize-native-root
+
+node scripts/notion-sdk-pi.mjs run --package /absolute/selected/broker \
+  --fixture /absolute/owned/materialization-fixture/fixture.json \
+  --source-http-helper /absolute/selected/cli/scripts/sdk-source-fixture.mjs \
+  --pi /absolute/installed/pi/dist/bundle/cli.js \
+  --scenario source-materialize-cancel-late --out /absolute/owned/materialize-cancel-late
+node scripts/notion-sdk-pi.mjs evidence --evidence /absolute/owned/materialize-cancel-late
 ~~~
 
-每例先运行实际模型工具的 readonly list，再提交用户字面 `$lazy-root` 或 growth 的 `$lazy-required`。覆盖旧行缺 Content/Current State、仅 Source 无 Skill、Source 的 Content/Contributions 全空、已 ready 集合扩展四种初态。legacy-source 保留真实旧注册形状：Status=applied、Operation 为空、Last Revision 是原 Git commit；旧 commit 仅冻结所选 Git 输入，不能充当 current plan authority。旧行保留 page、Main File ID、stable Skill ID 和人工字段；Members 中的 sibling 不展开，Source 声明集合不能被局部选择替换。legacy 两例用真实 Requires 关系证明完整闭包；source-only 不凭 frontmatter 发明不存在的依赖关系。native-root 另以真实 native 主文为明确根，沿实际 Requires 修复旧 Source 依赖，保留 native 权威和三篇完整正文；authorization_root 的 physical page、scope 和 requires_digest 必须保持，Members 不展开。
+上述五个成功场景先运行实际模型工具的 readonly list，再提交用户字面 `$lazy-root` 或 growth 的 `$lazy-required`。覆盖旧行 Content/Current State 属性存在且值为空、仅 Source 无 Skill、Source 的 Content/Contributions 全空、已 ready 集合扩展四种初态。legacy-source 保留真实旧注册形状：Status=applied、Operation 为空、Last Revision 是原 Git commit；旧 commit 仅冻结所选 Git 输入，不能充当 current plan authority。旧行保留 page、Main File ID、stable Skill ID 和人工字段；Members 中的 sibling 不展开，Source 声明集合不能被局部选择替换。legacy 两例用真实 Requires 关系证明完整闭包；source-only 不凭 frontmatter 发明不存在的依赖关系。native-root 另以真实 native 主文为明确根，沿实际 Requires 修复旧 Source 依赖，保留 native 权威和三篇完整正文；authorization_root 的 physical page、scope 和 requires_digest 必须保持，Members 不展开。
 
 物化 ready 回执只覆盖这次 root/Requires，仍是 partial 元数据。沿现役 SDK 完整目录读取核实当前 Library/scope，完成持久化后才回到普通只读 consume；记录这两步的实际顺序。不能用回执行拼成 complete 目录，也不能只看正文 local_cache 就报告整条缓存复用成功。目录失败、partial、错 scope，或等待期间取消/切换 session 都须阻止本次交付；单独的 metadata refresh 应重读原 Source，不应取消或改绑已接纳任务。
 
-每例随后启动相同 Store 的另一个空 Pi session/PID，确实在五分钟内复用第一次消费取得的缓存；Notion HTTP、Git HTTP、管理新调用均为 0。source-only 使用首次未物化候选的原精确 `alias@skill%3A<stable-id>@namespace` token，物化后的真实目录必须直接复用它，不能偷偷改成另一次宽松别名匹配。最后启动全新独立 client-2，配置、Store、cache、session 不与 client-1 共用，未复制消费者文件；它从同一 Notion 事实与 Git 取得自身原件，语义写为 0。
+这五个成功场景随后启动相同 Store 的另一个空 Pi session/PID，确实在五分钟内复用第一次消费取得的缓存；Notion HTTP、Git HTTP、管理新调用均为 0。source-only 使用首次未物化候选的原精确 `alias@skill%3A<stable-id>@namespace` token，物化后的真实目录必须直接复用它，不能偷偷改成另一次宽松别名匹配。最后启动全新独立 client-2，配置、Store、cache、session 不与 client-1 共用，未复制消费者文件；它从同一 Notion 事实与 Git 取得自身原件，语义写为 0。
+
+## 真实取消与迟到结果
+
+source-materialize-cancel-late 使用自己的 Source-only HTTP facts、canonical SQLite、request 与真实 Pi，不重用五个成功初态的运行目录。先让精确 Source Content PATCH 到达服务端并阻塞；原 Store 必须已保存同一 request 和 Source operation intent。随后通过 Pi 原生 RPC abort 取消当前等待，再用原生 new_session 在同一 PID 切到新 session。管理子进程和原 HTTP 保留，取消回执按结果未知记录，不能因等待取消而认定远端零写或已结清。
+
+在新 session 普通输入无 Skill 正文后，释放原 HTTP。被动 observer 保留固定管理子进程的原始 stdout、PID 和真实 close/exit；该原 request 的成功 receipt、实际 HTTP 完成以及同一 SQLite 原意图退休共同证明结清。取消 session 的原始 JSONL 不能变化，新 session 不能出现旧 materialization receipt、selected graph 或正文；迟到前后两次实际 provider 请求也必须排除完整原件。最后在新 session 明确提交一次 `$lazy-root`，重新走普通 consume 并核完整 serializer 字节；不能重放原业务 mutation。
+
+该场景沿同一 evidence 入口独立复算因果时间、原 request/operation、SQLite 原件和 provider/session 原件。Node 负例必须拒绝错 request、替换 Store、提前释放、把 unknown 写成 none、signal 退出冒充成功、残留 pending 以及隐藏在序列化内容中的正文。它与 CLI 固定 manager 的 late-dispatch 四例分开报告：前者证明真实 Pi 取消和 session 发布边界，后者证明未知业务/控制派发和 successor 的处理。任何失败或未知原 Store 都保留，禁止通过重置远端/删除 intent 制造成功。
 
 ## 证据
 
@@ -61,7 +76,7 @@ node scripts/notion-sdk-pi.mjs evidence --evidence /absolute/owned/materialize-n
 
 `context-broker.notion-materialization` 和 session 的 `context-broker-materialization` 是管理证据；普通 `context-broker.notion-sdk` consume 及原始 provider 序列化是另一层证据。管理成功后才允许普通 consume 形成新选择。consume.remote_writes 恒为 none，投影写尝试恒为 0；body 来自完整 Git 原件，旧 Notion 生成正文不能充当 oracle。
 
-当前 authority/receipt 负例沿以下现有单测核对：真实 input receipt、精确 roots/scope/session/branch、引用/代码围栏美元名、取消与撤销；请求/返回 Library、注册、commit/revision 和 physical identity；pending/blocked、迟到 receipt、旧 pin 和最终 provider fence。它们不能替代上述实际 Pi 成功路径。
+其余 authority/receipt 负例沿以下现有单测核对：真实 input receipt、精确 roots/scope/session/branch、引用/代码围栏美元名、取消与撤销；请求/返回 Library、注册、commit/revision 和 physical identity；pending/blocked、迟到 receipt、旧 pin 和最终 provider fence。它们不能替代上述实际 Pi 成功和取消路径。
 
 ~~~sh
 bun test packages/context-broker/scripts/preparation-authority.test.ts packages/context-broker/scripts/source-materialization-contract.test.ts packages/context-broker/scripts/source-member-candidates.test.ts packages/context-broker/scripts/notion-management.test.ts packages/context-broker/scripts/source-materialization.test.ts packages/context-broker/scripts/source-materialization-catalog.test.ts packages/context-broker/scripts/notion-sdk.test.ts
@@ -72,7 +87,7 @@ node --test scripts/notion-sdk-pi.test.mjs scripts/skill-consumption-source-obse
 
 如果目录、TTL、readiness 或事实失效发生变化，还必须运行 [新进程缓存四例](session-cache-recovery.md#新进程复用) 的 http-warm-restart、http-warm-directory-expired、http-smart-revalidate、http-smart-current。它们拥有原先缓存全链路回归，新增物化案例不替代它们。
 
-现役 CI 使用同一冻结 CLI 生成器、独立安装 Broker 与 Pi 1.6.0 执行以上五例，随后逐例运行同一 `evidence` 入口。失败也保留原始证据。`verification-skill-routing.test.mjs` 要求生成器、五次实际执行、五次独立回放及各自上传目录齐全；文档有命令不能替代该自动执行链。
+现役 CI 使用同一冻结 CLI 生成器、独立安装 Broker 与 Pi 1.6.0 执行原五例和独立取消迟到例，随后逐例运行同一 `evidence` 入口。失败也保留原始证据。`verification-skill-routing.test.mjs` 要求生成器、六次实际执行、六次独立回放及各自上传目录齐全；文档有命令不能替代该自动执行链。
 
 ## 结果范围
 
