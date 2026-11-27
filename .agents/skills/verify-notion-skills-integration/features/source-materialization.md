@@ -8,7 +8,7 @@
 
 上游 fixture 的 HEAD 必须已经前移，且 root 的正文与已接受 commit 不同。runner 先实际读取 Git HEAD 和对应正文，再要求 Source plan 与最终 provider 完整正文仍绑定旧 accepted commit；只改无关文件不能证明没有误跟 HEAD。
 
-runner 启动实际 Git smart HTTP backend、受控 Notion HTTP、同一安装包的固定 manager 和真实 Pi RPC/provider serializer。manager 拥有私有 canonical Store 和与消费者不同的受控凭据；client binding 只能选定固定命令，不能覆盖 generation、Source 集合、凭据、origin 或 Store。回执 scope 必须来自 SDK 对消费者的实际鉴权，manager_scope 保留管理端的实际鉴权；runner 从两边 SQLite identities 独立读取后比较，不能只比较请求回显。命令使用本轮明确选定的受支持 Node 绝对路径；示例 `node` 表示该路径。
+runner 启动实际 Git smart HTTP backend、受控 Notion HTTP、同一安装包的固定 manager 和真实 Pi RPC/provider serializer。manager 拥有私有 canonical Store 和与消费者不同的受控凭据；client binding 只能选定固定命令，不能覆盖 generation、Source 集合、凭据、origin 或 Store。回执 scope 必须来自 SDK 对消费者的实际鉴权，manager_scope 保留管理端的实际鉴权；runner 从两边 SQLite identities 独立读取后比较，不能只比较请求回显。正常成功路径的 manager scope 与 consumer scope 可以相同或不同；两者分别来自各自的实际鉴权，不能互相替代。本受控场景特意使用能产生不同 scope 的凭据，独立证明这次分离。命令使用本轮明确选定的受支持 Node 绝对路径；示例 `node` 表示该路径。
 
 ## 执行
 
@@ -94,7 +94,7 @@ cache-upgrade/seed.json、逐时点原件及索引、cache-upgrade-result.json �
 
 ## 管理结果与消费者失败
 
-CLI 只有在原 transport envelope、request、execution binding、library、receipt、target 和 authorization_root 全部通过后，才可在消费者 scope/load/invalidate 失败的 SkillsError.details 中提供 phase:consumer_finalization、同 outer code 的 local_error_code 和 verified_management。后者保留原 request_id、已验证 execution_id、library 和原 manager receipt；scope 仍是 manager scope。验证之前失败或 transport 未知不带这个证明。
+CLI 只有在原 transport envelope、request、execution binding、library、receipt、target 和 authorization_root 全部通过后，才可在消费者 scope/load/invalidate 失败的 SkillsError.details 中提供 phase:consumer_finalization、同 outer code 的 local_error_code 和 verified_management。后者保留原 request_id、已验证 execution_id、library 和原 manager receipt；scope 仍是 manager scope。验证之前失败或 transport 未知不带这个证明。已知未派发的 SourceManagementUnavailable 保持 remote_writes:none；没有可信回执或结果不确定时保持 unknown。
 
 Broker 再核当前 request/library/target/authorization_root、phase/code 及严格 receipt codec。execution_id 仅作为配对 SDK 已验证的 transport 事实保存，不能宣称 Broker 有第二份独立配置绑定。失败或 receipt 后取消保留原管理 status/operation/effects/scope，但不调用 onReceipt、不构造 consumer scope、不发布 ready、目录或正文。实际准备预算到期仍拒绝本轮交付，不能重新计时或丢掉已经验证的管理事实。这些是具体协议与存储升级义务；消费者有限模型没有管理 transport 或 SQLite schema 变量，TLC 结果不能替代这些实际回放。
 
