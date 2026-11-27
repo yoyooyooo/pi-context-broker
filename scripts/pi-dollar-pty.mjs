@@ -254,7 +254,7 @@ export async function run(options) {
       assert.notEqual(piRoot, dirname(piRoot)); piRoot = dirname(piRoot); }
     assertSupportedPiVersion(pi.version);
     const runtime = JSON.parse(await readFile(join(packageRoot, 'dist/ntn-skills-runtime.json'), 'utf8'));
-    const hashes = verifyBundledRuntime({ manifest: runtime, expectedVersion: runtime.package_version, cliBytes: await readFile(join(packageRoot, 'dist/ntn-skills.mjs')), sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')), refBytes: await readFile(join(packageRoot, 'dist/ntn-skills-ref.cjs')) });
+    const hashes = verifyBundledRuntime({ manifest: runtime, expectedVersion: runtime.package_version, cliBytes: await readFile(join(packageRoot, 'dist/ntn-skills.mjs')), managementBytes: await readFile(join(packageRoot, 'dist/ntn-skills-management.mjs')), sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')), refBytes: await readFile(join(packageRoot, 'dist/ntn-skills-ref.cjs')) });
     const original = validateCurrentFixture(JSON.parse(await readFile(options.fixture, 'utf8'))), { sample, owners } = currentServiceFacts(original);
     // Metadata names are deliberate fixture facts. Keep them and the namespace
     // short enough for Pi's actual fixed-width label column to show the token.

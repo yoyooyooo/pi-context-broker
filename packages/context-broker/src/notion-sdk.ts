@@ -49,6 +49,9 @@ type Options = {
   directory?: { view?: string; profile?: string };
   onCatalogSettled?: () => void;
 };
+export type SourceMemberDiscoveryInput = { library: string } & ({
+  query?: string; source_id?: string; requires_of?: never;
+} | { requires_of: string; query?: never; source_id?: never });
 type RuntimeOptions = Omit<Options, "sourceId"> & { metrics?: boolean; onRequestMetrics?: (snapshot: unknown) => void };
 type Sdk = {
   SKILL_REF_VERSION: 2;
@@ -63,6 +66,8 @@ type Sdk = {
   listCatalog?: (options?: RuntimeOptions) => Promise<unknown>;
   readCandidateSnapshot?: (options?: RuntimeOptions) => Promise<unknown>;
   CANDIDATE_SNAPSHOT_CONTRACT_VERSION?: number;
+  SOURCE_MATERIALIZATION_VERSION?: number;
+  discoverSourceMembers?: (input: SourceMemberDiscoveryInput, options?: RuntimeOptions) => Promise<unknown>;
   resolveCatalogReference?: (target: string, catalog: unknown) => unknown;
   resolveReference?: (target: string, options: RuntimeOptions & { from: string }) => Promise<unknown>;
   listSkill?: (target: string, options?: RuntimeOptions) => Promise<unknown>;
@@ -88,6 +93,7 @@ let consumptionEffectsVersion: unknown;
 let resourceEffectsVersion: unknown;
 let contentSearchContractVersion: unknown;
 let candidateSnapshotContractVersion: unknown;
+let sourceMaterializationVersion: unknown;
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -121,6 +127,7 @@ async function loadBundledSdk(): Promise<Sdk> {
     resourceEffectsVersion = manifest.resource_read_effects_version;
     contentSearchContractVersion = manifest.content_search_contract_version;
     candidateSnapshotContractVersion = manifest.candidate_snapshot_contract_version;
+    sourceMaterializationVersion = manifest.source_materialization_version;
     return sdk;
   })();
   try { return await bundledSdk; }
@@ -128,7 +135,7 @@ async function loadBundledSdk(): Promise<Sdk> {
 }
 
 /** Code is shared; every operation still creates and closes its own SDK runtime. */
-async function observed(operation: "library-selection" | "library" | "consume" | "read" | "read-resources" | "list" | "candidates" | "files" | "resolve" | "content-search", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
+async function observed(operation: "library-selection" | "library" | "consume" | "read" | "read-resources" | "list" | "candidates" | "files" | "resolve" | "content-search" | "source-members", options: Options, run: (sdk: Sdk, options: RuntimeOptions) => Promise<unknown>): Promise<unknown> {
   const { sourceId, ...runtimeOptions } = options;
   const attribution = { source_id: sourceId ?? null, library: options.library ?? null };
   const enabled = observations.hasSubscribers;
@@ -244,4 +251,13 @@ export function readNotionResourcesSdk(input: unknown, options: Options): Promis
 }
 export async function parseNotionSdkDuration(input: string): Promise<number> {
   return (await loadBundledSdk()).parseDuration(input);
+}
+
+/** Registered Source discovery is metadata-only and cannot perform management. */
+export async function discoverNotionSourceMembersSdk(input: SourceMemberDiscoveryInput, options: Options): Promise<unknown> {
+  return observed("source-members", options, (sdk, runtimeOptions) => {
+    if (sdk.SOURCE_MATERIALIZATION_VERSION !== 1 || sourceMaterializationVersion !== 1 || !sdk.discoverSourceMembers)
+      throw new NotionSdkError("SOURCE_SDK_INCOMPATIBLE");
+    return sdk.discoverSourceMembers(input, runtimeOptions);
+  });
 }

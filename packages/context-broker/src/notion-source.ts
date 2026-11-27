@@ -15,8 +15,9 @@ import { decodePreparedGraph, preparationFailureDetails, type PreparationPurpose
 import { sharedSkillId, validSharedRecordId } from "./shared-skill-identity";
 import type { PrefetchBudget, PrefetchOutcome, PrefetchPlan } from "./prefetch-policy";
 import { publishNotionEntry, materializeNotionEntryFile, materializeNotionResourceBatch, publishNotionResourceFile } from "./notion-entry";
-import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, readNotionCandidateSnapshotSdk, resolveNotionCatalogReferenceSdk, resolveNotionReferenceSdk, listNotionFilesSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
-import { notionCompletionCandidates, type CompletionCandidate } from "./completion-candidates";
+import { consumeNotionSdk, readNotionSdk, readNotionResourcesSdk, listNotionCatalogSdk, readNotionCandidateSnapshotSdk, discoverNotionSourceMembersSdk, resolveNotionCatalogReferenceSdk, resolveNotionReferenceSdk, listNotionFilesSdk, parseNotionSdkDuration, NotionSdkError } from "./notion-sdk";
+import { decodeSourceMemberCandidate, materializationAuthorization, type SourceMemberCandidate, type SourceMaterializationAuthorization } from "./source-materialization-contract";
+import { notionCompletionCandidates, sourceMemberCompletionCandidates, type CompletionCandidate } from "./completion-candidates";
 import type { ResourceReadBudget, FixedResourceRead, ResourceReadBatch, ResourceReadFileIdentity, ResourceReadWireFile } from "./resource-read-types";
 import type { ContentRecord, NotionDirectory, NotionDirectorySelection, NotionDirectoryOutcome, NotionListObservation, NotionView, SkillRecord, SourceConfig, SourcePolicy, SourceFailure } from "./types";
 import { searchNotionContentSdk } from "./notion-sdk";
@@ -133,21 +134,28 @@ export async function readNotionCandidateSnapshot(source: NotionSource, cwd: str
   if (value.kind !== "snapshot" || !Array.isArray(value.records) || !["complete", "partial"].includes(String(value.coverage))
     || typeof value.verifiedAt !== "number" || !Number.isSafeInteger(value.verifiedAt) || value.verifiedAt < 0
     || value.fetched_at !== value.verifiedAt || typeof value.stale !== "boolean") return decodeError(source);
+  const libraryId = value.libraryId, candidateScope = value.scope;
   const records = value.records.map(record => contentRecord(record, source));
+  if (value.source_members !== undefined && !Array.isArray(value.source_members)) return decodeError(source);
+  const members = Array.isArray(value.source_members) ? value.source_members.map(member => decodeSourceMemberCandidate(member,
+    { library: libraryId, scope: candidateScope }, record => contentRecord(record, source))) : [];
   const stable = new Set<string>(), physical = new Set<string>();
   for (const record of records) {
     if (record.locator.library_id !== value.libraryId || stable.has(record.id) || physical.has(record.locator.page_id)) return decodeError(source);
     stable.add(record.id); physical.add(record.locator.page_id);
   }
+  const unready = new Set(members.flatMap(member => member.readiness !== "ready" && member.record ? [member.record.id] : []));
   return { kind: "snapshot", scope: value.scope, verifiedAt: value.verifiedAt, stale: value.stale,
     coverage: value.coverage === "complete" ? "complete" : "partial",
-    candidates: notionCompletionCandidates(records, source, value.scope, value.coverage === "complete") };
+    candidates: [...notionCompletionCandidates(records.filter(record => !unready.has(record.id)), source, value.scope, value.coverage === "complete"),
+      ...sourceMemberCompletionCandidates(members.filter(member => member.readiness !== "ready" || !member.record || !stable.has(member.record.id)), source)] };
 }
 
 /** Only an accepted input needs a host file projection. This grants no current/body proof. */
 export async function materializeCompletionCandidate(candidate: CompletionCandidate, cwd: string, signal?: AbortSignal): Promise<SkillRecord> {
   signal?.throwIfAborted();
   if (candidate.origin === "local") return candidate.record;
+  if (candidate.origin === "source_member") throw new SourceError("SOURCE_MATERIALIZATION_REQUIRED", candidate.source.id);
   const { record: item, source, scope, token } = candidate;
   const dir = join(await cacheRoot(source, cwd), "scopes", scope, "indexes", randomUUID(), createHash("sha256").update(item.id).digest("hex"));
   await privateDirectory(dir, source);
@@ -238,6 +246,17 @@ export function sourceFailureMessage(code: string, details?: SourceError["detail
     case "LIBRARY_INIT_INCOMPLETE": return "Library initialization is incomplete. Resume the existing initialization operation; consumption does not repair or recreate tables.";
     case "LIBRARY_BINDING_CHANGED": return "The verified Library table binding changed. Inspect the root and select it again after confirming the intended binding.";
     case "LIBRARY_SCOPE_MISMATCH": return "The explicit Library does not match this source's verified Library root. Select the source that owns this Library.";
+    case "SOURCE_MATERIALIZATION_REQUIRED": return "This registered member needs an explicit $ selection before it can be prepared for consumption.";
+    case "SOURCE_MATERIALIZATION_UNAUTHORIZED": return "Source materialization requires a current explicit user selection.";
+    case "SOURCE_MATERIALIZATION_PENDING": return "The Source management operation is still pending. Its original request must settle before this Skill can be consumed.";
+    case "SOURCE_MATERIALIZATION_BLOCKED": return "The registered Source cannot prepare this exact member under its current policy or state.";
+    case "SOURCE_MATERIALIZATION_FAILED": return "Source materialization did not finish. Its management result remains separate from the readonly consumption result.";
+    case "SOURCE_MANAGER_REQUIRED": return "Configure a fixed Source manager for this Library before preparing its registered members.";
+    case "SOURCE_MANAGER_CONFIG_INVALID": return "The configured Source manager binding is invalid. Repair that binding before retrying the selection.";
+    case "SOURCE_MANAGER_SCOPE_MISMATCH": return "The Source manager does not own this exact Library and credential scope. Select its matching configured source.";
+    case "SOURCE_MANAGER_RESPONSE_INVALID": return "The Source manager response did not prove this request and target. No returned metadata was admitted for consumption.";
+    case "SOURCE_MANAGER_UNAVAILABLE": return "The configured Source manager could not finish this request. Its remote write status remains unknown.";
+    case "SOURCE_MANAGEMENT_UNAVAILABLE": return "The paired Source manager is unavailable or incompatible. Select a complete matching CLI and Broker installation.";
     case "CURRENT_SCHEMA_REQUIRED": return "This entry lacks the current content schema. An authorized management migration must finish before it can be consumed; reading or refreshing does not perform that migration.";
     case "SHARED_ROUTER_MEMBER_UNAVAILABLE": {
       const relation = sourceFailureDiagnostic(code, details), field = relation?.field ?? "relation";
@@ -943,4 +962,62 @@ export async function prepareNotionSkills(records: readonly SkillRecord[], sourc
     purpose: ready.purpose, scope: ready.scope, sourceId: source.id, roots: ready.roots.map(root => root.id),
     records: prepared, bindings: ready.session_bindings, lock: ready.graph_lock, budget: ready.budget, usage: ready.usage, effects: ready.effects,
   };
+}
+
+type SourceMemberDiscovery = { scope: string; candidates: SourceMemberCandidate[]; coverage: "complete" | "partial" };
+function sourceMemberDiscovery(value: unknown, source: NotionSource): SourceMemberDiscovery {
+  const library = source.library;
+  if (!library || !object(value) || value.version !== 1 || value.library_id !== library || typeof value.scope !== "string" || !HASH.test(value.scope)
+    || !Array.isArray(value.candidates) || !Array.isArray(value.failures) || value.coverage !== "complete" && value.coverage !== "partial"
+    || value.coverage === "complete" && value.failures.length > 0
+    || value.failures.some(failure => !object(failure) || typeof failure.source_id !== "string" || typeof failure.code !== "string")
+    || !object(value.effects) || value.effects.remote_writes !== "none") return decodeError(source);
+  const scope = value.scope;
+  const candidates = value.candidates.map(candidate => decodeSourceMemberCandidate(candidate, { library, scope }, record => contentRecord(record, source)));
+  const keys = new Set<string>();
+  for (const candidate of candidates) {
+    const key = JSON.stringify([candidate.source_id, candidate.member_key]);
+    if (keys.has(key)) return decodeError(source);
+    keys.add(key);
+  }
+  return { scope, candidates, coverage: value.coverage };
+}
+/** Resolve registered membership without producing bodies, pages or operation records. */
+export async function discoverNotionSourceMembers(source: NotionSource, cwd: string, query: string | undefined, signal?: AbortSignal, sourceId?: string): Promise<SourceMemberDiscovery> {
+  if (!source.library || source.enabled === false || source.discovery?.offline) throw new SourceError("SOURCE_UNAVAILABLE", source.id);
+  let value: unknown;
+  try { value = await discoverNotionSourceMembersSdk({ library: source.library, ...(query ? { query } : {}),
+    ...(sourceId ? { source_id: sourceId } : {}) }, sdkOptions(source, cwd, signal)); }
+  catch (error) { throw sdkFailure(error, source, "list", signal); }
+  signal?.throwIfAborted();
+  const discovery = sourceMemberDiscovery(value, source);
+  if (sourceId !== undefined && discovery.candidates.some(candidate => candidate.source_id !== sourceId)) return decodeError(source);
+  return discovery;
+}
+
+/** A fresh bounded Requires traversal, not an error-string hint, authorizes
+ * registered dependencies of an already-current native root. */
+export async function discoverNotionRequiredSourceMembers(source: NotionSource, cwd: string, root: SkillRecord, signal?: AbortSignal): Promise<
+  SourceMemberDiscovery & { root: ContentRecord; authorization: SourceMaterializationAuthorization }
+> {
+  if (!source.library || source.enabled === false || source.discovery?.offline || root.locator?.type !== "shared_skill")
+    throw new SourceError("SOURCE_UNAVAILABLE", source.id);
+  const owner = root.locator;
+  let value: unknown;
+  try { value = await discoverNotionSourceMembersSdk({ library: source.library, requires_of: owner.skill_id }, sdkOptions(source, cwd, signal)); }
+  catch (error) { throw sdkFailure(error, source, "list", signal); }
+  signal?.throwIfAborted();
+  const discovery = sourceMemberDiscovery(value, source);
+  if (!object(value) || discovery.coverage !== "complete") throw new SourceError("CATALOG_INCOMPLETE", source.id);
+  const current = contentRecord(value.root, source), authorization = materializationAuthorization(value.authorization_root);
+  if (current.id !== root.id || current.kind !== (root.kind ?? "skill") || !isDeepStrictEqual(current.locator, owner)
+    || discovery.scope !== root.sourceScope || authorization.skill_id !== owner.skill_id || authorization.page_id !== owner.page_id)
+    throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+  if (current.enabled === false) throw new SourceError("CONTENT_DISABLED", source.id);
+  return { ...discovery, root: current, authorization };
+}
+
+/** Management receipts reuse the same strict physical ContentRecord boundary. */
+export function decodeNotionContentRecord(value: unknown, source: NotionSource): ContentRecord {
+  return contentRecord(value, source);
 }

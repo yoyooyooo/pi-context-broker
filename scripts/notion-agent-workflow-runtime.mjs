@@ -468,14 +468,14 @@ export async function runAgentWorkflow(config) {
   const source = parse(await readFile(sourcePath, 'utf8'));
   const secretKeys = value => value && typeof value === 'object' && Object.entries(value).some(([key, child]) => /token|secret|password|authorization|api.?key/iu.test(key) || secretKeys(child));
   assert.ok(!secretKeys(source), 'Do not save a source configuration containing credentials');
-  const baseline = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json', 'dist/ntn-skills-ref.cjs'].map(path => identity(join(config.brokerRoot, path))));
+  const baseline = await Promise.all(['package.json', 'src/index.ts', 'dist/ntn-skills.mjs', 'dist/ntn-skills-sdk.mjs', 'dist/ntn-skills-runtime.json', 'dist/ntn-skills-ref.cjs', 'dist/ntn-skills-management.mjs'].map(path => identity(join(config.brokerRoot, path))));
   const cliManifest = await json(join(config.cliRoot, 'package.json'));
   const sdkExport = cliManifest.exports?.['./sdk'];
   const sdkEntry = typeof sdkExport === 'string' ? sdkExport : sdkExport?.import;
   assert.ok(typeof sdkEntry === 'string' && sdkEntry.startsWith('./'), 'The paired package must export its current SDK');
   const cliFiles = await Promise.all(['package.json', 'dist/ntn-skills.js', sdkEntry].map(path => identity(join(config.cliRoot, path))));
   const runtime = await json(baseline[4].path);
-  verifyBundledRuntime({ manifest: runtime, cliBytes: await readFile(baseline[2].path), sdkBytes: await readFile(baseline[3].path), refBytes: await readFile(baseline[5].path), expectedVersion: cliManifest.version });
+  verifyBundledRuntime({ manifest: runtime, cliBytes: await readFile(baseline[2].path), sdkBytes: await readFile(baseline[3].path), managementBytes: await readFile(baseline[6].path), refBytes: await readFile(baseline[5].path), expectedVersion: cliManifest.version });
   const build = await json(join(config.brokerRoot, 'dist/next-build.json'));
   for (const file of build.selected_cli.files) assert.equal((await identity(join(config.cliRoot, file.path))).sha256, file.sha256, 'Selected CLI/SDK build input changed: ' + file.path);
   const loadedPackageFiles = [];

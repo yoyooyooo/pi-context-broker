@@ -10,8 +10,8 @@
   },
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
-    "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59",
+    "packages/context-broker/src/discovery-records.ts": "5c9a092c38c88724efd1f3747ace4271d9d871d78f3b9506e210c66e5a49a60d",
+    "packages/context-broker/src/host-skills.ts": "6616ebda411e053642488f6f589abbbf7dd1b368d8f5915db38efc9914498cab",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
@@ -28,10 +28,10 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "bf57522e3cd63a398f05085dbfd04068eade37018a897bf269ee3c2d68836fbd",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "453d30268dc2bbe1f70202f919fd80e31d2f570b5848820bbd0e8da28e951169",
-    "packages/context-broker/src/index.ts": "bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9",
+    "packages/context-broker/src/index.ts": "e3985ea1fc6fe19d4fd7b22e4c62931358aad8ed57bb2f132ce7923fe4a7d592",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
-    "packages/context-broker/src/notion-source.ts": "a5332c87c07c34ccc61678c7ebff3b654db662d1b55cd507fb320079c90306e1",
+    "packages/context-broker/src/notion-source.ts": "36fd01fd55255d889d9b472543006f6d0a689c2b71ad35da0e66db2aa2de819d",
     "packages/context-broker/src/pi-host-adapter.ts": "1d91fa6a7e2528e3641a93754aeeb598f8e8c8270eb27ba5dc1e9ca3a1ea4ce0",
     "packages/context-broker/scripts/host-refresh.test.ts": "ab39fb9d470ba931e41425cf55ffe403f21c05d9c0c79756b2df250e44159654",
     "packages/context-broker/scripts/session-refresh.test.ts": "5e3f715774593d8a95cdf4c9869bf010a70c2e792943350b08d2657b6dfe8cf4",
@@ -50,11 +50,11 @@
     "packages/context-broker/src/content-publication.ts": "0dbb3fb6e12798474d08856649ebb4282483b7241e9830ac3f55daef81ddd4f8",
     "packages/context-broker/src/content-search.ts": "04587a09c4cc526851a010804e01ae200c53ecea10da5591002fadbfb071f6fa",
     "packages/context-broker/src/pi-authorization.ts": "9355d0cdf3347043c17447bc691d1a605b374bded3b60cee8a61b317eb690440",
-    "packages/context-broker/src/notion-sdk.ts": "4335b26f880759e2f619f9e54344928f3b71fa348e8e9b417016e4aecfab8a8c",
+    "packages/context-broker/src/notion-sdk.ts": "b241a89ed4f467828e1dadc6ec8deb3c4eac533c468f1847ee95d4ad2a402f1b",
     "packages/context-broker/scripts/host-content-search.test.ts": "2ee5d080075f43ade4375937f4473960a10dbd33f4eedf2864efb2ab371bc8b2",
     "packages/context-broker/scripts/content-search.test.ts": "d88a3e2d8a45ecf43e495235ffc3d5e1617ca9783b437fc70e9e9fc0eff39488",
     "packages/context-broker/scripts/pi-authorization.test.ts": "3b632769f7dc12d672c46155222cbc418cd66da86ae8fe6c592e275231a2ee3d",
-    "packages/context-broker/scripts/fixtures/current-notion-source.ts": "072e6d629bc90f6df510c736db347989bb84c70ad9450e66bc9f9adb395ea9d8",
+    "packages/context-broker/scripts/fixtures/current-notion-source.ts": "b1de65fc5f58db6452385fff7c8ac3b031fb49a56983eae33f34f333366bef8a",
     "packages/context-broker/src/native-reference.ts": "37158660edb67b70a97bef4fb6bfdab70dfb7ef6ea4ad1c2765bd2313647207e",
     "packages/context-broker/src/shared-skill-identity.ts": "2495065caf4cb7b81227b60bc0c97d50ada7bdfa14a7824750cb9326583f9186",
     "packages/context-broker/src/session-short-ref.ts": "739f598b083740f918108477ea2fd072f001169a7d6eadf29805b53660447541",
@@ -69,9 +69,9 @@
     "packages/context-broker/scripts/cli-write-invalidation.test.ts": "1469fd9eb3eac1ee2760a86f617091f76d4936836e0da0e0650da6b653cb8466",
     "packages/context-broker/src/sources.ts": "30572f81f9e6a8c314c6c4f595a95ec75f43767dbd8a280db3abab7bc907dedb",
     "packages/context-broker/scripts/shared-notion-adapter.test.ts": "9b1b4c91ed6004242f63ad76a88c6cb683715458f816e9ca287152dee2f2929e",
-    "packages/context-broker/scripts/soft-miss-regressions.test.ts": "f7c3b733733b122d8fb4e7fca4ea48e0c6f1672cab9a85018e111f29c1fbe880",
+    "packages/context-broker/scripts/soft-miss-regressions.test.ts": "ead1f0032d8dc380c4684ca91c64fabc2016f0dfdc793900125e62472317362c",
     "packages/context-broker/scripts/input-guard.test.ts": "957d10624ebb248a05c5ed63bef528b7fc46418f6cafe41a61e4e3977e57190d",
-    "packages/context-broker/src/skill-preparation.ts": "195ca6ded47974e2f1a2f6a150557e2c18f90afe5068816318fdd9b5516c87d4",
+    "packages/context-broker/src/skill-preparation.ts": "e8a93cd903243f8c82e9fbf66e4e541fa3b49a27c137cca5d75a95f3d6981e45",
     "packages/context-broker/src/nonblocking-context.ts": "c996a55b1e14abfb4e69e198bf244c44d372fb67c6d3242dff62a3ea5c412c06",
     "packages/context-broker/src/activation-feedback.ts": "607ef6f22e7c40106b6048f14a3863876a78db5ca307345a70117f1cdaa78d5b",
     "packages/context-broker/src/host-text.ts": "89d0c4d1591667ab71ee0b8b41e8dba7d9f7aae12f778590149ef49425a3b77c",
@@ -79,16 +79,21 @@
     "packages/context-broker/scripts/nonblocking-context.test.ts": "6d949157c04cf39bd712c0fdca024a9ce803d15e37de5f5a7ec9fa3ebfe8a3b2",
     "packages/context-broker/scripts/activation-feedback.test.ts": "9f15a1bbbad5f5a12e8c0544ef10037d85b44d0dbe127ecff08cd000c2dac6ce",
     "packages/context-broker/src/accepted-selections.ts": "792eeb195d47c3a925e9cc56224af1bcf512584a13483cf9db2e37f14fa0d19e",
-    "packages/context-broker/src/completion-candidates.ts": "270b111a87596f60c0026411fc71d87b438588495a0a6403b121c932e53f2724",
-    "packages/context-broker/src/dollar.ts": "325dc550c88d7ad7e3b1c6db2768f29bcefde441c622ea391409bf423f2ad7d9",
+    "packages/context-broker/src/completion-candidates.ts": "a13700af32283f4308169b325199d529261ee76833f9d7700ce0f98a22cc0fdb",
+    "packages/context-broker/src/dollar.ts": "58b381eadc83d017a38c97a12c50d1e540f1dadd0130f77bf1e9f29fc796e977",
     "packages/context-broker/src/pi-dollar-editor.ts": "3ef381720a6ca482cdba1ce9f06dc0d5a4788942c7e163a463284b23269a6016",
     "packages/context-broker/scripts/accepted-selections.test.ts": "5854988f8d8c2e4db46abb73a456a8e31dc39e2ddfd5d2edbc60e7c2ce729a83",
     "packages/context-broker/scripts/catalog-menu.test.ts": "45dfd4b3918898fb088f9c04425977c1221767036e6ac4d0a6cd9fe10e829410",
     "packages/context-broker/scripts/catalog-menu-session.test.ts": "1cea4b2637f3b1e0f430e44ee173aa3658deac9442a3b5db90fb35a8425980a3",
     "packages/context-broker/scripts/pi-dollar-editor.test.ts": "8fa1ad413620bd8381c61a5643cacabcb79e4ea25c233341990035262deca613",
     "packages/context-broker/scripts/fixtures/completion-menu.ts": "982e2cc09ee665c6d24df5b4b0ba544775e5ce56f926a5a115b306b7ced3612b",
-    "packages/context-broker/scripts/pi-queued-input.test.ts": "6f00d63e07082cdab7e60e6916758d6dd621d5ee25b38fb5ef472585826ea090",
-    "packages/context-broker/scripts/notion-sdk.test.ts": "0bebac7afc04079cf6229d4a51d559a68e653a6d1acbbc5ca79db1ff5c4dbeb3"
+    "packages/context-broker/scripts/pi-queued-input.test.ts": "cf885e86c5f3d623ca86978815e7ef11fa6fb92399adc46b8124b7858ad9767d",
+    "packages/context-broker/scripts/notion-sdk.test.ts": "45ab801c5fefc047f5caf4bd7045ac3d7623b759954a3f403180e891f987c707",
+    "packages/context-broker/src/source-materialization.ts": "f55557b7b71806c97f638b18fdb6aa292024f3396b68d15453d2f8d0f3ddac7c",
+    "packages/context-broker/scripts/source-materialization-catalog.test.ts": "457389752f728166843b95f566c163f6b21a79eea9a35eb91fc95c21b5920f3b",
+    "packages/context-broker/src/preparation-authority.ts": "2d799f0e701a3245ad44df3d6a482884534af9357046912cf691c92a4885f8bb",
+    "packages/context-broker/scripts/source-materialization.test.ts": "31e122dd5d566206fa212c642dfb4ac1bd498219420ac15dd0e51457831fc971",
+    "packages/context-broker/scripts/preparation-authority.test.ts": "324f6cf3596a3e0e7107758b5fb2bd5bc6aca9838612bb36ca0fd1706ab9e2a3"
   },
   "models": {
     "FreshnessPublication": {
@@ -1339,7 +1344,7 @@
     "pi_nonblocking_context": {
       "reviewed_from": "45166146b45e8b9b17b24fc3cb7972b93c3b3e2b",
       "scope": "Reviewed the final Pi context, context_with_system, before_provider_request, after_provider_response and turn_end control flow, the new instruction-retirement helper, deadline/gate, native queue admission, display state and actual changed regression assertions. This extends the earlier explicit_pi_preparation_warning review to restoration and final-provider failures; it does not change the qualification or source identity contract.",
-      "admission_and_deadline": "Pi preserves native editor and queue ownership. Each accepted queued input retains its Library context, session, generation, text and images; preparation is adopted when the native user message reaches a later context, without a second input hook. The context stage before each model request has one shared 60-second deadline covering Library identity, print/JSON metadata, explicit preflight/task prompt and active restoration. Timeout retires Broker acquisition without aborting the operation; each asynchronous source continuation still checks its captured cancellation and current run before publication. User Stop and session replacement keep their original authority. This is a per-context-stage budget, not one budget for an agent turn containing multiple model/tool round trips; the existing internal fixed-restoration 30-second read budget is unchanged.",
+      "admission_and_deadline": "Pi preserves native editor and queue ownership. Each accepted queued input retains its Library context, session, generation, text and images; preparation is adopted when the native user message reaches a later context, without a second input hook. The context stage before each model request has cumulative 60-second read time covering Library identity, print/JSON metadata, explicit preflight/task prompt and active restoration; guarded management SDK waits have a separate cumulative 180-second allowance and an absolute 240-second context cap. Receipt/catalog/consume resume the remaining read time. All roots and queued inputs share these allowances without renewal. Timeout retires Broker acquisition without aborting the operation; each asynchronous source continuation still checks its captured cancellation and current run before publication. User Stop and session replacement keep their original authority. This is a per-context-stage budget, not one budget for an agent turn containing multiple model/tool round trips; the existing internal fixed-restoration 30-second read budget is unchanged.",
       "retirement": "warnAndRetire releases only the unconfirmed preparation, removes its owned loaded records, pending graphs, candidates, source projections and pending persistence, and records one warning. It does not manufacture a new selected vector, authorization observation, activation receipt or boundary draft. Existing confirmed history is not rewritten. assertPiRun, precise source access, complete closure/body checks, graph validation and public projection acknowledgement remain enforced.",
       "payload_ownership": "withoutBrokerInstructions retains inline receipts until verified owned body spans are removed, including when public projection cannot be read; raw native input restoration binds timestamp and complete content. continueWithoutBrokerPayload changes known native message slots using original logical ownership, exact text/images and tool-call IDs. Replays preserve ordinary quotations, user/tool images, tool pairs, native reasoning/signatures and schemas; same-count swaps, changed source roles, mixed tool/text blocks and repeated warnings are covered. It never recursively replaces matching strings across an opaque payload.",
       "provider_and_persistence": "A failed final guard continues the original user request with unverified Skill instructions withheld and no new confirmation/persistence eligibility. A later 2xx alone cannot revive a degraded run; a new verified result must re-enter the complete context and delivery guards. A session write failure after accepted delivery warns without cancelling the response or claiming already-sent instructions were never loaded. Original complete delivery, current session/generation, completed turn, original branch user and actual applied-projection checks still decide active and persistent state.",
@@ -1455,6 +1460,44 @@
       "scope": "Only the CACHE_INVALIDATED sourceFailureMessage text and one row in the existing propagation regression change. Reverting those exact changes restores both files byte-for-byte to the reviewed base.",
       "ownership": "Core owns persistent current evidence, complete membership and final root/Requires read-set admission. Broker already forwards CACHE_INVALIDATED and keeps its existing ticket, scope, fixed-selection and complete-delivery boundaries; the diagnostic now covers known current facts as well as a cleared cache.",
       "proof_limit": "No production admission guard, finite model, config, bound, case, expected rule or mutation target changes. Whole-file hashes bind this reviewed diagnostic and concrete propagation regression; they do not establish persistent SQLite behavior, actual Pi execution or refinement."
+    },
+    "source_materialization": {
+      "scope": "Explicit accepted InputReceipt preparation is a separate management phase before ordinary read-only SDK consume. Read/use selection, original validation evidence, physical Source ownership, fixed pins, complete Requires closure, graph commit, provider/turn acknowledgement and projection remain the existing consumer contracts.",
+      "authority": "Only an exact literal user $ selection grants preparation authority bound to its accepted Library, configured Source, credential scope, physical root, session and branch. Menus, model tools, automatic discovery, quoted/code examples, unqualified variables and currency do not grant it. Source-member metadata has no fabricated physical locator or consumable ref.",
+      "publication": "Reviewed the index retry boundary: only exact missing-current failures enter authorized preparation; ready physical records take ordinary consume directly. A validated receipt retires scoped catalog/runtime facts, including its exact target for blocked/pending empty-affected results. Ready metadata remains partial; ordinary consume must independently prove complete bytes and closure. Existing cancellation, epoch and final graph/publication guards remain after the retry, and pinned roots cannot be replaced.",
+      "identity": "Stable source-member selection resolves the later physical record by exact stable Skill ID, while configured source, Library, scope and physical-page checks remain separate. Discovery requires complete coverage; native-root Requires grants bind the exact fresh root and digest, and management receipts must echo this proof. manager_scope is diagnostic provenance; consumer scope comparison remains strict.",
+      "replays": [
+        "preparation-authority.test.ts",
+        "source-materialization-contract.test.ts",
+        "source-materialization.test.ts",
+        "source-member-candidates.test.ts",
+        "soft-miss-regressions.test.ts",
+        "notion-sdk.test.ts",
+        "source-materialization-catalog.test.ts"
+      ],
+      "proof_limit": "The unchanged finite models do not model manager dispatch, remote writes, Notion consistency, real SQLite, fixed-manager recovery, or Pi cancellation. No model/config/view, bound, case inventory, expected rule or guard-mutation target is changed. Source hashes bind reviewed consumer owner bytes; fixed-manager HTTP/SQLite and installed Pi delivery require their separately retained concrete runs.",
+      "catalog_rebuild": {
+        "counterexample": "The installed Pi cold path completed management and ordinary body consumption, but management had retired the persistent catalog; a new PID within five minutes hit the body cache while refetching the full catalog. Body freshness alone did not establish directory reuse.",
+        "owners": "Reviewed materializeExplicitCandidate awaiting onReceipt and all three production callback sites. index.materializationReceived retires scoped facts, then uses the existing SDK complete catalog path with refresh before ordinary consume. Receipt records remain partial. Only a failure-free, exhaustive, non-stale observation of the same consumer scope may release preparation; unrelated catalog members are retained.",
+        "guards": "The accepted Library and Source remain captured. A newer metadata version causes reobservation of that Source without cancelling or retargeting the accepted turn. Cancellation/session checks fence asynchronous catalog acquisition and receipt release. Only the default captured Library publishes into its existing catalog slot; explicit foreign directories remain scoped. No original validation timestamp, TTL, pinned graph, ordinary consume proof or provider/turn acknowledgement is changed.",
+        "replays": "source-materialization-catalog.test.ts runs the production index/host/adapter with controlled external SDK/session: management-before-complete-catalog-before-consume; unrelated members; partial and foreign-scope failures; cancellation and session switch while held; concurrent metadata refresh and unchanged accepted root.",
+        "proof_limit": "ReadRace and FreshnessPublication cover their existing observation admission guards; DeliveryBoundary retains its complete-delivery fences. Asynchronous catalog scheduling, persistent SDK cache contents and real new-PID startup are concrete obligations outside these finite variables. The controlled host test does not prove SQLite persistence or actual Pi execution; the installed Source materialization and existing four cache scenarios must supply that evidence."
+      },
+      "context_budget": {
+        "reviewed_from": "284f50b00c23573bf5d1500d9fe9ae388d1ba47a",
+        "counterexample": "The retained b06 actual Pi legacy run had a ready management receipt after 53.005 seconds and 12 semantic writes, with zero projection writes. The old shared 60-second context deadline cancelled the following complete catalog read before ordinary consume and full provider delivery. The receipt and later PID absence do not establish a captured manager exit code. A separate production-index regression showed a late management receipt appended to the same cancelled session because its guard omitted the signal.",
+        "owners": "Reviewed withContextPreparationDeadline, host context/preflight, the existing PreparationAuthority grant, all three materializeExplicitCandidate callback sites and submissionRecords/discoverInputMembers. Only the guarded paired-management SDK await changes accounting. The capability grants no write authority, is passed explicitly, and is revoked or closed with its original owner. The existing withPreparationDeadline and public read/use/model-tool callers retain their original operation limits.",
+        "budgets": "One Pi context shares cumulative read 60000ms and management 180000ms, with absolute 240000ms maximum. All roots and queued inputs share that object. Receipt handling, complete catalog rebuild and ordinary consume charge the remaining read allowance; no phase or root resets either allowance. performance.now measures elapsed time at both phase transitions and final completion, including expired timers whose callbacks have not run. Without management the original single 60000ms timer is retained. The 180000ms allowance bounds foreground management waiting; it does not prescribe every fixed manager deployment configuration.",
+        "cancellation": "The outer Promise race first settles timeout and then aborts its child signal. Closed, nested or overlapping management waits cannot dispatch. Foreground cancellation neither kills an accepted writer nor creates a replacement request. A non-cooperative late SDK response remains available for fact invalidation, but inputReceiptIsCurrent includes signal before session append, and existing catalog/consume/epoch/branch/graph/provider guards remain. Normal completion closes the capability without aborting the successful signal used by later delivery boundaries.",
+        "replays": [
+          "source-materialization-catalog.test.ts: original 53s management plus 8s catalog plus 5s consume counterexample becomes complete provider delivery; read time before/after management and multiple root management time remain cumulative",
+          "source-materialization-catalog.test.ts: stalled management/catalog/consume; Stop and session switch in each phase; no late session/body publication; expired timer callback gaps; closed/nested capabilities; fresh discovery and native root Requires budget propagation; original partial/foreign-scope catalog refusals",
+          "source-materialization.test.ts and preparation-authority.test.ts: budget entry follows literal/current/readiness guards, issued grants carry the same object, forged/revoked grants cannot recover it",
+          "pi-queued-input.test.ts: installed Pi dispatcher and SessionManager adopt two accepted queued inputs with distinct Library/image provenance and the same context budget; later draft and one-time adoption remain intact",
+          "host-prepare.test.ts, resource-read-host.test.ts, host-content-search.test.ts and nonblocking-context.test.ts retain the original ordinary 60000ms and independent tool/reader/cancellation obligations"
+        ],
+        "proof_limit": "No TLA/config/view, finite variable, bound, case, independent expected rule or production guard-mutation target changes. ReadRace, FreshnessPublication and DeliveryBoundary retain their original publication properties. Cumulative wall-clock accounting, Promise races, native queue dispatch and real manager/Pi timing are implementation and actual-run obligations outside those finite variables. These hashes bind reviewed bytes, not a proof of implementation refinement or final installed-Pi success; run the existing formal/mutation gates and all six actual Pi scenarios on the final frozen pair."
+      }
     }
   },
   "library_session_design": {

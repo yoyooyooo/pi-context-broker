@@ -63,7 +63,7 @@ jobs:
         if: github.base_ref == 'benchmark' || github.ref == 'refs/heads/benchmark'
         run: bun run test:benchmark
       - name: Create current SDK fixture
-        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-current-fixture" --catalog
+        run: node .verification/ntn-skills-cli/scripts/sdk-fixture.ts --outdir "$RUNNER_TEMP/ntn-skills-current-fixture" --catalog --materialization
       - name: Installed current SDK consumption
         run: node scripts/verify-artifacts.mjs --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --report "$RUNNER_TEMP/current-sdk-artifacts.json"
       - name: Actual Pi cross-session cache
@@ -74,6 +74,22 @@ jobs:
           node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-warm-directory-expired" --scenario http-warm-directory-expired
           node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-smart-revalidate" --scenario http-smart-revalidate
           node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-smart-current" --scenario http-smart-current
+      - name: Actual Pi Source materialization
+        run: |
+          BROKER_PACKAGE=$(node -p 'require(process.argv[1]).package.installed' "$RUNNER_TEMP/current-sdk-artifacts.json")
+          PI_ENTRY=$(node -p 'require(process.argv[1]).pi.entry.path' "$RUNNER_TEMP/current-sdk-artifacts.json")
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-first" --scenario source-materialize-first
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-first"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-legacy" --scenario source-materialize-legacy
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-legacy"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-legacy-source" --scenario source-materialize-legacy-source
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-legacy-source"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-growth" --scenario source-materialize-growth
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-growth"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-native-root" --scenario source-materialize-native-root
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-native-root"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-cancel-late" --scenario source-materialize-cancel-late
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-cancel-late"
       - name: Preserve current SDK results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -87,6 +103,12 @@ jobs:
             ${{ runner.temp }}/pi-warm-directory-expired/
             ${{ runner.temp }}/pi-smart-revalidate/
             ${{ runner.temp }}/pi-smart-current/
+            ${{ runner.temp }}/pi-source-materialize-first/
+            ${{ runner.temp }}/pi-source-materialize-legacy/
+            ${{ runner.temp }}/pi-source-materialize-legacy-source/
+            ${{ runner.temp }}/pi-source-materialize-growth/
+            ${{ runner.temp }}/pi-source-materialize-native-root/
+            ${{ runner.temp }}/pi-source-materialize-cancel-late/
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7

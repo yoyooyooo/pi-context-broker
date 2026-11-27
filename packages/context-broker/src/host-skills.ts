@@ -10,11 +10,12 @@ import { InvocationError, recordIdentity } from "./discovery-records";
 import { assertSourceAvailable, formatSourceFailures, hasEnabledNotionSource } from "./sources";
 import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage, sourceFailureDiagnostic } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
-import { checkPreparationSignal, createInputReceipt, createPreparationGate, preparationCancelled, withPreparationDeadline, type ActivePreparation, type InputReceipt } from "./skill-preparation";
+import { checkPreparationSignal, createInputReceipt, createPreparationGate, preparationCancelled, withContextPreparationDeadline, withPreparationDeadline, type ContextPreparationBudget, type ActivePreparation, type InputReceipt } from "./skill-preparation";
 import { brokerToolResultDigest, continueWithoutBrokerPayload, withoutBrokerInstructions } from "./nonblocking-context";
 import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceConfig, SourceFailure, NotionListObservation, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
 import type { HostCapabilities } from "./host-adapter";
 import { invocationText } from "./invocation-text";
+import type { PreparationAuthority } from "./preparation-authority";
 import { viewSystemPrompt, withoutViewMetadata } from "./view-prompt";
 import { hostCliScope } from "./host-command";
 import { notifyUnavailableReferences, renderUnavailableReferences } from "./unavailable-references";
@@ -54,7 +55,7 @@ export type HostSkillOptions = {
   loadResource?(record: SkillRecord, path: string, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<string>;
   readFixedResource?(record: SkillRecord, ref: string, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<FixedResourceRead | undefined>;
   readResources?(record: SkillRecord, refs: readonly string[], budget: ResourceReadBudget, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<ResourceReadBatch>;
-  prepareGraph?(records: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal | undefined, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, bindings?: readonly PreparationBinding[], mode?: SelectionMode, policy?: ConsumptionPolicy): Promise<PreparedHostGraph[]>;
+  prepareGraph?(records: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal | undefined, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, bindings?: readonly PreparationBinding[], mode?: SelectionMode, policy?: ConsumptionPolicy, authority?: PreparationAuthority): Promise<PreparedHostGraph[]>;
   persistGraphs?(graphs: readonly PreparedHostGraph[], ctx: ExtensionContext, mode: SelectionMode): void;
   sessionGraph?(ctx: ExtensionContext): unknown;
   projectContext?(messages: AgentMessage[], ctx: ExtensionContext, pending?: readonly { graphs: PreparedHostGraph[]; mode: SelectionMode }[]): AgentMessage[];
@@ -63,7 +64,7 @@ export type HostSkillOptions = {
   needsPreflightPrompt?(text: string): boolean;
   onInputReceipt?(receipt: InputReceipt): void;
   onPreparation?(entry: ActivePreparation): void;
-  preflightPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal, receipt?: InputReceipt): Promise<void>;
+  preflightPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal, receipt?: InputReceipt, budget?: ContextPreparationBudget): Promise<void>;
   taskPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal, invocation?: ActivePreparation): Promise<string>;
   /** Pi acquires only after the host has created its cancellable agent operation. */
   buildPreparedPrompt?(text: string, ctx: ExtensionContext, signal: AbortSignal, prepared: readonly SkillRecord[], receipt: InputReceipt): Promise<Omit<AgentMessage, "role" | "timestamp"> | undefined>;
@@ -81,7 +82,7 @@ export type HostSkills = {
   refresh(ctx?: ExtensionContext, options?: { preserveTurn?: boolean }): Promise<void>;
   activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord>;
   prepare(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<PreparedReference>;
-  prepareMany(records: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal): Promise<void>;
+  prepareMany(records: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal, authority?: PreparationAuthority): Promise<void>;
   withPreparedPrompt<T>(prompt: string, ctx: ExtensionContext, build: (signal?: AbortSignal, native?: SkillRecord, original?: string, prepared?: readonly SkillRecord[], receipt?: InputReceipt) => Promise<T>): Promise<T>;
   isNativeLoaded(messages: AgentMessage[], record: SkillRecord): boolean;
   selectedModelReference(record: SkillRecord, ctx: ExtensionContext): string | undefined;
@@ -853,7 +854,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
   }
 
-  async function graphPreparation(selected: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, mode: SelectionMode = "extend", commitNow = true, policy?: ConsumptionPolicy): Promise<{ records: SkillRecord[]; graphs: PreparedHostGraph[]; commit(): void }> {
+  async function graphPreparation(selected: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, mode: SelectionMode = "extend", commitNow = true, policy?: ConsumptionPolicy, authority?: PreparationAuthority): Promise<{ records: SkillRecord[]; graphs: PreparedHostGraph[]; commit(): void }> {
     const owner = gate.active, observedGeneration = generation;
     const currentInspection = purpose === "inspect" && mode === "replace";
     const observedSession = ctx?.sessionManager?.getSessionId?.();
@@ -863,7 +864,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       || mode !== "replace" && (bindings.some(binding => binding.record.id === record.id)
         || ctx && options.sessionBinding?.(record, ctx)))).map(recordIdentity));
     let graphs: PreparedHostGraph[];
-    try { graphs = await options.prepareGraph!(selected, ctx, signal, purpose, pins, bindings, mode, policy); }
+    try { graphs = await options.prepareGraph!(selected, ctx, signal, purpose, pins, bindings, mode, policy, authority); }
     catch (error) { observeFailure(error, ticket, selected, fixed, ctx); throw error; }
     checkPreparationSignal(signal);
     if (generation !== observedGeneration || observedSession !== ctx?.sessionManager?.getSessionId?.()) throw preparationCancelled();
@@ -949,7 +950,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return { records: values, graphs, commit };
   }
 
-  async function prepareMany(selected: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal): Promise<void> {
+  async function prepareMany(selected: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal, authority?: PreparationAuthority): Promise<void> {
     const combined = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
     const observedEffects: ConsumptionEffects[] = [];
     const policy: ConsumptionPolicy = { observeEffects: effects => observedEffects.push(effects) };
@@ -965,7 +966,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (options.prepareGraph && graphRoots.length) {
         const finish = feedback.begin(graphRoots, ctx, "use", options.config.sources?.find(source => source.id === graphRoots[0]!.sourceId && source.type === "notion"));
         try {
-          const values = await graphPreparation(graphRoots, ctx, combined, "use", undefined, "extend", true, policy);
+          const values = await graphPreparation(graphRoots, ctx, combined, "use", undefined, "extend", true, policy, authority);
           observedEffects.push(combineConsumptionEffects(values.graphs.map(graph => graph.effects)));
           finish?.({ value: values.records[0]! });
         } catch (error) {
@@ -1190,7 +1191,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   function needsPreparation(text: string): boolean {
     return Boolean(/^\s*\/skill:[^\s]+/.test(text) || options.needsPreflightPrompt?.(text));
   }
-  async function preflight(text: string, ctx: ExtensionContext, signal?: AbortSignal, selectedNative?: SkillRecord, receipt = gate.active?.receipt): Promise<void> {
+  async function preflight(text: string, ctx: ExtensionContext, signal?: AbortSignal, selectedNative?: SkillRecord, receipt = gate.active?.receipt, budget?: ContextPreparationBudget): Promise<void> {
     checkPreparationSignal(signal);
     text = invocationText(text);
     const nativeSelection = /^\s*\/skill:[^\s]+/.test(text);
@@ -1201,7 +1202,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const candidate = selectedNative ?? nativeRecord(text);
     const record = candidate && (selectedNative || visibleInLibrary(candidate, ctx)) ? candidate : undefined;
     if (record) await prepare(record, ctx, signal);
-    await options.preflightPrompt?.(text, ctx, signal, receipt);
+    await options.preflightPrompt?.(text, ctx, signal, receipt, budget);
     checkPreparationSignal(signal);
   }
 
@@ -1536,7 +1537,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const run = deferredPiDiscovery ? piRun : undefined;
     const parent = AbortSignal.any([run?.signal ?? lifecycleController.signal, lifecycleController.signal]);
     try {
-      return await withPreparationDeadline(parent, async signal => {
+      return await withContextPreparationDeadline(parent, async (signal, budget) => {
         if (admissionError) throw admissionError;
         const contextEntries = deferredPiDiscovery ? ctx.sessionManager?.buildSessionProjection?.().entries ?? [] : [];
         if (run) {
@@ -1545,7 +1546,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           acknowledgeProjection(run, contextEntries);
           run.userEntryId ??= contextEntries.findLast(entry => entry.sourceEntry.type === "message"
             && entry.messages.some(message => message.role === "user"))?.sourceEntry.id;
-          // Metadata, explicit preparation and restoration share one deadline.
+          // Metadata, preparation and restoration share read time; only guarded
+          // management waits may use the separate cumulative management budget.
           if (!run.prepared && (ctx.mode === "print" || ctx.mode === "json")) {
             await options.librarySelection?.identity(ctx);
             checkPreparationSignal(signal); assertPiRun(run, ctx);
@@ -1574,7 +1576,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
             checkPreparationSignal(preparationSignal); assertPiRun(run, inputContext);
             const native = input.selectedNative && visibleInLibrary(input.selectedNative, inputContext) ? input.selectedNative : undefined;
             revalidateMetadata(inputContext);
-            await preflight(text, inputContext, preparationSignal, native, receipt);
+            await preflight(text, inputContext, preparationSignal, native, receipt, budget);
             checkPreparationSignal(preparationSignal); assertPiRun(run, inputContext);
             const task = await options.taskPrompt?.(text, inputContext, preparationSignal, entry) ?? text;
             checkPreparationSignal(preparationSignal); assertPiRun(run, inputContext);

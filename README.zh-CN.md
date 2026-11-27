@@ -142,6 +142,8 @@ sources:
 
 `next` 的 Notion 消费统一使用随包进程内 SDK，覆盖元数据、Skill/Router/Prompt 主文、支持文件和有预算的预取。一次 `consume` 负责准备和完整文件目录，首次仅物化选中主文，支持文件沿已验证的固定 File 引用按需读取。Prompt 每次显式提交重新取得本轮内容。诊断和明确管理保留配对 CLI。`source.command`、CLI prepare/read 链和完整 export 回退均已退役；包缺失或不匹配时明确要求升级。OMP/Tern 延后。
 
+首次显式 `$` 可经独立配对 manager 补齐尚未就绪的登记上游成员，再回到普通只读消费。已就绪内容保持原缓存路径。详见[首次显式选择 Source 成员](./packages/context-broker/docs/reference.zh-CN.md#首次显式选择已登记的-source-成员)。
+
 Pi 通过 `notion_list`、`notion_use` 与原生 `read` 提供会话引用：`sr:C` 表示目录候选，`sr:S` 表示固定的选中主文，`sr:R` 表示属于该选择的资源。原样复制返回的引用。`notion_use` 仅向模型顶层开放，不能从 Code mode 内部调用；准备成功与实际完整交付分别验证。这些引用属于当前会话分支，使用时仍检查来源授权和身份。准备、投递与恢复边界见 [Skill 消费运行时](./packages/context-broker/docs/skill-consumption-runtime.md)。
 
 每个 Notion source 可选配 `default_view_id`；不配置就用 API 返回的第一个 View。显式 ID 失效会提示，不静默改选；确认没有 View 时默认远程目录为空。Pi 发送普通消息时不等待远程目录，因此首次请求可能显示元数据仍在准备。每次模型请求使用内存中的当前目录，保留本地 Skill 和已加载正文；显式 `$` 选择会在首次请求前完成准备。View 内未勾选 Default Context 的记录可默认发现，View 外已勾选的记录也不会越过筛选。Pi 原生 `read` 检查选中记录或资源，`notion_use` 和显式 `$` 选择准备根与完整 Requires。独立补全仍展示全库元数据。代码或配置文件改变需要重启宿主，会话内切换 View 不需要。

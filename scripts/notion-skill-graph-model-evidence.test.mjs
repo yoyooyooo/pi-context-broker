@@ -222,7 +222,7 @@ for (const representation of ['flat', 'combined']) test('SDK observer retains ac
   assert.deepEqual(receipts[4].value, cached);
   assert.deepEqual(graphSourceViews(receipts.slice(4)), { directories: [], directoryFailures: [], preparations: [], entries: [], resources: [] }, 'Cached candidates and Library operations do not prove a current directory, preparation or delivered body');
   const events = await lines(ledger), accounting = graphSourceAccounting(events, receipts, { sourceMode: 'sdk', requireConsumption: true });
-  assert.deepEqual(accounting.sdk_calls, { 'library-selection': 1, library: 1, candidates: 1, list: 1, files: 1, consume: 1, read: 0, 'read-resources': 0, resolve: 1, 'content-search': 0 }); assert.equal(accounting.actual_http_attempts, 1);
+  assert.deepEqual(accounting.sdk_calls, { 'library-selection': 1, library: 1, candidates: 1, list: 1, 'source-members': 0, files: 1, consume: 1, read: 0, 'read-resources': 0, resolve: 1, 'content-search': 0 }); assert.equal(accounting.actual_http_attempts, 1);
   assert.equal(accounting.source_results_observed, 7);
   for (const operation of ['candidates', 'library-selection']) {
     assert.throws(() => graphSourceAccounting(events, receipts.map(item => item.operation === operation ? { ...item, metrics: receipts[3].metrics } : item), { sourceMode: 'sdk' }), /local SDK operation cannot make HTTP requests/);
