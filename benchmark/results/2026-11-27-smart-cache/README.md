@@ -34,9 +34,12 @@ batch = root / "control/current-smart-cache-own-20261127-1/attempt-1"
 result = subprocess.run(["node", str(cli), "query", "--root", str(batch)],
                         check=True, text=True, stdout=subprocess.PIPE)
 data = json.loads(result.stdout)
-fields = ("run_id", "condition_id", "outcome", "known_actual_attempts", "input_total")
-print(json.dumps({"model_requests": data["model_requests"],
-                  "rows": [{key: row[key] for key in fields} for row in data["rows"]]},
+fields = ("run_id", "condition_id", "outcome", "known_actual_attempts")
+usage = ("known_subtotal", "observed_items", "total_items")
+rows = [{**{key: row[key] for key in fields},
+         "input": {key: row["input_total"][key] for key in usage}}
+        for row in data["rows"]]
+print(json.dumps({"model_requests": data["model_requests"], "rows": rows},
                  ensure_ascii=False, indent=2))
 PYQUERY
 ```
