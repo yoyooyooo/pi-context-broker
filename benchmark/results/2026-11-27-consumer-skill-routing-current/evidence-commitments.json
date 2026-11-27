@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "meaning": "Hash commitments identify retained private originals; they do not make those originals publicly inspectable.",
+  "entries": [
+    {
+      "role": "registration",
+      "sha256": "61c3290691fd9551f182c56d185dbcf136d4ec5e79cda48f2688355a4e8eea0f",
+      "bytes": 834
+    },
+    {
+      "role": "setup",
+      "sha256": "00158ee0e111cebb57b0e0caad7513c077a69c2d057a0a2e58c5cb1d095eb377",
+      "bytes": 8631
+    },
+    {
+      "role": "plan",
+      "sha256": "14a184637f00a48c97ed738b0470918a10e1248672bb5f9099071d31733a7d59",
+      "bytes": 244589
+    },
+    {
+      "role": "predeclared-decision",
+      "sha256": "293803dbcb7626acd614957fa11b412ca5262968e080928b0a50ac301a50797b",
+      "bytes": 5364
+    },
+    {
+      "role": "payload-review",
+      "sha256": "508a88ec100f2c30b6b37aed4b360ba48ffdf7f1d29ac95d4d1678b714048d13",
+      "bytes": 33008
+    },
+    {
+      "role": "dispatch-gate",
+      "sha256": "3f0e2db95d0968966b660ef60dc107492274ed916862d203cdf572e15ed3015e",
+      "bytes": 1534
+    },
+    {
+      "role": "independent-final-decision",
+      "sha256": "7cd95228a21161faa66ab85b410c3320ba85e0666f58849181abecedee52eaff",
+      "bytes": 14010
+    },
+    {
+      "role": "remaining-factors-review",
+      "sha256": "701e8a82a55a1510739fc31cebab014a4dc835df397e07f2f3c5bd4504f0ea62",
+      "bytes": 1463
+    },
+    {
+      "role": "formal-analysis",
+      "sha256": "554e19bf765e58bc73ed58d4af43abac67687c1e8e91c0dcc26c2d1e700573f4",
+      "bytes": 208542
+    },
+    {
+      "role": "formal-analysis-operation",
+      "sha256": "0468d5bc21b6bc5bd982874f2aa3a9060669c6e57531e5ea6646c61712fe64f6",
+      "bytes": 17121
+    },
+    {
+      "role": "cleanup",
+      "sha256": "56f0d0ddeeac04eca9deb3b744615abb5e27245829ef7606453f28f48b8dcbab",
+      "bytes": 1520
+    },
+    {
+      "role": "B0-r0-raw_episode",
+      "sha256": "db951d46345ccecd24a7c9868821b16074efabf9ff831a96e76fa1a4d45f0e30",
+      "bytes": 298481
+    },
+    {
+      "role": "B0-r0-raw_events",
+      "sha256": "f8a9fbf8333b105d9c61642a53a5686cc9d478f672979eacd25516dc5a1cb842",
+      "bytes": 4234795
+    },
+    {
+      "role": "B0-r0-collection",
+      "sha256": "577a68c0a3dc901c15fefe7cee125c1cc46ec080fc52d00e15a52146548c4d8e",
+      "bytes": 1897
+    },
+    {
+      "role": "B0-r0-parent_result",
+      "sha256": "ca68658d810bf1b4c6ef2dba0a7b251e0ea06334617167af9944c040968aca67",
+      "bytes": 10051
+    },
+    {
+      "role": "B0-r0-independent_review",
+      "sha256": "57ceb86fc563f991f01b0821fe11ab742f63d73b9174e963bb9dffdb1c2e1958",
+      "bytes": 2260
+    },
+    {
+      "role": "B0-r0-correlation",
+      "sha256": "fd8e8773b5a83490d30fc79487721f26c572720151254b1e4b1bb876b1e29817",
+      "bytes": 61570
+    },
+    {
+      "role": "B0-r0-review-packet",
+      "sha256": "dba002d622d25203a106c85a3cebf365c48e51d60b228873b8b8c77db7bdb2df",
+      "bytes": 70093
+    },
+    {
+      "role": "G-r0-raw_episode",
+      "sha256": "1614fdf72eff2e06ee7745b650d011f778d959aaedc528164ea5b58849b126f8",
+      "bytes": 363798
+    },
+    {
+      "role": "G-r0-raw_events",
+      "sha256": "b99642ed6258df70851c1965b6a5d6ff68f13430392cb5f4bc3a855a6ddd3dde",
+      "bytes": 4693767
+    },
+    {
+      "role": "G-r0-collection",
+      "sha256": "c72bd07d873e66577c3ba68c8f617b5b909b59409fe5cc06da237c21e9b81ac0",
+      "bytes": 1903
+    },
+    {
+      "role": "G-r0-parent_result",
+      "sha256": "3dc7636e4bc693bfb3add037a1d560b6369dc9c7bd5e875449c7cd7c65fe3f3f",
+      "bytes": 10050
+    },
+    {
+      "role": "G-r0-independent_review",
+      "sha256": "46316796ab31c53dc43715a38b57ecf92463359e3471781448b0266c05b71b68",
+      "bytes": 2330
+    },
+    {
+      "role": "G-r0-correlation",
+      "sha256": "ca8909477093934546c4de5350367eb75637f53d111e1baeaccb46ca60d7c700",
+      "bytes": 49787
+    },
+    {
+      "role": "G-r0-review-packet",
+      "sha256": "6435499adee57f1625fed5cd8b99cfbc75839f1baea29d0d0c17897c5854e7fa",
+      "bytes": 92994
+    },
+    {
+      "role": "G-r1-raw_episode",
+      "sha256": "b2fff36fa0968e3ba8a79ac2d696111bb3f7a751d092f239f9f5bc659d85fbd0",
+      "bytes": 685393
+    },
+    {
+      "role": "G-r1-raw_events",
+      "sha256": "33d6ff0dbcdc39b233d761acaa20f19c14eb2ce089aea6964d507485b2d1959b",
+      "bytes": 6349878
+    },
+    {
+      "role": "G-r1-collection",
+      "sha256": "c8ac72bfe37c1c9c9bc686956f4ed37500ce86ef4efa5565435c98c38f996389",
+      "bytes": 1901
+    },
+    {
+      "role": "G-r1-parent_result",
+      "sha256": "3ed1b7036a7b7f666a00d791e1143ccc00b919f3ec3f4b9eb8819a04864f4a36",
+      "bytes": 10050
+    },
+    {
+      "role": "G-r1-independent_review",
+      "sha256": "3dc46ffec59c6991a8f122765f7554631a7d9a78e157f5eba9e0ebab114f2825",
+      "bytes": 3835
+    },
+    {
+      "role": "G-r1-correlation",
+      "sha256": "e3827b822b9fd19807cb05f37e0a2a7abc8876d448487eb4a106073c03f7c8f9",
+      "bytes": 57926
+    },
+    {
+      "role": "G-r1-review-packet",
+      "sha256": "654a1cd6f9f3ef60b99cf74e9926b597366a80b722af42ecb0bbe7684f8c8238",
+      "bytes": 47005
+    },
+    {
+      "role": "B0-r1-raw_episode",
+      "sha256": "7dd349b8e0f2d3b11177bfdb194f9c7624f05e699074a13469809d661bd8078a",
+      "bytes": 463003
+    },
+    {
+      "role": "B0-r1-raw_events",
+      "sha256": "af75bf2077c6e610e3ef0d8dede817c4cc09b85d8e7dacd339cd489ccecc5767",
+      "bytes": 6014130
+    },
+    {
+      "role": "B0-r1-collection",
+      "sha256": "8d8760ea201dadae347b04e77ffc9f48a9b3a555c912f034eac8c40fe37cdd71",
+      "bytes": 1898
+    },
+    {
+      "role": "B0-r1-parent_result",
+      "sha256": "d5bd51b37aa48397de6326ceea0e26d7817bff7c9d2fd2ccdbbae3f9dd7429d4",
+      "bytes": 10051
+    },
+    {
+      "role": "B0-r1-independent_review",
+      "sha256": "0ecb2d7dc880e38f51870a57069c79986f2ceb8f5cf5b124a97df8673013aba0",
+      "bytes": 3363
+    },
+    {
+      "role": "B0-r1-correlation",
+      "sha256": "3bf21ed909ce0d655479e5e298d6114df8e4147b75b0657d5c72a734863966a9",
+      "bytes": 49909
+    },
+    {
+      "role": "B0-r1-review-packet",
+      "sha256": "0370464a59b5bbabe83138bb014c54e6484f38a9fc6654d59dd9669884e83568",
+      "bytes": 149184
+    }
+  ]
+}
