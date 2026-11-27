@@ -1,11 +1,11 @@
 import { explicitDollarQueries } from "./invocation-text";
-import type { InputReceipt } from "./skill-preparation";
+import type { ContextPreparationBudget, InputReceipt } from "./skill-preparation";
 import type { ExtensionContext, SkillRecord } from "./types";
 
 /** This token is issued only from a real accepted input. It is never a property
  * of a cached Skill, a completion choice, a model tool call or a session pin. */
 export type PreparationAuthority = Readonly<{ receiptId: string }>;
-type Grant = { receipt: InputReceipt; roots: ReadonlyMap<string, string> };
+type Grant = { receipt: InputReceipt; roots: ReadonlyMap<string, string>; budget?: ContextPreparationBudget };
 const grants = new WeakMap<PreparationAuthority, Grant>();
 
 function rootIdentity(record: SkillRecord): string | undefined {
@@ -16,6 +16,7 @@ function rootIdentity(record: SkillRecord): string | undefined {
 export function authorizeExplicitPreparation(
   receipt: InputReceipt | undefined,
   selected: readonly { query: string; record: SkillRecord }[],
+  budget?: ContextPreparationBudget,
 ): PreparationAuthority | undefined {
   if (!receipt) return undefined;
   const queries = explicitDollarQueries(receipt.event.text ?? "");
@@ -26,7 +27,7 @@ export function authorizeExplicitPreparation(
   }
   if (!roots.size) return undefined;
   const authority = Object.freeze({ receiptId: receipt.id });
-  grants.set(authority, { receipt, roots });
+  grants.set(authority, { receipt, roots, budget });
   return authority;
 }
 
@@ -63,4 +64,8 @@ export function preparationReceipt(authority: PreparationAuthority | undefined):
 export function preparationQuery(authority: PreparationAuthority | undefined, record: SkillRecord): string | undefined {
   const identity = rootIdentity(record);
   return authority && identity ? grants.get(authority)?.roots.get(identity) : undefined;
+}
+
+export function preparationBudget(authority: PreparationAuthority | undefined): ContextPreparationBudget | undefined {
+  return authority ? grants.get(authority)?.budget : undefined;
 }

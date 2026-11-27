@@ -62,6 +62,14 @@ node scripts/notion-sdk-pi.mjs evidence --evidence /absolute/owned/materialize-c
 
 这五个成功场景随后启动相同 Store 的另一个空 Pi session/PID，确实在五分钟内复用第一次消费取得的缓存；Notion HTTP、Git HTTP、管理新调用均为 0。source-only 使用首次未物化候选的原精确 `alias@skill%3A<stable-id>@namespace` token，物化后的真实目录必须直接复用它，不能偷偷改成另一次宽松别名匹配。最后启动全新独立 client-2，配置、Store、cache、session 不与 client-1 共用，未复制消费者文件；它从同一 Notion 事实与 Git 取得自身原件，语义写为 0。
 
+## 前台预算与超时
+
+每次 Pi context 共用累计 60 秒普通读取额度。只有当前真实 `$` 的授权、Source、scope 和 readiness 已通过，配对 management SDK 的实际 await 才使用累计 180 秒管理额度。管理回执处理、完整目录重建和普通 consume 使用剩余读取额度；此前已耗的读取时间不能重置。同一 context 的多个 root 和 queued inputs 共用这两份额度，绝对上限为 240 秒。无管理调用的 context、普通 read/use/model tool 仍保持原期限。固定 manager 的服务端时限由它自己的配置决定；此处 180 秒只规定 Pi 前台管理等待。
+
+按原 SDK/management 事件 ID 与单调时间分别记录普通准备、管理等待、目录重建和 consume 的开始、结束、取消或超时。慢 manager 完成后必须仍通过完整目录和 provider 正文断言，不能把 manager ready 当作交付成功。每次阶段切换及最终返回都须检查已耗时间，即使过期 timer 尚未执行。现役物化 runner 的 RPC 等待为 360 秒，大于产品 240 秒上限；外层测试驱动不能先于产品终止并误报其行为。
+
+超时和 Stop 只结束前台等待及旧 session 的发布资格，不终止已接纳 writer、不创建新 request、不删除 pending。迟到回执可以失效共享事实，不能追加到已取消 session、激活选择或进入 provider。未捕获 manager exit 时如实记录未捕获；PID 消失不能推断 exit 0。预算回放和真实 Pi 原始时序分别报告，有限模型不宣称穷尽墙钟或 Promise 调度。
+
 ## 真实取消与迟到结果
 
 source-materialize-cancel-late 使用自己的 Source-only HTTP facts、canonical SQLite、request 与真实 Pi，不重用五个成功初态的运行目录。先让精确 Source Content PATCH 到达服务端并阻塞；原 Store 必须已保存同一 request 和 Source operation intent。随后通过 Pi 原生 RPC abort 取消当前等待，再用原生 new_session 在同一 PID 切到新 session。管理子进程和原 HTTP 保留，取消回执按结果未知记录，不能因等待取消而认定远端零写或已结清。
@@ -80,6 +88,8 @@ source-materialize-cancel-late 使用自己的 Source-only HTTP facts、canonica
 
 ~~~sh
 bun test packages/context-broker/scripts/preparation-authority.test.ts packages/context-broker/scripts/source-materialization-contract.test.ts packages/context-broker/scripts/source-member-candidates.test.ts packages/context-broker/scripts/notion-management.test.ts packages/context-broker/scripts/source-materialization.test.ts packages/context-broker/scripts/source-materialization-catalog.test.ts packages/context-broker/scripts/notion-sdk.test.ts
+bun test packages/context-broker/scripts/host-prepare.test.ts packages/context-broker/scripts/resource-read-host.test.ts packages/context-broker/scripts/host-content-search.test.ts packages/context-broker/scripts/nonblocking-context.test.ts
+PI_QUEUED_INPUT_PACKAGE=/absolute/installed/pi bun test packages/context-broker/scripts/pi-queued-input.test.ts
 node --test scripts/notion-sdk-pi.test.mjs scripts/skill-consumption-source-observer.test.mjs scripts/notion-skill-graph-model-evidence.test.mjs
 ~~~
 

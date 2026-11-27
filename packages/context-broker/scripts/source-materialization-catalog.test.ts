@@ -1,14 +1,15 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { activeNotionSession } from "./fixtures/active-notion-session";
+import { withContextPreparationDeadline } from "../src/skill-preparation";
 import type { SourceMaterializationRequest, SourceMaterializationReceipt, SourceMemberCandidate } from "../src/source-materialization-contract";
 
 /** The production index and host hooks run unchanged; only SDK operations and
  * the session are controlled. Real cross-PID SQLite/HTTP stays in the Pi gate. */
-async function fixture() {
+async function fixture(targetNames = ["root"]) {
   const session = await activeNotionSession({ catalogMaxAgeMs: 300_000 });
   const { f } = session, scope = f.selected.sourceScope!;
   const root = session.record("root").preparationBinding!.record;
@@ -16,6 +17,11 @@ async function fixture() {
   const candidate: SourceMemberCandidate = { type: "source_member", library_id: f.source.library!, scope,
     source_id: "registered-origin", member_key: "skills/root", expected_skill_id: "entry", registration_digest: "a".repeat(64),
     name: root.name, alias: root.alias, description: root.description, enabled: true, readiness: "materializable", record: root };
+  const members = targetNames.map(name => {
+    const record = session.record(name).preparationBinding!.record;
+    if (record.locator.type !== "shared_skill") throw new Error("Expected a physical Skill");
+    return { ...candidate, name, alias: name, member_key: "skills/" + name, expected_skill_id: record.locator.skill_id, record };
+  });
   const management = "export const SOURCE_MATERIALIZATION_VERSION=1, PACKAGE_VERSION='current-source-fixture';let handler;export function configure(value){handler=value;}export async function materializeSource(input){return handler(input);}";
   const path = join(f.root, "src/ntn-skills-management.mjs");
   await writeFile(path, management);
@@ -24,17 +30,23 @@ async function fixture() {
   const manager: { configure(handler: (input: SourceMaterializationRequest) => Promise<SourceMaterializationReceipt>): void } = await import(pathToFileURL(path).href);
   let ready = false, persisted = true;
   const trace: string[] = [], list = f.state.list.bind(f.state), consume = f.state.consume.bind(f.state), candidates = f.state.candidates.bind(f.state);
-  let refresh: () => Promise<void> = async () => {};
+  let refresh: () => Promise<void> = async () => {}, consumeWait = refresh;
+  let managementWait: (request: SourceMaterializationRequest) => Promise<void> = async () => {};
   manager.configure(async input => {
-    trace.push("management"); ready = true; persisted = false;
+    trace.push("management"); await managementWait(input); ready = true; persisted = false;
+    const member = members.find(value => value.expected_skill_id === input.target.expected_skill_id);
+    if (!member) throw new Error("Unexpected materialization target");
     return { version: 1, request_id: input.request_id, library_id: input.library, scope, target: input.target,
-      status: "ready", operation_id: "source-materialization", records: [root, required], affected_skill_ids: ["entry", "required"],
+      ...(input.authorization_root ? { authorization_root: input.authorization_root } : {}),
+      status: "ready", operation_id: "source-materialization", records: member.record.id === required.id ? [required] : [member.record, required],
+      affected_skill_ids: [...new Set([member.expected_skill_id, "required"])],
       source_revisions: [{ source_id: candidate.source_id, revision: "b".repeat(64) }], effects: { remote_writes: "management", projection: "none" } };
   });
-  f.state.sourceMembers = async () => ({ version: 1, library_id: f.source.library, scope, coverage: "complete", candidates: [candidate], failures: [], effects: { remote_writes: "none" } });
+  f.state.sourceMembers = async input => ({ version: 1, library_id: f.source.library, scope, coverage: "complete", candidates: members.filter(member => member.expected_skill_id === input.query || member.name === input.query), failures: [], effects: { remote_writes: "none" } });
   f.state.candidates = options => persisted ? candidates(options) : { kind: "miss", reason: "catalog_unavailable" };
   f.state.consume = async (input, options) => {
     trace.push(ready ? "consume" : "missing-current-schema");
+    if (ready) await consumeWait();
     return ready ? consume(input, options) : session.failed("CURRENT_SKILL_NOT_READY", session.record("root"));
   };
   f.state.list = async options => {
@@ -46,7 +58,8 @@ async function fixture() {
     }
     return list(options);
   };
-  return { session, trace, root, required, scope, setRefresh: (run: () => Promise<void>) => { refresh = run; }, persisted: () => persisted };
+  return { session, trace, root, required, scope, candidate, setRefresh: (run: () => Promise<void>) => { refresh = run; },
+    setManagement: (run: (request: SourceMaterializationRequest) => Promise<void>) => { managementWait = run; }, setConsume: (run: () => Promise<void>) => { consumeWait = run; }, persisted: () => persisted };
 }
 
 test("materialization rebuilds the real complete catalog before ordinary consumption and retains unrelated members", async () => {
@@ -126,4 +139,241 @@ test("a newer metadata refresh reobserves the catalog without cancelling or reta
     expect(JSON.stringify(result.payload)).toContain("Complete root instructions A.");
     expect(JSON.stringify(result.payload)).toContain("Complete required instructions A.");
   } finally { release.resolve(); await session.close(); }
+});
+
+
+/** Drive the real production timers and monotonic clock without waiting minutes.
+ * SDK/session boundaries remain the same as the other tests in this file. */
+function preparationClock() {
+  let now = 0;
+  const nativeTimeout = globalThis.setTimeout, nativeClear = globalThis.clearTimeout;
+  const timers = new Map<ReturnType<typeof setTimeout>, { at: number; run(): void }>();
+  const clock = spyOn(performance, "now").mockImplementation(() => now);
+  const timeout = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
+    if (delay === undefined || delay < 1_000) return nativeTimeout(callback, delay, ...args);
+    const timer = nativeTimeout(() => {}, 2_147_483_647); timer.unref();
+    timers.set(timer, { at: now + delay, run: () => callback(...args) });
+    return timer;
+  });
+  const clear = spyOn(globalThis, "clearTimeout").mockImplementation(handle => {
+    for (const timer of timers.keys()) if (timer === handle) timers.delete(timer);
+    nativeClear(handle);
+  });
+  return {
+    advance(ms: number) {
+      const target = now + ms;
+      for (;;) {
+        const next = [...timers].filter(([, timer]) => timer.at <= target).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next) break;
+        now = next[1].at; timers.delete(next[0]); nativeClear(next[0]); next[1].run();
+      }
+      now = target;
+    },
+    jump(ms: number) { now += ms; },
+    elapsed: () => now,
+    restore() { for (const timer of timers.keys()) nativeClear(timer); clear.mockRestore(); timeout.mockRestore(); clock.mockRestore(); },
+  };
+}
+
+test("authorized slow management leaves the ordinary read budget for complete catalog and provider bodies", async () => {
+  const { session, trace, setManagement, setRefresh, setConsume } = await fixture();
+  const clock = preparationClock();
+  setManagement(async () => { clock.advance(53_000); });
+  setRefresh(async () => { clock.advance(8_000); });
+  setConsume(async () => { clock.advance(5_000); });
+  try {
+    const result = await session.turn("Use $root@notion");
+    expect(clock.elapsed()).toBe(66_000);
+    expect(result.error).toBeUndefined(); expect(result.provider).toBe(true);
+    expect(trace.slice(0, 4)).toEqual(["missing-current-schema", "management", "catalog", "consume"]);
+    expect(JSON.stringify(result.payload)).toContain("Complete root instructions A.");
+    expect(JSON.stringify(result.payload)).toContain("Complete required instructions A.");
+  } finally { clock.restore(); await session.close(); }
+});
+
+test("same-session Stop cannot append a late management receipt after the context wait ends", async () => {
+  const { session, trace, setManagement } = await fixture();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  setManagement(async () => { entered.resolve(); await release.promise; });
+  let pending: ReturnType<typeof session.turn> | undefined;
+  try {
+    pending = session.turn("Use $root@notion");
+    await entered.promise; session.ctx.abort?.();
+    const result = await pending;
+    expect(result.provider).toBe(false);
+    const before = structuredClone(session.branch);
+    release.resolve(); await new Promise(resolve => setTimeout(resolve, 0));
+    expect(trace).toEqual(["missing-current-schema", "management"]);
+    expect(session.branch).toEqual(before);
+    expect(session.branch.filter(entry => entry.type === "custom" && entry.customType === "context-broker-materialization")).toEqual([]);
+    expect(session.selected()?.scopes.size ?? 0).toBe(0);
+  } finally { release.resolve(); await pending; await session.close(); }
+});
+
+
+test.each(["management", "catalog", "consume"] as const)("a stalled %s producer cannot outlive its cumulative context budget", async phase => {
+  const { session, trace, setManagement, setRefresh, setConsume } = await fixture();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const clock = preparationClock();
+  const hold = async () => { entered.resolve(); await release.promise; };
+  setManagement(phase === "management" ? hold : async () => { clock.advance(53_000); });
+  if (phase === "catalog") setRefresh(hold);
+  if (phase === "consume") setConsume(hold);
+  let pending: ReturnType<typeof session.turn> | undefined;
+  try {
+    pending = session.turn("Use $root@notion");
+    await entered.promise;
+    clock.advance(phase === "management" ? 180_001 : 60_001);
+    const result = await pending;
+    expect(result.aborted).toBe(false);
+    expect(JSON.stringify(result.payload)).toContain("SOURCE_PREPARATION_TIMEOUT");
+    expect(JSON.stringify(result.payload)).not.toContain("Complete root instructions A.");
+    expect(JSON.stringify(result.payload)).not.toContain("Complete required instructions A.");
+    expect(session.selected()?.scopes.size ?? 0).toBe(0);
+    const before = structuredClone(session.branch);
+    release.resolve(); await new Promise(resolve => setTimeout(resolve, 0));
+    expect(session.branch).toEqual(before);
+    expect(trace.filter(value => value === "management")).toHaveLength(1);
+  } finally { release.resolve(); await pending; clock.restore(); await session.close(); }
+});
+
+test("read time before and after management is cumulative and cannot be renewed by a ready receipt", async () => {
+  const { session, trace, setManagement, setRefresh } = await fixture();
+  const clock = preparationClock(), discover = session.f.state.sourceMembers;
+  session.f.state.sourceMembers = async input => { clock.advance(30_000); return discover(input); };
+  setManagement(async () => { clock.advance(53_000); });
+  setRefresh(async () => { clock.advance(31_000); });
+  try {
+    const result = await session.turn("Use $root@notion");
+    expect(clock.elapsed()).toBe(114_000);
+    expect(JSON.stringify(result.payload)).toContain("SOURCE_PREPARATION_TIMEOUT");
+    expect(JSON.stringify(result.payload)).not.toContain("Complete root instructions A.");
+    expect(trace).toEqual(["missing-current-schema", "management", "catalog"]);
+    expect(session.selected()?.scopes.size ?? 0).toBe(0);
+  } finally { clock.restore(); await session.close(); }
+});
+
+test("multiple explicit roots share one management allowance and cannot dispatch a root after it expires", async () => {
+  const { session, trace, setManagement } = await fixture(["root", "second", "independent"]);
+  const clock = preparationClock(), targets: string[] = [];
+  setManagement(async request => { targets.push(request.target.expected_skill_id); clock.advance(targets.length === 1 ? 100_000 : 81_000); });
+  try {
+    const result = await session.turn("Use $root@notion $second@notion $independent@notion");
+    expect(clock.elapsed()).toBe(181_000);
+    expect(targets).toEqual(["entry", "second"]);
+    expect(trace.filter(value => value === "management")).toHaveLength(2);
+    expect(JSON.stringify(result.payload)).toContain("SOURCE_PREPARATION_TIMEOUT");
+    expect(JSON.stringify(result.payload)).not.toContain("Complete root instructions A.");
+    expect(session.selected()?.scopes.size ?? 0).toBe(0);
+  } finally { clock.restore(); await session.close(); }
+});
+
+for (const phase of ["management", "catalog", "consume"] as const)
+test.each(["Stop", "session switch"] as const)("%s during " + phase + " prevents any late session or body publication", async mode => {
+  const { session, setManagement, setRefresh, setConsume } = await fixture();
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const hold = async () => { entered.resolve(); await release.promise; };
+  if (phase === "management") setManagement(hold);
+  if (phase === "catalog") setRefresh(hold);
+  if (phase === "consume") setConsume(hold);
+  let pending: ReturnType<typeof session.turn> | undefined;
+  try {
+    pending = session.turn("Use $root@notion"); await entered.promise;
+    if (mode === "Stop") session.ctx.abort?.();
+    else { await session.emit("session_before_switch", { reason: "new" }); session.ctx.sessionManager!.getSessionId = () => "new-session"; }
+    const result = await pending;
+    expect(JSON.stringify(result.payload)).not.toContain("Complete root instructions A.");
+    expect(JSON.stringify(result.payload)).not.toContain("Complete required instructions A.");
+    const before = structuredClone(session.branch);
+    release.resolve(); await new Promise(resolve => setTimeout(resolve, 0));
+    expect(session.branch).toEqual(before);
+    expect(session.selected()?.scopes.size ?? 0).toBe(0);
+  } finally { release.resolve(); await pending; await session.close(); }
+});
+
+test("fresh explicit discovery receives the same management budget before normal graph consumption", async () => {
+  const { session, trace, candidate, scope, setManagement } = await fixture();
+  session.f.state.sourceMembers = async () => ({ version: 1, library_id: session.f.source.library, scope, coverage: "complete",
+    candidates: [{ ...candidate, name: "fresh-member", alias: "fresh-member", record: undefined }], failures: [], effects: { remote_writes: "none" } });
+  const clock = preparationClock();
+  setManagement(async () => { clock.advance(65_000); });
+  try {
+    const result = await session.turn("Use $fresh-member@notion");
+    expect(trace.slice(0, 3)).toEqual(["management", "catalog", "consume"]);
+    expect(result.error).toBeUndefined(); expect(result.provider).toBe(true);
+    expect(JSON.stringify(result.payload)).toContain("Complete root instructions A.");
+    expect(JSON.stringify(result.payload)).toContain("Complete required instructions A.");
+  } finally { clock.restore(); await session.close(); }
+});
+
+test("expired read time cannot escape into management when the timer callback has not run", async () => {
+  const clock = preparationClock(), parent = new AbortController(); let dispatched = 0;
+  try {
+    await expect(withContextPreparationDeadline(parent.signal, async (_signal, budget) => {
+      clock.jump(60_001);
+      return budget.waitForManagement(async () => { dispatched++; return "unexpected"; });
+    })).rejects.toMatchObject({ code: "SOURCE_PREPARATION_TIMEOUT" });
+    expect(dispatched).toBe(0); expect(parent.signal.aborted).toBe(false);
+  } finally { clock.restore(); }
+});
+
+test("an expired manager response still reaches fact invalidation while the context reports timeout", async () => {
+  const clock = preparationClock(), parent = new AbortController(), received = Promise.withResolvers<void>();
+  const receipts: string[] = [];
+  try {
+    await expect(withContextPreparationDeadline(parent.signal, async (signal, budget) => {
+      const receipt = await budget.waitForManagement(async () => { clock.jump(180_001); return "durable-receipt"; });
+      receipts.push(receipt); expect(signal.aborted).toBe(true); received.resolve();
+    })).rejects.toMatchObject({ code: "SOURCE_PREPARATION_TIMEOUT" });
+    await received.promise;
+    expect(receipts).toEqual(["durable-receipt"]); expect(parent.signal.aborted).toBe(false);
+  } finally { clock.restore(); }
+});
+
+test("context completion checks elapsed time before accepting a producer ahead of its overdue timer", async () => {
+  const clock = preparationClock();
+  try {
+    await expect(withContextPreparationDeadline(new AbortController().signal, async () => {
+      clock.jump(60_001); return "overdue-content";
+    })).rejects.toMatchObject({ code: "SOURCE_PREPARATION_TIMEOUT" });
+  } finally { clock.restore(); }
+});
+
+test("a completed context closes management capability without aborting its successful read signal", async () => {
+  let dispatched = 0;
+  const { signal, budget } = await withContextPreparationDeadline(new AbortController().signal, async (signal, budget) => ({ signal, budget }));
+  expect(signal.aborted).toBe(false);
+  await expect(budget.waitForManagement(async () => { dispatched++; })).rejects.toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+  expect(dispatched).toBe(0);
+});
+
+test("nested management cannot dispatch or renew a context allowance", async () => {
+  let dispatched = 0;
+  await withContextPreparationDeadline(new AbortController().signal, async (_signal, budget) => {
+    await budget.waitForManagement(async () => {
+      await expect(budget.waitForManagement(async () => { dispatched++; })).rejects.toMatchObject({ code: "SOURCE_ACTIVATION_CANCELLED" });
+    });
+  });
+  expect(dispatched).toBe(0);
+});
+
+
+test("native root Requires repair carries the accepted context budget to the guarded dependency manager", async () => {
+  const { session, trace, root, required, candidate, scope, setManagement } = await fixture(["required"]);
+  if (root.locator.type !== "shared_skill" || required.locator.type !== "shared_skill") throw new Error("Expected physical Skills");
+  const authorization = { skill_id: root.locator.skill_id, page_id: root.locator.page_id, requires_digest: "e".repeat(64) };
+  const dependency = { ...candidate, name: "required", alias: "required", expected_skill_id: required.locator.skill_id,
+    member_key: "skills/required", record: required };
+  session.f.state.sourceMembers = async input => ({ version: 1, library_id: session.f.source.library, scope, coverage: "complete",
+    ...(input.requires_of ? { root, authorization_root: authorization } : {}), candidates: input.requires_of ? [dependency] : [],
+    failures: [], effects: { remote_writes: "none" } });
+  const clock = preparationClock();
+  setManagement(async request => { expect(request.authorization_root).toEqual(authorization); clock.advance(65_000); });
+  try {
+    const result = await session.turn("Use $root@notion");
+    expect(trace.slice(0, 4)).toEqual(["missing-current-schema", "management", "catalog", "consume"]);
+    expect(result.error).toBeUndefined(); expect(result.provider).toBe(true);
+    expect(JSON.stringify(result.payload)).toContain("Complete root instructions A.");
+    expect(JSON.stringify(result.payload)).toContain("Complete required instructions A.");
+  } finally { clock.restore(); await session.close(); }
 });

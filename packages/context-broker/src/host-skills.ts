@@ -10,7 +10,7 @@ import { InvocationError, recordIdentity } from "./discovery-records";
 import { assertSourceAvailable, formatSourceFailures, hasEnabledNotionSource } from "./sources";
 import { SourceError, SourceReferenceAmbiguity, ReferenceMiss, sourceFailureMessage, sourceFailureDiagnostic } from "./notion-source";
 import { createActivationFeedback, ACTIVATION_MESSAGE } from "./activation-feedback";
-import { checkPreparationSignal, createInputReceipt, createPreparationGate, preparationCancelled, withPreparationDeadline, type ActivePreparation, type InputReceipt } from "./skill-preparation";
+import { checkPreparationSignal, createInputReceipt, createPreparationGate, preparationCancelled, withContextPreparationDeadline, withPreparationDeadline, type ContextPreparationBudget, type ActivePreparation, type InputReceipt } from "./skill-preparation";
 import { brokerToolResultDigest, continueWithoutBrokerPayload, withoutBrokerInstructions } from "./nonblocking-context";
 import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceConfig, SourceFailure, NotionListObservation, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
 import type { HostCapabilities } from "./host-adapter";
@@ -64,7 +64,7 @@ export type HostSkillOptions = {
   needsPreflightPrompt?(text: string): boolean;
   onInputReceipt?(receipt: InputReceipt): void;
   onPreparation?(entry: ActivePreparation): void;
-  preflightPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal, receipt?: InputReceipt): Promise<void>;
+  preflightPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal, receipt?: InputReceipt, budget?: ContextPreparationBudget): Promise<void>;
   taskPrompt?(text: string, ctx: ExtensionContext, signal?: AbortSignal, invocation?: ActivePreparation): Promise<string>;
   /** Pi acquires only after the host has created its cancellable agent operation. */
   buildPreparedPrompt?(text: string, ctx: ExtensionContext, signal: AbortSignal, prepared: readonly SkillRecord[], receipt: InputReceipt): Promise<Omit<AgentMessage, "role" | "timestamp"> | undefined>;
@@ -1191,7 +1191,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
   function needsPreparation(text: string): boolean {
     return Boolean(/^\s*\/skill:[^\s]+/.test(text) || options.needsPreflightPrompt?.(text));
   }
-  async function preflight(text: string, ctx: ExtensionContext, signal?: AbortSignal, selectedNative?: SkillRecord, receipt = gate.active?.receipt): Promise<void> {
+  async function preflight(text: string, ctx: ExtensionContext, signal?: AbortSignal, selectedNative?: SkillRecord, receipt = gate.active?.receipt, budget?: ContextPreparationBudget): Promise<void> {
     checkPreparationSignal(signal);
     text = invocationText(text);
     const nativeSelection = /^\s*\/skill:[^\s]+/.test(text);
@@ -1202,7 +1202,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const candidate = selectedNative ?? nativeRecord(text);
     const record = candidate && (selectedNative || visibleInLibrary(candidate, ctx)) ? candidate : undefined;
     if (record) await prepare(record, ctx, signal);
-    await options.preflightPrompt?.(text, ctx, signal, receipt);
+    await options.preflightPrompt?.(text, ctx, signal, receipt, budget);
     checkPreparationSignal(signal);
   }
 
@@ -1537,7 +1537,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     const run = deferredPiDiscovery ? piRun : undefined;
     const parent = AbortSignal.any([run?.signal ?? lifecycleController.signal, lifecycleController.signal]);
     try {
-      return await withPreparationDeadline(parent, async signal => {
+      return await withContextPreparationDeadline(parent, async (signal, budget) => {
         if (admissionError) throw admissionError;
         const contextEntries = deferredPiDiscovery ? ctx.sessionManager?.buildSessionProjection?.().entries ?? [] : [];
         if (run) {
@@ -1546,7 +1546,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           acknowledgeProjection(run, contextEntries);
           run.userEntryId ??= contextEntries.findLast(entry => entry.sourceEntry.type === "message"
             && entry.messages.some(message => message.role === "user"))?.sourceEntry.id;
-          // Metadata, explicit preparation and restoration share one deadline.
+          // Metadata, preparation and restoration share read time; only guarded
+          // management waits may use the separate cumulative management budget.
           if (!run.prepared && (ctx.mode === "print" || ctx.mode === "json")) {
             await options.librarySelection?.identity(ctx);
             checkPreparationSignal(signal); assertPiRun(run, ctx);
@@ -1575,7 +1576,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
             checkPreparationSignal(preparationSignal); assertPiRun(run, inputContext);
             const native = input.selectedNative && visibleInLibrary(input.selectedNative, inputContext) ? input.selectedNative : undefined;
             revalidateMetadata(inputContext);
-            await preflight(text, inputContext, preparationSignal, native, receipt);
+            await preflight(text, inputContext, preparationSignal, native, receipt, budget);
             checkPreparationSignal(preparationSignal); assertPiRun(run, inputContext);
             const task = await options.taskPrompt?.(text, inputContext, preparationSignal, entry) ?? text;
             checkPreparationSignal(preparationSignal); assertPiRun(run, inputContext);

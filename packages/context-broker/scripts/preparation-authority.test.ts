@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { authorizeExplicitPreparation, authorizedPreparationRoots, revokePreparationAuthority } from "../src/preparation-authority";
-import { createInputReceipt } from "../src/skill-preparation";
+import { authorizeExplicitPreparation, authorizedPreparationRoots, preparationBudget, revokePreparationAuthority } from "../src/preparation-authority";
+import { createInputReceipt, withContextPreparationDeadline } from "../src/skill-preparation";
 import { explicitDollarQueries } from "../src/invocation-text";
 import type { ExtensionContext, SkillRecord } from "../src/types";
 
@@ -61,4 +61,16 @@ test("a completed preflight cannot lend its authority to a later consumer", () =
 test("unqualified amounts and shell variables cannot become Source management intent", () => {
   expect(explicitDollarQueries("Amounts $10 and $1.25; vars $HOME ${USER} $lowercase_skill")).toEqual(new Set(["lowercase_skill"]));
   expect(explicitDollarQueries("$HOME@notion $10@notion")).toEqual(new Set(["HOME@notion", "10@notion"]));
+});
+
+
+test("the context budget follows only a current issued grant and is removed with that grant", async () => {
+  const f = fixture();
+  await withContextPreparationDeadline(new AbortController().signal, async (_signal, budget) => {
+    const authority = authorizeExplicitPreparation(f.receipt, [{ query: "root@notion", record: f.record }], budget);
+    expect(preparationBudget(authority)).toBe(budget);
+    expect(preparationBudget({ receiptId: f.receipt.id })).toBeUndefined();
+    revokePreparationAuthority(authority);
+    expect(preparationBudget(authority)).toBeUndefined();
+  });
 });
