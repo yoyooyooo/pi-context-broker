@@ -106,7 +106,10 @@ export function assertColdMaterializationBudget({ receipt, facts, source, events
     assert.equal(request.method, proof.method); assert.equal(request.path, proof.path);
     assert.equal(request.control, 'hold-before-headers'); assert.equal(request.phase, 'materialize');
     assert.equal(request.terminal, 'finished'); assert.equal(request.status, 200);
-    assert.equal(request.response_bytes_complete, true); assert.equal(request.semantic_write, false);
+    assert.equal(request.response_bytes_complete, true);
+    // The fixture marks writes only; the exact GET method and path were checked above.
+    assert.ok(request.semantic_write === undefined || request.semantic_write === false,
+      'A held GET must not carry a semantic write or an unknown write marker');
     const starts = own.filter(row => row.kind === 'context-broker.notion-sdk' && row.event === 'start' && row.id === proof.sdk_id);
     const ends = own.filter(row => row.kind === 'context-broker.notion-sdk' && row.event === 'end' && row.id === proof.sdk_id);
     assert.equal(starts.length, 1); assert.equal(ends.length, 1);
