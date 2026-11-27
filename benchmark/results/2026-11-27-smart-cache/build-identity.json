@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "at_utc": "2026-11-27T06:18:38.555755+00:00",
+  "status": "passed",
+  "build_id": "next-smart-cache-20261127-1",
+  "build": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-smart-cache-20261127-1/build.json",
+    "sha256": "114b95ffb082aefa1046708bd7d15028479432933e2964ad71ebefb844fb2027",
+    "bytes": 9915279
+  },
+  "check": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/build-check-1.json",
+    "sha256": "65c59f4a459483b704812b99964b47dcd6408f98fd9bf3f883b6caf8a5b81ab6",
+    "bytes": 1197
+  },
+  "source_commits": {
+    "broker": "8bb9f72ed3f42b500521dbb01af12d361a0d30c4",
+    "cli": "24f954eadc1759e10d1110fbc8027d83f36cd620"
+  },
+  "accepted_product": {
+    "broker": "312c40ba85a2253306c3b4f82f82a4686168af74",
+    "cli": "31f30db8f960cc4f36d1e02f8e279d641b660718"
+  },
+  "actual_entries": {
+    "public_sdk": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-smart-cache-20261127-1/cli/dist/sdk.js",
+      "sha256": "ea241cd603491adaeb9e8a2364cb3fdc545459462a519b04eaad84500214a420",
+      "bytes": 1233938
+    },
+    "installed_sdk": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-smart-cache-20261127-1/installed/cli/node_modules/ntn-skills/dist/sdk.js",
+      "sha256": "ea241cd603491adaeb9e8a2364cb3fdc545459462a519b04eaad84500214a420",
+      "bytes": 1233938
+    },
+    "installed_cli": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-smart-cache-20261127-1/installed/cli/node_modules/ntn-skills/dist/ntn-skills.js",
+      "sha256": "75aa23bb3c8d07a730065c0601bd338926e72e6a28ff768307dba178d514e623",
+      "bytes": 2270724
+    },
+    "installed_broker": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-smart-cache-20261127-1/installed/broker/node_modules/pi-context-broker/src/index.ts",
+      "sha256": "bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9",
+      "bytes": 128851
+    }
+  },
+  "daily_readback": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/daily-current-readback.json",
+    "sha256": "0242dc7a7fc399512b15448a530137c5b4a5fac0c1ba09e5faf23d1f22faaf3d",
+    "bytes": 23351
+  },
+  "identity_scope": "Exact selected public SDK and installed CLI/Broker entries equal the accepted daily product. Benchmark-specific frozen source/controller remain a distinct identity; this is not a pure-next daily build.",
+  "permission_to_prepare": "One read-only current-SDK material refresh and zero-send configure under original declared design; actual model sends require separate root technical gate."
+}

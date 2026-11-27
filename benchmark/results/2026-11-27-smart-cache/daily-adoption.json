@@ -1,0 +1,344 @@
+{
+  "version": 1,
+  "kind": "thin-projection-of-existing-daily-adoption-readback",
+  "original": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/daily-current-readback.json",
+    "sha256": "0242dc7a7fc399512b15448a530137c5b4a5fac0c1ba09e5faf23d1f22faaf3d",
+    "bytes": 23351
+  },
+  "written_at": "2026-11-27T06:01:32.458617+00:00",
+  "scope": "Read existing owner receipts and actual installed bindings; no deployment or new Pi/Notion execution.",
+  "accepted_pair": {
+    "cli": "31f30db8f960cc4f36d1e02f8e279d641b660718",
+    "broker": "312c40ba85a2253306c3b4f82f82a4686168af74",
+    "generation": "31f30db8f960-312c40ba85a2"
+  },
+  "delivery_owner": "Existing AH-1329 / PR107 delivery owner; no takeover by Benchmark",
+  "conclusion": {
+    "all_three_installed_bindings_match_accepted_pair": true,
+    "all_three_owner_fresh_pi_verification_completed": true,
+    "verification_scope": "ordinary user plugins, live Notion, controlled loopback provider; fresh A/B Pi processes; no claim of natural model behavior",
+    "imile_first_attempt_failed_and_retained": true
+  },
+  "common_installed_sha256": {
+    "ntn-skills/dist/ntn-skills.js": "75aa23bb3c8d07a730065c0601bd338926e72e6a28ff768307dba178d514e623",
+    "ntn-skills/dist/sdk.js": "ea241cd603491adaeb9e8a2364cb3fdc545459462a519b04eaad84500214a420",
+    "pi-context-broker/src/index.ts": "bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9",
+    "pi-context-broker/dist/next-build.json": "d92094e2b7419bec1763398ee59288ef20df08bab8ed8f247b282d7be19b3842"
+  },
+  "machines": {
+    "mini": {
+      "read_at": "2026-11-27T05:53:31.100863+00:00",
+      "evidence_root": "/Users/yoyo/.local/share/notion-skills-next/31f30db8f960-312c40ba85a2/evidence",
+      "installed_files_match_common_hashes": true,
+      "receipts": {
+        "installation/result.json": {
+          "sha256": "43685e6fe47763cf846cb567b73dbefa8b7db61a1cd25c121074d37dee0babb0",
+          "status": "installed-and-selected",
+          "at": "2026-11-27T05:46:19.754Z"
+        },
+        "delivery/host-delivery-summary.json": {
+          "sha256": "3c7e79427f9c870941721a53edda715ece0da49e715038ae13dbcb8c6de8621b",
+          "status": "passed",
+          "at": null
+        },
+        "daily-cache/result.json": {
+          "sha256": "2a433af25711deac3a4a5f504c55fbc8566afef0f1f23b83b54af7946c31418a",
+          "status": "passed",
+          "at": "2026-11-27T05:48:05.196Z"
+        },
+        "upgrade-scope/summary.json": {
+          "sha256": "6a98c52a9fad6977e0c011dde65d3cf1fc8177fb2b183825f1aff20aadb0061b",
+          "status": "passed",
+          "at": null
+        }
+      },
+      "cache_summary": {
+        "body_max_age_ms": 3600000,
+        "baseline_pid": 5558,
+        "warm_pid": 5776,
+        "prepared_nodes": 1,
+        "required_edges": 0,
+        "baseline_sdk_http": 25,
+        "warm_sdk_http": 26,
+        "warm_directory_http": 26,
+        "warm_metadata_http": 25,
+        "warm_library_root_structure_http": 1,
+        "warm_consume_http": 0,
+        "warm_all_consumption_operations_http": 0,
+        "original_validated_at_preserved": true,
+        "complete_root_and_requires_in_actual_provider_wire": true,
+        "baseline_is_not_assumed_cold": true,
+        "directory_refresh_necessity": "not asserted by this ordinary-installation action",
+        "diagnostic_namespace_status": "ok"
+      },
+      "phases": [
+        {
+          "phase": "D",
+          "status": "passed",
+          "sha256": "5f0745bb198ff0d58efe79f61f0f3ef4664f10b9452c8c8474224831c2caccac",
+          "pid": 5126,
+          "observed_exit": true,
+          "exit_code": 0,
+          "normal_plugins": true,
+          "installed_broker_injected": false,
+          "initial_message_count": 0,
+          "provider_kind": null,
+          "consume_http": null,
+          "consume_elapsed_ms": null,
+          "graph_node_count": 0
+        },
+        {
+          "phase": "A",
+          "status": "passed",
+          "sha256": "e93eb82e51b244e1aa52373c7a1700cf9735cef198a0f905425eaaa07cdd7f96",
+          "pid": 5558,
+          "observed_exit": true,
+          "exit_code": 0,
+          "normal_plugins": true,
+          "installed_broker_injected": false,
+          "initial_message_count": 0,
+          "provider_kind": "controlled-loopback",
+          "consume_http": 25,
+          "consume_elapsed_ms": 16858.647541,
+          "graph_node_count": 1
+        },
+        {
+          "phase": "B",
+          "status": "passed",
+          "sha256": "faf0eaf1b4d5bcf08c33d848e981247ea0d5066704f1324762d5da516e453248",
+          "pid": 5776,
+          "observed_exit": true,
+          "exit_code": 0,
+          "normal_plugins": true,
+          "installed_broker_injected": false,
+          "initial_message_count": 0,
+          "provider_kind": "controlled-loopback",
+          "consume_http": 0,
+          "consume_elapsed_ms": 44.833541,
+          "graph_node_count": 1
+        }
+      ]
+    },
+    "pro": {
+      "read_at": "2026-11-27T05:53:28.758910+00:00",
+      "evidence_root": "/Users/yoyo/.local/share/notion-skills-next/31f30db8f960-312c40ba85a2/evidence",
+      "installed_files_match_common_hashes": true,
+      "receipts": {
+        "installation/result.json": {
+          "sha256": "cf991d302978a979eacc4532ddcfaeac16224be502c439f926e2a4e0169e2e72",
+          "status": "installed-and-selected",
+          "at": "2026-11-27T05:42:44.985Z"
+        },
+        "delivery/host-delivery-summary.json": {
+          "sha256": "73b6f9a0229209ec262a95ba55ae5559d87392f7b3f1ab1fb915850d3f1b1656",
+          "status": "passed",
+          "at": null
+        },
+        "daily-cache/result.json": {
+          "sha256": "86b9e466a7fe5529c6921cd0d72de9ffe5a578f238f5be71f6fde0ed4c0c04d2",
+          "status": "passed",
+          "at": "2026-11-27T05:44:43.554Z"
+        },
+        "upgrade-scope/summary.json": {
+          "sha256": "95418fccc7f14ce3d4781e5c88307ecab5fd2a4d27c6fb12316ec1aff5488d99",
+          "status": "passed",
+          "at": null
+        }
+      },
+      "cache_summary": {
+        "body_max_age_ms": 3600000,
+        "baseline_pid": 22783,
+        "warm_pid": 22956,
+        "prepared_nodes": 1,
+        "required_edges": 0,
+        "baseline_sdk_http": 25,
+        "warm_sdk_http": 0,
+        "warm_directory_http": 0,
+        "warm_metadata_http": 0,
+        "warm_library_root_structure_http": 0,
+        "warm_consume_http": 0,
+        "warm_all_consumption_operations_http": 0,
+        "original_validated_at_preserved": true,
+        "complete_root_and_requires_in_actual_provider_wire": true,
+        "baseline_is_not_assumed_cold": true,
+        "directory_refresh_necessity": "not asserted by this ordinary-installation action",
+        "diagnostic_namespace_status": "ok"
+      },
+      "phases": [
+        {
+          "phase": "D",
+          "status": "passed",
+          "sha256": "10464afa562680ac5f86f042b73e6c8c76c70a7ade9ffe35ca0c0a96d2a8ccc4",
+          "pid": 22396,
+          "observed_exit": true,
+          "exit_code": 0,
+          "normal_plugins": true,
+          "installed_broker_injected": false,
+          "initial_message_count": 0,
+          "provider_kind": null,
+          "consume_http": null,
+          "consume_elapsed_ms": null,
+          "graph_node_count": 0
+        },
+        {
+          "phase": "A",
+          "status": "passed",
+          "sha256": "aee351172ffdc79baa45eada0e3cee5c64d737c9c9355e38b4806f788637d370",
+          "pid": 22783,
+          "observed_exit": true,
+          "exit_code": 0,
+          "normal_plugins": true,
+          "installed_broker_injected": false,
+          "initial_message_count": 0,
+          "provider_kind": "controlled-loopback",
+          "consume_http": 25,
+          "consume_elapsed_ms": 11147.421875,
+          "graph_node_count": 1
+        },
+        {
+          "phase": "B",
+          "status": "passed",
+          "sha256": "6c20729c8ec4fae13284c4b76a0488cb05ff8c1849ea4756165b69201e67949a",
+          "pid": 22956,
+          "observed_exit": true,
+          "exit_code": 0,
+          "normal_plugins": true,
+          "installed_broker_injected": false,
+          "initial_message_count": 0,
+          "provider_kind": "controlled-loopback",
+          "consume_http": 0,
+          "consume_elapsed_ms": 64.735458,
+          "graph_node_count": 1
+        }
+      ]
+    },
+    "imile-win": {
+      "read_at": "2026-11-27T06:00:03.113409+00:00",
+      "evidence_root": "/home/yoyo/.local/share/notion-skills-next/31f30db8f960-312c40ba85a2/evidence",
+      "installed_files_match_common_hashes": true,
+      "receipts": {
+        "installation/result.json": {
+          "sha256": "aecfcf3f89d323797571d70caaa949d5b2dcc7457f02600bcf591670ea1c048f",
+          "status": "installed-and-selected",
+          "at": "2026-11-27T05:48:25.287Z"
+        },
+        "delivery/host-delivery-summary.json": {
+          "sha256": "cbbc77c388aa840ffae10880d5de72c7214fd3f78d01fbcddc4a4e73aae7649a",
+          "status": "passed_after_one_observed_timeout_recovery",
+          "at": null
+        },
+        "daily-cache-recovery-01/result.json": {
+          "sha256": "8e2073032925810fad727ce4bd0d05514ce0d7bafb7c13f98a6dc5186f2c7ef3",
+          "status": "passed",
+          "at": "2026-11-27T05:59:26.838Z"
+        },
+        "upgrade-scope/summary.json": {
+          "sha256": "5dd6c8c8521b5a8afcfc0947c5ac49ab3bab3c822a32a8613296ca70a5fdd8f5",
+          "status": "passed",
+          "at": null
+        }
+      },
+      "cache_summary": {
+        "body_max_age_ms": 3600000,
+        "baseline_pid": 3605851,
+        "warm_pid": 3608090,
+        "prepared_nodes": 1,
+        "required_edges": 0,
+        "baseline_sdk_http": 25,
+        "warm_sdk_http": 26,
+        "warm_directory_http": 26,
+        "warm_metadata_http": 25,
+        "warm_library_root_structure_http": 1,
+        "warm_consume_http": 0,
+        "warm_all_consumption_operations_http": 0,
+        "original_validated_at_preserved": true,
+        "complete_root_and_requires_in_actual_provider_wire": true,
+        "baseline_is_not_assumed_cold": true,
+        "directory_refresh_necessity": "not asserted by this ordinary-installation action",
+        "diagnostic_namespace_status": "ok"
+      },
+      "phases": [
+        {
+          "phase": "D",
+          "status": "passed",
+          "sha256": "e661a2ceee473fe37451da35cf0a0a5615fb89a8f11a545e0c526da1c3cd0a4f",
+          "pid": 3591889,
+          "observed_exit": true,
+          "exit_code": 0,
+          "normal_plugins": true,
+          "installed_broker_injected": false,
+          "initial_message_count": 0,
+          "provider_kind": null,
+          "consume_http": null,
+          "consume_elapsed_ms": null,
+          "graph_node_count": 0
+        },
+        {
+          "phase": "A",
+          "status": "passed",
+          "sha256": "3c82ca555e568efe9c30f55287a7e90d8452cbdde430062ec492f97ae38bd8a4",
+          "pid": 3605851,
+          "observed_exit": true,
+          "exit_code": 0,
+          "normal_plugins": true,
+          "installed_broker_injected": false,
+          "initial_message_count": 0,
+          "provider_kind": "controlled-loopback",
+          "consume_http": 25,
+          "consume_elapsed_ms": 14672.135341,
+          "graph_node_count": 1
+        },
+        {
+          "phase": "B",
+          "status": "passed",
+          "sha256": "f1ccf1c4f74a9430dcd3cee9a88951c62ae6285ad818e344606ba5878875fb45",
+          "pid": 3608090,
+          "observed_exit": true,
+          "exit_code": 0,
+          "normal_plugins": true,
+          "installed_broker_injected": false,
+          "initial_message_count": 0,
+          "provider_kind": "controlled-loopback",
+          "consume_http": 0,
+          "consume_elapsed_ms": 144.029201,
+          "graph_node_count": 1
+        }
+      ],
+      "retained_failed_attempt": {
+        "result": "daily-cache/result.json",
+        "sha256": "58c7b638be2c3e12c0d1d820e195754259f54d1d5799a8fd274b69969ac217ff",
+        "phase": "daily-cache/D/result.json",
+        "phase_sha256": "afe74630d8c2677e9d967d9c5a19725af1141964ed9a158b95693fc09aec15c7",
+        "error": "Actual command notification is missing",
+        "completed_at": "2026-11-27T05:49:34.754Z"
+      }
+    }
+  },
+  "owner_control_inputs": [
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/smart-cache-delivery-20261127-5924/control/actual-next-source.json",
+      "sha256": "fc173a3c8f416969cd8fe0eb7610d08b8b90e01219c2d323205a0bc65dea6f13"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/smart-cache-delivery-20261127-5924/control/packed-build-summary.json",
+      "sha256": "54a298a5d38355c4a1cc38a198592a130a146c613df6908b8891f0bc0b91874d"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/smart-cache-delivery-20261127-5924/control/delivery-payload.json",
+      "sha256": "c5eb1992b9fad03d523a0cce59b6923234ae49414993d05baeb9600c84d3713a",
+      "note": "Historical staged_not_installed receipt; current bindings and later installation evidence establish actual installation."
+    }
+  ],
+  "evidence_boundaries": [
+    "Reader started no Pi sessions, model sends, builds, installs, or Notion requests; deployment and recovery remained with the AH-1329 owner.",
+    "On each host, A and B have different fresh Pi PIDs, empty initial sessions, normal user plugins, no CLI injection of Broker, and observed exit 0. Actual autoload entry SHA equals the directly read installed Broker entry SHA.",
+    "Complete selected root body reached the real Pi serializer and controlled-loopback provider. Each selected graph has one node and zero Requires edges; positive live Requires and natural-model behavior remain unproven.",
+    "Warm consume and all consumption operations have zero HTTP on all three hosts. Warm SDK HTTP totals are Mini 26, Pro 0, imile 26; the nonzero requests are directory work. No all-scenario zero-request or speedup claim.",
+    "Original validated_at is preserved on all three. A baseline is not assumed cold.",
+    "Mini pi launcher is a small multica shim whose REAL_PI_JS targets the same Pi 1.6 entry used in the owner evidence. The shim filename version is not the underlying Pi package version.",
+    "CLI archive intentionally omits dist/next-build.json; producer identity is separately retained under evidence/producer/cli-next-build.json.",
+    "Installation receipt actual_new_pi=pending_public_daily_runner belongs to the earlier installation stage. Later passed daily-cache and host-delivery-summary receipts provide actual Pi evidence.",
+    "Imile first D failed with Actual command notification is missing. Its original failed files remain; daily-cache-recovery-01 passed and host summary explicitly reports passed_after_one_observed_timeout_recovery."
+  ]
+}

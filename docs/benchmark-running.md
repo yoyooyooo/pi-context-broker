@@ -98,6 +98,15 @@ tuple and original evidence remain available; the ordinary product source stays
 on the accepted runtime. This result is separate from the subsequently merged
 CLI smart-cache product and its Broker integration.
 
+The [accepted smart-cache comparison](benchmark-smart-cache-2026-11-27.md)
+uses each condition's exact SDK material proof and the same explicit/continuation
+cases. Its four valid observations contain three passes and one retained
+selection-evidence unknown; every business result and critical contract passes.
+It shows no foreground HTTP reduction in those actively refreshed episodes.
+The existing ordinary-profile warm-consumption result remains a separate scope.
+The observed repeated Library-title read proceeds as a narrow product fix, with
+new verification and delivery identities.
+
 Offline `reanalysis` can correct the interpretation of retained raw evidence
 without rebuilding or executing the product. Its historical source contracts
 remain explicit and separate from the current production protocol. Verify the
@@ -204,6 +213,7 @@ the common case material with `setup.materialization_binding_file`, then set
 ```json
 {
   "materialization_binding_file": "/absolute/owned/reference/binding.json",
+  "environment_pairs": [[1, 0]],
   "candidates": [
     {
       "id": "reference-broker",
@@ -227,8 +237,12 @@ the common case material with `setup.materialization_binding_file`, then set
 ```
 
 This fragment belongs in the existing standing setup; it does not replace its
-model, runtime, corpus or authorization fields. Configuration checks the proof
-against the selected frozen build's actual public SDK before reading model
+model, runtime, corpus or authorization fields. Each `environment_pairs` item
+is ordered `[candidate_index, reference_index]`; the example puts the reference
+first in `candidates`, so its comparison is `[1, 0]`. Check the frozen pair's
+condition IDs and schedule before transport, rather than inferring the direction
+from candidate names. Configuration checks the proof against the selected
+frozen build's actual public SDK before reading model
 credentials or capturing a subject. Both proofs must retain the same Library,
 Skill identities, public cases, input files, oracle and native-equivalent
 resource bytes and modes. Different physical proof hashes remain separately

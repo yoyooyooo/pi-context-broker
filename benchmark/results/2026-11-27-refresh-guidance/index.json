@@ -86,6 +86,12 @@
       "sha256": "3fb74b0b5b796422126a341c3dee022a84db5915c540d1929dcded5cf940e3ef",
       "bytes": 3578,
       "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-guide-sources-20261127/closeout.json"
+    },
+    {
+      "path": "orientation-readback.json",
+      "sha256": "31dadd2ccdd2b7b26ffb15268b0c51557c1e3bd9c8914800329df6af92105b56",
+      "bytes": 2747,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/retained-guide-orientation-readback.json"
     }
   ],
   "scope": "Navigation and selected summaries; complete original requests, responses and sessions remain at referenced Mini paths. Not a portable sealed replay package."
