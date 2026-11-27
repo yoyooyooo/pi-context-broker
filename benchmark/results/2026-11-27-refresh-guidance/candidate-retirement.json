@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "kind": "released-candidate-evidence-only-retirement-closeout",
+  "closed_at": "2026-11-27T05:39:11.920846+00:00",
+  "status": "retired_to_system_trash",
+  "build_id": "next-refresh-guidance-20261127-1",
+  "disposition": "evidence_only",
+  "scope": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-candidate-20261127/scope.json",
+    "sha256": "1f580624d55653d57f6ed2a6c8270ddd591508453378a93e903b7fc82dfadc97",
+    "bytes": 1765
+  },
+  "pre_audit": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-candidate-20261127/pre-audit.json",
+    "sha256": "f07e5fcde7437d7e90c6fdd0ac5c3146b508112fb6382e5fbece3c17b1b024d7",
+    "bytes": 26637
+  },
+  "verified_seed_sources": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-candidate-20261127/cache-seed-sources-verified.json",
+    "sha256": "8d1cd2698940c3e0ef67c752450b8c5e675b9e96f3afaf066c280ad91b657ed4",
+    "bytes": 15973
+  },
+  "post_audit": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-candidate-20261127/post-audit.json",
+    "sha256": "0685ef124e06eb5cb1d21a5f65730ce7c76727684a609cb0dd4d5a5cf17473f0",
+    "bytes": 3159
+  },
+  "paths": [
+    {
+      "source_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-refresh-guidance-20261127-1/source/broker/node_modules",
+      "destination_path": "/Users/yoyo/.Trash/node_modules 13-39-06-458",
+      "source_absent": true,
+      "native_acknowledgement": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-candidate-20261127/trash-1.native.json",
+        "sha256": "0ecab454924a1ac9b9b6aab8de108adbcd0c8a8425f3aa86fecd8b8b2c137643",
+        "bytes": 543
+      },
+      "allocated_kib_before": 110000,
+      "destination_bytes": "not_verified"
+    },
+    {
+      "source_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-refresh-guidance-20261127-1/source/cli/node_modules",
+      "destination_path": "/Users/yoyo/.Trash/node_modules 13-39-06-631",
+      "source_absent": true,
+      "native_acknowledgement": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-candidate-20261127/trash-2.native.json",
+        "sha256": "51e92dde2d06859aea784861fccd6ba06846b10da58c068da7898cb3d7ab02a9",
+        "bytes": 537
+      },
+      "allocated_kib_before": 204668,
+      "destination_bytes": "not_verified"
+    },
+    {
+      "source_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-refresh-guidance-20261127-1/build-state/cache",
+      "destination_path": "/Users/yoyo/.Trash/cache 13-39-06-808",
+      "source_absent": true,
+      "native_acknowledgement": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-candidate-20261127/trash-3.native.json",
+        "sha256": "dcc413a225c9fca6f759407568a1884483d67aca4a715321b1f3a3743618353f",
+        "bytes": 518
+      },
+      "allocated_kib_before": 276028,
+      "destination_bytes": "not_verified"
+    }
+  ],
+  "retired_active_allocated_kib": 590696,
+  "retained_originals_unchanged": 32196,
+  "preserved_cache_logs": 11,
+  "disk": {
+    "before_available_kib": 46315616,
+    "after_available_kib": 46253112,
+    "available_delta_kib": -62504,
+    "reclaimed_bytes": "not_claimed",
+    "interpretation": "Same-volume Trash is reversible retirement, not physical capacity reclamation; df includes concurrent activity."
+  },
+  "release": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/operator-closeout.json",
+    "sha256": "cfd2fd7c4cc589bb85b244e46a04c553a1d5c6cf17917a1a9a5059330842ae9f",
+    "bytes": 3849
+  },
+  "decision": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/refresh-guidance-cycle-20261127/product-decision.json",
+    "sha256": "314b10dd46469a92d1b47763ac89d3b85ae638a1b0fcc15f225efdea010b7588",
+    "bytes": 2318
+  },
+  "future_contract": "Original build manifest is unchanged. Source/controller, installed packages, bundled SDK/core, archives, all runs/raw/results/usage and controls remain. Complete dependency checks or full runtime replay are not promised after source node_modules and build-state/cache retirement.",
+  "reference_build": "next-product-runtime-20261127-2 remains untouched for accepted-cache comparison and seed use",
+  "new_model_requests": 0
+}
