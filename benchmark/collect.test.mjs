@@ -13,6 +13,7 @@ import { readSubjectTurnControl } from './execute.mjs';
 import { loadCurrentSourceViews } from './current-source-views.mjs';
 import { RETAINED_SOURCE_CONTRACT } from './retained-source-views.mjs';
 import { observeEpisodeNotion } from './runtime/episode-notion.mjs';
+import { finishEpisodeNotion } from './runtime/episode-runner.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture({ outcome='pass', missingUsage=false, tools=[], source=false, opaque=false, capture=false, budgetStopped=false, adapter=true,
@@ -68,7 +69,7 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
   if(!capture&&!missingUsage)usageLine=record('provider_stream_event',{request_id:'request-1',attempt_id:'attempt-1',provider:'unit-provider',api,model:'unit-route',
     event:api==='openai-responses'?{type:'response.completed',response:{usage:{input_tokens:100,output_tokens:20,total_tokens:120,input_tokens_details:{cached_tokens:30}}}}
       :{usage:{prompt_tokens:100,completion_tokens:20,total_tokens:120,prompt_tokens_details:{cached_tokens:30}}}},'request-1');
-  let notion=null;
+  let notion=null, runtimeStatus=capture?'captured':budgetStopped?'budget_stopped':'completed';
   if(managementEvents!==undefined){
     await mkdir(join(runRoot,'subject-runtime'));
     const cli=await save(join(runRoot,'observer-cli.mjs'),'// synthetic observer fixture\n');
@@ -79,7 +80,8 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
           addArtifact:async(id,path,kind)=>{const bytes=await readFile(path);const artifact={id,path,sha256:sha(bytes),bytes:bytes.length,kind};rawArtifacts.push(artifact);return artifact;}},
         context:()=>({stage:'user_task',turn_id:'turn-1',model_request_id:null,active_tool_call_ids:[]})});
       for(const event of managementEvents)diagnostics.channel('context-broker.notion-materialization').publish(event);
-      notion=await observer.finish();
+      const cleanup=await finishEpisodeNotion({notion:observer,status:runtimeStatus,record});
+      notion=cleanup.result;runtimeStatus=cleanup.status;
       // Empty SDK observations isolate this collector contract; this fixture
       // does not claim current product source delivery or management execution.
       notion.source_contract=RETAINED_SOURCE_CONTRACT;
@@ -103,7 +105,7 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
   const eRef=line=>({artifact_id:'events',sha256:events.sha256,line});
   const snapshot=await add('workspace-final',join(runRoot,'workspace-final.json'),{files:outputFile?[{path:'output/result.json',sha256:outputFile.sha256}]:[]});
   const rRef=(a,pointer='')=>({artifact_id:a.id,sha256:a.sha256,pointer});
-  const episode={version:1,status:capture?'captured':budgetStopped?'budget_stopped':'completed',
+  const episode={version:1,status:runtimeStatus,
     correlation:{run_id:'unit-run',episode_id:'unit-run',candidate_id:condition.id,task_id:'c1'},
     admission:{status:capture?'captured_not_authorized':'accepted_before_task',refs:[]},
     coverage:{attempts:'complete',tools:'complete',interventions:'complete'},
@@ -423,6 +425,8 @@ test('management collection rejects summary changes and incomplete raw evidence 
     ['duplicate result',[...managementEvents(),managementEvents()[1]]],
     ['changed attribution',[managementEvents()[0],{...managementEvents()[1],library:'different-library'}]],
     ['invalid ready effects',managementEvents('ready','unknown')],
+    ['malformed result with another pending request',[...managementEvents().slice(1),...managementEvents('pending','unknown')
+      .map(event=>({...event,request_id:'pending-request',member_key:'pending-skill'}))]],
   ])await t.test(name,async()=>{
     const result=await collect(await fixture({managementEvents:events,remoteWrite:false}));
     assert.equal(result.validity,'invalid');assert.equal(result.verified_success,false);

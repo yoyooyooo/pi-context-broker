@@ -294,7 +294,10 @@ request attribution, original input context, observed result context and reporte
 effects are retained independently of ordinary SDK consumption. A late first
 result keeps both contexts. A `pending` receipt ends the foreground management
 call but leaves durable settlement unknown; the observer does not wait for a
-second result that this producer never promises. Malformed, orphan and duplicate
+second result that this producer never promises. Cleanup preserves a completed
+business episode with this unresolved management state only when ordinary SDK,
+owned HTTP and direct-child observations are complete. Startup captures still
+require idle preparation. Malformed, orphan and duplicate
 events remain in the raw stream and make management coverage partial.
 
 Management reports may contain `remote_writes: "management"`; ordinary consumption
