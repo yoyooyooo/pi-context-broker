@@ -79,7 +79,7 @@
     "packages/context-broker/scripts/nonblocking-context.test.ts": "6d949157c04cf39bd712c0fdca024a9ce803d15e37de5f5a7ec9fa3ebfe8a3b2",
     "packages/context-broker/scripts/activation-feedback.test.ts": "9f15a1bbbad5f5a12e8c0544ef10037d85b44d0dbe127ecff08cd000c2dac6ce",
     "packages/context-broker/src/accepted-selections.ts": "792eeb195d47c3a925e9cc56224af1bcf512584a13483cf9db2e37f14fa0d19e",
-    "packages/context-broker/src/completion-candidates.ts": "a13700af32283f4308169b325199d529261ee76833f9d7700ce0f98a22cc0fdb",
+    "packages/context-broker/src/completion-candidates.ts": "75ab3bf33e81b00312bb9c983c782f370f782fabb248d7523fdaa8e22207de7b",
     "packages/context-broker/src/dollar.ts": "58b381eadc83d017a38c97a12c50d1e540f1dadd0130f77bf1e9f29fc796e977",
     "packages/context-broker/src/pi-dollar-editor.ts": "3ef381720a6ca482cdba1ce9f06dc0d5a4788942c7e163a463284b23269a6016",
     "packages/context-broker/scripts/accepted-selections.test.ts": "5854988f8d8c2e4db46abb73a456a8e31dc39e2ddfd5d2edbc60e7c2ce729a83",
@@ -90,11 +90,12 @@
     "packages/context-broker/scripts/pi-queued-input.test.ts": "cf885e86c5f3d623ca86978815e7ef11fa6fb92399adc46b8124b7858ad9767d",
     "packages/context-broker/scripts/notion-sdk.test.ts": "45ab801c5fefc047f5caf4bd7045ac3d7623b759954a3f403180e891f987c707",
     "packages/context-broker/src/source-materialization.ts": "1191bc52372a839051a4c95d78d8739868fffecf5ec1a77fb45b4eafad101037",
-    "packages/context-broker/scripts/source-materialization-catalog.test.ts": "05dc6b1a2ed5ffc463dd3171dc5cdb140e70afc88cb7a38029599f1d10befd08",
+    "packages/context-broker/scripts/source-materialization-catalog.test.ts": "a917e8054c750ee1185f9d9169e3a0074058e77f7fdbf9c89ce84c2accb63540",
     "packages/context-broker/src/preparation-authority.ts": "3613d92ae24f655ebd6ef46d46a11be62cefb51e5afa2af43b860b2639aae11b",
     "packages/context-broker/scripts/source-materialization.test.ts": "ad426640a44d8ecd842273a8f0b926634aeb1fceea14b3ec8726d2792186b4ae",
     "packages/context-broker/scripts/preparation-authority.test.ts": "96870fecd284160eef7b94d8217b0667372abe66b9e2a7a08646e6d59fb98da6",
-    "packages/context-broker/src/source-materialization-contract.ts": "ebcd3d79e37b06c5c57e8eb87699506865c8bcb2c8c9e21bc92202ed00b6a259"
+    "packages/context-broker/src/source-materialization-contract.ts": "ebcd3d79e37b06c5c57e8eb87699506865c8bcb2c8c9e21bc92202ed00b6a259",
+    "packages/context-broker/scripts/source-member-candidates.test.ts": "89fa0fecddceedc73758fad8d4bc7dac44d0fa2b2fcb3c00107e2d7a4bfce8fe"
   },
   "models": {
     "FreshnessPublication": {
@@ -230,6 +231,21 @@
         "pi-dollar-editor.test.ts: initial native input handoff, early Escape/unknown history, exact focused instance/draft/cursor/scope, native return/throw and foreign method/descriptor changes; same-scope open/waiting provider rebinding and no implicit Tab acceptance"
       ],
       "limitations": "The historical 18-state design run is not this maintained model. Cold/partial snapshots, arbitrary removals, source/session changes, Promise termination, terminal frames, milliseconds and actual Skill use require separate implementation/host evidence. Native startup observation, waiting-intent preservation and provider installation/rebinding require actual Editor and full-configuration terminal replays; these safety invariants do not establish them."
+    },
+    "SourceMemberSelection": {
+      "bounds": "One admitted literal, fixed ordinary local selection and namespace result, complete/partial decoded directory and zero/one/multiple matches. Two represents many; twenty-four initial combinations. No time, fairness or service availability property.",
+      "owners": [
+        "index.ts discoverInputMembers: existing ordinary registry result must be not-found before Source member discovery",
+        "completion-candidates.ts sourceMemberQuery and matchSourceMemberCandidate: selected namespace, then complete coverage, then zero/one/multiple matches",
+        "index.ts materializeInputMember: only the selected unique candidate reaches the separate management boundary"
+      ],
+      "atomicity": "Route, Observe, Classify and AdmitManagement are separate. Registry and decoded directory facts are fixed input premises. Admission denotes entry into the existing management boundary, not network dispatch, remote settlement or content publication. Current receipt, authorization, cancellation and budget remain independent concrete guards.",
+      "replays": [
+        "source-member-candidates.test.ts: partial zero/one/multiple candidates throw exact CATALOG_INCOMPLETE; wrong namespace is ignored, complete empty is missing and complete multiple is SOURCE_REFERENCE_AMBIGUOUS",
+        "source-materialization-catalog.test.ts: same-name local and Source member, bare local body with zero discovery/management, qualified Notion root plus Requires, wrong namespace without fallback, partial zero/one visible warning with zero management and no substitute Skill body",
+        "notion-sdk-pi-materialization.mjs source-materialize-first: actual Pi with distinct full local canary and accepted Git bodies; qualified first input, new-PID zero-remote warm read and independent client"
+      ],
+      "limitations": "Does not prove alias parsing, ordinary registry completeness, filesystem scanning, Git/runtime/PATH identity, SDK decoding, asynchronous discovery termination, other management authorization guards, transport, writes, manager completion, consumer graph or provider delivery. Those require the separate concrete host and installed-Pi evidence. No old Availability/ReadRace or other model result is relabeled as proving this selection slice."
     }
   },
   "cases": [
@@ -1082,6 +1098,76 @@
         "ChoiceIdentityPreserved",
         "NoDeadlock"
       ]
+    },
+    {
+      "model": "SourceMemberSelection",
+      "config": "candidate",
+      "expected_broken": [],
+      "expected_rules": [
+        "TypeOK",
+        "PartialDirectoryNeverClassified",
+        "PartialNoManagement",
+        "LocalSelectionOwnsRoute",
+        "UnmatchedNamespaceIsIgnored",
+        "CompleteClassificationIsExact",
+        "ManagementNeedsUniqueSelectedSource",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SourceMemberSelection",
+      "config": "partial-negative",
+      "expected_broken": [
+        "PartialDirectoryNeverClassified",
+        "PartialNoManagement",
+        "ManagementNeedsUniqueSelectedSource"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "PartialDirectoryNeverClassified",
+        "PartialNoManagement",
+        "LocalSelectionOwnsRoute",
+        "UnmatchedNamespaceIsIgnored",
+        "CompleteClassificationIsExact",
+        "ManagementNeedsUniqueSelectedSource",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SourceMemberSelection",
+      "config": "local-negative",
+      "expected_broken": [
+        "LocalSelectionOwnsRoute",
+        "ManagementNeedsUniqueSelectedSource"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "PartialDirectoryNeverClassified",
+        "PartialNoManagement",
+        "LocalSelectionOwnsRoute",
+        "UnmatchedNamespaceIsIgnored",
+        "CompleteClassificationIsExact",
+        "ManagementNeedsUniqueSelectedSource",
+        "NoDeadlock"
+      ]
+    },
+    {
+      "model": "SourceMemberSelection",
+      "config": "namespace-negative",
+      "expected_broken": [
+        "UnmatchedNamespaceIsIgnored",
+        "ManagementNeedsUniqueSelectedSource"
+      ],
+      "expected_rules": [
+        "TypeOK",
+        "PartialDirectoryNeverClassified",
+        "PartialNoManagement",
+        "LocalSelectionOwnsRoute",
+        "UnmatchedNamespaceIsIgnored",
+        "CompleteClassificationIsExact",
+        "ManagementNeedsUniqueSelectedSource",
+        "NoDeadlock"
+      ]
     }
   ],
   "excluded": [
@@ -1534,5 +1620,12 @@
     "qualified_reference_fixture": "The active-session SDK fixture now reports SKILL_NOT_FOUND for an exact owner absent from its actual catalog, matching the production catalog resolver instead of throwing a test assertion. The existing missing-reference regression expects that current lookup result, asserts exactly one list call, and independently checks selected and active state remain unchanged. The preceding Required-role rejection still requires zero SDK calls and unchanged state. No production guard, model, rule, case or mutation target changed.",
     "qualified_reference_same_library_scope": "The final host review narrows applicable active scopes to the explicit target Library, rather than bypassing scope disambiguation for every complete reference. Active B cannot constrain a full A reference; active A still selects its original configured source/scope within A. The unchanged member-read script proves duplicate-owner ambiguity before selection, exact selected member bytes, and no fallback to another source after that member disappears. The 120 host-prepare/refresh cases also pass, including full A from active B and original fixed pins. Candidate identity, availability, authorization, cancellation and publication guards are retained. Model cases, rules, bounds and mutation targets are unchanged.",
     "explicit_source_candidates": "Reviewed the isolated notion_list return boundary on base 5d45ba1. Only the actually returned metadata candidates are registered for later exact short-ref lookup, after cancellation and while task generation, metadata generation and Library publication identity still match. This does not change the default Library, load a body, select a graph or remove source/scope assertions. The actual production list(source=B) to returned sr to use regression fails SOURCE_REFERENCE_MISSING before the fix and passes with B owner/scope/body and unchanged Library A; cancelled producer metadata stays unavailable. Both source hash maps bind the same reviewed bytes. Models, bounds, cases, rules and guard mutation inventories are unchanged."
+  },
+  "source_member_selection_review": {
+    "reviewed_from": "b90212865b440c865e275f0d3050dfe8c5fb7085",
+    "change": "Move the complete-coverage guard before candidate filtering/cardinality after the selected-namespace check. Partial zero previously returned undefined and hid CATALOG_INCOMPLETE; partial one already failed. Complete empty and ambiguity, wrong-namespace no-op, existing local routing and the nonblocking ordinary-task policy stay unchanged.",
+    "formal_scope": "New SourceMemberSelection model and four configurations explicitly introduce directory coverage and match count. Its independent rule inventory and deleted-guard negatives are separate from all existing models.",
+    "implementation_evidence": "Preserve assertion-level old/new matcher and production-host failures. A distinct actual Pi old bare selection versus qualified input comparison proves the same-name acceptance precondition, not the new runtime guard or live Notion.",
+    "body_boundary": "Incomplete discovery emits a visible CATALOG_INCOMPLETE warning, dispatches no management and adds no substitute Skill body; ordinary provider continuation is not evidence of Skill delivery."
   }
 }

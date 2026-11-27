@@ -5,11 +5,46 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { parseArgs, validateCurrentFixture, currentServiceFacts, selectProviderCall, assertWireSources, verifyEvidence } from './notion-sdk-pi.mjs';
-import { assertCancellationCausality, assertNoCancellationPublication, assertPositiveManagerTransports, assertWarmMaterializationGraph, readManagerState } from './notion-sdk-pi-materialization.mjs';
+import { assertCancellationCausality, assertNoCancellationPublication, assertPositiveManagerTransports, assertSourceOnlyCollisionSelection, assertWarmMaterializationGraph, readManagerState } from './notion-sdk-pi-materialization.mjs';
 
 import { assertColdMaterializationBudget } from './notion-sdk-pi-cold-materialization.mjs';
 
 const options = ['--package', '/owned/installed', '--fixture', '/owned/current.json', '--source-http-helper', '/owned/current-http.mjs'];
+
+function sourceOnlyCollisionSelection(phase = 'materialize') {
+  const alias = 'lazy-root', cwd = '/owned/client-1', path = join(cwd, 'local-skills/lazy-root/SKILL.md');
+  const content = '# Local-only lazy-root\n\nThese filesystem instructions are distinct from the registered Notion Source member.\n';
+  const localBytes = Buffer.from('---\nname: lazy-root\ndescription: Same-name local selection fixture\n---\n\n' + content);
+  const source = { id: 'current-sdk', type: 'notion', namespace: 'current-sdk', library: '00000000-0000-4000-8000-000000000001' };
+  const client = { cwd, source, local_collision: { name: alias, path, content, bytes: localBytes.length, sha256: createHash('sha256').update(localBytes).digest('hex') } };
+  const config = { sources: [source], skillRoots: [join(cwd, 'local-skills/lazy-root')], requireAutoload: false };
+  const suffix = phase === 'materialize' ? ' Apply this Skill to the task.' : ' Apply this Skill from the independent client.';
+  const session = { branch: [{ type: 'message', message: { role: 'user', content: [{ type: 'text', text: '$lazy-root@current-sdk' + suffix }] } }] };
+  return { alias, client, config, localBytes, session, phase };
+}
+
+test('Source-only selection evidence retains the full local collision and both ordinary namespace inputs', () => {
+  for (const phase of ['materialize', 'independent-client']) assertSourceOnlyCollisionSelection(sourceOnlyCollisionSelection(phase));
+});
+
+for (const [label, change] of [
+  ['missing local competitor', value => { delete value.client.local_collision; }],
+  ['autoload-only local catalog', value => { value.config.requireAutoload = true; }],
+  ['hidden local root', value => { value.config.skillRoots = []; }],
+  ['renamed local Skill', value => { value.client.local_collision.name = 'unrelated'; }],
+  ['different local bytes with updated hash', value => {
+    value.localBytes = Buffer.from('Unrelated local instructions.');
+    value.client.local_collision.bytes = value.localBytes.length;
+    value.client.local_collision.sha256 = createHash('sha256').update(value.localBytes).digest('hex');
+  }],
+  ['bare input', value => { value.session.branch[0].message.content[0].text = '$lazy-root Apply this Skill to the task.'; }],
+  ['wrong namespace', value => { value.session.branch[0].message.content[0].text = '$lazy-root@another Apply this Skill to the task.'; }],
+  ['assistant quote instead of user selection', value => { value.session.branch[0].message.role = 'assistant'; }],
+]) test('Source-only selection evidence rejects ' + label, () => {
+  const value = sourceOnlyCollisionSelection(); change(value);
+  assert.throws(() => assertSourceOnlyCollisionSelection(value));
+});
+
 test('current command boundary rejects retired or ambiguous invocation before I/O', () => {
   assert.equal(parseArgs(['doctor', ...options, '--pi', '/owned/pi']).action, 'doctor');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-cache-recovery'])['--scenario'], 'http-cache-recovery');

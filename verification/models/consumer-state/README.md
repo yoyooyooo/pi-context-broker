@@ -2,7 +2,7 @@
 
 Owner: [.agents/skills/verify-notion-consumer-state](../../../.agents/skills/verify-notion-consumer-state/SKILL.md).
 
-These six bounded contracts complement Availability/ReadRace. The complete case inventory and independent expected rules live in `coverage.json`. Candidates must satisfy every declared rule and NoDeadlock. Each negative must break exactly its declared set. Parse errors, timeouts, incomplete spaces and unknown outcomes fail.
+These seven bounded contracts complement Availability/ReadRace. The complete case inventory and independent expected rules live in `coverage.json`. Candidates must satisfy every declared rule and NoDeadlock. Each negative must break exactly its declared set. Parse errors, timeouts, incomplete spaces and unknown outcomes fail.
 
 | Model | Contract | Independent implementation checks |
 | --- | --- | --- |
@@ -12,17 +12,18 @@ These six bounded contracts complement Availability/ReadRace. The complete case 
 | RecoveryClosure | Original fixed bodies, mandatory closure, local failure isolation and three subsequent prompts | Missing/disabled/denied originals, late restores and continued conversation |
 | LibrarySession | Branch Library choice, admitted-turn binding, exact call target, directory publication ticket and original pin owner | Switch/failure/branch restoration, A-to-B late producers, canonical root routing and old A selections |
 | MenuPublication | Current denial, snapshot order, dismissed dropdown and highlighted candidate identity | Pure snapshot publication, displayed-item acceptance, real Pi Editor and independently accepted input receipts |
+| SourceMemberSelection | Preserve an existing local selection and the selected namespace; require complete discovery before classifying zero, one or multiple Source matches | Mixed-source host routing, exact incomplete-directory warning with no management, and qualified actual Pi first use with a different local body |
 
 Read the Skill's contracts reference for atomic boundaries and finite assumptions. Hashes bind reviewed implementation bytes; they do not establish full implementation refinement. Fixed pins describe verified local selections, not remote version management or guaranteed historical recovery.
 
-Run the Skill's doctor and full run from the repository root with the pinned statechart/TLC installation. Keep outputs outside the repository. The existing runner supports `--suite consumer-state` and `--model FreshnessPublication`, `SelectionGraph`, `DeliveryBoundary`, `RecoveryClosure`, `LibrarySession` or `MenuPublication` for a targeted investigation.
+Run the Skill's doctor and full run from the repository root with the pinned statechart/TLC installation. Keep outputs outside the repository. The existing runner supports `--suite consumer-state` and `--model FreshnessPublication`, `SelectionGraph`, `DeliveryBoundary`, `RecoveryClosure`, `LibrarySession`, `MenuPublication` or `SourceMemberSelection` for a targeted investigation.
 
 `DeliveryBoundary.providerAccepted` denotes logical headers, not a wire receipt. Actual source roles, directory counts, JSON schemas, body completeness and HTTP entity digests remain concrete regression obligations. `final-request-undici.test.ts` checks real Node HTTP entities; installed Pi serializer and live provider behavior belong to the separate integration scope and must be executed before claiming them.
 
 ## Library selection
 
-LibrarySession has eleven configurations. The complete suite has forty-seven,
-including the five MenuPublication configurations.
+LibrarySession has eleven configurations. The complete suite has fifty-one,
+including five MenuPublication and four SourceMemberSelection configurations.
 Its independent oracle preserves the admitted A turn, A directory payload, parent
 branch selection and original A pin while the current child branch selects B.
 The selection ticket and lifecycle epoch are separate. A valid switch affects
@@ -93,3 +94,51 @@ associated with that native occurrence and later adopted through the original
 `pi-queued-input.test.ts` replays these actual installed host methods, including
 real image resizing and repeated context. Image bytes, host object identity and
 arbitrary queues remain outside the finite model.
+
+## Source member selection
+
+`SourceMemberSelection` starts with one admitted literal, the ordinary registry's
+local selection result, the selected Source namespace, a decoded complete or
+partial member directory, and zero, one or multiple matching candidates. Its
+twenty-four initial combinations do not enumerate aliases, filesystem scanning,
+credentials, Git subprocesses or asynchronous network responses.
+
+Route, observation, classification and management admission are separate actions.
+An existing local selection ends this route before Source discovery. A different
+namespace is ignored. For the selected Source, partial coverage blocks every
+match count; even zero matches cannot establish absence. Only a complete unique
+match reaches management admission. That state permits entry into the existing
+management boundary; it does not prove a dispatch, its receipt, remote writes,
+content preparation or delivery. Other lifecycle and authorization guards are
+outside this model. No fairness or service availability property is claimed.
+
+The following is an implementation statechart, not a generated TLC graph:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Route
+    Route --> Local: existing local selection
+    Route --> Ignored: other namespace
+    Route --> Observe: selected Source
+    Observe --> Blocked: partial at any match count
+    Observe --> Missing: complete and zero
+    Observe --> Ambiguous: complete and multiple
+    Observe --> Unique: complete and one
+    Unique --> Admission: existing management boundary
+```
+
+`index.discoverInputMembers` preserves a result already found by the ordinary
+registry. `completion-candidates.matchSourceMemberCandidate` checks the selected
+namespace, then coverage, then match count. The three negative configurations
+independently remove the local, namespace or coverage guard. Independent rules
+also require a complete unique selected Source for management admission.
+
+`source-member-candidates.test.ts` checks exact error codes and all cardinalities;
+`source-materialization-catalog.test.ts` exercises the production host with a
+same-name local Skill, qualified input, unknown namespace and partial zero/one
+matches. Its partial path shows `CATALOG_INCOMPLETE`, dispatches no management and
+supplies no substitute Skill body while the ordinary user request can continue.
+The integration `source-materialize-first` scenario separately uses actual Pi,
+different complete local and Git bodies, qualified first use and a new-process
+zero-remote warm read. Actual registry contents, shell/PATH/Git identity, complete
+provider bytes and installation provenance remain obligations of those replays.
