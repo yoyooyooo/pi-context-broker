@@ -17,7 +17,7 @@ import { graphSourceViews, verifyPreparationEvidence, retainedMaterialSelection,
 import { CURRENT_SOURCE_CONTRACT, loadCurrentSourceViews } from './current-source-views.mjs';
 
 export const COLLECTOR_VERSION = '1.2.2';
-export const CURRENT_COLLECTOR_VERSION = '1.3.2';
+export const CURRENT_COLLECTOR_VERSION = '1.3.3';
 const retainedSourceViews = { contract: RETAINED_SOURCE_CONTRACT, graphSourceViews, verifyPreparationEvidence };
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -225,6 +225,11 @@ const notionMetadataProducers = [{
 }, {
   'src/index.ts': 'e76e3c3ac75e5c6f1ca9668e60f5addc625471ce68cb3a7cec20b02f4ea60482',
   'src/host-skills.ts': 'eb9153cdc6e3b6665633d80e6bca804bb72df7447eccd5ab98510640798da205',
+}, {
+  // 3d57426c routes by local Library identity; only an observed SDK list below
+  // can establish directory evidence. Local selection and candidates cannot.
+  'src/index.ts': 'bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9',
+  'src/host-skills.ts': 'ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59',
 }];
 export function verifiedNotionListRuntime({ candidate, expected, admission, files }) {
   try {

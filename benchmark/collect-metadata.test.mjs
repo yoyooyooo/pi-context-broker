@@ -13,7 +13,10 @@ const indexSha = '292fc3c967cb2d4235eaf8412f582b18391250d46c332a1c67ea2934e1602d
 const hostSha = 'c24c6d08799dfa1e353b9bc282e16b44a8ad141229b681a51ef2bad84f6d6ae1';
 const candidateIndexSha = 'e76e3c3ac75e5c6f1ca9668e60f5addc625471ce68cb3a7cec20b02f4ea60482';
 const candidateHostSha = 'eb9153cdc6e3b6665633d80e6bca804bb72df7447eccd5ab98510640798da205';
-const producers = [{ indexSha, hostSha }, { indexSha: candidateIndexSha, hostSha: candidateHostSha }];
+const localIdentityIndexSha = 'bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9';
+const localIdentityHostSha = 'ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59';
+const producers = [{ indexSha, hostSha }, { indexSha: candidateIndexSha, hostSha: candidateHostSha },
+  { indexSha: localIdentityIndexSha, hostSha: localIdentityHostSha }];
 function producerFixture({ indexSha, hostSha } = producers[0]) {
   const view = root => {
     const path = root + '/broker/src/index.ts';
@@ -42,11 +45,11 @@ for (const [index, producer] of producers.entries()) test('metadata exemption ne
   ]) { const f = producerFixture(producer); change(f); assert.equal(verifiedNotionListRuntime(f), false); }
 });
 test('separately reviewed source hashes cannot be mixed into an unreviewed producer', () => {
-  for (const producer of [
-    { indexSha, hostSha: candidateHostSha },
-    { indexSha: candidateIndexSha, hostSha },
-    { indexSha: sha('unreviewed index'), hostSha: sha('unreviewed host') },
-  ]) assert.equal(verifiedNotionListRuntime(producerFixture(producer)), false);
+  for (const index of producers) for (const host of producers) {
+    if (index === host) continue;
+    assert.equal(verifiedNotionListRuntime(producerFixture({ indexSha: index.indexSha, hostSha: host.hostSha })), false);
+  }
+  assert.equal(verifiedNotionListRuntime(producerFixture({ indexSha: sha('unreviewed index'), hostSha: sha('unreviewed host') })), false);
 });
 
 function metadataFixture() {
@@ -71,6 +74,17 @@ test('reviewed metadata output matches captured SDK directory without adding a s
   assert.equal(Object.hasOwn(proof, 'selections'), false);
   f.tool.result.content[0].text = JSON.stringify(f.tool.result.details);
   assert.ok(notionMetadataEvidence(f.tool, f.context));
+});
+test('reviewed local-identity producer still requires an actually observed SDK directory', () => {
+  assert.equal(verifiedNotionListRuntime(producerFixture(producers[2])), true);
+  const f = metadataFixture();
+  assert.ok(notionMetadataEvidence(f.tool, f.context));
+  // Local routing and a candidate snapshot may know the same records. Neither
+  // substitutes for the list receipt consumed by the metadata classifier.
+  f.context.localLibrary = { root: 'root', source: f.context.sources[0] };
+  f.context.candidates = structuredClone(f.context.directories);
+  f.context.directories = [];
+  assert.equal(notionMetadataEvidence(f.tool, f.context), null);
 });
 const refusals = {
   'same name without producer': f => { f.context.runtime.status = 'unverified'; },
