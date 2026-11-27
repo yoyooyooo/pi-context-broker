@@ -510,13 +510,22 @@ export async function createEnvironment(options) {
   } catch (error) { await retainFailure(root, 'create', error); throw error; }
 }
 
-function sourceNames(source) {
-  return [...new Set(execFileSync('git', ['-C', source, 'ls-files', '-c', '-o', '--exclude-standard', '-z'],
-    { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).split('\0').filter(Boolean))].sort();
+const archivedBenchmarkResults = 'benchmark/results';
+function sourceProjection(repository) {
+  assert.ok(['cli', 'broker'].includes(repository), 'Unknown source repository');
+  return { version: 1, selection: 'git-tracked-and-nonignored-untracked',
+    excluded_roots: repository === 'broker' ? [archivedBenchmarkResults] : [] };
 }
 
-async function snapshot(source, destination) {
-  const names = sourceNames(source);
+function sourceNames(source, repository) {
+  const projection = sourceProjection(repository);
+  return [...new Set(execFileSync('git', ['-C', source, 'ls-files', '-c', '-o', '--exclude-standard', '-z'],
+    { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).split('\0').filter(Boolean))]
+    .filter(name => !projection.excluded_roots.some(root => name === root || name.startsWith(root + '/'))).sort();
+}
+
+export async function snapshotSource(source, destination, repository) {
+  const names = sourceNames(source, repository);
   const commit = git(source, 'rev-parse', 'HEAD'), files = [];
   await mkdir(destination, { recursive: true });
   for (const name of names) {
@@ -532,9 +541,10 @@ async function snapshot(source, destination) {
   }
   for (const file of files) assert.equal(hash(await readFile(join(source, file.path))), file.sha256, 'Source changed while snapshotting: ' + file.path);
   assert.equal(git(source, 'rev-parse', 'HEAD'), commit, 'HEAD changed while snapshotting');
-  const namesAfter = sourceNames(source);
+  const namesAfter = sourceNames(source, repository);
   assert.deepEqual(namesAfter, names, 'Source file list changed while snapshotting');
-  return { commit, branch: git(source, 'branch', '--show-current'), files, sha256: hash(JSON.stringify(files)) };
+  return { commit, branch: git(source, 'branch', '--show-current'), projection: sourceProjection(repository),
+    files, sha256: hash(JSON.stringify(files)) };
 }
 
 /** Standard npm archives and fresh consumers; no wrapper or frozen-file substitution. */
@@ -604,7 +614,7 @@ export async function buildEnvironment(options) {
   environment.tools = await currentTools(environment);
   const buildId = validId(options.id ?? id('build')), root = join(options.root, 'builds', buildId);
   let knownCopyBytes = 0;
-  for (const name of ['cli', 'broker']) for (const file of sourceNames(join(options.root, name))) {
+  for (const name of ['cli', 'broker']) for (const file of sourceNames(join(options.root, name), name)) {
     try { const info = await lstat(join(options.root, name, file)); assert.ok(info.isFile(), 'Source snapshots require ordinary files'); knownCopyBytes += info.size; }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
@@ -618,7 +628,7 @@ export async function buildEnvironment(options) {
   try {
     await save(join(root, 'capacity.json'), capacity);
     await mkdir(join(root, 'logs')); await mkdir(join(root, 'cache'));
-    for (const name of ['cli', 'broker']) sources[name] = await snapshot(join(options.root, name), join(root, 'source', name));
+    for (const name of ['cli', 'broker']) sources[name] = await snapshotSource(join(options.root, name), join(root, 'source', name), name);
     const env = runtimeEnvironment(join(root, 'build-state'), root, process.env, options['pass-env'] ?? [], environment.tools.node.path);
     // Git authentication is not needed for the public locked dependency installs.
     for (const path of ['tmp', 'config', 'bin']) await mkdir(join(root, 'build-state', path), { recursive: true });
