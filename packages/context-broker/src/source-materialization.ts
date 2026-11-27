@@ -5,7 +5,7 @@ import { materializeNotionSource, SourceManagementUnavailable } from "./notion-m
 import { decodeNotionContentRecord, SourceError } from "./notion-source";
 import { noConsumptionWrites } from "./consumption-effects";
 import { inputReceiptIsCurrent } from "./preparation-authority";
-import { decodeSourceMaterializationReceipt, materializationTarget, type SourceMemberCandidate, type SourceMaterializationAuthorization, type SourceMaterializationReceipt, type SourceMaterializationRequest } from "./source-materialization-contract";
+import { decodeSourceMaterializationFinalizationFailure, decodeSourceMaterializationReceipt, materializationTarget, type SourceMaterializationFinalizationFailure, type SourceMemberCandidate, type SourceMaterializationAuthorization, type SourceMaterializationReceipt, type SourceMaterializationRequest } from "./source-materialization-contract";
 import type { SourcePreparationScope, InputReceipt } from "./skill-preparation";
 import type { ContentRecord, ExtensionContext, SourceConfig } from "./types";
 
@@ -13,7 +13,7 @@ const observations = channel("context-broker.notion-materialization");
 const managerFailureCodes = new Set(["SOURCE_MANAGER_REQUIRED", "SOURCE_MANAGER_CONFIG_INVALID", "SOURCE_MANAGER_SCOPE_MISMATCH", "SOURCE_MANAGER_RESPONSE_INVALID", "SOURCE_MANAGER_UNAVAILABLE"]);
 type NotionSource = Extract<SourceConfig, { type: "notion" }>;
 export class SourceMaterializationError extends SourceError {
-  constructor(code: string, sourceId: string, readonly materialization: SourceMaterializationReceipt | {
+  constructor(code: string, sourceId: string, readonly materialization: SourceMaterializationReceipt | SourceMaterializationFinalizationFailure | {
     request_id: string; remote_writes: "none" | "unknown"; phase: "management";
   }) { super(code, sourceId, undefined, { effects: noConsumptionWrites() }); }
 }
@@ -48,6 +48,19 @@ export async function materializeExplicitCandidate(input: {
     const response = await manage().finally(() => input.preparation?.checkpoint());
     result = decodeSourceMaterializationReceipt(response, request, candidate.scope, value => decodeNotionContentRecord(value, source));
   } catch (error) {
+    let finalization: SourceMaterializationFinalizationFailure | undefined;
+    try { finalization = decodeSourceMaterializationFinalizationFailure(error, request, value => decodeNotionContentRecord(value, source)); }
+    catch { /* An invalid attribution cannot upgrade an unknown management outcome. */ }
+    if (finalization) {
+      const manager = finalization.verified_management.receipt;
+      observations.publish({ ...attribution, event: "result", phase: "consumer_finalization",
+        status: signal?.aborted || finalization.local_error_code === "CANCELLED" ? "cancelled" : "failed",
+        local_error_code: finalization.local_error_code, verified_management: finalization.verified_management,
+        effects: manager.effects, operation_id: manager.operation_id, manager_scope: manager.scope });
+      // No consumer scope has been established. Retain the management fact
+      // without entering onReceipt, catalog rebuilding or ordinary consumption.
+      throw new SourceMaterializationError(signal?.aborted ? "SOURCE_CANCELLED" : finalization.local_error_code, source.id, finalization);
+    }
     const unavailable = error instanceof SourceManagementUnavailable;
     const remoteWrites = unavailable ? "none" : "unknown";
     const code = unavailable ? error.code : error instanceof Error && "code" in error && typeof error.code === "string"
