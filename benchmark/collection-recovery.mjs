@@ -347,6 +347,8 @@ async function standingPlanContext(plan, planFile) {
 
 async function planContext(plan, planFile = join(plan.execution.control_root, 'plan.json')) {
   validateBatchPlan(plan); const e = plan.execution;
+  assert.equal(e.condition_materials, undefined, 'Collection recovery does not support condition-specific material bindings');
+  assert.ok(Object.values(e.conditions).every(condition => condition.case_bindings === undefined), 'Collection recovery cannot fall back from condition-specific material bindings');
   if (standingCloseout(plan)) return standingPlanContext(plan, planFile);
   assert.equal(plan.protocol.phase, 'pilot'); assert.equal(e.pilot_scope?.role, 'gate', 'Collection recovery is gate-only');
   assert.equal(e.resumption, undefined); assert.equal(e.episode_fixtures, undefined, 'Collection recovery cannot hide turn fixtures');
