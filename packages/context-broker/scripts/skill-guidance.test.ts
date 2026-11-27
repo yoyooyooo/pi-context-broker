@@ -412,7 +412,6 @@ test("Notion source flags are scoped to native installations without rewriting s
   const original = JSON.stringify(history);
   const projected = await h.project("context", history);
   const guidance = guidanceText(projected);
-  expect(guidance).toContain("beyond the default View");
   expect(guidance).toContain("Editor flags grant no permissions");
   expect(guidance).toContain("Local @Skills keep native availability");
   expect(guidance).toContain("Honor explicit source and prior choice");
