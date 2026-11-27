@@ -46,6 +46,28 @@ verification/models/consumer-state/coverage.json 是当前五个模型的唯一 
 
 这些是 `FreshnessPublication`、`ReadRace` 的具体实现扩展义务。现有有限模型没有 OAuth、空远程列表、metadata epoch、配置指纹或 branch ancestry 变量；不得从旧模型通过推导这些新行为已穷尽验证。保留模型、有限域、完整 cases/expected_rules 和旧负例；源码 hash 只绑定已审查的 owner 字节。真实 Notion/OAuth、安装身份和自然 Pi 任务继续由 integration、agent-workflows 负责。
 
+### Source 管理事实与消费者收尾
+
+管理 transport、SQLite 目录 schema 和 scope/load/invalidate 不在现有有限模型的变量或原子动作中。Source 写完成后本地目录失效失败，是具体实现义务；不得将 Availability、FreshnessPublication 或 DeliveryBoundary 的通过声称为 schema 升级或完整管理协议的形式证明。
+
+CLI 先验证固定 transport binding 与完整 manager receipt，然后才运行消费者收尾。其 consumer_finalization 失败可保留 verified_management；Broker 用 source-materialization-contract 再绑定原 request、Library、target、authorization_root 与严格 receipt，并保持 manager scope。source-materialization 只记录管理事实和实际 effects，拒绝 onReceipt、ready、catalog 与正文发布。实际 SourcePreparationScope.checkpoint 可以到期并 abort，但不改变已验证的管理事实；预算不重新计满。验证前错误、伪造 details 和未知 transport 保持 unknown。
+
+下图是实现合同示意，不是 TLC 生成的穷尽图：
+
+~~~mermaid
+stateDiagram-v2
+    [*] --> AwaitManager
+    AwaitManager --> Unknown: transport or binding invalid
+    AwaitManager --> Verified: exact bound receipt
+    Verified --> FinalizationFailed: consumer error or cancellation
+    Verified --> Catalog: consumer finalization succeeds
+    Catalog --> Consume: complete current catalog
+    FinalizationFailed --> [*]: retain manager fact; no publication
+    Unknown --> [*]: no verified fact
+~~~
+
+实际守卫由 source-materialization.test.ts 的旧实现红、新实现绿、伪造 request/library/target/authroot/phase/code、receipt 后取消和真实 budget checkpoint 到期回放检查。source-materialize-cache-upgrade 另用安装包、实际 Pi、真实 SQLite 及受控 Notion/Git，核两条 v1 与一条 v2 混合目录退休、跨 scope/无关目录保留、完整目录重建和全正文；独立 evidence 必须同时核原 manager stdout/stderr/实际 close 和后续 0 HTTP 暖读。它们是 concrete obligations，保留现有全部模型、cases、expected_rules 与 guard mutations。
+
 ## SelectionGraph
 
 一个 root 和一个 Requires，各有两个本地已验证选择的序号；不承诺远端历史恢复。旧向量为 root v1/Requires v2，新向量为 root v2/Requires v1；序号不表示两个身份共享 snapshot/hash。负配置复制 root pin 到 child，会破坏 EachMemberKeepsOwnPin。

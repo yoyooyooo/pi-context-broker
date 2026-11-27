@@ -15,7 +15,7 @@ test('current command boundary rejects retired or ambiguous invocation before I/
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-cache-recovery'])['--scenario'], 'http-cache-recovery');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-warm-restart'])['--scenario'], 'http-warm-restart');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-warm-directory-expired'])['--scenario'], 'http-warm-directory-expired');
-  for (const scenario of ['http-smart-revalidate', 'http-smart-current', 'source-materialize-legacy', 'source-materialize-first', 'source-materialize-legacy-source', 'source-materialize-growth', 'source-materialize-native-root', 'source-materialize-cancel-late', 'source-materialize-cold-budget'])
+  for (const scenario of ['http-smart-revalidate', 'http-smart-current', 'source-materialize-legacy', 'source-materialize-first', 'source-materialize-legacy-source', 'source-materialize-growth', 'source-materialize-native-root', 'source-materialize-cancel-late', 'source-materialize-cold-budget', 'source-materialize-cache-upgrade'])
     assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', scenario])['--scenario'], scenario);
   for (const args of [
     ['cleanup', '--evidence', '/owned/result'], ['run', ...options], ['run', ...options, '--out', 'relative'],
@@ -425,13 +425,15 @@ function positiveManagerEvidence(count = 2) {
     const bytes = Buffer.from(JSON.stringify({ version: 1, request_id: request, execution_id: binding.execution_id, library: binding.library, ok: true, result: receipt }) + '\n');
     const attribution = { kind: 'context-broker.notion-materialization', observer_pid: piPid, phase: 'management', source_id: 'current-sdk',
       request_id: request, library: binding.library, registered_source_id: receipt.target.source_id, member_key: receipt.target.member_key };
-    value.managerPids.push(pid); value.outputs.push({ pid, bytes });
+    const stderr = Buffer.from('manager diagnostic ' + i + '\n');
+    value.managerPids.push(pid); value.outputs.push({ pid, bytes, stderr });
     value.sessionReceipts.push({ ...structuredClone(receipt), source_id: 'current-sdk', input_receipt: input, scope: consumerScope, manager_scope: managerScope });
     value.events.push(
       { ...attribution, event: 'start', observer_monotonic_ns: String(time) },
       { kind: 'manager_transport', event: 'spawn', child_pid: pid, command: binding.command, observer_pid: piPid, observer_monotonic_ns: String(time + 10) },
       { kind: 'manager_transport', event: 'close', child_pid: pid, observer_pid: piPid, observer_monotonic_ns: String(time + 20), code: 0, signal: null,
-        output_file: join(base, 'manager-response-' + pid + '.json'), output_bytes: bytes.length, output_sha256: createHash('sha256').update(bytes).digest('hex') },
+        output_file: join(base, 'manager-response-' + pid + '.json'), output_bytes: bytes.length, output_sha256: createHash('sha256').update(bytes).digest('hex'),
+        stderr_file: join(base, 'manager-stderr-' + pid + '.txt'), stderr_bytes: stderr.length, stderr_sha256: createHash('sha256').update(stderr).digest('hex') },
       { ...attribution, event: 'result', observer_monotonic_ns: String(time + 30), status: receipt.status, operation_id: receipt.operation_id,
         effects: receipt.effects, manager_scope: managerScope },
     );
@@ -469,6 +471,9 @@ const managerEvidenceCorruptions = [
   ['duplicate close hiding another manager', value => { value.events.filter(row => row.kind === 'manager_transport' && row.event === 'close')[1].child_pid = value.managerPids[0]; }],
   ['an extra orphan spawn', value => { value.events.push({ ...value.events.find(row => row.event === 'spawn'), child_pid: 999 }); }],
   ['observer failure', value => { value.events.push({ kind: 'manager_transport', event: 'observer-error' }); }],
+  ['missing original stderr', value => { delete value.outputs[0].stderr; }],
+  ['altered stderr', value => { value.outputs[0].stderr = Buffer.from('replacement'); }],
+  ['substituted stderr path', value => { firstManagerClose(value).stderr_file = '/another/stderr'; }],
   ['missing original stdout', value => { value.outputs.pop(); }],
   ['altered stdout with a stale byte hash', value => { value.outputs[0].bytes = Buffer.from('{}'); }],
   ['a substituted stdout file path', value => { firstManagerClose(value).output_file = '/owned/another-response.json'; }],
