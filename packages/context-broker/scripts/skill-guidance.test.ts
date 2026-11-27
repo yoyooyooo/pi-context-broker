@@ -53,9 +53,9 @@ test("native Pi guidance is a bounded routing contract, not a duplicated CLI tut
   expect(guidance).toContain("refresh:true checks latest main; pins fixed");
   expect(guidance).toContain("refresh:true adopts latest on request");
   expect(guidance).toContain("Reuse complete content");
-  expect(guidance).toContain("Named Notion existence/availability questions: query:name,refresh:true; metadata only");
-  expect(guidance).toContain("Also after writes");
-  expect(guidance).toContain("keeping pins");
+  expect(guidance).toContain("refresh:true for named existence/availability questions");
+  expect(guidance).toContain("after writes or requested current/latest");
+  expect(guidance).toContain("discovery/use omits refresh");
   expect(guidance).toContain("Check freshness");
   expect(guidance).toContain("read(path) inspects");
   expect(guidance).toContain("notion_use(ref) applies with Requires");
@@ -128,7 +128,7 @@ test("an existing conversation replaces old guidance before a named availability
   expect(projected).not.toContain(oldGuidance);
   expect(projected.filter(message => message.customType === "ntn-skills-guidance")).toHaveLength(1);
   expect(guidanceText(projected)).toContain("Honor explicit source and prior choice");
-  expect(guidanceText(projected)).toContain("Named Notion existence/availability questions: query:name,refresh:true; metadata only");
+  expect(guidanceText(projected)).toContain("refresh:true for named existence/availability questions");
   expect(guidanceText(projected)).toContain("failed/partial/offline is not absence");
   expect(await h.project("context_with_system", projected)).toBe(projected);
 });

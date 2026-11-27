@@ -28,7 +28,7 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "bf57522e3cd63a398f05085dbfd04068eade37018a897bf269ee3c2d68836fbd",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "453d30268dc2bbe1f70202f919fd80e31d2f570b5848820bbd0e8da28e951169",
-    "packages/context-broker/src/index.ts": "bedca225968b5abe4b3736785454145f0838b7d2ee331c28f1288b2281bd97f8",
+    "packages/context-broker/src/index.ts": "6b08741c97d84ffe34741ce6cebe16c99c6e27834e2d27d2dea4e9e7f39770d2",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
     "packages/context-broker/src/notion-source.ts": "b63c5cb8f9a5d3a2d053e228e8fc6d9d70b9af454b57db8108325c4a17c6a28d",
@@ -64,7 +64,7 @@
     "packages/context-broker/scripts/session-short-ref-host.test.ts": "982cd5b08c52fdc89e340d594f818095a9dd9f4968d030f326d9c636f29cb5e6",
     "packages/context-broker/src/library-selection.ts": "64da1c2a9c383f49c4050f9b81ecf4a12fdd880c3f090bdd0c71cad235c79c41",
     "packages/context-broker/scripts/library-selection.test.ts": "a29f802b72ddba4394468355338e0f0d8e4cdce9729ed87021fdd6ec721d07da",
-    "packages/context-broker/scripts/skill-guidance.test.ts": "555aab8ae4a1c9ab391ac08a8a465f8de41e4c0b0b635546fe09911b1cb4222d",
+    "packages/context-broker/scripts/skill-guidance.test.ts": "dbc6b10bc6129114f25d6b9fb91ddfa5efdb305ee3a93832e78ad2fab839edce",
     "packages/context-broker/src/cli-write-invalidation.ts": "b320091423e2d3da7e073cda2d58c46f20ddec8ea8a1bd12d770963a2a9b30f6",
     "packages/context-broker/scripts/cli-write-invalidation.test.ts": "1469fd9eb3eac1ee2760a86f617091f76d4936836e0da0e0650da6b653cb8466",
     "packages/context-broker/src/sources.ts": "30572f81f9e6a8c314c6c4f595a95ec75f43767dbd8a280db3abab7bc907dedb",
@@ -1452,7 +1452,7 @@
     },
     "ordinary_application_metadata_guidance": {
       "base": "cd4123f19d0b4e913428502ead5d7f7b51e2cdb3",
-      "scope": "Only notion_list.refresh parameter prose and compressed notion_list guidance clarify ordinary discovery/application. The complete tool description, parameter schema shape, selection/refresh/cache execution and every state guard retain their exact bytes. skill-guidance.test.ts only updates its two existing named-question wording assertions; its 1500-byte bound is unchanged.",
+      "scope": "Only notion_list.refresh parameter prose and compressed notion_list guidance clarify ordinary discovery/application. The complete tool description, parameter schema shape, selection/refresh/cache execution and every state guard retain their exact bytes. skill-guidance.test.ts updates existing routing expectations for ordinary use, named questions and requested current metadata; every existing guidance byte limit remains unchanged.",
       "source_binding": "Rebind only host-skills.ts, index.ts and skill-guidance.test.ts after the exact-line review. All other protected file hashes, models, cases, expected rules and mutation targets are unchanged.",
       "boundary": "This is public instruction correspondence, not a finite-model proof of model choice or latency. Named existence/availability questions, writes and requested current/latest metadata or explicit refresh retain the documented fresh path; notion_use latest-on-request, pins, offline, cursor and content-search semantics remain unchanged. Natural behavior is decided separately by the fixed Benchmark cases."
     }
