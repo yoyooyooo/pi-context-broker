@@ -1690,7 +1690,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const submissionRegistry = (ctx: ExtensionContext, text: string, accepted: ReadonlyMap<string, DiscoveryRecord>, signal?: AbortSignal) =>
     parseInvocations(text, configuredRules(config)).some(request => request.scope !== "configured" && !accepted.has(request.query))
       ? getDollarRegistry(ctx.cwd, ctx, text, signal) : Promise.resolve([]);
-  function materializationReceived(result: SourceMaterializationReceipt, source: Extract<SourceConfig, { type: "notion" }>, receipt: InputReceipt, ctx: ExtensionContext): void {
+  async function materializationReceived(result: SourceMaterializationReceipt, source: Extract<SourceConfig, { type: "notion" }>, receipt: InputReceipt, ctx: ExtensionContext, signal?: AbortSignal): Promise<void> {
     invalidateCatalogSources([source.id], ctx);
     sourceRuntime.forgetSources([source.id]);
     if (result.status === "ready" || result.status === "already_ready") {
@@ -1710,6 +1710,40 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       source_id: source.id, library_id: result.library_id, scope: result.scope, manager_scope: result.manager_scope, status: result.status,
       target: result.target, authorization_root: result.authorization_root, affected_skill_ids: result.affected_skill_ids, source_revisions: result.source_revisions, effects: result.effects,
     });
+    if ((result.status !== "ready" && result.status !== "already_ready") || !inputReceiptIsCurrent(receipt, ctx, signal)) return;
+    const selectedContext = librarySelection.capture(ctx), cwd = catalogCwd(ctx.cwd ?? process.cwd());
+    const selected = await librarySelection.identity(selectedContext);
+    const isDefault = selected?.source.id === source.id && selected.root === result.library_id;
+    // Management retires the SDK's persistent catalog. Its receipt contains only
+    // the materialized closure, so rebuild the actual complete catalog before
+    // the accepted input may consume and finish. This also serves the next PID.
+    for (;;) {
+      const generation = { menu: menuGeneration, refresh: refreshGeneration };
+      const sourceVersion = sourceChanges.get(source.id)!;
+      const next = await ownCatalog(async owned => {
+        if (!inputReceiptIsCurrent(receipt, ctx, owned)) throw new SourceError("SOURCE_CANCELLED", source.id);
+        return isDefault
+          ? buildDiscoveryRegistry(await librarySelection.config(selectedContext), cwd, { paths, signal: owned, refreshSourceIds: [source.id],
+            directorySelections: notionDirectorySelections({ sources: [source] }, selectedContext),
+            onCatalogSettled: catalogCompletionNotification(selectedContext, generation) })
+          : discoverSourceCatalog({ sources: [source] }, cwd, { signal: owned, refresh: true });
+      }, signal);
+      if (!inputReceiptIsCurrent(receipt, ctx, signal)) throw new SourceError("SOURCE_CANCELLED", source.id);
+      // A metadata refresh does not cancel an accepted turn or retarget its
+      // Library. Reobserve this Source if its metadata generation moved.
+      if (sourceChanges.get(source.id) !== sourceVersion) continue;
+      const failed = next.failures.find(failure => failure.sourceId === source.id);
+      if (failed) throw new SourceError(failed.code, source.id);
+      const observations = next.lists?.filter(list => list.sourceId === source.id) ?? [];
+      if (observations.length !== 1 || observations[0]!.exhaustive !== true || observations[0]!.stale === true)
+        throw new SourceError("CATALOG_INCOMPLETE", source.id);
+      if (observations[0]!.scope !== result.scope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+      if (isDefault) {
+        pairedCatalogGenerations.set(next, generation);
+        await publishCatalog(catalogKey(cwd, selectedContext), Promise.resolve(next), new Map([[source.id, sourceVersion]]));
+      }
+      return;
+    }
   }
   async function memberRecord(member: SourceMemberCandidate, source: Extract<SourceConfig, { type: "notion" }>,
     record: ContentRecord, query: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord> {
@@ -1722,7 +1756,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     receipt: InputReceipt, query: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord> {
     if (member.readiness === "ready" && member.record) return memberRecord(member, source, member.record, query, ctx, signal);
     const result = await materializeExplicitCandidate({ candidate: member, source, receipt, query, purpose: "use", ctx, signal,
-      onReceipt: value => materializationReceived(value, source, receipt, ctx) });
+      onReceipt: value => materializationReceived(value, source, receipt, ctx, signal) });
     return memberRecord(member, source, result.record, query, ctx, signal);
   }
   async function discoverInputMembers(receipt: InputReceipt | undefined, text: string, ctx: ExtensionContext,
@@ -2009,7 +2043,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
             if (member) {
               if (discovered.coverage !== "complete") throw new SourceError("CATALOG_INCOMPLETE", sourceId);
               const result = await materializeExplicitCandidate({ candidate: member, source: boundSource, receipt, query, purpose, ctx, signal,
-                onReceipt: value => materializationReceived(value, boundSource, receipt, ctx) });
+                onReceipt: value => materializationReceived(value, boundSource, receipt, ctx, signal) });
               replacements.set(root.id!, { ...root, ...result.record });
               continue;
             }
@@ -2021,7 +2055,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
               const key = JSON.stringify([source.id, required.scope, dependency.record.id]);
               if (materializedInputs.get(receipt)?.has(key)) continue;
               await materializeExplicitCandidate({ candidate: dependency, source: boundSource, receipt, query, purpose, ctx, signal,
-                authorization: required.authorization, onReceipt: value => materializationReceived(value, boundSource, receipt, ctx) });
+                authorization: required.authorization, onReceipt: value => materializationReceived(value, boundSource, receipt, ctx, signal) });
             }
             replacements.set(root.id!, { ...root, ...required.root });
           }
