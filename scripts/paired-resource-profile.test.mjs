@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { chmod, mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join, parse } from 'node:path';
 import test from 'node:test';
 import { readResourceProfile } from './paired-resource-profile.mjs';
 
@@ -43,6 +43,45 @@ test('explicit source closures, hidden native entries and context order survive 
   assert.equal(result.mcpBytes.toString(), await readFile(f.manifest.mcp_config.path, 'utf8'));
   assert.deepEqual(await readFile(join(f.root, 'fixed-mcp-server')), before);
   assert.deepEqual((await readResourceProfile(f.ref, f)).evidence, result.evidence);
+});
+
+test('the verified paired environment can own its profile without changing declared resources', async () => {
+  const f = await fixture(), nested = await readResourceProfile(f.ref, f);
+  const sameRoot = await readResourceProfile(f.ref, { environmentRoot: f.root });
+  assert.deepEqual(sameRoot.evidence, nested.evidence);
+  assert.deepEqual(sameRoot.contextFiles, nested.contextFiles);
+  assert.deepEqual(sameRoot.mcpBytes, nested.mcpBytes);
+});
+
+test('same-root support still refuses filesystem, home and foreign owners', async () => {
+  const f = await fixture();
+  for (const root of [parse(f.root).root, homedir()]) {
+    f.manifest.owner_root = root;
+    await assert.rejects(readResourceProfile(await f.save(), { environmentRoot: root }), /TASK_OWNER_REQUIRED|OWNER_ALIAS/);
+  }
+  f.manifest.owner_root = f.root;
+  const ref = await f.save();
+  for (const environmentRoot of [dirname(f.root), f.root + '-sibling']) {
+    await assert.rejects(readResourceProfile(ref, { environmentRoot }), /ENVIRONMENT_NOT_OWNED/);
+  }
+});
+
+test('a selected environment must be an existing canonical directory', async () => {
+  const f = await fixture(), alias = join(f.root, 'environment-alias');
+  await symlink(f.environmentRoot, alias);
+  await assert.rejects(readResourceProfile(f.ref, { environmentRoot: alias }), /ENVIRONMENT_ALIAS/);
+  await assert.rejects(readResourceProfile(f.ref, { environmentRoot: f.root + '/environment/../environment' }), /CANONICAL_PATH/);
+  await assert.rejects(readResourceProfile(f.ref, { environmentRoot: f.ref.path }), /ENVIRONMENT_DIRECTORY_REQUIRED/);
+  await assert.rejects(readResourceProfile(f.ref, { environmentRoot: join(f.root, 'missing') }), /ENOENT/);
+});
+
+for (const [label, change, reason] of [
+  ['closure inventory', (f, path) => { f.manifest.extension_order[0].closure_ref.path = path; }, /CLOSURE_MANIFEST_NOT_OWNED/],
+  ['MCP configuration', (f, path) => { f.manifest.mcp_config.path = path; }, /MCP_CONFIG_NOT_OWNED/],
+  ['private agent snapshot', (f, path) => { f.manifest.agent_files = [{ path, sha256: '0'.repeat(64), relative_path: 'private.json' }]; }, /AGENT_FILE_NOT_OWNED/],
+]) test('a same-root profile cannot borrow an unowned ' + label, async () => {
+  const f = await fixture(); change(f, join(f.root + '-sibling', 'foreign.json'));
+  await assert.rejects(readResourceProfile(await f.save(), { environmentRoot: f.root }), reason);
 });
 
 for (const name of ['extension.mjs', 'helper.mjs', 'visible.md']) test('a changed declared ' + name + ' is rejected before loading', async () => {
@@ -88,7 +127,7 @@ test('private agent configuration exposes only descriptors and explicitly select
   const source = await f.put(join(f.root, 'private-web.json'), { apiKeyForFixture: secret, mode: 'read' });
   await chmod(source.path, 0o600);
   f.manifest.agent_files = [{ ...source, relative_path: 'web-search.json', credential_paths: [['apiKeyForFixture']] }];
-  const resources = await readResourceProfile(await f.save(), f);
+  const resources = await readResourceProfile(await f.save(), { environmentRoot: f.root });
   assert.deepEqual(resources.credentials, [secret]);
   assert.equal(resources.agentFiles[0].relative_path, 'web-search.json');
   assert.doesNotMatch(JSON.stringify(resources.evidence), new RegExp(secret));
@@ -97,7 +136,9 @@ test('private agent configuration exposes only descriptors and explicitly select
   f.manifest.agent_files[0].relative_path = '../outside.json';
   await assert.rejects(readResourceProfile(await f.save(), f), /AGENT_FILE_PATH/);
   f.manifest.agent_files[0].relative_path = 'web-search.json'; await chmod(source.path, 0o644);
-  await assert.rejects(readResourceProfile(await f.save(), f), /CREDENTIAL_FILE_PRIVATE/);
+  await assert.rejects(readResourceProfile(await f.save(), { environmentRoot: f.root }), /CREDENTIAL_FILE_PRIVATE/);
+  await chmod(source.path, 0o600); await chmod(f.root, 0o755);
+  await assert.rejects(readResourceProfile(await f.save(), { environmentRoot: f.root }), /CREDENTIAL_DIRECTORY_PRIVATE/);
 });
 
 

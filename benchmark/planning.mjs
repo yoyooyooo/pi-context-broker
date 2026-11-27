@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
-import { fingerprint, validateProtocol } from './protocol.mjs';
+import { BASELINE_DIAGNOSTIC, fingerprint, validateProtocol } from './protocol.mjs';
 import { EVIDENCE_VERSION } from './evidence/normalize.mjs';
 import { ANALYSIS_VERSION } from './analysis/compare.mjs';
 import { createPreregistrationTemplate } from './templates/preregistration.mjs';
@@ -107,10 +107,30 @@ export function comparisonPairs({ models, cases, repetitions = 1, orderingSeed =
   return pairs;
 }
 
-/** Freeze a concrete comparison, never a speculative future matrix. */
+/** Use the existing assessment slots for a single baseline, never a fabricated pair. */
+export function plannedStudyDesign({ purpose, models, cases, repetitions = 1, orderingSeed = 0,
+  environmentCount = 2, environmentPairs }) {
+  if (purpose !== BASELINE_DIAGNOSTIC) return { pairs: comparisonPairs({ models, cases, repetitions,
+    orderingSeed, environmentCount, environmentPairs }), assessments: [] };
+  assert.equal(environmentCount, 1, 'A baseline diagnostic names one environment');
+  assert.equal(models.length, 1, 'A baseline diagnostic names one model');
+  assert.ok(environmentPairs === undefined || Array.isArray(environmentPairs) && environmentPairs.length === 0,
+    'A baseline diagnostic has no comparison pairs');
+  assert.ok(Number.isSafeInteger(repetitions) && repetitions > 0);
+  assert.ok(Number.isSafeInteger(orderingSeed) && orderingSeed >= 0);
+  assert.ok(cases.length > 0 && cases.every(item => ['development', 'pilot'].includes(item.protocol_case.split)),
+    'A baseline diagnostic selects development or pilot cases only');
+  return { pairs: [], assessments: cases.flatMap(item => Array.from({ length: repetitions }, (_, repeat) => ({
+    id: 'm0-e0--' + item.id + '--r' + repeat, case_id: item.id, condition_id: 'm0-e0',
+    repeat, seed: orderingSeed + repeat, expected_support: 'supported',
+  }))) };
+}
+
+/** Freeze the declared comparison or descriptive baseline, never a speculative future matrix. */
 export function preregisterComparison({ id, phase, purpose, environments, models, corpus, cases, repetitions = 1,
   budget, decision, analysis, pilotScope, campaignScope, environmentPairs, allowedChanges, orderingSeed = 0, registeredAt = new Date().toISOString() }) {
-  const orientations = comparisonEnvironmentPairs(environments.length, environmentPairs);
+  const design = plannedStudyDesign({ purpose, models, cases, repetitions, orderingSeed,
+    environmentCount: environments.length, environmentPairs });
   assert.ok(!(pilotScope && campaignScope), 'A comparison cannot mix legacy pilot and finite campaign scopes');
   assert.ok(Number.isSafeInteger(repetitions) && repetitions > 0);
   assert.ok(models.length > 0 && cases.length > 0);
@@ -128,7 +148,12 @@ export function preregisterComparison({ id, phase, purpose, environments, models
     environment_id: environment.id, environment_sha256: environment.manifest_sha256, model_id: model.id,
     corpus_id: corpus.id, corpus_sha256: corpus.content_sha256, case_ids: cases.map(item => item.id),
     initial_state_sha256: state, authorization_sha256: permissions, budget_id: budget.id, code_mode: environment.policies.code_mode })));
-  value.pairs = comparisonPairs({ models, cases, repetitions, orderingSeed, environmentCount: environments.length, environmentPairs: orientations });
+  Object.assign(value, design);
+  if (purpose === BASELINE_DIAGNOSTIC) {
+    const comparative = new Set(['input_ratio', 'time_ratio', 'version_transition',
+      'model_environment_interaction', 'code_mode_interaction', 'cost_frontier']);
+    for (const key of ['primary', 'secondary']) value.metrics[key] = value.metrics[key].filter(id => !comparative.has(id));
+  }
   value.policies.budgets = [budget];
   value.policies.ordering = { method: 'balanced', seed: orderingSeed, concurrency: 1, condition_order: value.conditions.map(c => c.id) };
   const families = [...new Set(cases.map(item => item.protocol_case.family))];

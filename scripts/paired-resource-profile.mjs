@@ -58,7 +58,9 @@ export async function readResourceProfile(ref, { environmentRoot } = {}) {
   assert.ok(inside(manifest.owner_root, ref.path) && ref.path !== manifest.owner_root, 'RESOURCE_PROFILE_MANIFEST_NOT_OWNED');
   if (environmentRoot !== undefined) {
     absolute(environmentRoot);
-    assert.ok(inside(manifest.owner_root, environmentRoot) && environmentRoot !== manifest.owner_root, 'RESOURCE_PROFILE_ENVIRONMENT_NOT_OWNED');
+    assert.ok(inside(manifest.owner_root, environmentRoot), 'RESOURCE_PROFILE_ENVIRONMENT_NOT_OWNED');
+    assert.equal(await realpath(environmentRoot), environmentRoot, 'RESOURCE_PROFILE_ENVIRONMENT_ALIAS');
+    assert.ok((await lstat(environmentRoot)).isDirectory(), 'RESOURCE_PROFILE_ENVIRONMENT_DIRECTORY_REQUIRED');
   }
   assert.ok(Array.isArray(manifest.ordinary_source_refs) && manifest.ordinary_source_refs.length > 0, 'RESOURCE_PROFILE_ORDINARY_ORIGIN_REQUIRED');
   assert.ok(Array.isArray(manifest.extension_order) && manifest.extension_order.filter(item => item.role === 'selected-broker').length === 1, 'RESOURCE_PROFILE_ONE_SELECTED_BROKER');

@@ -6,6 +6,8 @@ import { canonicalAutoGroupLabel, validateRoutingPolicy } from './reported-model
 import { scheduleProtocol, UNSTARTED_FOLLOWUP, CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION, selectsUnstartedSlots } from './campaign-selection.mjs';
 import { isStandingWindow, modelWindowCondition, modelWindowEnd, validModelWindow } from './model-window.mjs';
 
+export const BASELINE_DIAGNOSTIC = 'baseline_diagnostic';
+
 const REQUIRED_EVIDENCE = ['runtime_identity', 'loaded_manifest', 'visible_materials',
   'model_requests', 'usage', 'tool_lineage', 'business_readback', 'completion_boundary', 'interventions'];
 const SCHEMAS = new Map([[environmentSchema.$id, environmentSchema], [protocolSchema.$id, protocolSchema]]);
@@ -296,6 +298,55 @@ function checkReferences(value, errors) {
   return { maps, ref };
 }
 
+/** A baseline diagnosis schedules observations without manufacturing a comparator. */
+function studyDesignChecks(value, maps, errors) {
+  if (value.purpose !== BASELINE_DIAGNOSTIC) {
+    // These minima were formerly common schema constraints. Keep every existing
+    // comparison contract strict while the explicit diagnostic shape uses one cell.
+    for (const [key, minimum] of [['conditions', 2], ['pairs', 1], ['allowed_changes', 1]])
+      if (value[key].length < minimum)
+        issue(errors, '/' + key, 'schema_items', 'Array has too few entries for a comparison');
+    if (value.policies.ordering.condition_order.length < 2)
+      issue(errors, '/policies/ordering/condition_order', 'schema_items', 'A comparison orders at least two conditions');
+    return;
+  }
+  if (value.environments.length !== 1 || value.models.length !== 1 || value.conditions.length !== 1)
+    issue(errors, '/conditions', 'baseline_diagnostic_condition', 'A baseline diagnosis names exactly one environment, model and condition');
+  if (value.pairs.length || !value.assessments.length || value.assessments.some(item => item.expected_support !== 'supported'))
+    issue(errors, '/assessments', 'baseline_diagnostic_schedule', 'A baseline diagnosis uses nonempty supported assessments and no pairs');
+  if (!['development', 'pilot'].includes(value.phase))
+    issue(errors, '/phase', 'baseline_diagnostic_phase', 'A baseline diagnosis is development or pilot, never confirmation or adoption');
+  if (value.policies.campaign?.kind !== 'benchmark-standing-campaign')
+    issue(errors, '/policies/campaign', 'baseline_diagnostic_standing', 'A baseline diagnosis uses the existing standing authorization and accounting');
+  if (value.allowed_changes.length)
+    issue(errors, '/allowed_changes', 'baseline_diagnostic_comparison', 'A baseline diagnosis has no comparison axis');
+  if (value.policies.decision.mode !== 'descriptive'
+      || ['quality_delta_min', 'input_ratio_max', 'capped_time_ratio_max', 'efficiency_ratio_max'].some(key => value.policies.decision[key] !== null))
+    issue(errors, '/policies/decision', 'baseline_diagnostic_decision', 'A baseline diagnosis is descriptive and declares no relative or adoption thresholds');
+  if (value.policies.analysis?.interactions?.length)
+    issue(errors, '/policies/analysis/interactions', 'baseline_diagnostic_interaction', 'One baseline condition cannot estimate an interaction');
+  const comparativeMetrics = new Set(['input_ratio', 'time_ratio', 'version_transition',
+    'model_environment_interaction', 'code_mode_interaction', 'cost_frontier']);
+  if ([...value.metrics.primary, ...value.metrics.secondary].some(metric => comparativeMetrics.has(metric)))
+    issue(errors, '/metrics', 'baseline_diagnostic_metrics', 'A baseline diagnosis reports condition observations, not comparative metrics');
+  value.models.forEach((model, i) => {
+    if (model.adoption.mode !== 'as_is' || model.adoption.confirmation_material_ids.length)
+      issue(errors, '/models/' + i + '/adoption', 'baseline_diagnostic_adoption', 'A baseline diagnosis neither tunes a model nor selects confirmation material');
+  });
+  const selectedCases = new Set(value.conditions.flatMap(condition => condition.case_ids));
+  for (const id of selectedCases) {
+    const item = maps.cases.get(id);
+    if (item && !['development', 'pilot'].includes(item.split))
+      issue(errors, '/corpus/cases', 'baseline_diagnostic_material', 'A baseline diagnosis selects only development or pilot material');
+  }
+  const repeats = [...new Set(value.assessments.map(item => item.repeat))].sort((a, b) => a - b);
+  if (repeats.some((repeat, index) => repeat !== index)
+      || value.conditions.some(condition => condition.case_ids.some(caseId =>
+        !same(value.assessments.filter(item => item.condition_id === condition.id && item.case_id === caseId)
+          .map(item => item.repeat).sort((a, b) => a - b), repeats))))
+    issue(errors, '/assessments', 'baseline_diagnostic_repeats', 'Every diagnostic case requires the same complete zero-based repeat set');
+}
+
 function comparisonChecks(value, maps, ref, errors) {
   const usedConditions = new Set();
   const occupiedEpisodes = new Set();
@@ -367,7 +418,7 @@ function comparisonChecks(value, maps, ref, errors) {
     if (!condition || !item) return;
     useEpisode(condition, item, assessment.repeat, path);
     const supported = item.capability_ids.every(id => maps.capabilities.get(id)?.environment_ids.includes(condition.environment_id));
-    if (item.capability_ids.every(id => maps.capabilities.get(id)?.scope === 'common'))
+    if (value.purpose !== BASELINE_DIAGNOSTIC && item.capability_ids.every(id => maps.capabilities.get(id)?.scope === 'common'))
       issue(errors, path, 'common_assessment', 'Common tasks belong in pairs, not unpaired capability assessments');
     if ((assessment.expected_support === 'supported') !== supported)
       issue(errors, path, 'support_mismatch', 'Unsupported is a declared capability scope, not an outcome override');
@@ -429,7 +480,9 @@ function policyChecks(value, maps, pairCells, stage, errors) {
   unique(policies.evidence.required, '/policies/evidence/required', errors);
   for (const kind of REQUIRED_EVIDENCE) if (!policies.evidence.required.includes(kind))
     issue(errors, '/policies/evidence/required', 'missing_evidence_contract', 'Missing required observation: ' + kind);
-  const families = new Set(pairCells.map(cell => cell.item.family));
+  const families = new Set(value.purpose === BASELINE_DIAGNOSTIC
+    ? value.assessments.map(item => maps.cases.get(item.case_id)?.family).filter(Boolean)
+    : pairCells.map(cell => cell.item.family));
   unique(policies.statistics.family_weights, '/policies/statistics/family_weights', errors, item => item.family);
   if (!setSame(policies.statistics.family_weights.map(item => item.family), [...families]))
     issue(errors, '/policies/statistics/family_weights', 'weight_scope_mismatch', 'Weights must cover exactly the declared common-task families');
@@ -738,6 +791,7 @@ export function validateProtocol(value, options = {}) {
       issue(errors, '/environments/' + i + '/status', 'unfrozen_identity', 'A frozen protocol cannot bind a draft environment');
   });
   const { maps, ref } = checkReferences(value, errors);
+  studyDesignChecks(value, maps, errors);
   const pairCells = comparisonChecks(value, maps, ref, errors);
   policyChecks(value, maps, pairCells, stage, errors);
   errors.push(...validateAnalysisPolicy(value).errors);
