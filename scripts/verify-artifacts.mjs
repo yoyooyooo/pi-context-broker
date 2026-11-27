@@ -63,6 +63,7 @@ async function selectedBuildInput(entry) {
       const sdk = typeof exported === "string" ? exported : exported?.import;
       return { package: metadata.name, version: metadata.version, manifest: await identity(path),
         cli: await identity(entry), sdk: await identity(await runtimePath(directory, sdk)),
+        management: await identity(await runtimePath(directory, "dist/management.js")),
         ref: await identity(await runtimePath(directory, metadata.exports?.["./ref"]?.require)),
         notices: await identity(await runtimePath(directory, "THIRD_PARTY_NOTICES.md")) };
     }
@@ -120,7 +121,7 @@ try {
   const runtime = JSON.parse(await readFile(join(installed, "dist/ntn-skills-runtime.json"), "utf8"));
   report.runtime = { ...runtime, hashes: verifyBundledRuntime({ manifest: runtime, expectedVersion: selected.version,
     cliBytes: await readFile(join(installed, "dist/ntn-skills.mjs")),
-    sdkBytes: await readFile(join(installed, "dist/ntn-skills-sdk.mjs")),
+    managementBytes: await readFile(join(installed, "dist/ntn-skills-management.mjs")), sdkBytes: await readFile(join(installed, "dist/ntn-skills-sdk.mjs")),
     refBytes: await readFile(join(installed, "dist/ntn-skills-ref.cjs")) }) };
   const sdk = await import(pathToFileURL(join(installed, "dist/ntn-skills-sdk.mjs")).href);
   assert.equal(sdk.SDK_VERSION, 3);

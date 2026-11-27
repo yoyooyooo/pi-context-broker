@@ -11,8 +11,9 @@ import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-
 import { renderHttpWrapper, startLoopbackMock } from './mock-provider-adapter.mjs';
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
 import { waitForSdkOperations } from './notion-sdk-observers.mjs';
+import { materializationScenarios, runMaterializationScenario, verifyMaterializationEvidence } from './notion-sdk-pi-materialization.mjs';
 
-export const scenarios = Object.freeze(['default-view', 'http-cache-recovery', 'http-warm-restart', 'http-warm-directory-expired', 'http-smart-revalidate', 'http-smart-current', 'http-interruption', 'working-set']);
+export const scenarios = Object.freeze(['default-view', 'http-cache-recovery', 'http-warm-restart', 'http-warm-directory-expired', 'http-smart-revalidate', 'http-smart-current', 'http-interruption', 'working-set', ...materializationScenarios]);
 const isWarmRestart = name => ['http-warm-restart', 'http-warm-directory-expired', 'http-smart-revalidate'].includes(name);
 export const usage = `Current SDK v3, actual Pi, controlled Notion and provider HTTP.
 node scripts/notion-sdk-pi.mjs doctor|run --package ABS --fixture ABS --source-http-helper ABS [--pi ABS] [--scenario all|${scenarios.join('|')}]
@@ -128,11 +129,18 @@ async function inspect(options) {
   const runtime = JSON.parse(await readFile(join(packageRoot, 'dist/ntn-skills-runtime.json'), 'utf8'));
   const runtimeHashes = verifyBundledRuntime({ manifest: runtime, expectedVersion: runtime.package_version,
     cliBytes: await readFile(join(packageRoot, 'dist/ntn-skills.mjs')), sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')),
+    managementBytes: await readFile(join(packageRoot, 'dist/ntn-skills-management.mjs')),
     refBytes: await readFile(join(packageRoot, 'dist/ntn-skills-ref.cjs')) });
   const [major, minor, patch] = process.versions.node.split('.').map(Number);
   assert.ok((major === 24 && (minor > 22 || minor === 22 && patch >= 3)) ||
     (major === 26 && (minor > 13 || minor === 13 && patch >= 1)), 'Use Node ^24.22.3 or ^26.13.1');
   const fixture = validateCurrentFixture(JSON.parse(await readFile(options['--fixture'], 'utf8')));
+  if (!options['--scenario'] || options['--scenario'] === 'all' || materializationScenarios.includes(options['--scenario'])) {
+    assert.equal(fixture.source_materialization?.version, 1, 'Generate the current fixture with --catalog --materialization');
+    assert.match(fixture.source_materialization.head_commit ?? '', /^[a-f0-9]{40}$/);
+    assert.notEqual(fixture.source_materialization.head_commit, fixture.source_materialization.commit, 'The materialization fixture must include a later unaccepted Git HEAD');
+    assert.equal(hash(fixture.source_materialization.unaccepted_root.content), fixture.source_materialization.unaccepted_root.sha256);
+  }
   const fixtureEnv = JSON.parse(await readFile(fixture.env, 'utf8'));
   assert.equal(fixtureEnv.NOTION_API_TOKEN, 'current-sdk-controlled-token', 'Only the declared controlled source token is accepted');
   const host = options['--pi'] ?? 'pi', command = await resolveHost(host);
@@ -159,7 +167,9 @@ async function inspect(options) {
     runtime: { executable: process.execPath, node: process.versions.node }, pi: { ...command, package_root: piRoot, version: metadata.version },
     broker: { path: packageRoot, runtime, hashes: runtimeHashes, files: files.sort((a, b) => a.path.localeCompare(b.path)) }, serializer,
     fixture: { path: options['--fixture'], sha256: hash(await readFile(options['--fixture'])) },
-    source_http_helper: { path: helper, sha256: hash(await readFile(helper)) }, driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))) } };
+    source_http_helper: { path: helper, sha256: hash(await readFile(helper)) }, driver_sha256: hash(await readFile(fileURLToPath(import.meta.url))),
+    materialization_driver: { path: fileURLToPath(new URL('./notion-sdk-pi-materialization.mjs', import.meta.url)),
+      sha256: hash(await readFile(new URL('./notion-sdk-pi-materialization.mjs', import.meta.url))) } } };
 }
 
 function lifecycleObserver(api) {
@@ -309,6 +319,7 @@ function phaseCost(events, source, pid, phase, elapsedMs, originals, maxAgeMs) {
 }
 
 async function runScenario(name, info, out) {
+  if (materializationScenarios.includes(name)) return runMaterializationScenario(name, info, out, { runCommand, lifecycleObserver, selectProviderCall, assertWireSources });
   const base = join(out, name); await mkdir(base, { mode: 0o700 });
   const { sample, owners } = currentServiceFacts(info.fixture);
   await save(join(base, 'source-facts.json'), sample);
@@ -715,8 +726,14 @@ export async function verifyEvidence(directory) {
       assertWireSources(JSON.parse(await readFile(join(base, proof.provider_file), 'utf8')), proof.present.map(item => item.text), proof.absent.map(item => item.text));
     }
     const source = await rows(join(base, 'source-http.jsonl')); assert.ok(source.length > 0);
-    assert.ok(source.every(row => row.method === 'GET' || row.method === 'POST' && /\/(?:query|queries)$/.test(row.path)));
     const events = await rows(join(base, 'sdk.jsonl'));
+    if (materializationScenarios.includes(entry.name)) {
+      assert.ok(isAbsolute(result.identity.materialization_driver?.path ?? ''));
+      assert.match(result.identity.materialization_driver?.sha256 ?? '', /^[a-f0-9]{64}$/);
+      await verifyMaterializationEvidence({ base, entry, source, events, proofs, assertWireSources });
+      continue;
+    }
+    assert.ok(source.every(row => row.method === 'GET' || row.method === 'POST' && /\/(?:query|queries)$/.test(row.path)));
     const starts = events.filter(row => row.kind === 'context-broker.notion-sdk' && row.event === 'start'), ends = events.filter(row => row.kind === 'context-broker.notion-sdk' && row.event === 'end');
     assert.ok(starts.length > 0); assert.deepEqual(starts.map(row => row.id).sort(), ends.map(row => row.id).sort());
     assert.equal(events.filter(row => row.kind === 'child_process' && row.active_sdk_ids.length > 0).length, 0);

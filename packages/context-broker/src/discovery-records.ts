@@ -5,7 +5,7 @@ import { parse as parseYaml } from "yaml";
 import type { RouterDiscoveryRecord, ConfigFile, DiscoveryMember, DiscoveryRecord, ScanConfig, SkillRecord, RawCatalogMember, CatalogRemoteReference, CatalogResolutionContext } from "./types";
 import { normalizeKey, skillRecordFromFile, uniqueStrings } from "./skill-records";
 import { isBundledBuiltin, isBundledBuiltinToken } from "./bundled-builtins";
-import { sharedSkillId } from "./shared-skill-identity";
+import { sharedSkillId, validSharedSkillId } from "./shared-skill-identity";
 
 export function recordKind(record: DiscoveryRecord): "skill" | "router" | "prompt" {
   return record.kind ?? "skill";
@@ -35,7 +35,7 @@ export function preciseRecordToken(record: DiscoveryRecord): string {
   if (isBundledBuiltin(record)) return recordToken(record);
   return `${record.alias ?? recordNormalizedName(record)}@${preciseSelector(record)}@${recordNamespace(record)}`;
 }
-function parsePreciseSelection(query: string): { selector: string; namespace: string } | undefined {
+function parsePreciseSelection(query: string): { selector: string; namespace: string; skillId?: string } | undefined {
   if (/[\p{Cc}\p{Cf}\p{Cs}]/u.test(query)) return undefined;
   const parts = query.split("@");
   if (parts.length !== 3 || !parts[0] || /[\s/]/u.test(parts[0]) || !/^[\p{L}\p{N}._-]+$/u.test(parts[2]!)) return undefined;
@@ -44,6 +44,8 @@ function parsePreciseSelection(query: string): { selector: string; namespace: st
   try {
     const id = decodeURIComponent(selector);
     if (id.startsWith("local:") && isAbsolute(id.slice(6)) && encodeSelectionId(id) === selector) return { selector, namespace: parts[2]! };
+    if (id.startsWith("skill:") && encodeSelectionId(id) === selector && validSharedSkillId(id.slice(6)))
+      return { selector, namespace: parts[2]!, skillId: id.slice(6) };
   } catch { /* Malformed text is not an identity-qualified reference. */ }
   return undefined;
 }
@@ -52,7 +54,11 @@ export function isPreciseSelectionToken(query: string): boolean {
 }
 export function matchesPreciseRecordToken(query: string, record: DiscoveryRecord): boolean {
   const selection = parsePreciseSelection(query);
-  return Boolean(selection && !isBundledBuiltin(record) && selection.selector === preciseSelector(record) && selection.namespace === recordNamespace(record));
+  if (!selection || isBundledBuiltin(record) || selection.namespace !== recordNamespace(record)) return false;
+  // A registered member's menu identity must still resolve after it gains its
+  // physical page, so repeating the accepted token never rediscovers upstream.
+  return selection.skillId === undefined ? selection.selector === preciseSelector(record)
+    : record.locator?.type === "shared_skill" && record.locator.skill_id === selection.skillId;
 }
 
 export function recordIdentity(record: DiscoveryRecord): string {

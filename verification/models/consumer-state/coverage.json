@@ -10,8 +10,8 @@
   },
   "files": {
     "packages/context-broker/src/consumer-observation.ts": "9468e9339f7c5732a50b9c73948753a901eaf076198946f597ddcea69f7df695",
-    "packages/context-broker/src/discovery-records.ts": "377efc553ecaa2c906958538273bff7443c999b054ff42e0a30991caf5c4aa94",
-    "packages/context-broker/src/host-skills.ts": "ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59",
+    "packages/context-broker/src/discovery-records.ts": "5c9a092c38c88724efd1f3747ace4271d9d871d78f3b9506e210c66e5a49a60d",
+    "packages/context-broker/src/host-skills.ts": "9a27edce5324c765e80a1c95b2ca5bc5339fae1d117b7094864f2b52db7c8c50",
     "packages/context-broker/src/prepare-protocol.ts": "460fd2745d750c0bb82354d57c077b99816f8d68a4fe9982d327e13c244aec0d",
     "packages/context-broker/src/session-graph.ts": "f2e1ddf48aa59ab10346f1d6327379217309e48235b644ba3bf494b3963162f0",
     "packages/context-broker/src/session-active.ts": "24f9ae22f0ffbca303a29e0d6aabf48cef981922531ccb6a2c0108cb038a226b",
@@ -28,10 +28,10 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "bf57522e3cd63a398f05085dbfd04068eade37018a897bf269ee3c2d68836fbd",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "453d30268dc2bbe1f70202f919fd80e31d2f570b5848820bbd0e8da28e951169",
-    "packages/context-broker/src/index.ts": "bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9",
+    "packages/context-broker/src/index.ts": "e2580e2766d3218df5748f36622b13337288574cb656e52197d97927e651ef90",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
-    "packages/context-broker/src/notion-source.ts": "a5332c87c07c34ccc61678c7ebff3b654db662d1b55cd507fb320079c90306e1",
+    "packages/context-broker/src/notion-source.ts": "36fd01fd55255d889d9b472543006f6d0a689c2b71ad35da0e66db2aa2de819d",
     "packages/context-broker/src/pi-host-adapter.ts": "1d91fa6a7e2528e3641a93754aeeb598f8e8c8270eb27ba5dc1e9ca3a1ea4ce0",
     "packages/context-broker/scripts/host-refresh.test.ts": "ab39fb9d470ba931e41425cf55ffe403f21c05d9c0c79756b2df250e44159654",
     "packages/context-broker/scripts/session-refresh.test.ts": "5e3f715774593d8a95cdf4c9869bf010a70c2e792943350b08d2657b6dfe8cf4",
@@ -50,11 +50,11 @@
     "packages/context-broker/src/content-publication.ts": "0dbb3fb6e12798474d08856649ebb4282483b7241e9830ac3f55daef81ddd4f8",
     "packages/context-broker/src/content-search.ts": "04587a09c4cc526851a010804e01ae200c53ecea10da5591002fadbfb071f6fa",
     "packages/context-broker/src/pi-authorization.ts": "9355d0cdf3347043c17447bc691d1a605b374bded3b60cee8a61b317eb690440",
-    "packages/context-broker/src/notion-sdk.ts": "4335b26f880759e2f619f9e54344928f3b71fa348e8e9b417016e4aecfab8a8c",
+    "packages/context-broker/src/notion-sdk.ts": "b241a89ed4f467828e1dadc6ec8deb3c4eac533c468f1847ee95d4ad2a402f1b",
     "packages/context-broker/scripts/host-content-search.test.ts": "2ee5d080075f43ade4375937f4473960a10dbd33f4eedf2864efb2ab371bc8b2",
     "packages/context-broker/scripts/content-search.test.ts": "d88a3e2d8a45ecf43e495235ffc3d5e1617ca9783b437fc70e9e9fc0eff39488",
     "packages/context-broker/scripts/pi-authorization.test.ts": "3b632769f7dc12d672c46155222cbc418cd66da86ae8fe6c592e275231a2ee3d",
-    "packages/context-broker/scripts/fixtures/current-notion-source.ts": "072e6d629bc90f6df510c736db347989bb84c70ad9450e66bc9f9adb395ea9d8",
+    "packages/context-broker/scripts/fixtures/current-notion-source.ts": "b1de65fc5f58db6452385fff7c8ac3b031fb49a56983eae33f34f333366bef8a",
     "packages/context-broker/src/native-reference.ts": "37158660edb67b70a97bef4fb6bfdab70dfb7ef6ea4ad1c2765bd2313647207e",
     "packages/context-broker/src/shared-skill-identity.ts": "2495065caf4cb7b81227b60bc0c97d50ada7bdfa14a7824750cb9326583f9186",
     "packages/context-broker/src/session-short-ref.ts": "739f598b083740f918108477ea2fd072f001169a7d6eadf29805b53660447541",
@@ -69,7 +69,7 @@
     "packages/context-broker/scripts/cli-write-invalidation.test.ts": "1469fd9eb3eac1ee2760a86f617091f76d4936836e0da0e0650da6b653cb8466",
     "packages/context-broker/src/sources.ts": "30572f81f9e6a8c314c6c4f595a95ec75f43767dbd8a280db3abab7bc907dedb",
     "packages/context-broker/scripts/shared-notion-adapter.test.ts": "9b1b4c91ed6004242f63ad76a88c6cb683715458f816e9ca287152dee2f2929e",
-    "packages/context-broker/scripts/soft-miss-regressions.test.ts": "f7c3b733733b122d8fb4e7fca4ea48e0c6f1672cab9a85018e111f29c1fbe880",
+    "packages/context-broker/scripts/soft-miss-regressions.test.ts": "ead1f0032d8dc380c4684ca91c64fabc2016f0dfdc793900125e62472317362c",
     "packages/context-broker/scripts/input-guard.test.ts": "957d10624ebb248a05c5ed63bef528b7fc46418f6cafe41a61e4e3977e57190d",
     "packages/context-broker/src/skill-preparation.ts": "195ca6ded47974e2f1a2f6a150557e2c18f90afe5068816318fdd9b5516c87d4",
     "packages/context-broker/src/nonblocking-context.ts": "c996a55b1e14abfb4e69e198bf244c44d372fb67c6d3242dff62a3ea5c412c06",
@@ -79,8 +79,8 @@
     "packages/context-broker/scripts/nonblocking-context.test.ts": "6d949157c04cf39bd712c0fdca024a9ce803d15e37de5f5a7ec9fa3ebfe8a3b2",
     "packages/context-broker/scripts/activation-feedback.test.ts": "9f15a1bbbad5f5a12e8c0544ef10037d85b44d0dbe127ecff08cd000c2dac6ce",
     "packages/context-broker/src/accepted-selections.ts": "792eeb195d47c3a925e9cc56224af1bcf512584a13483cf9db2e37f14fa0d19e",
-    "packages/context-broker/src/completion-candidates.ts": "270b111a87596f60c0026411fc71d87b438588495a0a6403b121c932e53f2724",
-    "packages/context-broker/src/dollar.ts": "325dc550c88d7ad7e3b1c6db2768f29bcefde441c622ea391409bf423f2ad7d9",
+    "packages/context-broker/src/completion-candidates.ts": "a13700af32283f4308169b325199d529261ee76833f9d7700ce0f98a22cc0fdb",
+    "packages/context-broker/src/dollar.ts": "58b381eadc83d017a38c97a12c50d1e540f1dadd0130f77bf1e9f29fc796e977",
     "packages/context-broker/src/pi-dollar-editor.ts": "3ef381720a6ca482cdba1ce9f06dc0d5a4788942c7e163a463284b23269a6016",
     "packages/context-broker/scripts/accepted-selections.test.ts": "5854988f8d8c2e4db46abb73a456a8e31dc39e2ddfd5d2edbc60e7c2ce729a83",
     "packages/context-broker/scripts/catalog-menu.test.ts": "45dfd4b3918898fb088f9c04425977c1221767036e6ac4d0a6cd9fe10e829410",
@@ -88,7 +88,7 @@
     "packages/context-broker/scripts/pi-dollar-editor.test.ts": "8fa1ad413620bd8381c61a5643cacabcb79e4ea25c233341990035262deca613",
     "packages/context-broker/scripts/fixtures/completion-menu.ts": "982e2cc09ee665c6d24df5b4b0ba544775e5ce56f926a5a115b306b7ced3612b",
     "packages/context-broker/scripts/pi-queued-input.test.ts": "6f00d63e07082cdab7e60e6916758d6dd621d5ee25b38fb5ef472585826ea090",
-    "packages/context-broker/scripts/notion-sdk.test.ts": "0bebac7afc04079cf6229d4a51d559a68e653a6d1acbbc5ca79db1ff5c4dbeb3"
+    "packages/context-broker/scripts/notion-sdk.test.ts": "45ab801c5fefc047f5caf4bd7045ac3d7623b759954a3f403180e891f987c707"
   },
   "models": {
     "FreshnessPublication": {
@@ -1455,6 +1455,21 @@
       "scope": "Only the CACHE_INVALIDATED sourceFailureMessage text and one row in the existing propagation regression change. Reverting those exact changes restores both files byte-for-byte to the reviewed base.",
       "ownership": "Core owns persistent current evidence, complete membership and final root/Requires read-set admission. Broker already forwards CACHE_INVALIDATED and keeps its existing ticket, scope, fixed-selection and complete-delivery boundaries; the diagnostic now covers known current facts as well as a cleared cache.",
       "proof_limit": "No production admission guard, finite model, config, bound, case, expected rule or mutation target changes. Whole-file hashes bind this reviewed diagnostic and concrete propagation regression; they do not establish persistent SQLite behavior, actual Pi execution or refinement."
+    },
+    "source_materialization": {
+      "scope": "Explicit accepted InputReceipt preparation is a separate management phase before ordinary read-only SDK consume. Read/use selection, original validation evidence, physical Source ownership, fixed pins, complete Requires closure, graph commit, provider/turn acknowledgement and projection remain the existing consumer contracts.",
+      "authority": "Only an exact literal user $ selection grants preparation authority bound to its accepted Library, configured Source, credential scope, physical root, session and branch. Menus, model tools, automatic discovery, quoted/code examples, unqualified variables and currency do not grant it. Source-member metadata has no fabricated physical locator or consumable ref.",
+      "publication": "Reviewed the index retry boundary: only exact missing-current failures enter authorized preparation; ready physical records take ordinary consume directly. A validated receipt retires scoped catalog/runtime facts, including its exact target for blocked/pending empty-affected results. Ready metadata remains partial; ordinary consume must independently prove complete bytes and closure. Existing cancellation, epoch and final graph/publication guards remain after the retry, and pinned roots cannot be replaced.",
+      "identity": "Stable source-member selection resolves the later physical record by exact stable Skill ID, while configured source, Library, scope and physical-page checks remain separate. Discovery requires complete coverage; native-root Requires grants bind the exact fresh root and digest, and management receipts must echo this proof. manager_scope is diagnostic provenance; consumer scope comparison remains strict.",
+      "replays": [
+        "preparation-authority.test.ts",
+        "source-materialization-contract.test.ts",
+        "source-materialization.test.ts",
+        "source-member-candidates.test.ts",
+        "soft-miss-regressions.test.ts",
+        "notion-sdk.test.ts"
+      ],
+      "proof_limit": "The unchanged finite models do not model manager dispatch, remote writes, Notion consistency, real SQLite, fixed-manager recovery, or Pi cancellation. No model/config/view, bound, case inventory, expected rule or guard-mutation target is changed. Source hashes bind reviewed consumer owner bytes; fixed-manager HTTP/SQLite and installed Pi delivery require their separately retained concrete runs."
     }
   },
   "library_session_design": {

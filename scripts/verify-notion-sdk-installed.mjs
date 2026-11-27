@@ -54,7 +54,7 @@ if (!worker) {
   const runtime = JSON.parse(await readFile(join(packageRoot, 'dist/ntn-skills-runtime.json'), 'utf8'));
   verifyBundledRuntime({ manifest: runtime, expectedVersion: runtime.package_version,
     cliBytes: await readFile(join(packageRoot, 'dist/ntn-skills.mjs')),
-    sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')),
+    managementBytes: await readFile(join(packageRoot, 'dist/ntn-skills-management.mjs')), sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')),
     refBytes: await readFile(join(packageRoot, 'dist/ntn-skills-ref.cjs')) });
   const { startSdkSourceFixture } = await import(pathToFileURL(options.get('--source-http-helper')).href);
   const service = await startSdkSourceFixture(fixture, join(out, 'source.jsonl'));

@@ -188,7 +188,7 @@ test('contradictory SDK source attribution remains an observation error', async 
   assert.equal(trace.events.filter(row => row.phase === 'observer_error').length, 1);
 });
 
-for (const operation of ['library-selection', 'library', 'list', 'files', 'read-resources', 'resolve']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
+for (const operation of ['library-selection', 'library', 'list', 'source-members', 'files', 'read-resources', 'resolve']) test('one ' + operation + ' is one observed SDK operation with its complete request ledger', async t => {
   const item = fixture(), observer = observe(item); t.after(observer.finish);
   const id = crypto.randomUUID();
   publishSdk(id, 'start', { operation });

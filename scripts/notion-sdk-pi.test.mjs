@@ -12,7 +12,7 @@ test('current command boundary rejects retired or ambiguous invocation before I/
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-cache-recovery'])['--scenario'], 'http-cache-recovery');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-warm-restart'])['--scenario'], 'http-warm-restart');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-warm-directory-expired'])['--scenario'], 'http-warm-directory-expired');
-  for (const scenario of ['http-smart-revalidate', 'http-smart-current'])
+  for (const scenario of ['http-smart-revalidate', 'http-smart-current', 'source-materialize-legacy', 'source-materialize-first', 'source-materialize-legacy-source', 'source-materialize-growth', 'source-materialize-native-root'])
     assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', scenario])['--scenario'], scenario);
   for (const args of [
     ['cleanup', '--evidence', '/owned/result'], ['run', ...options], ['run', ...options, '--out', 'relative'],

@@ -7,7 +7,7 @@ import { channel } from "node:diagnostics_channel";
 
 // These fixtures exercise the loading/observation boundary only. Actual SDK
 // runtime, package and Pi proofs use independently installed ntn-skills builds.
-async function fixture(options: { candidates?: boolean; candidateVersion?: number; candidateManifestVersion?: number; sdk?: boolean; sdkVersion?: number; sdkManifestVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; resourceEffectsVersion?: number | null; resourceEffectsManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; effectsVersion?: number | null; effectsManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; relativeResolver?: boolean; files?: boolean; contentSearch?: boolean; contentVersion?: number; contentManifestVersion?: number } = {}) {
+async function fixture(options: { sourceMembers?: boolean; materializationVersion?: number; materializationManifestVersion?: number; candidates?: boolean; candidateVersion?: number; candidateManifestVersion?: number; sdk?: boolean; sdkVersion?: number; sdkManifestVersion?: number; packageVersion?: string; manifestVersion?: string; resourceVersion?: number; resourceManifestVersion?: number; resourceEffectsVersion?: number | null; resourceEffectsManifestVersion?: number; readProofVersion?: number; readProofManifestVersion?: number; directoryVersion?: number; directoryManifestVersion?: number; effectsVersion?: number | null; effectsManifestVersion?: number; catalog?: boolean; catalogFailure?: "typed" | "returned" | "untyped" | "unsafe"; resolver?: boolean; relativeResolver?: boolean; files?: boolean; contentSearch?: boolean; contentVersion?: number; contentManifestVersion?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), "broker-sdk-boundary-"));
   await mkdir(join(root, "src")); await mkdir(join(root, "dist"));
   await copyFile(new URL("../src/notion-sdk.ts", import.meta.url), join(root, "src/notion-sdk.ts"));
@@ -32,6 +32,12 @@ export async function readCandidateSnapshot(options) {
   calls.push({ operation: 'candidates', options });
   options.onRequestMetrics?.({ total_requests: 0, trace: [] });
   return { kind: 'miss', reason: 'cache_missing' };
+}` : ""}
+${options.sourceMembers ? `export const SOURCE_MATERIALIZATION_VERSION = ${options.materializationVersion ?? 1};
+export async function discoverSourceMembers(input, options) {
+  calls.push({ operation: 'source-members', input, options });
+  options.onRequestMetrics?.({ total_requests: 0, trace: [] });
+  return { version: 1, library_id: input.library, candidates: [], coverage: 'complete', effects: { remote_writes: 'none' } };
 }` : ""}
 export const calls = [];
 export async function selectLibrary(options) { calls.push({operation: 'library-selection', options}); return options.library ?? '00000000-0000-4000-8000-000000000099'; }
@@ -93,6 +99,7 @@ export async function readResources(input, options) {
 `);
   await writeFile(join(root, "dist/ntn-skills-runtime.json"), JSON.stringify({ version: 1, skill_ref_version: 2, package: "ntn-skills",
     package_version: options.manifestVersion ?? options.packageVersion ?? "fixture-1", sdk_version: options.sdkManifestVersion ?? options.sdkVersion ?? 3, consumer_contract_version: 1,
+    ...(options.sourceMembers || options.materializationManifestVersion !== undefined ? { source_materialization_version: options.materializationManifestVersion ?? options.materializationVersion ?? 1 } : {}),
     ...(options.candidates || options.candidateManifestVersion !== undefined ? { candidate_snapshot_contract_version: options.candidateManifestVersion ?? options.candidateVersion ?? 1 } : {}),
     ...(options.contentSearch ? { content_search_contract_version: options.contentManifestVersion ?? options.contentVersion ?? 1 } : {}),
     ...(options.resourceVersion === undefined ? {} : { resource_read_contract_version: options.resourceManifestVersion ?? options.resourceVersion }),
@@ -442,4 +449,30 @@ test("candidate discovery requires the same paired capability and calls only the
   expect(calls[0].options.signal).toBe(signal);
   expect(calls[0].options.env).toBe(options.env);
   expect(calls[0].options).not.toHaveProperty("sourceId");
+});
+
+test("registered Source discovery is a separate readonly SDK capability and never falls back to management", async () => {
+  const input = { library: "00000000-0000-4000-8000-000000000001", query: "legacy-root", source_id: "registered-origin" };
+  for (const options of [{}, { sourceMembers: true, materializationVersion: 2 }, { sourceMembers: true, materializationManifestVersion: 2 }]) {
+    const f = await fixture(options);
+    await expect(f.boundary.discoverNotionSourceMembersSdk(input, { sourceId: "notion", library: input.library })).rejects.toMatchObject({ code: "SOURCE_SDK_INCOMPATIBLE" });
+    expect((await import(pathToFileURL(f.module).href)).calls).toHaveLength(0);
+  }
+  const f = await fixture({ sourceMembers: true });
+  expect(await f.boundary.discoverNotionSourceMembersSdk(input, { sourceId: "notion", library: input.library, cwd: "/owned" }))
+    .toMatchObject({ version: 1, library_id: input.library, effects: { remote_writes: "none" } });
+  const calls = (await import(pathToFileURL(f.module).href)).calls;
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ operation: "source-members", input, options: { cwd: "/owned", library: input.library } });
+  expect(calls[0].options).not.toHaveProperty("sourceId");
+});
+
+test("Required-member discovery preserves the exact root as a readonly typed request", async () => {
+  const f = await fixture({ sourceMembers: true });
+  const input = { library: "00000000-0000-4000-8000-000000000001", requires_of: "native-router" };
+  await f.boundary.discoverNotionSourceMembersSdk(input, { sourceId: "notion", library: input.library });
+  const calls = (await import(pathToFileURL(f.module).href)).calls;
+  expect(calls).toHaveLength(1);
+  expect(calls[0].input).toEqual(input);
+  expect(calls[0].input).not.toHaveProperty("query");
 });
