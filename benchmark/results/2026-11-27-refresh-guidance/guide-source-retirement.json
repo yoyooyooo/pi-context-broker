@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "kind": "rejected-candidate-source-retirement-closeout",
+  "closed_at": "2026-11-27T05:44:06.013429+00:00",
+  "status": "sources_trashed",
+  "environment_id": "3f3f14df-b877-446e-8365-391cb591902c",
+  "scope": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-guide-sources-20261127/scope.json",
+    "sha256": "a7d6e142338aee8949ddba9fe49f3065aa13d027f5cfe2631036f9cd5f6aed1d",
+    "bytes": 2151
+  },
+  "pre_audit": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-guide-sources-20261127/pre-audit.json",
+    "sha256": "f53b356d31cafab6e8af52f397cf54c33ef759cd23a9d54d43fcb5aae5a0d647",
+    "bytes": 73453
+  },
+  "post_audit": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-guide-sources-20261127/post-audit.json",
+    "sha256": "1f2bd890c7bdebd6a89b8fd2e78356148c245c4c08276501d4a9a621f3d3d4a3",
+    "bytes": 2105
+  },
+  "paths": [
+    {
+      "source_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-refresh-guidance-20261127/broker",
+      "head": "b90e122de6ed2b465d93b2df35cb70769ae96147",
+      "destination_path": "/Users/yoyo/.Trash/broker 13-44-05-625",
+      "source_absent": true,
+      "allocated_kib": 76936,
+      "trash_receipt": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-guide-sources-20261127/trash-1.ack.json",
+        "sha256": "e830773c0f0357bd985dba1ebd170bf12deadb086ccae10b6962ec4ea348e8fd",
+        "bytes": 1485
+      },
+      "destination_bytes": "not_verified"
+    },
+    {
+      "source_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-refresh-guidance-20261127/cli",
+      "head": "a22aa1cd5506d393df6ef4d37a6aeb7c575453ba",
+      "destination_path": "/Users/yoyo/.Trash/cli 13-44-05-800",
+      "source_absent": true,
+      "allocated_kib": 19144,
+      "trash_receipt": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-guide-sources-20261127/trash-2.ack.json",
+        "sha256": "6e95d8f98b4f70389a21c1739eef6b0ff35c1e6b9e724b3ea5ff6c154e11fcce",
+        "bytes": 1470
+      },
+      "destination_bytes": "not_verified"
+    }
+  ],
+  "retired_active_allocated_kib": 96080,
+  "retained_originals_unchanged": 81,
+  "recoverability": "All refs/HEAD bundles verified before and after retirement in an empty bare metadata repository without prerequisites; all reflog commits are reachable from preserved refs. Original Git metadata/reflog/index/config retained in verified tar archives. No untracked/ignored/unreachable content existed.",
+  "rejected_candidate": "PR105 closed unmerged; Broker b90 task branch was independently read back at its remote before retirement. No integration/adoption claim.",
+  "control_kit": "GUIDE root/control/environment/logs and the self-contained delivery preparation kit remain unchanged; no ongoing checkout consumer declared by either owner.",
+  "disk": {
+    "before_available_kib": 46092404,
+    "after_available_kib": 46081968,
+    "available_delta_kib": -10436,
+    "reclaimed_bytes": "not_claimed",
+    "interpretation": "Same-volume native Trash is reversible retirement; df includes concurrent activity and does not prove reclaimed capacity."
+  },
+  "new_models": 0,
+  "builds_runs_daily_modified": []
+}

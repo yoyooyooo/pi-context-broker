@@ -74,6 +74,18 @@
       "sha256": "06640d520b0ab61bd541e26846ab080452b5b735ff5bef9bb296388410936b5f",
       "bytes": 2687,
       "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-refresh-guidance-20261127/control/refresh-guidance-candidate/byte-count-correction.json"
+    },
+    {
+      "path": "candidate-retirement.json",
+      "sha256": "cb94c5c588a3995dad765bb052dafecb7e852ff7aa309e1b1a17b83c29a90879",
+      "bytes": 5122,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-candidate-20261127/closeout.json"
+    },
+    {
+      "path": "guide-source-retirement.json",
+      "sha256": "3fb74b0b5b796422126a341c3dee022a84db5915c540d1929dcded5cf940e3ef",
+      "bytes": 3578,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-guide-sources-20261127/closeout.json"
     }
   ],
   "scope": "Navigation and selected summaries; complete original requests, responses and sessions remain at referenced Mini paths. Not a portable sealed replay package."
