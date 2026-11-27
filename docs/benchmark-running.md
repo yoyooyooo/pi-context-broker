@@ -31,6 +31,11 @@ ordinary-profile delivery. Its original evidence packages remain immutable.
    and attempt for changed product, model, material or runtime conditions. The
    maintained comparison entry accepts two environments, or two explicit pairs;
    one representative case does not require expanding to every corpus family.
+   For a bare Native/Broker comparison, declare `pi_mode`, `sources` and
+   `native_root` among the intended `allowed_changes`, as well as its actual
+   tool/catalog/guidance differences. A declaration from a Broker/Broker
+   comparison does not cover these mode differences. The protocol still checks
+   the actual captured manifests; do not weaken that check after a refusal.
 4. **Inspect before transport.** Run `configure` to capture actual Pi loading,
    tool ownership, source readiness and serialized input without a model call.
    Inspect the relevant difference. For a daily integration change, also check
@@ -42,12 +47,18 @@ ordinary-profile delivery. Its original evidence packages remain immutable.
    bounded product decision while an unproved absence remains unknown. State
    that boundary; do not turn an unknown into a pass or claim general efficiency
    from one pair.
-6. **Close the product loop.** Fix a valuable gap as soon as it is clear, then
-   perform the checks affected by the change. Merge the accepted product through
-   `next` and complete the normal Pro, Mini and imile-win delivery contract.
-   Record the exact packages, fresh ordinary Pi observations and user-visible
-   result. Publish Benchmark evidence separately, update the project record and
-   retain the raw artifacts and accounting needed by the next iteration.
+6. **Route findings and close the loop.** Repair gaps that affect this
+   measurement or decision in the Benchmark mainline, then repeat the affected
+   checks. Record other worthwhile product improvements in separate Linear
+   issues with evidence, expected user benefit and a bounded validation path;
+   they do not automatically block the next measurement. Continue testing the
+   accepted `next`, then absorb and recheck those product changes when accepted.
+   Shared product and engineering changes go through `next`; Benchmark-specific
+   changes stay on `benchmark`. Product runtime changes follow the normal Pro,
+   Mini and imile-win delivery contract. A verifier-only change does not imply a
+   new product installation. Publish Benchmark evidence separately, update the
+   project record and retain the raw artifacts and accounting needed by the
+   next iteration.
    Retire owned mutable source, dependency and cache copies when their last
    consumer finishes. Record precise dispositions and actual free space; moving
    a path to same-volume Trash does not reclaim capacity. An evidence-only
@@ -56,10 +67,12 @@ ordinary-profile delivery. Its original evidence packages remain immutable.
 For the current Mini environment, start with the **current adoption and direct
 recovery** section of [AH-1217](https://linear.app/yoyooyooo/issue/AH-1217), then
 use the named report and its frozen inputs. The
-[retained smart-cache query recipe](../benchmark/results/2026-11-27-smart-cache/README.md#read-only-query-on-mini)
-provides an exact read-only command with compact output. It checks originals and
-existing derived results without a new environment or model run; it does not
-rerun the private oracle.
+[current complementary baseline](../benchmark/results/2026-11-27-complementary-current/README.md#read-only-query-on-mini)
+provides an exact read-only command and separates business, contracts and source
+coverage in its decision view. The
+[retained smart-cache query](../benchmark/results/2026-11-27-smart-cache/README.md#read-only-query-on-mini)
+remains available for the earlier comparison. Both read originals and existing
+derived results without a new environment, model run or private-oracle evaluation.
 
 Use the existing commands from the frozen controller:
 
@@ -114,12 +127,23 @@ It shows no foreground HTTP reduction in those actively refreshed episodes.
 The existing ordinary-profile warm-consumption result remains a separate scope.
 The [Library-title and first-use repairs](benchmark-library-title-2026-11-27.md)
 have entered next and completed ordinary adoption on Pro, Mini and imile-win.
-Their controlled regressions and live-Notion/cache checks are separate from the
-two prepared real-model observations, which have not run because Mini capacity
-admission stopped before configuration. The report preserves original 429
-failures, the repaired cache-only interpretation, the single ledger and precise
-retirement boundaries. Existing results remain available through the compact
-query above; no cross-machine ledger or material import is implied.
+Their controlled regressions and live-Notion/cache checks remain separate from
+real-model comparisons. The two additional Library-title version-comparison slots
+were cancelled before configuration when they no longer changed adoption. Their
+old pending-configure file must not be resumed; the original pause, costs and
+cancellation remain recorded.
+
+The subsequent [current complementary baseline](benchmark-complementary-current-2026-11-27.md)
+uses CLI `4ef03aa` and Benchmark apparatus `e4eb222` with the accepted runtime
+bytes. Its two Native/Broker observations pass every business and critical
+contract; Broker's complete legal-selection evidence remains unknown because
+three tool calls are opaque. The read-only query/journey decision view explains
+that boundary without changing the grade. Source/discovery optimization evidence
+belongs to the existing product issues. Released dependencies and caches are
+retired after their consumers finish, with original source/SDK/raw evidence
+retained and no same-volume Trash capacity credit. The shared SDK-settlement
+verifier repair entered next through PR #113; it changes no daily product runtime.
+No cross-machine ledger or material import is implied.
 
 Offline `reanalysis` can correct the interpretation of retained raw evidence
 without rebuilding or executing the product. Its historical source contracts
@@ -411,6 +435,15 @@ node benchmark/cli.mjs journey --root /absolute/task/batch --run retained-run-id
 node benchmark/cli.mjs analyze --root /absolute/task/batch --out /absolute/environment/reports/first
 node benchmark/cli.mjs reanalysis --root /absolute/task/batch --out /absolute/environment/reports/reanalysis-1
 ```
+
+`query` and `journey` expose a read-only `decision`: original overall outcome,
+business result, individual critical/noncritical contracts, execution coverage
+and source-readback coverage. Opaque tool IDs/names and evidence refs explain
+source limitations. Missing legacy readback is `unavailable`, not an empty or
+complete observation; corrupt retained evidence still fails verification.
+`--outcome` filters the original overall grade. The view does not rewrite stored
+journeys or normalized bundles and does not regrade. Use the current reporting
+CLI for this added view; an older frozen controller keeps its original output.
 
 `analyze` verifies retained evidence and aggregates normalized observations.
 `reanalysis` reads the original transport, tool and output artifacts, applies the

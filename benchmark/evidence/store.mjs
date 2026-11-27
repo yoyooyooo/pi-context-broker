@@ -299,6 +299,45 @@ export async function readEvidenceBundle({ directory, rawRoot, verify = true }) 
   if (verify) await verifyBundle(bundle, { root: rawRoot });
   return bundle;
 }
+// The caller supplies an episode from readEvidenceBundle. This view exposes
+// retained decisions and source limitations; it does not grade or rewrite them.
+export async function readEpisodeDecision(episode, options = {}) {
+  const decision = {
+    overall: structuredClone(episode.result), business: structuredClone(episode.business),
+    contracts: episode.contracts.map(({ id, kind, critical, status, reason, refs }) => ({
+      id, kind: kind ?? null, critical, status, reason: reason ?? null, refs: structuredClone(refs),
+    })),
+    execution_coverage: structuredClone(episode.admission.completeness),
+    source_readback: { status: 'unavailable', reason: 'No retained collection-readback artifact',
+      coverage: null, opaque_tools: null, unmatched_reads: null, refs: [] },
+  };
+  const artifact = episode.artifacts.find(item => item.id === 'collection-readback');
+  if (!artifact) return decision;
+  const ref = pointer => ({ artifact_id: artifact.id, sha256: artifact.sha256, pointer });
+  const readback = await resolveEvidenceRef(ref(''), episode.artifacts, options);
+  const coverage = readback?.evidence?.coverage;
+  if (readback?.kind !== 'benchmark-independent-readback' || readback.schema_version !== 1 ||
+      !coverage || typeof coverage !== 'object' || Array.isArray(coverage) ||
+      !Array.isArray(readback.opaque_tools) || !Array.isArray(readback.unmatched_reads))
+    throw new Error('Malformed independent readback for decision projection');
+  const tools = new Map(episode.tools.map(tool => [tool.id, tool]));
+  const opaque = readback.opaque_tools.map((id, index) => {
+    const tool = tools.get(id);
+    if (!tool) throw new Error('Opaque tool is absent from the normalized episode: ' + id);
+    return { id, name: tool.name, status: tool.status, execution: tool.execution ?? null,
+      turn_id: tool.turn_id ?? null, parent_id: tool.parent_id,
+      refs: [...structuredClone(tool.refs), ref('/opaque_tools/' + index)] };
+  });
+  const unmatched = readback.unmatched_reads.map((read, index) => {
+    if (!read || typeof read !== 'object' || Array.isArray(read))
+      throw new Error('Malformed unmatched read for decision projection');
+    return { ...structuredClone(read), refs: [...structuredClone(tools.get(read.tool_call_id)?.refs ?? []),
+      ref('/unmatched_reads/' + index)] };
+  });
+  decision.source_readback = { status: 'available', reason: null, coverage: structuredClone(coverage),
+    opaque_tools: opaque, unmatched_reads: unmatched, refs: [ref('')] };
+  return decision;
+}
 export function buildEvidenceIndex(episodes) {
   const runs = new Map();
   for (const episode of episodes) {
