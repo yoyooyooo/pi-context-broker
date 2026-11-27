@@ -7,6 +7,7 @@ import diagnostics from 'node:diagnostics_channel';
 import { randomUUID } from 'node:crypto';
 import { candidateDifferences, createEpisodeRecorder, sha256 } from './episode-evidence.mjs';
 import { observeEpisodeNotion, stableNotionCatalog } from './episode-notion.mjs';
+import { finishEpisodeNotion } from './episode-runner.mjs';
 import { graphSourceAccounting, graphSourceViews } from '../../scripts/notion-skill-graph-model-evidence.mjs';
 
 const publish = (name, value) => diagnostics.channel(name).publish(value);
@@ -568,5 +569,46 @@ test('management attribution and receipts are scrubbed before both correlation a
   for (const artifact of f.recorder.artifacts) {
     const value = fs.readFileSync(artifact.path, 'utf8');
     assert.ok(!value.includes('test-token-not-a-real-credential')); assert.ok(!value.includes('another-private-value'));
+  }
+});
+
+
+test('actual cleanup retains completed business evidence with pending management for collector grading', async t => {
+  for (const withWrite of [false, true]) await t.test(withWrite ? 'write and pending' : 'pending only', async t => {
+    const f = await fixture(); t.after(() => f.close()); f.stage('user_task');
+    f.operation('consume', { effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' } });
+    if (withWrite) f.management('ready', { remote_writes: 'management', projection: 'none' });
+    f.management('pending', { remote_writes: 'unknown', projection: 'none' });
+    const events = [];
+    const settled = await finishEpisodeNotion({ notion: f.observer, status: 'completed', record: (type, data) => events.push({ type, data }) });
+    assert.equal(settled.status, 'completed');
+    assert.equal(settled.result.coverage.sdk, 'complete'); assert.equal(settled.result.coverage.owned_http, 'complete');
+    assert.equal(settled.result.coverage.child_lifecycle, 'complete');
+    assert.equal(settled.result.management.coverage, 'partial');
+    assert.equal(settled.result.management.reported_effects.remote_writes, withWrite ? 'management' : 'unknown');
+    assert.equal(events[0].type, 'notion_cleanup'); assert.equal(events[0].data.idle, false);
+    assert.equal(events[0].data.management_pending_separated, true);
+  });
+});
+
+test('actual cleanup keeps captures and incomplete consumption invalid despite manager pending', async t => {
+  for (const [status, incomplete] of [['captured', false], ['completed', true]]) await t.test(status + ':' + incomplete, async t => {
+    const f = await fixture(); t.after(() => f.close());
+    f.operation('files', { files: [] }, { metricsObserved: !incomplete });
+    f.management('pending', { remote_writes: 'unknown', projection: 'none' });
+    const settled = await finishEpisodeNotion({ notion: f.observer, status, record() {} });
+    assert.equal(settled.status, 'invalid');
+  });
+});
+
+test('cleanup does not generalize manager uncertainty into an idle-timeout or incomplete-source exemption', async () => {
+  const pending = { coverage: 'partial', operations: [{ results: [{ status: 'pending' }] }] };
+  for (const [management, incomplete] of [[undefined, null], [{ coverage: 'complete', operations: [] }, null],
+    [pending, 'sdk'], [pending, 'owned_http'], [pending, 'child_lifecycle']]) {
+    const result = { coverage: { sdk: 'complete', owned_http: 'complete', child_lifecycle: 'complete',
+      ...(incomplete ? { [incomplete]: 'partial' } : {}) }, management };
+    const notion = { waitIdle: async timeout => { assert.equal(timeout, 2000); return false; }, finish: () => result };
+    assert.equal((await finishEpisodeNotion({ notion, status: 'completed', record() {} })).status, 'invalid');
+    assert.equal((await finishEpisodeNotion({ notion, status: 'cancelled', record() {} })).status, 'cancelled');
   }
 });

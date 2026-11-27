@@ -21,6 +21,22 @@ const selectedModel = model => Object.fromEntries(['id', 'name', 'provider', 'ap
 const errorData = error => ({ name: error?.name ?? 'Error', code: error?.code ?? null, message: String(error?.message ?? error), details: error?.details ?? null });
 const bounded = async (promise, milliseconds, fallback) => { let timer; try { return await Promise.race([promise, new Promise(resolve => { timer = setTimeout(() => resolve(fallback), milliseconds); })]); } finally { clearTimeout(timer); } };
 
+/** Preserve a settled business episode while separate management remains
+ * unresolved. Startup captures still require idle preparation; ordinary SDK,
+ * HTTP and direct-child evidence cannot borrow completeness from management. */
+export async function finishEpisodeNotion({ notion, status, record }) {
+  const idle = await notion.waitIdle(2000), result = await notion.finish();
+  const complete = result.coverage.sdk === 'complete' && result.coverage.owned_http === 'complete';
+  const managementPending = result.management?.coverage === 'partial'
+    && result.management.operations.some(operation => !operation.results.length || operation.results.at(-1).status === 'pending');
+  const retainUnsettledManagement = status === 'completed' && complete
+    && result.coverage.child_lifecycle === 'complete' && managementPending;
+  record('notion_cleanup', { idle, coverage: result.coverage,
+    management_pending: Boolean(managementPending), management_pending_separated: !idle && Boolean(retainUnsettledManagement) });
+  return { result, status: ['captured', 'completed'].includes(status)
+    && (!complete || !idle && !retainUnsettledManagement) ? 'invalid' : status };
+}
+
 /** Status joins the existing catalog owner. The public metadata tool also waits
  * for host publication, which can outlive SDK transport. Its result is evidence
  * of preparation only: never a model message, adopted Skill or business call. */
@@ -802,12 +818,10 @@ export async function runEpisode(input, hooks = {}) {
     }
     try {
       if (notion) {
-        const idle = await notion.waitIdle(2000);
-        notionResult = await notion.finish();
+        const settled = await finishEpisodeNotion({ notion, status, record: (type, data) => recorder.record(type, data) });
+        notionResult = settled.result; status = settled.status;
         coverage.notion_sdk = notionResult.coverage.sdk;
         coverage.notion_owned_http = notionResult.coverage.owned_http;
-        recorder.record('notion_cleanup', { idle, coverage: notionResult.coverage });
-        if (['captured', 'completed'].includes(status) && (!idle || coverage.notion_sdk !== 'complete' || coverage.notion_owned_http !== 'complete')) status = 'invalid';
       }
     } catch (error) { recorder.record('notion_validation_error', errorData(error)); coverage.notion_sdk = 'partial'; coverage.notion_owned_http = 'partial'; status = 'invalid'; }
     try {
