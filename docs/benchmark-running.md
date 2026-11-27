@@ -112,8 +112,14 @@ cases. Its four valid observations contain three passes and one retained
 selection-evidence unknown; every business result and critical contract passes.
 It shows no foreground HTTP reduction in those actively refreshed episodes.
 The existing ordinary-profile warm-consumption result remains a separate scope.
-The observed repeated Library-title read proceeds as a narrow product fix, with
-new verification and delivery identities.
+The [Library-title and first-use repairs](benchmark-library-title-2026-11-27.md)
+have entered next and completed ordinary adoption on Pro, Mini and imile-win.
+Their controlled regressions and live-Notion/cache checks are separate from the
+two prepared real-model observations, which have not run because Mini capacity
+admission stopped before configuration. The report preserves original 429
+failures, the repaired cache-only interpretation, the single ledger and precise
+retirement boundaries. Existing results remain available through the compact
+query above; no cross-machine ledger or material import is implied.
 
 Offline `reanalysis` can correct the interpretation of retained raw evidence
 without rebuilding or executing the product. Its historical source contracts

@@ -1,0 +1,402 @@
+{
+  "version": 1,
+  "kind": "library-title-product-cycle-public-summary",
+  "date": "2026-11-27",
+  "prepared_at_utc": "2026-11-27T10:40:49.535192+00:00",
+  "publication_state": "checkpoint_published_with_this_record",
+  "status": "product_fixes_adopted_three_hosts_targeted_model_comparison_not_run",
+  "accepted_sources": {
+    "cli_next": {
+      "commit": "4ef03aa9859e5d5c74594626c0bdb3f2dcd88040",
+      "pr": "https://github.com/yoyooyooo/notion-skills-cli/pull/42"
+    },
+    "cli_benchmark": {
+      "commit": "a46f4c7d97c478cf48d8ab795184ffc189623c38",
+      "pr": "https://github.com/yoyooyooo/notion-skills-cli/pull/43",
+      "complete_tree_equals_next": true
+    },
+    "cli_complete_tree": "1f2b091ffa0116b0b3fb642187f5ba1691515d5b",
+    "installed_broker": {
+      "commit": "0d255482feeacdd7f74adcd195b52e6a9a5073fd",
+      "pr": "https://github.com/yoyooyooo/pi-context-broker/pull/109"
+    },
+    "shared_verifier_next": {
+      "commit": "d013abc2b14a954961e572713d306c16675e296f",
+      "reviewed_head": "13b9d1915d84062582037134c45eb808bf91f3c7",
+      "pr": "https://github.com/yoyooyooo/pi-context-broker/pull/111",
+      "complete_tree": "bcaee029681b52b8039973b20d34cf8d256b9107"
+    },
+    "benchmark_report_publication": "Repository commit containing this record identifies its publication; no new model observation is implied.",
+    "benchmark_shared_source_revision": "ec91e143cd49a99a344d97f596ae80ac0837e2ae"
+  },
+  "product_findings": [
+    {
+      "finding": "explicitSource reread a database descriptor solely for its title after Library validation had already obtained it",
+      "repair": "reuse the title from the validated observation within that operation",
+      "controlled_http_counts": {
+        "explicit_source": {
+          "before": 15,
+          "after": 14
+        },
+        "representative_catalog": {
+          "before": 17,
+          "after": 16
+        }
+      },
+      "removed_gets_per_explicit_source_call": 1,
+      "controlled_tests_passed": 36,
+      "assertions": 203,
+      "limits": "One GET per actual explicitSource call, not per SDK operation or whole episode; no measured end-to-end latency claim."
+    },
+    {
+      "finding": "a delayed first initializer could reject current state published by a peer",
+      "repair": "recheck the current database after encountering the root marker and reuse the validated peer winner without restaging",
+      "old_source_counterexample": "failed at the expected root-admission boundary",
+      "fixed_real_process_regression": "passed; canonical peer snapshot retained",
+      "related_tests_passed": 16,
+      "typecheck": "passed",
+      "changed_file_format": "passed"
+    }
+  ],
+  "measurement_repair": {
+    "scope": "ordinary-pi-cache-reuse SDK metadata descriptor GET rate-limit recovery only",
+    "controlled_tests_passed": 68,
+    "old_source_counterexample": "failed at the all-attempt-success assertion",
+    "offline_originals_new_http_requests": 0,
+    "offline_originals_new_model_requests": 0,
+    "original_failed_results_unchanged": true,
+    "default_strict_still_rejects_originals": true,
+    "original_attempts": [
+      {
+        "machine": "Mini",
+        "phase": "D",
+        "sdk_http_attempts": 41,
+        "doctor_cli_http_attempts": 25,
+        "retry_after_seconds": 21,
+        "independent_wait_ms": 21395.181916999998
+      },
+      {
+        "machine": "imile-win",
+        "phase": "A",
+        "sdk_http_attempts": 25,
+        "doctor_cli_http_attempts": 0,
+        "retry_after_seconds": 6,
+        "independent_wait_ms": 6258.378418999999
+      }
+    ],
+    "installed_product_rebuilt_or_reinstalled_for_verifier_revision": false
+  },
+  "ordinary_adoption": {
+    "generation": "4ef03aa9859e-0d255482feea",
+    "evidence_level": "ordinary Pi / live Notion / controlled loopback provider with actual Pi serializer",
+    "all_attempts_passed": false,
+    "hosts": [
+      {
+        "machine": "Pro",
+        "status": "adopted_and_ordinary_behavior_verified",
+        "baseline_sdk_http": 24,
+        "warm_sdk_http": 0,
+        "warm_directory_http": 0,
+        "warm_consume_http": 0,
+        "warm_all_consumption_operations_http": 0,
+        "prepared_nodes": 1,
+        "required_edges": 0,
+        "original_validated_at_preserved": true,
+        "full_bodies_in_actual_provider_wire": true,
+        "baseline_is_not_assumed_cold": true,
+        "receipt_sha256": "bda4c1f2bb9564cd5d3c1bbee5ff4702f08371894cf4aa58438781cb6367589e"
+      },
+      {
+        "machine": "Mini",
+        "status": "adopted_and_ordinary_behavior_verified",
+        "baseline_sdk_http": 24,
+        "warm_sdk_http": 25,
+        "warm_directory_http": 25,
+        "warm_consume_http": 0,
+        "warm_all_consumption_operations_http": 0,
+        "prepared_nodes": 1,
+        "required_edges": 0,
+        "original_validated_at_preserved": true,
+        "full_bodies_in_actual_provider_wire": true,
+        "baseline_is_not_assumed_cold": true,
+        "receipt_sha256": "69ca701ccb50ea53ee12efedc04e90f624c28ba3b7e65926dbfb0358ba6933cc"
+      },
+      {
+        "machine": "imile-win",
+        "status": "adopted_and_ordinary_behavior_verified",
+        "baseline_sdk_http": 0,
+        "warm_sdk_http": 0,
+        "warm_directory_http": 0,
+        "warm_consume_http": 0,
+        "warm_all_consumption_operations_http": 0,
+        "prepared_nodes": 1,
+        "required_edges": 0,
+        "original_validated_at_preserved": true,
+        "full_bodies_in_actual_provider_wire": true,
+        "baseline_is_not_assumed_cold": true,
+        "receipt_sha256": "2feb4a64d56f7016b3ec4599e845cbbbfee0bff45d8098b81e00a37a35206306"
+      }
+    ],
+    "scope_limits": [
+      "One selected root and zero Requires on each host; no positive live Requires-closure claim.",
+      "Controlled loopback provider with actual ordinary Pi serializer; no natural-model comparison.",
+      "Warm consume HTTP0 on all three; Mini warm directory HTTP25 is retained and not called global HTTP0.",
+      "imile new A reused original successful validation time from the earlier strict-failed A; it is not a cold-start proof.",
+      "imile A/B transport pending at process close was non-Notion startup traffic; Notion pending0 and owned Pi processes all exited.",
+      "No new product build or installation was performed for the verifier-only source revision."
+    ]
+  },
+  "current_targeted_model_comparison": {
+    "case": "explicit-01-a",
+    "planned_observations": 2,
+    "executed_observations": 0,
+    "actual_model_requests": 0,
+    "configure_executed": false,
+    "admission_captures_executed": 0,
+    "capture_concurrency": 1,
+    "planned_model_order": [
+      "candidate",
+      "reference"
+    ],
+    "command_source": "none",
+    "status": "blocked_by_capacity_before_configure",
+    "latency_or_model_quality_improvement": "not_established",
+    "capacity": {
+      "observed_at": "2026-11-27T10:15:56.536Z",
+      "available_bytes": 23529463808,
+      "estimated_additional_bytes": 3221225472,
+      "expected_remaining_bytes": 20308238336,
+      "min_free_bytes": 21474836480,
+      "review_below_bytes": 42949672960
+    },
+    "next_execution_identity": "must be resolved by the current owner after fresh capacity and ledger checks; no replay identity is invented here",
+    "hard_floor_stop": {
+      "at": "2026-11-27T10:31:43.778238+00:00",
+      "available_bytes": 20581216256,
+      "minimum_free_bytes": 21474836480
+    },
+    "global_ledger": {
+      "observations": 243,
+      "registrations": 33,
+      "lease": null,
+      "new_scope_registered": false
+    },
+    "cross_machine_status": "blocked_existing_cross_machine_contract; existing standing execution is local and has no material/ledger import or remote executor"
+  },
+  "existing_real_model_evidence": {
+    "report": "https://github.com/yoyooyooo/pi-context-broker/blob/0cb3019795336248553770d1368ccd563905b60a/docs/benchmark-smart-cache-2026-11-27.md",
+    "valid_observations": 4,
+    "full_outcomes": {
+      "pass": 3,
+      "fail": 0,
+      "unknown": 1
+    },
+    "foreground_http_improvement": "not_established",
+    "scope": "previous smart-cache product pair; not evidence that the new title/concurrency pair has completed natural-model comparison"
+  },
+  "cold_agent_reuse": {
+    "new_model_requests": 0,
+    "frozen_controller_files_verified": 89,
+    "retained_rows": 4,
+    "full_outcomes": {
+      "pass": 3,
+      "fail": 0,
+      "unknown": 1
+    },
+    "plan_and_ledger_bytes_unchanged": true,
+    "portable_without_mini_originals": false,
+    "fresh_full_pilot": "not_run"
+  },
+  "retirement": {
+    "pure_build_dependency_and_cache_allocated_kib": 594280,
+    "completed_verifier_test_source_tmp_allocated_kib": 336620,
+    "physical_capacity_credit_bytes": 0,
+    "method": "native system Trash after consumer release and retained-evidence audit",
+    "pure_build_disposition": "evidence_only; full source dependency check/replay no longer promised",
+    "retained_complete_builds": [
+      "next-smart-cache-20261127-1",
+      "benchmark-library-title-20261127-1"
+    ],
+    "whole_cycle": {
+      "receipt_count": 7,
+      "distinct_path_count": 16,
+      "retired_active_allocated_kib": 2795084,
+      "physical_free_credit_bytes": 0,
+      "interpretation": "Sum of historical per-directory du allocations when exact active paths retired. Same-volume Trash preserves data and does not release physical capacity. APFS COW/shared blocks mean these figures are not exclusive physical use and must not be converted into experiment budget."
+    },
+    "retained_current_paths": [
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/cli",
+        "allocated_kib": 25456,
+        "state": "mutable_development_mainline",
+        "retention_reason": "One of the two unique mutable development clones for the single implementation line and paused continuation; not a disposable finished run.",
+        "release_condition": "Keep while the development mainline and paused continuation are owned here; any later relocation or closure requires explicit handoff preserving source and Git history."
+      },
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/broker",
+        "allocated_kib": 1261220,
+        "state": "mutable_development_mainline",
+        "retention_reason": "One of the two unique mutable development clones for the single implementation line and paused continuation; not a disposable finished run.",
+        "release_condition": "Keep while the development mainline and paused continuation are owned here; any later relocation or closure requires explicit handoff preserving source and Git history."
+      },
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-smart-cache-20261127-1",
+        "allocated_kib": 995364,
+        "state": "full_reference_pending_consumer",
+        "retention_reason": "Full reference/cache/controller retained for the prepared two-slot comparison. It has not executed because Mini is below the inherited 20 GiB floor. The documented cold query and original evidence bindings remain protected.",
+        "release_condition": "Complete or explicitly cancel this comparison, then perform a fresh exact consumer/retention audit before releasing generated directories."
+      },
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/benchmark-library-title-20261127-1",
+        "allocated_kib": 997752,
+        "state": "full_candidate_pending_consumer",
+        "retention_reason": "Full candidate baseline retained for the same prepared two-slot comparison; no new model observation or admission capture was executed.",
+        "release_condition": "Complete or explicitly cancel this comparison, then determine baseline retention and any generated-directory release with a fresh exact audit."
+      },
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-library-title-20261127-1",
+        "allocated_kib": 399412,
+        "state": "evidence_only",
+        "retention_reason": "Pure delivery build generated dependencies/cache already retired. Original source, build identity, SDK, archives, installed outputs and verification records remain; no full-check or complete-replay promise.",
+        "release_condition": "Evidence retention continues. No further removal is authorized by this metadata-only resource closeout."
+      }
+    ],
+    "capacity_at_closeout": {
+      "measured_at": "2026-11-27T10:40:50.525832+00:00",
+      "available_kib": 19741252,
+      "available_GiB": 18.826725006103516,
+      "inherited_min_free_bytes": 21474836480
+    },
+    "lifecycle_automation_implemented": false
+  },
+  "continuation": {
+    "project_current_entry": "https://linear.app/yoyooyooo/issue/AH-1217",
+    "readonly_query_cli": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-smart-cache-20261127-1/source/broker/benchmark/cli.mjs",
+    "readonly_query_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/attempt-1",
+    "compact_recipe": "benchmark/results/2026-11-27-smart-cache/README.md#read-only-query-on-mini",
+    "pending_configuration": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-library-title-own-20261127-1/pending-configure-2.json"
+  },
+  "source_evidence": {
+    "title_controlled_regression": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/library-title-reuse-20261127/focused-verification-1.json",
+      "bytes": 2080,
+      "sha256": "aae5457c19675d44191461a908575cdf7e09e38849bc2158deff1c74e18d08d9"
+    },
+    "concurrent_initializer_regression": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-root-admission-20261127/focused-1-verification.json",
+      "bytes": 3189,
+      "sha256": "99cf195cbbc088935dbcdcb4d118614516940a0a41b63fbd7355b49cc211d7ea"
+    },
+    "verifier_regression_and_offline_reanalysis": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/daily-retry-verification-20261127-1/focused-1-verification.json",
+      "bytes": 1843,
+      "sha256": "73084af935c1de88be9a25513db920f27034300baf542f6499c608704a778057"
+    },
+    "offline_original_attempts": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/daily-retry-verification-20261127-1/offline-originals.stdout.log",
+      "bytes": 2287,
+      "sha256": "2637163fdaa5aaa03090c3d073a421ba31ee4d9fc8ee34f86d27090d1c423ca5"
+    },
+    "three_host_adoption": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/library-title-reuse-20261127/delivery-preparation/three-host-adoption-1/summary.json",
+      "bytes": 34282,
+      "sha256": "5c5ff8ef5b28bd35977f0595ff9a231d28ffad804540f87760ae64d33493700f"
+    },
+    "accepted_verifier_identity": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/daily-retry-verification-20261127-1/pr111-accepted-identity.json",
+      "bytes": 590,
+      "sha256": "9cdf97ee467f0eb4fddf3c6dcec852fed5536257e55152d8c14e38e10337c5e0"
+    },
+    "verifier_ci_gate": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/daily-retry-verification-20261127-1/pr111-gates/gate-summary.json",
+      "bytes": 9355,
+      "sha256": "e5f4a057bbd73decb86737d020a5318488a0cad1802c6505f6e2dcfbb5957e8d"
+    },
+    "cold_agent_reuse": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/cold-reuse-readback-20261127.json",
+      "bytes": 12274,
+      "sha256": "0f887a7e6dbc9e6cac4e5043292d0ab3f5326e2b5cfae67dbe4a9c03f3e39a41"
+    },
+    "pending_configuration": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-library-title-own-20261127-1/pending-configure-2.json",
+      "bytes": 2822,
+      "sha256": "c3567d5398b30b8d2edc140374b7384db5183bb53e8746df03c947926ec81904"
+    },
+    "capacity_refusal": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-library-title-own-20261127-1/capacity-refusal-2.json",
+      "bytes": 1669,
+      "sha256": "7d4d7a14199547776d439ec13c247c9ab2403f89f01c0a3283077a7f53eafbe6"
+    },
+    "pure_build_retirement": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-library-title-pure-build-20261127/closeout.json",
+      "bytes": 16418,
+      "sha256": "94abeba1c0d6774e38457e8eb4258a1c26cee261e5990273f960cbfcc24c5f58"
+    },
+    "verifier_test_copy_retirement": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-daily-retry-focused-20261127/closeout.json",
+      "bytes": 7657,
+      "sha256": "58ea168e1cb01e0cc5527e6f9812db0481797392c43d5ca22002d9ef6b976004"
+    },
+    "hard_floor_stop": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-library-title-own-20261127-1/capacity-hard-floor-stop-3.json",
+      "bytes": 1698,
+      "sha256": "6081b447b9eebd94583c381dccc85f269565e5f6d7092e8a75b49559312640ac"
+    },
+    "pause_closeout": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-library-title-own-20261127-1/pause-closeout-1.json",
+      "bytes": 1972,
+      "sha256": "6b9143e446bb729a46f2b0b947b02e7bf034ae07dd01356adca4e4988ec2adf9"
+    },
+    "imile_cross_machine_readiness": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-root-admission-20261127/imile-benchmark-fallback-readiness-1.json",
+      "bytes": 11875,
+      "sha256": "576a279c86d60d17de9c6ad3311823650746b74d767c0bf9328fb99968820c2b"
+    },
+    "prepared_runtime_equivalence": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-root-admission-20261127/product-build-equivalence-1.json",
+      "bytes": 8545,
+      "sha256": "55daa10a1476b95a7545eb457c19b3d8020d15879fcdfb1ea6d6b4f546d42047"
+    },
+    "candidate_material_refresh": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-library-title-own-20261127-1/material-refresh-1-review.json",
+      "bytes": 6127,
+      "sha256": "c9ee2d420b6a485fb82f0912d45666906a79950582d434c8995907bdbfa393df"
+    },
+    "resource_closeout": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/library-title-resource-closeout-20261127.json",
+      "bytes": 19280,
+      "sha256": "67cd9ff9ce2b068eb59bbc5e48f68091b263ef81933c8e4088796c4a62ab8b37"
+    }
+  },
+  "excluded_content": [
+    "user settings and credentials",
+    "session/RPC/provider payloads",
+    "raw model and HTTP records",
+    "complete adoption receipts",
+    "source/dependency archives"
+  ],
+  "prepared_candidate": {
+    "reference_build": "next-smart-cache-20261127-1",
+    "candidate_build": "benchmark-library-title-20261127-1",
+    "reference_sdk_sha256": "ea241cd603491adaeb9e8a2364cb3fdc545459462a519b04eaad84500214a420",
+    "candidate_sdk_sha256": "69ee468d0200075ae3d5cb58608b77d8feb2c299845b68199151d72a4dc9de2b",
+    "runtime_and_bundled_instructions_equal_pure_next": true,
+    "identical_cli_archive_files": 78,
+    "identical_broker_archive_files": 91,
+    "total_broker_archive_files": 94,
+    "broker_archive_differences": [
+      "dist/next-build.json",
+      "README.md",
+      "README.zh-CN.md"
+    ],
+    "actual_capture_or_model_readme_exposure": "not_run; must be checked before executing pending observations",
+    "candidate_readonly_material_proof": "passed",
+    "remote_candidates": 16,
+    "native_resource_files": 25,
+    "cli_commands": 41,
+    "remote_repairs": 0,
+    "model_requests": 0,
+    "material_refresh_http_attempts": null,
+    "limits": "Command receipts do not expose complete HTTP attempts/internal retries. Frozen archives and original proofs are unchanged."
+  }
+}
