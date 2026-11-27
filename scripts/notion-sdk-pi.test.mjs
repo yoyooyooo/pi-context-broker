@@ -12,6 +12,8 @@ test('current command boundary rejects retired or ambiguous invocation before I/
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-cache-recovery'])['--scenario'], 'http-cache-recovery');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-warm-restart'])['--scenario'], 'http-warm-restart');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-warm-directory-expired'])['--scenario'], 'http-warm-directory-expired');
+  for (const scenario of ['http-smart-revalidate', 'http-smart-current'])
+    assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', scenario])['--scenario'], scenario);
   for (const args of [
     ['cleanup', '--evidence', '/owned/result'], ['run', ...options], ['run', ...options, '--out', 'relative'],
     ['run', ...options, '--out', '/owned/result', '--scenario', 'native-repeat'],
@@ -96,7 +98,7 @@ test('evidence replay rejects stale schema, modified wire and nonzero Pi exit', 
 async function warmEvidence(name) {
   const directory = await mkdtemp(join(tmpdir(), 'current-pi-warm-evidence-test-')), base = join(directory, name);
   await mkdir(base);
-  const expired = name === 'http-warm-directory-expired';
+  const metadata = name === 'http-smart-revalidate', expired = name === 'http-warm-directory-expired' || metadata;
   const hash = value => createHash('sha256').update(value).digest('hex');
   const originals = ['Root original 完整正文\n', 'Requires original 完整正文\n'];
   const wire = JSON.stringify({ messages: [{ role: 'user', content: originals.join('\n') }] });
@@ -112,6 +114,7 @@ async function warmEvidence(name) {
     { method: 'GET', path: '/v1/blocks/library/children', phase: 'warm-restart' },
     { method: 'POST', path: '/v1/data_sources/skills/query', phase: 'warm-restart' },
   ] : [];
+  if (metadata) warm.push(...['root', 'requires'].map(id => ({ method: 'GET', path: '/v1/pages/' + id, phase: 'warm-restart' })));
   const metrics = (metadata, body) => ({ total_requests: metadata + body,
     requests: { notion_metadata: metadata, notion_body: body, notion_write: 0, provider: 0 },
     body_requests: { current_body: body, retained_body: 0, unclassified_body: 0 } });
@@ -120,11 +123,13 @@ async function warmEvidence(name) {
     ...(value ? [{ kind: 'context-broker.notion-sdk-result', id, observer_pid: pid, operation, value }] : []),
     { kind: 'context-broker.notion-sdk', event: 'end', id, observer_pid: pid, operation, status: 'completed', request_metrics: requestMetrics },
   ];
-  const prepared = source => ({ status: 'ready', preparation: { nodes: ['root', 'requires'].map(id => ({ id, state: 'prepared', source,
-    binding: { snapshot_id: 'snapshot-' + id }, freshness: { max_age_ms: 300000, validated_at: 1234, age_ms: source === 'notion' ? 0 : 2000, stale: false } })) } });
+  const prepared = (source, revalidated = false) => ({ status: 'ready', preparation: { nodes: ['root', 'requires'].map((id, index) => ({ id, state: 'prepared', source,
+    binding: { snapshot_id: 'snapshot-' + id }, body_sha256: hash(originals[index]),
+    freshness: { max_age_ms: metadata ? 1000 : 300000, validated_at: metadata ? new Date(revalidated ? 3000 : 1000).toISOString() : 1234,
+      age_ms: source === 'notion' ? 0 : 2000, stale: false, ...(revalidated ? { validation: 'metadata' } : {}) } })) } });
   const files = {
     'scenario.json': { status: 'passed', steps: [{ status: 'passed' }] },
-    'launch.json': { source: { library: 'library', activation: { maxAge: '5m' }, discovery: { maxAge: expired ? '1s' : '5m' } } },
+    'launch.json': { source: { library: 'library', activation: { maxAge: metadata ? '1s' : '5m' }, discovery: { maxAge: expired ? '1s' : '5m' } } },
     'provider-001.json': wire, 'provider-002.json': wire,
     'provider-index.json': [1, 2].map(n => ({ file: `provider-00${n}.json`, sha256: hash(wire), status: 200 })),
     'wire-source-assertions.json': [1, 2].map(n => ({ provider_file: `provider-00${n}.json`,
@@ -134,12 +139,12 @@ async function warmEvidence(name) {
     'cold-session.json': { session_file: '/owned/cold.jsonl', branch: [] },
     'warm-empty-session.json': { session_file: '/owned/warm.jsonl', branch: [] },
     'warm-restart.json': { cold_pid: coldPid, warm_pid: warmPid, cold_session: '/owned/cold.jsonl', warm_session: '/owned/warm.jsonl',
-      max_age_ms: 300000, directory_max_age_ms: expired ? 1000 : 300000, cold_source_requests: cold.length, warm_source_requests: warm.length },
+      max_age_ms: metadata ? 1000 : 300000, directory_max_age_ms: expired ? 1000 : 300000, cold_source_requests: cold.length, warm_source_requests: warm.length },
     'source-http.jsonl': [...cold, ...warm],
     'sdk.jsonl': [
       ...operation('cold-consume', coldPid, 'consume', metrics(1, 2), prepared('notion')),
       ...operation('warm-list', warmPid, 'list', expired ? metrics(2, 1) : metrics(0, 0)),
-      ...operation('warm-consume', warmPid, 'consume', metrics(0, 0), prepared('local_cache')),
+      ...operation('warm-consume', warmPid, 'consume', metrics(metadata ? 2 : 0, 0), prepared(metadata ? 'notion' : 'local_cache', metadata)),
     ],
   };
   const save = (name, value) => writeFile(join(base, name), name.endsWith('.jsonl')
@@ -190,5 +195,86 @@ test('expired directory evidence counts every list request without reclassifying
     const modified = structuredClone(fixture.files[name]); mutate(modified); await fixture.save(name, modified);
     await assert.rejects(verifyEvidence(fixture.directory), name);
     await fixture.save(name, fixture.files[name]);
+  }
+});
+
+test('expired current evidence requires fresh metadata proof and retains complete body versions without hidden downloads', async () => {
+  const fixture = await warmEvidence('http-smart-revalidate');
+  await verifyEvidence(fixture.directory);
+  const cases = [
+    ['sdk.jsonl', rows => { rows.find(row => row.id === 'warm-consume' && row.value).value.preparation.nodes[0].freshness.validation = undefined; }],
+    ['sdk.jsonl', rows => { rows.find(row => row.id === 'warm-consume' && row.value).value.preparation.nodes[0].freshness.validated_at = new Date(1000).toISOString(); }],
+    ['sdk.jsonl', rows => { rows.find(row => row.id === 'warm-consume' && row.value).value.preparation.nodes[0].body_sha256 = 'changed'; }],
+    ['sdk.jsonl', rows => { rows.find(row => row.id === 'warm-consume' && row.value).value.preparation.nodes[0].source = 'local_cache'; }],
+    ['source-http.jsonl', rows => { rows.find(row => row.phase === 'warm-restart' && row.path === '/v1/pages/root').path += '/markdown'; }],
+  ];
+  for (const [name, mutate] of cases) {
+    const modified = structuredClone(fixture.files[name]); mutate(modified); await fixture.save(name, modified);
+    await assert.rejects(verifyEvidence(fixture.directory), name); await fixture.save(name, fixture.files[name]);
+  }
+});
+
+async function smartEvidence() {
+  const name = 'http-smart-current', directory = await mkdtemp(join(tmpdir(), 'current-pi-smart-evidence-test-')), base = join(directory, name);
+  await mkdir(base);
+  const hash = value => createHash('sha256').update(value).digest('hex');
+  const original = text => ({ text, bytes: Buffer.byteLength(text), sha256: hash(text) });
+  const bodies = { a1: 'Root v1 完整正文\n', b1: 'Required v1 完整正文\n', b2: 'Required v2 完整正文\n', a3: 'Root v3 完整正文\n', c1: 'Replacement Required 完整正文\n' };
+  const labels = ['cold', 'cancelled', 'recovered', 'replacement'];
+  const processes = labels.map((label, index) => ({ label, pid: 100 + index, session_file: '/owned/' + label + '.jsonl' }));
+  const selection = { cold: ['a1', 'b1'], cancelled: [], recovered: ['a1', 'b2'], pinned: ['a1', 'b2'], replacement: ['a3', 'c1'] };
+  const files = { 'scenario.json': { status: 'passed', steps: [{ status: 'passed' }] },
+    'launch.json': { source: { activation: { maxAge: '5m' }, discovery: { maxAge: '0' } } },
+    'smart-current.json': { version: 1, max_age_ms: 300000, processes, proofs: {}, owners: { a: 'root', b: 'requires' } },
+    'provider-index.json': [], 'wire-source-assertions.json': [], 'sdk.jsonl': [],
+    'source-http.jsonl': [
+      { method: 'GET', path: '/v1/pages/root/markdown', phase: 'setup', status: 200 },
+      { method: 'GET', path: '/v1/pages/requires/markdown', phase: 'dirty-cancel', status: 200 },
+      { method: 'GET', path: '/v1/pages/requires/markdown', phase: 'dirty-recovery', status: 429 },
+      { method: 'GET', path: '/v1/pages/requires/markdown', phase: 'dirty-recovery', status: 200 },
+      { method: 'GET', path: '/v1/pages/replacement/markdown', phase: 'membership-current', status: 200 },
+    ] };
+  for (const [index, [label, present]] of Object.entries(selection).entries()) {
+    const file = `provider-${String(index + 1).padStart(3, '0')}.json`, wire = JSON.stringify({ messages: [{ content: present.map(key => bodies[key]).join('\n') }] });
+    files[file] = wire; files['smart-current.json'].proofs[label] = file;
+    files['provider-index.json'].push({ file, sha256: hash(wire), status: 200 });
+    files['wire-source-assertions.json'].push({ provider_file: file, present: present.map(key => original(bodies[key])),
+      absent: Object.keys(bodies).filter(key => !present.includes(key)).map(key => original(bodies[key])) });
+  }
+  for (const [index, process] of processes.entries()) {
+    files[process.label === 'replacement' ? 'rpc-lifecycle.json' : process.label + '-rpc-lifecycle.json'] = [
+      { event: 'spawn', pid: process.pid, monotonicNs: String(index * 3000000000) },
+      { event: 'close', pid: process.pid, monotonicNs: String(index * 3000000000 + 2000000000), code: 0, signal: null },
+    ];
+    files[process.label + '-empty-session.json'] = { session_file: process.session_file, branch: [] };
+    files['sdk.jsonl'].push({ kind: 'context-broker.notion-sdk', event: 'start', operation: 'consume', observer_pid: process.pid, id: process.label });
+    if (process.label !== 'cancelled') files['sdk.jsonl'].push({ kind: 'context-broker.notion-sdk-result', operation: 'consume', observer_pid: process.pid, id: process.label,
+      value: { status: 'ready', preparation: { nodes: selection[process.label].map((key, index) => ({ id: index ? 'required' : 'root', state: 'prepared',
+        record: { name: index ? 'Required' : 'Current demo' }, body_sha256: hash(bodies[key]), binding: { snapshot_id: 'snapshot-' + key },
+        freshness: { validated_at: new Date(1000 + index).toISOString() } })) } } });
+    files['sdk.jsonl'].push({ kind: 'context-broker.notion-sdk', event: 'end', operation: 'consume', observer_pid: process.pid, id: process.label,
+      status: process.label === 'cancelled' ? 'cancelled' : 'completed' });
+  }
+  const save = (name, value) => writeFile(join(base, name), name.endsWith('.jsonl') ? value.map(row => JSON.stringify(row)).join('\n') + '\n'
+    : typeof value === 'string' ? value : JSON.stringify(value));
+  await writeFile(join(directory, 'result.json'), JSON.stringify({ schema: 2, status: 'passed', identity: { evidence_level: 'controlled-Pi' }, cases: [{ name, status: 'passed' }] }));
+  for (const [name, value] of Object.entries(files)) await save(name, value);
+  return { directory, files, save };
+}
+
+test('smart current evidence rejects missing dirty acquisition, incomplete closure, pin rewrites and inherited sessions', async () => {
+  const fixture = await smartEvidence(); await verifyEvidence(fixture.directory);
+  const cases = [
+    ['source-http.jsonl', rows => { rows.splice(rows.findIndex(row => row.phase === 'dirty-cancel'), 1); }],
+    ['source-http.jsonl', rows => { rows.find(row => row.status === 429).status = 200; }],
+    ['source-http.jsonl', rows => { rows.push({ method: 'GET', phase: 'membership-current', path: '/v1/pages/requires/markdown' }); }],
+    ['sdk.jsonl', rows => { rows.find(row => row.id === 'recovered' && row.value).value.preparation.nodes.pop(); }],
+    ['sdk.jsonl', rows => { rows.find(row => row.id === 'cancelled' && row.event === 'end').status = 'completed'; }],
+    ['recovered-empty-session.json', row => { row.branch.push({ customType: 'context-broker-selected-graph' }); }],
+    ['smart-current.json', row => { row.processes[2].pid = row.processes[0].pid; }],
+  ];
+  for (const [name, mutate] of cases) {
+    const modified = structuredClone(fixture.files[name]); mutate(modified); await fixture.save(name, modified);
+    await assert.rejects(verifyEvidence(fixture.directory), name); await fixture.save(name, fixture.files[name]);
   }
 });
