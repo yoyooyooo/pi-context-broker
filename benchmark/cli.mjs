@@ -14,6 +14,7 @@ import { createStandingHistoryBaseline } from './standing-campaign.mjs';
 import { prepareEngineeringControllerComposition } from './engineering-source.mjs';
 import { createHash } from 'node:crypto';
 import { retireInterruptedStandingBatch } from './batch-retirement.mjs';
+import { disposeProfilePrelaunchFailure } from './prelaunch-disposition.mjs';
 
 const HELP = `Benchmark: frozen comparisons, actual episodes, and offline evidence
 
@@ -31,6 +32,7 @@ const HELP = `Benchmark: frozen comparisons, actual episodes, and offline eviden
   node benchmark/cli.mjs status --root ABS_BATCH_DIRECTORY
   node benchmark/cli.mjs gate --root ABS_GATE_BATCH --out ABS_NEW_GATE_JSON
   node benchmark/cli.mjs reconcile --root ABS_BATCH_DIRECTORY --lease OBSERVED_DEAD_LEASE_ID [--retire-reason TEXT | --scope-only true]
+  node benchmark/cli.mjs reconcile --root ABS_BATCH_DIRECTORY --prelaunch-request ABS_REVIEWED_REQUEST
   node benchmark/cli.mjs analyze --root ABS_BATCH_DIRECTORY --out ABS_NEW_REPORT
   node benchmark/cli.mjs reanalysis --root ABS_BATCH_DIRECTORY --out ABS_NEW_REPORT
   node benchmark/cli.mjs register-reanalysis --plan ABS_PLAN --replacements ABS_JSON --out ABS_NEW_REVISION --reason TEXT
@@ -77,7 +79,7 @@ export function parseBenchmarkArgs(args) {
   const [action, ...rest] = args;
   const flags = { validate: ['protocol', 'stage'], manifest: ['file', 'stage'],
     phase0: ['root', 'build', 'mode', 'skills', 'expected', 'condition', 'id', 'out'], 'freeze-load': ['file', 'out'],
-    configure: ['setup'], run: ['plan', 'limit', 'analysis-revision', 'collection-recovery'], status: ['root'], gate: ['root', 'out'], reconcile: ['root', 'lease', 'retire-reason', 'scope-only'], analyze: ['root', 'out'], reanalysis: ['root', 'out'],
+    configure: ['setup'], run: ['plan', 'limit', 'analysis-revision', 'collection-recovery'], status: ['root'], gate: ['root', 'out'], reconcile: ['root', 'lease', 'retire-reason', 'scope-only', 'prelaunch-request'], analyze: ['root', 'out'], reanalysis: ['root', 'out'],
     'prepare-standing-history': ['request', 'out'], 'run-standing': ['plan', 'out', 'slice'],
     'draft-engineering-window': ['request', 'out'], 'prepare-engineering-window': ['draft', 'decision', 'out'],
     'draft-engineering-preflight-repair': ['request', 'out'], 'prepare-engineering-preflight-repair': ['draft', 'decision', 'out'],
@@ -178,6 +180,12 @@ export async function benchmarkMain(args) {
     assert.ok(options.root && isAbsolute(options.root), '--root must be absolute');
     const { batchStatus } = await import('./batch.mjs');
     if (options.action === 'reconcile') {
+      if (options['prelaunch-request'] !== undefined) {
+        assert.ok(isAbsolute(options['prelaunch-request']), '--prelaunch-request must be absolute');
+        assert.ok(['lease', 'retire-reason', 'scope-only'].every(key => options[key] === undefined),
+          'Prelaunch disposition cannot be combined with lease recovery or retirement');
+        return disposeProfilePrelaunchFailure({ controlRoot: options.root, request: options['prelaunch-request'] });
+      }
       assert.ok(options.lease, '--lease must name the observed interrupted lease');
       assert.ok(options['scope-only'] === undefined || options['scope-only'] === 'true', '--scope-only accepts true only');
       assert.ok(!options['scope-only'] || options['retire-reason'] === undefined, 'Choose scope-only recovery or retirement');
