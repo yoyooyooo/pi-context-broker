@@ -154,16 +154,16 @@ test("a preflight rejection still reaches receipt invalidation without authorizi
 });
 
 
-test("management accounting starts only after explicit input, current session and readiness guards", async () => {
-  const f = await fixture(); let waits = 0;
-  const budget = { async waitForManagement<T>(work: () => Promise<T>): Promise<T> { waits++; return work(); } };
+test("a direct member starts preparation accounting only after literal, session and readiness guards", async () => {
+  const f = await fixture(); let begins = 0, checkpoints = 0;
+  const preparation = { begin() { begins++; }, checkpoint() { checkpoints++; } };
   for (const text of ["`$entry@notion`", "> $entry@notion", "entry@notion"])
-    await expect(f.api.materializeExplicitCandidate({ ...f.input(text), budget })).rejects.toMatchObject({ code: "SOURCE_MATERIALIZATION_UNAUTHORIZED" });
-  await expect(f.api.materializeExplicitCandidate({ ...f.input(), budget, candidate: { ...f.candidate, readiness: "blocked" } }))
+    await expect(f.api.materializeExplicitCandidate({ ...f.input(text), preparation })).rejects.toMatchObject({ code: "SOURCE_MATERIALIZATION_UNAUTHORIZED" });
+  await expect(f.api.materializeExplicitCandidate({ ...f.input(), preparation, candidate: { ...f.candidate, readiness: "blocked" } }))
     .rejects.toMatchObject({ code: "SOURCE_MATERIALIZATION_BLOCKED" });
-  await expect(f.api.materializeExplicitCandidate({ ...f.input(), budget, ctx: { ...f.ctx, cwd: f.root + "/other" } }))
+  await expect(f.api.materializeExplicitCandidate({ ...f.input(), preparation, ctx: { ...f.ctx, cwd: f.root + "/other" } }))
     .rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
-  expect(waits).toBe(0); expect(f.controlled.calls).toEqual([]);
-  await f.api.materializeExplicitCandidate({ ...f.input(), budget });
-  expect(waits).toBe(1); expect(f.controlled.calls).toHaveLength(1);
+  expect(begins).toBe(0); expect(checkpoints).toBe(0); expect(f.controlled.calls).toEqual([]);
+  await f.api.materializeExplicitCandidate({ ...f.input(), preparation });
+  expect(begins).toBe(1); expect(checkpoints).toBe(1); expect(f.controlled.calls).toHaveLength(1);
 });

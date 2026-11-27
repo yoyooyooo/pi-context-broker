@@ -7,13 +7,15 @@ import test from 'node:test';
 import { parseArgs, validateCurrentFixture, currentServiceFacts, selectProviderCall, assertWireSources, verifyEvidence } from './notion-sdk-pi.mjs';
 import { assertCancellationCausality, assertNoCancellationPublication, assertPositiveManagerTransports, assertWarmMaterializationGraph, readManagerState } from './notion-sdk-pi-materialization.mjs';
 
+import { assertColdMaterializationBudget } from './notion-sdk-pi-cold-materialization.mjs';
+
 const options = ['--package', '/owned/installed', '--fixture', '/owned/current.json', '--source-http-helper', '/owned/current-http.mjs'];
 test('current command boundary rejects retired or ambiguous invocation before I/O', () => {
   assert.equal(parseArgs(['doctor', ...options, '--pi', '/owned/pi']).action, 'doctor');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-cache-recovery'])['--scenario'], 'http-cache-recovery');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-warm-restart'])['--scenario'], 'http-warm-restart');
   assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', 'http-warm-directory-expired'])['--scenario'], 'http-warm-directory-expired');
-  for (const scenario of ['http-smart-revalidate', 'http-smart-current', 'source-materialize-legacy', 'source-materialize-first', 'source-materialize-legacy-source', 'source-materialize-growth', 'source-materialize-native-root', 'source-materialize-cancel-late'])
+  for (const scenario of ['http-smart-revalidate', 'http-smart-current', 'source-materialize-legacy', 'source-materialize-first', 'source-materialize-legacy-source', 'source-materialize-growth', 'source-materialize-native-root', 'source-materialize-cancel-late', 'source-materialize-cold-budget'])
     assert.equal(parseArgs(['run', ...options, '--out', '/owned/result', '--scenario', scenario])['--scenario'], scenario);
   for (const args of [
     ['cleanup', '--evidence', '/owned/result'], ['run', ...options], ['run', ...options, '--out', 'relative'],
@@ -604,4 +606,65 @@ test('retained SQLite evidence preserves exact fields through JSON replay', asyn
   assert.deepEqual(observed.identities, [{ id: 'original-manager', scope: 'exact-scope' }]);
   assert.equal(observed.rows[0].retired, 0); assert.equal(observed.rows[0].payload.intent.operation_id, 'original-operation');
   retained.identities[0].scope = 'another-scope'; assert.notDeepEqual(await readManagerState(path), retained);
+});
+
+function coldBudgetEvidence() {
+  const library = { library_id: 'library', skills: { data_source_id: 'skills' } };
+  const facts = { sample: { notion: { library } }, members: [{ name: 'lazy-root', legacy_page_id: 'root-page' }] };
+  const prompt = '$lazy-root Apply this Skill to the task.', piPid = 701;
+  const ns = ms => String(BigInt(ms) * 1000000n), events = [], source = [], holds = [];
+  const specs = [
+    ['catalog-root', 'list', '/v1/pages/library', 12000, 'catalog'],
+    ['catalog-children', 'list', '/v1/blocks/library/children', 12000, 'catalog'],
+    ['catalog-skills-schema', 'list', '/v1/data_sources/skills', 12000, 'catalog'],
+    ['initial-consume-owner', 'consume', '/v1/pages/root-page', 12000, 'missing'],
+    ['source-discovery-root', 'source-members', '/v1/pages/library', 14000, 'discover'],
+  ];
+  let time = 1000;
+  const event = (kind, fields, at = time) => events.push({ kind, observer_pid: piPid, observer_monotonic_ns: ns(at), ...fields });
+  event('context-broker.notion-sdk', { event: 'start', id: 'catalog', operation: 'list' }, 1001);
+  for (const [index, [label, operation, path, delay_ms, sdk_id]] of specs.entries()) {
+    time += 100;
+    if (index >= 3) event('context-broker.notion-sdk', { event: 'start', id: sdk_id, operation }, time - 1);
+    const start = time; time += delay_ms;
+    holds.push({ label, operation, method: 'GET', path, delay_ms, sdk_id, sequence: index + 1,
+      reached_monotonic_ns: ns(start), released_monotonic_ns: ns(time), closed_monotonic_ns: ns(time + 2) });
+    source.push({ method: 'GET', path, sequence: index + 1, started_monotonic_ns: ns(start),
+      ended_monotonic_ns: ns(time + 1), closed_monotonic_ns: ns(time + 2), control: 'hold-before-headers',
+      phase: 'materialize', terminal: 'finished', status: 200, response_bytes_complete: true, semantic_write: false });
+    time += 3;
+    if (index >= 2) event('context-broker.notion-sdk', { event: 'end', id: sdk_id, operation, status: index === 3 ? 'failed' : 'completed' });
+    if (index === 3) event('context-broker.notion-sdk-result', { id: sdk_id, operation,
+      value: { status: 'failed', error: { code: 'CURRENT_SCHEMA_REQUIRED' } } });
+  }
+  time += 100; event('context-broker.notion-materialization', { event: 'start' });
+  time += 1000; event('context-broker.notion-materialization', { event: 'result', status: 'ready' });
+  time += 1; event('context-broker.notion-sdk', { event: 'start', id: 'refreshed', operation: 'list' });
+  time += 2000; event('context-broker.notion-sdk', { event: 'end', id: 'refreshed', operation: 'list', status: 'completed' });
+  time += 1; event('context-broker.notion-sdk', { event: 'start', id: 'ready', operation: 'consume' });
+  time += 2000; event('context-broker.notion-sdk-result', { id: 'ready', operation: 'consume', value: { status: 'ready' } });
+  return { facts, piPid, events, source, initial: { branch: [] },
+    session: { branch: [{ type: 'message', message: { role: 'user', content: [{ type: 'text', text: prompt }] } }] },
+    receipt: { version: 1, kind: 'actual-pi-cold-materialization-budget', status: 'completed', prompt, pi_pid: piPid,
+      initial_http_count: 0, sent_monotonic_ns: ns(1000), completed_monotonic_ns: ns(time + 100), holds } };
+}
+
+test('cold materialization evidence rejects prewarming, short or misattributed delays and a missing catalog barrier', () => {
+  const original = coldBudgetEvidence(); assertColdMaterializationBudget(original);
+  const changes = [
+    proof => { proof.initial.branch.push(...proof.session.branch); },
+    proof => { proof.session.branch.unshift({ type: 'message', message: { role: 'user', content: 'Find the Skill first' } }); },
+    proof => { proof.source[0].started_monotonic_ns = '0'; },
+    proof => { proof.receipt.holds[4].released_monotonic_ns = proof.receipt.holds[4].reached_monotonic_ns; },
+    proof => { proof.receipt.holds[4].sdk_id = 'missing'; },
+    proof => { proof.source[4].terminal = 'aborted'; },
+    proof => { proof.events.find(row => row.value?.status === 'failed').value.error.code = 'ACCESS_DENIED'; },
+    proof => { proof.events.find(row => row.kind === 'context-broker.notion-materialization' && row.event === 'start').observer_monotonic_ns = '59000000000'; },
+    proof => { proof.events = proof.events.filter(row => row.id !== 'refreshed'); },
+    proof => { proof.receipt.completed_monotonic_ns = '242000000000'; },
+  ];
+  for (const change of changes) {
+    const proof = structuredClone(original); change(proof);
+    assert.throws(() => assertColdMaterializationBudget(proof));
+  }
 });
