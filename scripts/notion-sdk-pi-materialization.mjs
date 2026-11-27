@@ -102,6 +102,111 @@ async function positiveManagerTransports({ base, manager, events, sessionReceipt
     consumerScope: credentialScopes.clients[0].scope, managerPids, events, sessionReceipts, outputs });
 }
 
+/** A use result prepares the exact Requires closure; other declared nodes remain metadata. */
+export function assertWarmMaterializationGraph(value, cold, expected) {
+  const sameIds = (actual, wanted, label) => {
+    assert.ok(actual.every(id => typeof id === 'string' && id.length > 0), label);
+    assert.equal(new Set(actual).size, actual.length, 'Duplicate identity: ' + label);
+    assert.equal(new Set(wanted).size, wanted.length, 'Duplicate expected identity: ' + label);
+    assert.deepEqual([...actual].sort(), [...wanted].sort(), label);
+  };
+  const edgeKeys = edges => edges.map(edge => JSON.stringify([edge.from, edge.to, edge.ref]));
+  const metadataKeys = ['id', 'ref', 'kind', 'name', 'description', 'availability'];
+  const metadata = entry => Object.fromEntries(metadataKeys.map(key => [key, entry[key]]));
+  assert.equal(value.status, 'ready'); assert.equal(cold.status, 'ready');
+  const plan = value.preparation, prior = cold.preparation;
+  assert.equal(plan.status, 'ready'); assert.equal(plan.purpose, 'use');
+  sameIds(plan.nodes.map(node => node.id), plan.nodes.map(node => node.id), 'node identities');
+  const nodes = new Map(plan.nodes.map(node => [node.id, node])), roles = new Map(), closure = new Set();
+  const addRole = (id, role) => { const current = roles.get(id) ?? new Set(); current.add(role); roles.set(id, current); };
+  const roots = plan.roots.map(root => { assert.equal(root.readiness, 'ready'); addRole(root.id, 'root'); return root.id; });
+  sameIds(roots, roots, 'root identities');
+  const pending = [...roots];
+  for (let i = 0; i < pending.length; i++) {
+    const id = pending[i]; if (closure.has(id)) continue;
+    const node = nodes.get(id); assert.equal(node?.state, 'prepared', 'Every selected root and Required must be prepared'); closure.add(id);
+    for (const edge of plan.required.filter(edge => edge.from === id)) { addRole(edge.to, 'required'); pending.push(edge.to); }
+  }
+  const prepared = plan.nodes.filter(node => node.state === 'prepared'), ids = [...closure];
+  sameIds(prepared.map(node => node.id), ids, 'prepared closure'); sameIds(plan.required_closure, ids, 'required_closure');
+  sameIds(value.entries.map(entry => entry.id), ids, 'consume entries');
+  sameIds(plan.session_bindings.map(binding => binding.record.id), ids, 'session bindings');
+  sameIds(plan.graph_lock.bindings.map(binding => binding.record.id), ids, 'graph lock bindings');
+  sameIds(plan.graph_lock.roots, roots, 'graph lock roots');
+  assert.equal(plan.graph_lock.scope, plan.scope); assert.equal(plan.graph_lock.purpose, 'use');
+  assert.equal(plan.usage.prepared_nodes, ids.length);
+  sameIds(ids, expected.prepared.map(record => record.id), 'independent fixture closure');
+  sameIds(roots, expected.root_ids, 'independent selected roots');
+  const required = prepared.flatMap(node => node.required.map(child => {
+    assert.equal(child.availability, 'available'); return { from: node.id, to: child.id, ref: child.ref };
+  }));
+  sameIds(edgeKeys(plan.required), edgeKeys(required), 'Required directories and edges');
+  sameIds(edgeKeys(plan.graph_lock.required), edgeKeys(required), 'graph lock Required edges');
+  const known = new Map();
+  for (const node of prepared) {
+    assert.equal(node.record.id, node.id); assert.equal(node.binding.record.id, node.id);
+    const physical = expected.prepared.find(record => record.id === node.id);
+    for (const record of [node.record, node.binding.record]) {
+      assert.equal(record.locator.type, 'shared_skill'); assert.equal(record.locator.library_id, expected.library_id);
+      assert.equal(record.locator.skill_id, physical.skill_id); assert.equal(record.locator.page_id, physical.page_id);
+    }
+    assert.equal(node.binding.scope, plan.scope); assert.equal(node.binding.body_sha256, node.body_sha256);
+    for (const group of [plan.session_bindings, plan.graph_lock.bindings])
+      assert.deepEqual(group.find(binding => binding.record.id === node.id), node.binding);
+    const entry = value.entries.find(entry => entry.id === node.id);
+    assert.deepEqual(entry.manifest.record, node.record); assert.equal(entry.manifest.scope, plan.scope);
+    assert.equal(entry.manifest.snapshot_id, node.binding.snapshot_id); assert.equal(entry.manifest.version_id, node.binding.version_id);
+    assert.equal(entry.source_body.sha256, node.body_sha256); assert.equal(entry.source_body.bytes, node.bytes);
+    assert.equal(node.source, 'local_cache'); assert.equal(node.freshness.policy, 'max_age'); assert.equal(node.freshness.max_age_ms, 300000);
+    assert.equal(node.freshness.stale, false);
+    assert.ok(typeof node.freshness.age_ms === 'number' && Number.isFinite(node.freshness.age_ms)
+      && node.freshness.age_ms >= 0 && node.freshness.age_ms < 300000);
+    assert.ok(typeof node.freshness.validated_at === 'string' && Number.isFinite(Date.parse(node.freshness.validated_at)));
+    const original = prior.nodes.find(candidate => candidate.id === node.id); assert.equal(original?.state, 'prepared');
+    assert.deepEqual(node.binding, original.binding); assert.equal(node.body_sha256, original.body_sha256);
+    assert.equal(node.content, original.content); assert.equal(node.bytes, original.bytes);
+    assert.equal(node.freshness.validated_at, original.freshness.validated_at);
+    for (const [role, directory] of [['member', node.candidates], ['reference', node.references]]) for (const child of directory) {
+      addRole(child.id, role); if (closure.has(child.id)) continue;
+      if (known.has(child.id)) assert.deepEqual(known.get(child.id), metadata(child));
+      else known.set(child.id, metadata(child));
+    }
+  }
+  sameIds(prior.nodes.filter(node => node.state === 'prepared').map(node => node.id), ids, 'cold closure');
+  assert.equal(plan.graph_lock.sha256, prior.graph_lock.sha256);
+  const metadataNodes = plan.nodes.filter(node => !closure.has(node.id));
+  sameIds(metadataNodes.map(node => node.id), [...known.keys()], 'only declared metadata outside the closure');
+  for (const node of metadataNodes) {
+    assert.equal(node.state, 'known');
+    assert.deepEqual(Object.keys(node).sort(), [...metadataKeys, 'roles', 'state'].sort(), 'Known metadata must not carry acquired content or bindings');
+    assert.deepEqual(metadata(node), known.get(node.id));
+  }
+  for (const node of plan.nodes) sameIds(node.roles, [...(roles.get(node.id) ?? [])], 'exact roles for ' + node.id);
+}
+
+function materializationGraphExpectation(facts, after) {
+  const library = after.library, source = after.sources.find(row => row.id === facts.source_page_id);
+  const contributions = JSON.parse(fieldText(source, library.sources, 'Contributions'));
+  const memberId = member => {
+    const declared = contributions.filter(row => row.member_key === member.member_key); assert.equal(declared.length, 1);
+    if (facts.initial !== 'source-only' && !(facts.initial === 'manifest-growth' && member === facts.members[1]))
+      assert.equal(declared[0].skill_id, member.legacy_skill_id);
+    return declared[0].skill_id;
+  };
+  const selected = facts.initial === 'manifest-growth' ? [facts.members[1]]
+    : facts.initial === 'source-only' ? [facts.members[0]] : facts.members.slice(0, 2);
+  const skillIds = selected.map(memberId);
+  if (facts.native_root) skillIds.unshift(facts.native_root.skill_id);
+  // The controlled facts use canonical UUIDs and the public Skill ID alphabet.
+  assert.match(library.library_id, /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/);
+  const prepared = skillIds.map(skill_id => {
+    assert.match(skill_id, /^[a-z0-9][a-z0-9._-]{0,199}$/);
+    const owners = after.skills.filter(row => fieldText(row, library.skills, 'Skill ID') === skill_id); assert.equal(owners.length, 1);
+    return { id: 'skill://' + skill_id + '?library=' + library.library_id, skill_id, page_id: owners[0].id };
+  });
+  return { library_id: library.library_id, root_ids: [prepared[0].id], prepared };
+}
+
 async function actualCredentialScope(stateRoot) {
   const { DatabaseSync } = await import('node:sqlite');
   const path = join(stateRoot, 'state.sqlite'), database = new DatabaseSync(path, { readOnly: true });
@@ -828,6 +933,8 @@ export async function verifyMaterializationEvidence({ base, entry, source, event
   assert.equal(manager.config.git.executable, manager.tool_selection.git.path);
   assert.equal(manager.config.git.sha256, manager.tool_selection.git.sha256);
   const credentialScopes = JSON.parse(await readFile(join(base, 'credential-scopes.json'), 'utf8'));
+  const ready = JSON.parse(await readFile(join(base, 'after-materialization.json'), 'utf8'));
+  const graphExpectation = materializationGraphExpectation(facts, ready);
   assert.notEqual(credentialScopes.manager.scope, credentialScopes.clients[0].scope);
   assert.equal(credentialScopes.clients[0].scope, credentialScopes.clients[1].scope);
   assert.notEqual(credentialScopes.clients[0].path, credentialScopes.clients[1].path);
@@ -870,8 +977,7 @@ export async function verifyMaterializationEvidence({ base, entry, source, event
     if (process.phase === 'warm-restart') {
       assert.equal(management(events).filter(row => row.observer_pid === process.pid).length, 0);
       assert.equal(events.filter(row => row.observer_pid === process.pid && row.operation === 'source-members').length, 0);
-      assert.ok(values.at(-1).value.preparation.nodes.every(node => node.state === 'prepared' && node.source === 'local_cache'
-        && node.freshness.max_age_ms === 300000 && node.freshness.age_ms < 300000));
+      assertWarmMaterializationGraph(values.at(-1).value, consumeValues(events, receipt.processes[0].pid).at(-1).value, graphExpectation);
     }
   }
   const actions = management(events), starts = actions.filter(row => row.event === 'start'), results = actions.filter(row => row.event === 'result');
@@ -885,7 +991,6 @@ export async function verifyMaterializationEvidence({ base, entry, source, event
   'The ordinary successful consume must run after the accepted management receipt');
   assert.equal(events.filter(row => row.kind === 'child_process' && row.active_sdk_ids.length > 0
     && !['git'].includes(row.command)).length, 0, 'The consumer spawned a management CLI');
-  const ready = JSON.parse(await readFile(join(base, 'after-materialization.json'), 'utf8'));
   const session = JSON.parse(await readFile(join(base, 'materialize-final-session.json'), 'utf8'));
   const sessionManagement = session.branch.filter(row => row.customType === 'context-broker-materialization');
   assert.equal(sessionManagement.length, starts.length);

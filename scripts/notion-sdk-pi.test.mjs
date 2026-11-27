@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { parseArgs, validateCurrentFixture, currentServiceFacts, selectProviderCall, assertWireSources, verifyEvidence } from './notion-sdk-pi.mjs';
-import { assertCancellationCausality, assertNoCancellationPublication, assertPositiveManagerTransports, readManagerState } from './notion-sdk-pi-materialization.mjs';
+import { assertCancellationCausality, assertNoCancellationPublication, assertPositiveManagerTransports, assertWarmMaterializationGraph, readManagerState } from './notion-sdk-pi-materialization.mjs';
 
 const options = ['--package', '/owned/installed', '--fixture', '/owned/current.json', '--source-http-helper', '/owned/current-http.mjs'];
 test('current command boundary rejects retired or ambiguous invocation before I/O', () => {
@@ -504,6 +504,87 @@ const managerEvidenceCorruptions = [
 ];
 for (const [label, corrupt] of managerEvidenceCorruptions) test('positive manager evidence rejects ' + label, () => {
   const value = positiveManagerEvidence(); corrupt(value); assert.throws(() => assertPositiveManagerTransports(value));
+});
+
+function materializationWarmGraph(mode = 'member') {
+  const scope = 'a'.repeat(64), library = 'library', validated = '2026-11-27T12:00:00.000Z';
+  const directory = id => ({ id, ref: 'skill://' + id + '/SKILL.md', kind: 'skill', name: id, description: id + ' metadata', availability: 'available' });
+  const prepared = (id, role) => {
+    const record = { id, kind: 'skill', locator: { type: 'shared_skill', skill_id: id, page_id: 'page-' + id, library_id: library } };
+    const content = id + ' 完整正文\n', digest = createHash('sha256').update(content).digest('hex');
+    return { id, ref: 'skill://' + id + '/SKILL.md?snapshot=s_' + id, roles: [role], state: 'prepared', record,
+      binding: { record: structuredClone(record), scope, snapshot_id: 's_' + id, version_id: 'version-' + id, body_sha256: digest },
+      content, bytes: Buffer.byteLength(content), body_sha256: digest, required: [], candidates: [], references: [], source: 'notion',
+      freshness: { policy: 'max_age', max_age_ms: 300000, age_ms: 0, stale: false, validated_at: validated } };
+  };
+  const root = prepared('root', 'root'), required = prepared('required', 'required'), member = directory('member');
+  root.required.push(directory('required')); root.candidates.push(member);
+  const nodes = [root, required, { ...member, state: 'known', roles: ['member'] }];
+  if (mode === 'reference') { const ref = directory('reference'); root.references.push(ref); nodes.push({ ...ref, state: 'known', roles: ['reference'] }); }
+  if (mode === 'member-reference') { root.references.push(member); nodes[2].roles.push('reference'); }
+  if (mode === 'required-member') { root.candidates.push(directory('required')); required.roles.push('member'); }
+  const edges = [{ from: 'root', to: 'required', ref: directory('required').ref }], bindings = [root.binding, required.binding];
+  const cold = { status: 'ready', entries: [root, required].map(node => ({ id: node.id,
+    manifest: { record: structuredClone(node.record), scope, snapshot_id: node.binding.snapshot_id, version_id: node.binding.version_id },
+    source_body: { sha256: node.body_sha256, bytes: node.bytes } })),
+    preparation: { status: 'ready', purpose: 'use', scope, roots: [{ id: 'root', readiness: 'ready' }], nodes, required: edges,
+      required_closure: ['root', 'required'], usage: { prepared_nodes: 2 }, session_bindings: structuredClone(bindings),
+      graph_lock: { purpose: 'use', scope, roots: ['root'], required: structuredClone(edges), bindings: structuredClone(bindings), sha256: 'f'.repeat(64) } } };
+  const warm = structuredClone(cold);
+  for (const node of warm.preparation.nodes.filter(node => node.state === 'prepared')) { node.source = 'local_cache'; node.freshness.age_ms = 150; }
+  return { warm, cold, expected: { library_id: library, root_ids: ['root'], prepared: [root, required].map(node => ({
+    id: node.id, skill_id: node.record.locator.skill_id, page_id: node.record.locator.page_id })) } };
+}
+
+test('warm materialization proves only the exact prepared closure while declared Members and References remain known', () => {
+  for (const mode of ['member', 'reference', 'member-reference', 'required-member']) {
+    const { warm, cold, expected } = materializationWarmGraph(mode);
+    assert.equal(warm.preparation.nodes.every(node => node.state === 'prepared'), false, 'The old all-nodes oracle rejects valid metadata');
+    assertWarmMaterializationGraph(warm, cold, expected);
+  }
+});
+
+const warmGraphCorruptions = [
+  ['a non-ready root', value => { value.warm.preparation.roots[0].readiness = 'not_ready'; }],
+  ['a different selected root with the same entire closure', value => { value.expected.root_ids = ['required']; }],
+  ['a Required left known', value => { value.warm.preparation.nodes[1].state = 'known'; }],
+  ['a missing Required', value => { value.warm.preparation.nodes.splice(1, 1); }],
+  ['a missing global Required edge', value => { value.warm.preparation.required = []; }],
+  ['a Required directory hidden from the graph', value => { value.warm.preparation.nodes[0].required = []; }],
+  ['a changed graph-lock edge', value => { value.warm.preparation.graph_lock.required[0].ref = 'another-ref'; }],
+  ['an extra prepared Member', value => { value.warm.preparation.nodes[2].state = 'prepared'; }],
+  ['an undeclared known identity', value => { value.warm.preparation.nodes.push({ ...value.warm.preparation.nodes[2], id: 'stranger' }); }],
+  ['a substituted stable identity with the same prepared count', value => { value.warm.preparation.nodes[1].record.locator.skill_id = 'stranger'; }],
+  ['a substituted physical page', value => { value.warm.preparation.nodes[1].binding.record.locator.page_id = 'another-page'; }],
+  ['a failed metadata node', value => { value.warm.preparation.nodes[2].state = 'failed'; }],
+  ['a known node promoted to Required by its roles', value => { value.warm.preparation.nodes[2].roles = ['required']; }],
+  ['metadata without the declared description', value => { value.warm.preparation.nodes[2].description = 'different'; }],
+  ['a metadata node carrying hidden content', value => { value.warm.preparation.nodes[2].content = ''; }],
+  ['a metadata node carrying an acquired binding', value => { value.warm.preparation.nodes[2].binding = {}; }],
+  ['a metadata node claiming freshness', value => { value.warm.preparation.nodes[2].freshness = {}; }],
+  ['a duplicate consume entry', value => { value.warm.entries[1] = structuredClone(value.warm.entries[0]); }],
+  ['a duplicate session binding', value => { value.warm.preparation.session_bindings[1] = structuredClone(value.warm.preparation.session_bindings[0]); }],
+  ['a missing graph-lock binding', value => { value.warm.preparation.graph_lock.bindings.pop(); }],
+  ['an incomplete required_closure', value => { value.warm.preparation.required_closure.pop(); }],
+  ['remote Required acquisition', value => { value.warm.preparation.nodes[1].source = 'notion'; }],
+  ['expired Required freshness', value => { value.warm.preparation.nodes[1].freshness.age_ms = 300000; }],
+  ['negative cache age', value => { value.warm.preparation.nodes[1].freshness.age_ms = -1; }],
+  ['non-finite cache age', value => { value.warm.preparation.nodes[1].freshness.age_ms = NaN; }],
+  ['a different TTL', value => { value.warm.preparation.nodes[1].freshness.max_age_ms = 3600000; }],
+  ['stale cache content', value => { value.warm.preparation.nodes[1].freshness.stale = true; }],
+  ['missing validation instants on both cold and warm nodes', value => { delete value.warm.preparation.nodes[1].freshness.validated_at; delete value.cold.preparation.nodes[1].freshness.validated_at; }],
+  ['a changed validation instant without HTTP', value => { value.warm.preparation.nodes[1].freshness.validated_at = '2026-11-27T12:00:01.000Z'; }],
+  ['a changed cold body hash', value => { value.cold.preparation.nodes[1].body_sha256 = 'e'.repeat(64); }],
+  ['cold and warm bindings agreeing on a hash that differs from the actual node body', value => {
+    for (const plan of [value.warm.preparation, value.cold.preparation]) {
+      plan.nodes[1].binding.body_sha256 = 'e'.repeat(64);
+      for (const group of [plan.session_bindings, plan.graph_lock.bindings]) group.find(binding => binding.record.id === 'required').body_sha256 = 'e'.repeat(64);
+    }
+  }],
+];
+for (const [label, corrupt] of warmGraphCorruptions) test('warm materialization evidence rejects ' + label, () => {
+  const value = materializationWarmGraph(); corrupt(value);
+  assert.throws(() => assertWarmMaterializationGraph(value.warm, value.cold, value.expected));
 });
 
 
