@@ -32,6 +32,7 @@ async function fixture(t, variation = {}) {
     const buildRoot = join(root, 'builds', buildId);
     const cliFiles = { 'package.json': '{"name":"fixture-cli"}\n', 'README.md': updated && variation.metadata ? 'changed metadata\n' : 'same metadata\n',
       'dist/ntn-skills.js': 'same CLI bytes\n', 'dist/sdk.js': updated && variation.sdk ? 'changed SDK bytes\n' : 'same SDK bytes\n',
+      'dist/management.js': updated && variation.management ? 'changed management bytes\n' : 'same management bytes\n',
       'dist/ref.cjs': 'same Skill reference module\n', 'skills/fixture/SKILL.md': '# Controlled fixture Skill\n',
       'THIRD_PARTY_NOTICES.md': 'Same dependency notices\n',
       'node_modules/dependency/index.js': updated && variation.dependency ? 'changed installed dependency\n' : 'same installed dependency\n',
@@ -76,7 +77,7 @@ test('only the declared instrumentation changes while actual public checker veri
   assert.equal(result.checker.receipts.source.status, 'passed'); assert.equal(result.checker.receipts.target.status, 'passed');
 });
 
-for (const [name, variation] of [['SDK', { sdk: true }], ['metadata', { metadata: true }], ['installed dependency', { dependency: true }]]) {
+for (const [name, variation] of [['SDK', { sdk: true }], ['management', { management: true }], ['metadata', { metadata: true }], ['installed dependency', { dependency: true }]]) {
   test('a separately valid paired build cannot bridge changed ' + name, async t => {
     const f = await fixture(t, variation);
     assert.equal((await checkEnvironment({ root: f.root, build: 'new' })).status, 'passed');
