@@ -94,6 +94,11 @@ it does not revoke the standing grant. The transport does not blindly replay
 an ambiguous provider send. New repaired attempts retain the failed attempt,
 its reservations, its known usage and its unknown costs.
 
+If a selected executable can update in place, prepare one task-owned copy before
+capture and bind its exact command path and bytes. Preserve its provenance and
+dependency evidence without repeatedly refreshing the global hash or copying
+the whole home directory.
+
 Completed evidence uses the normalized episode's `admission.status` and
 `admission.completeness` for attempts, tools and interventions. The normalized
 episode has no top-level `core_evidence` field. The same public
@@ -199,13 +204,71 @@ still-open invocation.
 Retirement does not complete missing scientific slots. Keep the old partial
 analysis, all outcomes and usage. A source repair requires a new controller
 identity and work plan; a fresh full design remains separate from the old
-partial design. The existing `reconcile` command without `--retire-reason`
+partial design. The lease form of `reconcile` without `--retire-reason`
 still only releases a dead lease and does not close an invocation.
 
 The runner receipt is `standing-campaign-runner-receipt`. It binds the plan,
 grant, work plan, item and attempt, and records the actual ledger and checkpoints.
 The receipt does not label a failed invocation as zero sends merely because
 the runner threw an exception.
+
+### Close a proven profile failure before launch
+
+A closed standing batch can retain one unresolved first slot after a declared
+MCP executable's identity check fails with `RESOURCE_PROFILE_FILE_CHANGED`.
+When the reviewed producer and original records prove that validation stopped
+before subject launch, record a supervised terminal disposition:
+
+```sh
+node benchmark/cli.mjs reconcile --root OLD_CONFIGURATION --prelaunch-request ABS_REQUEST
+```
+
+Both paths must be absolute. `--prelaunch-request` cannot be combined with
+`--lease`, `--retire-reason` or `--scope-only`.
+
+`verifyProfilePrelaunchDispositionRequest({ controlRoot, request })` checks the
+request without acquiring a lease or writing files. It verifies the exact
+reviewed producer closure and byte-bound plan, profile, registration,
+reservation, ledger and runner records. It requires a dead runner owner and
+the absence of the batch lease, run directory, launch artifact and turn-control
+directory. The read-only preflight also requires the campaign lease file to be
+absent. Error text alone cannot prove this boundary.
+
+`disposeProfilePrelaunchFailure` acquires the existing campaign lease, repeats
+the checks and publishes the fixed `prelaunch-disposition.json` sidecar without
+replacing an existing record. It preserves the old ledger and reservation,
+does not append `episode_completed`, and keeps unobserved runtime usage as
+`null`. Successor registration binds the sidecar. Every later standing ledger
+read verifies the retained writer's complete closure before using that writer's
+fixed verifier to recheck the original evidence, producer and absence conditions.
+A later controller version does not replace the historical verifier. Retain
+both frozen source closures. First publication and an unfinished pending
+publication require the original owner to be dead. A verified published terminal
+record keeps that exit fact; a later process reusing the numeric PID cannot
+reopen it. New run, launch or batch-lease evidence still blocks historical replay.
+The disposed old scope rejects activation and reservation, including before a
+successor has registered.
+
+Publication writes a request-bound pending file and atomically links its
+complete bytes to the final sidecar. Repeating the same request converges to
+the same record; a partial pending file can resume only from its exact expected
+prefix. The campaign lease still uses the existing exclusive writer. After an
+interruption with a complete dead campaign lease, first use:
+
+```sh
+node benchmark/cli.mjs reconcile --root OLD_CONFIGURATION --lease OBSERVED_DEAD_CAMPAIGN_LEASE_ID --scope-only true
+```
+
+Then repeat the original request with the same frozen writer. A live owner,
+conflicting pending bytes, or a partial or empty campaign lease remains blocking.
+Do not delete a lease, reset the ledger, or treat a pending file as a terminal
+record. The scope-only command preserves the complete dead lease; it does not
+repair malformed lease contents.
+
+Continue with a new attempt, work plan, condition epoch, repaired resource
+profile and fresh capture under the same grant and standing ledger. Keep the
+failed attempt and its capture evidence. Other unresolved executions,
+ambiguous sends or incomplete proof remain blocking.
 
 ### Close a retained zero-send collection failure
 

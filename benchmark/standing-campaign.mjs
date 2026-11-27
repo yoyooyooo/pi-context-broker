@@ -7,6 +7,7 @@ import { fingerprint } from './protocol.mjs';
 import { verifyExecutionImplementation } from './implementation.mjs';
 import { readEvidenceBundle } from './evidence/store.mjs';
 import { assertCohortModelEvidence } from './prospective-cohort.mjs';
+import { PRELAUNCH_DISPOSITION_FILE, readProfilePrelaunchDisposition, verifyProfilePrelaunchDisposition } from './prelaunch-disposition.mjs';
 
 export const STANDING_CAMPAIGN = 'benchmark-standing-campaign';
 export const STANDING_WORK_PLAN = 'benchmark-standing-work-plan';
@@ -65,7 +66,7 @@ export async function readStandingAuthorization(ref) {
   return { value, reference: structuredClone(ref) };
 }
 
-async function verifyControllerFiles(controller) {
+export async function verifyControllerFiles(controller) {
   keys(controller, ['source_root', 'implementation']); assert.ok(canonical(controller.source_root));
   assert.equal(await realpath(controller.source_root), controller.source_root);
   const implementation = controller.implementation;
@@ -230,7 +231,8 @@ export async function inspectStandingLedger({ ledgerRoot, baseline: baselineRefe
   for (const { name, ordinal: sequence } of numericStandingNames(names ?? [], 'registration')) {
     assert.equal(sequence, registrations.length + 1, 'STANDING_REGISTRATION_GAP');
     const actual = await record(join(ledgerRoot, name)), value = actual.value;
-    keys(value, ['version', 'kind', 'sequence', 'global_sequence', 'predecessor', 'id', 'amendment', 'plan']);
+    keys(value, ['version', 'kind', 'sequence', 'global_sequence', 'predecessor', 'id', 'amendment', 'plan',
+      ...(Object.hasOwn(value, 'predecessor_disposition') ? ['predecessor_disposition'] : [])]);
     assert.equal(value.version, 1); assert.equal(value.kind, 'benchmark-standing-registration'); assert.equal(value.sequence, sequence);
     assert.equal(value.global_sequence, baseline.value.registrations + sequence); assert.deepEqual(value.predecessor, previous.reference);
     const amendment = await readStandingAmendment(value.amendment); assert.equal(amendment.id, value.id);
@@ -240,6 +242,12 @@ export async function inspectStandingLedger({ ledgerRoot, baseline: baselineRefe
     assert.equal(plan.execution.standing_scope.id, value.id); assert.equal(plan.execution.control_root, amendment.control_root);
     assert.equal(plan.execution.pilot_ledger_root, ledgerRoot);
     assert.equal(plan.plan_sha256, fingerprint({ ...plan, plan_sha256: null }));
+    if (Object.hasOwn(value, 'predecessor_disposition')) {
+      assert.ok(previous.value.kind === 'benchmark-standing-registration', 'STANDING_DISPOSITION_PREDECESSOR_REQUIRED');
+      const predecessor = await verified(previous.value.plan);
+      const disposition = await verifyProfilePrelaunchDisposition({ reference: value.predecessor_disposition, predecessor, successor: plan });
+      assert.deepEqual(disposition.value.originals.registration, previous.reference, 'STANDING_DISPOSITION_REGISTRATION_CHANGED');
+    }
     owners.set(value.id, { plan, amendment });
     registrations.push({ sequence, global_sequence: value.global_sequence, ...actual }); previous = actual;
   }
@@ -360,14 +368,30 @@ export async function verifyStandingPlan(plan, { activate = false, forReservatio
   let latest = boundary.registrations.at(-1);
   const own = boundary.registrations.find(item => item.value.id === plan.id);
   if (own) { assert.deepEqual(own.value.amendment, registration.amendment); assert.deepEqual(own.value.plan, actualPlan.reference); }
+  if (own && (activate || forReservation)) {
+    const terminal = await optional(join(execution.control_root, PRELAUNCH_DISPOSITION_FILE));
+    if (terminal) {
+      await verifyProfilePrelaunchDisposition({ reference: terminal.reference, predecessor: plan });
+      assert.fail('STANDING_ATTEMPT_PRELAUNCH_TERMINAL');
+    }
+  }
   if (activate && !own) {
     assert.ok(boundary.lease && boundary.lease.pid === process.pid && boundary.lease.plan_sha256 === plan.plan_sha256,
       'STANDING_ACTIVATION_REQUIRES_OWN_LEASE');
+    let predecessorDisposition;
     if (latest) {
       const predecessor = await verified(latest.value.plan), rows = await rowsAt(predecessor.execution.control_root);
       assert.ok(rows.length && rows.at(-1).type === 'batch_closed', 'STANDING_PREDECESSOR_NOT_CLOSED');
-      assert.equal(rows.filter(item => item.type === 'episode_started').length,
-        rows.filter(item => item.type === 'episode_completed').length, 'STANDING_PREDECESSOR_UNRESOLVED');
+      if (rows.filter(item => item.type === 'episode_started').length !== rows.filter(item => item.type === 'episode_completed').length) {
+        let disposition;
+        try { disposition = await readProfilePrelaunchDisposition({ predecessor, successor: plan }); }
+        catch (error) {
+          if (error.code === 'ENOENT') assert.fail('STANDING_PREDECESSOR_UNRESOLVED');
+          throw error;
+        }
+        assert.deepEqual(disposition.value.originals.registration, latest.reference, 'STANDING_DISPOSITION_REGISTRATION_CHANGED');
+        predecessorDisposition = disposition.reference;
+      }
       for (const event of rows.filter(item => item.type === 'episode_completed')) await assertCompletedStandingEvidence(predecessor, event);
       assert.equal(await optional(join(predecessor.execution.control_root, 'lease.json')), null, 'STANDING_PREDECESSOR_LEASE_ACTIVE');
     }
@@ -375,7 +399,8 @@ export async function verifyStandingPlan(plan, { activate = false, forReservatio
     const row = { version: 1, kind: 'benchmark-standing-registration', sequence,
       global_sequence: boundary.history_registrations + sequence,
       predecessor: latest?.reference ?? (await record(join(context.ledgerRoot, 'ledger-baseline.json'))).reference,
-      id: plan.id, amendment: registration.amendment, plan: actualPlan.reference };
+      id: plan.id, amendment: registration.amendment, plan: actualPlan.reference,
+      ...(predecessorDisposition ? { predecessor_disposition: predecessorDisposition } : {}) };
     const ref = await save(join(context.ledgerRoot, 'scope-registration-' + String(sequence).padStart(3, '0') + '.json'), row);
     latest = { value: row, reference: ref };
   }
