@@ -8,19 +8,20 @@ import { isolatedEnv, resolveHost } from '../packages/context-broker/scripts/con
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { renderHttpWrapper, startLoopbackMock } from './mock-provider-adapter.mjs';
 import { runColdMaterializationPrompt, assertColdMaterializationBudget } from './notion-sdk-pi-cold-materialization.mjs';
+import { seedCacheUpgrade, readCacheUpgradeEvidence, assertCacheUpgradeEvidence } from './notion-sdk-pi-cache-upgrade.mjs';
 
 // These cases are part of notion-sdk-pi, with the same installed artifact and
 // actual Pi provider serializer. There is no alternate test runner or mock SDK.
 export const materializationScenarios = Object.freeze([
   'source-materialize-legacy', 'source-materialize-first',
   'source-materialize-legacy-source', 'source-materialize-growth',
-  'source-materialize-native-root', 'source-materialize-cancel-late', 'source-materialize-cold-budget',
+  'source-materialize-native-root', 'source-materialize-cancel-late', 'source-materialize-cold-budget', 'source-materialize-cache-upgrade',
 ]);
 const initialFor = name => ({
   'source-materialize-legacy': 'legacy-members', 'source-materialize-first': 'source-only',
   'source-materialize-legacy-source': 'legacy-source', 'source-materialize-growth': 'manifest-growth',
   'source-materialize-native-root': 'native-root', 'source-materialize-cancel-late': 'source-only',
-  'source-materialize-cold-budget': 'legacy-source',
+  'source-materialize-cold-budget': 'legacy-source', 'source-materialize-cache-upgrade': 'legacy-source',
 })[name];
 const hash = value => createHash('sha256').update(value).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -56,10 +57,14 @@ export function assertPositiveManagerTransports({ base, binding, piPid, sourceId
     const close = one(closes.filter(row => row.child_pid === pid), 'Missing or duplicate actual manager close');
     assert.equal(spawn.command, binding.command); assert.equal(spawn.observer_pid, piPid); assert.equal(close.observer_pid, piPid);
     assert.equal(close.code, 0, 'An actual successful manager exit is required'); assert.equal(close.signal, null);
-    const output = one(outputs.filter(row => row.pid === pid), 'Missing or duplicate original manager stdout').bytes;
+    const originals = one(outputs.filter(row => row.pid === pid), 'Missing or duplicate original manager stdout/stderr');
+    const output = originals.bytes, stderr = originals.stderr;
     assert.ok(Buffer.isBuffer(output)); assert.ok(output.length > 0 && output.length <= 1048576);
     assert.equal(close.output_file, join(base, 'manager-response-' + pid + '.json'));
     assert.equal(close.output_bytes, output.length); assert.equal(close.output_sha256, hash(output));
+    assert.ok(Buffer.isBuffer(stderr)); assert.ok(stderr.length <= 1048576);
+    assert.equal(close.stderr_file, join(base, 'manager-stderr-' + pid + '.txt'));
+    assert.equal(close.stderr_bytes, stderr.length); assert.equal(close.stderr_sha256, hash(stderr));
     const envelope = JSON.parse(output.toString('utf8'));
     assert.equal(envelope.version, 1); assert.equal(envelope.ok, true);
     assert.equal(envelope.execution_id, binding.execution_id); assert.equal(envelope.library, binding.library);
@@ -99,7 +104,7 @@ export function assertPositiveManagerTransports({ base, binding, piPid, sourceId
 async function positiveManagerTransports({ base, manager, events, sessionReceipts, credentialScopes, piPid, sourceId }) {
   const managerPids = (await readFile(join(base, 'manager/accepted-pids.txt'), 'utf8')).trim().split('\n').map(Number);
   assert.ok(managerPids.every(pid => Number.isSafeInteger(pid) && pid > 0));
-  const outputs = await Promise.all(managerPids.map(async pid => ({ pid, bytes: await readFile(join(base, 'manager-response-' + pid + '.json')) })));
+  const outputs = await Promise.all(managerPids.map(async pid => ({ pid, bytes: await readFile(join(base, 'manager-response-' + pid + '.json')), stderr: await readFile(join(base, 'manager-stderr-' + pid + '.txt')) })));
   return assertPositiveManagerTransports({ base, binding: manager.binding, piPid, sourceId, managerScope: credentialScopes.manager.scope,
     consumerScope: credentialScopes.clients[0].scope, managerPids, events, sessionReceipts, outputs });
 }
@@ -601,8 +606,14 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
+import { observeCacheUpgrade } from ${JSON.stringify(new URL('./notion-sdk-pi-cache-upgrade.mjs', import.meta.url).href)};
 const active = new Set();
-const emit = (kind, event) => appendFileSync(process.env.CURRENT_SDK_EVENTS, JSON.stringify({kind,observer_pid:process.pid,observer_monotonic_ns:process.hrtime.bigint().toString(),...event})+'\\n');
+const emit = (kind, event) => {
+  const row={kind,observer_pid:process.pid,observer_monotonic_ns:process.hrtime.bigint().toString(),...event};
+  appendFileSync(process.env.CURRENT_SDK_EVENTS,JSON.stringify(row)+'\\n');
+  try{observeCacheUpgrade(process.env.CURRENT_CACHE_UPGRADE_CONFIG,kind,row);}
+  catch(error){appendFileSync(process.env.CURRENT_SDK_EVENTS,JSON.stringify({kind:'cache_upgrade_observer_error',observer_pid:process.pid,error:error.message})+'\\n');}
+};
 for(const topic of ['context-broker.notion-sdk','context-broker.notion-sdk-result','context-broker.notion-materialization'])
   channel(topic).subscribe(event=>{if(topic==='context-broker.notion-sdk'){if(event.event==='start')active.add(event.id);else if(event.event==='end')active.delete(event.id);}emit(topic,event);});
 for(const api of ['spawn','spawnSync','exec','execSync','execFile','execFileSync','fork']){
@@ -611,13 +622,16 @@ for(const api of ['spawn','spawnSync','exec','execSync','execFile','execFileSync
     const child=original.apply(this,args);
     if(api==='spawn' && args[0]===process.env.CURRENT_MANAGER_ENTRY){
       emit('manager_transport',{event:'spawn',child_pid:child.pid,command:args[0]});
-      const chunks=[];let bytes=0;
+      const chunks=[],errors=[];let bytes=0,errorBytes=0;
       child.stdout.on('data',chunk=>{bytes+=Buffer.byteLength(chunk);if(bytes<=1048576)chunks.push(Buffer.from(chunk));});
+      child.stderr.on('data',chunk=>{errorBytes+=Buffer.byteLength(chunk);if(errorBytes<=1048576)errors.push(Buffer.from(chunk));});
       child.once('close',(code,signal)=>{try{
-        if(bytes>1048576)throw Error('MANAGER_OBSERVATION_BOUND');
+        if(bytes>1048576||errorBytes>1048576)throw Error('MANAGER_OBSERVATION_BOUND');
         const output=Buffer.concat(chunks),file=process.env.CURRENT_MANAGER_OUTPUT+'/manager-response-'+child.pid+'.json';
         writeFileSync(file,output,{flag:'wx',mode:0o600});
-        emit('manager_transport',{event:'close',child_pid:child.pid,code,signal,output_file:file,output_bytes:output.length,output_sha256:createHash('sha256').update(output).digest('hex')});
+        const stderr=Buffer.concat(errors),stderrFile=process.env.CURRENT_MANAGER_OUTPUT+'/manager-stderr-'+child.pid+'.txt';
+        writeFileSync(stderrFile,stderr,{flag:'wx',mode:0o600});
+        emit('manager_transport',{event:'close',child_pid:child.pid,code,signal,output_file:file,output_bytes:output.length,output_sha256:createHash('sha256').update(output).digest('hex'),stderr_file:stderrFile,stderr_bytes:stderr.length,stderr_sha256:createHash('sha256').update(stderr).digest('hex')});
       }catch(error){emit('manager_transport',{event:'observer-error',child_pid:child.pid,error:error.message});}});
     }
     return child;
@@ -639,7 +653,8 @@ syncBuiltinESMExports();
         CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_LOG_FILE: join(root, 'decisions.jsonl'),
         CURRENT_SDK_EVENTS: join(base, 'sdk.jsonl'), CURRENT_NATIVE_EVENTS: join(base, 'native.jsonl'), CURRENT_CONTROL: control,
         BROKER_E2E_PROCESS_LEDGER: join(base, 'processes.jsonl'), NODE_OPTIONS: '--import=' + preload, CTX_MOCK_PROVIDER_BASE_URL: provider.baseUrl,
-        CURRENT_MANAGER_ENTRY: manager.binding.command, CURRENT_MANAGER_OUTPUT: base });
+        CURRENT_MANAGER_ENTRY: manager.binding.command, CURRENT_MANAGER_OUTPUT: base,
+        ...(name === 'source-materialize-cache-upgrade' && number === 1 ? { CURRENT_CACHE_UPGRADE_CONFIG: join(base, 'cache-upgrade-config.json') } : {}) });
       await mkdir(env.NTN_SKILLS_CONFIG_HOME, { recursive: true, mode: 0o700 });
       await save(join(env.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: source.library });
       await save(join(env.NTN_SKILLS_CONFIG_HOME, 'source-manager.json'), manager.binding);
@@ -683,6 +698,9 @@ syncBuiltinESMExports();
       assert.equal(service.requests.some(row => row.semantic_write), false);
       assert.deepEqual(service.notion.skills, facts.sample.notion.skills);
     });
+    if (name === 'source-materialize-cache-upgrade') await step('seed mixed legacy and current metadata only in the private consumer Store', async () => {
+      seedCacheUpgrade({ path: join(first.env.NTN_SKILLS_HOME, 'state.sqlite'), library: first.source.library, base });
+    });
     if (name === 'source-materialize-cancel-late') return await runCancellation({ name, base, info, facts, first, manager, service, git, wire, steps, processes, rpc,
       step, snapshot, finish, setPlan: value => { plan = value; }, checkWire, assertWireSources: helpers.assertWireSources, present, absent });
     // The first process now crosses a real input-receipt boundary.
@@ -709,6 +727,8 @@ syncBuiltinESMExports();
       events: await rows(join(base, 'sdk.jsonl')), initial: JSON.parse(await readFile(join(base, 'discovery-empty-session.json'), 'utf8')),
       session: firstFinal, piPid: processes[0].pid,
     });
+    if (name === 'source-materialize-cache-upgrade') await save(join(base, 'cache-upgrade-result.json'),
+      assertCacheUpgradeEvidence({ ...readCacheUpgradeEvidence(base), events: await rows(join(base, 'sdk.jsonl')), source: service.requests, piPid: processes[0].pid }));
     const initialManagement = management(await rows(join(base, 'sdk.jsonl'))).filter(row => row.event === 'result');
     const sessionManagement = firstFinal.branch.filter(entry => entry.customType === 'context-broker-materialization');
     assert.equal(sessionManagement.length, initialManagement.length);
@@ -889,6 +909,12 @@ async function verifyCancellationEvidence({ base, entry, source, events, proofs,
   assert.deepEqual(receipt.manager_processes, events.filter(row => row.kind === 'manager_transport' && row.event === 'close'));
   assert.equal(receipt.manager_processes.length, pids.length);
   assert.ok(receipt.manager_processes.every(row => row.code === 0 && row.signal === null));
+  for (const close of receipt.manager_processes) {
+    assert.equal(close.stderr_file, join(base, 'manager-stderr-' + close.child_pid + '.txt'));
+    const stderr = await readFile(close.stderr_file);
+    assert.ok(stderr.length <= 1048576);
+    assert.equal(close.stderr_bytes, stderr.length); assert.equal(close.stderr_sha256, hash(stderr));
+  }
   const scopes = await read('credential-scopes.json');
   assert.notEqual(scopes.manager.scope, scopes.clients[0].scope);
   assert.equal(scopes.manager.scope, states.settled.identities[0].scope); assert.equal(response.envelope.result.scope, scopes.manager.scope);
@@ -1008,6 +1034,9 @@ export async function verifyMaterializationEvidence({ base, entry, source, event
     initial: JSON.parse(await readFile(join(base, 'discovery-empty-session.json'), 'utf8')),
     session, piPid: receipt.processes[0].pid,
   });
+  if (entry.name === 'source-materialize-cache-upgrade') assert.deepEqual(
+    JSON.parse(await readFile(join(base, 'cache-upgrade-result.json'), 'utf8')),
+    assertCacheUpgradeEvidence({ ...readCacheUpgradeEvidence(base), events, source, piPid: receipt.processes[0].pid }));
   const sessionManagement = session.branch.filter(row => row.customType === 'context-broker-materialization');
   assert.equal(sessionManagement.length, starts.length);
   for (const row of sessionManagement) {

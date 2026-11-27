@@ -1,10 +1,11 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { channel } from "node:diagnostics_channel";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { currentNotionFixture } from "./fixtures/current-notion-source";
-import { createInputReceipt } from "../src/skill-preparation";
+import { createInputReceipt, withContextPreparationDeadline } from "../src/skill-preparation";
 import { needsSourceMaterialization } from "../src/source-materialization";
 import { SourceError } from "../src/notion-source";
 import type { SourceMaterializationRequest, SourceMaterializationReceipt, SourceMemberCandidate } from "../src/source-materialization-contract";
@@ -166,4 +167,107 @@ test("a direct member starts preparation accounting only after literal, session 
   expect(begins).toBe(0); expect(checkpoints).toBe(0); expect(f.controlled.calls).toEqual([]);
   await f.api.materializeExplicitCandidate({ ...f.input(), preparation });
   expect(begins).toBe(1); expect(checkpoints).toBe(1); expect(f.controlled.calls).toHaveLength(1);
+});
+
+function finalizationError(request: SourceMaterializationRequest, receipt: SourceMaterializationReceipt, code = "STATE_CORRUPT") {
+  return Object.assign(new Error("local consumer finalization failed"), { code, details: {
+    phase: "consumer_finalization", local_error_code: code,
+    verified_management: { request_id: request.request_id, execution_id: "verified-fixed-manager",
+      library: request.library, receipt: { ...receipt, scope: "9".repeat(64) } },
+    local_error_details: { key: "cache/catalogs/old" },
+  } });
+}
+
+test("a verified manager receipt survives local finalization failure without authorizing consumer publication", async () => {
+  const f = await fixture(), observed: unknown[] = [], topic = channel("context-broker.notion-materialization");
+  const observe = (value: unknown) => { observed.push(value); };
+  topic.subscribe(observe);
+  try {
+    f.controlled.configure(async request => { throw finalizationError(request, f.ready(request)); });
+    await expect(f.api.materializeExplicitCandidate(f.input())).rejects.toMatchObject({
+      code: "STATE_CORRUPT", materialization: {
+        phase: "consumer_finalization", local_error_code: "STATE_CORRUPT",
+        verified_management: { execution_id: "verified-fixed-manager", receipt: {
+          status: "ready", scope: "9".repeat(64), operation_id: "accepted-operation",
+          effects: { remote_writes: "management", projection: "none" },
+        } },
+        local_error_details: { key: "cache/catalogs/old" },
+      }, details: { effects: { remote_writes: "none" } },
+    });
+    expect(observed.at(-1)).toMatchObject({ event: "result", phase: "consumer_finalization", status: "failed",
+      local_error_code: "STATE_CORRUPT", manager_scope: "9".repeat(64), operation_id: "accepted-operation",
+      effects: { remote_writes: "management", projection: "none" } });
+    expect(f.receipts).toEqual([]); expect(f.calls).toEqual([]);
+  } finally { topic.unsubscribe(observe); }
+});
+
+test("cancellation after a verified manager result preserves the fact but never invokes onReceipt", async () => {
+  const f = await fixture(), controller = new AbortController();
+  f.controlled.configure(async request => { controller.abort(); throw finalizationError(request, f.ready(request), "CANCELLED"); });
+  await expect(f.api.materializeExplicitCandidate({ ...f.input(), signal: controller.signal })).rejects.toMatchObject({
+    code: "SOURCE_CANCELLED", materialization: { phase: "consumer_finalization", local_error_code: "CANCELLED",
+      verified_management: { receipt: { status: "ready", scope: "9".repeat(64), effects: { remote_writes: "management" } } } },
+  });
+  expect(f.receipts).toEqual([]); expect(f.calls).toEqual([]);
+});
+
+test("invalid finalization attribution never upgrades unknown management effects", async () => {
+  const f = await fixture();
+  const mutations = [
+    (error: ReturnType<typeof finalizationError>) => { error.details.phase = "outcome_unknown"; },
+    (error: ReturnType<typeof finalizationError>) => { error.details.local_error_code = "AUTH_REQUIRED"; },
+    (error: ReturnType<typeof finalizationError>) => { error.details.verified_management.request_id = "another-request"; },
+    (error: ReturnType<typeof finalizationError>) => { error.details.verified_management.library = "00000000-0000-4000-8000-000000000098"; },
+    (error: ReturnType<typeof finalizationError>) => { error.details.verified_management.execution_id = ""; },
+    (error: ReturnType<typeof finalizationError>) => { error.details.verified_management.receipt.request_id = "another-request"; },
+    (error: ReturnType<typeof finalizationError>) => { error.details.verified_management.receipt.scope = "not-a-scope"; },
+    (error: ReturnType<typeof finalizationError>) => { error.details.verified_management.receipt.target = { ...error.details.verified_management.receipt.target, member_key: "skills/another" }; },
+    (error: ReturnType<typeof finalizationError>) => { error.details.verified_management.receipt.authorization_root = { skill_id: "unrequested", page_id: "00000000-0000-4000-8000-000000000099", requires_digest: "f".repeat(64) }; },
+    (error: ReturnType<typeof finalizationError>) => { error.details.verified_management.receipt.effects.remote_writes = "unknown"; },
+    (error: ReturnType<typeof finalizationError>) => { error.details.verified_management.receipt.records = []; },
+  ];
+  for (const [index, mutate] of mutations.entries()) {
+    f.controlled.configure(async request => { const error = finalizationError(request, f.ready(request)); mutate(error); throw error; });
+    const rejected = await f.api.materializeExplicitCandidate(f.input()).then(() => undefined, (error: unknown) => error);
+    expect(rejected, "invalid attribution mutation " + index).toMatchObject({
+      code: "SOURCE_MATERIALIZATION_FAILED", materialization: { phase: "management", remote_writes: "unknown" },
+    });
+  }
+  expect(f.receipts).toEqual([]); expect(f.calls).toEqual([]);
+});
+
+test("a required-member finalization fact must retain the exact physical authorization root", async () => {
+  const f = await fixture();
+  const authorization = { skill_id: "root", page_id: "00000000-0000-4000-8000-000000000099", requires_digest: "e".repeat(64) };
+  f.controlled.configure(async request => {
+    const error = finalizationError(request, f.ready(request));
+    error.details.verified_management.receipt.authorization_root = { ...authorization, requires_digest: "f".repeat(64) };
+    throw error;
+  });
+  await expect(f.api.materializeExplicitCandidate({ ...f.input(), authorization })).rejects.toMatchObject({
+    code: "SOURCE_MATERIALIZATION_FAILED", materialization: { phase: "management", remote_writes: "unknown" },
+  });
+  expect(f.receipts).toEqual([]); expect(f.calls).toEqual([]);
+});
+
+test("the real preparation checkpoint expires the budget without erasing verified local-failure facts", async () => {
+  const f = await fixture();
+  let now = 0, retained: unknown;
+  const clock = spyOn(performance, "now").mockImplementation(() => now);
+  const settled = Promise.withResolvers<void>();
+  try {
+    f.controlled.configure(async request => { now = 180_001; throw finalizationError(request, f.ready(request)); });
+    await expect(withContextPreparationDeadline(new AbortController().signal, async (signal, budget) =>
+      budget.withSourcePreparation(async preparation => {
+        try { return await f.api.materializeExplicitCandidate({ ...f.input(), signal, preparation }); }
+        catch (error) { retained = error; throw error; }
+        finally { settled.resolve(); }
+      }))).rejects.toMatchObject({ code: "SOURCE_PREPARATION_TIMEOUT" });
+    await settled.promise;
+    expect(retained).toMatchObject({ code: "SOURCE_CANCELLED", materialization: {
+      phase: "consumer_finalization", local_error_code: "STATE_CORRUPT",
+      verified_management: { receipt: { status: "ready", scope: "9".repeat(64), effects: { remote_writes: "management" } } },
+    } });
+    expect(f.receipts).toEqual([]); expect(f.calls).toEqual([]);
+  } finally { clock.mockRestore(); }
 });
