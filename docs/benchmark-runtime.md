@@ -288,6 +288,24 @@ owned HTTP metrics and direct child lifecycle. Descendant transport remains
 episode's complete observation claim. Notion operation `receipt_ref` identifies
 its hash-bound JSON artifact; `source_request_id` joins that operation to its HTTP
 metrics without conflating it with a model request.
+`result.notion.management` separately observes the
+`context-broker.notion-materialization` lifecycle. Its start/end references,
+request attribution, original input context, observed result context and reported
+effects are retained independently of ordinary SDK consumption. A late first
+result keeps both contexts. A `pending` receipt ends the foreground management
+call but leaves durable settlement unknown; the observer does not wait for a
+second result that this producer never promises. Malformed, orphan and duplicate
+events remain in the raw stream and make management coverage partial.
+
+Management reports may contain `remote_writes: "management"`; ordinary consumption
+effects keep their existing `none | unknown` contract. Management HTTP counts,
+other processes and durable writer settlement are not independently observed.
+The SDK/direct-CLI HTTP subtotal therefore does not become a complete management
+or whole-task total. Complete observer boundaries with no management events
+establish zero events only in that channel. Historical artifacts without those
+boundaries remain unobserved. Management uncertainty does not erase complete SDK
+coverage or convert unknown effects to zero.
+
 Runtime instrumentation records synchronous event-write time,
 JSON artifact-write time and output volume. Those measurements do not claim to
 measure total observer CPU or network overhead.

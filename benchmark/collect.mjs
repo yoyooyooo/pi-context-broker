@@ -18,7 +18,7 @@ import { CURRENT_SOURCE_CONTRACT, loadCurrentSourceViews } from './current-sourc
 import { pairedBrokerEntry } from './paired-broker-entry.mjs';
 
 export const COLLECTOR_VERSION = '1.2.2';
-export const CURRENT_COLLECTOR_VERSION = '1.3.11';
+export const CURRENT_COLLECTOR_VERSION = '1.3.12';
 const retainedSourceViews = { contract: RETAINED_SOURCE_CONTRACT, graphSourceViews, verifyPreparationEvidence };
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -60,6 +60,109 @@ async function implementationSources(entry) {
   return [...found.values()].sort((a, b) => a.relative_path.localeCompare(b.relative_path));
 }
 const loadedImplementation = implementationSources(import.meta.url);
+
+/** Replay the separate management diagnostics from retained event bytes.
+ * This observes reported effects, not manager HTTP or durable writer settlement. */
+export function collectNotionManagement(observation, events, eventArtifact) {
+  const channel = 'context-broker.notion-materialization';
+  const scope = 'Owned Pi management diagnostics and reported effects only; manager HTTP and durable writer settlement are unobserved.';
+  const rows = events.map((row, index) => ({ row, ref: eventArtifact
+    ? { artifact_id: eventArtifact.id, sha256: eventArtifact.sha256, line: index + 1 } : null }));
+  const starts = rows.filter(({ row }) => row.type === 'notion_materialization_observer_start');
+  const ends = rows.filter(({ row }) => row.type === 'notion_materialization_observer_end');
+  const recorded = rows.filter(({ row }) => row.type === 'notion_materialization_event');
+  const observerErrors = rows.filter(({ row }) => row.type === 'notion_observer_error' && row.data?.channel === channel);
+  if (observation === undefined && !starts.length && !ends.length && !recorded.length && !observerErrors.length)
+    return { status: 'unobserved', coverage: 'unobserved', operations: null, event_refs: [],
+      reported_effects: { remote_writes: 'unknown', projection: 'unknown' }, http: { status: 'unknown', value: null },
+      refs: { start: null, end: null }, error_refs: [], errors: [], scope };
+  const errors = [], operations = new Map(), invalidRequests = new Set();
+  const check = work => { try { work(); return true; } catch (error) { errors.push(String(error.message).split('\n')[0]); return false; } };
+  const text = value => typeof value === 'string' && value.length > 0 && value.length <= 8192 && !/[\u0000-\u001f\u007f]/u.test(value);
+  const boundariesVerified = check(() => {
+    assert.ok(eventArtifact, 'Management events require their original artifact');
+    assert.equal(starts.length, 1, 'Management observation needs one start');
+    assert.equal(ends.length, 1, 'Management observation needs one end');
+    assert.ok(starts[0].ref.line < ends[0].ref.line, 'Management observation boundaries are reversed');
+    for (const item of [...starts, ...ends]) {
+      assert.equal(item.row.data?.version, 1); assert.equal(item.row.data?.channel, channel);
+    }
+    for (const item of observerErrors)
+      assert.ok(item.ref.line > starts[0].ref.line && item.ref.line < ends[0].ref.line, 'Management event is outside its observer lifetime');
+  });
+  for (const { row, ref } of recorded) {
+    const verified = check(() => {
+      assert.ok(boundariesVerified && ref.line > starts[0].ref.line && ref.line < ends[0].ref.line,
+        'Management event is outside its verified observer lifetime');
+      const event = row.data?.event, context = row.data?.context;
+      assert.ok(object(event) && object(context), 'Management event or context is missing');
+      assert.equal(event.version, 1); assert.equal(event.phase, 'management');
+      for (const key of ['request_id', 'source_id', 'library', 'registered_source_id', 'member_key'])
+        assert.ok(text(event[key]), 'Management attribution is invalid');
+      const attribution = Object.fromEntries(['source_id', 'library', 'registered_source_id', 'member_key', 'authorization_root']
+        .filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]]));
+      if (event.event === 'start') {
+        assert.ok(!operations.has(event.request_id), 'Management request has duplicate starts');
+        operations.set(event.request_id, { request_id: event.request_id, attribution,
+          start_context: context, start_ref: ref, results: [] });
+        return;
+      }
+      assert.equal(event.event, 'result', 'Unknown management event');
+      const operation = operations.get(event.request_id);
+      assert.ok(operation, 'Management result has no original start');
+      assert.deepEqual(attribution, operation.attribution, 'Management result changed its attribution');
+      assert.ok(['ready', 'already_ready', 'pending', 'blocked', 'failed', 'cancelled'].includes(event.status), 'Unknown management status');
+      assert.ok(object(event.effects) && ['none', 'management', 'unknown'].includes(event.effects.remote_writes)
+        && ['none', 'unknown'].includes(event.effects.projection), 'Invalid management effects');
+      if (['ready', 'already_ready', 'pending', 'blocked'].includes(event.status))
+        assert.equal(event.effects.projection, 'none', 'Management receipt projection is invalid');
+      if (['ready', 'already_ready'].includes(event.status))
+        assert.notEqual(event.effects.remote_writes, 'unknown', 'Ready management receipt has unknown effects');
+      for (const key of ['operation_id', 'manager_scope']) if (Object.hasOwn(event, key))
+        assert.ok(text(event[key]), 'Invalid management receipt identity');
+      operation.results.push({ status: event.status, effects: event.effects,
+        ...Object.fromEntries(['operation_id', 'manager_scope'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]])),
+        context, result_ref: ref });
+      assert.equal(operation.results.length, 1, 'Management request has duplicate results');
+    });
+    if (!verified) invalidRequests.add(row.data?.event?.request_id);
+  }
+  const own = [...operations.values()], results = own.flatMap(operation => operation.results);
+  const pending = own.filter(operation => !operation.results.length || operation.results.at(-1).status === 'pending').length;
+  const complete = errors.length === 0 && observerErrors.length === 0 && pending === 0;
+  const coverage = complete ? 'complete' : 'partial';
+  const reportedEffects = {
+    remote_writes: results.some(result => result.effects.remote_writes === 'management') ? 'management'
+      : !complete || results.some(result => result.effects.remote_writes === 'unknown') ? 'unknown' : 'none',
+    projection: !complete || results.some(result => result.effects.projection === 'unknown') ? 'unknown' : 'none',
+  };
+  const eventRefs = recorded.map(item => item.ref);
+  const refs = { start: starts[0]?.ref ?? null, end: ends[0]?.ref ?? null };
+  // One independently attributable write is enough to violate a no-write
+  // authorization, even while another request remains pending or unknown.
+  const verifiedWriteRequests = own.filter(operation => !invalidRequests.has(operation.request_id)
+    && operation.results.length === 1 && operation.results[0].effects.remote_writes === 'management')
+    .map(operation => ({ request_id: operation.request_id, refs: [operation.start_ref, operation.results[0].result_ref] }));
+  check(() => {
+    assert.ok(object(observation), 'Management summary is missing');
+    assert.equal(observation.version, 1); assert.equal(observation.channel, channel);
+    assert.deepEqual(observation.operations, own, 'Management summary differs from original event lifecycles');
+    assert.deepEqual(observation.event_refs, eventRefs, 'Management summary omits or changes original events');
+    assert.deepEqual(observation.refs, refs, 'Management observer references differ');
+    assert.equal(observation.coverage, coverage, 'Management coverage differs from original events');
+    assert.deepEqual(observation.reported_effects, reportedEffects, 'Management effects differ from original results');
+    assert.deepEqual(observation.http, { status: 'unknown', value: null }, 'Management HTTP is not independently observed');
+    const end = ends[0]?.row.data;
+    assert.ok(end, 'Management observation has no terminal record');
+    assert.equal(end.operations, own.length); assert.equal(end.events, recorded.length);
+    assert.equal(end.pending, pending); assert.equal(end.errors, observerErrors.length);
+    assert.equal(end.coverage, coverage); assert.deepEqual(end.reported_effects, reportedEffects);
+  });
+  return { version: 1, channel, status: errors.length || observerErrors.length ? 'partial' : 'observed',
+    coverage: errors.length ? 'partial' : coverage, operations: own, event_refs: eventRefs,
+    reported_effects: reportedEffects, http: { status: 'unknown', value: null }, refs,
+    verified_write_requests: verifiedWriteRequests, error_refs: observerErrors.map(item => item.ref), errors, scope };
+}
 
 function localPath(root, name) {
   assert.ok(typeof name === 'string' && name && !isAbsolute(name));
@@ -291,6 +394,12 @@ const notionMetadataProducers = [{
   // b9de8bf0 changes only public refresh guidance, not metadata execution.
   'src/index.ts': '6b08741c97d84ffe34741ce6cebe16c99c6e27834e2d27d2dea4e9e7f39770d2',
   'src/host-skills.ts': 'd359e2919bc6a259eba2201c808683b04107bdeca249663b304560eaf816a36d',
+}, {
+  // Accepted 05cfe498: the complete notion_list registration/execute (10414
+  // bytes, b7d6b573...) and index.getRecords (2090 bytes, c72dfbaf...) match
+  // 7f87b924 byte-for-byte. Only this complete producer tuple is reviewed.
+  'src/index.ts': 'e3985ea1fc6fe19d4fd7b22e4c62931358aad8ed57bb2f132ce7923fe4a7d592',
+  'src/host-skills.ts': '6616ebda411e053642488f6f589abbbf7dd1b368d8f5915db38efc9914498cab',
 }];
 export function verifiedNotionListRuntime({ candidate, expected, admission, files, build }) {
   try {
@@ -615,13 +724,35 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     Boolean(binding.materialization_proof && run.pi_launch?.mode === 'broker');
   const sourceContract = episode?.notion?.source_contract ?? binding.source_contract ?? RETAINED_SOURCE_CONTRACT;
   const currentSource = sourceContract === CURRENT_SOURCE_CONTRACT;
-  const collectorVersion = currentSource ? CURRENT_COLLECTOR_VERSION : COLLECTOR_VERSION;
+  const management = collectNotionManagement(episode?.notion?.management, events, eventArtifact);
+  const collectorVersion = currentSource || management.status !== 'unobserved' ? CURRENT_COLLECTOR_VERSION : COLLECTOR_VERSION;
   let sourceViews = currentSource ? null : retainedSourceViews;
+  if (management.status === 'partial') problems.push('notion_management_evidence_incomplete');
   const notion = { status: 'unavailable', source_contract: sourceContract,
     operations: [], source_bodies: [], owned_http: { status: 'unknown', value: null },
     coverage: episode?.notion?.coverage ?? null, descendant_transport: 'unobserved',
     scope: 'Owned SDK and directly observed bundled CLI only; SDK reads do not prove delivery to the agent.',
-    errors: [], refs: [] };
+    management, errors: [], refs: uniqueRefs([...management.event_refs, ...management.error_refs, ...Object.values(management.refs)]) };
+  let managementAuthorization = null;
+  if (management.status !== 'unobserved' && binding.public_case.authorization !== undefined) {
+    try {
+      const authorization = binding.public_case.authorization, authorizationSha256 = fingerprint(authorization);
+      assert.equal(authorizationSha256, binding.public_case.authorization_sha256, 'Public case authorization bytes changed');
+      assert.equal(authorizationSha256, caseInfo.authorization_sha256, 'Management authorization differs from the frozen case');
+      if (authorization.remote_write === false) {
+        const status = management.verified_write_requests.length ? 'fail'
+          : management.coverage === 'complete' && management.reported_effects.remote_writes === 'none' ? 'pass' : 'unknown';
+        managementAuthorization = { status, authorization, authorization_sha256: authorizationSha256,
+          reason: status === 'fail' ? 'Management reports remote writes forbidden by this frozen case.'
+            : status === 'unknown' ? 'Management effects do not establish this frozen remote-write authorization.'
+              : 'Complete management diagnostics report no remote writes in their observed scope.',
+          scope: 'Source management only; other tool effects and unobserved processes are outside this derived contract.' };
+        notion.management_authorization = managementAuthorization;
+      }
+    } catch (error) {
+      notion.errors.push(error.message); problems.push('source_management_authorization_unverified');
+    }
+  }
   if (currentSource) {
     try {
       assert.ok(!binding.materialization_proof || binding.source_contract === CURRENT_SOURCE_CONTRACT, 'Current runtime requires refreshed current material');
@@ -1190,7 +1321,8 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
   const duration = Number.isFinite(episode?.timing?.duration_ms) && episode.timing.duration_ms >= 0
     ? known(episode.timing.duration_ms, [ref(resultArtifact, '/timing/duration_ms')], 'observed') : unknown('No complete runtime elapsed-time observation', baseRefs);
   let successTime = unknown('Verified business completion boundary is unavailable', baseRefs);
-  if (grade.verified_success && validity === 'valid' && status === 'completed' && turns.length) {
+  if (grade.verified_success && (!managementAuthorization || managementAuthorization.status === 'pass')
+    && validity === 'valid' && status === 'completed' && turns.length) {
     const last = turns.at(-1), ended = resolveRef(last.end_ref), begin = episode.timing?.started_monotonic_ns;
     if (ended?.value?.type === 'user_turn_end' && ended.value.data?.settled === true && ended.value.data?.is_idle === true &&
         /^\d+$/.test(begin ?? '') && /^\d+$/.test(ended.value.monotonic_ns ?? '') && BigInt(ended.value.monotonic_ns) >= BigInt(begin)) {
@@ -1203,6 +1335,14 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     refs: uniqueRefs([ref(gradeArtifact, '/contracts/' + index), ref(readbackArtifact, '/evidence/coverage'),
       ...contract.evidence_ids.flatMap(id => evidenceRefs.get(id) ?? [])]),
     precision: 'derived', formula: 'corpus/gradeEpisode/v1', oracle_sha256: oracleIdentity.sha256 }));
+  if (managementAuthorization) normalizedContracts.push({
+    id: 'source-management-authorization', kind: 'source-management-authorization', critical: true,
+    status: managementAuthorization.status, reason: managementAuthorization.reason,
+    refs: uniqueRefs([ref(protocolArtifact, '/corpus/cases/' + protocol.corpus.cases.indexOf(caseInfo) + '/authorization_sha256'),
+      ref(readbackArtifact, '/notion/management_authorization'), ...management.event_refs, ...management.error_refs, ...Object.values(management.refs)]),
+    precision: 'derived', formula: 'frozen-case-remote-write-authorization/management-diagnostics-v1',
+    authorization_sha256: managementAuthorization.authorization_sha256,
+  });
   const interventions = [], interventionKinds = new Set(['human_rescue', 'evaluation_rescue', 'task_clarification', 'product_recovery']);
   let interventionCoverage = episode?.coverage?.interventions ?? 'unavailable';
   for (const [index, item] of (episode?.interventions ?? []).entries()) {

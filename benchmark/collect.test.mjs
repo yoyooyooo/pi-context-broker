@@ -4,16 +4,19 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import diagnostics from 'node:diagnostics_channel';
 import { canonicalJson, fingerprint } from './protocol.mjs';
-import { CURRENT_COLLECTOR_VERSION, collectEpisode, collectRawUsage, collectProviderApplicationCompletion, deliveredSourceBodies, deriveRedactedProviderBinding } from './collect.mjs';
+import { CURRENT_COLLECTOR_VERSION, collectEpisode, collectNotionManagement, collectRawUsage, collectProviderApplicationCompletion, deliveredSourceBodies, deriveRedactedProviderBinding, verifiedNotionListRuntime } from './collect.mjs';
 import { exampleProtocol } from './analysis/fixtures.mjs';
 import { assertCompletedStandingEvidence } from './standing-campaign.mjs';
 import { readSubjectTurnControl } from './execute.mjs';
 import { loadCurrentSourceViews } from './current-source-views.mjs';
+import { RETAINED_SOURCE_CONTRACT } from './retained-source-views.mjs';
+import { observeEpisodeNotion } from './runtime/episode-notion.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture({ outcome='pass', missingUsage=false, tools=[], source=false, opaque=false, capture=false, budgetStopped=false, adapter=true,
-  routing, reportedModels=[], api='openai-completions', providerError=false, sourceFrom, answer=null }={}) {
+  routing, reportedModels=[], api='openai-completions', providerError=false, sourceFrom, answer=null, managementEvents, remoteWrite }={}) {
   const root=await mkdtemp(join(tmpdir(),'benchmark-collect-unit-')),runRoot=join(root,'runs','unit-run'),workspace=join(runRoot,'workspace');
   await mkdir(join(workspace,'output'),{recursive:true});
   const save=async(path,value)=>{await mkdir(join(path,'..'),{recursive:true});const text=typeof value==='string'?value:canonicalJson(value)+'\n';await writeFile(path,text);return {path,sha256:sha(text),bytes:Buffer.byteLength(text)};};
@@ -30,6 +33,8 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
   const oracleFile=await save(join(root,'private','oracle.json'),oracle);
   const proof=await save(join(root,'private','adapter.json'),{scope:'synthetic-unit-only',status:'passed',api});
   const p=exampleProtocol({cases:[{id:'c1',family:'unit',material_id:'material',cluster_id:'cluster',split:'development',contract_sha256:fingerprint(oracle)}]});
+  const authorization=remoteWrite===undefined?null:{workspace_read:['input/**'],workspace_write:[],remote_write:remoteWrite};
+  if(authorization)p.corpus.cases[0].authorization_sha256=fingerprint(authorization);
   p.corpus.content_sha256='a'.repeat(64);p.corpus.capabilities=[{id:'workspace-files',scope:'common',environment_ids:p.conditions.map(c=>c.environment_id)}];
   const model={id:'model',provider:'unit-provider',route:'unit-route',api,parameters:{},...(routing?{routing}:{}),
     adapter:{id:'unit-adapter',version:'1',verification:'verified',evidence_sha256:proof.sha256}};
@@ -38,7 +43,8 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
   const condition=p.conditions[0],slot={slot_id:'unit-slot',pair_id:'c1-r0',case_id:'c1',condition_id:condition.id,repeat:0,seed:0};
   const binding={id:'c1',protocol_case:p.corpus.cases[0],oracle_path:oracleFile.path,oracle_sha256:oracleFile.sha256,
     skills_root:join(root,'materials'),skill_inventory:[{...material,skill_id:'unit-skill',resource_path:'SKILL.md'}],
-    public_case:{id:'c1',title:'Synthetic collector unit fixture',completion:answer?{kind:'final-answer',paths:[]}:{paths:['output/result.json']},turns:[{id:'turn-1',prompt:'Unit task'}]},events:[],clarification:[]};
+    public_case:{id:'c1',title:'Synthetic collector unit fixture',...(authorization?{authorization,authorization_sha256:fingerprint(authorization)}:{}),
+      completion:answer?{kind:'final-answer',paths:[]}:{paths:['output/result.json']},turns:[{id:'turn-1',prompt:'Unit task'}]},events:[],clarification:[]};
   const run={run_id:'unit-run',root:runRoot,pi_launch:{mode:'native',native_corpus:{root:join(runRoot,'skills','native')}}};
   const shared={run_id:'unit-run',build_id:'unit-build',root:runRoot,status:'passed',exit_code:0,signal:null,timed_out:false,spawned:true,
     runtime_check:{status:'unchanged'},frozen_artifacts:'passed'};
@@ -62,6 +68,23 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
   if(!capture&&!missingUsage)usageLine=record('provider_stream_event',{request_id:'request-1',attempt_id:'attempt-1',provider:'unit-provider',api,model:'unit-route',
     event:api==='openai-responses'?{type:'response.completed',response:{usage:{input_tokens:100,output_tokens:20,total_tokens:120,input_tokens_details:{cached_tokens:30}}}}
       :{usage:{prompt_tokens:100,completion_tokens:20,total_tokens:120,prompt_tokens_details:{cached_tokens:30}}}},'request-1');
+  let notion=null;
+  if(managementEvents!==undefined){
+    await mkdir(join(runRoot,'subject-runtime'));
+    const cli=await save(join(runRoot,'observer-cli.mjs'),'// synthetic observer fixture\n');
+    const prior=process.env.PAIRED_CLI_ENTRY;process.env.PAIRED_CLI_ENTRY=cli.path;
+    try{
+      const observer=observeEpisodeNotion({config:{runRoot,controlDir:join(runRoot,'notion-control'),correlation:{episode_id:'unit-run'}},
+        recorder:{scrub:structuredClone,record:(type,data)=>({artifact_id:'events',line:record(type,data)}),
+          addArtifact:async(id,path,kind)=>{const bytes=await readFile(path);const artifact={id,path,sha256:sha(bytes),bytes:bytes.length,kind};rawArtifacts.push(artifact);return artifact;}},
+        context:()=>({stage:'user_task',turn_id:'turn-1',model_request_id:null,active_tool_call_ids:[]})});
+      for(const event of managementEvents)diagnostics.channel('context-broker.notion-materialization').publish(event);
+      notion=await observer.finish();
+      // Empty SDK observations isolate this collector contract; this fixture
+      // does not claim current product source delivery or management execution.
+      notion.source_contract=RETAINED_SOURCE_CONTRACT;
+    }finally{if(prior===undefined)delete process.env.PAIRED_CLI_ENTRY;else process.env.PAIRED_CLI_ENTRY=prior;}
+  }
   if(source) {
     const copied=join(run.pi_launch.native_corpus.root,'unit-skill','SKILL.md');await save(copied,body);
     tools=[...tools,{id:'read-skill',name:'read',args:{path:copied,...(sourceFrom===undefined?{}:{from:sourceFrom})},
@@ -75,6 +98,8 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
   const endLine=record('user_turn_end',endData);
   if(answer?.duplicateEnd)record('user_turn_end',endData);
   const events=await add('events',join(runRoot,'events.jsonl'),rows.map(JSON.stringify).join('\n')+'\n','jsonl');
+  const bindRefs=value=>Array.isArray(value)?value.map(bindRefs):value&&typeof value==='object'
+    ?Object.fromEntries(Object.entries(value.artifact_id?{...value,sha256:rawArtifacts.find(item=>item.id===value.artifact_id).sha256}:value).map(([key,item])=>[key,bindRefs(item)])):value;
   const eRef=line=>({artifact_id:'events',sha256:events.sha256,line});
   const snapshot=await add('workspace-final',join(runRoot,'workspace-final.json'),{files:outputFile?[{path:'output/result.json',sha256:outputFile.sha256}]:[]});
   const rRef=(a,pointer='')=>({artifact_id:a.id,sha256:a.sha256,pointer});
@@ -87,7 +112,7 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
     requests:capture?[{id:'capture',attempts:[]}]:[{id:'request-1',payload_sha256:payloadSha,payload_ref:rRef(payload),
       attempts:[{id:'attempt-1',sent:true,transport_id:1,start_ref:eRef(usageLine??endLine)}],
       ...(usageLine?{usage_ref:{...eRef(usageLine),pointer:'/data/event/usage'},usage_attempt_id:'attempt-1'}:{})}],
-    artifacts:rawArtifacts};
+    ...(notion?{notion:bindRefs(notion)}:{}),artifacts:rawArtifacts};
   const resultFile=await save(join(runRoot,'episode-result.json'),episode);
   return {root,runRoot,workspace,binding,protocol:p,slot,condition,model:{...model,...(adapter?{adapter_evidence_path:proof.path}:{})},
     raw:{root:runRoot,run_id:'unit-run',shared,episode,result_path:resultFile.path},
@@ -319,6 +344,164 @@ test('a required Notion source cannot silently substitute a missing observer wit
   assert.equal(result.validity,'invalid');assert.equal(result.readback.notion.owned_http.value,null);
   assert.ok(result.bundle.episode.admission.reasons.includes('core_notion_evidence_missing'));
 });
+
+function managementEvents(status='ready', remoteWrites='management', projection='none'){
+  const common={version:1,request_id:'accepted-input:materialization',source_id:'notion',
+    library:'4215636c-236e-81e8-8168-ee2ac696f73a',registered_source_id:'registered-source',member_key:'unit-skill',phase:'management'};
+  return [{...common,event:'start'},{...common,event:'result',status,
+    effects:{remote_writes:remoteWrites,projection},operation_id:'manager-operation',manager_scope:'manager-scope'}];
+}
+const managementContract=result=>result.bundle.episode.contracts.find(item=>item.id==='source-management-authorization');
+
+test('management effects retain valid observations while the frozen case authorization controls the derived result',async t=>{
+  for(const scenario of [
+    {name:'known write',events:managementEvents(),effect:'management',contract:'fail',outcome:'fail'},
+    {name:'cancelled effects unknown',events:managementEvents('cancelled','unknown','unknown'),effect:'unknown',contract:'unknown',outcome:'unknown'},
+    {name:'failed without writes',events:managementEvents('failed','none'),effect:'none',contract:'pass',outcome:'pass'},
+    {name:'already ready without writes',events:managementEvents('already_ready','none'),effect:'none',contract:'pass',outcome:'pass'},
+    {name:'observed zero management',events:[],effect:'none',contract:'pass',outcome:'pass'},
+    {name:'pending receipt',events:managementEvents('pending','unknown'),effect:'unknown',contract:'unknown',outcome:'unknown',coverage:'partial'},
+    {name:'start still pending',events:managementEvents().slice(0,1),effect:'unknown',contract:'unknown',outcome:'unknown',coverage:'partial'},
+    {name:'verified write plus pending receipt',events:[...managementEvents(),...managementEvents('pending','unknown')
+      .map(event=>({...event,request_id:'second-request',member_key:'second-skill'}))],
+      effect:'management',contract:'fail',outcome:'fail',coverage:'partial'},
+    {name:'verified write plus missing result',events:[...managementEvents(),...managementEvents().slice(0,1)
+      .map(event=>({...event,request_id:'second-request',member_key:'second-skill'}))],
+      effect:'management',contract:'fail',outcome:'fail',coverage:'partial'},
+  ])await t.test(scenario.name,async()=>{
+    const f=await fixture({managementEvents:scenario.events,remoteWrite:false,routing,reportedModels:['grok-4.7']}),result=await collect(f);
+    assert.equal(result.validity,'valid');assert.equal(result.stop_batch,false);
+    assert.equal(result.collector_version,CURRENT_COLLECTOR_VERSION);
+    assert.equal(result.grade.business_outcome,'pass');assert.equal(result.grade.verified_success,true,'The private oracle remains unchanged');
+    assert.equal(result.outcome,scenario.outcome);assert.equal(result.verified_success,scenario.outcome==='pass');
+    const management=result.readback.notion.management;
+    assert.equal(management.status,'observed');assert.equal(management.coverage,scenario.coverage??'complete');
+    assert.equal(management.reported_effects.remote_writes,scenario.effect);
+    if(scenario.contract==='fail')assert.equal(management.verified_write_requests.length,1);
+    assert.deepEqual(management.http,{status:'unknown',value:null});
+    assert.equal(result.readback.notion.owned_http.value,0,'The SDK subtotal is independent of manager HTTP');
+    const contract=managementContract(result);assert.equal(contract.status,scenario.contract);
+    assert.equal(contract.authorization_sha256,f.binding.public_case.authorization_sha256);
+    assert.ok(contract.refs.some(item=>item.pointer?.endsWith('/authorization_sha256')));
+    assert.ok(contract.refs.some(item=>item.pointer==='/notion/management_authorization'));
+    assert.ok(contract.refs.some(item=>item.artifact_id==='events'));
+    assert.equal(result.bundle.episode.timing.time_to_success_ms.status,scenario.outcome==='pass'?'known':'unknown');
+    const {plan,event}=standingEvidenceInput(f,result);
+    await assertCompletedStandingEvidence(plan,event);
+  });
+});
+
+test('authorized remote writes and historical unobserved management do not acquire a new prohibition or zero-write claim',async()=>{
+  const allowed=await collect(await fixture({managementEvents:managementEvents(),remoteWrite:true}));
+  assert.equal(allowed.validity,'valid');assert.equal(allowed.outcome,'pass');assert.equal(managementContract(allowed),undefined);
+  assert.equal(allowed.readback.notion.management.reported_effects.remote_writes,'management');
+  const historical=await collect(await fixture({remoteWrite:false}));
+  assert.equal(historical.validity,'valid');assert.equal(historical.outcome,'pass');assert.equal(managementContract(historical),undefined);
+  assert.equal(historical.readback.notion.management.status,'unobserved');
+  assert.equal(historical.readback.notion.management.operations,null);
+  assert.equal(historical.readback.notion.management.reported_effects.remote_writes,'unknown');
+  assert.equal(historical.readback.notion.management.http.value,null);
+});
+
+test('management collection rejects summary changes and incomplete raw evidence without erasing retained effects',async t=>{
+  for(const [name,mutate] of [
+    ['hidden operations',value=>{value.operations=[];value.event_refs=[];}],
+    ['changed effects',value=>{value.reported_effects.remote_writes='none';}],
+    ['invented HTTP zero',value=>{value.http={status:'known',value:0};}],
+    ['wrong original reference',value=>{value.operations[0].start_ref.line++;}],
+    ['missing summary',(_value,episode)=>{delete episode.notion.management;}],
+  ])await t.test(name,async()=>{
+    const f=await fixture({managementEvents:managementEvents(),remoteWrite:false});
+    mutate(f.raw.episode.notion.management,f.raw.episode);await f.save(f.raw.result_path,f.raw.episode);
+    const result=await collect(f);
+    assert.equal(result.validity,'invalid');assert.equal(result.verified_success,false);
+    assert.ok(result.bundle.episode.admission.reasons.includes('notion_management_evidence_incomplete'));
+    assert.equal(result.readback.notion.management.reported_effects.remote_writes,'management');
+  });
+  for(const [name,events] of [
+    ['orphan result',managementEvents().slice(1)],
+    ['duplicate result',[...managementEvents(),managementEvents()[1]]],
+    ['changed attribution',[managementEvents()[0],{...managementEvents()[1],library:'different-library'}]],
+    ['invalid ready effects',managementEvents('ready','unknown')],
+  ])await t.test(name,async()=>{
+    const result=await collect(await fixture({managementEvents:events,remoteWrite:false}));
+    assert.equal(result.validity,'invalid');assert.equal(result.verified_success,false);
+    assert.ok(result.bundle.episode.admission.reasons.includes('notion_management_evidence_incomplete'));
+    assert.equal(result.readback.notion.management.event_refs.length,events.length);
+  });
+});
+
+test('management authorization requires the original public bytes and protocol hash',async()=>{
+  const f=await fixture({managementEvents:managementEvents(),remoteWrite:false});
+  f.binding.public_case.authorization.remote_write=true;
+  const result=await collect(f);
+  assert.equal(result.validity,'invalid');
+  assert.ok(result.bundle.episode.admission.reasons.includes('source_management_authorization_unverified'));
+  assert.equal(result.readback.notion.management.reported_effects.remote_writes,'management');
+});
+
+test('management replay binds a late first result to its original start context',async()=>{
+  const f=await fixture({managementEvents:managementEvents(),remoteWrite:false});
+  const artifact=f.raw.episode.artifacts.find(item=>item.id==='events');
+  const events=(await readFile(artifact.path,'utf8')).trimEnd().split('\n').map(JSON.parse);
+  const observation=structuredClone(f.raw.episode.notion.management);
+  const operation=observation.operations[0],late={stage:'cleanup',turn_id:null,model_request_id:null,active_tool_call_ids:[]};
+  events[operation.results[0].result_ref.line-1].data.context=late;operation.results[0].context=late;
+  const result=collectNotionManagement(observation,events,artifact);
+  assert.equal(result.status,'observed');assert.equal(result.coverage,'complete');
+  assert.equal(result.operations[0].start_context.turn_id,'turn-1');
+  assert.deepEqual(result.operations[0].results[0].context,late);
+});
+
+test('management writes outside a verified observation boundary cannot establish an authorization failure',async()=>{
+  const f=await fixture({managementEvents:managementEvents(),remoteWrite:false});
+  const artifact=f.raw.episode.artifacts.find(item=>item.id==='events');
+  const events=(await readFile(artifact.path,'utf8')).trimEnd().split('\n').map(JSON.parse);
+  const observation=f.raw.episode.notion.management;
+  events[observation.refs.start.line-1].data.channel='unrelated-observer';
+  const result=collectNotionManagement(observation,events,artifact);
+  assert.equal(result.status,'partial');assert.equal(result.coverage,'partial');
+  assert.deepEqual(result.verified_write_requests,[]);
+});
+
+test('accepted Source materialization metadata uses only its reviewed complete producer tuple',()=>{
+  const current={indexSha:'e3985ea1fc6fe19d4fd7b22e4c62931358aad8ed57bb2f132ce7923fe4a7d592',
+    hostSha:'6616ebda411e053642488f6f589abbbf7dd1b368d8f5915db38efc9914498cab'};
+  const previous={indexSha:'6b08741c97d84ffe34741ce6cebe16c99c6e27834e2d27d2dea4e9e7f39770d2',
+    hostSha:'d359e2919bc6a259eba2201c808683b04107bdeca249663b304560eaf816a36d'};
+  const fixture=(producer,mode)=>{
+    const suffix=mode==='packed'?'/installed/broker/node_modules/pi-context-broker':'/broker';
+    const view=root=>{
+      const path=root+suffix+'/src/index.ts';
+      return {entry_kind:'pi-sdk',mode:'broker',build:{path:root+'/build.json'},
+        launch_profile:{extensions:[{role:'broker',path,sha256:producer.indexSha}]},
+        extensions:[{resolved_path:path,tools:['notion_list'],entry:{path,realpath:path,sha256:producer.indexSha}}],
+        tools:{all:[{name:'notion_list',exposure:'direct',sourceInfo:{path,source:'cli'}}]}};
+    };
+    const candidate={snapshot:view('/build'),projection:view('$BUILD')};
+    const build={root:'/build',packages:{broker:{files:[{path:'src/index.ts',sha256:producer.indexSha}]}},
+      candidate:mode==='packed'?{mode,root:'/build/installed',packages:{broker:{name:'pi-context-broker',
+        root:'/build'+suffix,entry:'/build'+suffix+'/src/index.ts',
+        closure:{root:'/build'+suffix,files:[{path:'src/index.ts',sha256:producer.indexSha}]}}}}:{mode}};
+    return {build,candidate,expected:{projection:structuredClone(candidate.projection)},admission:{differences:[]},
+      files:[{name:'src/index.ts',sha256:producer.indexSha},{name:'src/host-skills.ts',sha256:producer.hostSha}]};
+  };
+  for(const mode of ['directory','packed']){
+    assert.equal(verifiedNotionListRuntime(fixture(current,mode)),true);
+    for(const producer of [{...current,hostSha:previous.hostSha},{...current,indexSha:previous.indexSha},
+      {...current,hostSha:sha('changed host')},{...current,indexSha:sha('changed index')}])
+      assert.equal(verifiedNotionListRuntime(fixture(producer,mode)),false);
+    for(const mutate of [
+      f=>{f.candidate.snapshot.tools.all[0].sourceInfo.path='/other/index.ts';},
+      f=>{f.candidate.snapshot.extensions.push(f.candidate.snapshot.extensions[0]);},
+      f=>{f.build.packages.broker.files[0].sha256=sha('changed package');},
+      f=>{f.admission.differences.push('drift');},
+    ]){
+      const changed=fixture(current,mode);mutate(changed);assert.equal(verifiedNotionListRuntime(changed),false);
+    }
+  }
+});
+
 test('analysis identity contains retained actual implementation bytes and rejects missing delivery semantics',async()=>{
   const result=await collect(await fixture());
   const identity=result.bundle.episode.identity;

@@ -11,6 +11,7 @@ import { graphSourceAccounting, graphSourceViews } from '../../scripts/notion-sk
 
 const publish = (name, value) => diagnostics.channel(name).publish(value);
 const metricChannel = 'context-broker.notion-sdk', resultChannel = 'context-broker.notion-sdk-result';
+const managementChannel = 'context-broker.notion-materialization';
 const capturedCatalogSequences = JSON.parse(fs.readFileSync(new URL('./fixtures/sdk3-catalog-directory-sequence.json', import.meta.url), 'utf8')).cases;
 const catalog = () => ({ scope: 'scope-actual', fetched_at: '2026-11-22T12:00:00Z',
   records: [{ id: 'stable-skill', name: 'Refund', description: 'Resolve a refund', body_sha256: 'a'.repeat(64) }], databases: [], count: 1,
@@ -84,7 +85,16 @@ async function fixture() {
     for (const [name, event] of sequence(rows)) publish(name, event);
     return id;
   };
-  return { runRoot, controlDir, recorder, observer, operation, stage(next) { stage = next; },
+  const management = (status, effects, { sequence = rows => rows, requestId = randomUUID() + ':' + 'a'.repeat(64),
+    memberKey = '.', managerScope = 'fixture-manager' } = {}) => {
+    const common = { version: 1, request_id: requestId, source_id: 'notion',
+      library: '4215636c-236e-81e8-8168-ee2ac696f73a', registered_source_id: 'registered-source', member_key: memberKey, phase: 'management' };
+    const rows = [{ ...common, event: 'start' }, { ...common, event: 'result', status, effects,
+      ...(status === 'ready' || status === 'already_ready' ? { operation_id: 'operation-fixture', manager_scope: managerScope } : {}) }];
+    for (const event of sequence(rows)) publish(managementChannel, event);
+    return requestId;
+  };
+  return { runRoot, controlDir, recorder, observer, operation, management, stage(next) { stage = next; },
     async close() {
       try { return await observer.finish(); }
       finally {
@@ -348,7 +358,7 @@ test('a legal resolve sequence retains all five SDK operations and zero-request 
   assert.equal(source.at(-1).errors, 0); assert.equal(source.at(-1).complete, true);
   const accounting = graphSourceAccounting(ledger, receipts, { sourceMode: 'sdk', requireConsumption: true });
   assert.deepEqual(accounting.sdk_calls, { 'library-selection': 0, library: 0, candidates: 0,
-    list: 1, files: 0, consume: 1, read: 1, 'read-resources': 1, resolve: 1, 'content-search': 0 });
+    list: 1, 'source-members': 0, files: 0, consume: 1, read: 1, 'read-resources': 1, resolve: 1, 'content-search': 0 });
   assert.equal(accounting.actual_http_attempts, 0);
 });
 
@@ -425,5 +435,138 @@ test('credential boundary scrubs diagnostic strings and graph output artifacts',
     const value = fs.readFileSync(artifact.path, 'utf8');
     assert.ok(!value.includes('test-token-not-a-real-credential'));
     assert.ok(!value.includes('another-private-value'));
+  }
+});
+
+
+test('Source member metadata keeps the complete readonly SDK lifecycle without becoming a catalog or body', async () => {
+  const f = await fixture();
+  const value = { version: 1, library_id: '4215636c-236e-81e8-8168-ee2ac696f73a', scope: 'a'.repeat(64),
+    candidates: [], failures: [], coverage: 'complete', effects: { remote_writes: 'none', projection: 'none' } };
+  const id = f.operation('source-members', value);
+  assert.deepEqual(f.observer.candidate().projection, { observed: false, catalogs: [] });
+  assert.deepEqual(f.observer.preparedEntries(), []);
+  const result = await f.close();
+  assert.equal(result.coverage.sdk, 'complete'); assert.equal(result.coverage.owned_http, 'complete');
+  const operation = result.operations.find(item => item.operation_id === id);
+  assert.equal(operation.operation, 'source-members'); assert.equal(operation.result_observed, true);
+  const receipt = JSON.parse(fs.readFileSync(f.recorder.artifacts.find(item => item.id === operation.receipt_ref.artifact_id).path, 'utf8'));
+  assert.deepEqual(receipt.value, value);
+  assert.equal(result.management.coverage, 'complete'); assert.deepEqual(result.management.operations, []);
+});
+
+test('zero management is bounded by the installed observer and never supplies an HTTP count', async () => {
+  const f = await fixture(), result = await f.close();
+  const events = fs.readFileSync(f.recorder.eventPath, 'utf8').trim().split('\n').map(JSON.parse);
+  const management = result.management;
+  assert.equal(management.coverage, 'complete'); assert.deepEqual(management.event_refs, []);
+  assert.deepEqual(management.reported_effects, { remote_writes: 'none', projection: 'none' });
+  assert.deepEqual(management.http, { status: 'unknown', value: null });
+  assert.equal(events[management.refs.start.line - 1].type, 'notion_materialization_observer_start');
+  assert.equal(events[management.refs.end.line - 1].type, 'notion_materialization_observer_end');
+  assert.equal(events[management.refs.end.line - 1].data.events, 0);
+});
+
+test('management writes remain separate from a subsequent readonly consume and unobserved manager HTTP', async () => {
+  const f = await fixture(); f.stage('user_task');
+  const requestId = f.management('ready', { remote_writes: 'management', projection: 'none' });
+  f.operation('consume', { effects: { version: 1, remote_writes: 'none', author_content: 'unchanged' } });
+  const result = await f.close();
+  assert.equal(result.coverage.sdk, 'complete'); assert.equal(result.coverage.owned_http, 'complete');
+  assert.equal(result.operations.length, 1); assert.equal(result.operations[0].operation, 'consume');
+  assert.equal(result.management.coverage, 'complete'); assert.equal(result.management.operations[0].request_id, requestId);
+  assert.equal(result.management.operations[0].results[0].status, 'ready');
+  assert.deepEqual(result.management.reported_effects, { remote_writes: 'management', projection: 'none' });
+  assert.deepEqual(result.management.http, { status: 'unknown', value: null });
+});
+
+test('manager pending, blocked, failure and cancellation retain their effects independently of SDK coverage', async t => {
+  for (const [status, remoteWrites, projection, complete] of [
+    ['already_ready', 'none', 'none', true], ['blocked', 'none', 'none', true],
+    ['failed', 'none', 'none', true], ['failed', 'unknown', 'unknown', true],
+    ['cancelled', 'unknown', 'unknown', true], ['pending', 'unknown', 'none', false],
+  ]) await t.test(status + ':' + remoteWrites, async () => {
+    const f = await fixture();
+    f.management(status, { remote_writes: remoteWrites, projection });
+    if (!complete) assert.equal(await f.observer.waitIdle(1), false);
+    const result = await f.close(), management = result.management;
+    assert.equal(result.coverage.sdk, 'complete'); assert.equal(result.coverage.owned_http, 'complete');
+    assert.equal(management.coverage, complete ? 'complete' : 'partial');
+    assert.equal(management.operations[0].results[0].status, status);
+    assert.deepEqual(management.operations[0].results[0].effects, { remote_writes: remoteWrites, projection });
+    assert.equal(management.reported_effects.remote_writes, remoteWrites);
+    assert.deepEqual(management.http, { status: 'unknown', value: null });
+  });
+});
+
+test('a returned pending receipt ends an unbounded idle wait without awaiting a second product result', { timeout: 1000 }, async t => {
+  const f = await fixture(); t.after(() => f.close());
+  f.management('pending', { remote_writes: 'unknown', projection: 'none' });
+  assert.equal(await f.observer.waitIdle(null), false);
+  const result = await f.close();
+  assert.equal(result.coverage.sdk, 'complete'); assert.equal(result.coverage.owned_http, 'complete');
+  assert.equal(result.management.coverage, 'partial');
+  assert.equal(result.management.operations[0].results.length, 1);
+  assert.equal(result.management.operations[0].results[0].status, 'pending');
+  assert.deepEqual(result.management.reported_effects, { remote_writes: 'unknown', projection: 'unknown' });
+});
+
+test('a missing manager result remains pending without falsely making the SDK layer incomplete', async () => {
+  const f = await fixture();
+  f.management('ready', { remote_writes: 'management', projection: 'none' }, { sequence: rows => rows.slice(0, 1) });
+  assert.equal(await f.observer.waitIdle(1), false);
+  assert.throws(() => f.observer.candidate(), /STARTUP_PENDING/);
+  const result = await f.close();
+  assert.equal(result.coverage.sdk, 'complete'); assert.equal(result.management.coverage, 'partial');
+  assert.equal(result.management.operations[0].results.length, 0);
+  assert.deepEqual(result.management.reported_effects, { remote_writes: 'unknown', projection: 'unknown' });
+});
+
+test('a late management result retains the original input attribution and the later observation context', async () => {
+  const f = await fixture(); f.stage('user_task'); let resultEvent;
+  const requestId = f.management('ready', { remote_writes: 'management', projection: 'none' }, {
+    sequence: rows => { resultEvent = rows[1]; return rows.slice(0, 1); },
+  });
+  f.stage('cleanup'); publish(managementChannel, resultEvent);
+  const result = await f.close(), operation = result.management.operations[0];
+  assert.equal(result.management.coverage, 'complete'); assert.equal(operation.request_id, requestId);
+  assert.equal(operation.start_context.turn_id, 'turn-1'); assert.equal(operation.start_context.stage, 'user_task');
+  assert.equal(operation.results[0].context.turn_id, null); assert.equal(operation.results[0].context.stage, 'cleanup');
+  assert.equal(operation.results[0].status, 'ready');
+});
+
+test('unpaired, changed or duplicate management diagnostics retain raw evidence and partial management coverage', async t => {
+  for (const [name, sequence] of [
+    ['orphan result', rows => rows.slice(1)],
+    ['changed owner', rows => [rows[0], { ...rows[1], library: 'ffffffff-ffff-4fff-bfff-ffffffffffff' }]],
+    ['duplicate start', rows => [rows[0], ...rows]],
+    ['duplicate result', rows => [...rows, rows[1]]],
+    ['ready unknown', rows => [rows[0], { ...rows[1], effects: { remote_writes: 'unknown', projection: 'none' } }]],
+  ]) await t.test(name, async () => {
+    const f = await fixture(); let count;
+    f.management('ready', { remote_writes: 'management', projection: 'none' }, { sequence: rows => { const chosen = sequence(rows); count = chosen.length; return chosen; } });
+    assert.equal(await f.observer.waitIdle(), false);
+    const result = await f.close();
+    assert.equal(result.coverage.sdk, 'complete'); assert.equal(result.management.coverage, 'partial');
+    assert.equal(result.management.event_refs.length, count);
+    const events = fs.readFileSync(f.recorder.eventPath, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(events.filter(event => event.type === 'notion_materialization_event').length, count);
+    assert.ok(events.some(event => event.type === 'notion_observer_error' && event.data.channel === managementChannel));
+  });
+});
+
+test('management attribution and receipts are scrubbed before both correlation and persistence', async () => {
+  const f = await fixture();
+  f.management('ready', { remote_writes: 'management', projection: 'none' }, {
+    memberKey: 'skills/test-token-not-a-real-credential', managerScope: 'test-token-not-a-real-credential',
+    sequence: rows => rows.map(row => ({ ...row, authorization: 'another-private-value' })),
+  });
+  const result = await f.close();
+  assert.equal(result.management.coverage, 'complete');
+  assert.ok(result.management.operations[0].attribution.member_key.includes('REDACTED_CREDENTIAL'));
+  assert.equal(result.management.operations[0].results[0].manager_scope, 'REDACTED_CREDENTIAL');
+  for (const artifact of f.recorder.artifacts) {
+    const value = fs.readFileSync(artifact.path, 'utf8');
+    assert.ok(!value.includes('test-token-not-a-real-credential')); assert.ok(!value.includes('another-private-value'));
   }
 });
