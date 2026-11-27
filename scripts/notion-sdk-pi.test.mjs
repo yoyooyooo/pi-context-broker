@@ -631,7 +631,7 @@ function coldBudgetEvidence() {
       reached_monotonic_ns: ns(start), released_monotonic_ns: ns(time), closed_monotonic_ns: ns(time + 2) });
     source.push({ method: 'GET', path, sequence: index + 1, started_monotonic_ns: ns(start),
       ended_monotonic_ns: ns(time + 1), closed_monotonic_ns: ns(time + 2), control: 'hold-before-headers',
-      phase: 'materialize', terminal: 'finished', status: 200, response_bytes_complete: true, semantic_write: false });
+      phase: 'materialize', terminal: 'finished', status: 200, response_bytes_complete: true });
     time += 3;
     if (index >= 2) event('context-broker.notion-sdk', { event: 'end', id: sdk_id, operation, status: index === 3 ? 'failed' : 'completed' });
     if (index === 3) event('context-broker.notion-sdk-result', { id: sdk_id, operation,
@@ -658,6 +658,10 @@ test('cold materialization evidence rejects prewarming, short or misattributed d
     proof => { proof.receipt.holds[4].released_monotonic_ns = proof.receipt.holds[4].reached_monotonic_ns; },
     proof => { proof.receipt.holds[4].sdk_id = 'missing'; },
     proof => { proof.source[4].terminal = 'aborted'; },
+    proof => { proof.source[0].semantic_write = true; },
+    proof => { proof.source[0].semantic_write = null; },
+    proof => { proof.source[0].semantic_write = 'false'; },
+    proof => { proof.source[0].method = 'POST'; },
     proof => { proof.events.find(row => row.value?.status === 'failed').value.error.code = 'ACCESS_DENIED'; },
     proof => { proof.events.find(row => row.kind === 'context-broker.notion-materialization' && row.event === 'start').observer_monotonic_ns = '59000000000'; },
     proof => { proof.events = proof.events.filter(row => row.id !== 'refreshed'); },
@@ -667,4 +671,12 @@ test('cold materialization evidence rejects prewarming, short or misattributed d
     const proof = structuredClone(original); change(proof);
     assert.throws(() => assertColdMaterializationBudget(proof));
   }
+});
+
+test('cold GET evidence accepts the fixture omitted marker and an explicit readonly marker', () => {
+  const original = coldBudgetEvidence();
+  assert.ok(original.source.every(row => !Object.hasOwn(row, 'semantic_write')));
+  assertColdMaterializationBudget(original);
+  for (const row of original.source) row.semantic_write = false;
+  assertColdMaterializationBudget(original);
 });
