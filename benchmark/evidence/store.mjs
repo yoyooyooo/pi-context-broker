@@ -4,7 +4,7 @@ import { resolve, relative, isAbsolute, join } from 'node:path';
 import { canonicalJson, fingerprint } from '../protocol.mjs';
 import { renderJourney, validateRef } from './normalize.mjs';
 import { assessReportedModel, providerReportedModel, validateRoutingPolicy } from '../reported-model.mjs';
-import { deriveRedactedProviderBinding } from '../provider-binding.mjs';
+import { deriveRedactedProviderBinding, isCredentialRedaction } from '../provider-binding.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const inside = (root, path) => { const rel = relative(root, path); return rel === '' || !rel.startsWith('..') && !isAbsolute(rel); };
@@ -98,12 +98,12 @@ function verifyReportedModelSources(episode, files, projection, reader) {
   };
   const bindingCache = new Map();
   function verifiedRedactedBinding(attempt, row) {
-    const key = canonicalJson([attempt.request_id, attempt.id]);
+    const key = canonicalJson([attempt.request_id, attempt.id, row.data.provider]);
     if (bindingCache.has(key)) return bindingCache.get(key);
     let verified = null;
     try {
       const binding = attempt.provider_binding;
-      if (binding?.status !== 'known' || binding.value !== identity.model_provider || binding.observed_provider !== '[REDACTED_CREDENTIAL]' ||
+      if (binding?.status !== 'known' || binding.value !== identity.model_provider || !isCredentialRedaction(binding.observed_provider) || binding.observed_provider !== row.data.provider ||
         binding.formula !== 'unique-observed-provider-configuration-key/v1' || !binding.refs?.length) return null;
       const locators = new Set(binding.refs.map(ref => canonicalJson(clean(ref))));
       const boundRef = ref => {
@@ -183,7 +183,7 @@ function verifyReportedModelSources(episode, files, projection, reader) {
       const original = providerReportedModel(raw.row.data.api, raw.row.data.event);
       if (original.field !== observation.field || canonicalJson(original.value) !== canonicalJson(observation.value))
         throw new Error('Reported model value or field differs from original server event');
-      const providerBound = raw.row.data.provider === identity.model_provider || raw.row.data.provider === '[REDACTED_CREDENTIAL]' &&
+      const providerBound = raw.row.data.provider === identity.model_provider || isCredentialRedaction(raw.row.data.provider) &&
         Boolean(verifiedRedactedBinding(attempt, raw.row));
       const bound = raw.row.data.api === identity.model_api && raw.row.data.model === identity.model_route && providerBound;
       if (observation.bound !== bound) throw new Error('Reported model event binding differs from raw request metadata');

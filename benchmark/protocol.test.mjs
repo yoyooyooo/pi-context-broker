@@ -254,6 +254,47 @@ test('model condition identity includes its reported-model contract', () => {
   assertValid(seal(value));
 });
 
+const mixedPolicy = () => ({ mode: 'mixed-route', route: 'group/flash', configuration_sha256: digest('mixed-route-closure'),
+  reported_model_ids: ['group/flash', 'deepseek-v4.1-flash', 'provider/gpt-6.1-terra'] });
+
+test('a declared mixed group is a separate opaque condition in an ordinary development plan', () => {
+  const value = frozenFixture(), model = value.models[0];
+  value.phase = 'development'; model.route = 'group/flash'; model.routing = mixedPolicy();
+  assertValid(seal(value));
+  for (const [change, code] of [
+    [m => { m.route = 'group/worker'; }, 'routing_mode_mismatch'],
+    [m => { m.route = 'auto/deepseek-v4.1-flash'; }, 'routing_mode_mismatch'],
+    [m => { m.backend.observability = 'reported'; m.backend.identity = 'deepseek-v4.1-flash'; }, 'mixed_backend_unverified'],
+    [m => { m.routing.reported_model_ids = ['group/worker']; }, 'routing_policy_invalid'],
+    [m => { m.routing.reported_model_ids.push('group/flash'); }, 'duplicate_identity'],
+  ]) { const changed = clone(value); change(changed.models[0]); assertCode(seal(changed), code); }
+});
+
+test('mixed routing schema rejects a missing closure, a fake fixed variant and unknown fields', () => {
+  for (const change of [
+    policy => { delete policy.configuration_sha256; },
+    policy => { policy.configuration_sha256 = 'bad'; },
+    policy => { policy.model_variant = 'deepseek-v4.1-flash'; },
+    policy => { policy.allow_any_model = true; },
+  ]) {
+    const value = frozenFixture(); value.phase = 'development';
+    value.models[0].route = 'group/flash'; value.models[0].routing = mixedPolicy();
+    change(value.models[0].routing);
+    assert.equal(validateProtocol(seal(value), { stage: 'execute' }).valid, false);
+  }
+});
+
+test('a mixed configuration change changes the condition and cannot silently reuse a frozen plan', () => {
+  const value = modelComparison();
+  value.models[1] = { ...clone(value.models[0]), id: value.models[1].id };
+  value.models.forEach(model => { model.route = 'group/flash'; model.routing = mixedPolicy(); });
+  assertCode(seal(value), 'model_condition_same');
+  value.models[1].routing.configuration_sha256 = digest('new-mixed-route-closure');
+  assertValid(seal(value));
+  value.models[1].routing.configuration_sha256 = digest('unregistered-mixed-route-closure');
+  assert.equal(validateProtocol(value, { stage: 'execute' }).valid, false);
+});
+
 test('optional analysis policy is frozen with verified bounds and ordered budget cutoffs', () => {
   const value = frozenFixture();
   assertValid(value);

@@ -14,6 +14,7 @@ import { captureRuntimeIdentity, compareRuntimeIdentity } from './paired-runtime
 import { closeoutEnvironment } from './paired-closeout.mjs';
 import { verifyArchiveInstallation, verifyBundledNotices } from './verify-package-closure.mjs';
 import { inventoryCopyBytes, preflightCapacity } from './paired-capacity.mjs';
+import { readResourceProfile } from './paired-resource-profile.mjs';
 
 const DEFAULTS = {
   cli: 'https://github.com/yoyooyooo/notion-skills-cli.git',
@@ -51,6 +52,7 @@ export const HELP = `Usage:
     [--skills ABSOLUTE_DIRECTORY] [--models ABSOLUTE_MODELS_JSON]
     [--pi-mode broker|native] [--native-skills ABSOLUTE_DIRECTORY]
     [--pi-extension ABSOLUTE_ENTRY ...]
+    [--resource-profile ABSOLUTE_JSON --resource-profile-sha256 SHA256]
     [--pass-env ENV_NAME ...] [--timeout-ms MILLISECONDS|none]
     [--stdin inherit|ignore] -- ARGUMENTS
 
@@ -123,7 +125,7 @@ export function parseArgs(args) {
     build: ['root', 'id', 'pass-env', 'install-mode', 'bun-cache-from', 'bun-cache-sha256', 'npm-cache-from', 'npm-cache-sha256', 'capacity-policy', 'capacity-estimate-bytes'], check: ['root', 'build'],
     closeout: ['root', 'manifest', 'receipt'],
     run: ['root', 'build', 'target', 'id', 'cwd', 'library', 'parent', 'skills', 'models', 'pass-env', 'timeout-ms', 'stdin',
-      'pi-mode', 'native-skills', 'pi-extension', 'command-source', 'capacity-policy', 'capacity-estimate-bytes'],
+      'pi-mode', 'native-skills', 'pi-extension', 'resource-profile', 'resource-profile-sha256', 'command-source', 'capacity-policy', 'capacity-estimate-bytes'],
   };
   assert.ok(allowed[command], 'Choose create, build, check, run, or closeout; see --help');
   const options = { command, args: [], 'pass-env': [], 'pi-extension': [] };
@@ -756,12 +758,39 @@ export function validatePiArguments(args) {
   }
 }
 
-async function piLaunchDefinition(options, root, buildRoot, pi, selectedBroker = join(buildRoot, 'broker/src/index.ts')) {
+async function piLaunchDefinition(options, root, buildRoot, pi, selectedBroker = join(buildRoot, 'broker/src/index.ts'), resourceInput = null) {
   const mode = options['pi-mode'] ?? 'broker';
   assert.ok(['broker', 'native'].includes(mode), '--pi-mode must be broker or native');
   assert.ok(mode !== 'native' || options['native-skills'], 'Native Pi requires --native-skills');
   assert.ok(mode !== 'native' || !options.skills, '--skills is for Broker discovery; use --native-skills in native mode');
   assert.ok(mode !== 'broker' || !options['native-skills'], '--native-skills requires --pi-mode native');
+  assert.equal(options['resource-profile'] !== undefined, options['resource-profile-sha256'] !== undefined, 'Supply the resource profile and its SHA256 together');
+  if (options['resource-profile'] !== undefined) {
+    assert.equal(mode, 'broker', 'The ordinary-derived resource profile requires Broker mode');
+    assert.ok(options.target === 'command' && options['command-source'] === 'none', 'The ordinary-derived resource profile belongs to the runtime-only Benchmark SDK subject');
+    assert.equal((options['pi-extension'] ?? []).length, 0, 'Declare ordinary-derived extensions only in the frozen profile');
+    const resource = resourceInput ?? await readResourceProfile({ path: options['resource-profile'], sha256: options['resource-profile-sha256'] }, { environmentRoot: options.root });
+    const extensions = [];
+    for (const item of resource.manifest.extension_order) extensions.push(item.role === 'selected-broker'
+      ? { ...await toolIdentity(selectedBroker), role: 'broker' }
+      : { ...await toolIdentity(item.path), role: 'common', identity_scope: 'declared-closure-files', closure_ref: item.closure_ref,
+        ...(item.package_ref ? { ordinary_package_ref: item.package_ref } : {}), ...(item.source_info ? { ordinary_source_info: item.source_info } : {}) });
+    assert.equal(new Set(extensions.map(item => item.path)).size, extensions.length, 'Resource profile repeats the selected Broker');
+    const nativePaths = resource.manifest.native_skills.map(item => item.path);
+    await writeFile(join(root, 'pi-agent/mcp.json'), resource.mcpBytes, { mode: 0o600, flag: 'wx' });
+    for (const file of resource.agentFiles) {
+      const destination = join(root, 'pi-agent', file.relative_path);
+      await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
+      await writeFile(destination, file.bytes, { mode: 0o600, flag: 'wx' });
+    }
+    return { version: 1, mode, entry: pi.path,
+      argv: ['--offline', '-ne', '-ns', '-nc', '--no-mcp', '--no-prompt-templates', '--no-approve',
+        ...extensions.flatMap(item => ['-e', item.path]), ...nativePaths.flatMap(path => ['--skill', path]), '--session-dir', join(root, 'sessions')],
+      argv_scope: 'private CLI wrapper; Benchmark SDK additionally loads the frozen context and MCP configuration explicitly',
+      settings: { packages: [], ...resource.manifest.settings }, extensions, native_skill_roots: [], native_skill_paths: nativePaths, native_corpus: null,
+      resource_profile: resource.ref, resource_profile_evidence: resource.evidence,
+      observation_scope: 'ordinary-derived frozen resources; actual SDK loading and finite tool restrictions require the Benchmark observer' };
+  }
   const nativeRoots = [];
   let nativeCorpus = null;
   if (options['native-skills']) {
@@ -834,7 +863,9 @@ export async function runEnvironment(options) {
   const stdin = options.stdin ?? 'ignore';
   assert.ok(['inherit', 'ignore'].includes(stdin), '--stdin must be inherit or ignore');
   const runId = validId(options.id ?? id('run')), root = join(options.root, 'runs', runId);
-  let knownCopyBytes = 0;
+  assert.equal(options['resource-profile'] !== undefined, options['resource-profile-sha256'] !== undefined, 'Supply the resource profile and its SHA256 together');
+  const resourceInput = options['resource-profile'] !== undefined ? await readResourceProfile({ path: options['resource-profile'], sha256: options['resource-profile-sha256'] }, { environmentRoot: options.root }) : null;
+  let knownCopyBytes = resourceInput ? resourceInput.mcpBytes.length + resourceInput.agentFiles.reduce((total, file) => total + file.bytes.length, 0) : 0;
   if (options.target === 'command' && commandSource === 'copy') {
     const build = await json(join(buildRoot, 'build.json'));
     knownCopyBytes += await inventoryCopyBytes(join(buildRoot, 'source'), build.source_tree);
@@ -864,7 +895,7 @@ export async function runEnvironment(options) {
   const sources = options.library ? [{ id: 'notion', type: 'notion', namespace: 'notion', library: options.library,
     cacheDir: join(root, 'cache/broker'), prefetch: false }] : [];
   const pi = environment.tools.pi;
-  const piLaunch = await piLaunchDefinition(options, root, buildRoot, pi, env.PAIRED_BROKER_ENTRY);
+  const piLaunch = await piLaunchDefinition(options, root, buildRoot, pi, env.PAIRED_BROKER_ENTRY, resourceInput);
   await save(env.CONTEXT_BROKER_CONFIG, { sources, skillRoots, extraSkillRoots: [], ruleRoots: [], discoveryCatalogs: [], extraDiscoveryCatalogs: [], requireAutoload: false });
   await save(join(root, 'pi-agent/settings.json'), piLaunch.settings);
   await save(join(root, 'pi-launch.json'), piLaunch);

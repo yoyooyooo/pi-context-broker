@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { candidateDifferences, normalizeCandidate } from './episode-evidence.mjs';
+import { candidateDifferences, normalizeCandidate, sha256 } from './episode-evidence.mjs';
 import { createEpisodeBudget, EpisodeStop, guardedFetch, providerUsage } from './episode-policy.mjs';
-import { brokerDiagnosticsProjection, catalogCandidateReferences, finishEpisodeRequest, initialContextProjection, requestContract, reserveEpisodeRequest } from './episode-runner.mjs';
+import { brokerDiagnosticsProjection, catalogCandidateReferences, preparedSkillReferences, finishEpisodeRequest, initialContextProjection, requestContract, reserveEpisodeRequest } from './episode-runner.mjs';
 
 const limits = { wallTimeMs: 60000, maxModelRequests: 3, maxToolCalls: 4, maxHttpAttempts: 3, maxInputTokens: 300000, maxOutputTokens: 16000, maxTotalTokens: 316000 };
 const usage = (input, output) => providerUsage('openai-completions', { usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output } });
@@ -310,4 +310,63 @@ test('same-name owner changes and changed catalog bodies remain contract differe
     const payload = catalogPayload(f.ref, api); change(payload);
     assert.ok(candidateDifferences(expected, requestContract(payload, api, 'task', {}, refs)).length);
   }
+});
+
+
+function preparedFixture(byte = 1, content = 'Owned body <&> with a complete source.') {
+  const f = candidateFixture(byte), selectedRef = 'sr:S' + Buffer.alloc(16, byte).toString('base64url');
+  const resourceRef = 'sr:R' + Buffer.alloc(16, byte).toString('base64url');
+  const snapshot = 's_' + 'b'.repeat(64), fixed = f.record.ref + '&snapshot=' + snapshot;
+  const selection = { kind: 'selected', identity: f.identity, snapshot_id: snapshot, version_id: 'version-one',
+    body_sha256: sha256(content), entrypoint: 'SKILL.md', ref: fixed };
+  const file = { path: 'references/note.md', ref: fixtureRoot + '/references/note.md&snapshot=' + snapshot, bytes: 4, sha256: sha256('note') };
+  const manifest = { complete: true, record: f.record, scope: f.identity.scope, snapshot_id: snapshot, version_id: selection.version_id,
+    entrypoint: 'SKILL.md', files: [{ path: 'SKILL.md', bytes: Buffer.byteLength(content), sha256: selection.body_sha256 },
+      { path: file.path, bytes: file.bytes, sha256: file.sha256 }] };
+  const entry = { evidence: 'consume.entries', manifest, value: { record: f.record, scope: f.identity.scope,
+    snapshot_id: snapshot, version_id: selection.version_id, path: 'SKILL.md', ref: fixed, content, sha256: selection.body_sha256, has_more: false } };
+  f.shortRefs.bindings.set(selectedRef, selection);
+  f.shortRefs.bindings.set(resourceRef, { kind: 'resource', owner: selectedRef, ...file });
+  const escaped = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  const wrapper = '<context-broker-record kind="skill" name="same-name" ref="' + selectedRef + '">\n'
+    + '<resources>' + escaped(JSON.stringify([{ path: file.path, ref: resourceRef }])) + '</resources>\n<body>\n'
+    + escaped(content) + '\n</body>\n</context-broker-record>';
+  return { ...f, selectedRef, resourceRef, entries: [entry], wrapper,
+    formatReference: (identity, path, fixedSnapshot) => fixedSnapshot === undefined ? fixtureReference(identity, path)
+      : identity === fixtureRoot && path === file.path && fixedSnapshot === snapshot ? file.ref : undefined };
+
+}
+
+test('actual prompt preloads compare proven selected owners, complete bodies and resources without changing payload bytes', () => {
+  const first = preparedFixture(1), second = preparedFixture(2);
+  for (const api of ['openai-completions', 'openai-responses']) {
+    const key = api === 'openai-responses' ? 'input' : 'messages';
+    const payload = f => { const value = catalogPayload(f.ref, api, '$same-name@notion explain it'); value[key].push({ role: 'user', content: f.wrapper }); return value; };
+    const a = payload(first), b = payload(second), raw = JSON.stringify(b);
+    assert.deepEqual(requestContract(a, api, '$same-name@notion explain it', {}, preparedSkillReferences(first)),
+      requestContract(b, api, '$same-name@notion explain it', {}, preparedSkillReferences(second)));
+    assert.equal(JSON.stringify(b), raw);
+    const changed = preparedFixture(3, 'Another genuine body');
+    assert.notDeepEqual(requestContract(a, api, '$same-name@notion explain it', {}, preparedSkillReferences(first)),
+      requestContract(payload(changed), api, '$same-name@notion explain it', {}, preparedSkillReferences(changed)));
+    const wrong = payload(second); wrong[key].at(-1).content = second.wrapper.replace('Owned body', 'Forged body');
+    assert.throws(() => requestContract(wrong, api, '$same-name@notion explain it', {}, preparedSkillReferences(second)), /DELIVERY_MISMATCH/);
+  }
+});
+
+test('selected normalization rejects unobserved content, changed owner, partial bodies and resource cross-binding', () => {
+  for (const mutate of [
+    f => { f.entries = []; },
+    f => { f.entries[0].value.has_more = true; },
+    f => { f.entries[0].value.content = 'forged'; },
+    f => { f.shortRefs.bindings.get(f.selectedRef).identity = { ...f.identity, scope: 'c'.repeat(64) }; },
+    f => { f.shortRefs.bindings.get(f.resourceRef).owner = 'sr:S' + Buffer.alloc(16, 9).toString('base64url'); },
+    f => { f.shortRefs.bindings.get(f.resourceRef).sha256 = 'd'.repeat(64); },
+    f => { f.shortRefs.bindings.get(f.resourceRef).ref += '-another-snapshot'; },
+  ]) {
+    const f = preparedFixture(); mutate(f); assert.throws(() => preparedSkillReferences(f), /BENCHMARK_/);
+  }
+  const f = preparedFixture(), refs = preparedSkillReferences(f), payload = catalogPayload(f.ref, 'openai-completions');
+  payload.messages.push({ role: 'user', content: f.wrapper + '\nUnrecognized placement: ' + f.selectedRef });
+  assert.throws(() => requestContract(payload, 'openai-completions', 'task', {}, refs), /REFERENCE_OUTSIDE_LOCATION/);
 });

@@ -3,19 +3,21 @@ import { createHash } from 'node:crypto';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 
+export const isCredentialRedaction = value => value === '[REDACTED_CREDENTIAL]' || value === 'REDACTED_CREDENTIAL';
+
 export function deriveRedactedProviderBinding({ event, request, requestStart, candidate, expected, admission,
   payload, attemptStart, transportStart, transportSent, transportEnd, model, refs = [], attemptId = request?.usage_attempt_id,
   publicProjection = false }) {
   try {
     assert.equal(typeof publicProjection, 'boolean');
     assert.equal(event.type, 'provider_stream_event');
-    assert.equal(event.data.provider, '[REDACTED_CREDENTIAL]');
+    assert.ok(isCredentialRedaction(event.data.provider));
     assert.equal(event.data.request_id, request.id); assert.equal(event.data.attempt_id, attemptId);
     assert.equal(event.data.api, model.api); assert.equal(event.data.model, model.route ?? model.id);
     assert.deepEqual(candidate.projection, expected.projection);
     assert.deepEqual(admission.differences, []);
     const selected = candidate.projection.model;
-    assert.equal(selected.provider, '[REDACTED_CREDENTIAL]');
+    assert.equal(selected.provider, event.data.provider);
     assert.equal(selected.id, model.route ?? model.id); assert.equal(selected.api, model.api);
     assert.deepEqual(candidate.projection.model_parameters, model.parameters);
     assert.equal(requestStart.type, 'model_request_start'); assert.equal(requestStart.data.request_id, request.id);
@@ -50,7 +52,7 @@ export function deriveRedactedProviderBinding({ event, request, requestStart, ca
     assert.equal(transportEnd.phase, 'request_end'); assert.equal(transportEnd.id, transportStart.id);
     assert.ok(refs.length > 0);
     return { status: 'known', value: model.provider, precision: 'derived',
-      observed_provider: '[REDACTED_CREDENTIAL]', formula: 'unique-observed-provider-configuration-key/v1',
+      observed_provider: event.data.provider, formula: 'unique-observed-provider-configuration-key/v1',
       verification_scope: publicProjection ? 'public-projection-original-transport-hash-claims-retained' : 'private-original-transport-hashes-recomputed', refs };
   } catch { return null; }
 }

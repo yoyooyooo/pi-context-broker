@@ -110,3 +110,37 @@ test('an old or incomplete subject fails before credentials, control directories
     await assert.rejects(verifyTurnRuntimeBuild(f), { code: 'BENCHMARK_TURN_RUNTIME_BUILD_MISMATCH' });
   }
 });
+
+
+test('ordinary-derived dispatch also freezes the resource reader, finite tool policy and credential recorder', async () => {
+  const f = await fixture(), manifestPath = join(f.buildRoot, 'build.json');
+  const resourceProfile = { path: join(f.environmentRoot, 'profile-not-read-by-build-gate.json'), sha256: 'f'.repeat(64) };
+  await assert.rejects(verifyTurnRuntimeBuild({ ...f, resourceProfile }), { code: 'BENCHMARK_TURN_RUNTIME_BUILD_MISMATCH' });
+  const extra = ['scripts/paired-resource-profile.mjs', 'benchmark/runtime/episode-policy.mjs', 'benchmark/runtime/episode-evidence.mjs'];
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  for (const path of extra) {
+    const bytes = await readFile(new URL('../' + path, import.meta.url)), target = join(f.buildRoot, 'source/broker', path);
+    await mkdir(dirname(target), { recursive: true }); await writeFile(target, bytes);
+    manifest.source_tree.files.push({ path: 'broker/' + path, sha256: hash(bytes) });
+  }
+  manifest.source_tree.sha256 = hash(JSON.stringify(manifest.source_tree.files)); await writeFile(manifestPath, JSON.stringify(manifest));
+  const proof = await verifyTurnRuntimeBuild({ ...f, resourceProfile }); assert.equal(proof.files.length, 7);
+  for (const path of extra) assert.ok(proof.files.some(file => file.path === path));
+  await writeFile(join(f.buildRoot, 'source/broker/scripts/paired-resource-profile.mjs'), 'older profile implementation');
+  await assert.rejects(verifyTurnRuntimeBuild({ ...f, resourceProfile }), { code: 'BENCHMARK_TURN_RUNTIME_BUILD_MISMATCH' });
+});
+
+
+test('dispatch rejects explicit empty profiles before build verification, credential reads or child processes', async () => {
+  const f = await fixture(); let operations = 0;
+  for (const resourceProfile of [null, false, '']) {
+    await assert.rejects(verifyTurnRuntimeBuild({ ...f, resourceProfile }), error => error.code === 'BENCHMARK_TURN_RUNTIME_BUILD_MISMATCH' && /RESOURCE_PROFILE_REFERENCE_REQUIRED/.test(error.details.reason));
+    await assert.rejects(runSubject({ ...f, mode: 'broker', resourceProfile, modelsFile: join(f.environmentRoot, 'never-read-models.json'),
+      controlRoot: join(f.environmentRoot, 'never-created-control'), runId: 'no-dispatch', captureOnly: true }, {
+      verifyTurnRuntimeBuild() { operations++; throw new Error('No build verification'); },
+      resolveModelCredential() { operations++; throw new Error('No credential access'); },
+      runEnvironment() { operations++; throw new Error('No child process'); },
+    }), /RESOURCE_PROFILE_REFERENCE_REQUIRED/);
+  }
+  assert.equal(operations, 0); await assert.rejects(lstat(join(f.environmentRoot, 'never-created-control')), { code: 'ENOENT' });
+});

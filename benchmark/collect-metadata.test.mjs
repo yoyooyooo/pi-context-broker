@@ -15,10 +15,16 @@ const candidateIndexSha = 'e76e3c3ac75e5c6f1ca9668e60f5addc625471ce68cb3a7cec20b
 const candidateHostSha = 'eb9153cdc6e3b6665633d80e6bca804bb72df7447eccd5ab98510640798da205';
 const localIdentityIndexSha = 'bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9';
 const localIdentityHostSha = 'ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59';
+const guidanceIndexSha = 'dccad7ad9eacd5de31fd2fa6b7c8005a8be305a15af760cb9066ce83a4647937';
+const descriptionsHostSha = 'd89358ce068296b4c55e382c6e5d8ecd0371f4213573430f8a3b740ac5e2cb89';
+const sourceAttributeIndexSha = 'c8dd8b78298ac548dbde7a24c4c3fab3c9df728c8739f16054dfbceeff686a91';
 const refreshGuidanceIndexSha = '6b08741c97d84ffe34741ce6cebe16c99c6e27834e2d27d2dea4e9e7f39770d2';
 const refreshGuidanceHostSha = 'd359e2919bc6a259eba2201c808683b04107bdeca249663b304560eaf816a36d';
 const producers = [{ indexSha, hostSha }, { indexSha: candidateIndexSha, hostSha: candidateHostSha },
   { indexSha: localIdentityIndexSha, hostSha: localIdentityHostSha },
+  { indexSha: guidanceIndexSha, hostSha: localIdentityHostSha },
+  { indexSha: localIdentityIndexSha, hostSha: descriptionsHostSha },
+  { indexSha: sourceAttributeIndexSha, hostSha: localIdentityHostSha },
   { indexSha: refreshGuidanceIndexSha, hostSha: refreshGuidanceHostSha }];
 function producerFixture({ indexSha, hostSha } = producers[0], mode = 'directory') {
   const suffix = mode === 'packed' ? '/installed/broker/node_modules/pi-context-broker' : '/broker';
@@ -88,8 +94,12 @@ test('matching entry bytes at another package location cannot borrow the reviewe
 
 test('separately reviewed source hashes cannot be mixed into an unreviewed producer', () => {
   for (const index of producers) for (const host of producers) {
-    if (index === host) continue;
+    if (producers.some(producer => producer.indexSha === index.indexSha && producer.hostSha === host.hostSha)) continue;
     assert.equal(verifiedNotionListRuntime(producerFixture({ indexSha: index.indexSha, hostSha: host.hostSha })), false);
+  }
+  for (const producer of producers) {
+    assert.equal(verifiedNotionListRuntime(producerFixture({ ...producer, indexSha: sha('unreviewed index') })), false);
+    assert.equal(verifiedNotionListRuntime(producerFixture({ ...producer, hostSha: sha('unreviewed host') })), false);
   }
   assert.equal(verifiedNotionListRuntime(producerFixture({ indexSha: sha('unreviewed index'), hostSha: sha('unreviewed host') })), false);
 });

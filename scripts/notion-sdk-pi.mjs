@@ -10,6 +10,7 @@ import { assertSupportedPiVersion, isolatedEnv, resolveHost } from '../packages/
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { renderHttpWrapper, startLoopbackMock } from './mock-provider-adapter.mjs';
 import { verifyBundledRuntime } from './verify-package-closure.mjs';
+import { waitForSdkOperations } from './notion-sdk-observers.mjs';
 
 export const scenarios = Object.freeze(['default-view', 'http-cache-recovery', 'http-warm-restart', 'http-warm-directory-expired', 'http-smart-revalidate', 'http-smart-current', 'http-interruption', 'working-set']);
 const isWarmRestart = name => ['http-warm-restart', 'http-warm-directory-expired', 'http-smart-revalidate'].includes(name);
@@ -367,6 +368,17 @@ async function runScenario(name, info, out) {
   const use = async ref => { const value = await tool('notion_use', { ref }); assert.equal(value.frame.isError, false, value.text); return value; };
   const show = async () => { const result = await tool('notion_ctl', { working_set: 'show' }); assert.equal(result.frame.isError, false, result.text); assert.equal(result.value.kind, 'working_set'); return result.value; };
   const snapshot = async label => { const output = join(base, label + '.json'); await save(control, { action: 'snapshot', output }); await rpc.prompt('/current-fixture'); return JSON.parse(await readFile(output, 'utf8')); };
+  const closeObservedInput = async label => {
+    const current = rpc, receiptPath = join(base, label + '-sdk-settle.json');
+    try {
+      const receipt = await waitForSdkOperations(join(base, 'sdk.jsonl'), current.lifecycle[0].pid);
+      await save(receiptPath, receipt);
+    } catch (error) {
+      if (error.receipt) await save(receiptPath, error.receipt);
+      throw error;
+    }
+    await current.closeInput();
+  };
   const compact = async label => {
     await ordinary('Checkpoint for ' + label); const before = await snapshot(label + '-before');
     const entry = [...before.branch].reverse().find(item => item.type === 'message' && item.message?.role === 'user'); assert.ok(entry);
@@ -389,7 +401,7 @@ async function runScenario(name, info, out) {
         await step(phase + ': a fresh Pi dollar submission reads the complete root and Requires', async () => {
           receipt.proofs[phase] = checkSources(await ordinary('$current-demo Apply this Skill to the new task.'), [a1, b1], [c1]);
         });
-        await snapshot(phase + '-final-session'); await rpc.closeInput();
+        await snapshot(phase + '-final-session'); await closeObservedInput(phase);
         await save(join(base, phase + '-rpc.json'), rpc.frames);
         await save(join(base, phase + '-rpc-lifecycle.json'), rpc.lifecycle);
         const events = await rows(join(base, 'sdk.jsonl'));
@@ -423,7 +435,7 @@ async function runScenario(name, info, out) {
         checkSources(await ordinary('$current-demo Apply this Skill to the current task.'), [a1, b1], [c1]);
       });
       const cold = await snapshot('cold-session'), coldPid = rpc.lifecycle[0].pid;
-      await rpc.closeInput();
+      await closeObservedInput('cold');
       await save(join(base, 'cold-rpc.json'), rpc.frames); await save(join(base, 'cold-rpc-lifecycle.json'), rpc.lifecycle);
       const coldRequests = service.requests.length;
       // Let only the directory TTL expire while neither Pi process is running.
@@ -454,7 +466,7 @@ async function runScenario(name, info, out) {
         processes.push({ label, pid: rpc.lifecycle[0].pid, session_file: empty.session_file });
       };
       const finishProcess = async label => {
-        await snapshot(label + '-final-session'); await rpc.closeInput();
+        await snapshot(label + '-final-session'); await closeObservedInput(label);
         await save(join(base, label + '-rpc.json'), rpc.frames);
         await save(join(base, label + '-rpc-lifecycle.json'), rpc.lifecycle);
       };
@@ -578,7 +590,7 @@ async function runScenario(name, info, out) {
         });
       }
     }
-    if (!metadataRevalidation) { await snapshot('final-session'); await rpc.closeInput(); }
+    if (!metadataRevalidation) { await snapshot('final-session'); await closeObservedInput('final'); }
     if (isWarmRestart(name) && !metadataRevalidation) {
       const receiptPath = join(base, 'warm-restart.json'), receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
       receipt.warm_source_requests = service.requests.length - receipt.cold_source_requests;

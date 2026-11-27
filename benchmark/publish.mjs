@@ -9,7 +9,7 @@ import { renderAnalysisMarkdown, renderMetricSvg, reportTables, toCsv } from './
 import { verifyArtifactFiles, verifyBundle } from './evidence/store.mjs';
 import { OFFLINE_REPORT_SOURCE_FILES } from './offline-source-files.mjs';
 
-export const PUBLICATION_VERSION = '1.0.6';
+export const PUBLICATION_VERSION = '1.0.7';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const within = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
@@ -238,7 +238,9 @@ export function createPublicSanitizer({ redactions = {}, material = [] } = {}) {
 }
 function privateGradingMaterial(value) {
   if (!value || typeof value !== 'object') return false;
-  if (Array.isArray(value.contracts) && value.contracts.some(contract => contract?.kind === 'artifact-json' && Object.hasOwn(contract, 'expected'))) return true;
+  if (Array.isArray(value.contracts) && value.contracts.some(contract =>
+    contract?.kind === 'artifact-json' && Object.hasOwn(contract, 'expected')
+    || contract?.kind === 'final-answer' && ['all', 'any', 'none'].some(key => Object.hasOwn(contract, key)))) return true;
   if (Array.isArray(value.canaries) || object(value.oracles)) return true;
   return Object.values(value).some(privateGradingMaterial);
 }

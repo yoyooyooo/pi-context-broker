@@ -10,6 +10,42 @@ export function codemodeExtensionOptions(policy) {
   return { mode: policy === 'required' ? 'only' : 'on', models: false };
 }
 
+/** Finite rules from the reviewed resource profile, not name-based side-effect inference. */
+export function assessProfileToolCall(policy, event) {
+  if (!policy) return null;
+  if (policy.blocked_tools.includes(event.toolName)) return { rule: 'blocked_tool', tool: event.toolName, reason: 'This declared tool is outside the episode authorization.' };
+  if (!policy.allowed_tools.includes(event.toolName)) return { rule: 'undeclared_tool', tool: event.toolName, reason: 'This tool is absent from the frozen episode policy.' };
+  for (const rule of policy.blocked_parameters) {
+    if (rule.tool !== event.toolName) continue;
+    let current = event.input, present = true;
+    for (const key of rule.path) {
+      if (current === null || typeof current !== 'object' || !Object.hasOwn(current, key)) { present = false; break; }
+      current = current[key];
+    }
+    const blocked = rule.when === 'not_equal' ? !present || current !== rule.value : present && (rule.when === 'present' || Boolean(current));
+    if (blocked) return { rule: 'blocked_parameter', tool: event.toolName, path: rule.path, reason: rule.reason };
+  }
+  return null;
+}
+
+/** The SDK invokes this before direct, deferred MCP and CodeMode child execution.
+ * Lifecycle hooks and arbitrary shell commands are outside this finite boundary. */
+export function createEpisodeToolGuard({ budget, codeEnabled, toolPolicy, checkContract = () => {}, record, stop }) {
+  return event => {
+    record('tool_call', event);
+    const block = (code, details, reason) => {
+      record('tool_call_blocked', { tool_call_id: event.toolCallId, parent_tool_call_id: event.parentToolCallId ?? null,
+        tool: event.toolName, code, details, executed: false, scope: code.startsWith('BENCHMARK_OUT_OF_SCOPE') ? 'apparatus-out-of-scope' : 'episode-guard' });
+      stop(code, details); return { block: true, terminate: true, reason };
+    };
+    try { checkContract(); budget.tool(); }
+    catch (error) { return block(error.code ?? 'BENCHMARK_TOOL_GUARD', error.details ?? {}, error.message); }
+    if (!codeEnabled && event.toolName === 'codemode') return block('BENCHMARK_CODEMODE_DISABLED', {}, 'Codemode is disabled in this condition.');
+    const rejection = assessProfileToolCall(toolPolicy, event);
+    if (rejection) return block('BENCHMARK_OUT_OF_SCOPE_TOOL', rejection, rejection.reason);
+  };
+}
+
 const finite = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const field = (object, path) => path.reduce((value, key) => value?.[key], object);
 

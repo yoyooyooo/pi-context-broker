@@ -33,7 +33,7 @@ export async function projectSubjectRuntime({ buildRoot, projectionRoot }) {
     ...selected.map(name => 'benchmark/runtime/' + name), 'benchmark/turn-bridge.mjs', 'benchmark/reported-model.mjs',
     ...['skill-consumption-provider.mjs', 'skill-consumption-source-observer.mjs', 'notion-skill-graph-model-evidence.mjs',
       'notion-default-context.mjs', 'notion-integration-hosts.mjs', 'notion-agent-inventory-evidence.mjs',
-      'skill-preparation-evidence.mjs'].map(name => 'scripts/' + name),
+      'skill-preparation-evidence.mjs', 'paired-resource-profile.mjs'].map(name => 'scripts/' + name),
     'packages/context-broker/src/native-reference.ts', 'packages/context-broker/src/skill-ref-protocol.ts',
   ];
   for (const path of sourcePaths) {

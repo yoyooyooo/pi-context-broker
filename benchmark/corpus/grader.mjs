@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
 const STATUSES = new Set(['pass', 'fail', 'unknown', 'not_applicable']);
-const KINDS = new Set(['artifact-json', 'selection', 'resources', 'clarification', 'state-event']);
+const BUSINESS_KINDS = new Set(['artifact-json', 'final-answer']);
+const KINDS = new Set([...BUSINESS_KINDS, 'selection', 'resources', 'clarification', 'state-event']);
+// Match the existing natural-workflow output facts, not a whole-answer template.
+const normalized = value => value.normalize('NFKC').replace(/\s+/gu, ' ').toLocaleLowerCase('en-US').trim();
 const hash = value => createHash('sha256').update(value).digest('hex');
 const own = (value, key) => Object.hasOwn(value, key);
 
@@ -60,6 +63,23 @@ export function validateOracle(oracle) {
         assert.equal(new Set(keys).size, keys.length, 'Expected row keys must be unique');
       }
     }
+    if (contract.kind === 'final-answer') {
+      assert.ok(typeof contract.turn_id === 'string' && contract.turn_id.trim(), 'Final answer needs an explicit turn_id');
+      assert.ok(['necessary-facts', 'semantic-review'].includes(contract.assessment), 'Final answer needs an explicit assessment');
+      assert.ok(['all', 'any', 'none'].some(key => contract[key]?.length), 'Final answer needs necessary facts');
+      for (const key of ['all', 'any', 'none']) {
+        const ids = contract[key] ?? [];
+        assert.ok(Array.isArray(ids) && ids.every(id => typeof id === 'string' && id.trim()), 'Invalid final answer fact IDs');
+        assert.equal(new Set(ids).size, ids.length, 'Duplicate final answer fact ID');
+        for (const id of ids) {
+          const fact = oracle.facts?.[id];
+          assert.ok(Array.isArray(fact?.anyOf) && fact.anyOf.length > 0
+            && fact.anyOf.every(value => typeof value === 'string' && normalized(value)), 'Missing private fact alternatives: ' + id);
+        }
+      }
+      for (const id of contract.none ?? [])
+        assert.ok(![...(contract.all ?? []), ...(contract.any ?? [])].includes(id), 'Contradictory final answer facts');
+    }
     if (contract.kind === 'selection') assert.ok(Array.isArray(contract.allowed_sets) && contract.allowed_sets.length > 0);
     if (contract.kind === 'resources') {
       assert.ok(Array.isArray(contract.alternatives) && contract.alternatives.length > 0);
@@ -77,7 +97,7 @@ export function validateOracle(oracle) {
     }
     if (contract.kind === 'state-event') assert.equal(typeof contract.event_id, 'string');
   }
-  assert.ok(oracle.contracts.some(contract => contract.kind === 'artifact-json'), 'Oracle must define a business deliverable');
+  assert.ok(oracle.contracts.some(contract => BUSINESS_KINDS.has(contract.kind)), 'Oracle must define a business deliverable');
   return oracle;
 }
 
@@ -109,6 +129,43 @@ function gradeArtifact(contract, evidence) {
   }
   return result(contract, matches ? 'pass' : 'fail', [artifact],
     matches ? 'Observed business values satisfy the declared output contract' : 'Observed business values differ from the declared output contract');
+}
+
+function gradeFinalAnswer(contract, evidence, oracle) {
+  const observed = (evidence.final_answers ?? []).filter(item => item.turn_id === contract.turn_id);
+  if (!observed.length) return missing(contract, evidence, 'final_answers', 'Required final answer was not observed');
+  if (observed.length !== 1) return result(contract, 'unknown', observed, 'Final answer has ambiguous turn evidence');
+  const answer = observed[0];
+  if (typeof answer.content !== 'string' || !/^[a-f0-9]{64}$/.test(answer.sha256 ?? '') || hash(answer.content) !== answer.sha256)
+    return result(contract, 'unknown', [answer], 'Final answer bytes and content identity were not proven');
+  if (!answer.content.trim()) return result(contract, 'fail', [answer], 'The completed turn contains no final answer');
+  const text = normalized(answer.content);
+  const facts = key => (contract[key] ?? []).map(id => ({
+    id, found: oracle.facts[id].anyOf.some(value => text.includes(normalized(value))),
+  }));
+  const checks = { all: facts('all'), any: facts('any'), none: facts('none') };
+  const matched = checks.all.every(row => row.found) && checks.none.every(row => !row.found)
+    && (!checks.any.length || checks.any.some(row => row.found));
+  const diagnostics = { assessment: contract.assessment, checks,
+    method: 'necessary-facts-with-alternatives; not-whole-answer-equality' };
+  if (contract.assessment === 'necessary-facts') return {
+    ...result(contract, matched ? 'pass' : 'fail', [answer], matched
+      ? 'Final answer satisfies the declared necessary text facts; semantic correctness is outside this contract'
+      : 'Final answer differs from the declared necessary text facts'),
+    ...diagnostics,
+  };
+  const reviews = (evidence.final_answer_reviews ?? []).filter(item => item.contract_id === contract.id
+    && item.turn_id === contract.turn_id && item.answer_sha256 === answer.sha256);
+  if (reviews.length !== 1) return {
+    ...result(contract, 'unknown', [answer, ...reviews], reviews.length
+      ? 'More than one independent semantic review is bound to this answer'
+      : 'Necessary text checks are diagnostic; an independent semantic review of these exact answer bytes is required'),
+    ...diagnostics,
+  };
+  const review = reviews[0];
+  return { ...result(contract, review.status, [answer, review], review.reason), ...diagnostics,
+    review: { evidence_id: review.evidence_id, reviewer: review.reviewer, method: review.method,
+      turn_id: review.turn_id, answer_sha256: review.answer_sha256 } };
 }
 
 function gradeSelection(contract, evidence) {
@@ -167,13 +224,20 @@ function gradeStateEvent(contract, evidence) {
 export function gradeEpisode({ oracle, evidence = {}, capabilities = [] }) {
   validateOracle(oracle);
   assert.ok(evidence && typeof evidence === 'object' && !Array.isArray(evidence), 'Evidence must be an object');
-  for (const key of ['artifacts', 'selections', 'resource_reads', 'clarifications', 'state_events']) {
+  for (const key of ['artifacts', 'final_answers', 'final_answer_reviews', 'selections', 'resource_reads', 'clarifications', 'state_events']) {
     assert.ok(evidence[key] === undefined || Array.isArray(evidence[key]), 'Evidence ' + key + ' must be an array');
     for (const item of evidence[key] ?? []) {
       assert.equal(typeof item.evidence_id, 'string', 'Observed evidence needs an evidence_id');
       assert.ok(item.evidence_id.length > 0, 'Observed evidence needs a nonempty evidence_id');
     }
     assert.ok(evidence.coverage?.[key] === undefined || ['complete', 'partial', 'unavailable'].includes(evidence.coverage[key]), 'Invalid evidence coverage');
+  }
+  for (const review of evidence.final_answer_reviews ?? []) {
+    for (const key of ['contract_id', 'turn_id', 'reviewer', 'reason'])
+      assert.ok(typeof review[key] === 'string' && review[key].trim(), 'Semantic review needs ' + key);
+    assert.match(review.answer_sha256 ?? '', /^[a-f0-9]{64}$/, 'Semantic review needs an answer hash');
+    assert.ok(['pass', 'fail', 'unknown'].includes(review.status), 'Invalid semantic review status');
+    assert.equal(review.method, 'independent-semantic-review', 'Semantic review must declare its method');
   }
   assert.ok(Array.isArray(capabilities), 'Capabilities must be an array');
   for (const capability of capabilities) {
@@ -188,17 +252,19 @@ export function gradeEpisode({ oracle, evidence = {}, capabilities = [] }) {
   const absent = oracle.required_capabilities.filter(id => !supported.has(id));
   const unsupported = oracle.required_capabilities.filter(id => supported.get(id) === false);
   const capabilityStatus = unsupported.length ? 'unsupported' : absent.length ? 'unknown' : 'supported';
-  const graders = { 'artifact-json': gradeArtifact, selection: gradeSelection, resources: gradeResources,
+  const graders = { 'artifact-json': gradeArtifact, 'final-answer': gradeFinalAnswer, selection: gradeSelection, resources: gradeResources,
     clarification: gradeClarification, 'state-event': gradeStateEvent };
   const contracts = oracle.contracts.map(contract => capabilityStatus === 'unsupported'
     ? result(contract, 'not_applicable', [], 'Required capability is explicitly unsupported')
-    : graders[contract.kind](contract, evidence));
-  const business = contracts.filter(contract => contract.kind === 'artifact-json').map(contract => contract.status);
+    : graders[contract.kind](contract, evidence, oracle));
+  const business = contracts.filter(contract => BUSINESS_KINDS.has(contract.kind)).map(contract => contract.status);
   const businessOutcome = business.every(status => status === 'not_applicable') ? 'not_applicable'
     : business.includes('fail') ? 'fail' : business.includes('unknown') ? 'unknown' : 'pass';
   const used = new Set(contracts.flatMap(contract => contract.evidence_ids));
   const refs = [
     ...(evidence.artifacts ?? []).map(item => ({ evidence_id: item.evidence_id, kind: 'artifact', path: item.path, ...(item.sha256 ? { sha256: item.sha256 } : {}) })),
+    ...(evidence.final_answers ?? []).map(item => ({ evidence_id: item.evidence_id, kind: 'final-answer', turn_id: item.turn_id, sha256: item.sha256 })),
+    ...(evidence.final_answer_reviews ?? []).map(item => ({ evidence_id: item.evidence_id, kind: 'semantic-review', turn_id: item.turn_id, answer_sha256: item.answer_sha256 })),
     ...(evidence.resource_reads ?? []).map(item => ({ evidence_id: item.evidence_id, kind: 'resource', path: item.path, ...(item.sha256 ? { sha256: item.sha256 } : {}) })),
     ...(evidence.state_events ?? []).map(item => ({ evidence_id: item.evidence_id, kind: 'state-event' })),
   ].filter(item => used.has(item.evidence_id));

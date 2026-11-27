@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { closeSync, openSync, writeSync } from 'node:fs';
-import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { chmod, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 export const sha256 = value => createHash('sha256').update(value).digest('hex');
 export const inside = (root, path) => { const part = relative(root, path); return part === '' || part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part); };
@@ -73,8 +73,8 @@ export async function createEpisodeRecorder(directory, correlation, credentials 
   const overhead = { record_sync_wall_ms: 0, artifact_write_wall_ms: 0, event_bytes: 0, event_count: 0, artifact_count: 0 };
   const secrets = credentials.filter(value => typeof value === 'string' && value.length > 3);
   const scrub = value => JSON.parse(JSON.stringify(value, (key, item) => {
-    if (typeof item === 'string' && /^(apiKey|api_key|authorization|access_token|refresh_token)$/i.test(key)) return '[REDACTED_CREDENTIAL]';
-    if (typeof item === 'string') for (const secret of secrets) item = item.split(secret).join('[REDACTED_CREDENTIAL]');
+    if (typeof item === 'string' && /^(apiKey|api_key|authorization|access_token|refresh_token)$/i.test(key)) return 'REDACTED_CREDENTIAL';
+    if (typeof item === 'string') for (const secret of secrets) item = item.split(secret).join('REDACTED_CREDENTIAL');
     if (typeof item === 'bigint') return item.toString();
     return item;
   }));
@@ -98,8 +98,25 @@ export async function createEpisodeRecorder(directory, correlation, credentials 
   };
   return {
     directory, eventPath, artifacts, record, save, scrub, overhead,
+    project(value, prefixes) { return scrub(normalizeCandidate(value, prefixes)); },
+    addCredentials(values) { for (const value of values) if (typeof value === 'string' && value.length > 3 && !secrets.includes(value)) secrets.push(value); },
     bind(bindings) { current = { ...current, ...bindings }; },
     async addArtifact(id, path, kind) { const artifact = { ...await fileIdentity(path, id), kind }; artifacts.push(artifact); return artifact; },
+    async addRedactedJsonlArtifact(id, source, kind) {
+      assert.match(id, /^[A-Za-z0-9_-]+$/);
+      await chmod(dirname(source), 0o700); await chmod(source, 0o600);
+      const permissions = { file_mode: (await lstat(source)).mode & 0o777, parent_mode: (await lstat(dirname(source))).mode & 0o777 };
+      assert.deepEqual(permissions, { file_mode: 0o600, parent_mode: 0o700 }, 'BENCHMARK_PRIVATE_SESSION_PERMISSIONS');
+      const bytes = await readFile(source), original = await fileIdentity(source);
+      assert.equal(original.sha256, sha256(bytes), 'BENCHMARK_SESSION_CHANGED_WHILE_COPYING');
+      const redacted = bytes.toString('utf8').split('\n').map(line => line.trim() ? JSON.stringify(scrub(JSON.parse(line))) : line).join('\n');
+      const path = join(directory, id + '-redacted.jsonl');
+      await writeFile(path, redacted, { flag: 'wx', mode: 0o600 });
+      const artifact = { ...await fileIdentity(path, id), kind: kind + '-redacted-copy',
+        source: { ...original, kind, retained_private: true, permissions },
+        redaction: { scope: 'recorder known credentials and credential fields', representation: 'parsed JSONL copy; original bytes retained unchanged' } };
+      artifacts.push(artifact); return artifact;
+    },
     async close() { if (!closed) { closed = true; closeSync(fd); artifacts.push({ ...await fileIdentity(eventPath, 'events'), kind: 'jsonl' }); } return artifacts; },
   };
 }

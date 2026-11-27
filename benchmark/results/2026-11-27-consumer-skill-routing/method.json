@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "kind": "ah1336-public-method",
+  "phase": "ordinary-development-v2",
+  "model_condition": "group/flash",
+  "requested_reasoning_effort": "high",
+  "max_output_tokens_per_request": 8192,
+  "product_baseline": {
+    "cli_commit": "31f30db8f960cc4f36d1e02f8e279d641b660718",
+    "broker_commit": "312c40ba85a2253306c3b4f82f82a4686168af74"
+  },
+  "measurement_controller_commit": "be958e293e06c8e6804100e185193094ceabb504",
+  "collector_version": "1.3.9",
+  "registration_sha256": "c91a1198b59f78049bc52203ef8c781d911d813c64a5795e6f37d2461099de99",
+  "decision_contract_sha256": "d05216fd356cfecfcec95852bbe6a8edac1246709f7b4f8e1b089034ffc6c424",
+  "development_window_utc": {
+    "start": "2026-11-27T07:46:26Z",
+    "end": "2026-11-27T13:46:26Z"
+  },
+  "design": {
+    "factors": [
+      "G",
+      "T",
+      "S"
+    ],
+    "each_compared_to": "independent B0",
+    "cases": 2,
+    "material_clusters": 1,
+    "repeats_per_arm": 2,
+    "slots_per_factor": 8,
+    "planned_slots": 24,
+    "pool_factors": false,
+    "automatic_replacement_episodes": 0
+  },
+  "episode_limits": {
+    "wall_clock_ms": 240000,
+    "model_requests": 6,
+    "input_tokens": 800000,
+    "output_tokens": 32768,
+    "model_client_transport_http_attempts": 6,
+    "subject_client_automatic_retries": 0,
+    "scope": "Source HTTP and gateway-internal upstream attempts are recorded separately from the client transport ceiling."
+  },
+  "candidate_advance": {
+    "candidate_passes_required": 4,
+    "candidate_planned_denominator": 4,
+    "known_new_critical_regressions_allowed": 0,
+    "minimum_cases_with_gain_in_both_repeats": 1,
+    "business_gain": "candidate pass versus corresponding B0 known fail in both repeats",
+    "route_gain": "both business answers pass and the same independently reviewed avoidable B0 detour is absent in the candidate in both repeats",
+    "input_ratio_explanation_threshold": 1.1,
+    "capped_time_ratio_explanation_threshold": 1.15,
+    "capped_time_ms": 240000,
+    "unexplained_growth": "do not adopt"
+  },
+  "unknown_policy": "Retain unknown; no success credit; do not relabel as a known business failure. Retain invalid, stopped and never-started slots.",
+  "interpretation": "Small-sample descriptive screening; no statistical superiority, noninferiority, equivalence or general cognitive claim. A screened candidate requires separately frozen independent confirmation before adoption.",
+  "publication_scope": "Anonymous numeric aggregates and candidate source patches only. Public arithmetic cannot regrade private answers or independently verify private truth, source delivery, route attribution or semantic review.",
+  "recipes": [
+    {
+      "file": "recipes/G-v3.patch",
+      "sha256": "31bd895addc4629ce88b008353f431693371aa91d27c6d1e9121de55e67d8ea6",
+      "status": "unadopted_experimental_candidate"
+    },
+    {
+      "file": "recipes/T-v2.patch",
+      "sha256": "a81e1dd1ff94b833651959761771f6963dc1baee589cd9a9962cd02ce24ee472",
+      "status": "unadopted_experimental_candidate"
+    },
+    {
+      "file": "recipes/S.patch",
+      "sha256": "e17934dbf04137c17c14267e2c46786f7aa1577a1ccd409abc5cd46ac7cef40f",
+      "status": "unadopted_experimental_candidate"
+    }
+  ],
+  "comparison_direction": {
+    "quality": "candidate minus its own B0",
+    "resource_ratios": "candidate divided by its own B0",
+    "original_execution_pair_order": "unchanged"
+  },
+  "capped_time_definition": {
+    "valid_pass": "min(known time_to_success_ms, 240000); unknown if success time is unknown",
+    "valid_fail_or_unknown": 240000,
+    "no_valid_observation": null,
+    "observed_elapsed": "Separate actual elapsed measurement; never-started is null."
+  },
+  "S_prospective_collector_amendment": {
+    "registration_sha256": "46cb1fb3e10c8ccb2788af38efefc6daeeac331364ee564ba9b635f1bda76510",
+    "controller_commit": "f49155ef70362fda22be230a08aecd893ebae7b1",
+    "execution_closure_sha256": "7d3fb631656faa49aebd43ed1430d8edffd541bbdca8bd31b2b8f9085167aea9",
+    "source_proof_sha256": "22c31efac79c1da5860cd7072460b4df8d323da765fe07d4f60d3a63dc6f19a6",
+    "collector_version": "1.3.11",
+    "source_changes": [
+      "evidence-store marker verification",
+      "collector version constant"
+    ],
+    "subject_builds_changed": false,
+    "scientific_fields_changed": false,
+    "logical_slots_transferred_before_dispatch": 8,
+    "old_plan_dispatch_allowed": false,
+    "old_capture_reuse": false,
+    "additional_scientific_samples": 0,
+    "original_window_extended": false
+  },
+  "T_report_only_recollection": {
+    "collector_commit": "7842b586bde4ab9840fb048fe0ce3bed5e7123b8",
+    "collector_version": "1.3.11",
+    "additional_model_requests": 0,
+    "original_ledger_modified": false,
+    "original_remaining_slots_resumed": false
+  },
+  "final_disposition": {
+    "status": "no_adoption_inconclusive",
+    "valid_candidate_comparison_obtained": false,
+    "planned_logical_slots": 24,
+    "started_slots": 2,
+    "never_started_slots": 22,
+    "valid_observations": 0,
+    "invalid_observations": 2,
+    "candidate_observations": 0,
+    "confirmation_opened": false,
+    "fixed_model_regression_conditions_run": false,
+    "product_changes_adopted": false,
+    "original_stops_retained": true,
+    "replacement_episodes": 0
+  }
+}

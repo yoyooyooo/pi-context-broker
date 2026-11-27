@@ -133,12 +133,18 @@ The [2026-11-26 resource-read reanalysis](benchmark-relative-source-reanalysis-2
 records the original, intermediate and corrected outcomes across the six retained
 engineering scopes, unchanged actual costs, and the resulting product decision.
 
-Current collection uses collector `1.3.5` and explicitly binds SDK v3,
+Current collection uses collector `1.3.11` and explicitly binds SDK v3,
 Library-root v1, resource-read v1, Skill-ref v2 and preparation-evidence v2.
 The subject includes only the public observer dependencies and the exact paired
 reference producer. Its embedded SDK hash is checked against the Broker bundle;
 the public SDK hash and reference bytes are checked against the paired CLI.
 Current collection cannot interpret old material proofs as newly verified data.
+
+Collector 1.3.11 uses the same legacy and identifier-safe credential-marker
+recognition for collection and evidence-bundle verification. A redacted provider
+still needs the unique observed configuration and its original request, payload
+and transport chain; the marker alone is not identity evidence. Reverification
+also binds the claimed observed marker to each raw event before reusing proof.
 
 For current receipts, `provider_error` excludes a normal application completion
 followed by HTTP cancellation only when the shared provider completion rule
@@ -154,7 +160,7 @@ against the built package before applying the reviewed producer tuple. The
 refresh-guidance candidate has its own reviewed complete tuple; the accepted
 reference tuple remains valid. Changed or mixed producer hashes are not admitted.
 
-Collector `1.3.5` recognizes a successful `notion_list` metadata response only
+Collector `1.3.10` recognizes a successful `notion_list` metadata response only
 when its captured owner and admission match a reviewed Broker producer, its
 closed output matches the delivered metadata projection, and the record identity
 matches an actually observed SDK directory. The reviewed hashes for
@@ -162,6 +168,8 @@ matches an actually observed SDK directory. The reviewed hashes for
 collector: the retained `cbe36c3` producer, the reviewed `3c78765f` producer
 with local candidate snapshots, the reviewed `3d57426c` producer, and the
 reviewed `b9de8bf0` refresh-guidance producer retained for the unadopted comparison.
+The separately reviewed AH-1336 G-v3, T-v2 and S text variants also retain the
+metadata execution branch; the same owner, SDK and closed-output checks apply.
 In the third pair, Library identity selects routing from local configuration; the SDK
 list still verifies the Library-bound directory. The list retains its selected
 metadata publication, generation and cancellation checks, and its closed
@@ -640,9 +648,21 @@ daily tool installation is changed.
 
 Each model needs `adapter_evidence_file` from the actual maintained SDK's
 controlled transport test, an explicit observation window and effective
-parameters. Unobservable alias backends remain opaque. No fallback or auxiliary
-model is allowed. Unverified prices are reported as unknown currency cost while
+parameters. Unobservable alias backends remain opaque. Fixed and automatic
+single-variant conditions retain their exact response-identity checks. A declared
+mixed-route condition may use its own production fallback; it does not authorize
+a different route or an auxiliary model. Unverified prices remain unknown while
 token and network counts remain available.
+
+A mixed group is a separate condition with routing policy
+`{ mode: "mixed-route", route, configuration_sha256, reported_model_ids }`.
+Freeze the actual transitive group configuration and exact allowed response IDs.
+The configuration hash binds the declared condition; it does not independently
+prove the live gateway configuration, successful provider or applied reasoning
+effort. Preserve gateway evidence and every attempt, including treatment-related
+fallback. An explicitly allowed exact group echo is `requested_route_alias` and
+cannot identify the concrete backend. Fixed-route and auto-route policies still
+require one declared model variant.
 
 `budget.episode` sets elapsed time, actual requests, input/output tokens, HTTP
 attempts and retries. `budget.batch` sets their aggregate limits and concurrency.
@@ -687,3 +707,60 @@ Benchmark implementation belongs on `benchmark`. Fixes to shared product or
 isolation behavior go through `next` first and are then synchronized. Preparation,
 real execution, analysis and source integration have separate receipts. No paid
 cron or automatic all-model matrix is installed.
+
+## Natural answers and prompt-triggered preparation
+
+Use `completion: { kind: "final-answer", paths: [] }` for a public task whose
+result is an ordinary assistant answer. Its private oracle contract names the
+exact `turn_id`, `assessment`, and necessary `all`/`any`/`none` fact conditions.
+Fact patterns remain private. The public prompt need not request a JSON file.
+`necessary-facts` verifies only the declared textual conditions.
+`semantic-review` retains those matches as diagnostics and stays unknown until
+an independent review is bound to the exact contract, turn and answer SHA-256.
+
+The collector reads the retained `user_turn_end` event and checks it against the
+runtime turn. A reviewer may call the same `collectEpisode` with an immutable
+`finalAnswerReview: { path, sha256 }` and a new output directory. The review names
+its run, case, private oracle hash, reviewer and method; each decision binds its
+contract, turn and answer hash. Keep the original collection and its unknowns.
+Do not treat keyword matches, model self-scores or a replacement final answer as
+proof of semantic correctness.
+
+Admission captures the actual first public prompt through ordinary Pi loading.
+This includes `$Skill` preparation that changes the first model-visible body.
+The existing pre-send guard still stops before HTTP or model tool execution.
+Only identical first prompts and startup inputs share an expectation.
+Branch-local candidate handles are matched to the independently observed
+catalog. Selected and resource handles additionally require complete observed
+SDK consume manifests, exact owner and immutable file identity. Only those
+recognized locations change in a comparison copy; the retained and transmitted
+payloads preserve the product's real handles and complete body bytes.
+
+## Ordinary-derived resources
+
+To preserve explicit ordinary native Skills, context and tool competition in a
+comparison, use the optional [frozen resource profile](benchmark-resource-profile.md).
+It runs through the same Benchmark subject and requires new apparatus build IDs.
+The profile records shared restrictions, private configuration identities and
+execution-before-effect stops; it does not claim OS-level isolation.
+
+### Redacted comparison evidence
+
+New captures normalize owned paths and proven catalog references before credential
+redaction. Evidence uses the identifier-safe `REDACTED_CREDENTIAL` marker; the
+collector also accepts the exact historical `[REDACTED_CREDENTIAL]` marker when
+the original provider-binding proof is complete. Actual tool names, source
+content and provider payloads are unchanged.
+
+Each new expectation includes `request_contract_sha256`, computed from canonical
+request bytes before redaction. Execution requires both the redacted contract
+and this digest to match before sending. Older captures remain available for
+historical analysis, but cannot authorize a new execution with this apparatus;
+create a fresh capture using its explicit build. Message differences and source
+identity checks remain enforced.
+
+The shared retry, compaction and cache-warming overrides are reapplied after the
+SDK resource reload and checked on the created session. Ordinary-profile
+apparatus validation must include the non-capture admission and transport path
+against an owned loopback provider; a capture-only result does not prove that
+path.

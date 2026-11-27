@@ -7,6 +7,14 @@ import { pairedBrokerEntry } from './paired-broker-entry.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 
+function observedSdkEntry(entry, files) {
+  assert.ok(entry?.path && entry.sha256, 'Actual SDK implementation entry is missing');
+  const matches = files.filter(file => file.path === entry.path);
+  assert.equal(matches.length, 1, 'Actual SDK implementation entry must have one observed file');
+  assert.deepEqual(entry, matches[0], 'Actual SDK implementation identity differs from the observed file');
+  return entry;
+}
+
 export function extensionsFromCapture({ projection: p, build, buildRoot, runRoot }) {
   const physicalPath = path => path.startsWith('$BUILD/') ? join(buildRoot, path.slice(7))
     : path.startsWith('$RUN/') ? join(runRoot, path.slice(5)) : path;
@@ -37,8 +45,13 @@ export function extensionsFromCapture({ projection: p, build, buildRoot, runRoot
       assert.equal(file.realpath, brokerPath, 'Loaded Broker real path differs from its frozen entry');
       assert.equal(file.sha256, broker.sha256, 'Loaded Broker bytes differ from its frozen entry');
     }
-    if (!file && extension.path === 'builtin:codemode') file = p.pi.files.find(file => file.path.endsWith('/extensions/codemode/index.js'));
-    if (!file && extension.path === 'builtin:tool_search') file = p.pi.files.find(file => file.path.endsWith('/extensions/tool-search/index.js'));
+    // Historical captures did not bind builtin entries. New captures carry the
+    // observed implementation directly, even when redaction obscures its label.
+    const legacyBuiltinCapture = p.pi.entry === undefined;
+    if (!file && legacyBuiltinCapture && extension.path === 'builtin:codemode') file = p.pi.files.find(file => file.path.endsWith('/extensions/codemode/index.js'));
+    if (!file && legacyBuiltinCapture && extension.path === 'builtin:tool_search') file = p.pi.files.find(file => file.path.endsWith('/extensions/tool-search/index.js'));
+    if (!file && legacyBuiltinCapture && extension.path === 'builtin:mcp') file = p.pi.files.find(file => file.path.endsWith('/extensions/mcp/index.js'));
+    if (file && extension.resolved_path.startsWith('builtin:')) observedSdkEntry(file, p.pi.files);
     if (role === 'observer') {
       assert.equal(extension.resolved_path, '<inline:benchmark-observer>');
       assert.equal(file, null, 'The Benchmark observer must be the captured inline extension');
@@ -72,8 +85,9 @@ export async function environmentFromCapture({ id, environmentRoot, buildId, exp
   }
   const buildBytes = await readFile(join(environmentRoot, 'builds', buildId, 'build.json')), build = JSON.parse(buildBytes);
   assert.equal(p.build.sha256, sha(buildBytes), 'Capture used another paired build');
-  const sdk = p.pi.files.find(file => file.path.endsWith('/pi-coding-agent/dist/index.js'));
-  assert.ok(sdk, 'Actual maintained SDK module was not observed');
+  const sdk = p.pi.entry === undefined ? p.pi.files.find(file => file.path.endsWith('/pi-coding-agent/dist/index.js')) : p.pi.entry;
+  assert.ok(sdk?.sha256, 'Actual maintained SDK module was not observed');
+  observedSdkEntry(sdk, p.pi.files);
   const sdkPackageFile = build.packages.cli.files.find(file => file.path === 'dist/sdk.js');
   assert.ok(sdkPackageFile?.sha256, 'Complete paired CLI SDK identity is missing');
   if (p.mode === 'native') assert.equal(p.native_roots.length, 1, 'The native manifest requires its single observed task root');
@@ -87,7 +101,7 @@ export async function environmentFromCapture({ id, environmentRoot, buildId, exp
       pi: { version: p.pi.version, entry: sdk.path, sha256: sdk.sha256 },
       bun: { version: actualRuntime.bun.version, entry: p.bun.path, sha256: p.bun.sha256 },
       ...(p.git ? { git: { version: p.git.version, entry: p.git.realpath, sha256: p.git.sha256 } } : {}) },
-    pi: { mode: p.mode, entry_kind: 'pi-sdk', entry: sdk.path, config_sha256: fingerprint({ settings: p.settings, broker: p.broker_config, factories: p.factories }),
+    pi: { mode: p.mode, entry_kind: 'pi-sdk', entry: sdk.path, config_sha256: fingerprint({ settings: p.settings, broker: p.broker_config, factories: p.factories, ...(p.resource_profile ? { resource_profile: p.resource_profile } : {}) }),
       extensions, tools: p.tools.all.map(({ name, description, parameters }) => ({ name, description, parameters })),
       active_tools: p.tools.active, catalog_sha256: fingerprint(expectationSet),
       sources: [{ id: 'canonical-corpus', kind: sourceKind ?? (p.mode === 'native' ? 'native' : 'local'), content_sha256: corpusSha256 }],

@@ -5,19 +5,24 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { canonicalJson, fingerprint } from './protocol.mjs';
-import { collectEpisode, collectRawUsage, collectProviderApplicationCompletion, deliveredSourceBodies, deriveRedactedProviderBinding } from './collect.mjs';
+import { CURRENT_COLLECTOR_VERSION, collectEpisode, collectRawUsage, collectProviderApplicationCompletion, deliveredSourceBodies, deriveRedactedProviderBinding } from './collect.mjs';
 import { exampleProtocol } from './analysis/fixtures.mjs';
 import { assertCompletedStandingEvidence } from './standing-campaign.mjs';
+import { readSubjectTurnControl } from './execute.mjs';
+import { loadCurrentSourceViews } from './current-source-views.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture({ outcome='pass', missingUsage=false, tools=[], source=false, opaque=false, capture=false, budgetStopped=false, adapter=true,
-  routing, reportedModels=[], api='openai-completions', providerError=false, sourceFrom }={}) {
+  routing, reportedModels=[], api='openai-completions', providerError=false, sourceFrom, answer=null }={}) {
   const root=await mkdtemp(join(tmpdir(),'benchmark-collect-unit-')),runRoot=join(root,'runs','unit-run'),workspace=join(runRoot,'workspace');
   await mkdir(join(workspace,'output'),{recursive:true});
   const save=async(path,value)=>{await mkdir(join(path,'..'),{recursive:true});const text=typeof value==='string'?value:canonicalJson(value)+'\n';await writeFile(path,text);return {path,sha256:sha(text),bytes:Buffer.byteLength(text)};};
   const materialPath=join(root,'materials','unit-skill','SKILL.md'),body='# Unit Skill\nUse the supplied input.\n';
   const material=await save(materialPath,body);
-  const oracle={schema_version:1,case_id:'c1',capability_scope:'common',required_capabilities:['workspace-files'],contracts:[
+  const oracle={schema_version:1,case_id:'c1',capability_scope:'common',required_capabilities:['workspace-files'],
+    ...(answer?{facts:{total:{anyOf:['total: 7']},uncertain:{anyOf:['ownership is unproven']},invented:{anyOf:['ownership confirmed']}}}:{}),contracts:[
+    answer?{id:'answer',kind:'final-answer',turn_id:'turn-1',assessment:answer.assessment??'necessary-facts',
+      all:['total'],any:['uncertain'],none:['invented'],critical:true}:
     {id:'deliverable',kind:'artifact-json',path:'output/result.json',comparison:'exact',expected:{answer:7},critical:true},
     {id:'selection',kind:'selection',allowed_sets:source?[['unit-skill']]:[[]],critical:false},
     ...(source?[{id:'main-source',kind:'resources',critical:true,alternatives:[[{skill_id:'unit-skill',path:'SKILL.md',sha256:material.sha256}]]}]:[]),
@@ -33,13 +38,13 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
   const condition=p.conditions[0],slot={slot_id:'unit-slot',pair_id:'c1-r0',case_id:'c1',condition_id:condition.id,repeat:0,seed:0};
   const binding={id:'c1',protocol_case:p.corpus.cases[0],oracle_path:oracleFile.path,oracle_sha256:oracleFile.sha256,
     skills_root:join(root,'materials'),skill_inventory:[{...material,skill_id:'unit-skill',resource_path:'SKILL.md'}],
-    public_case:{id:'c1',title:'Synthetic collector unit fixture',completion:{paths:['output/result.json']},turns:[{id:'turn-1',prompt:'Unit task'}]},events:[],clarification:[]};
+    public_case:{id:'c1',title:'Synthetic collector unit fixture',completion:answer?{kind:'final-answer',paths:[]}:{paths:['output/result.json']},turns:[{id:'turn-1',prompt:'Unit task'}]},events:[],clarification:[]};
   const run={run_id:'unit-run',root:runRoot,pi_launch:{mode:'native',native_corpus:{root:join(runRoot,'skills','native')}}};
   const shared={run_id:'unit-run',build_id:'unit-build',root:runRoot,status:'passed',exit_code:0,signal:null,timed_out:false,spawned:true,
     runtime_check:{status:'unchanged'},frozen_artifacts:'passed'};
   await save(join(runRoot,'run.json'),run);await save(join(runRoot,'result.json'),shared);
   let outputFile=null;
-  if(outcome!=='missing')outputFile=await save(join(workspace,'output/result.json'),outcome==='pass'?{answer:7}:{answer:8});
+  if(!answer&&outcome!=='missing')outputFile=await save(join(workspace,'output/result.json'),outcome==='pass'?{answer:7}:{answer:8});
   const rawArtifacts=[],add=async(id,path,value,kind='json')=>{const a={id,...await save(path,value),kind};rawArtifacts.push(a);return a;};
   const payload=await add('request-1-payload',join(runRoot,'payload.json'),{model:'unit-route',messages:[{role:'user',content:'Unit task'}]});
   const payloadSha=sha(JSON.stringify(JSON.parse(await readFile(payload.path,'utf8'))));
@@ -65,7 +70,10 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
   if(opaque)tools=[...tools,{id:'shell',name:'bash',args:{command:'opaque behavior'},result:{content:[{type:'text',text:''}]},isError:false}];
   for(const t of tools){record('session_event',{type:'tool_execution_start',toolCallId:t.id,toolName:t.name,args:t.args,...(t.parent?{parentToolCallId:t.parent}:{})});
     record('session_event',{type:'tool_execution_end',toolCallId:t.id,toolName:t.name,result:t.result,isError:t.isError,...(t.parent?{parentToolCallId:t.parent}:{})});}
-  const endLine=record('user_turn_end',{id:'turn-1',settled:true,is_idle:true});
+  const endData={id:answer?.wrongTurn?'another-turn':'turn-1',settled:!answer?.unsettled,is_idle:true,
+    ...(answer&&!answer.omitText?{final_text:answer.text??null}:{})};
+  const endLine=record('user_turn_end',endData);
+  if(answer?.duplicateEnd)record('user_turn_end',endData);
   const events=await add('events',join(runRoot,'events.jsonl'),rows.map(JSON.stringify).join('\n')+'\n','jsonl');
   const eRef=line=>({artifact_id:'events',sha256:events.sha256,line});
   const snapshot=await add('workspace-final',join(runRoot,'workspace-final.json'),{files:outputFile?[{path:'output/result.json',sha256:outputFile.sha256}]:[]});
@@ -75,7 +83,7 @@ async function fixture({ outcome='pass', missingUsage=false, tools=[], source=fa
     admission:{status:capture?'captured_not_authorized':'accepted_before_task',refs:[]},
     coverage:{attempts:'complete',tools:'complete',interventions:'complete'},
     completion:{cleanup:{abort_settled:true,dispose_called:true}},timing:{duration_ms:100,started_monotonic_ns:'0'},
-    turns:capture?[]:[{id:'turn-1',end_ref:eRef(endLine),workspace_manifest_ref:rRef(snapshot)}],interventions:[],
+    turns:capture?[]:[{id:'turn-1',...(answer&&Object.hasOwn(answer,'summaryText')?{final_text:answer.summaryText}:{}),end_ref:eRef(endLine),workspace_manifest_ref:rRef(snapshot)}],interventions:[],
     requests:capture?[{id:'capture',attempts:[]}]:[{id:'request-1',payload_sha256:payloadSha,payload_ref:rRef(payload),
       attempts:[{id:'attempt-1',sent:true,transport_id:1,start_ref:eRef(usageLine??endLine)}],
       ...(usageLine?{usage_ref:{...eRef(usageLine),pointer:'/data/event/usage'},usage_attempt_id:'attempt-1'}:{})}],
@@ -166,10 +174,12 @@ function completedThenCancelled() {
 test('current collection recognizes the shared completed-before-cancel proof for the same request and usage attempt', () => {
   const f = completedThenCancelled();
   assert.equal(collectProviderApplicationCompletion(f), 'sse-done-before-http-cancel');
-  f.assistantEvent.data.message.provider = '[REDACTED_CREDENTIAL]';
-  assert.equal(collectProviderApplicationCompletion(f), null);
-  f.providerBinding = { status: 'known', value: 'unit-provider' };
-  assert.equal(collectProviderApplicationCompletion(f), 'sse-done-before-http-cancel');
+  for (const marker of ['[REDACTED_CREDENTIAL]', 'REDACTED_CREDENTIAL']) {
+    f.assistantEvent.data.message.provider = marker; delete f.providerBinding;
+    assert.equal(collectProviderApplicationCompletion(f), null);
+    f.providerBinding = { status: 'known', value: 'unit-provider' };
+    assert.equal(collectProviderApplicationCompletion(f), 'sse-done-before-http-cancel');
+  }
 });
 test('current completion proof preserves real errors, incomplete SSE and unrelated assistant results', () => {
   for (const change of [
@@ -342,6 +352,11 @@ test('redacted provider recovery requires the unique observed configuration and 
   assert.equal(recovered.value,'unit-provider');assert.equal(recovered.precision,'derived');
   assert.equal(recovered.observed_provider,'[REDACTED_CREDENTIAL]');
   assert.equal(recovered.verification_scope,'private-original-transport-hashes-recomputed');
+  const modern=JSON.parse(JSON.stringify(value).replaceAll('[REDACTED_CREDENTIAL]','REDACTED_CREDENTIAL'));
+  assert.equal(deriveRedactedProviderBinding(modern).value,'unit-provider');
+  assert.equal(deriveRedactedProviderBinding(modern).observed_provider,'REDACTED_CREDENTIAL');
+  const inconsistent=structuredClone(modern);inconsistent.event.data.provider='[REDACTED_CREDENTIAL]';
+  assert.equal(deriveRedactedProviderBinding(inconsistent),null);
   const projected=structuredClone(value);
   projected.candidate.projection.model.baseUrl='https://published-endpoint.invalid/v1';
   projected.candidate.projection.model_configuration.definition.providers['unit-provider'].baseUrl='https://published-endpoint.invalid/v1';
@@ -396,4 +411,127 @@ test('turn evidence collector closure excludes subject dispatch and private fixt
  for(const forbidden of ['benchmark/execute.mjs','benchmark/fixture.mjs','benchmark/fixture-turn-adapter.mjs','benchmark/corpus/index.mjs'])
   assert.ok(!names.includes(forbidden),forbidden);
  assert.equal(result.readback.turn_control.required,false);
+});
+
+test('collector reads a natural final answer from retained terminal events without an output file',async()=>{
+  const text='Total: 7. Ownership is unproven.';
+  const f=await fixture({answer:{text}}),result=await collect(f);
+  assert.equal(result.grade.business_outcome,'pass');assert.equal(result.grade.verified_success,true);
+  assert.deepEqual(result.readback.output_checks,[]);assert.deepEqual(result.readback.evidence.artifacts,[]);
+  assert.deepEqual(result.readback.evidence.final_answers,[{evidence_id:'final-answer-0',turn_id:'turn-1',content:text,sha256:sha(text)}]);
+  assert.equal(result.readback.answer_checks[0].refs[0].artifact_id,'events');
+  const serialized=JSON.stringify(result.bundle);
+  assert.equal(serialized.includes('oracle.json'),false);assert.equal(serialized.includes('anyOf'),false);
+});
+
+test('collector keeps absent or unbound terminal answer evidence distinct from a completed empty answer',async()=>{
+  for(const options of [{omitText:true},{unsettled:true},{wrongTurn:true},{duplicateEnd:true}]){
+    const result=await collect(await fixture({answer:{text:'Total: 7. Ownership is unproven.',...options}}));
+    assert.equal(result.grade.business_outcome,'unknown');assert.equal(result.readback.evidence.coverage.final_answers,'partial');
+  }
+  for(const text of [null,'']){
+    const result=await collect(await fixture({answer:{text}}));
+    assert.equal(result.grade.business_outcome,'fail');assert.equal(result.readback.evidence.coverage.final_answers,'complete');
+  }
+  const result=await collect(await fixture({answer:{text:'Total: 7. Ownership is unproven.',summaryText:'invented summary'}}));
+  assert.equal(result.grade.business_outcome,'unknown');assert.equal(result.validity,'invalid');
+});
+
+async function naturalReview(f,result,changes={}){
+  return f.save(join(f.root,'control','answer-review.json'),{schema_version:1,kind:'benchmark-final-answer-review',
+    run_id:f.raw.run_id,case_id:f.binding.id,oracle_sha256:f.binding.oracle_sha256,reviews:[{
+      contract_id:'answer',turn_id:'turn-1',answer_sha256:result.readback.evidence.final_answers[0].sha256,
+      status:'pass',reason:'Independent full-answer review confirms the total and preserves source uncertainty.',
+      reviewer:'collector-test-independent-reviewer',method:'independent-semantic-review',...changes}]});
+}
+
+test('collector binds independent semantic review to its original file, oracle, turn and final text',async()=>{
+  const f=await fixture({answer:{text:'The sum is seven. Source attribution cannot be established.',assessment:'semantic-review'}});
+  const original=await collect(f);assert.equal(original.grade.business_outcome,'unknown');
+  const review=await naturalReview(f,original);
+  const reviewed=await collectEpisode({...f,...f.args,outputDirectory:join(f.root,'reviewed'),finalAnswerReview:review,
+    reanalysisOf:{episode_sha256:original.episode_sha256}});
+  assert.equal(reviewed.grade.business_outcome,'pass');assert.equal(reviewed.grade.verified_success,true);
+  assert.equal(reviewed.grade.contracts[0].checks.all[0].found,false);
+  assert.equal(reviewed.readback.final_answer_review.sha256,review.sha256);
+  assert.deepEqual(reviewed.grade.contracts[0].evidence_ids,['final-answer-0','final-answer-review-0']);
+  assert.equal(JSON.parse(await readFile(original.paths.grade,'utf8')).business_outcome,'unknown');
+  const kept=reviewed.bundle.episode.artifacts.find(item=>item.id==='collection-answer-review');
+  assert.ok(kept);assert.equal(kept.sha256,review.sha256);
+});
+
+test('collector rejects an altered review file or review of different answer bytes',async()=>{
+  for(const mode of ['changed-file','wrong-answer','subject-workspace']){
+    const f=await fixture({answer:{text:'Total: 7. Ownership is unproven.',assessment:'semantic-review'}});
+    const original=await collect(f),review=await naturalReview(f,original,mode==='wrong-answer'?{answer_sha256:'0'.repeat(64)}:{});
+    if(mode==='changed-file')await writeFile(review.path,'{}\n');
+    if(mode==='subject-workspace'){
+      const relocated=await f.save(join(f.workspace,'review.json'),JSON.parse(await readFile(review.path,'utf8')));
+      review.path=relocated.path;review.sha256=relocated.sha256;
+    }
+    await assert.rejects(collectEpisode({...f,...f.args,outputDirectory:join(f.root,'review-rejected'),finalAnswerReview:review}),
+      mode==='changed-file'?/Evidence bytes changed/:mode==='wrong-answer'?/retained final-answer bytes/:/controller namespace/);
+  }
+});
+
+
+test('retained SDK3 source bodies without optional file bindings remain JSON-safe without inventing binding evidence', {
+  skip: !process.env.BENCHMARK_CURRENT_SOURCE_RUN &&
+    'Set BENCHMARK_CURRENT_SOURCE_RUN and BENCHMARK_CURRENT_SOURCE_PLAN to retained SDK3 evidence containing an unbound source body.',
+}, async t => {
+  const root = process.env.BENCHMARK_CURRENT_SOURCE_RUN;
+  const json = async path => JSON.parse(await readFile(path, 'utf8'));
+  assert.ok(process.env.BENCHMARK_CURRENT_SOURCE_PLAN, 'The retained run requires its original frozen plan');
+  const plan = await json(process.env.BENCHMARK_CURRENT_SOURCE_PLAN);
+  const resultPath = join(root, 'benchmark/runtime/episode-result.json');
+  const episode = await json(resultPath);
+  const candidate = await json(join(root, 'benchmark/runtime/candidate-observed.json'));
+  const views = await loadCurrentSourceViews({ runRoot: root, buildRoot: join(candidate.snapshot.build.path, '..'), candidate });
+  assert.equal(views.producer.sdk_version, 3);
+  const preserved = new Map();
+  for (const path of [resultPath, join(root, 'result.json'), join(root, 'run.json'), ...episode.artifacts.map(item => item.path)])
+    preserved.set(path, sha(await readFile(path)));
+  const receipts = await Promise.all(episode.notion.operations.map(operation => {
+    const artifact = episode.artifacts.find(item => item.id === operation.receipt_ref.artifact_id);
+    assert.ok(artifact); return json(artifact.path);
+  }));
+  const sourceViews = views.graphSourceViews(receipts);
+  const absentBindings = new Set([
+    ...sourceViews.entries.filter(entry => !entry.value.file_bindings?.some(file => file.path === (entry.value.path ?? 'SKILL.md')))
+      .map(entry => entry.requestId + ':' + (entry.value.path ?? 'SKILL.md')),
+    ...sourceViews.resources.flatMap(entry => entry.value.files
+      .filter(file => !entry.value.manifest.file_bindings?.some(binding => binding.path === file.path))
+      .map(file => entry.requestId + ':' + file.path)),
+  ]);
+  assert.ok(absentBindings.size > 0, 'The retained evidence must exercise an absent optional SDK file binding');
+  const bindingBytes = await readFile(plan.execution.case_bindings_file);
+  assert.equal(sha(bindingBytes), plan.execution.case_bindings_sha256);
+  const slot = plan.slots.find(item => item.case_id === episode.correlation.task_id && item.condition_id === episode.correlation.candidate_id);
+  assert.ok(slot);
+  const binding = JSON.parse(bindingBytes).find(item => item.id === slot.case_id);
+  const condition = plan.protocol.conditions.find(item => item.id === slot.condition_id);
+  const model = { ...plan.protocol.models.find(item => item.id === condition.model_id), adapter_evidence_path: plan.execution.adapter_evidence_file };
+  const raw = { root, run_id: episode.correlation.run_id, result_path: resultPath,
+    shared: await json(join(root, 'result.json')), episode, status: episode.status };
+  const required = binding.public_case.turns.length > 1 || (binding.events?.length ?? 0) > 0 || (binding.clarification?.length ?? 0) > 0;
+  raw.turn_control_verification = await readSubjectTurnControl({ controlRoot: plan.execution.control_root, runRoot: root, runId: raw.run_id, required });
+  raw.turn_control = raw.turn_control_verification.result;
+  const outputDirectory = await mkdtemp(join(plan.execution.environment_root, 'control', 'source-body-collector-regression-'));
+  const collected = await collectEpisode({ raw, binding, protocol: plan.protocol, slot, condition, model,
+    outputDirectory, environmentRoot: plan.execution.environment_root });
+  t.diagnostic('Retained zero-request collector regression: ' + outputDirectory);
+  assert.equal(collected.collector_version, CURRENT_COLLECTOR_VERSION);
+  assert.equal(collected.readback.notion.status, 'observed');
+  for (const row of collected.readback.notion.source_bodies) {
+    if (absentBindings.has(row.operation_id + ':' + row.path)) assert.equal(row.file_binding, null);
+    assert.match(row.sha256, /^[a-f0-9]{64}$/); assert.ok(row.bytes >= 0);
+    assert.ok(row.owner); assert.ok(row.ref);
+  }
+  assert.ok(collected.readback.notion.source_bodies.some(row => absentBindings.has(row.operation_id + ':' + row.path)));
+  assert.deepEqual(await json(join(outputDirectory, 'readback.json')), collected.readback);
+  assert.equal(collected.budget_usage.model_requests, episode.requests.flatMap(request => request.attempts).filter(attempt => attempt.sent).length);
+  assert.equal(episode.budget.usage_unknown, false);
+  assert.equal(collected.budget_usage.input_tokens, episode.budget.input_tokens);
+  assert.equal(collected.budget_usage.output_tokens, episode.budget.output_tokens);
+  for (const [path, expected] of preserved) assert.equal(sha(await readFile(path)), expected);
 });

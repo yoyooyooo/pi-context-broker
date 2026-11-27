@@ -2,6 +2,7 @@ import test from 'node:test';
 import { verifyPreparationEvidence } from './retained-source-views.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { collectRuntimeTools, deliveredSourceBodies, preparedSourceMatches, verifiedCodeModeRuntime } from './collect.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -72,6 +73,94 @@ test('a caught child failure remains opaque even when both complete censuses hon
     message.details.calls[0].status = message.nestedCalls.calls[0].status = 'error';
     const result = lineage(f); assert.equal(result.complete, true); assert.equal(result.tools[0].container.complete, false, name);
   }
+});
+
+function rejectedChildFixture() {
+  const f = nestedFixture(), name = 'mcp__fixture__save';
+  f.events[1].data.toolName = f.events[2].data.toolName = name;
+  f.events[2].data.isError = true;
+  f.events[2].data.result = { content: [{ type: 'text', text: 'Blocked before implementation execution' }] };
+  f.events[3].data.result.details.calls[0].name = name;
+  f.events[3].data.result.details.calls[0].status = 'error';
+  const message = f.session.entries[0].message;
+  message.details.calls[0].name = message.nestedCalls.calls[0].name = name;
+  message.details.calls[0].status = message.nestedCalls.calls[0].status = 'error';
+  f.events.splice(2, 0,
+    { type: 'tool_call', turn_id: 'turn-1', data: { type: 'tool_call', toolName: name, toolCallId: 'outer/1', parentToolCallId: 'outer', input: f.events[1].data.args } },
+    { type: 'tool_call_blocked', turn_id: 'turn-1', data: { tool: name, tool_call_id: 'outer/1', parent_tool_call_id: 'outer',
+      executed: false, code: 'BENCHMARK_OUT_OF_SCOPE_TOOL', scope: 'apparatus-out-of-scope', details: { rule: 'blocked_tool' } } });
+  return f;
+}
+
+test('a guarded child remains in the callback census and ancestry without claiming implementation execution', () => {
+  const f = rejectedChildFixture(), before = structuredClone(f), result = lineage(f), child = result.tools[1];
+  assert.deepEqual(f, before); assert.equal(result.complete, true);
+  assert.equal(child.execution, 'rejected_before_execution'); assert.equal(child.status, 'fail');
+  assert.equal(child.parent_id, 'outer'); assert.equal(child.turn_id, 'turn-1');
+  assert.equal(child.sequence, 2); assert.equal(child.end_sequence, 5);
+  assert.deepEqual(child.refs.map(ref => ref.line).sort(), [2, 3, 4, 5]);
+  assert.deepEqual(result.tools[0].container.descendant_ids, ['outer/1']);
+  assert.equal(result.tools[0].container.complete, false);
+  assert.deepEqual(result.tools[0].container.reasons, ['A descendant was rejected before execution']);
+});
+
+test('the same exact receipt proves a top-level rejection without removing its SDK callbacks', () => {
+  const f = rejectedChildFixture(); f.events = f.events.slice(1, -1); f.session = { entries: [] };
+  for (const row of f.events) delete row.data.parentToolCallId;
+  f.events.find(row => row.type === 'tool_call_blocked').data.parent_tool_call_id = null;
+  const result = lineage(f); assert.equal(result.complete, true);
+  assert.equal(result.tools.length, 1); assert.equal(result.tools[0].parent_id, null);
+  assert.equal(result.tools[0].execution, 'rejected_before_execution');
+  assert.equal(result.tools[0].sequence, 1); assert.equal(result.tools[0].end_sequence, 4);
+});
+
+const badRejections = {
+  'another call ID': f => { f.events[3].data.tool_call_id = 'foreign'; },
+  'another parent': f => { f.events[3].data.parent_tool_call_id = 'foreign'; },
+  'missing explicit parent': f => { delete f.events[3].data.parent_tool_call_id; },
+  'another tool': f => { f.events[3].data.tool = 'read'; },
+  'another turn': f => { f.events[3].turn_id = 'turn-2'; },
+  'absent turn identity throughout': f => { for (const row of f.events) delete row.turn_id; },
+  'another original hook identity': f => { f.events[2].data.toolCallId = 'foreign'; },
+  'another original hook parent': f => { f.events[2].data.parentToolCallId = 'foreign'; },
+  'another original hook tool': f => { f.events[2].data.toolName = 'read'; },
+  'another original hook turn': f => { f.events[2].turn_id = 'turn-2'; },
+  'missing original hook': f => { f.events.splice(2, 1); },
+  'duplicate original hooks': f => { f.events.splice(3, 0, structuredClone(f.events[2])); },
+  'duplicate rejection receipts': f => { f.events.splice(4, 0, structuredClone(f.events[3])); },
+  'a receipt before its hook': f => { [f.events[2], f.events[3]] = [f.events[3], f.events[2]]; },
+  'a receipt after pipeline completion': f => { [f.events[3], f.events[4]] = [f.events[4], f.events[3]]; },
+  'a claimed execution': f => { f.events[3].data.executed = true; },
+  'an incompatible scope': f => { f.events[3].data.scope = 'episode-guard'; },
+  'a non-string guard code': f => { f.events[3].data.code = ['BENCHMARK_OUT_OF_SCOPE_TOOL']; },
+  'a successful terminal callback': f => { f.events[4].data.isError = false; },
+};
+for (const [name, mutate] of Object.entries(badRejections)) test('guard classification rejects ' + name, () => {
+  const f = rejectedChildFixture(); mutate(f); const result = lineage(f);
+  assert.equal(result.complete, false); assert.ok(result.errors.some(error => /tool guard rejection/i.test(error)));
+  assert.notEqual(result.tools.find(tool => tool.id === 'outer/1').execution, 'rejected_before_execution');
+});
+
+test('a tool result cannot impersonate the observer rejection receipt', () => {
+  const f = rejectedChildFixture(), claim = f.events[3].data;
+  f.events.splice(2, 2); f.events[2].data.result.details = { tool_call_blocked: claim, executed: false };
+  const result = lineage(f); assert.equal(result.complete, true);
+  assert.equal(result.tools[1].execution, 'observed');
+});
+
+const guardProofPath = process.env.BENCHMARK_PROFILE_GUARD_PROOF;
+test('retained maintained-SDK child callbacks preserve the blocked implementation classification',
+  { skip: !guardProofPath && 'Set BENCHMARK_PROFILE_GUARD_PROOF to the retained zero-model SDK proof.' }, async () => {
+  const bytes = await readFile(guardProofPath), proof = JSON.parse(bytes);
+  assert.equal(proof.requests, 0); assert.equal(proof.executions, 0); assert.equal(proof.laterHooks, 0);
+  const result = collectRuntimeTools(proof.events, { id: 'maintained-sdk-proof', sha256: sha(bytes) });
+  const rejected = result.tools.find(tool => tool.id === 'outer-code/1');
+  assert.ok(rejected); assert.equal(rejected.execution, 'rejected_before_execution');
+  assert.equal(rejected.parent_id ?? rejected.observed_parent_id, 'outer-code');
+  // This proof invokes the real CodeMode executor directly with synthetic parent
+  // lineage. It must not invent the natural parent pipeline callbacks it lacks.
+  assert.equal(result.complete, false);
+  assert.deepEqual(result.errors, ['Unobserved parent for nested call: outer-code/1']);
 });
 
 function runtimeFixture() {

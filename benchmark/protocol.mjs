@@ -574,19 +574,26 @@ function policyChecks(value, maps, pairCells, stage, errors) {
       const routing = model.routing, auto = model.route.startsWith('auto/');
       try { validateRoutingPolicy(routing); }
       catch (error) { issue(errors, path + '/routing', 'routing_policy_invalid', error.message); }
-      const matchesVariant = id => id === routing.model_variant || id.endsWith('/' + routing.model_variant);
-      if ((routing.mode === 'auto-route') !== auto || /(^|\/)group\//.test(model.route)
-          || (routing.mode === 'auto-route' && model.route !== 'auto/' + routing.model_variant)
-          || (routing.mode === 'fixed-route' && /(^|\/)auto\//.test(model.route)))
-        issue(errors, path + '/routing/mode', 'routing_mode_mismatch', 'Auto routes must declare auto-route; fixed routes cannot use group aliases');
-      if (auto && model.backend.observability !== 'opaque_alias')
-        issue(errors, path + '/backend', 'auto_backend_unverified', 'An auto route is an opaque backend condition; a returned route label is not backend attestation');
-      if (!matchesVariant(model.route))
-        issue(errors, path + '/routing/model_variant', 'route_variant_mismatch', 'The requested route must name the declared concrete model variant');
+      if (routing.mode === 'mixed-route') {
+        if (model.route !== routing.route)
+          issue(errors, path + '/routing/route', 'routing_mode_mismatch', 'A mixed route must bind the exact requested group');
+        if (model.backend.observability !== 'opaque_alias')
+          issue(errors, path + '/backend', 'mixed_backend_unverified', 'A mixed route is a group condition and cannot claim one fixed backend');
+      } else {
+        const matchesVariant = id => id === routing.model_variant || id.endsWith('/' + routing.model_variant);
+        if ((routing.mode === 'auto-route') !== auto || /(^|\/)group\//.test(model.route)
+            || (routing.mode === 'auto-route' && model.route !== 'auto/' + routing.model_variant)
+            || (routing.mode === 'fixed-route' && /(^|\/)auto\//.test(model.route)))
+          issue(errors, path + '/routing/mode', 'routing_mode_mismatch', 'Auto routes must declare auto-route; fixed routes cannot use group aliases');
+        if (auto && model.backend.observability !== 'opaque_alias')
+          issue(errors, path + '/backend', 'auto_backend_unverified', 'An auto route is an opaque backend condition; a returned route label is not backend attestation');
+        if (!matchesVariant(model.route))
+          issue(errors, path + '/routing/model_variant', 'route_variant_mismatch', 'The requested route must name the declared concrete model variant');
+        if (routing.reported_model_ids.some(id => !(routing.mode === 'auto-route' && id === canonicalAutoGroupLabel(routing.model_variant)) &&
+            (/(^|\/)group\//.test(id) || (/(^|\/)auto\//.test(id) && !(routing.mode === 'auto-route' && id === model.route)) || !matchesVariant(id))))
+          issue(errors, path + '/routing/reported_model_ids', 'reported_model_alias', 'Reported labels must name the declared variant or its exact authorized auto route or canonical group');
+      }
       unique(routing.reported_model_ids, path + '/routing/reported_model_ids', errors);
-      if (routing.reported_model_ids.some(id => !(routing.mode === 'auto-route' && id === canonicalAutoGroupLabel(routing.model_variant)) &&
-          (/(^|\/)group\//.test(id) || (/(^|\/)auto\//.test(id) && !(routing.mode === 'auto-route' && id === model.route)) || !matchesVariant(id))))
-        issue(errors, path + '/routing/reported_model_ids', 'reported_model_alias', 'Reported labels must name the declared variant or its exact authorized auto route or canonical group');
     }
     if (!validModelWindow(model.backend.window))
       issue(errors, path + '/backend/window', 'route_window_invalid', 'Route window start must precede its end');

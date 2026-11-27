@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {normalizeEpisode} from './evidence/normalize.mjs';
 import {assessReportedModel} from './reported-model.mjs';
+import {deriveRedactedProviderBinding} from './provider-binding.mjs';
 import {verifyBundle,writeEvidenceBundle,readEvidenceBundle,buildEvidenceIndex,queryEvidenceIndex,inventoryLegacyEvidence,resolveEvidenceRef} from './evidence/store.mjs';
 import {exampleEnvelope,exampleEpisode} from './analysis/fixtures.mjs';
 import {fingerprint} from './protocol.mjs';
@@ -54,7 +55,94 @@ async function reportedBundle({values=['grok/grok-4.7'],keep,claimedValues,rawRe
   attempt.reported_model=assessReportedModel({routing,sent:true,refs:attempt.refs,
     observations:(keep??values.map((_,i)=>i)).map((index,position)=>({value:claimedValues?.[position]??values[index],field:'/data/event/model',bound:true,
       ref:{artifact_id:'events',sha256:artifact.sha256,line:index+1}}))});
+  return {root,bundle:normalizeEpisode(input),input,rows};
+}
+
+// Synthetic original artifacts exercise the complete offline binding boundary;
+// none of these records are a provider execution or retained study material.
+async function redactedReportedBundle(marker,{mutate=()=>{},values}={}) {
+  const {root,input,rows}=await reportedBundle({values}),attempt=input.attempts[0];
+  const hash=value=>createHash('sha256').update(value).digest('hex');
+  const model={id:'unit-model',provider:'unit-provider',api:input.identity.model_api,
+    route:input.identity.model_route,routing:input.identity.model_routing,parameters:{maxTokens:100}};
+  input.identity.model_id=model.id;
+  for(const row of rows)row.data.provider=marker;
+  const selected={provider:marker,id:model.route,api:model.api,baseUrl:'http://127.0.0.1:1234/v1'};
+  const candidate={projection:{model:selected,model_parameters:model.parameters,
+    model_configuration:{definition:{providers:{'unit-provider':{api:model.api,baseUrl:selected.baseUrl,models:[{id:model.route}]}}}}}};
+  const payload={model:model.route,messages:[]};
+  const request={id:attempt.request_id,usage_attempt_id:attempt.id,payload_sha256:hash(JSON.stringify(payload)),
+    attempts:[{id:attempt.id,transport_id:1}]};
+  const proof={event:rows[0],request,model,candidate,expected:structuredClone(candidate),admission:{differences:[]},payload,
+    requestStart:{type:'model_request_start',data:{request_id:request.id,capture_only:false,model:selected}},
+    attemptStart:{type:'http_attempt_start',data:{request_id:request.id,attempt_id:attempt.id,method:'POST',
+      url_origin:'http://127.0.0.1:1234',url_path:'/v1/chat/completions'}},
+    transportStart:{phase:'request_start',category:'model',method:'POST',id:1,
+      originSha256:hash('http://127.0.0.1:1234'),pathSha256:hash('/v1/chat/completions')},
+    transportSent:{phase:'request_sent',id:1,requestBodySha256:request.payload_sha256},
+    transportEnd:{phase:'request_end',id:1},attemptId:attempt.id,refs:attempt.refs};
+  const binding=deriveRedactedProviderBinding(proof);
+  assert.equal(binding?.status,'known');
+  // Negative fixtures keep a claimed known binding but rehash their changed
+  // original artifacts, so verifyBundle must rederive rather than trust it.
+  mutate(proof,binding,rows);
+  const reportedRows=[...rows];
+  rows.push(proof.requestStart,proof.attemptStart,...[proof.transportStart,proof.transportSent,proof.transportEnd].filter(Boolean));
+  const eventsText=rows.map(JSON.stringify).join('\n')+'\n',events=input.artifacts.find(a=>a.id==='events');
+  await writeFile(events.path,eventsText);
+  Object.assign(events,{sha256:hash(eventsText),bytes:Buffer.byteLength(eventsText)});
+  const eventRef=row=>({artifact_id:'events',sha256:events.sha256,line:rows.indexOf(row)+1});
+  const save=async(id,value)=>{
+    const text=JSON.stringify(value),path=join(root,id+'.json');
+    await writeFile(path,text);
+    const artifact={id,path,kind:'json',sha256:hash(text),bytes:Buffer.byteLength(text)};
+    input.artifacts.push(artifact);
+    return {artifact_id:id,sha256:artifact.sha256,pointer:''};
+  };
+  const candidateRef=await save('candidate-observed',proof.candidate);
+  const expectedRef=await save('collection-provider-binding-expectation',proof.expected);
+  proof.admission.expected_file={sha256:expectedRef.sha256};
+  const admissionRef=await save('admission-comparison',proof.admission);
+  const payloadRef=await save('provider-payload',proof.payload);
+  proof.request.start_ref=eventRef(proof.requestStart);
+  proof.request.payload_ref=payloadRef;
+  proof.request.attempts[0].start_ref=eventRef(proof.attemptStart);
+  const runtimeRef=await save('collection-runtime-result',{requests:[proof.request]});
+  const protocolRef=await save('collection-protocol',{models:[proof.model]});
+  attempt.transport_id=1;
+  attempt.provider_binding={...binding,refs:[candidateRef,expectedRef,admissionRef,payloadRef,runtimeRef,protocolRef,...rows.map(eventRef)]};
+  attempt.reported_model=assessReportedModel({routing:input.identity.model_routing,sent:true,refs:attempt.refs,
+    observations:reportedRows.map(row=>({value:row.data.event.model,field:'/data/event/model',bound:true,ref:eventRef(row)}))});
   return {root,bundle:normalizeEpisode(input)};
+}
+
+for(const marker of ['[REDACTED_CREDENTIAL]','REDACTED_CREDENTIAL']) {
+  test('redacted provider bundle accepts complete original proof: '+marker,async()=>{
+    const f=await redactedReportedBundle(marker);
+    assert.equal(f.bundle.episode.attempts[0].provider_binding.observed_provider,marker);
+    assert.equal((await verifyBundle(f.bundle,{root:f.root})).valid,true);
+  });
+  test('redacted provider bundle rejects missing or forged transport proof: '+marker,async()=>{
+    for(const mutate of [
+      proof=>{proof.transportSent=null;},
+      proof=>{proof.transportSent.requestBodySha256='b'.repeat(64);},
+      proof=>{proof.transportStart.originSha256='c'.repeat(64);},
+    ]) {
+      const f=await redactedReportedBundle(marker,{mutate});
+      await assert.rejects(()=>verifyBundle(f.bundle,{root:f.root}),/binding differs from raw request metadata/);
+    }
+  });
+  test('redacted provider bundle rejects a claimed different observed marker: '+marker,async()=>{
+    const other=marker==='REDACTED_CREDENTIAL'?'[REDACTED_CREDENTIAL]':'REDACTED_CREDENTIAL';
+    const f=await redactedReportedBundle(marker,{mutate:(_proof,binding)=>{binding.observed_provider=other;}});
+    await assert.rejects(()=>verifyBundle(f.bundle,{root:f.root}),/binding differs from raw request metadata/);
+  });
+  test('redacted provider bundle cannot reuse proof for another raw marker in the same attempt: '+marker,async()=>{
+    const other=marker==='REDACTED_CREDENTIAL'?'[REDACTED_CREDENTIAL]':'REDACTED_CREDENTIAL';
+    const f=await redactedReportedBundle(marker,{values:['grok/grok-4.7','grok/grok-4.7'],
+      mutate:(_proof,_binding,rows)=>{rows[1].data.provider=other;}});
+    await assert.rejects(()=>verifyBundle(f.bundle,{root:f.root}),/binding differs from raw request metadata/);
+  });
 }
 
 test('bundle verification proves original reported value, request identity and complete event coverage',async()=>{
