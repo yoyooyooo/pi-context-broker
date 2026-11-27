@@ -36,6 +36,27 @@ const fieldText = (row, binding, key) => {
 const management = events => events.filter(row => row.kind === 'context-broker.notion-materialization');
 const consumeValues = (events, pid) => events.filter(row => row.kind === 'context-broker.notion-sdk-result'
   && row.operation === 'consume' && row.observer_pid === pid && row.value?.status === 'ready');
+const localCollisionContent = alias => `# Local-only ${alias}\n\nThese filesystem instructions are distinct from the registered Notion Source member.\n`;
+const localCollisionSkill = alias => `---\nname: ${alias}\ndescription: Same-name local selection fixture\n---\n\n${localCollisionContent(alias)}`;
+
+/** The Source-only proof must actually include the local competitor it claims. */
+export function assertSourceOnlyCollisionSelection({ alias, client, config, localBytes, session, phase }) {
+  assert.ok(['materialize', 'independent-client'].includes(phase));
+  const local = client.local_collision;
+  assert.equal(local?.name, alias);
+  assert.equal(local.path, join(client.cwd, 'local-skills', alias, 'SKILL.md'));
+  assert.equal(local.content, localCollisionContent(alias));
+  assert.ok(Buffer.isBuffer(localBytes));
+  assert.equal(localBytes.toString('utf8'), localCollisionSkill(alias));
+  assert.equal(local.bytes, localBytes.length); assert.equal(local.sha256, hash(localBytes));
+  assert.equal(client.source.namespace, 'current-sdk');
+  assert.deepEqual(config, { sources: [client.source], skillRoots: [dirname(local.path)], requireAutoload: false });
+  const suffix = phase === 'materialize' ? ' Apply this Skill to the task.' : ' Apply this Skill from the independent client.';
+  const expected = '$' + alias + '@' + client.source.namespace + suffix;
+  const userTurns = session.branch.filter(row => row.type === 'message' && row.message?.role === 'user').map(row =>
+    typeof row.message.content === 'string' ? row.message.content : row.message.content.filter(part => part.type === 'text').map(part => part.text).join(''));
+  assert.ok(userTurns.includes(expected), 'The actual user input must select the Notion namespace despite the local collision');
+}
 
 /** Bind every positive management result to its own actual child close and whole stdout. */
 export function assertPositiveManagerTransports({ base, binding, piPid, sourceId, managerScope, consumerScope,
@@ -573,6 +594,8 @@ export async function runMaterializationScenario(name, info, out, helpers) {
     info.fixture.source_materialization.unaccepted_root.content,
     ...(facts.initial === 'manifest-growth' ? [facts.expected.root] : facts.initial === 'source-only' ? [facts.expected.required] : [])];
   const alias = facts.native_root?.alias ?? (facts.initial === 'manifest-growth' ? facts.members[1].name : facts.members[0].name);
+  const localCollisionBody = name === 'source-materialize-first' ? localCollisionContent(alias) : undefined;
+  if (localCollisionBody) absent.push(localCollisionBody);
   await save(join(base, 'source-facts.json'), facts);
   let plan = { mode: 'complete' };
   const checkWire = (body, included = present, excluded = absent) => {
@@ -645,7 +668,15 @@ syncBuiltinESMExports();
       const source = { type: 'notion', id: 'current-sdk', namespace: 'current-sdk', library: facts.sample.notion.library.library_id,
         discovery: { maxAge: '5m' }, activation: { maxAge: '5m' }, cacheDir: join(root, 'broker-cache'), prefetch: false };
       const config = join(agentDir, 'context-broker/config.yml');
-      await save(config, { sources: [source] });
+      let localCollision;
+      if (localCollisionBody) {
+        const path = join(root, 'local-skills', alias, 'SKILL.md');
+        await mkdir(dirname(path), { recursive: true });
+        const body = localCollisionSkill(alias);
+        await writeFile(path, body);
+        localCollision = { path, name: alias, bytes: Buffer.byteLength(body), sha256: hash(body), content: localCollisionBody };
+      }
+      await save(config, { sources: [source], ...(localCollision ? { skillRoots: [dirname(localCollision.path)], requireAutoload: false } : {}) });
       await save(join(agentDir, 'settings.json'), { compaction: { enabled: false }, retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } } });
       const env = isolatedEnv({ base: root, agentDir, PATH: [dirname(process.execPath), dirname(gitCommand.identity), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':'),
         NOTION_API_TOKEN: info.fixtureEnv.NOTION_API_TOKEN, NOTION_API_BASE_URL: service.origin,
@@ -666,6 +697,7 @@ syncBuiltinESMExports();
       const args = ['--no-extensions', '--no-skills', '--no-mcp', '--session-dir', sessions, '--tools', 'read,notion_list,notion_use,notion_ctl',
         '-e', providerExtension, '-e', observerExtension, '-e', join(info.packageRoot, 'src/index.ts'), '--model', 'context-broker-e2e/fake'];
       await save(join(root, 'launch.json'), { host: info.host, args, cwd: root, source, empty_consumer_roots: empty,
+        ...(localCollision ? { local_collision: localCollision, config_file: config, config_sha256: hash(await readFile(config)) } : {}),
         consumer_credential_sha256: hash(info.fixtureEnv.NOTION_API_TOKEN),
         manager_binding: manager.binding, isolation: { home: env.HOME, state: env.NTN_SKILLS_HOME, cache: env.NTN_SKILLS_CACHE_HOME, broker: source.cacheDir }, copied_consumer_state: false });
       return { root, source, env, args };
@@ -690,6 +722,7 @@ syncBuiltinESMExports();
       await save(join(base, 'process-boundaries.json'), processes); return final;
     };
     const first = await createClient(1);
+    const firstQuery = localCollisionBody ? alias + '@' + first.source.namespace : alias;
     await open(first, 'discovery');
     if (name !== 'source-materialize-cold-budget') await step('actual model discovery has no management authority or semantic writes', async () => {
       plan = { mode: 'call', call: { type: 'toolCall', id: 'readonly-discovery', name: 'notion_list', arguments: { query: alias, limit: 100 } } };
@@ -707,7 +740,7 @@ syncBuiltinESMExports();
     service.setPhase('materialize'); git.setPhase('materialize'); processes[0].phase = 'materialize';
     await step('literal dollar selection uses the fixed manager then publishes complete ordinary consumption', async () => {
       plan = { mode: 'complete' };
-      const prompt = '$' + alias + ' Apply this Skill to the task.';
+      const prompt = '$' + firstQuery + ' Apply this Skill to the task.';
       if (name === 'source-materialize-cold-budget')
         await runColdMaterializationPrompt({ base, facts, service, rpc, piPid: processes[0].pid, prompt });
       else await rpc.prompt(prompt);
@@ -763,7 +796,7 @@ syncBuiltinESMExports();
     assert.equal(warmEvents.filter(row => row.observer_pid === warm.pid && row.operation === 'source-members').length, 0);
     const second = await createClient(2), fresh = await open(second, 'independent-client');
     await step('an independent empty client consumes the persisted Notion records with no repair writes', async () => {
-      plan = { mode: 'complete' }; await rpc.prompt('$' + alias + ' Apply this Skill from the independent client.');
+      plan = { mode: 'complete' }; await rpc.prompt('$' + firstQuery + ' Apply this Skill from the independent client.');
       fresh.provider_file = checkWire(wire.at(-1).body);
       assert.deepEqual(assertMaterializedFacts(facts, service.notion), processes[0].facts);
     });
@@ -784,7 +817,7 @@ syncBuiltinESMExports();
     }
     const managerProcesses = await positiveManagerTransports({ base, manager, events, sessionReceipts: sessionManagement.map(row => row.data),
       credentialScopes, piPid: processes[0].pid, sourceId: first.source.id });
-    const receipt = { version: 1, initial: facts.initial, max_age_ms: 300000, alias, warm_query: warmQuery, original_member_candidate: originalMemberCandidate, processes,
+    const receipt = { version: 1, initial: facts.initial, max_age_ms: 300000, alias, first_query: firstQuery, warm_query: warmQuery, original_member_candidate: originalMemberCandidate, processes,
       manager_processes: managerProcesses, management_operations: initialManagement.length, semantic_writes: afterWrites, projection_writes: 0, copied_consumer_state: false, source_id: facts.source_id };
     await save(join(base, 'materialization.json'), receipt);
     await save(join(base, 'after-independent-client.json'), service.notion);
@@ -984,6 +1017,18 @@ export async function verifyMaterializationEvidence({ base, entry, source, event
     assert.equal(Object.keys(client.empty_consumer_roots).length, 3);
     assert.ok(Object.values(client.empty_consumer_roots).every(value => value === 'absent'));
   }
+  if (entry.name === 'source-materialize-first') {
+    assert.equal(receipt.first_query, receipt.alias + '@current-sdk');
+    for (const [index, client] of clients.entries()) {
+      assert.equal(client.config_file, join(client.cwd, 'agent/context-broker/config.yml'));
+      const configBytes = await readFile(client.config_file);
+      assert.equal(hash(configBytes), client.config_sha256);
+      const phase = index === 0 ? 'materialize' : 'independent-client';
+      assertSourceOnlyCollisionSelection({ alias: receipt.alias, client, config: JSON.parse(configBytes),
+        localBytes: await readFile(client.local_collision.path),
+        session: JSON.parse(await readFile(join(base, phase + '-final-session.json'), 'utf8')), phase });
+    }
+  }
   for (const key of Object.keys(clients[0].isolation)) assert.notEqual(clients[0].isolation[key], clients[1].isolation[key]);
   let previousExit;
   for (const process of receipt.processes) {
@@ -1004,6 +1049,8 @@ export async function verifyMaterializationEvidence({ base, entry, source, event
       : facts.initial === 'source-only' ? [facts.expected.root] : [facts.expected.root, facts.expected.required];
     assert.deepEqual(proof[0].present.map(row => row.text), expected); assert.ok(proof[0].absent.some(row => row.text === facts.expected.sibling));
     assert.ok(proof[0].absent.some(row => row.text === facts.sample.source_materialization.unaccepted_root.content));
+    if (entry.name === 'source-materialize-first') assert.ok(proof[0].absent.some(row => row.text === localCollisionContent(receipt.alias)),
+      'Every Source-only provider proof must exclude the same-name local instructions');
     const values = consumeValues(events, process.pid); assert.ok(values.length > 0);
     for (const value of values) {
       assert.equal(value.value.effects?.remote_writes, 'none');

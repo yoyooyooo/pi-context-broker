@@ -48,7 +48,7 @@
     "packages/context-broker/src/index.ts": "22facb24faf8f327b3da9a3ec57e3f7044001782861d7398aaf508660533bc38",
     "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "84d3fb8a58b0fd203cffe45a29442b5363666ecfd0997f55c001d8d8197c1959",
     "packages/context-broker/src/source-materialization.ts": "1191bc52372a839051a4c95d78d8739868fffecf5ec1a77fb45b4eafad101037",
-    "packages/context-broker/scripts/source-materialization-catalog.test.ts": "05dc6b1a2ed5ffc463dd3171dc5cdb140e70afc88cb7a38029599f1d10befd08",
+    "packages/context-broker/scripts/source-materialization-catalog.test.ts": "a917e8054c750ee1185f9d9169e3a0074058e77f7fdbf9c89ce84c2accb63540",
     "packages/context-broker/src/preparation-authority.ts": "3613d92ae24f655ebd6ef46d46a11be62cefb51e5afa2af43b860b2639aae11b",
     "packages/context-broker/scripts/source-materialization.test.ts": "ad426640a44d8ecd842273a8f0b926634aeb1fceea14b3ec8726d2792186b4ae",
     "packages/context-broker/scripts/preparation-authority.test.ts": "96870fecd284160eef7b94d8217b0667372abe66b9e2a7a08646e6d59fb98da6",
@@ -288,6 +288,15 @@
         "host-content-search.test.ts"
       ],
       "contract": "Use the same existing deadline race for Broker metadata/use, cli_source and scalar read at 60000ms, preserve content search 360000ms and batch requested timeBudgetMs, and settle on caller cancellation without waiting for a producer. Ordinary native read keeps its execution contract. Source instructions, refs, receipts and activation remain subject to original child-signal/publication guards. Pi idle behavior, timers and non-cooperative Promise termination are concrete execution obligations, not Availability/ReadRace finite variables."
+    },
+    {
+      "name": "ordinary Source member route and incomplete directory classification",
+      "tests": [
+        "source-member-candidates.test.ts",
+        "source-materialization-catalog.test.ts",
+        "notion-sdk-pi-materialization.mjs source-materialize-first"
+      ],
+      "contract": "The consumer-state SourceMemberSelection slice independently models existing local selection, namespace, complete/partial directory and match count. Availability/ReadRace do not acquire those variables or prove this boundary. Concrete mixed-source host and actual Pi evidence still establish real selection, visible CATALOG_INCOMPLETE with zero management/no substitute body, qualified input and complete body/warm behavior."
     }
   ],
   "current_review": {

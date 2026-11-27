@@ -127,12 +127,13 @@ export function matchSourceMemberCandidate(query: string, source: Extract<Source
   members: readonly SourceMemberCandidate[], coverage: "complete" | "partial"): SourceMemberCandidate | undefined {
   const selected = sourceMemberQuery(query, source);
   if (!selected) return undefined;
+  // Missing from a partial directory does not establish absence in this Source.
+  if (coverage !== "complete") throw Object.assign(new Error("The registered Source member directory is incomplete"), { code: "CATALOG_INCOMPLETE" });
   const stableId = selected.includes("@") ? sourceMemberLookupQuery(query, source) : undefined;
   const matches = selected.includes("@") ? members.filter(member => member.expected_skill_id === stableId)
     : members.filter(member => member.alias === selected || member.name === selected || member.member_key === selected);
   if (matches.length > 1) throw Object.assign(new Error("The Source member selection is ambiguous"), { code: "SOURCE_REFERENCE_AMBIGUOUS" });
   if (!matches.length) return undefined;
-  if (coverage !== "complete") throw Object.assign(new Error("The registered Source member directory is incomplete"), { code: "CATALOG_INCOMPLETE" });
   return matches[0];
 }
 

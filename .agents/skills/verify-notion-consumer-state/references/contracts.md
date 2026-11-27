@@ -8,7 +8,7 @@
 
 Availability/ReadRace 留在 verification/models/consumer-observations，完整配置及故意保留的缺陷反例不改写。它们约束资格一致性、有效分页 cursor、请求顺序和两代会话；F1–F7 与原两项真实守卫 mutation 继续执行。
 
-verification/models/consumer-state/coverage.json 是当前五个模型的唯一 cases 清单，绑定真实源码和受控回归。不得在 Skill 或 CI 复制另一份配置列表。这些模型覆盖有限时间、来源、精确身份/失败目标、Library 选择，以及 fixed graph 和 provider/boundary 交接。
+verification/models/consumer-state/coverage.json 是当前模型的唯一 cases 清单，绑定真实源码和受控回归。不得在 Skill 或 CI 复制另一份配置列表。这些模型覆盖有限时间、来源、精确身份/失败目标、Library 选择，以及 fixed graph 和 provider/boundary 交接。
 
 ## FreshnessPublication
 
@@ -286,6 +286,22 @@ Prompt 获取、physical binding 和本 source 拒绝；这不证明实际网络
 忽略 abort、provider reject 后下一请求、scope/cursor/session 退休和图片保持。
 按键至真实可见下拉、后台返回至屏幕更新及筛选 p50/p95 由真实 Editor/TUI 另测，
 包括 Pi 的自然 debounce；任何模型状态数或零 HTTP 断言都不是毫秒证据。
+
+## SourceMemberSelection
+
+该有限切片以一次已接纳的 literal 输入、普通 registry 已有本地选择与否、所选 namespace、解码后的 complete/partial 和 0/1/多个候选为输入。共二十四种初态，多个用 2 表示；不把字符串解析、目录构造、文件扫描、Git 或网络观察伪装成模型已验证的输入。
+
+| 动作/独立性质 | 具体实现与回放 | 边界 |
+| --- | --- | --- |
+| Route / LocalSelectionOwnsRoute | index.discoverInputMembers 只对 ordinary registry 的 not-found 继续 Source 发现；mixed-source host 裸名只交付本地正文，source-members 与 management 为 0 | 不证明任意本地文件或 fuzzy alias 的完整 registry 构造 |
+| Route / UnmatchedNamespaceIsIgnored | sourceMemberQuery 返回未选中后立即忽略；错误 namespace 不回退同名本地对象 | namespace 来自实际配置，不是注册 Source ID；解析原件由具体回归核验 |
+| Classify / PartialDirectoryNeverClassified、PartialNoManagement | matchSourceMemberCandidate 在匹配数量判断前拒绝 partial；零匹配与有匹配 host 均可见 CATALOG_INCOMPLETE，0 management、无替代 Skill 正文 | 普通用户任务可继续；warning 不证明 provider 获得 Skill |
+| Classify / CompleteClassificationIsExact | complete 目录按 0/1/多个返回缺失、唯一、歧义 | 真实候选身份、字符串匹配与错误码由 source-member-candidates.test.ts 检查 |
+| AdmitManagement / ManagementNeedsUniqueSelectedSource | 唯一候选才进入 index.materializeInputMember 的既有边界 | 只建模准入，不表示派发、manager 成功或正文交付；当前 receipt、权限、取消与预算仍是独立守卫 |
+
+Route、Observe、Classify、AdmitManagement 分开，完成态允许 stutter；不声明公平性、网络最终完成或时延。managementAdmitted 只表示进入既有准备边界，readiness、PreparationAuthority grant、真实 dispatch 和完成仍由各自实现回归或已有模型另证；固定输入不覆盖运行中 namespace 或 receipt 改变。candidate 保留全部守卫，三个 negative 分别删除 local、namespace、coverage 守卫。独立 expected_rules 固定所有七条性质和 NoDeadlock；负例必须穷尽并只破坏其声明集合。实际生成 statechart/TLC 原件由现役 runner 保存；实现分支示意见 consumer-state README。
+
+`source-materialization-catalog.test.ts` 通过 production index/host 验证同名混合源、qualified 引用、未知 namespace 及 partial 0/1。`source-materialize-first` 的实际 Pi 则保留无 autoload 标记的同名本地 canary、完整 Git 正文、真实 `$name@namespace`、新 PID 暖读和独立客户端。普通启动 shell/PATH 与 actual Git 身份、manager 原协议和 provider 完整字节继续由 integration 检查；本模型不能代替这些证据，也不扩张 Availability/ReadRace 的变量或历史结论。
 
 ## 守卫破坏与诊断
 

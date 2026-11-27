@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -61,6 +62,79 @@ async function fixture(targetNames = ["root"], setup: Parameters<typeof activeNo
   return { session, trace, root, required, scope, candidate, setRefresh: (run: () => Promise<void>) => { refresh = run; },
     setManagement: (run: (request: SourceMaterializationRequest) => Promise<void>) => { managementWait = run; }, setConsume: (run: () => Promise<void>) => { consumeWait = run; }, persisted: () => persisted };
 }
+
+const localCollisionBody = "Local-only fresh-member instructions. Never substitute these for the registered Source member.\n";
+async function mixedSourceFixture() {
+  const result = await fixture(["root"], { beforeStart(f) {
+    const localRoot = join(f.root, "local-collision");
+    mkdirSync(localRoot);
+    writeFileSync(join(localRoot, "SKILL.md"), "---\nname: fresh-member\ndescription: Same-name local selection fixture\n---\n" + localCollisionBody);
+    // Ordinary dollar discovery includes the complete local catalog, including
+    // Skills that do not opt in to autoload. Do not hide the collision.
+    writeFileSync(join(f.root, "config.json"), JSON.stringify({ skillRoots: [localRoot], requireAutoload: false, sources: [f.source] }));
+  } });
+  result.session.f.state.sourceMembers = async () => ({ version: 1, library_id: result.session.f.source.library,
+    scope: result.scope, coverage: "complete", failures: [], effects: { remote_writes: "none" },
+    candidates: [{ ...result.candidate, name: "fresh-member", alias: "fresh-member", record: undefined }] });
+  return result;
+}
+
+test("a bare local collision supplies local instructions without Source discovery or management", async () => {
+  const { session, trace } = await mixedSourceFixture();
+  try {
+    const result = await session.turn("Use $fresh-member");
+    expect(result.error).toBeUndefined(); expect(result.provider).toBe(true);
+    expect(JSON.stringify(result.payload)).toContain(localCollisionBody.trim());
+    expect(JSON.stringify(result.payload)).not.toContain("Complete root instructions A.");
+    expect(session.f.calls.filter(call => call.operation === "source-members")).toHaveLength(0);
+    expect(trace).toEqual([]);
+    expect(session.branch.filter(entry => entry.customType === "context-broker-materialization")).toHaveLength(0);
+  } finally { await session.close(); }
+});
+
+test("a qualified Source-only selection crosses management and delivers its graph despite a local collision", async () => {
+  const { session, trace } = await mixedSourceFixture();
+  try {
+    const result = await session.turn("Use $fresh-member@notion");
+    expect(result.error).toBeUndefined(); expect(result.provider).toBe(true);
+    expect(trace).toEqual(["management", "catalog", "consume"]);
+    expect(session.f.calls.filter(call => call.operation === "source-members")).toHaveLength(1);
+    expect(JSON.stringify(result.payload)).toContain("Complete root instructions A.");
+    expect(JSON.stringify(result.payload)).toContain("Complete required instructions A.");
+    expect(JSON.stringify(result.payload)).not.toContain(localCollisionBody.trim());
+    expect(session.branch.filter(entry => entry.customType === "context-broker-materialization")).toHaveLength(1);
+  } finally { await session.close(); }
+});
+
+test("an unknown namespace never falls back to a same-name local Skill or materializes another Source", async () => {
+  const { session, trace } = await mixedSourceFixture();
+  try {
+    const result = await session.turn("Use $fresh-member@missing-source");
+    expect(session.f.calls.filter(call => call.operation === "source-members")).toHaveLength(0);
+    expect(trace).toEqual([]);
+    expect(JSON.stringify(result.payload)).not.toContain(localCollisionBody.trim());
+    expect(JSON.stringify(result.payload)).not.toContain("Complete root instructions A.");
+    expect(session.branch.filter(entry => entry.customType === "context-broker-materialization")).toHaveLength(0);
+  } finally { await session.close(); }
+});
+
+test.each([false, true])("an incomplete Source directory (matching candidate: %s) remains a visible failure with no management or local fallback", async matched => {
+  const { session, trace, candidate, scope } = await mixedSourceFixture();
+  session.f.state.sourceMembers = async () => ({ version: 1, library_id: session.f.source.library, scope, coverage: "partial",
+    candidates: matched ? [{ ...candidate, name: "fresh-member", alias: "fresh-member", record: undefined }] : [],
+    failures: [{ source_id: "unavailable-origin", code: "SOURCE_GIT_RUNTIME_UNSUPPORTED" }], effects: { remote_writes: "none" } });
+  try {
+    const result = await session.turn("Use $fresh-member@notion").then(value => ({ value }), error => ({ error }));
+    if (!("value" in result)) throw result.error;
+    expect(result.value.provider).toBe(true);
+    expect(result.value.notices.find(notice => notice.text.includes("CATALOG_INCOMPLETE"))).toMatchObject({ level: "warning" });
+    expect(trace).toEqual([]);
+    expect(session.f.calls.filter(call => call.operation === "source-members")).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toContain(localCollisionBody.trim());
+    expect(JSON.stringify(result)).not.toContain("Complete root instructions A.");
+    expect(session.branch.filter(entry => entry.customType === "context-broker-materialization")).toHaveLength(0);
+  } finally { await session.close(); }
+});
 
 test("materialization rebuilds the real complete catalog before ordinary consumption and retains unrelated members", async () => {
   const { session, trace, persisted } = await fixture();
