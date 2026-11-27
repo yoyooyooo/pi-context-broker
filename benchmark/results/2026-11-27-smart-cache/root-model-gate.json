@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "at_utc": "2026-11-27T06:42:49.210139+00:00",
+  "decision": "proceed_with_registered_four_slots",
+  "scope": "Existing standing authorization; this is an internal technical admission check, not a new user resource approval.",
+  "plan": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/attempt-1/plan.json",
+    "sha256": "584b65c0bde3bad5361580a57461b3817524b8f47d1ed39f17cbdcfe65e17bd7",
+    "bytes": 97042,
+    "internal_sha256": "b360c6ee7441c208440a6aaaf034c91246d6aafaf93210a4e1bf534085455292"
+  },
+  "controller_sha256": "4632e30dfeb7885fb5510558714cadb7a1f9fb6e408c2a733a88a52b6df296e2",
+  "evidence": [
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/build-identity-1.json",
+      "sha256": "6a2a9095d41e688f1f1d09b1d6231f6356bdd546364647c62e491090f908fbfd",
+      "bytes": 3053
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/condition-bindings-verification.json",
+      "sha256": "a51a9b922c0977ab035b9b4fa44d535477d93fcb7b9f4ba35ea637a418c59a36",
+      "bytes": 7083
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/root-capture-inspection-1.json",
+      "sha256": "9ebed0a20fc907e40c2d46a993530fda98bd66ab45a7dfd77386586b85708558",
+      "bytes": 15398
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/material-refresh-1-review.json",
+      "sha256": "c11b7c5bcceea497d09819968837e41020c97169ab5cf9c2ebe15b1d3bdeb1b0",
+      "bytes": 14261
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/planned-schedule-1.json",
+      "sha256": "bca41f42763f9775af4385efb945f734df88c947273aa44cdc3281c6b3de4e47",
+      "bytes": 1756
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/preparation-findings-1.json",
+      "sha256": "16a8aa049af42e3d05777d26ec3d23d337df9b9465b3c4bce07bf519141c1645",
+      "bytes": 1164
+    }
+  ],
+  "admission": {
+    "correct_pair_direction": "m0-e1 current candidate, m0-e0 previous accepted reference",
+    "condition_sdk_proofs": "fd4384cf reference; ea241cd6 candidate; each verified owned closure and exact build manifest",
+    "shared_material": "Same Common16 Library, both public cases, input inventory, oracles, identities and 25 native-equivalent resources",
+    "canonical_request": {
+      "both_bytes": 14480,
+      "both_fingerprint": "11226e2b9f8277d8655c64965c254f044e7ae48c0a24e77c0ea859cc85e8797e"
+    },
+    "actual_serializer": {
+      "reference_compact_bytes": 15042,
+      "candidate_compact_bytes": 15034,
+      "difference": "Independent workspace and two bundled product Skill paths; 8-byte length difference is build ID naming, not product wording benefit."
+    },
+    "actual_capture": "Both parent results passed, exit0, runtime unchanged, frozen artifacts passed; command_source none and no source copy. Zero model HTTP or guarded-fetch attempts, all model budget counters zero, expected capture-complete send block and cleanup complete.",
+    "independent_review": "Actual plan/owned proofs, both 21-artifact capture closures, expectation/projection match, recorded actual serializer, extension ownership, modes and complete shared read-only catalog reviewed; no remaining admission blocker."
+  },
+  "limitations": [
+    "Admission payload is the probe, not a business task prompt; shared startup expectations do not constitute separate continuation business-prompt captures.",
+    "Package/daily/source checks do not predict business outcome or population efficiency.",
+    "Observe request/refresh choices, actual source operations and cancellation boundaries; do not attribute stochastic model time or input variation to cache alone.",
+    "Preserve failures, unknowns, retries and all actual usage. Do not add samples to obtain a positive result."
+  ],
+  "capacity": {
+    "df": "Filesystem   1024-blocks      Used Available Capacity  iused     ifree %iused  Mounted on\n/dev/disk3s5   482797652 399511328  41053956    91% 15701161 410539560    4%   /System/Volumes/Data\n",
+    "available_bytes": 42039250944,
+    "remaining_owned_growth_estimate_bytes": 536870912,
+    "expected_remaining_bytes": 41502380032,
+    "remaining_scope": "Four source-free model runs, collection and small analysis/indices. Both complete builds already exist. No new build/clone/dependency copy.",
+    "review": "Ended guide and focused copies already retired to same-volume Trash with no physical capacity credit; current two builds have these named consumers and explicit retirement after interpretation."
+  },
+  "execution": "Operator should finish its finite capture review, reread ledger and lease, then use the existing frozen run-standing entry with slice1 for the original four slots; never rebuild or alter frozen inputs."
+}

@@ -28,6 +28,8 @@ The comparison uses the existing `explicit-01-a` and `continuation-01-a` Common1
 
 The provider route label is not backend attestation. Both arms use the same new frozen controller; the reference's public subject and turn-runtime files were verified unchanged. The existing read-only material proof applies to both identical SDKs, so it was not refreshed again.
 
+A later read-only orientation check found that the retained setup used `environment_pairs: [[0, 1]]`: `m0-e0` is the accepted reference build and `m0-e1` is the guidance candidate, while the scorer labels a pair's first condition as candidate. The product roles and raw-run tables in this report use the actual build and run identities; they must not be replaced by the old automatic comparison labels or ratio direction. The not-adopted decision rests on the observed refresh arguments, request counts, background completion/cancellation and added public bytes, so that decision is unchanged. The [orientation readback](../benchmark/results/2026-11-27-refresh-guidance/orientation-readback.json) retains this distinction. The old plan, raw observations, usage and scores remain untouched; the next comparison declares its direction correctly before transport.
+
 ## What the model actually received
 
 Both zero-model captures pass. They load the selected packed `src/index.ts` entry, expose the same tools, and observe the same complete sixteen-item catalog and directory. Both have zero provider attempts and zero model usage. The public subject projection, including the paired reference artifacts, is identical.

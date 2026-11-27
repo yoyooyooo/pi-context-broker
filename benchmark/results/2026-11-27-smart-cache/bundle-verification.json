@@ -1,0 +1,53 @@
+{
+  "at_utc": "2026-11-27T07:00:59.742Z",
+  "status": "passed",
+  "verify": true,
+  "bounded_evidence_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126",
+  "scope": "Every referenced artifact actual SHA/bytes and normalized derivations verified by the frozen evidence reader; no reanalysis or model send.",
+  "runs": [
+    {
+      "run_id": "current-smart-cache-own-pair-1-001",
+      "status": "verified",
+      "bundle": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-own-pair-1-001/benchmark/normalized/normalized/bundle.json",
+        "sha256": "6ff88cf073a1907ef235b86ead33bde3c3963058c2dff65a41c4f416c5aab156",
+        "bytes": 103539
+      },
+      "episode_sha256": "1e1e92cc4b76b68526d319bd0ac45524fe3083694e249456f570b7e3cf96bb40",
+      "artifact_count": 224
+    },
+    {
+      "run_id": "current-smart-cache-own-pair-1-002",
+      "status": "verified",
+      "bundle": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-own-pair-1-002/benchmark/normalized/normalized/bundle.json",
+        "sha256": "c3048abb3f00e17f10a35959b5ca6a3e1bc0e28002272ead7a8f003c8998239a",
+        "bytes": 103039
+      },
+      "episode_sha256": "39acf6e09db4b3a752efa52c84e6f5f5de253a2a38c07dfb050ff01707fb39e6",
+      "artifact_count": 224
+    },
+    {
+      "run_id": "current-smart-cache-own-pair-1-003",
+      "status": "verified",
+      "bundle": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-own-pair-1-003/benchmark/normalized/normalized/bundle.json",
+        "sha256": "08c26a27055bea69bfb6b7741acfb036937e84c5f8772f00b7795cab53351c6c",
+        "bytes": 109932
+      },
+      "episode_sha256": "da1ba17fba8934b7d9eec0deaa1c7d4fd07b03fadb8ca9a0c60c028831ef4e78",
+      "artifact_count": 244
+    },
+    {
+      "run_id": "current-smart-cache-own-pair-1-004",
+      "status": "verified",
+      "bundle": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-own-pair-1-004/benchmark/normalized/normalized/bundle.json",
+        "sha256": "33232e35f0188ea31db442920326dcbfb0cb255eb53cd6cc6f45c2a12f52a419",
+        "bytes": 110032
+      },
+      "episode_sha256": "d51b7510d5c4f252705b583a8a587e13e28073ce04d139086d539abfbe4a9dbb",
+      "artifact_count": 243
+    }
+  ]
+}

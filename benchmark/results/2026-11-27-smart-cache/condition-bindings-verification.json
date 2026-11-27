@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "at_utc": "2026-11-27T06:16:25.828626+00:00",
+  "status": "passed",
+  "scope": "Condition-specific SDK material binding, true portable verifier closure and legacy revision regression; no model or remote fixture effects.",
+  "tests": {
+    "first_attempt": {
+      "condition_bindings_pass": 8,
+      "related_regression_pass": 142,
+      "related_regression_fail": 1,
+      "optional_historical_skip": 1,
+      "failure": "Declared offline revision verifier source list omitted the new static dependency."
+    },
+    "followup": {
+      "condition_bindings_pass": 10,
+      "revision_pass": 13,
+      "fail": 0,
+      "skip": 0
+    },
+    "unchanged_regressions": "Reuse actual first-attempt passing suites; do not rerun unaffected coverage."
+  },
+  "runs": [
+    {
+      "run_id": "current-smart-cache-bindings-focused-1",
+      "status": "failed",
+      "exit_code": 1,
+      "runtime_check": "unchanged",
+      "frozen_artifacts": "passed",
+      "evidence": [
+        {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-bindings-focused-1/result.json",
+          "sha256": "cbcccea78bba24c2f86be8847bb5d8ee5a7be8a0b7826bb38c5658ae3d4041a8",
+          "bytes": 10119
+        },
+        {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-bindings-focused-1/command.stdout.log",
+          "sha256": "d214dd16c78470ad1baac5c4ab2576a6f52d3c9b2a848e7d32faa508750f9f35",
+          "bytes": 16921
+        },
+        {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-bindings-focused-1/command.stderr.log",
+          "sha256": "02ef8d05b071d53eede0c217db72c2884aad67465af9942688de519887d19711",
+          "bytes": 785
+        },
+        {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-bindings-focused-1/run.json",
+          "sha256": "000a6e921a2fe3ea0848c9da0f07175b6ced6220011b154770b5337a5f51e9f8",
+          "bytes": 13217
+        },
+        {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-bindings-focused-1/command.process.json",
+          "sha256": "ad21c39cf7b3d08fb4adcedd44cfa1039aaa1b0d97ca8d586d1e68d72c8ad6e4",
+          "bytes": 152
+        }
+      ],
+      "inputs": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/focused-inputs-1/manifest.json",
+        "sha256": "359967200e10d263844a253d1cab24f2873059c4c3764690dca27004fc0d4a2c",
+        "bytes": 11680
+      },
+      "script": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/verify-condition-bindings-1.mjs",
+        "sha256": "647220e41f59a45d9b006eff339b461bf49ab0a5a19dd3b6857628ef27175b76",
+        "bytes": 1761
+      }
+    },
+    {
+      "run_id": "current-smart-cache-bindings-focused-2",
+      "status": "passed",
+      "exit_code": 0,
+      "runtime_check": "unchanged",
+      "frozen_artifacts": "passed",
+      "evidence": [
+        {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-bindings-focused-2/result.json",
+          "sha256": "86dc980825f90a9c429c1a5c1cbb2005511db0d4088db63459ec0aa1f38483de",
+          "bytes": 10122
+        },
+        {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-bindings-focused-2/command.stdout.log",
+          "sha256": "e76615c7ee51c8d2730a8d3718bf78ee445938bef68340d57c6d1cbe24320aa5",
+          "bytes": 3168
+        },
+        {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-bindings-focused-2/command.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-bindings-focused-2/run.json",
+          "sha256": "ea0d11f8d2652dbc6cd44d769160b872eab765cab5e670cd3e9539cf3018f48e",
+          "bytes": 13267
+        },
+        {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-smart-cache-bindings-focused-2/command.process.json",
+          "sha256": "626ddb901c4726f3c23bc504346afdbdc89531aa34a96f4ab0a84cb46044c37f",
+          "bytes": 152
+        }
+      ],
+      "inputs": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/focused-inputs-2/manifest.json",
+        "sha256": "a66628e3df81f7f1ba1ca66eb42c2e960737f8664aa1210fb8fe386e3738ef08",
+        "bytes": 12274
+      },
+      "script": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/verify-condition-bindings-2.mjs",
+        "sha256": "0cc1fd0cdd2867fd66b47e4e42e7f35b3de97cf17b6d5dd43a908c6589f50229",
+        "bytes": 1436
+      }
+    }
+  ],
+  "source_since_followup_inputs": {
+    "only_docs_updated": [
+      "docs/benchmark-running.md"
+    ],
+    "final_docs": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/broker/docs/benchmark-running.md",
+      "sha256": "9cb0e2308af725722dd489d40646dc722fd4845be40666fb41f8ba6a796d228b",
+      "bytes": 39830
+    }
+  },
+  "review": {
+    "independent_source_review": "Portable revision registry closes over 16 declared files; no planning/subject/models/configure/controller/runner/corpus static dependency. Complete execution closure retains preparation code.",
+    "docs_review": "Confirmed exact supported modes and offline retained control/material boundary."
+  },
+  "product_source_equals_accepted_next": "312c40ba85a2253306c3b4f82f82a4686168af74",
+  "capacity": {
+    "df": "Filesystem   1024-blocks      Used Available Capacity  iused     ifree %iused  Mounted on\n/dev/disk3s5   482797652 395371520  45193764    90% 15584844 451937640    3%   /System/Volumes/Data\n",
+    "available_bytes": 46278414336,
+    "whole_phase_additional_estimate_bytes": 3221225472,
+    "expected_remaining_bytes": 43057188864,
+    "note": "Estimate includes this task and shared concurrent delivery allowance, not a reservation. Trash moves get no free-space credit."
+  },
+  "next_action": "Commit reviewed source, build one current paired packed candidate; zero model sends until capture and ownership gate."
+}

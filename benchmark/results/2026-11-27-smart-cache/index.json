@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "kind": "thin-original-evidence-index",
+  "status": "comparison_completed_3_pass_1_unknown",
+  "created_at": "2026-11-27T07:11:21.065Z",
+  "scope": "Navigation, compact readback projections and selected small receipts. No original requests, sessions, archives or source trees are copied.",
+  "files": [
+    {
+      "path": "build-identity.json",
+      "mode": "exact-small-receipt-copy",
+      "sha256": "6a2a9095d41e688f1f1d09b1d6231f6356bdd546364647c62e491090f908fbfd",
+      "bytes": 3053,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/build-identity-1.json",
+      "original_sha256": "6a2a9095d41e688f1f1d09b1d6231f6356bdd546364647c62e491090f908fbfd"
+    },
+    {
+      "path": "root-model-gate.json",
+      "mode": "exact-small-receipt-copy",
+      "sha256": "c4fd767f03635e75b255fb506218338d46da86f1b47c46f095cf12e7fef2e2c5",
+      "bytes": 5406,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/root-model-gate-1.json",
+      "original_sha256": "c4fd767f03635e75b255fb506218338d46da86f1b47c46f095cf12e7fef2e2c5"
+    },
+    {
+      "path": "condition-bindings-verification.json",
+      "mode": "exact-small-receipt-copy",
+      "sha256": "a51a9b922c0977ab035b9b4fa44d535477d93fcb7b9f4ba35ea637a418c59a36",
+      "bytes": 7083,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/condition-bindings-verification.json",
+      "original_sha256": "a51a9b922c0977ab035b9b4fa44d535477d93fcb7b9f4ba35ea637a418c59a36"
+    },
+    {
+      "path": "final-ledger.json",
+      "mode": "exact-small-receipt-copy",
+      "sha256": "eb6d2532a784405c8495e4b0626999f2638dc18cb33f63aea666c0cf13375739",
+      "bytes": 3481,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/final-ledger-1.json",
+      "original_sha256": "eb6d2532a784405c8495e4b0626999f2638dc18cb33f63aea666c0cf13375739"
+    },
+    {
+      "path": "bundle-verification.json",
+      "mode": "exact-small-receipt-copy",
+      "sha256": "934325c35c5ca58d467d4fb3826508b999331305018c336ad6232b4d579820cf",
+      "bytes": 2582,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/bundle-verification-2.json",
+      "original_sha256": "934325c35c5ca58d467d4fb3826508b999331305018c336ad6232b4d579820cf"
+    },
+    {
+      "path": "comparison.json",
+      "mode": "derived-field-projection",
+      "sha256": "63101329f033e510b58bcbba13de5fa933f1a898dda917cd0ea014e8919ecb51",
+      "bytes": 83444,
+      "original": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/operator-readback-1.json",
+        "sha256": "ff04b787ca806fd10935d9efd50b91bb50994c2f73d796c8e23b21cfedfb4dea",
+        "bytes": 201725
+      }
+    },
+    {
+      "path": "daily-adoption.json",
+      "mode": "derived-field-projection",
+      "sha256": "75752e1b5cff29755da422908b27d54af1d15a58e7f4057d0362612c5dcfd62b",
+      "bytes": 14916,
+      "original": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-cycle-20261127/daily-current-readback.json",
+        "sha256": "0242dc7a7fc399512b15448a530137c5b4a5fac0c1ba09e5faf23d1f22faaf3d",
+        "bytes": 23351
+      }
+    }
+  ],
+  "original_control": [
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/attempt-1/plan.json",
+      "sha256": "584b65c0bde3bad5361580a57461b3817524b8f47d1ed39f17cbdcfe65e17bd7",
+      "bytes": 97042
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/template-1.json",
+      "sha256": "2ed2ec7d2492157d90dd464b63aec2fd78345c9a0ca69aae238e0ba01471c200",
+      "bytes": 11804
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/setup-1.json",
+      "sha256": "8dd7b879d5410386310977a8766658723b729facdfcd997a41a5e128cc9deb75",
+      "bytes": 12706
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/work-plan-1.json",
+      "sha256": "db3b0d722c42dccc20e02d4e55e01471103147c3867ddcf2da96f3664c16d675",
+      "bytes": 18316
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/controller-identity-1.json",
+      "sha256": "b465675806e20e054498767c14340fbb983c15fbf7ff383bfaef3c2a8e4f034b",
+      "bytes": 15551
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/material-refresh-1-review.json",
+      "sha256": "c11b7c5bcceea497d09819968837e41020c97169ab5cf9c2ebe15b1d3bdeb1b0",
+      "bytes": 14261
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/configure-1-review.json",
+      "sha256": "d4267542b19e0c15b8b668f922eecde95b5404470d7bc9a69819b61a9ad24dc9",
+      "bytes": 23839
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/run-standing-1.stdout.json",
+      "sha256": "545f367985027b8461d5d080ab8c6d76e01b8e694d732a20aaa26e19e9dae5a8",
+      "bytes": 2051
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/operator-readback-1.json",
+      "sha256": "ff04b787ca806fd10935d9efd50b91bb50994c2f73d796c8e23b21cfedfb4dea",
+      "bytes": 201725
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/operator-closeout-1.json",
+      "sha256": "d52be08fb4df0c4d38b14ec6f89736b856ab47948f3b0a5875b5cf4567dc81d2",
+      "bytes": 9941
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/artifact-index-1.json",
+      "sha256": "8e7fabe962fe141597b25205d838c14d009e1e4fa13f0f099c074aa5aaf2b8c0",
+      "bytes": 22745
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/storage-closeout-1.json",
+      "sha256": "c6f34df6cde7b97dec5b2eaf65da6b61ce23bcf52c7c3bd8108271dd950fa9ca",
+      "bytes": 6798
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/bundle-verification-attempt-1.json",
+      "sha256": "92608ecd05915b1ff6722e7deea090bf69f2d94412870a78bf7bbdcb40cd281d",
+      "bytes": 659
+    }
+  ],
+  "material_originals": [
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-product-material-20261127-1/verified/ca667472-71d3-4711-99af-a8ce7f7d2cc4/binding.json",
+      "sha256": "3cf5a21522ecff145d8581b0fee05733b0c52fbf0a27ac9c8a4f6762a0286edd",
+      "bytes": 17974
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-material-20261127-1/verified/232cda75-9d51-4fda-9995-ba2637441447/binding.json",
+      "sha256": "4b0a245d38cc2755228e0fdf210350dd4d530e575ed650e62b255ad0ef0480f9",
+      "bytes": 18006
+    }
+  ],
+  "build_retirement": {
+    "status": "not_asserted_by_this_index",
+    "receipts": [],
+    "note": "Operator consumers ended at 2026-11-27T07:03:51.601Z. Root will append later resource-disposition receipts; this report does not claim either build was already cleaned."
+  },
+  "reanalysis_limits": [
+    "This directory is not a sealed or portable replay archive. Original Mini paths and SHA values identify the evidence; path presence is not a runtime-availability promise.",
+    "Exact reanalysis needs the frozen controller/implementation, common and condition bindings, owned proof/source SDK closure, original case inputs/oracles and raw run artifacts. Keep strict SDK/producer hashes and the retained unknown.",
+    "Condition-specific material mode supports this immutable Own comparison; collection recovery and legacy stateful/finite/pilot continuations are not migrated by this work.",
+    "Retirement can make original runtime replay unavailable. A new execution after retirement requires a separately identified build and plan; never overwrite or relabel this plan.",
+    "Current full-build disposition is root-owned; system-Trash moves do not by themselves create free disk space."
+  ]
+}

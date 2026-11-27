@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "at_utc": "2026-11-27T06:27:55.259536+00:00",
+  "scope": "Read-only clarification of the retained refresh-guidance comparison orientation; no changes to the old plan, raw runs, scores, usage or decision.",
+  "retained_plan": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/plan.json",
+    "sha256": "49d78a518ef67e548ce6ff93befb96ba687957679d7678a5901290c8090d8f3a",
+    "bytes": 96158
+  },
+  "retained_setup": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/setup-1.json",
+    "sha256": "94dc4c04425e02963166f9deae9b9a62101e9e08a3bf1e6bfaeac51f6c13e21f",
+    "bytes": 509290
+  },
+  "retained_product_decision": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/refresh-guidance-cycle-20261127/product-decision.json",
+    "sha256": "314b10dd46469a92d1b47763ac89d3b85ae638a1b0fcc15f225efdea010b7588",
+    "bytes": 2318
+  },
+  "protocol_pairs": [
+    {
+      "id": "m0-explicit-01-a-n16-r1-r0",
+      "condition_ids": [
+        "m0-e0",
+        "m0-e1"
+      ],
+      "case_id": "explicit-01-a-n16-r1"
+    },
+    {
+      "id": "m0-continuation-01-a-n16-r2-r0",
+      "condition_ids": [
+        "m0-e0",
+        "m0-e1"
+      ],
+      "case_id": "continuation-01-a-n16-r2"
+    }
+  ],
+  "actual_conditions": {
+    "m0-e0": {
+      "product_role": "accepted_reference",
+      "build_id": "next-product-runtime-20261127-2"
+    },
+    "m0-e1": {
+      "product_role": "rejected_guidance_candidate",
+      "build_id": "next-refresh-guidance-20261127-1"
+    }
+  },
+  "scorer_convention": "First protocol.pairs.condition_ids item is labelled candidate; second is reference. The old [[0,1]] setup therefore makes automatic comparative labels opposite to the explicit product roles.",
+  "decision_readback": "The retained product decision uses actual named runs, refresh arguments, request counts, background cancellation/completion and measured additional public bytes. It does not rely on automatic ratio/adoption labels; not-adopted remains supported by the same limited evidence.",
+  "new_comparison_action": "Use environment_pairs [[1,0]] in the new smart-cache setup with e1=current candidate/e0=previous reference, before any new model send. Preserve original case/model/prompt/oracle/repetition and freeze the actual balanced order.",
+  "limitations": "Do not copy old automatic candidate/reference labels or ratio direction into a product claim. No model rerun or retroactive plan correction is needed for this clarification."
+}
