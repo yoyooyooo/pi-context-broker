@@ -53,6 +53,14 @@ ordinary-profile delivery. Its original evidence packages remain immutable.
    a path to same-volume Trash does not reclaim capacity. An evidence-only
    manifest is not a promise that the original build remains runnable.
 
+For the current Mini environment, start with the **current adoption and direct
+recovery** section of [AH-1217](https://linear.app/yoyooyooo/issue/AH-1217), then
+use the named report and its frozen inputs. The
+[retained smart-cache query recipe](../benchmark/results/2026-11-27-smart-cache/README.md#read-only-query-on-mini)
+provides an exact read-only command with compact output. It checks originals and
+existing derived results without a new environment or model run; it does not
+rerun the private oracle.
+
 Use the existing commands from the frozen controller:
 
 ```sh
