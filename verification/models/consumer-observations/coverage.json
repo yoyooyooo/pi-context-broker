@@ -45,8 +45,10 @@
     "packages/context-broker/src/types.ts": "1c0114476ee68660b440537209ac98b960509a69fc730e63e84a4745c918cddc",
     "packages/context-broker/scripts/nonblocking-context.test.ts": "6d949157c04cf39bd712c0fdca024a9ce803d15e37de5f5a7ec9fa3ebfe8a3b2",
     "packages/context-broker/scripts/activation-feedback.test.ts": "9f15a1bbbad5f5a12e8c0544ef10037d85b44d0dbe127ecff08cd000c2dac6ce",
-    "packages/context-broker/src/index.ts": "e2580e2766d3218df5748f36622b13337288574cb656e52197d97927e651ef90",
-    "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "84d3fb8a58b0fd203cffe45a29442b5363666ecfd0997f55c001d8d8197c1959"
+    "packages/context-broker/src/index.ts": "1daa9e0cafe89eb921799d8a15379c56b5683550fde0d67bc7ac8ce9eae9db99",
+    "packages/context-broker/scripts/scalar-resource-read-host.test.ts": "84d3fb8a58b0fd203cffe45a29442b5363666ecfd0997f55c001d8d8197c1959",
+    "packages/context-broker/src/source-materialization.ts": "21e475dfd1249fc24533e023d0a5faeb40a4f3225432f9eca2f4642d0272bc76",
+    "packages/context-broker/scripts/source-materialization-catalog.test.ts": "f555d23c56e76695d5a6338a7014176df8ea2ec2eb5538c3a8c5c6141ae4bf7a"
   },
   "models": {
     "Availability": {
@@ -584,9 +586,17 @@
         "source-materialization.test.ts",
         "source-member-candidates.test.ts",
         "soft-miss-regressions.test.ts",
-        "notion-sdk.test.ts"
+        "notion-sdk.test.ts",
+        "source-materialization-catalog.test.ts"
       ],
-      "proof_limit": "The unchanged finite models do not model manager dispatch, remote writes, Notion consistency, real SQLite, fixed-manager recovery, or Pi cancellation. No model/config/view, bound, case inventory, expected rule or guard-mutation target is changed. Source hashes bind reviewed consumer owner bytes; fixed-manager HTTP/SQLite and installed Pi delivery require their separately retained concrete runs."
+      "proof_limit": "The unchanged finite models do not model manager dispatch, remote writes, Notion consistency, real SQLite, fixed-manager recovery, or Pi cancellation. No model/config/view, bound, case inventory, expected rule or guard-mutation target is changed. Source hashes bind reviewed consumer owner bytes; fixed-manager HTTP/SQLite and installed Pi delivery require their separately retained concrete runs.",
+      "catalog_rebuild": {
+        "counterexample": "The installed Pi cold path completed management and ordinary body consumption, but management had retired the persistent catalog; a new PID within five minutes hit the body cache while refetching the full catalog. Body freshness alone did not establish directory reuse.",
+        "owners": "Reviewed materializeExplicitCandidate awaiting onReceipt and all three production callback sites. index.materializationReceived retires scoped facts, then uses the existing SDK complete catalog path with refresh before ordinary consume. Receipt records remain partial. Only a failure-free, exhaustive, non-stale observation of the same consumer scope may release preparation; unrelated catalog members are retained.",
+        "guards": "The accepted Library and Source remain captured. A newer metadata version causes reobservation of that Source without cancelling or retargeting the accepted turn. Cancellation/session checks fence asynchronous catalog acquisition and receipt release. Only the default captured Library publishes into its existing catalog slot; explicit foreign directories remain scoped. No original validation timestamp, TTL, pinned graph, ordinary consume proof or provider/turn acknowledgement is changed.",
+        "replays": "source-materialization-catalog.test.ts runs the production index/host/adapter with controlled external SDK/session: management-before-complete-catalog-before-consume; unrelated members; partial and foreign-scope failures; cancellation and session switch while held; concurrent metadata refresh and unchanged accepted root.",
+        "proof_limit": "ReadRace and FreshnessPublication cover their existing observation admission guards; DeliveryBoundary retains its complete-delivery fences. Asynchronous catalog scheduling, persistent SDK cache contents and real new-PID startup are concrete obligations outside these finite variables. The controlled host test does not prove SQLite persistence or actual Pi execution; the installed Source materialization and existing four cache scenarios must supply that evidence."
+      }
     }
   },
   "library_root_review": {

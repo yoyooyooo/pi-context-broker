@@ -28,7 +28,7 @@
     "packages/context-broker/scripts/final-request-undici.test.ts": "bf57522e3cd63a398f05085dbfd04068eade37018a897bf269ee3c2d68836fbd",
     "packages/context-broker/src/session-working-set.ts": "4792c1b3e1ecdbbfd77918f2f9ddf074cfe197e8fbed265a5796cd59671bd36c",
     "packages/context-broker/scripts/session-active-session.mjs": "453d30268dc2bbe1f70202f919fd80e31d2f570b5848820bbd0e8da28e951169",
-    "packages/context-broker/src/index.ts": "e2580e2766d3218df5748f36622b13337288574cb656e52197d97927e651ef90",
+    "packages/context-broker/src/index.ts": "1daa9e0cafe89eb921799d8a15379c56b5683550fde0d67bc7ac8ce9eae9db99",
     "packages/context-broker/src/session-recovery.ts": "bfe55337591b8cab2acb57652bf7ad098e77b3192404215de6dd3c1888bffd65",
     "packages/context-broker/src/resource-read-projection.ts": "ef3c830f5a57458e4141fa7e00af6239b96f1eacfb9ad2f2920e547544a2351b",
     "packages/context-broker/src/notion-source.ts": "36fd01fd55255d889d9b472543006f6d0a689c2b71ad35da0e66db2aa2de819d",
@@ -88,7 +88,9 @@
     "packages/context-broker/scripts/pi-dollar-editor.test.ts": "8fa1ad413620bd8381c61a5643cacabcb79e4ea25c233341990035262deca613",
     "packages/context-broker/scripts/fixtures/completion-menu.ts": "982e2cc09ee665c6d24df5b4b0ba544775e5ce56f926a5a115b306b7ced3612b",
     "packages/context-broker/scripts/pi-queued-input.test.ts": "6f00d63e07082cdab7e60e6916758d6dd621d5ee25b38fb5ef472585826ea090",
-    "packages/context-broker/scripts/notion-sdk.test.ts": "45ab801c5fefc047f5caf4bd7045ac3d7623b759954a3f403180e891f987c707"
+    "packages/context-broker/scripts/notion-sdk.test.ts": "45ab801c5fefc047f5caf4bd7045ac3d7623b759954a3f403180e891f987c707",
+    "packages/context-broker/src/source-materialization.ts": "21e475dfd1249fc24533e023d0a5faeb40a4f3225432f9eca2f4642d0272bc76",
+    "packages/context-broker/scripts/source-materialization-catalog.test.ts": "f555d23c56e76695d5a6338a7014176df8ea2ec2eb5538c3a8c5c6141ae4bf7a"
   },
   "models": {
     "FreshnessPublication": {
@@ -1467,9 +1469,17 @@
         "source-materialization.test.ts",
         "source-member-candidates.test.ts",
         "soft-miss-regressions.test.ts",
-        "notion-sdk.test.ts"
+        "notion-sdk.test.ts",
+        "source-materialization-catalog.test.ts"
       ],
-      "proof_limit": "The unchanged finite models do not model manager dispatch, remote writes, Notion consistency, real SQLite, fixed-manager recovery, or Pi cancellation. No model/config/view, bound, case inventory, expected rule or guard-mutation target is changed. Source hashes bind reviewed consumer owner bytes; fixed-manager HTTP/SQLite and installed Pi delivery require their separately retained concrete runs."
+      "proof_limit": "The unchanged finite models do not model manager dispatch, remote writes, Notion consistency, real SQLite, fixed-manager recovery, or Pi cancellation. No model/config/view, bound, case inventory, expected rule or guard-mutation target is changed. Source hashes bind reviewed consumer owner bytes; fixed-manager HTTP/SQLite and installed Pi delivery require their separately retained concrete runs.",
+      "catalog_rebuild": {
+        "counterexample": "The installed Pi cold path completed management and ordinary body consumption, but management had retired the persistent catalog; a new PID within five minutes hit the body cache while refetching the full catalog. Body freshness alone did not establish directory reuse.",
+        "owners": "Reviewed materializeExplicitCandidate awaiting onReceipt and all three production callback sites. index.materializationReceived retires scoped facts, then uses the existing SDK complete catalog path with refresh before ordinary consume. Receipt records remain partial. Only a failure-free, exhaustive, non-stale observation of the same consumer scope may release preparation; unrelated catalog members are retained.",
+        "guards": "The accepted Library and Source remain captured. A newer metadata version causes reobservation of that Source without cancelling or retargeting the accepted turn. Cancellation/session checks fence asynchronous catalog acquisition and receipt release. Only the default captured Library publishes into its existing catalog slot; explicit foreign directories remain scoped. No original validation timestamp, TTL, pinned graph, ordinary consume proof or provider/turn acknowledgement is changed.",
+        "replays": "source-materialization-catalog.test.ts runs the production index/host/adapter with controlled external SDK/session: management-before-complete-catalog-before-consume; unrelated members; partial and foreign-scope failures; cancellation and session switch while held; concurrent metadata refresh and unchanged accepted root.",
+        "proof_limit": "ReadRace and FreshnessPublication cover their existing observation admission guards; DeliveryBoundary retains its complete-delivery fences. Asynchronous catalog scheduling, persistent SDK cache contents and real new-PID startup are concrete obligations outside these finite variables. The controlled host test does not prove SQLite persistence or actual Pi execution; the installed Source materialization and existing four cache scenarios must supply that evidence."
+      }
     }
   },
   "library_session_design": {

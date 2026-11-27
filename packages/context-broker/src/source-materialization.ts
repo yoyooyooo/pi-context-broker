@@ -24,7 +24,7 @@ export async function materializeExplicitCandidate(input: {
   candidate: SourceMemberCandidate; source: NotionSource; receipt: InputReceipt; query: string;
   purpose: "inspect" | "use"; ctx: ExtensionContext; signal?: AbortSignal;
   authorization?: SourceMaterializationAuthorization;
-  onReceipt(receipt: SourceMaterializationReceipt): void;
+  onReceipt(receipt: SourceMaterializationReceipt): void | Promise<void>;
 }): Promise<{ record: ContentRecord; receipt: SourceMaterializationReceipt }> {
   const { candidate, source, receipt, query, ctx, signal } = input;
   if (!inputReceiptIsCurrent(receipt, ctx, signal)) throw new SourceError("SOURCE_CANCELLED", source.id);
@@ -62,7 +62,7 @@ export async function materializeExplicitCandidate(input: {
   }
   observations.publish({ ...attribution, event: "result", status: result.status, effects: result.effects, operation_id: result.operation_id, manager_scope: result.manager_scope });
   // Retire old facts even when cancellation races a completed durable write.
-  input.onReceipt(result);
+  await input.onReceipt(result);
   if (!inputReceiptIsCurrent(receipt, ctx, signal)) throw new SourceMaterializationError("SOURCE_CANCELLED", source.id, result);
   if (result.status !== "ready" && result.status !== "already_ready")
     throw new SourceMaterializationError(result.status === "pending" ? "SOURCE_MATERIALIZATION_PENDING" : "SOURCE_MATERIALIZATION_BLOCKED", source.id, result);

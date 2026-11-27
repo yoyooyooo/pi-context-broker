@@ -63,7 +63,7 @@ async function generationInventory(root) {
   return { files, sha256: hash(JSON.stringify(files)) };
 }
 
-async function controlledManager(base, info, facts, origin) {
+async function controlledManager(base, info, facts, origin, fixture) {
   const manager = join(base, 'manager'); await mkdir(manager, { mode: 0o700 });
   const roots = { home: join(manager, 'state'), config_home: join(manager, 'config'), cache_home: join(manager, 'cache') };
   const scheduler = join(manager, 'scheduler');
@@ -77,7 +77,10 @@ async function controlledManager(base, info, facts, origin) {
   assert.equal(await sdk.selectLibrary({ library, cwd: manager, env, metrics: true, onRequestMetrics: value => metrics.push(value) }), library);
   assert.ok((await lstat(join(roots.home, 'state.sqlite'))).size > 0, 'Initialize the original manager Store through the actual SDK');
   assert.equal(metrics.length, 1); assert.equal(metrics[0]?.total_requests, 0);
-  const runtime = await realpath(process.execPath), git = (await resolveHost('git')).identity;
+  const tools = await fixture.stageSdkManagerTools(join(manager, 'tools'), {
+    node: process.execPath, git: (await resolveHost('git')).identity,
+  });
+  const runtime = tools.node.path, git = tools.git.path;
   const inventory = await generationInventory(info.packageRoot);
   const credentials = join(manager, 'credentials.json'), configPath = join(manager, 'server.json');
   const managerToken = 'current-sdk-controlled-manager-token';
@@ -96,7 +99,7 @@ async function controlledManager(base, info, facts, origin) {
     + 'exec ' + [runtime, join(info.packageRoot, config.generation.cli_entry), 'ctl', 'library', 'source', 'manager', '--config', configPath].map(shellQuote).join(' ') + '\n';
   await writeFile(launcher, script, { flag: 'wx', mode: 0o700 });
   const binding = { version: 1, kind: 'local', library, execution_id: inventory.sha256, command: launcher };
-  await save(join(manager, 'identity.json'), { binding, config, inventory, initialization: { sdk_module: join(info.packageRoot, 'dist/ntn-skills-sdk.mjs'), metrics }, launcher_sha256: hash(script) });
+  await save(join(manager, 'identity.json'), { binding, config, inventory, tool_selection: tools, initialization: { sdk_module: join(info.packageRoot, 'dist/ntn-skills-sdk.mjs'), metrics }, launcher_sha256: hash(script) });
   return { binding, manager, roots, pids };
 }
 
@@ -164,6 +167,7 @@ export async function runMaterializationScenario(name, info, out, helpers) {
   const base = join(out, name); await mkdir(base, { mode: 0o700 });
   const fixture = await import(pathToFileURL(info.helper).href);
   assert.equal(typeof fixture.startSdkGitFixture, 'function'); assert.equal(typeof fixture.materializationServiceFacts, 'function');
+  assert.equal(typeof fixture.stageSdkManagerTools, 'function');
   const gitCommand = await resolveHost('git'), upstream = info.fixture.source_materialization;
   const gitEnv = { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
   const observedHead = await helpers.runCommand(gitCommand.file, [...gitCommand.prefix, '-C', upstream.repository, 'rev-parse', 'HEAD'], { cwd: base, env: gitEnv });
@@ -205,7 +209,7 @@ export async function runMaterializationScenario(name, info, out, helpers) {
         const file = 'provider-' + String(wire.length + 1).padStart(3, '0') + '.json'; await writeFile(join(base, file), bytes, { mode: 0o600 });
         wire.push({ file, sha256: hash(bytes), body: JSON.parse(bytes), record });
       } });
-    const manager = await controlledManager(base, info, facts, service.origin);
+    const manager = await controlledManager(base, info, facts, service.origin, fixture);
     const control = join(base, 'control.json'), providerExtension = join(base, 'provider.mjs'), observerExtension = join(base, 'lifecycle.mjs'), preload = join(base, 'observer.mjs');
     await save(control, { action: 'none' });
     await writeFile(providerExtension, renderHttpWrapper({ helperUrl: new URL('./mock-provider-adapter.mjs', import.meta.url).href, serializerUrl: pathToFileURL(info.identity.serializer.serializer.path).href }));
@@ -231,7 +235,7 @@ syncBuiltinESMExports();
       const config = join(agentDir, 'context-broker/config.yml');
       await save(config, { sources: [source] });
       await save(join(agentDir, 'settings.json'), { compaction: { enabled: false }, retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } } });
-      const env = isolatedEnv({ base: root, agentDir, PATH: dirname(process.execPath) + ':/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+      const env = isolatedEnv({ base: root, agentDir, PATH: [dirname(process.execPath), dirname(gitCommand.identity), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':'),
         NOTION_API_TOKEN: info.fixtureEnv.NOTION_API_TOKEN, NOTION_API_BASE_URL: service.origin,
         NTN_SKILLS_NOTION_INTERVAL_MS: '100', NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000',
         CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_LOG_FILE: join(root, 'decisions.jsonl'),
@@ -401,6 +405,20 @@ export async function verifyMaterializationEvidence({ base, entry, source, event
     assert.ok(JSON.stringify(warm.branch).includes('$' + receipt.warm_query), 'The new process did not use the exact original Source candidate token');
   }
   const manager = JSON.parse(await readFile(join(base, 'manager/identity.json'), 'utf8'));
+  assert.equal(manager.tool_selection.version, 1);
+  assert.equal(manager.tool_selection.root, join(base, 'manager/tools'));
+  for (const role of ['node', 'git']) {
+    const selected = manager.tool_selection[role];
+    assert.equal(selected.path, join(manager.tool_selection.root, role));
+    assert.notEqual(selected.source, selected.path);
+    assert.equal(selected.source_sha256, selected.sha256);
+    assert.equal(hash(await readFile(selected.path)), selected.sha256);
+    assert.equal(selected.uid, process.getuid()); assert.equal(selected.mode, 0o500);
+  }
+  assert.equal(manager.config.generation.runtime, manager.tool_selection.node.path);
+  assert.equal(manager.config.generation.runtime_sha256, manager.tool_selection.node.sha256);
+  assert.equal(manager.config.git.executable, manager.tool_selection.git.path);
+  assert.equal(manager.config.git.sha256, manager.tool_selection.git.sha256);
   const credentialScopes = JSON.parse(await readFile(join(base, 'credential-scopes.json'), 'utf8'));
   assert.notEqual(credentialScopes.manager.scope, credentialScopes.clients[0].scope);
   assert.equal(credentialScopes.clients[0].scope, credentialScopes.clients[1].scope);
