@@ -66,15 +66,20 @@ explicit states; repair the measurement only where it affects this decision.
 
 ## Current source and retained experiments
 
-The shared engineering base now follows `next`
-`78b8739f6227fdb8a89962499ce579a563996b3a`, with CLI
-`ba092a531a64633c31e648b4f9f806e606a78f4e` (SDK v3 and Library root).
-The measured and adopted runtime remains that CLI paired with Broker
+The 2026-11-26 measured and adopted runtime paired CLI
+`ba092a531a64633c31e648b4f9f806e606a78f4e` with Broker
 `c3a880071996429e615bd66de74b86b462c669c3` on Pro, Mini and imile-win.
-The later engineering sync adds capacity checks and optional runtime-only
-command preparation; it does not rebuild or relabel that runtime. Its root
-`package.json` change only adds a verification test, so the conservative build
-input inventory differs even though product source and dependencies do not.
+The subsequent engineering sync to
+`78b8739f6227fdb8a89962499ce579a563996b3a` added capacity checks and optional
+runtime-only command preparation. These are historical integration and delivery
+identities, not assertions about today's ordinary installation.
+
+The 2026-11-27 continuation targets shared product source CLI
+`a22aa1cd5506d393df6ef4d37a6aeb7c575453ba` and Broker
+`3d57426c237def82833a86eda367e476e28cd76c`. Broker PR #102 changes verification
+and pins that CLI; it does not change this product runtime. New execution must
+bind the completed frozen build and its actual admission receipts before it can
+establish a baseline for this pair.
 Existing plans, product builds, raw observations and published scores retain
 their original identities; synchronizing source does not migrate an experiment.
 
@@ -104,23 +109,26 @@ The [2026-11-26 resource-read reanalysis](benchmark-relative-source-reanalysis-2
 records the original, intermediate and corrected outcomes across the six retained
 engineering scopes, unchanged actual costs, and the resulting product decision.
 
-Current collection uses collector `1.3.2` and explicitly binds SDK v3,
+Current collection uses collector `1.3.3` and explicitly binds SDK v3,
 Library-root v1, resource-read v1, Skill-ref v2 and preparation-evidence v2.
 The subject includes only the public observer dependencies and the exact paired
 reference producer. Its embedded SDK hash is checked against the Broker bundle;
 the public SDK hash and reference bytes are checked against the paired CLI.
 Current collection cannot interpret old material proofs as newly verified data.
 
-Collector `1.3.2` recognizes a successful `notion_list` metadata response only
+Collector `1.3.3` recognizes a successful `notion_list` metadata response only
 when its captured owner and admission match a reviewed Broker producer, its
 closed output matches the delivered metadata projection, and the record identity
 matches an actually observed SDK directory. The reviewed hashes for
 `src/index.ts` and `src/host-skills.ts` are pinned as complete pairs in the
-collector: the retained `cbe36c3` producer and the reviewed `3c78765f` producer
-with local candidate snapshots. The list output branch and its metadata
-readiness checks are unchanged between those revisions. Mixing hashes across
-pairs or changing either file returns this tool to unknown coverage until
-reviewed. Content
+collector: the retained `cbe36c3` producer, the reviewed `3c78765f` producer
+with local candidate snapshots, and the reviewed `3d57426c` producer. In the
+third pair, Library identity selects routing from local configuration; the SDK
+list still verifies the Library-bound directory. The list retains its selected
+metadata publication, generation and cancellation checks, and its closed
+metadata-only output. Local Library selection and candidate snapshots cannot
+replace the observed SDK directory. Mixing hashes across pairs or changing
+either file returns this tool to unknown coverage until reviewed. Content
 search, added body fields, unknown shapes and arbitrary shell calls remain
 opaque. This evidence excludes metadata delivery from Skill consumption; it does
 not prove Skill adoption or an exhaustive absence result. Apply the correction
