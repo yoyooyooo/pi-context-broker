@@ -35,7 +35,8 @@ const environmentKeys = ["CONTEXT_BROKER_CONFIG", "CONTEXT_BROKER_ROOTS", "CONTE
 
 /** Production index, adapter, graph decoder and delivery hooks. Only the external
  * SDK and Pi session manager are controlled; this is not a live Pi/Notion test. */
-export async function activeNotionSession(options: { catalogMaxAgeMs?: number; sourceScope?: string; sourceEnabled?: boolean } = {}) {
+export async function activeNotionSession(options: { catalogMaxAgeMs?: number; sourceScope?: string; sourceEnabled?: boolean;
+  warmCatalog?: boolean; beforeStart?(fixture: Awaited<ReturnType<typeof currentNotionFixture>>): void } = {}) {
   const f = await currentNotionFixture("skill", { name: "root", body: "Complete root instructions A.\n" });
   if (options.sourceEnabled !== undefined) f.source.enabled = options.sourceEnabled;
   const scope = options.sourceScope ?? f.selected.sourceScope;
@@ -160,9 +161,10 @@ export async function activeNotionSession(options: { catalogMaxAgeMs?: number; s
   const tool = (name: "notion_list" | "notion_use" | "notion_ctl") => { const found = tools.find(item => item.name === name); assert.ok(found); return found; };
   const delivered = (items: readonly SkillRecord[]): AgentMessage[] => items.map(item => ({ role: "custom", customType: "context-broker", content: item.body,
     details: { records: [sourceDeliveryReceipt(item, item.body!)] } }));
+  options.beforeStart?.(f);
   await contextBroker(api);
   await emit("session_start");
-  if (options.sourceEnabled !== false) await tool("notion_list").execute("catalog", {}, undefined, undefined, ctx);
+  if (options.sourceEnabled !== false && options.warmCatalog !== false) await tool("notion_list").execute("catalog", {}, undefined, undefined, ctx);
   const seed = async (roots = ["root"]) => {
     const graph: PreparedHostGraph = await f.boundary.prepareNotionSkills(roots.map(record), f.source, f.root, { purpose: "use" });
     persistSessionSelection(api, ctx, [graph], "extend");

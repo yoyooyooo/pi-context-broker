@@ -55,14 +55,19 @@ export async function withPreparationDeadline<T>(parent: AbortSignal, work: (sig
   finally { clearTimeout(timer); parent.removeEventListener("abort", cancel); }
 }
 
-/** Only the accepted context passes this capability to a guarded management
- * call. It changes accounting, never input authority or a writer's lifetime. */
+/** A lexical scope for one accepted input's Source preparation. Accounting
+ * never grants a write or changes a manager's lifetime. */
+export type SourcePreparationScope = {
+  begin(): void;
+  /** Charge before publication without discarding a late durable receipt. */
+  checkpoint(): void;
+};
 export type ContextPreparationBudget = {
-  waitForManagement<T>(work: () => Promise<T>): Promise<T>;
+  withSourcePreparation<T>(work: (scope: SourcePreparationScope) => Promise<T>): Promise<T>;
 };
 
-/** One Pi context shares cumulative read/management time across all accepted
- * inputs and roots. Ordinary tools keep withPreparationDeadline unchanged. */
+/** One Pi context shares cumulative read/Source-preparation time across all
+ * accepted inputs and roots. Ordinary tools keep their original deadline. */
 export async function withContextPreparationDeadline<T>(
   parent: AbortSignal,
   work: (signal: AbortSignal, budget: ContextPreparationBudget) => Promise<T>,
@@ -70,8 +75,9 @@ export async function withContextPreparationDeadline<T>(
   checkPreparationSignal(parent);
   const controller = new AbortController(), signal = AbortSignal.any([parent, controller.signal]);
   const stopped = Promise.withResolvers<never>();
-  const remaining = { read: 60_000, management: 180_000 }, started = performance.now();
-  let phase: "read" | "management" | "closed" = "read", changedAt = started;
+  const remaining = { read: 60_000, preparation: 180_000 }, started = performance.now();
+  let phase: "read" | "preparation" | "closed" = "read", changedAt = started;
+  let currentScope: SourcePreparationScope | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const close = () => { phase = "closed"; clearTimeout(timer); };
   const expire = () => {
@@ -99,25 +105,34 @@ export async function withContextPreparationDeadline<T>(
     else timer = setTimeout(expire, delay);
   };
   const budget: ContextPreparationBudget = Object.freeze({
-    async waitForManagement<T>(operation: () => Promise<T>): Promise<T> {
-      // A closed capability, nested call or overlapping call cannot dispatch.
-      if (phase !== "read") throw preparationCancelled();
-      const now = charge();
-      checkPreparationSignal(signal);
-      phase = "management"; arm(now);
-      checkPreparationSignal(signal);
-      try { return await operation(); }
-      finally {
-        // The outer race retires foreground waiting. A late durable receipt is
-        // still returned for fact invalidation; it cannot reopen this budget.
-        if (phase === "management") {
+    async withSourcePreparation<T>(operation: (scope: SourcePreparationScope) => Promise<T>): Promise<T> {
+      // One preflight owns the scope. Queued inputs share the remaining amounts,
+      // but nested, overlapping and closed scopes cannot start more work.
+      if (phase === "closed" || currentScope) throw preparationCancelled();
+      charge(); checkPreparationSignal(signal);
+      const scope: SourcePreparationScope = Object.freeze({
+        begin() {
+          if (currentScope !== scope || phase === "closed") throw preparationCancelled();
           const now = charge();
-          if (!signal.aborted) { phase = "read"; arm(now); }
-        }
+          checkPreparationSignal(signal);
+          if (phase === "read") { phase = "preparation"; arm(now); }
+        },
+        checkpoint() {
+          // A late operation may still retire durable facts. Its old scope
+          // cannot charge or reopen a later input's accounting owner.
+          if (currentScope === scope) charge();
+        },
+      });
+      currentScope = scope;
+      try { return await operation(scope); }
+      finally {
+        const now = charge();
+        currentScope = undefined;
+        if (phase === "preparation" && !signal.aborted) { phase = "read"; arm(now); }
       }
     },
   });
-  // Keep exactly the original single 60000ms timer when no manager is entered.
+  // Keep exactly the original single 60000ms timer when no repair is entered.
   arm(started);
   try {
     return await Promise.race([stopped.promise, (async () => {
