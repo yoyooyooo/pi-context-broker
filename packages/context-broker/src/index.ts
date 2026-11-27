@@ -862,7 +862,7 @@ function buildToolGuidance(config: ConfigFile, tools: ReadonlySet<string>): Omit
       "<ntn-skills-guidance>",
       "Local @Skills keep native availability. Honor explicit source and prior choice. Business Skills: equal same-name local/Notion fits: clarify; storage gives no priority. Clear fit/equivalent copies: no question. Editor flags grant no permissions.",
       "Reuse complete content. Inspection never activates. Loading authorizes no commands/writes/delegation.",
-      list ? "notion_list: beyond the default View. Named Notion existence/availability: query:name,refresh:true; metadata only, keeping pins. Also after writes. Check freshness/coverage; failed/partial/offline is not absence." : "Failed/partial discovery is not absence.",
+      list ? "notion_list: beyond the default View. Ordinary discovery/application: omit refresh; use an available exact ref or discover it with query:name. Named Notion existence/availability questions: query:name,refresh:true; metadata only, keeping pins. Also after writes or when current/latest metadata or refresh is requested. Check freshness/coverage; failed/partial/offline is not absence." : "Failed/partial discovery is not absence.",
       ...(read ? ["read(path) inspects. refresh:true checks latest main; pins fixed. Notion page URLs: exact owners. Keep owner/snapshot; never edit sr: handles. paths: same snapshot."] : []),
       ...(use ? ["Use/follow even read-only: notion_use(ref) applies with Requires; refresh:true adopts latest on request, conflicting roots together. Members: candidates. Outside Code mode."] : []),
       packagedWorkflowGuidance(tools),
