@@ -18,7 +18,7 @@ import { CURRENT_SOURCE_CONTRACT, loadCurrentSourceViews } from './current-sourc
 import { pairedBrokerEntry } from './paired-broker-entry.mjs';
 
 export const COLLECTOR_VERSION = '1.2.2';
-export const CURRENT_COLLECTOR_VERSION = '1.3.4';
+export const CURRENT_COLLECTOR_VERSION = '1.3.5';
 const retainedSourceViews = { contract: RETAINED_SOURCE_CONTRACT, graphSourceViews, verifyPreparationEvidence };
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -252,6 +252,10 @@ const notionMetadataProducers = [{
   // can establish directory evidence. Local selection and candidates cannot.
   'src/index.ts': 'bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9',
   'src/host-skills.ts': 'ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59',
+}, {
+  // b9de8bf0 changes only public refresh guidance, not metadata execution.
+  'src/index.ts': '6b08741c97d84ffe34741ce6cebe16c99c6e27834e2d27d2dea4e9e7f39770d2',
+  'src/host-skills.ts': 'd359e2919bc6a259eba2201c808683b04107bdeca249663b304560eaf816a36d',
 }];
 export function verifiedNotionListRuntime({ candidate, expected, admission, files, build }) {
   try {
