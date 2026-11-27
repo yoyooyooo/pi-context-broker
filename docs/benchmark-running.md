@@ -116,6 +116,12 @@ reference producer. Its embedded SDK hash is checked against the Broker bundle;
 the public SDK hash and reference bytes are checked against the paired CLI.
 Current collection cannot interpret old material proofs as newly verified data.
 
+Broker extension identity comes from the frozen build selection, its declared
+launch role and the observed loaded entry and hash. Directory and packed installs
+use that same check; a path merely resembling a Broker directory cannot assign
+ownership. Packed metadata collection also verifies the selected archive entry
+against the built package before applying the reviewed producer tuple.
+
 Collector `1.3.3` recognizes a successful `notion_list` metadata response only
 when its captured owner and admission match a reviewed Broker producer, its
 closed output matches the delivered metadata projection, and the record identity
