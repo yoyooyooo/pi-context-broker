@@ -183,7 +183,8 @@ migrated through its reviewed management workflow before this read-only step.
 
 For a product iteration, compare the smallest existing cases that exercise the
 changed behavior. Freeze reference and candidate builds with the same Benchmark
-runtime, model condition and refreshed material. `configure` captures the actual
+subject runtime, model condition and public material. Each selected SDK must
+have its own applicable material proof. `configure` captures the actual
 serialized requests without sending them. Inspect that difference before
 `run-standing`. Keep all real outcomes and usage, then decide whether to adopt
 the product change; completing an unrelated historical matrix is not a gate.
@@ -191,6 +192,65 @@ Source synchronization and offline reanalysis alone do not establish a new live
 baseline. Fresh preparation and stateful fixture writes are not supported by
 this current read-only path. They must reject before remote dispatch until their
 own current-contract implementation and readiness check are complete.
+
+### Compare products with different SDK bytes
+
+A material proof records the exact SDK that read and verified the Library. Keep
+the reference proof when refreshing the same read-only Library for a new SDK.
+Do not relabel that proof or replace the proof in an older frozen plan. Select
+the common case material with `setup.materialization_binding_file`, then set
+`materialization_binding_file` on each candidate that needs a different proof:
+
+```json
+{
+  "materialization_binding_file": "/absolute/owned/reference/binding.json",
+  "candidates": [
+    {
+      "id": "reference-broker",
+      "build_id": "reference-build",
+      "mode": "broker",
+      "code_mode": "off",
+      "source_kind": "notion",
+      "notion_entry": "same-library-root-uuid"
+    },
+    {
+      "id": "candidate-broker",
+      "build_id": "candidate-build",
+      "mode": "broker",
+      "code_mode": "off",
+      "source_kind": "notion",
+      "notion_entry": "same-library-root-uuid",
+      "materialization_binding_file": "/absolute/owned/candidate/binding.json"
+    }
+  ]
+}
+```
+
+This fragment belongs in the existing standing setup; it does not replace its
+model, runtime, corpus or authorization fields. Configuration checks the proof
+against the selected frozen build's actual public SDK before reading model
+credentials or capturing a subject. Both proofs must retain the same Library,
+Skill identities, public cases, input files, oracle and native-equivalent
+resource bytes and modes. Different physical proof hashes remain separately
+owned while the scientific case identity stays common.
+
+The frozen plan records `execution.condition_materials` and a hash reference in
+each condition's `case_bindings`. Dispatch, replay and reanalysis verify that
+condition's owned material closure and select the same case binding. A missing,
+partial, swapped or changed registration fails; it cannot fall back to the
+common proof. Original source paths can retire after their owned snapshots have
+been verified and their last consumer ends. Preserve the frozen control files
+(including common and per-condition bindings, case inputs and oracles), build
+manifests, owned proof closures and raw observations needed for offline
+interpretation. An evidence-only build does not become runnable through this
+read path.
+
+The scalar setup remains available when all selected current SDKs match its
+single proof. Candidate-specific proofs support shared read-only cases with no
+stateful events. They cannot be combined with episode-owned fixtures, corpus
+snapshots, retained zero-send resumptions, finite-campaign or legacy pilot
+scopes and continuations, or historical collection recovery. Use a new standing attempt for the comparison;
+unsupported combinations reject before remote fixture preparation.
 
 ## Choose the authorized execution path
 

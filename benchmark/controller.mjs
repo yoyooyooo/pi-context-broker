@@ -12,6 +12,7 @@ import { verifyZeroSendRepair } from './resumption.mjs';
 import { readEpisodeFixtureBindings } from './fixture-dispatch.mjs';
 import { verifyCollectionRecovery, verifyCollectionRecoveryResults } from './collection-recovery.mjs';
 import { modelWindowContains } from './model-window.mjs';
+import { readConditionMaterialBindings, selectCaseBinding } from './condition-bindings.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
@@ -27,12 +28,13 @@ export async function loadExecution(plan) {
   assert.equal(sha(bytes), input.case_bindings_sha256, 'Frozen case bindings changed');
   assert.equal(sha(await readFile(input.models_file)), input.models_sha256, 'Selected model registry changed');
   const bindings = JSON.parse(bytes);
+  const conditionBindings = await readConditionMaterialBindings({ execution: input, bindings });
   const slotBindings = await readEpisodeFixtureBindings({ id: plan.id, registration: input.episode_fixtures,
     environmentRoot: input.environment_root, controlRoot: input.control_root, cases: bindings, slots: plan.slots,
     candidates: input.conditions, runtime: input.runtime });
   for (const slot of plan.slots) if (slotBindings.has(slot.slot_id))
     assert.ok(input.conditions[slot.condition_id]?.expectations?.[slot.slot_id], 'Writable slots require their own frozen startup expectation');
-  return { input, bindings, slotBindings };
+  return { input, bindings, slotBindings, conditionBindings };
 }
 
 async function collect(raw, plan, slot, condition, model, binding, outputDirectory, reanalysisOf, adapterEvidencePath = plan.execution.adapter_evidence_file) {
@@ -120,11 +122,11 @@ export function completedEpisodeRecord(raw, collected, { episodeBudget = null } 
       receipt: verification.receipt ?? raw.turn_control?.receipt ?? null } } : {}) };
 }
 
-export function executionForSlot({ plan, bindings, slotBindings, slot }) {
+export function executionForSlot({ plan, bindings, slotBindings, conditionBindings, slot }) {
   const condition = plan.protocol.conditions.find(value => value.id === slot.condition_id);
   const model = plan.protocol.models.find(value => value.id === condition?.model_id);
   const owned = slotBindings.get(slot.slot_id);
-  const binding = owned?.binding ?? bindings.find(value => value.id === slot.case_id);
+  const binding = selectCaseBinding({ execution: plan.execution, bindings, conditionBindings, slotBindings, slot });
   const candidate = plan.execution.conditions[slot.condition_id];
   assert.ok(condition && model && binding && candidate);
   const expectation = candidate.expectations[owned ? slot.slot_id : slot.case_id];
@@ -133,7 +135,7 @@ export function executionForSlot({ plan, bindings, slotBindings, slot }) {
 }
 
 export async function executeBatchPlan({ plan, maximumNewEpisodes = Infinity, analysisRevisionFile, collectionRecoveryFile }) {
-  const { input, bindings, slotBindings } = await loadExecution(plan);
+  const { input, bindings, slotBindings, conditionBindings } = await loadExecution(plan);
   const status = await batchStatus(input.control_root);
   const analysisRevisionReference = analysisRevisionFile ? { path: analysisRevisionFile, sha256: sha(await readFile(analysisRevisionFile)) }
     : status.analysis_revision;
@@ -154,7 +156,7 @@ export async function executeBatchPlan({ plan, maximumNewEpisodes = Infinity, an
   const implementation = collectionRecovery?.implementation ?? analysisRevision?.implementation ?? input.implementation;
   await verifyExecutionImplementation(implementation);
   if (input.resumption) await verifyZeroSendRepair({ reference: input.resumption.repair, environmentRoot: input.environment_root });
-  const argsFor = slot => executionForSlot({ plan, bindings, slotBindings, slot });
+  const argsFor = slot => executionForSlot({ plan, bindings, slotBindings, conditionBindings, slot });
   async function storeResult(raw, slot, reanalysisOf) {
     const { condition, model, binding } = argsFor(slot);
     if (collectionRecoveryReference) {
@@ -206,18 +208,17 @@ export async function analyzeBatch({ root, outputDirectory, reanalysis = false }
   assert.ok(reportRelative && !reportRelative.startsWith('..') && !isAbsolute(reportRelative), 'Reports must remain within the task-owned environment');
   const recovery = await verifyCollectionRecoveryResults(plan, status.episodes);
   const episodes = [];
-  const { bindings, slotBindings } = await loadExecution(plan);
+  const { bindings, slotBindings, conditionBindings } = await loadExecution(plan);
   for (const finished of status.episodes) {
     if (!reanalysis) {
       const bundle = await readEvidenceBundle({ directory: finished.result.normalized_directory, rawRoot: plan.execution.environment_root });
       episodes.push(bundle.episode); continue;
     }
     const slot = plan.slots.find(slot => slot.slot_id === finished.slot_id);
-    const condition = plan.protocol.conditions.find(c => c.id === slot.condition_id), model = plan.protocol.models.find(m => m.id === condition.model_id);
+    const { condition, model, binding: originalBinding } = executionForSlot({ plan, bindings, slotBindings, conditionBindings, slot });
     const runRoot = finished.result.run_root, resultPath = join(runRoot, 'benchmark/runtime/episode-result.json');
     const raw = { root: runRoot, run_id: finished.run_id, result_path: resultPath, shared: await readJson(join(runRoot, 'result.json')), episode: await readJson(resultPath) };
     raw.status = raw.episode.status;
-    const originalBinding = slotBindings.get(slot.slot_id)?.binding ?? bindings.find(b => b.id === slot.case_id);
     const collectionBinding = recovery?.projectedBindings.find(item => item.case_id === slot.case_id)?.binding ?? originalBinding;
     const result = await collect(raw, plan, slot, condition, model, collectionBinding,
       join(outputDirectory, 'reanalysis', finished.run_id), finished.result.episode_sha256,

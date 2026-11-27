@@ -8,6 +8,7 @@ import { fingerprint, validateProtocol } from './protocol.mjs';
 import { readEvidenceBundle } from './evidence/store.mjs';
 import { executionImplementation, instrumentationIdentity } from './implementation.mjs';
 import { readProviderTransport, providerApplicationCompletion } from '../scripts/skill-consumption-provider.mjs';
+import { readConditionMaterialBindings, selectCaseBinding } from './condition-bindings.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -76,9 +77,11 @@ async function publicInputs(root, prefix = '') {
   }
   return files;
 }
-async function materialBoundary(plan, bindings) {
+async function materialBoundary(plan, bindings, conditionBindings) {
   const items = [], root = plan.execution.environment_root;
-  for (const binding of bindings) {
+  const selected = [...bindings.map(binding => ({ binding })), ...[...(conditionBindings ?? new Map()).entries()]
+    .flatMap(([condition_id, value]) => value.bindings.map(binding => ({ binding, condition_id, reference: value.reference })))];
+  for (const { binding, condition_id, reference } of selected) {
     const oracle = await readFile(await owned(binding.oracle_path, root));
     assert.equal(sha(oracle), binding.oracle_sha256, 'ANALYSIS_REVISION_ORACLE_BYTES_CHANGED');
     const inputs = await publicInputs(await owned(binding.input_root, root));
@@ -91,7 +94,8 @@ async function materialBoundary(plan, bindings) {
     }
     const proof = binding.materialization_proof;
     if (proof) assert.equal(sha(await readFile(await owned(proof.path, root))), proof.sha256, 'ANALYSIS_REVISION_MATERIAL_PROOF_CHANGED');
-    items.push({ case_id: binding.id, public_case_sha256: fingerprint(binding.public_case), oracle_sha256: binding.oracle_sha256,
+    items.push({ case_id: binding.id, ...(condition_id ? { condition_id, condition_binding: reference } : {}),
+      public_case_sha256: fingerprint(binding.public_case), oracle_sha256: binding.oracle_sha256,
       input_inventory_sha256: binding.input_inventory_sha256, inputs, skills, materialization_proof: proof ?? null });
   }
   return { protocol_sha256: plan.protocol.protocol_sha256, case_bindings_sha256: plan.execution.case_bindings_sha256, cases: items };
@@ -165,7 +169,8 @@ async function frozenPlan(file, expected) {
   assert.equal(sha(await readFile(await owned(plan.execution.models_file, plan.execution.environment_root))), plan.execution.models_sha256, 'ANALYSIS_REVISION_MODELS_CHANGED');
   for (const condition of Object.values(plan.execution.conditions)) for (const ref of Object.values(condition.expectations))
     assert.equal(sha(await readFile(await owned(ref.path, plan.execution.environment_root))), ref.sha256, 'ANALYSIS_REVISION_EXPECTATION_CHANGED');
-  return { plan, bindings: JSON.parse(bindingBytes), reference: { path: file, sha256: sha(bytes), plan_sha256: plan.plan_sha256 } };
+  const bindings = JSON.parse(bindingBytes), conditionBindings = await readConditionMaterialBindings({ execution: plan.execution, bindings });
+  return { plan, bindings, conditionBindings, reference: { path: file, sha256: sha(bytes), plan_sha256: plan.plan_sha256 } };
 }
 async function ledgerPrefix(plan, reference) {
   const path = join(plan.execution.control_root, 'ledger.jsonl'), allBytes = await readFile(path);
@@ -313,7 +318,7 @@ export function assertWrappedRequestLimitRepair({ original, old, next, runtime, 
     change: 'retain_failed_episode_and_costs_without_escalating_local_budget_stop_to_batch' };
 }
 
-async function replacementFor({ request, plan, bindings, rows, instrumentation }) {
+async function replacementFor({ request, plan, bindings, conditionBindings, rows, instrumentation }) {
   const completed = rows.filter(row => row.type === 'episode_completed' && row.run_id === request.run_id);
   assert.equal(completed.length, 1, 'ANALYSIS_REVISION_COMPLETED_RUN_REQUIRED');
   const original = completed[0], starts = rows.filter(row => row.type === 'episode_started' && row.run_id === request.run_id);
@@ -321,7 +326,7 @@ async function replacementFor({ request, plan, bindings, rows, instrumentation }
   const slot = plan.slots.find(slot => slot.slot_id === original.slot_id); assert.ok(slot);
   for (const key of ['case_id', 'condition_id', 'pair_id', 'repeat', 'seed']) assert.equal(original[key], slot[key]);
   const condition = plan.protocol.conditions.find(condition => condition.id === slot.condition_id), model = plan.protocol.models.find(model => model.id === condition.model_id);
-  const binding = bindings.find(binding => binding.id === slot.case_id); assert.ok(binding);
+  const binding = selectCaseBinding({ execution: plan.execution, bindings, conditionBindings, slot }); assert.ok(binding);
   const root = plan.execution.environment_root, runRoot = join(root, 'runs', request.run_id);
   assert.equal(original.result.run_root, runRoot);
   const oldDirectory = await owned(original.result.normalized_directory, root), directory = await owned(request.directory, plan.execution.control_root);
@@ -396,7 +401,7 @@ async function replacementFor({ request, plan, bindings, rows, instrumentation }
 
 export async function createAnalysisRevision({ planFile, outputFile, replacements, reason }) {
   assert.ok(typeof reason === 'string' && reason.trim() && reason.length <= 4000, 'ANALYSIS_REVISION_REASON_REQUIRED');
-  const frozen = await frozenPlan(planFile), { plan, bindings } = frozen;
+  const frozen = await frozenPlan(planFile), { plan, bindings, conditionBindings } = frozen;
   assert.ok(Array.isArray(replacements) && replacements.length > 0 && new Set(replacements.map(item => item.run_id)).size === replacements.length, 'ANALYSIS_REVISION_UNIQUE_REPLACEMENTS');
   assert.ok(isAbsolute(outputFile) && inside(plan.execution.control_root, outputFile));
   const ledger = await ledgerPrefix(plan), implementation = await executionImplementation();
@@ -404,9 +409,9 @@ export async function createAnalysisRevision({ planFile, outputFile, replacement
   const instrumentation = await instrumentationIdentity({ ...plan.execution, implementation });
   verifyInstrumentation(instrumentation, plan.execution.instrumentation);
   const changes = sourceChanges(plan.execution.implementation, implementation), revised = [];
-  for (const request of replacements) revised.push(await replacementFor({ request, plan, bindings, rows: ledger.rows, instrumentation }));
+  for (const request of replacements) revised.push(await replacementFor({ request, plan, bindings, conditionBindings, rows: ledger.rows, instrumentation }));
   assert.equal(new Set(revised.map(item => item.slot_id)).size, revised.length, 'ANALYSIS_REVISION_DUPLICATE_SLOT');
-  const materials = await materialBoundary(plan, bindings), base = await baseSources(plan);
+  const materials = await materialBoundary(plan, bindings, conditionBindings), base = await baseSources(plan);
   const sources = await retainImplementation(implementation, outputFile, plan.execution.control_root);
   const preparation = await provePreparationBoundary({ changes, sources, base, instrumentation, plan });
   const revision = { version: 1, kind: 'benchmark-analysis-revision', created_at: new Date().toISOString(), reason,
@@ -440,7 +445,7 @@ export async function verifyAnalysisRevision({ reference, plan }) {
   assert.deepEqual(revision.sourceChanges, sourceChanges(plan.execution.implementation, revision.implementation));
   await verifySources(revision.implementation, revision.implementation_sources, plan.execution.control_root);
   const base = await baseSources(plan, revision.base_implementation_sources_ref);
-  assert.deepEqual(revision.material_boundary, await materialBoundary(plan, frozen.bindings));
+  assert.deepEqual(revision.material_boundary, await materialBoundary(plan, frozen.bindings, frozen.conditionBindings));
   assert.deepEqual(revision.preparation_boundary, await provePreparationBoundary({ changes: revision.sourceChanges,
     sources: revision.implementation_sources, base, instrumentation: revision.instrumentation, plan }));
   const ledger = await ledgerPrefix(plan, revision.ledger);
@@ -451,7 +456,8 @@ export async function verifyAnalysisRevision({ reference, plan }) {
   assert.equal(new Set(revision.replacements.map(item => item.run_id)).size, revision.replacements.length);
   assert.equal(new Set(revision.replacements.map(item => item.slot_id)).size, revision.replacements.length);
   for (const replacement of revision.replacements) {
-    const actual = await replacementFor({ request: replacement, plan, bindings: frozen.bindings, rows: ledger.rows, instrumentation: revision.instrumentation });
+    const actual = await replacementFor({ request: replacement, plan, bindings: frozen.bindings, conditionBindings: frozen.conditionBindings,
+      rows: ledger.rows, instrumentation: revision.instrumentation });
     assert.deepEqual(replacement, actual, 'ANALYSIS_REVISION_REPLACEMENT_CHANGED');
   }
   return revision;

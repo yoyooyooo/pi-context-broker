@@ -25,6 +25,8 @@ import { ENGINEERING_WINDOW_DRAFT, assertEngineeringWindowSetup, isEngineeringCo
 import { ENGINEERING_PREFLIGHT_REPAIR_DRAFT } from './campaign-engineering-preflight-repair.mjs';
 import { assertStandingSetup, standingCampaignPolicy } from './standing-campaign.mjs';
 import { prepareAdapterEvidenceOwnership } from './collection-recovery.mjs';
+import { assertConditionMaterialSetup, prepareConditionMaterialBindings, freezeConditionMaterialBindings,
+  readConditionMaterialBindings, selectCaseBinding } from './condition-bindings.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const save = async (path, value) => {
@@ -74,6 +76,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   assert.equal(setup.version, 1);
   assert.ok(isAbsolute(setup.environment_root) && isAbsolute(setup.control_root));
   assert.ok(Array.isArray(setup.candidates));
+  assertConditionMaterialSetup(setup);
   const environmentPairs = comparisonEnvironmentPairs(setup.candidates.length, setup.environment_pairs);
   if (setup.candidates.length !== 2) assert.ok(setup.campaign_scope || setup.standing, 'Four candidates require an explicit campaign design');
   assert.ok([setup.pilot_scope, setup.campaign_scope, setup.standing].filter(Boolean).length <= 1, 'A setup cannot mix scope contracts');
@@ -117,6 +120,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
         assert.deepEqual(projected.binding, bindings.find(binding => binding.id === item.case_id));
       }
     }
+    await readConditionMaterialBindings({ execution: existing.execution, bindings });
     await readEpisodeFixtureBindings({ id: existing.id, registration: existing.execution.episode_fixtures,
       environmentRoot: setup.environment_root, controlRoot: root, cases: bindings, slots: existing.slots,
       candidates: existing.execution.conditions, runtime: existing.execution.runtime, ...(snapshot ? { corpus: snapshot } : {}) });
@@ -134,6 +138,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   if (materialization) assert.equal(corpus.publicCorpus.content_sha256, materialization.public_sha256);
   await writeCorpus({ corpus, publicRoot: join(root, 'corpus-public'), controlRoot: join(root, 'corpus-private') });
   let cases = await prepareCases({ corpus, selections: setup.corpus.selections, root: join(root, 'cases') });
+  const unboundCases = cases;
   // Stateful preparation can allocate remote objects. Reject an older subject
   // implementation before that work, even though capture itself sends no model request.
   const turnRuntimeBuilds = [];
@@ -150,6 +155,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     cases = cases.map(binding => shared.find(item => item.id === binding.id) ?? binding);
     for (const candidate of setup.candidates) if (candidate.mode === 'broker') assert.equal(candidate.notion_entry, materialization.entry);
   }
+  const candidateMaterials = await prepareConditionMaterialBindings({ setup, cases, unboundCases, materialization });
   // Imported evidence must already have an owned, verified closure before any
   // startup capture or provider execution. Shared material keeps one native root.
   const materialOwnership = [];
@@ -194,12 +200,23 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
       : setup.campaign_scope ? { campaign: setup.campaign_scope } : {}) } };
   const scheduled = scheduleProtocol(schedule), captureSlots = startupCaptureSchedule(schedule, cases, setup.episode_fixtures);
   const candidatesByCondition = Object.fromEntries(models.flatMap((_model, mi) => setup.candidates.map((candidate, ei) => ['m' + mi + '-e' + ei, candidate])));
+  const conditionExecution = { environment_root: setup.environment_root, control_root: root,
+    case_bindings_file: bindingsFile, case_bindings_sha256: sha(await readFile(bindingsFile)), conditions: candidatesByCondition };
+  const conditionMaterials = await freezeConditionMaterialBindings({ prepared: candidateMaterials, execution: conditionExecution,
+    cases, candidates: candidatesByCondition });
+  if (conditionMaterials.registration) {
+    conditionExecution.condition_materials = conditionMaterials.registration;
+    conditionExecution.conditions = Object.fromEntries(Object.entries(candidatesByCondition).map(([id, candidate]) =>
+      [id, { ...candidate, case_bindings: conditionMaterials.references[id] }]));
+  }
   const prepared = await prepareEpisodeFixtures({ id: setup.id, environmentRoot: setup.environment_root, controlRoot: root,
     corpus, cases, slots: scheduled, candidates: candidatesByCondition, runtime, policy: setup.episode_fixtures });
   const secrets = await resolveModelCredential({ sourceFile: credential.source_file, provider: credential.provider, apiKeyEnv: credential.api_key_env });
   const previous = Object.fromEntries(Object.keys(secrets).map(key => [key, process.env[key]]));
   Object.assign(process.env, secrets);
   const cells = models.flatMap((model, mi) => setup.candidates.flatMap((candidate, ei) => cases.flatMap((binding, ci) => {
+    binding = selectCaseBinding({ execution: conditionExecution, bindings: cases, conditionBindings: conditionMaterials.bindings,
+      slot: { case_id: binding.id, condition_id: 'm' + mi + '-e' + ei } });
     return captureBindingsForCase({ binding, conditionId: 'm' + mi + '-e' + ei, slots: captureSlots, slotBindings: prepared.slots })
       .map(actual => ({ model, candidate: { ...candidate,
         ...(actual.slot && candidate.mode === 'broker' ? { notion_entry: actual.binding.notion_entry } : {}) },
@@ -287,6 +304,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     const ei = environments.findIndex(environment => environment.id === condition.environment_id), candidate = setup.candidates[ei];
     const selected = expanded.filter(result => result.ei === ei && result.model.id === condition.model_id);
     return [condition.id, { build_id: candidate.build_id, mode: candidate.mode, ...(candidate.notion_entry ? { notion_entry: candidate.notion_entry } : {}),
+      ...(conditionMaterials.registration ? { case_bindings: conditionMaterials.references[condition.id] } : {}),
       expectations: Object.fromEntries(selected.map(result => [result.slot?.slot_id ?? result.binding.id, result.expectation])) }];
   }));
   const execution = { environment_root: setup.environment_root, control_root: root, runtime, conditions,
@@ -294,6 +312,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     case_bindings_file: bindingsFile, case_bindings_sha256: sha(await readFile(bindingsFile)),
     models_file: modelsFile, models_sha256: registry.sha256, model_base_url: registry.base_url, credential,
     adapter_evidence_file: adapterOwnership.owned.path,
+    ...(conditionMaterials.registration ? { condition_materials: conditionMaterials.registration } : {}),
     ...(snapshot ? { corpus_snapshot: structuredClone(setup.corpus.snapshot) } : {}),
     ...(prepared.registration ? { episode_fixtures: prepared.registration } : {}),
     ...(standing ? { pilot_ledger_root: standing.ledgerRoot }
@@ -310,6 +329,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
     ...([CONFIRMATION_CONTINUATION, ENGINEERING_WINDOW_CONTINUATION].includes(setup.campaign_scope?.role) ? { capture_design_slots: captureSlots.length, selected_dispatch_slots: scheduled.length } : {}),
     capture_scope: 'shared-identical-startup-inputs; every episode independently verifies public-input bytes and actual startup/final-request contracts',
     material_original_bindings: materialOriginalBindings, material_ownership: materialOwnership, adapter_ownership: adapterOwnership,
+    material_sdk_preflight: candidateMaterials.candidates.map(({ bindings: _bindings, ...identity }) => identity),
+    ...(conditionMaterials.registration ? { frozen_condition_materializations: conditionMaterials.references } : {}),
     frozen_slot_materializations: prepared.slots.size,
     capture_refs: results.map(result => ({ run_id: result.raw.run_id, case_ids: result.members.map(member => member.binding.id),
       ...(result.slot ? { slot_id: result.slot.slot_id, materialization: prepared.slots.get(result.slot.slot_id).ref } : {}), expectation: result.expectation })) });
