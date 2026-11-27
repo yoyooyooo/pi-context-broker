@@ -15,6 +15,7 @@ import { readProviderTransport } from '../scripts/skill-consumption-provider.mjs
 import { parseSourceObservation } from '../scripts/skill-consumption-source-observer.mjs';
 import { graphSourceViews, verifyPreparationEvidence, retainedMaterialSelection, retainedSelectionSnapshots, RETAINED_SOURCE_CONTRACT } from './retained-source-views.mjs';
 import { CURRENT_SOURCE_CONTRACT, loadCurrentSourceViews } from './current-source-views.mjs';
+import { pairedBrokerEntry } from './paired-broker-entry.mjs';
 
 export const COLLECTOR_VERSION = '1.2.2';
 export const CURRENT_COLLECTOR_VERSION = '1.3.3';
@@ -231,7 +232,7 @@ const notionMetadataProducers = [{
   'src/index.ts': 'bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9',
   'src/host-skills.ts': 'ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59',
 }];
-export function verifiedNotionListRuntime({ candidate, expected, admission, files }) {
+export function verifiedNotionListRuntime({ candidate, expected, admission, files, build }) {
   try {
     assert.deepEqual(candidate.projection, expected.projection); assert.deepEqual(admission.differences, []);
     const producer = notionMetadataProducers.find(producer => Object.entries(producer).every(([path, sha256]) => {
@@ -239,9 +240,11 @@ export function verifiedNotionListRuntime({ candidate, expected, admission, file
       return matches.length === 1 && matches[0].sha256 === sha256;
     }));
     assert.ok(producer, 'The complete Broker metadata producer tuple must be reviewed');
-    for (const [view, root] of [[candidate.snapshot, dirname(candidate.snapshot.build.path)], [candidate.projection, '$BUILD']]) {
+    const selected = pairedBrokerEntry(build, dirname(candidate.snapshot.build.path));
+    assert.equal(selected.sha256, producer['src/index.ts']);
+    for (const [view, path] of [[candidate.snapshot, selected.path],
+      [candidate.projection, '$BUILD' + selected.path.slice(build.root.length)]]) {
       assert.equal(view.entry_kind, 'pi-sdk'); assert.equal(view.mode, 'broker');
-      const path = root + '/broker/src/index.ts';
       const owners = view.extensions.filter(extension => extension.tools.includes('notion_list'));
       assert.equal(owners.length, 1); assert.equal(owners[0].resolved_path, path);
       assert.equal(owners[0].entry.path, path); assert.equal(owners[0].entry.realpath, path);
@@ -770,7 +773,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       const artifact = await addFile('collection-metadata-producer-' + files.length, join(run.build_root, 'broker', name), declarations[0].sha256, 'implementation');
       files.push({ name, ...artifact });
     }
-    assert.ok(verifiedNotionListRuntime({ candidate: captured, expected: JSON.parse(fileBytes.get(expected.id)), admission: comparison, files }));
+    assert.ok(verifiedNotionListRuntime({ candidate: captured, expected: JSON.parse(fileBytes.get(expected.id)), admission: comparison, files, build }));
     assert.equal(shared.runtime_check.status, 'unchanged'); assert.equal(shared.frozen_artifacts, 'passed');
     metadataSources = captured.snapshot.broker_config?.sources ?? [];
     const sourceRef = artifact => ({ artifact_id: artifact.id, sha256: artifact.sha256, line: 1 });

@@ -17,20 +17,27 @@ const localIdentityIndexSha = 'bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d
 const localIdentityHostSha = 'ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59';
 const producers = [{ indexSha, hostSha }, { indexSha: candidateIndexSha, hostSha: candidateHostSha },
   { indexSha: localIdentityIndexSha, hostSha: localIdentityHostSha }];
-function producerFixture({ indexSha, hostSha } = producers[0]) {
+function producerFixture({ indexSha, hostSha } = producers[0], mode = 'directory') {
+  const suffix = mode === 'packed' ? '/installed/broker/node_modules/pi-context-broker' : '/broker';
   const view = root => {
-    const path = root + '/broker/src/index.ts';
+    const path = root + suffix + '/src/index.ts';
     return { entry_kind: 'pi-sdk', mode: 'broker', build: { path: root + '/build.json' },
       launch_profile: { extensions: [{ role: 'broker', path, sha256: indexSha }] },
       extensions: [{ resolved_path: path, tools: ['notion_list'], entry: { path, realpath: path, sha256: indexSha } }],
       tools: { all: [{ name: 'notion_list', exposure: 'direct', sourceInfo: { path, source: 'cli' } }] } };
   };
   const candidate = { snapshot: view('/build'), projection: view('$BUILD') };
-  return { candidate, expected: { projection: structuredClone(candidate.projection) }, admission: { differences: [] },
+  const build = { root: '/build', packages: { broker: { files: [{ path: 'src/index.ts', sha256: indexSha }] } },
+    candidate: mode === 'packed' ? { mode, root: '/build/installed', packages: { broker: {
+      name: 'pi-context-broker', root: '/build' + suffix, entry: '/build' + suffix + '/src/index.ts',
+      closure: { root: '/build' + suffix, files: [{ path: 'src/index.ts', sha256: indexSha }] },
+    } } } : { mode } };
+  return { build, candidate, expected: { projection: structuredClone(candidate.projection) }, admission: { differences: [] },
     files: [{ name: 'src/index.ts', sha256: indexSha }, { name: 'src/host-skills.ts', sha256: hostSha }] };
 }
-for (const [index, producer] of producers.entries()) test('metadata exemption needs reviewed Broker tuple ' + index + ' and matching admission', () => {
-  assert.equal(verifiedNotionListRuntime(producerFixture(producer)), true);
+for (const mode of ['directory', 'packed']) for (const [index, producer] of producers.entries())
+test('metadata exemption needs reviewed Broker tuple ' + index + ', ' + mode + ' package and matching admission', () => {
+  assert.equal(verifiedNotionListRuntime(producerFixture(producer, mode)), true);
   for (const change of [
     f => { f.candidate.snapshot.tools.all[0].sourceInfo.path = '/other/index.ts'; },
     f => { f.candidate.snapshot.tools.all[0].sourceInfo.source = 'builtin'; },
@@ -42,8 +49,20 @@ for (const [index, producer] of producers.entries()) test('metadata exemption ne
     f => { f.files.push(f.files[1]); },
     f => { f.expected.projection.mode = 'native'; },
     f => { f.admission.differences.push('drift'); },
-  ]) { const f = producerFixture(producer); change(f); assert.equal(verifiedNotionListRuntime(f), false); }
+  ]) { const f = producerFixture(producer, mode); change(f); assert.equal(verifiedNotionListRuntime(f), false); }
 });
+test('packed metadata ownership rejects an unbound package, entry, archive or declared role', () => {
+  for (const change of [
+    f => { f.build.candidate.packages.broker.entry = '/other/index.ts'; },
+    f => { f.build.candidate.packages.broker.entry = '/build/installed/broker/node_modules/pi-context-broker/../other/index.ts'; },
+    f => { f.build.candidate.packages.broker.closure.files[0].sha256 = sha('different archive bytes'); },
+    f => { f.build.packages.broker.files[0].sha256 = sha('different built bytes'); },
+    f => { f.candidate.snapshot.launch_profile.extensions[0].role = 'common'; },
+    f => { f.build.candidate.mode = 'unknown'; },
+    f => { delete f.build; },
+  ]) { const f = producerFixture(producers[2], 'packed'); change(f); assert.equal(verifiedNotionListRuntime(f), false); }
+});
+
 test('separately reviewed source hashes cannot be mixed into an unreviewed producer', () => {
   for (const index of producers) for (const host of producers) {
     if (index === host) continue;
