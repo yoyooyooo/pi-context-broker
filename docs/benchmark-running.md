@@ -331,6 +331,39 @@ their original plans. Their budgets, expiry windows and approval requirements
 do not apply to a standing work plan. Review results through the common
 `status`, `journey`, `analyze` and `reanalysis` entry points below.
 
+## Diagnose one current baseline
+
+When the missing evidence is one current product answer, use the existing standing
+entry with `purpose: "baseline_diagnostic"`. This is a descriptive assessment of
+one environment and one model, not an A/A comparison. Keep `phase` and the selected
+case split at `development` or `pilot`, declare one candidate, use
+`allowed_changes: []`, and omit `environment_pairs`. Declare
+`decision.mode: "descriptive"`; comparative decision thresholds are null.
+The existing standing grant, work-plan, shared ledger and unbounded resource
+policy remain required. The finite `planned_episodes` value describes the cases
+and repeats selected for this diagnosis, not a cumulative execution allowance.
+
+`configure` freezes supported `assessments` and an empty `pairs` array. The same
+assessment IDs feed fixture ownership, actual no-model captures, admission,
+`run-standing`, collection and analysis. Every declared case receives the same
+complete zero-based repeat set. Confirmation material, model tuning, interaction
+contrasts and adoption decisions are outside this purpose. Normal two/four-arm
+comparison requirements remain unchanged.
+
+Use a freshly verified resource profile when ordinary tool competition matters.
+The [ordinary-derived profile](benchmark-resource-profile.md) may be owned by the
+current environment itself or by its enclosing task directory. Its manifests,
+MCP configuration and private snapshots remain task-owned and byte-bound; do not
+widen ownership to a shared parent or edit a historical profile to reuse it.
+A changed apparatus reader requires a new frozen build.
+
+Run the same `configure`, `run-standing`, `query` and `journey` commands shown
+above. A complete correct answer supplies an absolute baseline observation.
+An incomplete answer retains its actual stop and unknown semantics; a complete
+wrong answer can identify the next hypothesis. Neither case supplies a paired
+effect, a general quality claim or adoption evidence. If a candidate is warranted,
+freeze a separate normal comparison after examining the baseline.
+
 ## Retained historical plans
 
 The [2026-11-22 two-model pilot report](benchmark-two-model-pilot-2026-11-22.md)

@@ -32,7 +32,8 @@
         "native_calibration",
         "model_evolution",
         "model_crosssection",
-        "model_environment_interaction"
+        "model_environment_interaction",
+        "baseline_diagnostic"
       ]
     },
     "registered_at": {
@@ -70,7 +71,7 @@
           "error_contract"
         ]
       },
-      "minItems": 1
+      "minItems": 0
     },
     "environments": {
       "type": "array",
@@ -578,7 +579,7 @@
         ],
         "additionalProperties": false
       },
-      "minItems": 2
+      "minItems": 1
     },
     "pairs": {
       "type": "array",
@@ -626,7 +627,7 @@
         ],
         "additionalProperties": false
       },
-      "minItems": 1
+      "minItems": 0
     },
     "assessments": {
       "type": "array",
@@ -1272,7 +1273,7 @@
                 "maxLength": 160,
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
               },
-              "minItems": 2
+              "minItems": 1
             }
           },
           "required": [

@@ -152,15 +152,25 @@ endpoint observations. The Benchmark loader binds those original receipts and
 checks actual loading; the protocol cannot certify them merely by accepting
 correctly formatted hashes.
 
-## Comparison purposes
+## Study purposes
 
 | `purpose` | Fixed conditions | Allowed experiment |
 | --- | --- | --- |
+| `baseline_diagnostic` | One environment/model, development or pilot material, standing authorization | Supported assessments with no pairs; descriptive observations only |
 | `environment_iteration` | Model/effective settings, common tasks, material, initial state, authorization, budget | Declared build/tool/prompt/config/contract/policy changes |
 | `native_calibration` | Same fixed business and model conditions | One Broker and one native environment; either can be A |
 | `model_evolution` | Exact environment and common business/budget | Two actual conditions in the same declared model family |
 | `model_crosssection` | Exact environment and common business/budget | Two actual model conditions with overlapping observation windows |
 | `model_environment_interaction` | Common tasks/initial state/authorization/budget, same two environment identities | Exactly two models by two environments, with both matched within-model pairs |
+
+A `baseline_diagnostic` has exactly one environment, model and condition,
+`allowed_changes: []`, and a nonempty set of supported assessments. All selected
+cases have the same complete zero-based repeat set. Its decision mode is
+`descriptive`; relative thresholds, comparative metrics, interactions, model
+tuning and confirmation selections are forbidden. It uses the existing standing
+execution and accounting contract. No candidate adoption or paired benefit can
+be inferred from this purpose. These constraints do not relax ordinary
+comparison requirements below.
 
 Environment differences must be named in `allowed_changes`; unused permitted
 changes are harmless, but an undeclared actual difference is rejected.
@@ -193,11 +203,13 @@ actual business material and contract, not an environment's tool instructions.
 Representation-specific files can differ while their business content remains
 mechanically equivalent; AH-1219 owns that equivalence proof.
 
-Common capabilities retain a fixed paired denominator. A promised common case
+In a comparison, common capabilities retain a fixed paired denominator. A promised common case
 cannot be omitted from one side, moved into an unpaired assessment or labelled
 unsupported. Added and withdrawn capabilities use separate assessments whose
 support agrees with the declared environment capability set. Unsupported
-assessments record scope and do not schedule a fake failed model task.
+assessments record scope and do not schedule a fake failed model task. The explicit
+`baseline_diagnostic` purpose can assess a common task without a comparison; it
+retains that task in its single-condition denominator and cannot claim a relative result.
 
 A material ID cannot describe conflicting content, split or cluster. Tuning
 requires a declared development budget, development material and disjoint

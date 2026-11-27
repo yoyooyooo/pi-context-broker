@@ -46,11 +46,15 @@ CLI and Broker bytes remain selected by the normal paired-build checks.
 
 The manifest has `schema_version:1` and
 `kind:"benchmark-ordinary-derived-resources"`. Its `owner_root` is a canonical task
-directory containing both the manifest and the paired environment. The manifest,
-closure inventories, MCP configuration and private agent-configuration snapshots
-are task-owned. Ordinary source files may remain at their explicit, canonical,
-read-only locations. The reader does not install packages or discover resources
-from the user's home at execution time.
+directory containing the manifest. The paired environment can be that same
+directory or a nested directory; the reader verifies its canonical path and that
+it exists as a directory. Filesystem roots and the user's home cannot be task
+owners, and a sibling environment or path alias is rejected. The manifest, closure
+inventories, MCP configuration and private agent-configuration snapshots remain
+inside the declared owner. Reusing a mainline environment does not require
+broadening ownership to its parent directory. Ordinary source files may remain at
+their explicit, canonical, read-only locations. The reader does not install
+packages or discover resources from the user's home at execution time.
 
 | Field | Contract |
 | --- | --- |

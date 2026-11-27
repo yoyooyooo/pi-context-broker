@@ -143,6 +143,12 @@ checks still apply. Source/build copies may be retired only when no retained
 plan or evidence still references their bytes. Keep the full artifact closure
 as well as the accounting needed by later work.
 
+A standing work plan can also name an explicit `baseline_diagnostic` setup with
+one environment/model and supported assessment slots. It uses this same grant,
+ledger, lease, reservation and evidence path. See [single-baseline diagnosis](benchmark-running.md#diagnose-one-current-baseline)
+for its descriptive-only constraints. An empty comparison list cannot support
+adoption, and a one-episode scientific design does not add an execution quota.
+
 ## Execution and recovery
 
 ```sh

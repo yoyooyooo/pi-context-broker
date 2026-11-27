@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { chmod, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-import { fingerprint } from './protocol.mjs';
+import { BASELINE_DIAGNOSTIC, fingerprint } from './protocol.mjs';
 import { buildCorpus, writeCorpus } from './corpus/index.mjs';
 import { buildStoreDiagnosticCorpus, STORE_FIRST_USE_GENERATOR } from './diagnostic-corpus.mjs';
 import { readCorpusSnapshot } from './corpus/snapshot.mjs';
-import { bindMaterializedCases, comparisonEnvironmentPairs, comparisonPairs, prepareCases, preregisterComparison } from './planning.mjs';
+import { bindMaterializedCases, comparisonEnvironmentPairs, plannedStudyDesign, prepareCases, preregisterComparison } from './planning.mjs';
 import { prepareEpisodeFixtures, readEpisodeFixtureBindings, validateEpisodeFixturePolicy } from './fixture-dispatch.mjs';
 import { snapshotModels, verifiedModelConditions, resolveModelCredential } from './models.mjs';
 import { environmentFromCapture } from './manifest.mjs';
@@ -78,15 +78,36 @@ export function startupCaptureSchedule(protocol, cases, episodeFixtures) {
   return declaredSchedule(protocol);
 }
 
-/** Resolve public inputs, prove no-model loading, then freeze the concrete executable comparison. */
+/** Reject an incompatible diagnostic before writing control state or reading credentials. */
+function assertDiagnosticSetup(setup) {
+  if (setup.purpose !== BASELINE_DIAGNOSTIC) return;
+  assert.equal(setup.candidates.length, 1, 'A baseline diagnostic names one candidate');
+  assert.equal(setup.models?.ids?.length, 1, 'A baseline diagnostic names one model');
+  assert.ok(setup.standing && !setup.pilot_scope && !setup.campaign_scope,
+    'A baseline diagnostic requires its existing standing authorization');
+  assert.ok(['development', 'pilot'].includes(setup.phase), 'A baseline diagnostic is not confirmation or regression');
+  assert.ok(['development', 'pilot'].includes(setup.corpus?.split), 'A baseline diagnostic selects development or pilot cases only');
+  assert.deepEqual(setup.allowed_changes, [], 'A baseline diagnostic declares no comparison changes');
+  assert.ok(setup.environment_pairs === undefined || Array.isArray(setup.environment_pairs) && !setup.environment_pairs.length,
+    'A baseline diagnostic has no comparison pairs');
+  assert.equal(setup.decision?.mode, 'descriptive', 'A baseline diagnostic cannot decide adoption');
+  for (const key of ['quality_delta_min', 'input_ratio_max', 'capped_time_ratio_max', 'efficiency_ratio_max'])
+    assert.ok(setup.decision[key] === undefined || setup.decision[key] === null, 'A baseline diagnostic has no relative threshold: ' + key);
+  assert.ok(setup.analysis?.interactions === undefined || Array.isArray(setup.analysis.interactions) && !setup.analysis.interactions.length,
+    'A baseline diagnostic has no interactions');
+}
+
+/** Resolve public inputs, prove no-model loading, then freeze the declared executable study. */
 export async function configureComparison(setup, { onProgress = () => {} } = {}) {
   assert.equal(setup.version, 1);
   assert.ok(isAbsolute(setup.environment_root) && isAbsolute(setup.control_root));
   assert.ok(Array.isArray(setup.candidates));
+  assertDiagnosticSetup(setup);
   for (const candidate of setup.candidates) if (candidate.resource_profile !== undefined) { validateResourceProfileRef(candidate.resource_profile); assert.equal(candidate.mode, 'broker', 'Ordinary-derived resources require Broker mode'); }
   assertConditionMaterialSetup(setup);
-  const environmentPairs = comparisonEnvironmentPairs(setup.candidates.length, setup.environment_pairs);
-  if (setup.candidates.length !== 2) assert.ok(setup.campaign_scope || setup.standing, 'Four candidates require an explicit campaign design');
+  const environmentPairs = setup.purpose === BASELINE_DIAGNOSTIC ? []
+    : comparisonEnvironmentPairs(setup.candidates.length, setup.environment_pairs);
+  if (setup.candidates.length === 4) assert.ok(setup.campaign_scope || setup.standing, 'Four candidates require an explicit campaign design');
   assert.ok([setup.pilot_scope, setup.campaign_scope, setup.standing].filter(Boolean).length <= 1, 'A setup cannot mix scope contracts');
   assert.ok(setup.budget && setup.decision && setup.models && setup.corpus);
   const standing = setup.standing ? await assertStandingSetup(setup) : null;
@@ -147,6 +168,12 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   await writeCorpus({ corpus, publicRoot: join(root, 'corpus-public'), controlRoot: join(root, 'corpus-private') });
   let cases = await prepareCases({ corpus, selections: setup.corpus.selections, root: join(root, 'cases') });
   const unboundCases = cases;
+  if (setup.purpose === BASELINE_DIAGNOSTIC) {
+    const design = plannedStudyDesign({ purpose: setup.purpose,
+      models: setup.models.ids, cases, environmentCount: setup.candidates.length,
+      repetitions: setup.repetitions ?? 1, orderingSeed: setup.ordering_seed ?? 0, environmentPairs });
+    standingCampaignPolicy(standing, { scheduledEpisodes: design.assessments.length });
+  }
   // Stateful preparation can allocate remote objects. Reject an older subject
   // implementation before that work, even though capture itself sends no model request.
   const turnRuntimeBuilds = [];
@@ -202,9 +229,9 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const credential = { source_file: setup.models.source_file, provider: setup.models.provider, api_key_env: registry.api_key_env };
   const runtime = setup.runtime;
   assert.ok(runtime && isAbsolute(runtime.node) && isAbsolute(runtime.pi) && isAbsolute(runtime.bun));
-  const schedule = { pairs: comparisonPairs({ models, cases, repetitions: setup.repetitions ?? 1,
+  const schedule = { ...plannedStudyDesign({ purpose: setup.purpose, models, cases, repetitions: setup.repetitions ?? 1,
     orderingSeed: setup.ordering_seed ?? 0, environmentCount: setup.candidates.length, environmentPairs }),
-  assessments: [], policies: { ordering: { seed: setup.ordering_seed ?? 0 },
+  policies: { ordering: { seed: setup.ordering_seed ?? 0 },
     ...(standing ? { campaign: standingCampaignPolicy(standing, { scheduledEpisodes: standing.item.planned_episodes }) }
       : setup.campaign_scope ? { campaign: setup.campaign_scope } : {}) } };
   const scheduled = scheduleProtocol(schedule), captureSlots = startupCaptureSchedule(schedule, cases, setup.episode_fixtures);
