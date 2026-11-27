@@ -532,6 +532,99 @@ for (const operation of ['library', 'list', 'files', 'resolve']) test(operation 
   assert.equal(result.sdk[0].attribution.response_bytes, 100);
 });
 
+function recoveredRateLimitFixture() {
+  const source = sdkObservation(), requestId = 'sdk:10:one';
+  const first = { ...source.events[2], attempt: 1, method: 'GET', http_status: 429, outcome: 'failure',
+    request_bytes: 0, response_bytes: 260, started_ms: 0, duration_ms: 100,
+    rate_limit_reason: 'public_api_request_rate_limit', retry_after_seconds: 6 };
+  const next = { ...first, attempt: 2, request_id: 'recovered-response', http_status: 200, outcome: 'success',
+    response_bytes: 900, started_ms: 6200, duration_ms: 100, rate_limit_reason: null, retry_after_seconds: null };
+  source.events = [source.events[0], source.events[1], first,
+    { phase: 'wait', kind: 'http', requestId, wait_kind: 'retry', milliseconds: 5900 },
+    { phase: 'wait', kind: 'http', requestId, wait_kind: 'queue', milliseconds: 200 },
+    next, { ...source.events[3], total_requests: 2, trace_dropped: 0 },
+    { ...source.events[4], errorCode: null }, source.events[5]];
+  const request = { ...sdkHttp[0], method: 'GET',
+    path: '/v1/data_sources/33333333-3333-4333-8333-333333333333',
+    cursor_sha256: null, request_bytes: 0, request_sha256: createHash('sha256').update('').digest('hex'), started_ms: 10 };
+  const observed = [request, { ...sdkHttp[1], status: 429, ended_ms: 110 },
+    { ...request, id: '10:2', started_ms: 6210 },
+    { ...sdkHttp[1], id: '10:2', response_request_id: next.request_id, ended_ms: 6310 }];
+  return { source, observed };
+}
+
+test('cache recovery retains both metadata attempts and verifies actual backoff; strict mode still rejects', () => {
+  const { source, observed } = recoveredRateLimitFixture();
+  assert.throws(() => classifyDailyHttp(observed, new Set(), new Set([10]), { sourceObservation: source }));
+  const result = classifyDailyHttp(observed, new Set(), new Set([10]), {
+    sourceObservation: source, sdkAttemptPolicy: 'recovered-metadata-rate-limit',
+  });
+  assert.equal(result.sdk.length, 2); assert.equal(result.source.length, 2);
+  assert.deepEqual(result.sdk.map(row => [row.attribution.http_status, row.attribution.outcome, row.attribution.response_bytes]),
+    [[429, 'failure', 260], [200, 'success', 900]]);
+  assert.deepEqual(result.recoveredRateLimits, [{ operation_request_id: 'sdk:10:one',
+    failed_request_id: sdkRequestId, retry_request_id: 'recovered-response', successful_request_id: 'recovered-response', http_status: 429,
+    rate_limit_reason: 'public_api_request_rate_limit', retry_after_seconds: 6,
+    independent_wait_ms: 6100, sdk_wait_ms: 6100, retry_wait_ms: 5900 }]);
+});
+
+test('each rate-limited retry must respect backoff even when a later attempt succeeds', () => {
+  for (const retryStarted of [1100, 6200]) {
+    const { source, observed } = recoveredRateLimitFixture();
+    const second = source.events.find(row => row.attempt === 2);
+    const success = { ...second, attempt: 3, request_id: 'third-response', started_ms: retryStarted + 6100 };
+    Object.assign(second, { outcome: 'failure', http_status: 429, retry_after_seconds: 6,
+      rate_limit_reason: 'public_api_request_rate_limit', started_ms: retryStarted });
+    source.events.splice(source.events.indexOf(second) + 1, 0,
+      { phase: 'wait', kind: 'http', requestId: second.requestId, wait_kind: 'retry', milliseconds: 6000 }, success);
+    source.events.find(row => row.phase === 'metrics').total_requests = 3;
+    observed[2].started_ms = retryStarted + 10;
+    Object.assign(observed[3], { status: 429, ended_ms: retryStarted + 110 });
+    observed.push({ ...observed[2], id: '10:3', started_ms: retryStarted + 6110 },
+      { ...observed[3], id: '10:3', status: 200, response_request_id: 'third-response', ended_ms: retryStarted + 6210 });
+    const classify = () => classifyDailyHttp(observed, new Set(), new Set([10]), {
+      sourceObservation: source, sdkAttemptPolicy: 'recovered-metadata-rate-limit',
+    });
+    if (retryStarted === 1100) assert.throws(classify, /Retry-After/u);
+    else {
+      const result = classify();
+      assert.equal(result.sdk.length, 3);
+      assert.equal(result.recoveredRateLimits.length, 2);
+    }
+  }
+});
+
+test('cache recovery rejects failed operations, unrelated successes, insufficient waits and unsupported failures', () => {
+  const cases = [
+    fixture => { fixture.source.events.find(row => row.phase === 'completed').errorCode = 'NOTION_UNAVAILABLE'; },
+    fixture => { fixture.source.events.find(row => row.phase === 'completed').status = 'failed'; },
+    fixture => { fixture.source.events.find(row => row.phase === 'completed').status = 'cancelled'; },
+    fixture => { fixture.source.events = fixture.source.events.filter(row => row.wait_kind !== 'retry'); },
+    fixture => { fixture.source.events.find(row => row.attempt === 1).retry_after_seconds = null; },
+    fixture => { fixture.observed[2].started_ms = 6109; },
+    fixture => { fixture.source.events.find(row => row.attempt === 2).started_ms = 6099; },
+    fixture => { fixture.observed[2].path = '/v1/data_sources/44444444-4444-4444-8444-444444444444'; },
+    fixture => { fixture.observed[2].cursor_sha256 = 'different-cursor'; },
+    fixture => { fixture.source.events.find(row => row.attempt === 2).requestId = 'sdk:10:other'; },
+    fixture => { fixture.source.events.find(row => row.attempt === 2).outcome = 'failure'; },
+    fixture => { fixture.source.events.find(row => row.attempt === 1).http_status = 403; fixture.observed[1].status = 403; },
+    fixture => { fixture.source.events.find(row => row.attempt === 1).request_kind = 'notion_body'; },
+    fixture => { fixture.source.events.find(row => row.attempt === 2).request_kind = 'notion_body'; },
+    fixture => { fixture.source.events.find(row => row.attempt === 1).rate_limit_reason = 'unknown'; },
+    fixture => { fixture.source.events.find(row => row.attempt === 1).method = 'POST'; fixture.observed[0].method = 'POST'; },
+    fixture => { fixture.source.events.find(row => row.attempt === 1).request_bytes = 2; fixture.observed[0].request_bytes = 2; },
+    fixture => { fixture.observed[0].request_sha256 = 'unproven-body'; },
+    fixture => { fixture.observed.splice(3, 1); },
+    fixture => { fixture.source.events.find(row => row.attempt === 2).http_status = 403; fixture.observed[3].status = 403; },
+  ];
+  for (const mutate of cases) {
+    const fixture = recoveredRateLimitFixture(); mutate(fixture);
+    assert.throws(() => classifyDailyHttp(fixture.observed, new Set(), new Set([10]), {
+      sourceObservation: fixture.source, sdkAttemptPolicy: 'recovered-metadata-rate-limit',
+    }));
+  }
+});
+
 const libraryRoot = '11111111-1111-4111-8111-111111111111';
 const libraryDatabase = '22222222-2222-4222-8222-222222222222';
 const libraryDataSource = '33333333-3333-4333-8333-333333333333';

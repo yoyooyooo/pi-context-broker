@@ -254,7 +254,9 @@ async function phase(name, opt, info, classifyDailyHttp, target, serializer) {
     for (const row of observed.filter(row => row.event === 'child_close' && sourcePids.has(row.child_pid))) {
       assert.equal(row.code, 0); assert.equal(row.signal, null); assert.equal(row.receipt?.ok, true);
     }
-    const partition = classifyDailyHttp(observed, sourcePids, new Set([receipt.host.pid]), { sourceObservation });
+    const partition = classifyDailyHttp(observed, sourcePids, new Set([receipt.host.pid]), {
+      sourceObservation, sdkAttemptPolicy: 'recovered-metadata-rate-limit',
+    });
     const sourceEvents = sourceObservation.events;
     const operations = sourceEvents.filter(row => row.phase === 'started' && row.kind === 'sdk').map(row => ({
       requestId: row.requestId, operation: row.operation, source_id: row.source_id, library: row.library,
@@ -274,6 +276,9 @@ async function phase(name, opt, info, classifyDailyHttp, target, serializer) {
         && row.attribution.target?.block_id === opt.library && row.structure?.kind === 'root-children' && row.structure.root === opt.library).length,
       consumption_requests: partition.sdk.filter(row => !['library-selection', 'candidates', 'library', 'list'].includes(row.attribution.operation)).length,
       all_target_requests: partition.source.length,
+      sdk_attempts_all_succeeded: partition.recoveredRateLimits.length === 0,
+      recovered_rate_limit_requests: partition.recoveredRateLimits.length,
+      recovered_rate_limits: partition.recoveredRateLimits,
       other_plugin_requests: partition.otherPlugins.length, unattributed_host_requests: partition.unattributedHostHttp.length,
       proxy_tunnels: partition.proxyTunnels.length, host_transport_end: terminal[0],
       scope: 'Actual owned Pi SDK plus bundled doctor CLI; independent HTTP matched by PID and response request ID. Other plugins, non-Notion host HTTP and proxy CONNECT are separate. Worker transport is outside this observer.' };
@@ -410,6 +415,7 @@ export async function runCache(config, { classifyDailyHttp }) {
     result.summary = { alias: '$' + d.selection.selection, page: d.selection.page, body_max_age_ms: opt.maxAgeMs,
       baseline_pid: a.host.pid, warm_pid: b.host.pid, prepared_nodes: b.graph.nodes.length, required_edges: b.graph.required.length,
       baseline_sdk_http: a.http.sdk_requests, warm_sdk_http: b.http.sdk_requests,
+      recovered_rate_limit_requests: result.phases.reduce((sum, phase) => sum + phase.http.recovered_rate_limit_requests, 0),
       warm_directory_http: b.http.directory_requests, warm_metadata_http: b.http.metadata_requests,
       warm_library_root_structure_http: b.http.library_root_structure_requests,
       warm_consume_http: b.consume.http_requests, warm_all_consumption_operations_http: b.http.consumption_requests,

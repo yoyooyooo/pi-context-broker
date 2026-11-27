@@ -316,7 +316,60 @@ export function validateDailyDoctor(reports, review, sourceDatabaseIds, required
   return { status: 'retained-external-catalog-diagnostics', failures, catalog: review.catalog, reason: review.reason };
 }
 
-export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObservation } = {}) {
+function recoveredMetadataRateLimits(sdk, sdkAttempts, observed, sourceObservation) {
+  const recoveries = [];
+  for (const request of sdk) {
+    const { operation, attempt } = sdkAttempts.get(request.attribution.request_id);
+    if (attempt.outcome === 'success') {
+      assert.ok(attempt.http_status >= 200 && attempt.http_status < 300, 'Successful SDK attempt needs HTTP 2xx');
+      continue;
+    }
+    assert.equal(attempt.outcome, 'failure');
+    assert.equal(attempt.http_status, 429, 'Only recovered metadata rate limits are accepted');
+    assert.equal(attempt.request_kind, 'notion_metadata');
+    assert.equal(attempt.rate_limit_reason, 'public_api_request_rate_limit');
+    assert.equal(request.origin, 'https://api.notion.com');
+    assert.equal(request.method, 'GET');
+    assert.match(request.path, /^\/v1\/(?:databases|data_sources)\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u);
+    assert.equal(request.request_bytes, 0);
+    assert.equal(request.request_sha256, hash(''));
+    const events = sourceObservation.events.filter(row => row.requestId === operation.requestId);
+    const terminal = events.find(row => row.phase === 'completed');
+    assert.equal(terminal.errorCode, null, 'Recovered operation must have no SDK error');
+    assert.ok(Number.isFinite(attempt.retry_after_seconds) && attempt.retry_after_seconds >= 0, 'Recovery needs actual Retry-After');
+    const sameRequest = candidate => ['pid', 'origin', 'method', 'path', 'cursor_sha256', 'request_bytes', 'request_sha256']
+      .every(key => candidate[key] === request[key]);
+    const later = sdk.filter(candidate => {
+      const next = sdkAttempts.get(candidate.attribution.request_id);
+      return next.operation.requestId === operation.requestId && next.attempt.attempt > attempt.attempt
+        && sameRequest(candidate);
+    }).sort((a, b) => a.attribution.attempt - b.attribution.attempt);
+    const retried = later[0], recovered = later.find(candidate => candidate.attribution.outcome === 'success');
+    assert.ok(recovered, 'Rate limit has no later success for the same metadata request');
+    const next = sdkAttempts.get(retried.attribution.request_id).attempt;
+    const success = sdkAttempts.get(recovered.attribution.request_id).attempt;
+    assert.equal(next.request_kind, 'notion_metadata'); assert.equal(success.request_kind, 'notion_metadata');
+    assert.ok(success.http_status >= 200 && success.http_status < 300);
+    const between = events.slice(events.indexOf(attempt) + 1, events.indexOf(next));
+    const waits = between.filter(row => row.phase === 'wait' && row.wait_kind === 'retry');
+    assert.ok(waits.length && waits.every(row => Number.isFinite(row.milliseconds) && row.milliseconds >= 0),
+      'Recovery needs an observed retry wait');
+    const response = observed.find(row => row.event === 'http_end' && row.pid === request.pid && row.id === request.id);
+    const independentWaitMs = retried.started_ms - response.ended_ms;
+    const sdkWaitMs = next.started_ms - (attempt.started_ms + attempt.duration_ms);
+    for (const wait of [independentWaitMs, sdkWaitMs])
+      assert.ok(Number.isFinite(wait) && wait >= attempt.retry_after_seconds * 1000, 'Recovery did not observe Retry-After');
+    recoveries.push({ operation_request_id: operation.requestId, failed_request_id: attempt.request_id,
+      retry_request_id: next.request_id, successful_request_id: success.request_id, http_status: attempt.http_status,
+      rate_limit_reason: attempt.rate_limit_reason, retry_after_seconds: attempt.retry_after_seconds,
+      independent_wait_ms: independentWaitMs, sdk_wait_ms: sdkWaitMs,
+      retry_wait_ms: waits.reduce((sum, row) => sum + row.milliseconds, 0) });
+  }
+  return recoveries;
+}
+
+export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObservation, sdkAttemptPolicy = 'successful' } = {}) {
+  assert.ok(['successful', 'recovered-metadata-rate-limit'].includes(sdkAttemptPolicy));
   assert.ok(!observed.some(row => row.event === 'http_observer_error'), 'Independent HTTP observer contains invalid evidence');
   const parents = new Map();
   for (const row of observed) {
@@ -411,11 +464,13 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
       assert.equal(match.attempt.method, request.method);
       assert.equal(match.attempt.http_status, terminal[0].status);
       assert.equal(match.attempt.request_bytes, request.request_bytes);
-      assert.equal(match.attempt.outcome, 'success');
+      if (sdkAttemptPolicy === 'successful') assert.equal(match.attempt.outcome, 'success');
       const attributed = { ...request, attribution: { kind: 'sdk', operation: match.operation.operation,
         library: match.operation.library, source_id: match.operation.source_id,
         requestId: match.operation.requestId, attempt: match.attempt.attempt, request_id: match.attempt.request_id,
         request_kind: match.attempt.request_kind, response_bytes: match.attempt.response_bytes,
+        outcome: match.attempt.outcome, http_status: match.attempt.http_status,
+        rate_limit_reason: match.attempt.rate_limit_reason ?? null, retry_after_seconds: match.attempt.retry_after_seconds ?? null,
         body_kind: match.attempt.body_kind ?? null, target: match.attempt.target ?? null },
         ...(Object.hasOwn(terminal[0], 'library_structure') ? { structure: terminal[0].library_structure } : {}) };
       matchedSdk.add(match.attempt.request_id); sdk.push(attributed); source.push(attributed);
@@ -426,7 +481,9 @@ export function classifyDailyHttp(observed, sourcePids, hostPids, { sourceObserv
     }
   }
   assert.equal(matchedSdk.size, sdkAttempts.size, 'An SDK attempt lacks independent HTTP evidence');
-  return { source, sdk, otherPlugins, unattributedHostHttp, proxyTunnels };
+  const recoveredRateLimits = sdkAttemptPolicy === 'recovered-metadata-rate-limit'
+    ? recoveredMetadataRateLimits(sdk, sdkAttempts, observed, sourceObservation) : [];
+  return { source, sdk, otherPlugins, unattributedHostHttp, proxyTunnels, recoveredRateLimits };
 }
 
 export function validateDailySdkOperations(operations, library) {
