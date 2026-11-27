@@ -137,7 +137,8 @@ try {
     ...currentDocs.map(name => "docs/" + name)]);
   report.documentation = { status: "passed", files: currentDocs, privateReferences: 0 };
 
-  // The pinned Pi package provides Jiti only. This does not start or validate a Pi host.
+  // This gate uses Pi's Jiti only. Record the same installed public Pi entry for
+  // the following actual-Pi gate; this result does not claim a Pi session ran.
   const loader = join(base, "loader");
   await mkdir(loader);
   await writeFile(join(loader, "package.json"), JSON.stringify({ name: "current-broker-loader", private: true }));
@@ -145,9 +146,13 @@ try {
   await mkdir(loaderHome);
   const loaderEnv = packageInstallationEnvironment({ home: loaderHome, base, ...downloads });
   run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact",
-    "@earendil-works/pi-coding-agent@1.5.2"], { cwd: loader, env: loaderEnv });
+    "@earendil-works/pi-coding-agent@1.6.0"], { cwd: loader, env: loaderEnv });
   const piPackage = join(loader, "node_modules/@earendil-works/pi-coding-agent/package.json");
-  assert.equal(JSON.parse(await readFile(piPackage, "utf8")).version, "1.5.2");
+  const piMetadata = JSON.parse(await readFile(piPackage, "utf8"));
+  assert.equal(piMetadata.name, "@earendil-works/pi-coding-agent");
+  assert.equal(piMetadata.version, "1.6.0");
+  report.pi = { name: piMetadata.name, version: piMetadata.version, package: await identity(piPackage),
+    entry: await identity(await runtimePath(dirname(piPackage), typeof piMetadata.bin === "string" ? piMetadata.bin : piMetadata.bin?.pi)) };
   const sdkOut = join(base, "current-sdk");
   run(process.execPath, [join(root, "scripts/verify-notion-sdk-installed.mjs"),
     "--package", installed, "--fixture", options.get("--fixture"),

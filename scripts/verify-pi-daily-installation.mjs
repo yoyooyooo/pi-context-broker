@@ -874,12 +874,20 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   node scripts/verify-pi-daily-installation.mjs aggregate --config ABSOLUTE_CONFIG.json
   node scripts/verify-pi-daily-installation.mjs candidate-plan --config ABSOLUTE_CONFIG.json
   node scripts/verify-pi-daily-installation.mjs candidate-run --config ABSOLUTE_CONFIG.json --live
+  node scripts/verify-pi-daily-installation.mjs cache-plan --config ABSOLUTE_CONFIG.json
+  node scripts/verify-pi-daily-installation.mjs cache-run --config ABSOLUTE_CONFIG.json --live
 
 plan: describe ordinary daily Pi diagnostics; does not execute Pi.
 run: verify the committed next worktree pair, current builds, existing installation and a fresh ordinary Pi process.
 aggregate: require current passed Pro/Mini daily receipts from different machines for the same delivery and real origin/next pair.
 candidate-plan: validate and describe the separate project-scoped candidate; does not execute Pi.
 candidate-run: execute that candidate with its specified provider/model and record actual evidence.
+cache-plan: validate the ordinary installed package and describe the live cache check without opening a Pi session.
+cache-run: use normal daily settings and three fresh Pi processes for find/doctor, baseline consumption and warm consumption.
+Cache configs require scope:ordinary-pi-cache-reuse, brokerRoot, library, query,
+evidenceRoot and expectedMaxAgeMs; pi and cwd are optional. The existing cache is preserved.
+Full root and Requires bodies must reach the actual Pi serializer; warm consumption HTTP must be zero.
+Directory/root-structure HTTP is reported separately. This controlled-provider check is not a daily delivery aggregate.
 
 Each action requires an explicit version:1 JSON config and owned absolute evidence paths.
 Daily runs require worktrees.cli and worktrees.broker with root and complete commit,
@@ -901,12 +909,18 @@ These actions do not install packages or change user settings.`);
   }
   const [action, flag, input, ...extra] = process.argv.slice(2);
   const candidate = action === 'candidate-plan' || action === 'candidate-run';
-  assert.ok(['plan', 'run', 'aggregate', 'candidate-plan', 'candidate-run'].includes(action) && flag === '--config' && input
-    && (action === 'candidate-run' ? extra.length === 1 && extra[0] === '--live' : !extra.length),
-  'Usage: node scripts/verify-pi-daily-installation.mjs plan|run|aggregate|candidate-plan --config ABSOLUTE_CONFIG.json; candidate-run --config ABSOLUTE_CONFIG.json --live');
+  const cache = action === 'cache-plan' || action === 'cache-run';
+  assert.ok(['plan', 'run', 'aggregate', 'candidate-plan', 'candidate-run', 'cache-plan', 'cache-run'].includes(action) && flag === '--config' && input
+    && (['candidate-run', 'cache-run'].includes(action) ? extra.length === 1 && extra[0] === '--live' : !extra.length),
+  'Usage: node scripts/verify-pi-daily-installation.mjs plan|run|aggregate|candidate-plan|cache-plan --config ABSOLUTE_CONFIG.json; candidate-run|cache-run --config ABSOLUTE_CONFIG.json --live');
   const config = await json(resolve(input));
   assert.equal(config.version, 1);
-  if (candidate) {
+  if (cache) {
+    const { cachePlan, runCache } = await import('./verify-pi-daily-cache.mjs');
+    const result = action === 'cache-plan' ? await cachePlan(config) : await runCache(config, { classifyDailyHttp });
+    console.log(JSON.stringify(result, null, 2));
+    if (action === 'cache-run' && result.status !== 'passed') process.exitCode = 1;
+  } else if (candidate) {
     const { candidatePlan, runCandidate } = await import('./verify-pi-daily-candidate.mjs');
     const result = action === 'candidate-plan' ? await candidatePlan(config) : await runCandidate(config, { packageClosure, fileIdentity });
     console.log(JSON.stringify(result, null, 2));

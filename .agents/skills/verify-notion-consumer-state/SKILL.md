@@ -50,6 +50,8 @@ node scripts/check-consumer-state-mutations.mjs --out "$CONSUMER_MUTATION_PARENT
 
 mutation 输出目录本身须不存在。按实际变化选择 `FreshnessPublication`、`SelectionGraph`、`DeliveryBoundary`、`RecoveryClosure`、`LibrarySession` 或 `MenuPublication`，不复制工具内部参数。模型 runner 生成 Mermaid/report/TLC；需要展示图时依照 [图形产物复现](../../../docs/formal-verification-maintenance.md#图形产物定位与复现)，只渲染本次真实生成的图。
 
+T01 涉及缓存、TTL、库选择、启动/SDK 次序或会话复用时，必须交接 [新进程缓存验证](../verify-notion-skills-integration/features/session-cache-recovery.md#新进程复用) 的 `http-warm-restart` 和 `http-warm-directory-expired`，随后复验普通安装。这里的模型、SDK 或 hooks 只证明对应状态守卫，不能代填新 PID/session、全部 HTTP、原 snapshot/校验时间与实际 provider 全文的 host 结果。
+
 排队输入改动还须沿宿主验证入口运行 `bun run test:pi-queued-input`，显式配置
 `PI_QUEUED_INPUT_PACKAGE` 为实际 Pi 安装根。最终包复验可另设
 `PI_QUEUED_INPUT_BROKER` 为实际 Broker package 根；默认只测试当前源码。
