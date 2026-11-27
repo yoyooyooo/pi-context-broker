@@ -27,6 +27,7 @@ test("installed Pi " + manifest.version + " retains queued receipts across real 
   type Listener = (event: never, ctx: ExtensionContext) => unknown;
   const handlers = new Map<string, Listener[]>(), notices: string[] = [], receipts: InputReceipt[] = [];
   const choices = createAcceptedSelections<{ token: string; target: string }>(candidate => candidate.token);
+  const budgets: unknown[] = [];
   const seen: Array<{ id: string; target: string; library: string | undefined; images: ImageContent[] | undefined }> = [];
   const config: ConfigFile = { sources: [{ id: "a", type: "notion", library: a }, { id: "b", type: "notion", library: b }] };
   const owner = createLibrarySelection(config, async input => {
@@ -44,7 +45,8 @@ test("installed Pi " + manifest.version + " retains queued receipts across real 
     getRecords: async () => ({ records: [], failures: [] }), loadRecord: async () => { throw new Error("No content read in receipt replay"); },
     needsPreflightPrompt: text => text.includes("$same-choice"),
     onInputReceipt: receipt => { receipts.push(receipt); choices.capture(receipt, ["same-choice"]); },
-    preflightPrompt: async (_text, context, _signal, receipt) => {
+    preflightPrompt: async (_text, context, _signal, receipt, budget) => {
+      assert.ok(budget); budgets.push(budget);
       assert.ok(receipt);
       const selected = choices.forSubmission(receipt).get("same-choice"); assert.ok(selected);
       seen.push({ id: receipt.id, target: selected.target, library: libraryContext(context)?.local()?.root, images: receipt.event.images });
@@ -73,6 +75,9 @@ test("installed Pi " + manifest.version + " retains queued receipts across real 
     await runner.emitInput(text, [image], "interactive", "followUp");
     manager.appendCustomEntry(LIBRARY_SELECTION_ENTRY, { version: 1, library: b, status: "ready" }); owner.invalidate();
     choices.remember(ctx, { token: "same-choice", target: "next-draft-B" });
+    const secondText = "$same-choice second queued input";
+    await runner.emitInput(secondText, undefined, "interactive", "followUp");
+    choices.remember(ctx, { token: "same-choice", target: "later-draft-B" });
     const native: AgentMessage = { role: "user", content: [{ type: "text", text }, { ...image }] };
     await normalizer._normalizeQueuedMessageImages(native);
     assert.ok(Array.isArray(native.content));
@@ -82,17 +87,22 @@ test("installed Pi " + manifest.version + " retains queued receipts across real 
     assert.notEqual(native.content[0]!.text, text, "The real queued normalization appends a size hint");
     await runner.emit({ type: "message_start", message: native });
     const entryId = manager.appendMessage(native);
+    const second: AgentMessage = { role: "user", content: secondText };
+    await runner.emit({ type: "message_start", message: second }); manager.appendMessage(second);
     const projection = manager.buildSessionProjection();
     assert.equal(projection.entries.find((entry: { sourceEntry: { id: string } }) => entry.sourceEntry.id === entryId)?.sourceEntry.message, native,
       "Actual SessionManager retains the message_start instance as provenance");
     const projected = await runner.emitContext(projection.messages);
-    assert.deepEqual(seen, [{ id: receipts[0]!.id, target: "accepted-A", library: a, images: [image] }]);
+    assert.deepEqual(seen, [{ id: receipts[0]!.id, target: "accepted-A", library: a, images: [image] },
+      { id: receipts[1]!.id, target: "next-draft-B", library: b, images: undefined }]);
+    assert.equal(budgets.length, 2);
+    assert.equal(budgets[0], budgets[1], "Both accepted queued inputs share the same context budget");
     const delivered = projected.find((message: AgentMessage) => message.role === "user" && Array.isArray(message.content));
     assert.notEqual(delivered, native, "Actual emitContext clones the messages before Broker sees them");
     assert.deepEqual(delivered, native, "Broker preserves Pi's normalized text and image bytes");
     await runner.emitContext(manager.buildSessionProjection().messages);
-    assert.equal(seen.length, 1, "Repeated context cannot adopt the same native occurrence twice");
-    assert.equal(choices.forContext(ctx).get("same-choice")?.target, "next-draft-B");
+    assert.equal(seen.length, 2, "Repeated context cannot adopt the same native occurrence twice");
+    assert.equal(choices.forContext(ctx).get("same-choice")?.target, "later-draft-B");
     assert.deepEqual(notices, []);
   } finally { await runner.emit({ type: "session_shutdown" }); }
 });

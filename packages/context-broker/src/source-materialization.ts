@@ -6,7 +6,7 @@ import { decodeNotionContentRecord, SourceError } from "./notion-source";
 import { noConsumptionWrites } from "./consumption-effects";
 import { inputReceiptIsCurrent } from "./preparation-authority";
 import { decodeSourceMaterializationReceipt, materializationTarget, type SourceMemberCandidate, type SourceMaterializationAuthorization, type SourceMaterializationReceipt, type SourceMaterializationRequest } from "./source-materialization-contract";
-import type { InputReceipt } from "./skill-preparation";
+import type { ContextPreparationBudget, InputReceipt } from "./skill-preparation";
 import type { ContentRecord, ExtensionContext, SourceConfig } from "./types";
 
 const observations = channel("context-broker.notion-materialization");
@@ -24,6 +24,7 @@ export async function materializeExplicitCandidate(input: {
   candidate: SourceMemberCandidate; source: NotionSource; receipt: InputReceipt; query: string;
   purpose: "inspect" | "use"; ctx: ExtensionContext; signal?: AbortSignal;
   authorization?: SourceMaterializationAuthorization;
+  budget?: ContextPreparationBudget;
   onReceipt(receipt: SourceMaterializationReceipt): void | Promise<void>;
 }): Promise<{ record: ContentRecord; receipt: SourceMaterializationReceipt }> {
   const { candidate, source, receipt, query, ctx, signal } = input;
@@ -41,8 +42,9 @@ export async function materializeExplicitCandidate(input: {
   observations.publish({ ...attribution, event: "start" });
   let result: SourceMaterializationReceipt;
   try {
-    const response = await materializeNotionSource(request, { cwd: ctx.cwd ?? process.cwd(), library: candidate.library_id, signal,
+    const manage = () => materializeNotionSource(request, { cwd: ctx.cwd ?? process.cwd(), library: candidate.library_id, signal,
       env: { ...process.env, ...(source.requestTimeoutMs === undefined ? {} : { NTN_SKILLS_REQUEST_TIMEOUT_MS: String(source.requestTimeoutMs) }) } });
+    const response = await (input.budget ? input.budget.waitForManagement(manage) : manage());
     result = decodeSourceMaterializationReceipt(response, request, candidate.scope, value => decodeNotionContentRecord(value, source));
   } catch (error) {
     const unavailable = error instanceof SourceManagementUnavailable;

@@ -5,7 +5,7 @@ import { sessionSourceSnapshot, sessionSourceBindings, sourceContentIdentity, so
 import { sessionSelection, selectedBinding, selectedTaskRole, persistSessionSelection, exportSessionSelection, type SessionSelection } from "./session-graph";
 import { activeSelection, confirmActiveSources } from "./session-active";
 import { createActiveSourceRestorer } from "./session-recovery";
-import { checkPreparationSignal, isPreparationCancelled, withPreparationDeadline, type InputReceipt } from "./skill-preparation";
+import { checkPreparationSignal, isPreparationCancelled, withPreparationDeadline, type ContextPreparationBudget, type InputReceipt } from "./skill-preparation";
 import { createCompletionSnapshot, localCompletionCandidate, notionCompletionCandidates, materializationCompletionCandidates, matchSourceMemberCandidate, sourceMemberLookupQuery, sourceMemberQuery, type CompletionCandidate } from "./completion-candidates";
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
@@ -104,7 +104,7 @@ import type {
 import { DOLLAR_SKILL_PATTERN, explicitDollarQueries, invocationText } from "./invocation-text";
 import { materializeExplicitCandidate, needsSourceMaterialization } from "./source-materialization";
 import type { SourceMemberCandidate, SourceMaterializationReceipt } from "./source-materialization-contract";
-import { authorizeExplicitPreparation, authorizedPreparationRoots, inputReceiptIsCurrent, preparationQuery, preparationReceipt, revokePreparationAuthority } from "./preparation-authority";
+import { authorizeExplicitPreparation, authorizedPreparationRoots, inputReceiptIsCurrent, preparationBudget, preparationQuery, preparationReceipt, revokePreparationAuthority } from "./preparation-authority";
 
 const CUSTOM_TYPE = "context-broker";
 const BUILTIN_SKILL_PROMPT_TYPE = "skill-prompt";
@@ -1498,7 +1498,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const acceptedSelections = createAcceptedSelections<CompletionCandidate>(candidate => candidate.token);
   const acceptedRecords = new WeakMap<InputReceipt, Promise<ReadonlyMap<string, DiscoveryRecord>>>();
   const materializedInputs = new WeakMap<InputReceipt, Set<string>>();
-  const submissionRecords = (receipt: InputReceipt | undefined, signal?: AbortSignal): Promise<ReadonlyMap<string, DiscoveryRecord>> => {
+  const submissionRecords = (receipt: InputReceipt | undefined, signal?: AbortSignal, budget?: ContextPreparationBudget): Promise<ReadonlyMap<string, DiscoveryRecord>> => {
     if (!receipt) return Promise.resolve(new Map());
     let pending = acceptedRecords.get(receipt);
     if (!pending) {
@@ -1506,7 +1506,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
         const entries = new Map<string, DiscoveryRecord>();
         for (const [token, candidate] of acceptedSelections.forSubmission(receipt)) {
           const record = candidate.origin === "source_member"
-            ? await materializeInputMember(candidate.member, candidate.source, receipt, token, receipt.ctx, signal)
+            ? await materializeInputMember(candidate.member, candidate.source, receipt, token, receipt.ctx, signal, budget)
             : await materializeCompletionCandidate(candidate, receipt.ctx.cwd ?? process.cwd(), signal);
           entries.set(token, record);
         }
@@ -1705,7 +1705,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       owner.snapshot.accept(owner.snapshot.begin("refresh"),
         materializationCompletionCandidates(owner.snapshot.read().candidates, source, result));
     }
-    if (inputReceiptIsCurrent(receipt, ctx)) pi.appendEntry?.("context-broker-materialization", {
+    if (inputReceiptIsCurrent(receipt, ctx, signal)) pi.appendEntry?.("context-broker-materialization", {
       version: 1, input_receipt: receipt.id, request_id: result.request_id, operation_id: result.operation_id,
       source_id: source.id, library_id: result.library_id, scope: result.scope, manager_scope: result.manager_scope, status: result.status,
       target: result.target, authorization_root: result.authorization_root, affected_skill_ids: result.affected_skill_ids, source_revisions: result.source_revisions, effects: result.effects,
@@ -1753,14 +1753,14 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       source, scope: member.scope }, ctx.cwd ?? process.cwd(), signal);
   }
   async function materializeInputMember(member: SourceMemberCandidate, source: Extract<SourceConfig, { type: "notion" }>,
-    receipt: InputReceipt, query: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord> {
+    receipt: InputReceipt, query: string, ctx: ExtensionContext, signal?: AbortSignal, budget?: ContextPreparationBudget): Promise<SkillRecord> {
     if (member.readiness === "ready" && member.record) return memberRecord(member, source, member.record, query, ctx, signal);
-    const result = await materializeExplicitCandidate({ candidate: member, source, receipt, query, purpose: "use", ctx, signal,
+    const result = await materializeExplicitCandidate({ candidate: member, source, receipt, query, purpose: "use", ctx, signal, budget,
       onReceipt: value => materializationReceived(value, source, receipt, ctx, signal) });
     return memberRecord(member, source, result.record, query, ctx, signal);
   }
   async function discoverInputMembers(receipt: InputReceipt | undefined, text: string, ctx: ExtensionContext,
-    accepted: ReadonlyMap<string, DiscoveryRecord>, registry: readonly DiscoveryRecord[], signal?: AbortSignal): Promise<ReadonlyMap<string, DiscoveryRecord>> {
+    accepted: ReadonlyMap<string, DiscoveryRecord>, registry: readonly DiscoveryRecord[], signal?: AbortSignal, budget?: ContextPreparationBudget): Promise<ReadonlyMap<string, DiscoveryRecord>> {
     if (!receipt) return accepted;
     const queries = explicitDollarQueries(receipt.event.text ?? ""), additional = new Map(accepted);
     for (const request of parseInvocations(text, configuredRules(config))) {
@@ -1776,7 +1776,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       const members = await discoverNotionSourceMembers(source, ctx.cwd ?? process.cwd(), lookup, signal);
       const member = matchSourceMemberCandidate(request.query, source, members.candidates, members.coverage);
       if (!member) continue;
-      additional.set(request.query, await materializeInputMember(member, source, receipt, request.query, ctx, signal));
+      additional.set(request.query, await materializeInputMember(member, source, receipt, request.query, ctx, signal, budget));
     }
     acceptedRecords.set(receipt, Promise.resolve(additional));
     return additional;
@@ -2019,7 +2019,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
           bindings.set(binding.record.id, binding);
         }
         const boundSource = bindNotionSource(source, roots[0]!);
-        const receipt = preparationReceipt(authority);
+        const receipt = preparationReceipt(authority), budget = preparationBudget(authority);
         const refreshed = receipt && roots.some(root => materializedInputs.get(receipt)?.has(JSON.stringify([source.id, root.sourceScope, root.id])));
         const consume = (current: readonly SkillRecord[], refresh: boolean) => prepareNotionSkills(current, boundSource, ctx?.cwd ?? process.cwd(), {
           purpose, signal, rootPins, sessionBindings: [...bindings.values()], refresh, ...policy,
@@ -2042,7 +2042,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
             const member = candidates[0];
             if (member) {
               if (discovered.coverage !== "complete") throw new SourceError("CATALOG_INCOMPLETE", sourceId);
-              const result = await materializeExplicitCandidate({ candidate: member, source: boundSource, receipt, query, purpose, ctx, signal,
+              const result = await materializeExplicitCandidate({ candidate: member, source: boundSource, receipt, query, purpose, ctx, signal, budget,
                 onReceipt: value => materializationReceived(value, boundSource, receipt, ctx, signal) });
               replacements.set(root.id!, { ...root, ...result.record });
               continue;
@@ -2054,7 +2054,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
               if (!dependency.record || dependency.record.locator.type !== "shared_skill") throw new SourceError("SOURCE_IDENTITY_MISMATCH", sourceId);
               const key = JSON.stringify([source.id, required.scope, dependency.record.id]);
               if (materializedInputs.get(receipt)?.has(key)) continue;
-              await materializeExplicitCandidate({ candidate: dependency, source: boundSource, receipt, query, purpose, ctx, signal,
+              await materializeExplicitCandidate({ candidate: dependency, source: boundSource, receipt, query, purpose, ctx, signal, budget,
                 authorization: required.authorization, onReceipt: value => materializationReceived(value, boundSource, receipt, ctx, signal) });
             }
             replacements.set(root.id!, { ...root, ...required.root });
@@ -2156,16 +2156,16 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       }
       return tasks.length ? text + "\n\n" + tasks.join("\n\n") : text;
     },
-    preflightPrompt: async (text, ctx, signal, receipt) => {
+    preflightPrompt: async (text, ctx, signal, receipt, budget) => {
       const requests = parseInvocations(text, configuredRules(config));
       if (requests.length === 0) return;
-      let accepted = await submissionRecords(receipt, signal);
+      let accepted = await submissionRecords(receipt, signal, budget);
       const registry = await registryPromise;
       const dollarRegistry = requests.some(request => request.scope === "global" || request.scope === "catalog")
         ? await buildDollarRegistryForContext(ctx, submissionRegistry(ctx, text, accepted, signal)) : [];
-      accepted = await discoverInputMembers(receipt, text, ctx, accepted, dollarRegistry, signal);
+      accepted = await discoverInputMembers(receipt, text, ctx, accepted, dollarRegistry, signal, budget);
       const { injections } = resolveSkillRequests(requests, registry, { phase: "input" }, dollarRegistry, config, accepted, libraryContext(ctx)?.local()?.source.id);
-      const authority = authorizeExplicitPreparation(receipt, injections);
+      const authority = authorizeExplicitPreparation(receipt, injections, budget);
       try { await host.prepareMany(injections.map(injection => injection.record).filter(record => record.sourceId), ctx, signal, authority); }
       finally { revokePreparationAuthority(authority); }
     },

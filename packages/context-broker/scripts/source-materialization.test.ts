@@ -152,3 +152,18 @@ test("a preflight rejection still reaches receipt invalidation without authorizi
   expect(f.receipts[0]).toMatchObject({ target: { expected_skill_id: "entry" }, affected_skill_ids: [], effects: { remote_writes: "none" } });
   expect(f.calls).toEqual([]);
 });
+
+
+test("management accounting starts only after explicit input, current session and readiness guards", async () => {
+  const f = await fixture(); let waits = 0;
+  const budget = { async waitForManagement<T>(work: () => Promise<T>): Promise<T> { waits++; return work(); } };
+  for (const text of ["`$entry@notion`", "> $entry@notion", "entry@notion"])
+    await expect(f.api.materializeExplicitCandidate({ ...f.input(text), budget })).rejects.toMatchObject({ code: "SOURCE_MATERIALIZATION_UNAUTHORIZED" });
+  await expect(f.api.materializeExplicitCandidate({ ...f.input(), budget, candidate: { ...f.candidate, readiness: "blocked" } }))
+    .rejects.toMatchObject({ code: "SOURCE_MATERIALIZATION_BLOCKED" });
+  await expect(f.api.materializeExplicitCandidate({ ...f.input(), budget, ctx: { ...f.ctx, cwd: f.root + "/other" } }))
+    .rejects.toMatchObject({ code: "SOURCE_CANCELLED" });
+  expect(waits).toBe(0); expect(f.controlled.calls).toEqual([]);
+  await f.api.materializeExplicitCandidate({ ...f.input(), budget });
+  expect(waits).toBe(1); expect(f.controlled.calls).toHaveLength(1);
+});

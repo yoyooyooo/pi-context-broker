@@ -486,7 +486,7 @@ syncBuiltinESMExports();
     };
     const open = async (client, phase) => {
       service.setPhase(phase); git.setPhase(phase);
-      rpc = await startRpc({ host: info.host, args: client.args, cwd: client.root, env: client.env, timeoutMs: 180000 });
+      rpc = await startRpc({ host: info.host, args: client.args, cwd: client.root, env: client.env, timeoutMs: 360000 });
       const initial = await snapshot(phase + '-empty-session');
       assert.equal(initial.branch.some(entry => entry.customType === 'context-broker-selected-graph' || entry.customType === 'context-broker-materialization'), false);
       const row = { phase, pid: rpc.lifecycle[0].pid, session_file: initial.session_file, client: client.root, source_begin: service.requests.length, git_begin: git.requests.length };

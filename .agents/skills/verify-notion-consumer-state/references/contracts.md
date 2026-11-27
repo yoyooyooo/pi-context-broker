@@ -92,7 +92,11 @@ Broker 准备、授权、完整闭包或最终投影检查失败时，原用户�
 
 失败后同一 turn 内的新成功获取可以重新尝试原上下文链。`toolResultRecovery` 在获取前捕获 run 和失败 episode 的 Map，只在当前 session/generation/signal、同一 Map 且完整获取成功时登记 call ID 与结果 digest。digest 包含正文、来源 receipt 和规范化 `isError`；undefined/false 等价，true 或正文/receipt 变化均不能放行。新的失败替换 Map，旧 episode 的迟到结果不能恢复它；partial scalar、截断 batch 和授权失败不登记。旧结果和旧指令片段继续退休，新结果仍经过当前权限、完整 Requires、最终投影及 provider/turn/projection 守卫。`host-prepare.test.ts`、`resource-read-host.test.ts` 和 `nonblocking-context.test.ts` 回放这些正反例。RecoveryClosure 的三个 prompt 与 DeliveryBoundary 的有限变量不包含同 turn 的 episode、原生数组或 digest；它们的原规则不变，不能据此宣称这些新实现边界已穷尽证明。
 
-`skill-preparation.withPreparationDeadline` 将每次模型请求前 context 阶段的 Library 身份、print/JSON metadata、显式准备、任务 prompt 和 active restoration 纳入同一个 60 秒期限；不是整段含多次模型和工具往返的 agent turn 共用此期限。生产者不配合取消也必须让等待结束。超时只终止 Broker 获取；原操作 signal 保持可用，随后迟到结果还必须通过原取消和当前 owner 检查。Pi preparation gate 不禁用编辑器；一次 input 接纳的排队文本和图片由原生队列送到后续 context 后再准备。期限、Promise 退出、输入顺序和图片保留是实现义务，有限模型没有这些墙钟、队列或原生内容变量。
+`skill-preparation.withContextPreparationDeadline` 将每次模型请求前 context 的 Library 身份、print/JSON metadata、显式准备、任务 prompt 和 active restoration 纳入累计 60 秒读取额度。当前字面 `$` 的 Source、scope、readiness 守卫通过后，实际 management SDK await 才进入累计 180 秒管理额度；回执、完整目录和普通 consume 返回剩余读取额度。多个 root 和同一 context 接纳的 queued inputs 共用预算，不按 root 或阶段重新计满，绝对总时限为 240 秒。没有管理调用时保持一个原始 60000ms timer；公开工具仍用原 `withPreparationDeadline`。这是每次 context 的额度，整段含多次模型和工具往返的 agent turn 不共用它。
+
+预算通过 preflight 和既有 PreparationAuthority grant 显式传递，不从 signal、模型工具或缓存记录推导写权限。单调时钟在每次阶段切换及 context 完成时扣账，并检查已耗尽额度，避免到期 timer 尚未调度时逃入下一阶段。关闭、嵌套和重叠的管理能力不能派发新请求。外层 Promise race 结束不配合取消的等待，超时先保留 SOURCE_PREPARATION_TIMEOUT 再取消子 signal，原用户操作仍可继续。固定 manager 的既有请求、写入意图和进程生命周期不由此预算接管。迟到成功回执可以失效共享事实，但必须经过包含 signal 的 input receipt 守卫后才可写 session；不能开始新的 consume、选择图或投递。正常 context 完成只关闭预算能力，保留供后续交付边界使用的成功 signal。
+
+Pi preparation gate 不禁用编辑器；一次 input 接纳的排队文本和图片由原生队列送到后续 context 后再准备。`source-materialization-catalog.test.ts` 经真实 index/host 回放慢 manager 后完整目录和正文、两个累计额度、各阶段卡住及 Stop/session switch、迟到回执和 timer 调度间隙；`pi-queued-input.test.ts` 用安装 Pi 的 dispatcher/SessionManager 检查两份 queued receipt 共用一个预算。普通 60 秒、工具预算和原权限、partial、foreign-scope 负例继续运行。期限、Promise 退出、输入顺序和图片保留是实现义务，有限模型没有这些墙钟、队列或原生内容变量；实际 Pi 原始账本仍须单独验证。
 
 `index` 的 shutdown 先推进目录代次、取消 catalog owner 并清空目录引用，不再等待所有目录 producer 退出。`ownCatalog` 保留获取前后的 signal 检查及拒绝观察；`publishCatalog` 仍检查 owner 和原 cache entry。`host-refresh.test.ts` 通过真实 index 入口暂停一个忽略取消的 SDK catalog，验证 shutdown 在 producer 返回前完成、迟到结果不能作为工具结果发布，也不新增 branch entry 或通知。此 Promise 退出义务不属于 ReadRace 的有限网络调度证明。
 
