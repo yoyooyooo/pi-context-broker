@@ -1,0 +1,4698 @@
+{
+  "version": 1,
+  "kind": "benchmark-current-long-session-thin-summary",
+  "recorded_at_utc": "2026-11-27T15:25:21.285947+00:00",
+  "owner": "AH-1217",
+  "environment_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126",
+  "environment_id": "8cb2b3cc-218d-4598-b40d-e0a1c2b76d99",
+  "product": {
+    "cli": "e2fa61517efd1c8784d2695973c4e7dbc8b18877",
+    "broker_runtime": "7f87b9242c45714f12e70b7745f9ec1a340c3655",
+    "benchmark_apparatus": "a5942c90615c03b2f6e490fb5a47b2dc88ef4d14",
+    "build_id": "benchmark-long-session-current-20261127-1",
+    "sdk_sha256": "faebf5f459978634ccc141849e47e8671536784bd4bc3c16a032000edb1414cb",
+    "controller_sha256": "6533e39f9cbd3869ae34d3be43517a903d32ab93a291b021753eb8a3a2c6fadd",
+    "collector_version": "1.3.11",
+    "boundary": [
+      "At selection, Broker next still pinned prior CLI4ef. This explicit experimental pair uses accepted standalone SDK e2fa615 and accepted Broker runtime 7f87b924.",
+      "Broker product PR110 merged to next at 2026-11-27T14:51:26Z as 05cfe498acaec4786521e2285df616eaacb3d031. Its new Source behavior is not in this frozen experiment.",
+      "No daily package/config or product runtime changes are performed by this Benchmark-only implementation.",
+      "CLI benchmark remote remained older at the recorded check; execution binds the explicit accepted next commit above rather than that branch."
+    ],
+    "selection_at_utc": "2026-11-27T14:34:00Z (approximately; exact selected identities are bound in the build)"
+  },
+  "design": {
+    "plan_id": "current-long-session-own-pair-2",
+    "plan_content_sha256": "f1559a0e5194ab3a8727691b03e3dc2202f27b618b76110acf76dcf41cfe9c1f",
+    "generator": "long-session-consumption-v1",
+    "cases": [
+      {
+        "caseId": "long-session-reuse-a",
+        "candidateCount": 16,
+        "roundCount": 8
+      },
+      {
+        "caseId": "long-session-switch-a",
+        "candidateCount": 16,
+        "roundCount": 8
+      }
+    ],
+    "episodes": 4,
+    "user_turns": 32,
+    "independent_material_clusters": 1,
+    "repetitions": 1,
+    "code_mode": "off",
+    "model_route": "magpie/auto/gpt-6.2-sol",
+    "model_parameters": {
+      "thinkingLevel": "high",
+      "maxTokens": 128000
+    },
+    "model_window": {
+      "mode": "standing",
+      "start": "2026-11-27T14:50:50.322Z",
+      "end": null
+    },
+    "interpretation": "One continuous eight-turn episode per case/condition. Prefixes are correlated; fixed declared auto route does not attest one physical backend. Historical conditions are not pooled."
+  },
+  "observations": [
+    {
+      "run_id": "current-long-session-own-pair-2-001",
+      "case_id": "long-session-switch-a-n16-r8",
+      "cluster_id": "benchmark-long-session-da31ede4ee66-shared-material-a",
+      "pair_id": "m0-long-session-switch-a-n16-r8-r0",
+      "environment_id": "current-long-session-broker-off",
+      "episode_sha256": "1808227743ab5f4acb2ef6c96f1462ce7646df114640a7c83cd15c50495197ea",
+      "overall": {
+        "critical_failures": [],
+        "outcome": "pass",
+        "unassisted_success": true,
+        "verified_success": true
+      },
+      "business_status": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-turn-1",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-2",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-3",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-4",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-5",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-6",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-7",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-8",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "routing-policy-read",
+          "kind": "resources",
+          "status": "pass",
+          "scope": "episode"
+        },
+        {
+          "id": "refund-policy-read",
+          "kind": "resources",
+          "status": "pass",
+          "scope": "episode"
+        }
+      ],
+      "selection_contracts": [
+        {
+          "id": "legal-selection",
+          "status": "pass",
+          "scope": "episode"
+        }
+      ],
+      "coverage": {
+        "attempts": "complete",
+        "interventions": "complete",
+        "tools": "complete"
+      },
+      "first_input_tokens": 2973,
+      "startup_ms": 24844.727042,
+      "episode_duration_ms": 249367.346167,
+      "postlude_ms": 130.145,
+      "money_status": "unknown",
+      "request_retry_counts": {},
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 20844,
+              "known_subtotal": 20844,
+              "known_items": 5,
+              "total_items": 5
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 280,
+              "known_subtotal": 280,
+              "known_items": 5,
+              "total_items": 5
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 5376,
+              "known_items": 2,
+              "total_items": 5
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 5
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 3830,
+              "known_items": 2,
+              "total_items": 5
+            },
+            "input_peak": 4724,
+            "provider_attempts": 5,
+            "model_requests_started": 5,
+            "recorded_tool_calls": 4,
+            "executed_tool_calls": 4,
+            "top_level_tool_calls": 4,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 20844,
+              "known_subtotal": 20844,
+              "known_items": 5,
+              "total_items": 5
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 280,
+              "known_subtotal": 280,
+              "known_items": 5,
+              "total_items": 5
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 5376,
+              "known_items": 2,
+              "total_items": 5
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 5
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 3830,
+              "known_items": 2,
+              "total_items": 5
+            },
+            "input_peak": 4724,
+            "provider_attempts": 5,
+            "model_requests_started": 5,
+            "recorded_tool_calls": 4,
+            "executed_tool_calls": 4,
+            "top_level_tool_calls": 4,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 73473.645875,
+            "elapsed_from_episode_start_ms": 98318.372917,
+            "elapsed_from_first_user_turn_ms": 73473.645875
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-1",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-1.json",
+              "turn_id": "turn-1",
+              "sha256": "31c081d660cfb1e7b2376ab281d456af00645491ea09a0fceed2fd27507d241b",
+              "grade_evidence_ids": [
+                "artifact-0"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-2",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 9058,
+              "known_subtotal": 9058,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 124,
+              "known_subtotal": 124,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 5376,
+              "known_subtotal": 5376,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 3682,
+              "known_subtotal": 3682,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "input_peak": 5016,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 29902,
+              "known_subtotal": 29902,
+              "known_items": 7,
+              "total_items": 7
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 404,
+              "known_subtotal": 404,
+              "known_items": 7,
+              "total_items": 7
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 10752,
+              "known_items": 4,
+              "total_items": 7
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 7
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 7512,
+              "known_items": 4,
+              "total_items": 7
+            },
+            "input_peak": 5016,
+            "provider_attempts": 7,
+            "model_requests_started": 7,
+            "recorded_tool_calls": 5,
+            "executed_tool_calls": 5,
+            "top_level_tool_calls": 5,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 12823.956166,
+            "elapsed_from_episode_start_ms": 111246.736,
+            "elapsed_from_first_user_turn_ms": 86402.008958
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-2",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-2.json",
+              "turn_id": "turn-2",
+              "sha256": "ded4e80e03cda64647091c3773f7de63f497695c39daccb3b9befef6293ac1e2",
+              "grade_evidence_ids": [
+                "artifact-8"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-3",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 27418,
+              "known_subtotal": 27418,
+              "known_items": 5,
+              "total_items": 5
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 282,
+              "known_subtotal": 282,
+              "known_items": 5,
+              "total_items": 5
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 16640,
+              "known_items": 4,
+              "total_items": 5
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 5
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 6451,
+              "known_items": 4,
+              "total_items": 5
+            },
+            "input_peak": 6015,
+            "provider_attempts": 5,
+            "model_requests_started": 5,
+            "recorded_tool_calls": 4,
+            "executed_tool_calls": 4,
+            "top_level_tool_calls": 4,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 57320,
+              "known_subtotal": 57320,
+              "known_items": 12,
+              "total_items": 12
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 686,
+              "known_subtotal": 686,
+              "known_items": 12,
+              "total_items": 12
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 27392,
+              "known_items": 8,
+              "total_items": 12
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 12
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 13963,
+              "known_items": 8,
+              "total_items": 12
+            },
+            "input_peak": 6015,
+            "provider_attempts": 12,
+            "model_requests_started": 12,
+            "recorded_tool_calls": 9,
+            "executed_tool_calls": 9,
+            "top_level_tool_calls": 9,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 62494.0545,
+            "elapsed_from_episode_start_ms": 173855.0635,
+            "elapsed_from_first_user_turn_ms": 149010.336458
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-3",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-3.json",
+              "turn_id": "turn-3",
+              "sha256": "6e9bae3a53e7e5293fd1c5c6171fa795f77ed94ad50cba986abbda9f75c3fbf2",
+              "grade_evidence_ids": [
+                "artifact-15"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-4",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 11629,
+              "known_subtotal": 11629,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 103,
+              "known_subtotal": 103,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 7936,
+              "known_subtotal": 7936,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 3693,
+              "known_subtotal": 3693,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "input_peak": 6292,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 68949,
+              "known_subtotal": 68949,
+              "known_items": 14,
+              "total_items": 14
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 789,
+              "known_subtotal": 789,
+              "known_items": 14,
+              "total_items": 14
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 35328,
+              "known_items": 10,
+              "total_items": 14
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 14
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 17656,
+              "known_items": 10,
+              "total_items": 14
+            },
+            "input_peak": 6292,
+            "provider_attempts": 14,
+            "model_requests_started": 14,
+            "recorded_tool_calls": 10,
+            "executed_tool_calls": 10,
+            "top_level_tool_calls": 10,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 8743.001042,
+            "elapsed_from_episode_start_ms": 182702.346167,
+            "elapsed_from_first_user_turn_ms": 157857.619125
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-4",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-4.json",
+              "turn_id": "turn-4",
+              "sha256": "f995d314555178d2f1f06c9758e356eff673a8ceb460c9ad5235f56bb32018f6",
+              "grade_evidence_ids": [
+                "artifact-21"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-5",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 18992,
+              "known_subtotal": 18992,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 227,
+              "known_subtotal": 227,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 9472,
+              "known_items": 2,
+              "total_items": 3
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 3
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 3923,
+              "known_items": 2,
+              "total_items": 3
+            },
+            "input_peak": 6768,
+            "provider_attempts": 3,
+            "model_requests_started": 3,
+            "recorded_tool_calls": 2,
+            "executed_tool_calls": 2,
+            "top_level_tool_calls": 2,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 87941,
+              "known_subtotal": 87941,
+              "known_items": 17,
+              "total_items": 17
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1016,
+              "known_subtotal": 1016,
+              "known_items": 17,
+              "total_items": 17
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 44800,
+              "known_items": 12,
+              "total_items": 17
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 17
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 21579,
+              "known_items": 12,
+              "total_items": 17
+            },
+            "input_peak": 6768,
+            "provider_attempts": 17,
+            "model_requests_started": 17,
+            "recorded_tool_calls": 12,
+            "executed_tool_calls": 12,
+            "top_level_tool_calls": 12,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 10776.112833,
+            "elapsed_from_episode_start_ms": 193553.289917,
+            "elapsed_from_first_user_turn_ms": 168708.562875
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-5",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-5.json",
+              "turn_id": "turn-5",
+              "sha256": "7d6966349084d838072a58ad8a07b91dae1ace46ef83957f1e50edd235b3ceba",
+              "grade_evidence_ids": [
+                "artifact-26"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-6",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 20517,
+              "known_subtotal": 20517,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 225,
+              "known_subtotal": 225,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 16640,
+              "known_subtotal": 16640,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 3
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 3877,
+              "known_subtotal": 3877,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "input_peak": 7274,
+            "provider_attempts": 3,
+            "model_requests_started": 3,
+            "recorded_tool_calls": 2,
+            "executed_tool_calls": 2,
+            "top_level_tool_calls": 2,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 108458,
+              "known_subtotal": 108458,
+              "known_items": 20,
+              "total_items": 20
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1241,
+              "known_subtotal": 1241,
+              "known_items": 20,
+              "total_items": 20
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 61440,
+              "known_items": 15,
+              "total_items": 20
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 20
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 25456,
+              "known_items": 15,
+              "total_items": 20
+            },
+            "input_peak": 7274,
+            "provider_attempts": 20,
+            "model_requests_started": 20,
+            "recorded_tool_calls": 14,
+            "executed_tool_calls": 14,
+            "top_level_tool_calls": 14,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 36634.444458,
+            "elapsed_from_episode_start_ms": 230263.9565,
+            "elapsed_from_first_user_turn_ms": 205419.229458
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-6",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-6.json",
+              "turn_id": "turn-6",
+              "sha256": "7a35e9c81f31e4e06d4dfc5344a4ed2659cd0d5e31992b884820bcbcbda27ea1",
+              "grade_evidence_ids": [
+                "artifact-30"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-7",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 14171,
+              "known_subtotal": 14171,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 112,
+              "known_subtotal": 112,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 11008,
+              "known_subtotal": 11008,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 3163,
+              "known_subtotal": 3163,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "input_peak": 7563,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 122629,
+              "known_subtotal": 122629,
+              "known_items": 22,
+              "total_items": 22
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1353,
+              "known_subtotal": 1353,
+              "known_items": 22,
+              "total_items": 22
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 72448,
+              "known_items": 17,
+              "total_items": 22
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 22
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 28619,
+              "known_items": 17,
+              "total_items": 22
+            },
+            "input_peak": 7563,
+            "provider_attempts": 22,
+            "model_requests_started": 22,
+            "recorded_tool_calls": 15,
+            "executed_tool_calls": 15,
+            "top_level_tool_calls": 15,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 6250.540125,
+            "elapsed_from_episode_start_ms": 236585.931209,
+            "elapsed_from_first_user_turn_ms": 211741.204167
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-7",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-7.json",
+              "turn_id": "turn-7",
+              "sha256": "c7fc3fbf7b55d331b03e4989e2ede7bd5dab8b2b32476531df1c4c7a2f2fc673",
+              "grade_evidence_ids": [
+                "artifact-33"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-8",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 22840,
+              "known_subtotal": 22840,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 222,
+              "known_subtotal": 222,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 14336,
+              "known_subtotal": 14336,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 3
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 8504,
+              "known_subtotal": 8504,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "input_peak": 8052,
+            "provider_attempts": 3,
+            "model_requests_started": 3,
+            "recorded_tool_calls": 2,
+            "executed_tool_calls": 2,
+            "top_level_tool_calls": 2,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 145469,
+              "known_subtotal": 145469,
+              "known_items": 25,
+              "total_items": 25
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1575,
+              "known_subtotal": 1575,
+              "known_items": 25,
+              "total_items": 25
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 86784,
+              "known_items": 20,
+              "total_items": 25
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 25
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 37123,
+              "known_items": 20,
+              "total_items": 25
+            },
+            "input_peak": 8052,
+            "provider_attempts": 25,
+            "model_requests_started": 25,
+            "recorded_tool_calls": 17,
+            "executed_tool_calls": 17,
+            "top_level_tool_calls": 17,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 12545.373291,
+            "elapsed_from_episode_start_ms": 249237.194125,
+            "elapsed_from_first_user_turn_ms": 224392.467083
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-8",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-8.json",
+              "turn_id": "turn-8",
+              "sha256": "365553d2aaf604722587503708338102902e70aefcaa0d023f361c956bfde94d",
+              "grade_evidence_ids": [
+                "artifact-35"
+              ]
+            }
+          ]
+        }
+      ],
+      "sdk": {
+        "operation_count": 30,
+        "http_attempts": 254,
+        "by_operation": {
+          "library-selection": {
+            "operations": 9,
+            "http_attempts": 0
+          },
+          "candidates": {
+            "operations": 3,
+            "http_attempts": 0
+          },
+          "list": {
+            "operations": 11,
+            "http_attempts": 170
+          },
+          "consume": {
+            "operations": 5,
+            "http_attempts": 46
+          },
+          "read": {
+            "operations": 2,
+            "http_attempts": 38
+          }
+        },
+        "coverage": {
+          "sdk": "complete",
+          "owned_http": "complete",
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved"
+        },
+        "association": "Unique SDK operations; recorded start context is not causal foreground or per-turn completion attribution."
+      }
+    },
+    {
+      "run_id": "current-long-session-own-pair-2-002",
+      "case_id": "long-session-switch-a-n16-r8",
+      "cluster_id": "benchmark-long-session-da31ede4ee66-shared-material-a",
+      "pair_id": "m0-long-session-switch-a-n16-r8-r0",
+      "environment_id": "current-long-session-native-off",
+      "episode_sha256": "0eb4f8f5a27306dae44b8bd066b85024d8e92a9f25eb2b42277ebbb21de43288",
+      "overall": {
+        "critical_failures": [],
+        "outcome": "pass",
+        "unassisted_success": true,
+        "verified_success": true
+      },
+      "business_status": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-turn-1",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-2",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-3",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-4",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-5",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-6",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-7",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-8",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "routing-policy-read",
+          "kind": "resources",
+          "status": "pass",
+          "scope": "episode"
+        },
+        {
+          "id": "refund-policy-read",
+          "kind": "resources",
+          "status": "pass",
+          "scope": "episode"
+        }
+      ],
+      "selection_contracts": [
+        {
+          "id": "legal-selection",
+          "status": "pass",
+          "scope": "episode"
+        }
+      ],
+      "coverage": {
+        "attempts": "complete",
+        "interventions": "complete",
+        "tools": "complete"
+      },
+      "first_input_tokens": 3072,
+      "startup_ms": 1163.150417,
+      "episode_duration_ms": 107890.817417,
+      "postlude_ms": 132.667125,
+      "money_status": "unknown",
+      "request_retry_counts": {},
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 13399,
+              "known_subtotal": 13399,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 324,
+              "known_subtotal": 324,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "input_peak": 3579,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 13399,
+              "known_subtotal": 13399,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 324,
+              "known_subtotal": 324,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "input_peak": 3579,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 14838.95,
+            "elapsed_from_episode_start_ms": 16002.100417,
+            "elapsed_from_first_user_turn_ms": 14838.95
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-1",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-1.json",
+              "turn_id": "turn-1",
+              "sha256": "2be3f321895195edb3a068b095339ca97fca0c943e42f724137e656aff9df210",
+              "grade_evidence_ids": [
+                "artifact-0"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-2",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 7615,
+              "known_subtotal": 7615,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 115,
+              "known_subtotal": 115,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "input_peak": 3848,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 21014,
+              "known_subtotal": 21014,
+              "known_items": 6,
+              "total_items": 6
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 439,
+              "known_subtotal": 439,
+              "known_items": 6,
+              "total_items": 6
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 6
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 6
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 6
+            },
+            "input_peak": 3848,
+            "provider_attempts": 6,
+            "model_requests_started": 6,
+            "recorded_tool_calls": 4,
+            "executed_tool_calls": 4,
+            "top_level_tool_calls": 4,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 11821.824708,
+            "elapsed_from_episode_start_ms": 27877.903375,
+            "elapsed_from_first_user_turn_ms": 26714.752958
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-2",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-2.json",
+              "turn_id": "turn-2",
+              "sha256": "71a21d4b29648cbc597ff179d15655455e04440bdfe8c7eaf4824ebfd8fde223",
+              "grade_evidence_ids": [
+                "artifact-8"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-3",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 17123,
+              "known_subtotal": 17123,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 312,
+              "known_subtotal": 312,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 1536,
+              "known_items": 1,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 2711,
+              "known_items": 1,
+              "total_items": 4
+            },
+            "input_peak": 4492,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 38137,
+              "known_subtotal": 38137,
+              "known_items": 10,
+              "total_items": 10
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 751,
+              "known_subtotal": 751,
+              "known_items": 10,
+              "total_items": 10
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 1536,
+              "known_items": 1,
+              "total_items": 10
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 10
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 2711,
+              "known_items": 1,
+              "total_items": 10
+            },
+            "input_peak": 4492,
+            "provider_attempts": 10,
+            "model_requests_started": 10,
+            "recorded_tool_calls": 7,
+            "executed_tool_calls": 7,
+            "top_level_tool_calls": 7,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 15497.35275,
+            "elapsed_from_episode_start_ms": 43453.876709,
+            "elapsed_from_first_user_turn_ms": 42290.726292
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-3",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-3.json",
+              "turn_id": "turn-3",
+              "sha256": "6e9bae3a53e7e5293fd1c5c6171fa795f77ed94ad50cba986abbda9f75c3fbf2",
+              "grade_evidence_ids": [
+                "artifact-15"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-4",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 9415,
+              "known_subtotal": 9415,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 111,
+              "known_subtotal": 111,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 1536,
+              "known_items": 1,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 3211,
+              "known_items": 1,
+              "total_items": 2
+            },
+            "input_peak": 4747,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 47552,
+              "known_subtotal": 47552,
+              "known_items": 12,
+              "total_items": 12
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 862,
+              "known_subtotal": 862,
+              "known_items": 12,
+              "total_items": 12
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 3072,
+              "known_items": 2,
+              "total_items": 12
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 12
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 5922,
+              "known_items": 2,
+              "total_items": 12
+            },
+            "input_peak": 4747,
+            "provider_attempts": 12,
+            "model_requests_started": 12,
+            "recorded_tool_calls": 8,
+            "executed_tool_calls": 8,
+            "top_level_tool_calls": 8,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 6548.297166,
+            "elapsed_from_episode_start_ms": 50078.23125,
+            "elapsed_from_first_user_turn_ms": 48915.080833
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-4",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-4.json",
+              "turn_id": "turn-4",
+              "sha256": "f995d314555178d2f1f06c9758e356eff673a8ceb460c9ad5235f56bb32018f6",
+              "grade_evidence_ids": [
+                "artifact-21"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-5",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 20922,
+              "known_subtotal": 20922,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 352,
+              "known_subtotal": 352,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 5888,
+              "known_items": 3,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 9855,
+              "known_items": 3,
+              "total_items": 4
+            },
+            "input_peak": 5510,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 68474,
+              "known_subtotal": 68474,
+              "known_items": 16,
+              "total_items": 16
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1214,
+              "known_subtotal": 1214,
+              "known_items": 16,
+              "total_items": 16
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 8960,
+              "known_items": 5,
+              "total_items": 16
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 16
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 15777,
+              "known_items": 5,
+              "total_items": 16
+            },
+            "input_peak": 5510,
+            "provider_attempts": 16,
+            "model_requests_started": 16,
+            "recorded_tool_calls": 11,
+            "executed_tool_calls": 11,
+            "top_level_tool_calls": 11,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 15955.253417,
+            "elapsed_from_episode_start_ms": 66104.697417,
+            "elapsed_from_first_user_turn_ms": 64941.547
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-5",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-5.json",
+              "turn_id": "turn-5",
+              "sha256": "7d6966349084d838072a58ad8a07b91dae1ace46ef83957f1e50edd235b3ceba",
+              "grade_evidence_ids": [
+                "artifact-26"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-6",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 23838,
+              "known_subtotal": 23838,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 311,
+              "known_subtotal": 311,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 9984,
+              "known_subtotal": 9984,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 13854,
+              "known_subtotal": 13854,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "input_peak": 6170,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 92312,
+              "known_subtotal": 92312,
+              "known_items": 20,
+              "total_items": 20
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1525,
+              "known_subtotal": 1525,
+              "known_items": 20,
+              "total_items": 20
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 18944,
+              "known_items": 9,
+              "total_items": 20
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 20
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 29631,
+              "known_items": 9,
+              "total_items": 20
+            },
+            "input_peak": 6170,
+            "provider_attempts": 20,
+            "model_requests_started": 20,
+            "recorded_tool_calls": 14,
+            "executed_tool_calls": 14,
+            "top_level_tool_calls": 14,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 14035.475667,
+            "elapsed_from_episode_start_ms": 80242.943292,
+            "elapsed_from_first_user_turn_ms": 79079.792875
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-6",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-6.json",
+              "turn_id": "turn-6",
+              "sha256": "7a35e9c81f31e4e06d4dfc5344a4ed2659cd0d5e31992b884820bcbcbda27ea1",
+              "grade_evidence_ids": [
+                "artifact-30"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-7",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 12795,
+              "known_subtotal": 12795,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 112,
+              "known_subtotal": 112,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 5120,
+              "known_subtotal": 5120,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 7675,
+              "known_subtotal": 7675,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "input_peak": 6437,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 105107,
+              "known_subtotal": 105107,
+              "known_items": 22,
+              "total_items": 22
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1637,
+              "known_subtotal": 1637,
+              "known_items": 22,
+              "total_items": 22
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 24064,
+              "known_items": 11,
+              "total_items": 22
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 22
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 37306,
+              "known_items": 11,
+              "total_items": 22
+            },
+            "input_peak": 6437,
+            "provider_attempts": 22,
+            "model_requests_started": 22,
+            "recorded_tool_calls": 15,
+            "executed_tool_calls": 15,
+            "top_level_tool_calls": 15,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 9763.721541,
+            "elapsed_from_episode_start_ms": 90136.264,
+            "elapsed_from_first_user_turn_ms": 88973.113583
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-7",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-7.json",
+              "turn_id": "turn-7",
+              "sha256": "c7fc3fbf7b55d331b03e4989e2ede7bd5dab8b2b32476531df1c4c7a2f2fc673",
+              "grade_evidence_ids": [
+                "artifact-33"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-8",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 27696,
+              "known_subtotal": 27696,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 356,
+              "known_subtotal": 356,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 16128,
+              "known_subtotal": 16128,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 11568,
+              "known_subtotal": 11568,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "input_peak": 7205,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 132803,
+              "known_subtotal": 132803,
+              "known_items": 26,
+              "total_items": 26
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1993,
+              "known_subtotal": 1993,
+              "known_items": 26,
+              "total_items": 26
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 40192,
+              "known_items": 15,
+              "total_items": 26
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 26
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 48874,
+              "known_items": 15,
+              "total_items": 26
+            },
+            "input_peak": 7205,
+            "provider_attempts": 26,
+            "model_requests_started": 26,
+            "recorded_tool_calls": 18,
+            "executed_tool_calls": 18,
+            "top_level_tool_calls": 18,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 17489.949292,
+            "elapsed_from_episode_start_ms": 107758.145209,
+            "elapsed_from_first_user_turn_ms": 106594.994792
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-8",
+              "status": "pass",
+              "path": "output/long-session-switch-a-turn-8.json",
+              "turn_id": "turn-8",
+              "sha256": "365553d2aaf604722587503708338102902e70aefcaa0d023f361c956bfde94d",
+              "grade_evidence_ids": [
+                "artifact-35"
+              ]
+            }
+          ]
+        }
+      ],
+      "sdk": {
+        "operation_count": 0,
+        "http_attempts": 0,
+        "by_operation": {},
+        "coverage": {
+          "sdk": "complete",
+          "owned_http": "complete",
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved"
+        },
+        "association": "Unique SDK operations; recorded start context is not causal foreground or per-turn completion attribution."
+      }
+    },
+    {
+      "run_id": "current-long-session-own-pair-2-003",
+      "case_id": "long-session-reuse-a-n16-r8",
+      "cluster_id": "benchmark-long-session-da31ede4ee66-shared-material-a",
+      "pair_id": "m0-long-session-reuse-a-n16-r8-r0",
+      "environment_id": "current-long-session-native-off",
+      "episode_sha256": "f6f6fb9a3f5cd2edfda9cbe5d6091d275e51f4b07938db875702019412a07e3a",
+      "overall": {
+        "critical_failures": [],
+        "outcome": "unknown",
+        "unassisted_success": false,
+        "verified_success": false
+      },
+      "business_status": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-turn-1",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-2",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-3",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-4",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-5",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-6",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-7",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-8",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "routing-policy-read",
+          "kind": "resources",
+          "status": "pass",
+          "scope": "episode"
+        }
+      ],
+      "selection_contracts": [
+        {
+          "id": "legal-selection",
+          "status": "unknown",
+          "scope": "episode"
+        }
+      ],
+      "coverage": {
+        "attempts": "complete",
+        "interventions": "complete",
+        "tools": "complete"
+      },
+      "first_input_tokens": 3070,
+      "startup_ms": 877.297792,
+      "episode_duration_ms": 132673.40725000002,
+      "postlude_ms": 117.083625,
+      "money_status": "unknown",
+      "request_retry_counts": {},
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 13390,
+              "known_subtotal": 13390,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 311,
+              "known_subtotal": 311,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "input_peak": 3576,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 13390,
+              "known_subtotal": 13390,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 311,
+              "known_subtotal": 311,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "input_peak": 3576,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 13846.746583,
+            "elapsed_from_episode_start_ms": 14724.044375,
+            "elapsed_from_first_user_turn_ms": 13846.746583
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-1",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-1.json",
+              "turn_id": "turn-1",
+              "sha256": "d67d3aa7abd455cdbc3ceddffe4ee29e63168e5bb089e2bfdab363d35bc89348",
+              "grade_evidence_ids": [
+                "artifact-0"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-2",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 7690,
+              "known_subtotal": 7690,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 258,
+              "known_subtotal": 258,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "input_peak": 3927,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 21080,
+              "known_subtotal": 21080,
+              "known_items": 6,
+              "total_items": 6
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 569,
+              "known_subtotal": 569,
+              "known_items": 6,
+              "total_items": 6
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 6
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 6
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 6
+            },
+            "input_peak": 3927,
+            "provider_attempts": 6,
+            "model_requests_started": 6,
+            "recorded_tool_calls": 4,
+            "executed_tool_calls": 4,
+            "top_level_tool_calls": 4,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 20239.459041,
+            "elapsed_from_episode_start_ms": 35043.755,
+            "elapsed_from_first_user_turn_ms": 34166.457208
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-2",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-2.json",
+              "turn_id": "turn-2",
+              "sha256": "ef275394259227b05f5ec0a6a162ff7fafcd51d15d4eaaabea8eb0a738b4b95b",
+              "grade_evidence_ids": [
+                "artifact-8"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-3",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 12793,
+              "known_subtotal": 12793,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 303,
+              "known_subtotal": 303,
+              "known_items": 3,
+              "total_items": 3
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 3
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 3
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 3
+            },
+            "input_peak": 4450,
+            "provider_attempts": 3,
+            "model_requests_started": 3,
+            "recorded_tool_calls": 2,
+            "executed_tool_calls": 2,
+            "top_level_tool_calls": 2,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 33873,
+              "known_subtotal": 33873,
+              "known_items": 9,
+              "total_items": 9
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 872,
+              "known_subtotal": 872,
+              "known_items": 9,
+              "total_items": 9
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 9
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 9
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 9
+            },
+            "input_peak": 4450,
+            "provider_attempts": 9,
+            "model_requests_started": 9,
+            "recorded_tool_calls": 6,
+            "executed_tool_calls": 6,
+            "top_level_tool_calls": 6,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 16693.43625,
+            "elapsed_from_episode_start_ms": 51809.575709,
+            "elapsed_from_first_user_turn_ms": 50932.277917
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-3",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-3.json",
+              "turn_id": "turn-3",
+              "sha256": "f138f1ea684f3e57751210375439d2b7bb0495a6f48fcc6905486c4768edc482",
+              "grade_evidence_ids": [
+                "artifact-15"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-4",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 9502,
+              "known_subtotal": 9502,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 234,
+              "known_subtotal": 234,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 1536,
+              "known_items": 1,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 3099,
+              "known_items": 1,
+              "total_items": 2
+            },
+            "input_peak": 4867,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 43375,
+              "known_subtotal": 43375,
+              "known_items": 11,
+              "total_items": 11
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1106,
+              "known_subtotal": 1106,
+              "known_items": 11,
+              "total_items": 11
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 1536,
+              "known_items": 1,
+              "total_items": 11
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 11
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 3099,
+              "known_items": 1,
+              "total_items": 11
+            },
+            "input_peak": 4867,
+            "provider_attempts": 11,
+            "model_requests_started": 11,
+            "recorded_tool_calls": 7,
+            "executed_tool_calls": 7,
+            "top_level_tool_calls": 7,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 9151.519625,
+            "elapsed_from_episode_start_ms": 61057.684292,
+            "elapsed_from_first_user_turn_ms": 60180.3865
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-4",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-4.json",
+              "turn_id": "turn-4",
+              "sha256": "5d6e3f2c2bc34ed53c66901af509a5a5901cdd217b13aa093a9127e494d10e49",
+              "grade_evidence_ids": [
+                "artifact-21"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-5",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 21402,
+              "known_subtotal": 21402,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 352,
+              "known_subtotal": 352,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 9728,
+              "known_subtotal": 9728,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 11674,
+              "known_subtotal": 11674,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "input_peak": 5633,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 64777,
+              "known_subtotal": 64777,
+              "known_items": 15,
+              "total_items": 15
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1458,
+              "known_subtotal": 1458,
+              "known_items": 15,
+              "total_items": 15
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 11264,
+              "known_items": 5,
+              "total_items": 15
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 15
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 14773,
+              "known_items": 5,
+              "total_items": 15
+            },
+            "input_peak": 5633,
+            "provider_attempts": 15,
+            "model_requests_started": 15,
+            "recorded_tool_calls": 10,
+            "executed_tool_calls": 10,
+            "top_level_tool_calls": 10,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 16907.393916,
+            "elapsed_from_episode_start_ms": 78036.025125,
+            "elapsed_from_first_user_turn_ms": 77158.727333
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-5",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-5.json",
+              "turn_id": "turn-5",
+              "sha256": "bc4cd5849f38549c3b0eeffc915b42047a6a0e34808062b4e283c166d0a1c830",
+              "grade_evidence_ids": [
+                "artifact-26"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-6",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 24478,
+              "known_subtotal": 24478,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 349,
+              "known_subtotal": 349,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 9216,
+              "known_items": 3,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 8860,
+              "known_items": 3,
+              "total_items": 4
+            },
+            "input_peak": 6402,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 89255,
+              "known_subtotal": 89255,
+              "known_items": 19,
+              "total_items": 19
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1807,
+              "known_subtotal": 1807,
+              "known_items": 19,
+              "total_items": 19
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 20480,
+              "known_items": 8,
+              "total_items": 19
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 19
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 23633,
+              "known_items": 8,
+              "total_items": 19
+            },
+            "input_peak": 6402,
+            "provider_attempts": 19,
+            "model_requests_started": 19,
+            "recorded_tool_calls": 13,
+            "executed_tool_calls": 13,
+            "top_level_tool_calls": 13,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 16066.260125,
+            "elapsed_from_episode_start_ms": 94198.32325,
+            "elapsed_from_first_user_turn_ms": 93321.025458
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-6",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-6.json",
+              "turn_id": "turn-6",
+              "sha256": "c49ea814656439bb178140dd44f5848a46faa99f7b65fbe97ef800f8925591ee",
+              "grade_evidence_ids": [
+                "artifact-30"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-7",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 27527,
+              "known_subtotal": 27527,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 346,
+              "known_subtotal": 346,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 14848,
+              "known_subtotal": 14848,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 12679,
+              "known_subtotal": 12679,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "input_peak": 7162,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 116782,
+              "known_subtotal": 116782,
+              "known_items": 23,
+              "total_items": 23
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 2153,
+              "known_subtotal": 2153,
+              "known_items": 23,
+              "total_items": 23
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 35328,
+              "known_items": 12,
+              "total_items": 23
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 23
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 36312,
+              "known_items": 12,
+              "total_items": 23
+            },
+            "input_peak": 7162,
+            "provider_attempts": 23,
+            "model_requests_started": 23,
+            "recorded_tool_calls": 16,
+            "executed_tool_calls": 16,
+            "top_level_tool_calls": 16,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 17748.055041,
+            "elapsed_from_episode_start_ms": 112017.028375,
+            "elapsed_from_first_user_turn_ms": 111139.730583
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-7",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-7.json",
+              "turn_id": "turn-7",
+              "sha256": "7cdaa39f7c658554ab2232116feb1e036e29be312ff086b181a3b0650beab732",
+              "grade_evidence_ids": [
+                "artifact-33"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-8",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 30577,
+              "known_subtotal": 30577,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 348,
+              "known_subtotal": 348,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 18688,
+              "known_subtotal": 18688,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 4
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 11889,
+              "known_subtotal": 11889,
+              "known_items": 4,
+              "total_items": 4
+            },
+            "input_peak": 7926,
+            "provider_attempts": 4,
+            "model_requests_started": 4,
+            "recorded_tool_calls": 3,
+            "executed_tool_calls": 3,
+            "top_level_tool_calls": 3,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 147359,
+              "known_subtotal": 147359,
+              "known_items": 27,
+              "total_items": 27
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 2501,
+              "known_subtotal": 2501,
+              "known_items": 27,
+              "total_items": 27
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 54016,
+              "known_items": 16,
+              "total_items": 27
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 27
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 48201,
+              "known_items": 16,
+              "total_items": 27
+            },
+            "input_peak": 7926,
+            "provider_attempts": 27,
+            "model_requests_started": 27,
+            "recorded_tool_calls": 19,
+            "executed_tool_calls": 19,
+            "top_level_tool_calls": 19,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 20439.206667,
+            "elapsed_from_episode_start_ms": 132556.316334,
+            "elapsed_from_first_user_turn_ms": 131679.018542
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-8",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-8.json",
+              "turn_id": "turn-8",
+              "sha256": "9f40cde6d00a65a5b01d85b19bbe7004a190b3dfa550ba4fa1b43841b21d6080",
+              "grade_evidence_ids": [
+                "artifact-35"
+              ]
+            }
+          ]
+        }
+      ],
+      "sdk": {
+        "operation_count": 0,
+        "http_attempts": 0,
+        "by_operation": {},
+        "coverage": {
+          "sdk": "complete",
+          "owned_http": "complete",
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved"
+        },
+        "association": "Unique SDK operations; recorded start context is not causal foreground or per-turn completion attribution."
+      }
+    },
+    {
+      "run_id": "current-long-session-own-pair-2-004",
+      "case_id": "long-session-reuse-a-n16-r8",
+      "cluster_id": "benchmark-long-session-da31ede4ee66-shared-material-a",
+      "pair_id": "m0-long-session-reuse-a-n16-r8-r0",
+      "environment_id": "current-long-session-broker-off",
+      "episode_sha256": "d1066253cc333458092a248b05a27e879408a74c2cb25616fe48b6659af732b1",
+      "overall": {
+        "critical_failures": [],
+        "outcome": "pass",
+        "unassisted_success": true,
+        "verified_success": true
+      },
+      "business_status": "pass",
+      "critical_contracts": [
+        {
+          "id": "business-turn-1",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-2",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-3",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-4",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-5",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-6",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-7",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "business-turn-8",
+          "kind": "artifact-json",
+          "status": "pass",
+          "scope": "turn-bound output only"
+        },
+        {
+          "id": "routing-policy-read",
+          "kind": "resources",
+          "status": "pass",
+          "scope": "episode"
+        }
+      ],
+      "selection_contracts": [
+        {
+          "id": "legal-selection",
+          "status": "pass",
+          "scope": "episode"
+        }
+      ],
+      "coverage": {
+        "attempts": "complete",
+        "interventions": "complete",
+        "tools": "complete"
+      },
+      "first_input_tokens": 2971,
+      "startup_ms": 25962.275792,
+      "episode_duration_ms": 120974.225958,
+      "postlude_ms": 124.31325,
+      "money_status": "unknown",
+      "request_retry_counts": {},
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 20892,
+              "known_subtotal": 20892,
+              "known_items": 5,
+              "total_items": 5
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 239,
+              "known_subtotal": 239,
+              "known_items": 5,
+              "total_items": 5
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 8960,
+              "known_items": 3,
+              "total_items": 5
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 5
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 4873,
+              "known_items": 3,
+              "total_items": 5
+            },
+            "input_peak": 4735,
+            "provider_attempts": 5,
+            "model_requests_started": 5,
+            "recorded_tool_calls": 4,
+            "executed_tool_calls": 4,
+            "top_level_tool_calls": 4,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 20892,
+              "known_subtotal": 20892,
+              "known_items": 5,
+              "total_items": 5
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 239,
+              "known_subtotal": 239,
+              "known_items": 5,
+              "total_items": 5
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 8960,
+              "known_items": 3,
+              "total_items": 5
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 5
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 4873,
+              "known_items": 3,
+              "total_items": 5
+            },
+            "input_peak": 4735,
+            "provider_attempts": 5,
+            "model_requests_started": 5,
+            "recorded_tool_calls": 4,
+            "executed_tool_calls": 4,
+            "top_level_tool_calls": 4,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 40593.360541,
+            "elapsed_from_episode_start_ms": 66555.636333,
+            "elapsed_from_first_user_turn_ms": 40593.360541
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-1",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-1.json",
+              "turn_id": "turn-1",
+              "sha256": "3c1710e975f5421fd1e7fcac9d8f3b169eadf1a1a12c4f9fada9859e28865a13",
+              "grade_evidence_ids": [
+                "artifact-0"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-2",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 9058,
+              "known_subtotal": 9058,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 153,
+              "known_subtotal": 153,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 5376,
+              "known_subtotal": 5376,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 3682,
+              "known_subtotal": 3682,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "input_peak": 5047,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 29950,
+              "known_subtotal": 29950,
+              "known_items": 7,
+              "total_items": 7
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 392,
+              "known_subtotal": 392,
+              "known_items": 7,
+              "total_items": 7
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 14336,
+              "known_items": 5,
+              "total_items": 7
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 7
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 8555,
+              "known_items": 5,
+              "total_items": 7
+            },
+            "input_peak": 5047,
+            "provider_attempts": 7,
+            "model_requests_started": 7,
+            "recorded_tool_calls": 5,
+            "executed_tool_calls": 5,
+            "top_level_tool_calls": 5,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 9586.750959,
+            "elapsed_from_episode_start_ms": 76221.866417,
+            "elapsed_from_first_user_turn_ms": 50259.590625
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-2",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-2.json",
+              "turn_id": "turn-2",
+              "sha256": "8c777d80da7de29245870c49083ab4dd55147f47ade47996f63d81986fa6269c",
+              "grade_evidence_ids": [
+                "artifact-8"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-3",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 9743,
+              "known_subtotal": 9743,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 150,
+              "known_subtotal": 150,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 1536,
+              "known_items": 1,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 2787,
+              "known_items": 1,
+              "total_items": 2
+            },
+            "input_peak": 5420,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 39693,
+              "known_subtotal": 39693,
+              "known_items": 9,
+              "total_items": 9
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 542,
+              "known_subtotal": 542,
+              "known_items": 9,
+              "total_items": 9
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 15872,
+              "known_items": 6,
+              "total_items": 9
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 9
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 11342,
+              "known_items": 6,
+              "total_items": 9
+            },
+            "input_peak": 5420,
+            "provider_attempts": 9,
+            "model_requests_started": 9,
+            "recorded_tool_calls": 6,
+            "executed_tool_calls": 6,
+            "top_level_tool_calls": 6,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 7568.151416,
+            "elapsed_from_episode_start_ms": 83869.201833,
+            "elapsed_from_first_user_turn_ms": 57906.926041
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-3",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-3.json",
+              "turn_id": "turn-3",
+              "sha256": "3f8d38296e6b044599a6f1058c69a8026c284d83c9a29f620a22cdf952d9cf84",
+              "grade_evidence_ids": [
+                "artifact-15"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-4",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 10358,
+              "known_subtotal": 10358,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 149,
+              "known_subtotal": 149,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 3584,
+              "known_items": 1,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 1047,
+              "known_items": 1,
+              "total_items": 2
+            },
+            "input_peak": 5727,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 50051,
+              "known_subtotal": 50051,
+              "known_items": 11,
+              "total_items": 11
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 691,
+              "known_subtotal": 691,
+              "known_items": 11,
+              "total_items": 11
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 19456,
+              "known_items": 7,
+              "total_items": 11
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 11
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 12389,
+              "known_items": 7,
+              "total_items": 11
+            },
+            "input_peak": 5727,
+            "provider_attempts": 11,
+            "model_requests_started": 11,
+            "recorded_tool_calls": 7,
+            "executed_tool_calls": 7,
+            "top_level_tool_calls": 7,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 7546.284666,
+            "elapsed_from_episode_start_ms": 91517.354333,
+            "elapsed_from_first_user_turn_ms": 65555.078541
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-4",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-4.json",
+              "turn_id": "turn-4",
+              "sha256": "3f8fa0e29e60d80b3400b5a380fface5a8fe3b4d31800c5e5121d202640d3d28",
+              "grade_evidence_ids": [
+                "artifact-21"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-5",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 10981,
+              "known_subtotal": 10981,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 152,
+              "known_subtotal": 152,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 8192,
+              "known_subtotal": 8192,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 2789,
+              "known_subtotal": 2789,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "input_peak": 6040,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 61032,
+              "known_subtotal": 61032,
+              "known_items": 13,
+              "total_items": 13
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 843,
+              "known_subtotal": 843,
+              "known_items": 13,
+              "total_items": 13
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 27648,
+              "known_items": 9,
+              "total_items": 13
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 13
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 15178,
+              "known_items": 9,
+              "total_items": 13
+            },
+            "input_peak": 6040,
+            "provider_attempts": 13,
+            "model_requests_started": 13,
+            "recorded_tool_calls": 8,
+            "executed_tool_calls": 8,
+            "top_level_tool_calls": 8,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 6625.548125,
+            "elapsed_from_episode_start_ms": 98275.374833,
+            "elapsed_from_first_user_turn_ms": 72313.099041
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-5",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-5.json",
+              "turn_id": "turn-5",
+              "sha256": "05167e266793f8df3bc5d946b4f36ac36c5aaf4fd4e6747161d7de083c7d0181",
+              "grade_evidence_ids": [
+                "artifact-26"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-6",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 11607,
+              "known_subtotal": 11607,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 152,
+              "known_subtotal": 152,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 9216,
+              "known_subtotal": 9216,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 2391,
+              "known_subtotal": 2391,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "input_peak": 6353,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 72639,
+              "known_subtotal": 72639,
+              "known_items": 15,
+              "total_items": 15
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 995,
+              "known_subtotal": 995,
+              "known_items": 15,
+              "total_items": 15
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 36864,
+              "known_items": 11,
+              "total_items": 15
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 15
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 17569,
+              "known_items": 11,
+              "total_items": 15
+            },
+            "input_peak": 6353,
+            "provider_attempts": 15,
+            "model_requests_started": 15,
+            "recorded_tool_calls": 9,
+            "executed_tool_calls": 9,
+            "top_level_tool_calls": 9,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 7025.904875,
+            "elapsed_from_episode_start_ms": 105377.99,
+            "elapsed_from_first_user_turn_ms": 79415.714208
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-6",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-6.json",
+              "turn_id": "turn-6",
+              "sha256": "cc1eed6f0af568730549f6cf7bf4caa50eaa0032d7db71a8a8e602bb99d6e4de",
+              "grade_evidence_ids": [
+                "artifact-30"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-7",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 12160,
+              "known_subtotal": 12160,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 149,
+              "known_subtotal": 149,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "known",
+              "value": 8448,
+              "known_subtotal": 8448,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "known",
+              "value": 3712,
+              "known_subtotal": 3712,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "input_peak": 6596,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 84799,
+              "known_subtotal": 84799,
+              "known_items": 17,
+              "total_items": 17
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1144,
+              "known_subtotal": 1144,
+              "known_items": 17,
+              "total_items": 17
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 45312,
+              "known_items": 13,
+              "total_items": 17
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 17
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 21281,
+              "known_items": 13,
+              "total_items": 17
+            },
+            "input_peak": 6596,
+            "provider_attempts": 17,
+            "model_requests_started": 17,
+            "recorded_tool_calls": 10,
+            "executed_tool_calls": 10,
+            "top_level_tool_calls": 10,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 6583.49675,
+            "elapsed_from_episode_start_ms": 112032.157708,
+            "elapsed_from_first_user_turn_ms": 86069.881916
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-7",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-7.json",
+              "turn_id": "turn-7",
+              "sha256": "cffcd721eee45394822ac2ff7ccfcb0fc6945200533052a75cc48428f27fe33d",
+              "grade_evidence_ids": [
+                "artifact-33"
+              ]
+            }
+          ]
+        },
+        {
+          "turn_id": "turn-8",
+          "marginal": {
+            "input_tokens": {
+              "status": "known",
+              "value": 12780,
+              "known_subtotal": 12780,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 151,
+              "known_subtotal": 151,
+              "known_items": 2,
+              "total_items": 2
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 5632,
+              "known_items": 1,
+              "total_items": 2
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 2
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 1275,
+              "known_items": 1,
+              "total_items": 2
+            },
+            "input_peak": 6907,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 1,
+            "executed_tool_calls": 1,
+            "top_level_tool_calls": 1,
+            "nested_tool_calls": 0
+          },
+          "cumulative": {
+            "input_tokens": {
+              "status": "known",
+              "value": 97579,
+              "known_subtotal": 97579,
+              "known_items": 19,
+              "total_items": 19
+            },
+            "output_tokens": {
+              "status": "known",
+              "value": 1295,
+              "known_subtotal": 1295,
+              "known_items": 19,
+              "total_items": 19
+            },
+            "cache_read_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 50944,
+              "known_items": 14,
+              "total_items": 19
+            },
+            "cache_write_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 0,
+              "known_items": 0,
+              "total_items": 19
+            },
+            "uncached_input_tokens": {
+              "status": "unknown",
+              "value": null,
+              "known_subtotal": 22556,
+              "known_items": 14,
+              "total_items": 19
+            },
+            "input_peak": 6907,
+            "provider_attempts": 19,
+            "model_requests_started": 19,
+            "recorded_tool_calls": 11,
+            "executed_tool_calls": 11,
+            "top_level_tool_calls": 11,
+            "nested_tool_calls": 0
+          },
+          "timing": {
+            "user_turn_duration_ms": 8719.781041,
+            "elapsed_from_episode_start_ms": 120849.904833,
+            "elapsed_from_first_user_turn_ms": 94887.629041
+          },
+          "business_artifacts": [
+            {
+              "contract_id": "business-turn-8",
+              "status": "pass",
+              "path": "output/long-session-reuse-a-turn-8.json",
+              "turn_id": "turn-8",
+              "sha256": "25f3c7fb1e2a3fa95a316127d81a39d2b4c1678afa839e0aba79b5f389f08133",
+              "grade_evidence_ids": [
+                "artifact-35"
+              ]
+            }
+          ]
+        }
+      ],
+      "sdk": {
+        "operation_count": 20,
+        "http_attempts": 110,
+        "by_operation": {
+          "library-selection": {
+            "operations": 9,
+            "http_attempts": 0
+          },
+          "candidates": {
+            "operations": 3,
+            "http_attempts": 0
+          },
+          "list": {
+            "operations": 6,
+            "http_attempts": 68
+          },
+          "consume": {
+            "operations": 1,
+            "http_attempts": 23
+          },
+          "read": {
+            "operations": 1,
+            "http_attempts": 19
+          }
+        },
+        "coverage": {
+          "sdk": "complete",
+          "owned_http": "complete",
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved"
+        },
+        "association": "Unique SDK operations; recorded start context is not causal foreground or per-turn completion attribution."
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "case": "switch",
+      "broker_run_id": "current-long-session-own-pair-2-001",
+      "native_run_id": "current-long-session-own-pair-2-002",
+      "cluster_id": "benchmark-long-session-da31ede4ee66-shared-material-a",
+      "curves": [
+        {
+          "turn_id": "turn-1",
+          "broker_minus_native": {
+            "input_tokens": 7445,
+            "output_tokens": -44,
+            "provider_attempts": 1,
+            "model_requests_started": 1,
+            "recorded_tool_calls": 1,
+            "elapsed_from_episode_start_ms": 82316.2725
+          }
+        },
+        {
+          "turn_id": "turn-2",
+          "broker_minus_native": {
+            "input_tokens": 8888,
+            "output_tokens": -35,
+            "provider_attempts": 1,
+            "model_requests_started": 1,
+            "recorded_tool_calls": 1,
+            "elapsed_from_episode_start_ms": 83368.83262500001
+          }
+        },
+        {
+          "turn_id": "turn-3",
+          "broker_minus_native": {
+            "input_tokens": 19183,
+            "output_tokens": -65,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 2,
+            "elapsed_from_episode_start_ms": 130401.18679099999
+          }
+        },
+        {
+          "turn_id": "turn-4",
+          "broker_minus_native": {
+            "input_tokens": 21397,
+            "output_tokens": -73,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 2,
+            "elapsed_from_episode_start_ms": 132624.114917
+          }
+        },
+        {
+          "turn_id": "turn-5",
+          "broker_minus_native": {
+            "input_tokens": 19467,
+            "output_tokens": -198,
+            "provider_attempts": 1,
+            "model_requests_started": 1,
+            "recorded_tool_calls": 1,
+            "elapsed_from_episode_start_ms": 127448.59249999998
+          }
+        },
+        {
+          "turn_id": "turn-6",
+          "broker_minus_native": {
+            "input_tokens": 16146,
+            "output_tokens": -284,
+            "provider_attempts": 0,
+            "model_requests_started": 0,
+            "recorded_tool_calls": 0,
+            "elapsed_from_episode_start_ms": 150021.013208
+          }
+        },
+        {
+          "turn_id": "turn-7",
+          "broker_minus_native": {
+            "input_tokens": 17522,
+            "output_tokens": -284,
+            "provider_attempts": 0,
+            "model_requests_started": 0,
+            "recorded_tool_calls": 0,
+            "elapsed_from_episode_start_ms": 146449.667209
+          }
+        },
+        {
+          "turn_id": "turn-8",
+          "broker_minus_native": {
+            "input_tokens": 12666,
+            "output_tokens": -418,
+            "provider_attempts": -1,
+            "model_requests_started": -1,
+            "recorded_tool_calls": -1,
+            "elapsed_from_episode_start_ms": 141479.048916
+          }
+        }
+      ],
+      "input_crossing": {
+        "observed_horizon": 8,
+        "first_nonpositive_turn": null,
+        "first_strictly_negative_turn": null,
+        "initial_premium_recovery_turn": null,
+        "starts_nonpositive": false,
+        "positive_to_nonpositive_turns": [],
+        "nonpositive_to_positive_turns": [],
+        "remains_nonpositive_after_first": null
+      },
+      "elapsed_crossing": {
+        "observed_horizon": 8,
+        "first_nonpositive_turn": null,
+        "first_strictly_negative_turn": null,
+        "initial_premium_recovery_turn": null,
+        "starts_nonpositive": false,
+        "positive_to_nonpositive_turns": [],
+        "nonpositive_to_positive_turns": [],
+        "remains_nonpositive_after_first": null
+      },
+      "quality_gate": "aligned original pass/pass",
+      "prefixes": [
+        {
+          "turns": 1,
+          "broker_input": {
+            "status": "known",
+            "value": 20844,
+            "known_subtotal": 20844,
+            "known_items": 5,
+            "total_items": 5
+          },
+          "native_input": {
+            "status": "known",
+            "value": 13399,
+            "known_subtotal": 13399,
+            "known_items": 4,
+            "total_items": 4
+          },
+          "broker_elapsed_ms": 98318.372917,
+          "native_elapsed_ms": 16002.100417,
+          "broker_minus_native": {
+            "input_tokens": 7445,
+            "output_tokens": -44,
+            "provider_attempts": 1,
+            "model_requests_started": 1,
+            "recorded_tool_calls": 1,
+            "elapsed_from_episode_start_ms": 82316.2725
+          }
+        },
+        {
+          "turns": 2,
+          "broker_input": {
+            "status": "known",
+            "value": 29902,
+            "known_subtotal": 29902,
+            "known_items": 7,
+            "total_items": 7
+          },
+          "native_input": {
+            "status": "known",
+            "value": 21014,
+            "known_subtotal": 21014,
+            "known_items": 6,
+            "total_items": 6
+          },
+          "broker_elapsed_ms": 111246.736,
+          "native_elapsed_ms": 27877.903375,
+          "broker_minus_native": {
+            "input_tokens": 8888,
+            "output_tokens": -35,
+            "provider_attempts": 1,
+            "model_requests_started": 1,
+            "recorded_tool_calls": 1,
+            "elapsed_from_episode_start_ms": 83368.83262500001
+          }
+        },
+        {
+          "turns": 4,
+          "broker_input": {
+            "status": "known",
+            "value": 68949,
+            "known_subtotal": 68949,
+            "known_items": 14,
+            "total_items": 14
+          },
+          "native_input": {
+            "status": "known",
+            "value": 47552,
+            "known_subtotal": 47552,
+            "known_items": 12,
+            "total_items": 12
+          },
+          "broker_elapsed_ms": 182702.346167,
+          "native_elapsed_ms": 50078.23125,
+          "broker_minus_native": {
+            "input_tokens": 21397,
+            "output_tokens": -73,
+            "provider_attempts": 2,
+            "model_requests_started": 2,
+            "recorded_tool_calls": 2,
+            "elapsed_from_episode_start_ms": 132624.114917
+          }
+        },
+        {
+          "turns": 8,
+          "broker_input": {
+            "status": "known",
+            "value": 145469,
+            "known_subtotal": 145469,
+            "known_items": 25,
+            "total_items": 25
+          },
+          "native_input": {
+            "status": "known",
+            "value": 132803,
+            "known_subtotal": 132803,
+            "known_items": 26,
+            "total_items": 26
+          },
+          "broker_elapsed_ms": 249237.194125,
+          "native_elapsed_ms": 107758.145209,
+          "broker_minus_native": {
+            "input_tokens": 12666,
+            "output_tokens": -418,
+            "provider_attempts": -1,
+            "model_requests_started": -1,
+            "recorded_tool_calls": -1,
+            "elapsed_from_episode_start_ms": 141479.048916
+          }
+        }
+      ]
+    },
+    {
+      "case": "reuse",
+      "broker_run_id": "current-long-session-own-pair-2-004",
+      "native_run_id": "current-long-session-own-pair-2-003",
+      "cluster_id": "benchmark-long-session-da31ede4ee66-shared-material-a",
+      "curves": [
+        {
+          "turn_id": "turn-1",
+          "broker_minus_native": {
+            "input_tokens": 7502,
+            "output_tokens": -72,
+            "provider_attempts": 1,
+            "model_requests_started": 1,
+            "recorded_tool_calls": 1,
+            "elapsed_from_episode_start_ms": 51831.591958000005
+          }
+        },
+        {
+          "turn_id": "turn-2",
+          "broker_minus_native": {
+            "input_tokens": 8870,
+            "output_tokens": -177,
+            "provider_attempts": 1,
+            "model_requests_started": 1,
+            "recorded_tool_calls": 1,
+            "elapsed_from_episode_start_ms": 41178.111417
+          }
+        },
+        {
+          "turn_id": "turn-3",
+          "broker_minus_native": {
+            "input_tokens": 5820,
+            "output_tokens": -330,
+            "provider_attempts": 0,
+            "model_requests_started": 0,
+            "recorded_tool_calls": 0,
+            "elapsed_from_episode_start_ms": 32059.626124000002
+          }
+        },
+        {
+          "turn_id": "turn-4",
+          "broker_minus_native": {
+            "input_tokens": 6676,
+            "output_tokens": -415,
+            "provider_attempts": 0,
+            "model_requests_started": 0,
+            "recorded_tool_calls": 0,
+            "elapsed_from_episode_start_ms": 30459.670040999998
+          }
+        },
+        {
+          "turn_id": "turn-5",
+          "broker_minus_native": {
+            "input_tokens": -3745,
+            "output_tokens": -615,
+            "provider_attempts": -2,
+            "model_requests_started": -2,
+            "recorded_tool_calls": -2,
+            "elapsed_from_episode_start_ms": 20239.349707999994
+          }
+        },
+        {
+          "turn_id": "turn-6",
+          "broker_minus_native": {
+            "input_tokens": -16616,
+            "output_tokens": -812,
+            "provider_attempts": -4,
+            "model_requests_started": -4,
+            "recorded_tool_calls": -4,
+            "elapsed_from_episode_start_ms": 11179.666750000004
+          }
+        },
+        {
+          "turn_id": "turn-7",
+          "broker_minus_native": {
+            "input_tokens": -31983,
+            "output_tokens": -1009,
+            "provider_attempts": -6,
+            "model_requests_started": -6,
+            "recorded_tool_calls": -6,
+            "elapsed_from_episode_start_ms": 15.129333000004408
+          }
+        },
+        {
+          "turn_id": "turn-8",
+          "broker_minus_native": {
+            "input_tokens": -49780,
+            "output_tokens": -1206,
+            "provider_attempts": -8,
+            "model_requests_started": -8,
+            "recorded_tool_calls": -8,
+            "elapsed_from_episode_start_ms": -11706.41150100001
+          }
+        }
+      ],
+      "input_crossing": {
+        "observed_horizon": 8,
+        "first_nonpositive_turn": 5,
+        "first_strictly_negative_turn": 5,
+        "initial_premium_recovery_turn": 5,
+        "starts_nonpositive": false,
+        "positive_to_nonpositive_turns": [
+          5
+        ],
+        "nonpositive_to_positive_turns": [],
+        "remains_nonpositive_after_first": true
+      },
+      "elapsed_crossing": {
+        "observed_horizon": 8,
+        "first_nonpositive_turn": 8,
+        "first_strictly_negative_turn": 8,
+        "initial_premium_recovery_turn": 8,
+        "starts_nonpositive": false,
+        "positive_to_nonpositive_turns": [
+          8
+        ],
+        "nonpositive_to_positive_turns": [],
+        "remains_nonpositive_after_first": true
+      },
+      "quality_gate": "not fully aligned: original Native legal-selection unknown; descriptive completed-business costs only",
+      "prefixes": [
+        {
+          "turns": 1,
+          "broker_input": {
+            "status": "known",
+            "value": 20892,
+            "known_subtotal": 20892,
+            "known_items": 5,
+            "total_items": 5
+          },
+          "native_input": {
+            "status": "known",
+            "value": 13390,
+            "known_subtotal": 13390,
+            "known_items": 4,
+            "total_items": 4
+          },
+          "broker_elapsed_ms": 66555.636333,
+          "native_elapsed_ms": 14724.044375,
+          "broker_minus_native": {
+            "input_tokens": 7502,
+            "output_tokens": -72,
+            "provider_attempts": 1,
+            "model_requests_started": 1,
+            "recorded_tool_calls": 1,
+            "elapsed_from_episode_start_ms": 51831.591958000005
+          }
+        },
+        {
+          "turns": 2,
+          "broker_input": {
+            "status": "known",
+            "value": 29950,
+            "known_subtotal": 29950,
+            "known_items": 7,
+            "total_items": 7
+          },
+          "native_input": {
+            "status": "known",
+            "value": 21080,
+            "known_subtotal": 21080,
+            "known_items": 6,
+            "total_items": 6
+          },
+          "broker_elapsed_ms": 76221.866417,
+          "native_elapsed_ms": 35043.755,
+          "broker_minus_native": {
+            "input_tokens": 8870,
+            "output_tokens": -177,
+            "provider_attempts": 1,
+            "model_requests_started": 1,
+            "recorded_tool_calls": 1,
+            "elapsed_from_episode_start_ms": 41178.111417
+          }
+        },
+        {
+          "turns": 4,
+          "broker_input": {
+            "status": "known",
+            "value": 50051,
+            "known_subtotal": 50051,
+            "known_items": 11,
+            "total_items": 11
+          },
+          "native_input": {
+            "status": "known",
+            "value": 43375,
+            "known_subtotal": 43375,
+            "known_items": 11,
+            "total_items": 11
+          },
+          "broker_elapsed_ms": 91517.354333,
+          "native_elapsed_ms": 61057.684292,
+          "broker_minus_native": {
+            "input_tokens": 6676,
+            "output_tokens": -415,
+            "provider_attempts": 0,
+            "model_requests_started": 0,
+            "recorded_tool_calls": 0,
+            "elapsed_from_episode_start_ms": 30459.670040999998
+          }
+        },
+        {
+          "turns": 8,
+          "broker_input": {
+            "status": "known",
+            "value": 97579,
+            "known_subtotal": 97579,
+            "known_items": 19,
+            "total_items": 19
+          },
+          "native_input": {
+            "status": "known",
+            "value": 147359,
+            "known_subtotal": 147359,
+            "known_items": 27,
+            "total_items": 27
+          },
+          "broker_elapsed_ms": 120849.904833,
+          "native_elapsed_ms": 132556.316334,
+          "broker_minus_native": {
+            "input_tokens": -49780,
+            "output_tokens": -1206,
+            "provider_attempts": -8,
+            "model_requests_started": -8,
+            "recorded_tool_calls": -8,
+            "elapsed_from_episode_start_ms": -11706.41150100001
+          }
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "actual_model_requests": 97,
+    "actual_provider_attempts": 97,
+    "input_tokens": 523210,
+    "output_tokens": 7364,
+    "business_outputs_pass": 32,
+    "first_required_resource_checks_pass": 12,
+    "overall": {
+      "pass": 3,
+      "unknown": 1,
+      "fail": 0
+    },
+    "owned_sdk_http_attempts": 364,
+    "monetary_cost": "unknown / unpriced"
+  },
+  "capture_preparation": {
+    "captures": [
+      {
+        "attempt": 1,
+        "run_id": "current-long-session-own-pair-1-capture-m0-e0-c0",
+        "model_attempts": 0,
+        "http_attempts": 0,
+        "reference": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/attempt-1/current-long-session-own-pair-1-capture-m0-e0-c0.capture.json",
+          "sha256": "136336baf00c65567daffa1e61a342f8343767a63acf1483c8a7513f28092d75",
+          "bytes": 33096
+        }
+      },
+      {
+        "attempt": 1,
+        "run_id": "current-long-session-own-pair-1-capture-m0-e0-c1",
+        "model_attempts": 0,
+        "http_attempts": 0,
+        "reference": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/attempt-1/current-long-session-own-pair-1-capture-m0-e0-c1.capture.json",
+          "sha256": "c6721bd27690d744e053d937a8cbfaaf4402be1579182ebbd111f5a5b916b014",
+          "bytes": 33100
+        }
+      },
+      {
+        "attempt": 1,
+        "run_id": "current-long-session-own-pair-1-capture-m0-e1-c0",
+        "model_attempts": 0,
+        "http_attempts": 34,
+        "reference": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/attempt-1/current-long-session-own-pair-1-capture-m0-e1-c0.capture.json",
+          "sha256": "650233e01e3ad05ec413bcd2f3896a14a6455d471243dc480916bf81bf74b54d",
+          "bytes": 49449
+        }
+      },
+      {
+        "attempt": 1,
+        "run_id": "current-long-session-own-pair-1-capture-m0-e1-c1",
+        "model_attempts": 0,
+        "http_attempts": 34,
+        "reference": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/attempt-1/current-long-session-own-pair-1-capture-m0-e1-c1.capture.json",
+          "sha256": "835f1c66fd08145654771ca87cef44d678ff1cbb0bfc0481397f0addd54ff5a4",
+          "bytes": 49449
+        }
+      },
+      {
+        "attempt": 2,
+        "run_id": "current-long-session-own-pair-2-capture-m0-e0-c0",
+        "model_attempts": 0,
+        "http_attempts": 0,
+        "reference": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/attempt-2/current-long-session-own-pair-2-capture-m0-e0-c0.capture.json",
+          "sha256": "5337f68b6e382dc7361076dac7dc5f332d5a57755aed6ebee00e12f94284488d",
+          "bytes": 33098
+        }
+      },
+      {
+        "attempt": 2,
+        "run_id": "current-long-session-own-pair-2-capture-m0-e0-c1",
+        "model_attempts": 0,
+        "http_attempts": 0,
+        "reference": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/attempt-2/current-long-session-own-pair-2-capture-m0-e0-c1.capture.json",
+          "sha256": "803629f9c8046b115ca75aee37aaa0363ba6f7db7b5382e77986ecfc9f1c6b31",
+          "bytes": 33107
+        }
+      },
+      {
+        "attempt": 2,
+        "run_id": "current-long-session-own-pair-2-capture-m0-e1-c0",
+        "model_attempts": 0,
+        "http_attempts": 34,
+        "reference": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/attempt-2/current-long-session-own-pair-2-capture-m0-e1-c0.capture.json",
+          "sha256": "0930e697b4dc7fc0798bbd97c0ed82262825a3d88b28b1621ce30d68d2435a32",
+          "bytes": 49449
+        }
+      },
+      {
+        "attempt": 2,
+        "run_id": "current-long-session-own-pair-2-capture-m0-e1-c1",
+        "model_attempts": 0,
+        "http_attempts": 34,
+        "reference": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/attempt-2/current-long-session-own-pair-2-capture-m0-e1-c1.capture.json",
+          "sha256": "62046708da691c4031a88f2080d336edd30dffefda122e22a60c95204be31d5f",
+          "bytes": 49447
+        }
+      }
+    ],
+    "model_requests": 0,
+    "owned_sdk_http_attempts": 136,
+    "failed_attempt_1_preserved": true
+  },
+  "material_refresh": {
+    "reference": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/refresh-1.stdout.json",
+      "sha256": "074d63ef0fb7d87c21bd9c2b5ea38af3c7647f4a8dd8d4719858007843db5118",
+      "bytes": 2296
+    },
+    "same_remote_catalog": true,
+    "candidates": 16,
+    "files": 25,
+    "remote_repairs": 0,
+    "model_requests": 0,
+    "http_attempts": "not separately quantified in this fixture receipt; not zero"
+  },
+  "ledger": {
+    "global_observations": 249,
+    "global_registrations": 35,
+    "lease": null
+  },
+  "limits": [
+    "Current complete cache-read, cache-write, uncached input and monetary totals remain unknown; known subtotals are not totals.",
+    "Original Native reuse overall remains unknown; positive business/resource evidence does not establish complete absence of other shell effects.",
+    "First request, whole first turn, event-clock prefix elapsed and original runtime total are separate measurements.",
+    "The thin publication does not distribute private oracle, full payloads or a portable replay package.",
+    "No product runtime change or fresh three-machine daily delivery was performed for this Benchmark-only implementation."
+  ],
+  "source_receipts": {
+    "intent": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/intent-before-build.json",
+      "sha256": "e472fe9b30098bc2f7d73a377a41a8bfbcf7f340a7e7cd0171bde01f664aecd2",
+      "bytes": 4094
+    },
+    "selected_product": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/product-selection-before-build-1.json",
+      "sha256": "2ffcf5883eb5ed3ee628960e1c9b08d2bee4568144cf8bd86b8f661a5ff22779",
+      "bytes": 1142
+    },
+    "configuration_correction": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/configuration-correction-1.json",
+      "sha256": "573e2e60b3fc461d9cf95dff738a80f91fa2b256d10e2593fdeb465ccba25d5b",
+      "bytes": 2415
+    },
+    "setup": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/setup-2.json",
+      "sha256": "a555ab84f2909ee0bd6d04804f74c1d64154ca2b50d31394c7ceeff611af9cf1",
+      "bytes": 10781
+    },
+    "work_plan": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/work-plan-2.json",
+      "sha256": "696fec4275f7bdb90fa99edd3a4a8bf2554ffe230e83f53526ccadf5f1cfe99b",
+      "bytes": 18503
+    },
+    "plan": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/attempt-2/plan.json",
+      "sha256": "f61f36d25c1c7844b168b1a3dba158fa8231df064b199d1402d03f7cf24aeba8",
+      "bytes": 84623
+    },
+    "configuration_proof": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/attempt-2/configuration-proof.json",
+      "sha256": "f1ecf53c528045652159805b34819b25b5006f22e6f7ffce73dc17cdabfe6c08",
+      "bytes": 6360
+    },
+    "runner": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/run-standing-1.stdout.json",
+      "sha256": "a84e6d0b4daebaed2efcf922bc3c3946bef3ef846272e2e3f835ee1082f08e9a",
+      "bytes": 2033
+    },
+    "ledger": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/ledger-after-models-1.json",
+      "sha256": "452384fe76e51308a466876f431e2b73f5303e34798545a0eb5197a5bbf4dc6c",
+      "bytes": 505160
+    },
+    "independent_numeric_audit": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/turn-results-1/final-004/audit-result.json",
+      "sha256": "575b9a254c8e4d06cd866cc229e36167fdc5a430550389bd27d4d2ddb630b02b",
+      "bytes": 317834
+    },
+    "query_and_journey_commands": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/turn-results-1/final-004/commands.json",
+      "sha256": "62d085b60c37758014a2b708a996aee3dba7496b2e11d07681ce92278e28fab0",
+      "bytes": 3320
+    },
+    "independent_business_and_payload_audit": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/independent-review/final-independent-review-1.json",
+      "sha256": "f18f105e5c5f966314ea1033dae092ce416a76348ed04137f5e06bc2ab724096",
+      "bytes": 17704
+    },
+    "actual_payload_body_audit": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/independent-review/all-main-body-payloads-1.json",
+      "sha256": "860acdc04a837fc3288ab38be6ffa9be2dd0e95a61b25eddc30b9c8ff242a26f",
+      "bytes": 136504
+    },
+    "opaque_boundary": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/independent-review/opaque-shell-boundary-1.json",
+      "sha256": "5b4ce5e63c27c0f9f04915caf7405e82e32d94ef875e65bb9eb2eca07a8d8c18",
+      "bytes": 4440
+    },
+    "final_build_check": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/final-paired-check-1.stdout.json",
+      "sha256": "ac7177e0d75ecdb53950292293db15df1ccaddfeaa5094785d93fc0cd275204c",
+      "bytes": 1253
+    },
+    "historical_audit": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/historical/result.json",
+      "sha256": "3a0a14daac2e59fa541faa34563640fee1d81ea93a00b25aff683fa343083e04",
+      "bytes": 313250
+    },
+    "material_binding": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-material-20261127-1/verified/a8942279-3626-4c3d-899a-1f98dea20813/binding.json",
+      "sha256": "0021a2dadf761de729473a966fdd4a99cdeb524635eacd2a6f583f90bf5d509a",
+      "bytes": 17928
+    },
+    "build": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/benchmark-long-session-current-20261127-1/build.json",
+      "sha256": "9969f229591c9082db46e1bd7b2874200d90fd31038be2526465e1fa3f9797ff",
+      "bytes": 9939737
+    }
+  },
+  "retirement": {
+    "status": "retired_to_system_trash",
+    "at": "2026-11-27T15:30:47.689658+00:00",
+    "build_disposition": "evidence_only",
+    "paths_moved": 70,
+    "optional_paths_absent": 6,
+    "retired_active_allocated_kib": 642704,
+    "retained_original_entries_unchanged": 33562,
+    "source_workspace_links_now_dangling": 30,
+    "physical_free_credit_bytes": 0,
+    "permanent_deletions": 0,
+    "scope": "Read-only controller/SDK/packages/raw/control queries; no complete original build-check or replay promised.",
+    "receipt": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/retirement-preparation/final-closeout.json",
+      "sha256": "67b4ef3ee7541b8002cc92c22dcbd47fe3a479ff003ea2a599c0d5a0f9d33706"
+    }
+  },
+  "readonly_reuse": {
+    "status": "passed",
+    "entry": "README.md",
+    "commands": 5,
+    "original_stdout_hashes_match": true,
+    "turn_curves_match": true,
+    "model_invocations": 0,
+    "scope": "Retained query/journey on Mini only; not an end-to-end unfamiliar-Agent pilot, portable replay, repeated resource audit or live-ledger verification.",
+    "receipt": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-long-session-20261127-1/cold-readonly-1/receipt.json",
+      "sha256": "2f459c6e410086142d9a672f10abacb7d20481233c1defb631f25b8b04aa9f47"
+    }
+  }
+}

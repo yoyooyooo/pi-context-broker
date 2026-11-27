@@ -1,0 +1,1049 @@
+{
+  "version": 1,
+  "kind": "retained-long-session-public-summary",
+  "created_at": "2026-11-27T15:05:21.347561+00:00",
+  "derivation": {
+    "source_audit_sha256": "3a0a14daac2e59fa541faa34563640fee1d81ea93a00b25aff683fa343083e04",
+    "model_requests_added": 0,
+    "originals_or_grades_changed": false,
+    "projection": "Only cost trajectories, quality scope and direct evidence locators; no private oracle, task payload, credentials or absolute host path"
+  },
+  "timing_basis": {
+    "primary": "Original runtime.turns[].started_monotonic_ns/ended_monotonic_ns; cumulative elapsed begins at runtime.timing.started_monotonic_ns and includes startup and inter-turn gaps.",
+    "event_secondary": "user_turn_start/end event clocks are separately shown; event end includes workspace capture and is slightly later.",
+    "full_episode": "Original runtime.timing.duration_ms includes terminal work beyond the last turn; it is not capped-time scoring."
+  },
+  "limitations": [
+    "Each comparison is one material pair; prefixes of one conversation are correlated, not independent samples.",
+    "Different lengths, cases, SDK versions and CodeMode conditions must not be spliced into one curve.",
+    "Historical SDK2/free crossover does not establish a crossover for current SDK3/off.",
+    "Unknown cache breakdown and unverified money remain unknown; input is full provider input including reported cache.",
+    "A cost crossover is an observation, not evidence of universal quality noninferiority or a general adoption decision."
+  ],
+  "pairs": [
+    {
+      "scope": "historical-sdk2-codemode-free",
+      "broker_episode": "standing42-run-2-scale-references-n16-r2-001",
+      "native_episode": "standing42-run-2-scale-references-n16-r2-002",
+      "conditions": [
+        {
+          "episode_id": "standing42-run-2-scale-references-n16-r2-001",
+          "condition": "broker-free",
+          "original_outcome": "pass",
+          "business_status": "pass",
+          "critical_contracts": {
+            "total": 3,
+            "pass": 3,
+            "fail": 0,
+            "unknown": 0
+          },
+          "noncritical_unknown_contracts": [],
+          "turn_bound_business_artifacts": 2,
+          "timing": {
+            "episode_duration_ms": 52293.29075,
+            "startup_to_first_user_turn_ms": 6929.010292,
+            "after_last_user_turn_ms": 99.661667,
+            "between_turns_ms": 81.678583,
+            "boundary_note": "runtime turn ended precedes workspace snapshot and user_turn_end event; the two clocks are reported separately"
+          },
+          "originals": {
+            "events": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r2/raw/060d16d18daeb172a612df880dac1f7775c6e8d2c685fcb135a4b6a59884fc0d",
+              "access": "published_privacy_projection",
+              "sha256": "060d16d18daeb172a612df880dac1f7775c6e8d2c685fcb135a4b6a59884fc0d",
+              "original_source_sha256": "c917a70a1040195beec4a214f950e3e087f2fec6387dad50138129e0b249f7f9"
+            },
+            "collection-runtime-result": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r2/raw/955a8628cc71978c2011587dace2b4ef5c02ec851c1ce66ea80b62b2a94cbb61",
+              "access": "published_privacy_projection",
+              "sha256": "955a8628cc71978c2011587dace2b4ef5c02ec851c1ce66ea80b62b2a94cbb61",
+              "original_source_sha256": "f5557704d2bc6a958e7df2c0665c6ed56e0335ebb324f484580fc2987589924c"
+            },
+            "collection-readback": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r2/raw/8e6f357a0fb5d2dd6d603bc4809b04a5f9cd0765f167a2b65791b9a7869beadd",
+              "access": "published_privacy_projection",
+              "sha256": "8e6f357a0fb5d2dd6d603bc4809b04a5f9cd0765f167a2b65791b9a7869beadd",
+              "original_source_sha256": "ff92dca626ef6ba7c05ac8ed917e7de6fdd2db3acec1ca5ca15fb60d1920d951"
+            },
+            "collection-grade": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r2/raw/52f70cde4cb8b8b53f1dac76299e61316a0a42530f80b2678584178afa7ce790",
+              "access": "published_privacy_projection",
+              "sha256": "52f70cde4cb8b8b53f1dac76299e61316a0a42530f80b2678584178afa7ce790",
+              "original_source_sha256": "52f70cde4cb8b8b53f1dac76299e61316a0a42530f80b2678584178afa7ce790"
+            }
+          }
+        },
+        {
+          "episode_id": "standing42-run-2-scale-references-n16-r2-002",
+          "condition": "native-free",
+          "original_outcome": "pass",
+          "business_status": "pass",
+          "critical_contracts": {
+            "total": 3,
+            "pass": 3,
+            "fail": 0,
+            "unknown": 0
+          },
+          "noncritical_unknown_contracts": [],
+          "turn_bound_business_artifacts": 2,
+          "timing": {
+            "episode_duration_ms": 40465.2075,
+            "startup_to_first_user_turn_ms": 636.617791,
+            "after_last_user_turn_ms": 93.31275,
+            "between_turns_ms": 109.752125,
+            "boundary_note": "runtime turn ended precedes workspace snapshot and user_turn_end event; the two clocks are reported separately"
+          },
+          "originals": {
+            "events": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r2/raw/82dc1567ba3b5b83f56bc63fa9f5f346c0e45e01396c835e734cc96cffad4633",
+              "access": "published_privacy_projection",
+              "sha256": "82dc1567ba3b5b83f56bc63fa9f5f346c0e45e01396c835e734cc96cffad4633",
+              "original_source_sha256": "b5eb2e44b337baa9270671c913623b8e7bb4defcbffe0667c9ce8a8945fb3daf"
+            },
+            "collection-runtime-result": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r2/raw/849555b3d0875eb65bc7964ec183d5b8891a3cc3a6b0a1a9922be30b62acf95d",
+              "access": "published_privacy_projection",
+              "sha256": "849555b3d0875eb65bc7964ec183d5b8891a3cc3a6b0a1a9922be30b62acf95d",
+              "original_source_sha256": "cea0d644dd53e31122cb903b8967f45703a562bbbe9e597bed03d36080d6f156"
+            },
+            "collection-readback": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r2/raw/d8bb900fc891a4c7d8f13fa2eae1acabde7bcab694d9a7e59af2e97aedc0fee1",
+              "access": "published_privacy_projection",
+              "sha256": "d8bb900fc891a4c7d8f13fa2eae1acabde7bcab694d9a7e59af2e97aedc0fee1",
+              "original_source_sha256": "dfba62ba1222eb8fe59360089d9479673a238cc14e0dbbc524ef9d985875a9ec"
+            },
+            "collection-grade": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r2/raw/3e02873484f30d4f6a43bd4cf80f71c2f30be6fcb7113fec9952ccd2964016db",
+              "access": "published_privacy_projection",
+              "sha256": "3e02873484f30d4f6a43bd4cf80f71c2f30be6fcb7113fec9952ccd2964016db",
+              "original_source_sha256": "3e02873484f30d4f6a43bd4cf80f71c2f30be6fcb7113fec9952ccd2964016db"
+            }
+          }
+        }
+      ],
+      "rows": [
+        {
+          "turn": 1,
+          "broker": {
+            "input_tokens": 23272,
+            "cumulative_input_tokens": 23272,
+            "model_requests": 5,
+            "actual_attempts": 5,
+            "runtime_turn_duration_ms": 33020.321125,
+            "elapsed_from_runtime_start_ms": 39949.331417,
+            "event_turn_duration_ms": 33026.73725,
+            "event_start_line": 11,
+            "event_end_line": 845
+          },
+          "native": {
+            "input_tokens": 20947,
+            "cumulative_input_tokens": 20947,
+            "model_requests": 5,
+            "actual_attempts": 5,
+            "runtime_turn_duration_ms": 20229.892667,
+            "elapsed_from_runtime_start_ms": 20866.510458,
+            "event_turn_duration_ms": 20234.958666,
+            "event_start_line": 5,
+            "event_end_line": 1153
+          },
+          "marginal_input_delta_broker_minus_native": 2325,
+          "cumulative_input_delta_broker_minus_native": 2325,
+          "elapsed_delta_broker_minus_native_ms": 19082.820959
+        },
+        {
+          "turn": 2,
+          "broker": {
+            "input_tokens": 16147,
+            "cumulative_input_tokens": 39419,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 12162.616042,
+            "elapsed_from_runtime_start_ms": 52193.626042,
+            "event_turn_duration_ms": 12171.878166,
+            "event_start_line": 850,
+            "event_end_line": 1400
+          },
+          "native": {
+            "input_tokens": 20912,
+            "cumulative_input_tokens": 41859,
+            "model_requests": 4,
+            "actual_attempts": 4,
+            "runtime_turn_duration_ms": 19395.625125,
+            "elapsed_from_runtime_start_ms": 40371.887708,
+            "event_turn_duration_ms": 19402.191458,
+            "event_start_line": 1158,
+            "event_end_line": 2235
+          },
+          "marginal_input_delta_broker_minus_native": -4765,
+          "cumulative_input_delta_broker_minus_native": -2440,
+          "elapsed_delta_broker_minus_native_ms": 11821.738334000001
+        }
+      ],
+      "input_crossing": {
+        "delta_by_turn": [
+          2325,
+          -2440
+        ],
+        "initial_delta": 2325,
+        "end_delta": -2440,
+        "first_nonpositive_turn": 2,
+        "initial_premium_recovery_turn": 2,
+        "starts_nonpositive": false,
+        "transitions": [
+          {
+            "after_turn": 2,
+            "kind": "positive_to_nonpositive"
+          }
+        ],
+        "nonpositive_persists_from_first_through_horizon": true,
+        "observed_horizon": 2,
+        "extrapolation": "none"
+      },
+      "elapsed_crossing": {
+        "delta_by_turn": [
+          19082.820959,
+          11821.738334000001
+        ],
+        "initial_delta": 19082.820959,
+        "end_delta": 11821.738334000001,
+        "first_nonpositive_turn": null,
+        "initial_premium_recovery_turn": null,
+        "starts_nonpositive": false,
+        "transitions": [],
+        "nonpositive_persists_from_first_through_horizon": false,
+        "observed_horizon": 2,
+        "extrapolation": "none"
+      },
+      "interpretation": "one descriptive paired episode; correlated prefixes, not independent samples",
+      "quality_scope": "Retained episode grades plus same-byte output proof at the demanded turn; resources, selection, permission and side effects are not independently regraded per turn."
+    },
+    {
+      "scope": "historical-sdk2-codemode-free",
+      "broker_episode": "standing42-run-2-scale-references-n16-r4-001",
+      "native_episode": "standing42-run-2-scale-references-n16-r4-002",
+      "conditions": [
+        {
+          "episode_id": "standing42-run-2-scale-references-n16-r4-001",
+          "condition": "broker-free",
+          "original_outcome": "pass",
+          "business_status": "pass",
+          "critical_contracts": {
+            "total": 5,
+            "pass": 5,
+            "fail": 0,
+            "unknown": 0
+          },
+          "noncritical_unknown_contracts": [],
+          "turn_bound_business_artifacts": 4,
+          "timing": {
+            "episode_duration_ms": 135054.660416,
+            "startup_to_first_user_turn_ms": 38711.537083,
+            "after_last_user_turn_ms": 130.079167,
+            "between_turns_ms": 262.420333,
+            "boundary_note": "runtime turn ended precedes workspace snapshot and user_turn_end event; the two clocks are reported separately"
+          },
+          "originals": {
+            "events": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r4/raw/2656c899389a60fd454cb777ebfb5340c296c536e55566a6dfb1732bd1659609",
+              "access": "published_privacy_projection",
+              "sha256": "2656c899389a60fd454cb777ebfb5340c296c536e55566a6dfb1732bd1659609",
+              "original_source_sha256": "d6e839c3c9d4f49c4112264915536e85100ca2c34038cd6559597a1a18c48339"
+            },
+            "collection-runtime-result": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r4/raw/fe59deea1b13a82350be9c10889d0cf29c6c481606fe14aa2c6fbcc19c1cc3c0",
+              "access": "published_privacy_projection",
+              "sha256": "fe59deea1b13a82350be9c10889d0cf29c6c481606fe14aa2c6fbcc19c1cc3c0",
+              "original_source_sha256": "265e8cdd0512282d0d236f5c69c2d0e867d842f6ab00e19688416cefd62ac58b"
+            },
+            "collection-readback": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r4/raw/4a4e44e51202747af5519e1c4c59953457500bd612b837f3c819964a5636fc59",
+              "access": "published_privacy_projection",
+              "sha256": "4a4e44e51202747af5519e1c4c59953457500bd612b837f3c819964a5636fc59",
+              "original_source_sha256": "efe16c6e586511c106b3afa86f69d9e0311ffd6fb53fa189d3cea52aea6c2edb"
+            },
+            "collection-grade": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r4/raw/17e84d16be996b7ba0d6c266b5b2f95db3620315bd08b7229d4d1d5aa405be69",
+              "access": "published_privacy_projection",
+              "sha256": "17e84d16be996b7ba0d6c266b5b2f95db3620315bd08b7229d4d1d5aa405be69",
+              "original_source_sha256": "17e84d16be996b7ba0d6c266b5b2f95db3620315bd08b7229d4d1d5aa405be69"
+            }
+          }
+        },
+        {
+          "episode_id": "standing42-run-2-scale-references-n16-r4-002",
+          "condition": "native-free",
+          "original_outcome": "unknown",
+          "business_status": "pass",
+          "critical_contracts": {
+            "total": 5,
+            "pass": 5,
+            "fail": 0,
+            "unknown": 0
+          },
+          "noncritical_unknown_contracts": [
+            "legal-selection"
+          ],
+          "turn_bound_business_artifacts": 4,
+          "timing": {
+            "episode_duration_ms": 88669.8265,
+            "startup_to_first_user_turn_ms": 651.603791,
+            "after_last_user_turn_ms": 121.248292,
+            "between_turns_ms": 295.197,
+            "boundary_note": "runtime turn ended precedes workspace snapshot and user_turn_end event; the two clocks are reported separately"
+          },
+          "originals": {
+            "events": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r4/raw/efea1907b1ae8c7514e00716a803a5e861fe48ef6c2e05a1a960586be089c5a5",
+              "access": "published_privacy_projection",
+              "sha256": "efea1907b1ae8c7514e00716a803a5e861fe48ef6c2e05a1a960586be089c5a5",
+              "original_source_sha256": "53163be87cd2ec5ea3bc196e934734e7c3d01d49062d471f4007c6e0485e2460"
+            },
+            "collection-runtime-result": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r4/raw/46db57cd5ece449a7eb4b067fcbb80a8a5957a7e30598b893c4a9398c1027305",
+              "access": "published_privacy_projection",
+              "sha256": "46db57cd5ece449a7eb4b067fcbb80a8a5957a7e30598b893c4a9398c1027305",
+              "original_source_sha256": "a5563c3bb6cb791177cc9338aeac3cbacdf97fdf5dd6cadc6ec6fa472c12ce4a"
+            },
+            "collection-readback": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r4/raw/2707bd768fefa3d8815e77c81917945daf9dd3f1304bcb1bcf08d25a77a391e5",
+              "access": "published_privacy_projection",
+              "sha256": "2707bd768fefa3d8815e77c81917945daf9dd3f1304bcb1bcf08d25a77a391e5",
+              "original_source_sha256": "51bb255a1fbd1fb074ac19394803da2c64e59865736909d9f4e62194dc8d3104"
+            },
+            "collection-grade": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-references-n16-r4/raw/b9cef954df9ed8cfdf6deac7bff0a8051e575f3527c16ba8e2aaed87de12a4cd",
+              "access": "published_privacy_projection",
+              "sha256": "b9cef954df9ed8cfdf6deac7bff0a8051e575f3527c16ba8e2aaed87de12a4cd",
+              "original_source_sha256": "b9cef954df9ed8cfdf6deac7bff0a8051e575f3527c16ba8e2aaed87de12a4cd"
+            }
+          }
+        }
+      ],
+      "rows": [
+        {
+          "turn": 1,
+          "broker": {
+            "input_tokens": 23309,
+            "cumulative_input_tokens": 23309,
+            "model_requests": 5,
+            "actual_attempts": 5,
+            "runtime_turn_duration_ms": 35239.726209,
+            "elapsed_from_runtime_start_ms": 73951.263292,
+            "event_turn_duration_ms": 35247.498291,
+            "event_start_line": 11,
+            "event_end_line": 920
+          },
+          "native": {
+            "input_tokens": 30877,
+            "cumulative_input_tokens": 30877,
+            "model_requests": 7,
+            "actual_attempts": 7,
+            "runtime_turn_duration_ms": 32109.481209,
+            "elapsed_from_runtime_start_ms": 32761.085,
+            "event_turn_duration_ms": 32111.85525,
+            "event_start_line": 5,
+            "event_end_line": 1269
+          },
+          "marginal_input_delta_broker_minus_native": -7568,
+          "cumulative_input_delta_broker_minus_native": -7568,
+          "elapsed_delta_broker_minus_native_ms": 41190.178292000004
+        },
+        {
+          "turn": 2,
+          "broker": {
+            "input_tokens": 16428,
+            "cumulative_input_tokens": 39737,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 37480.53075,
+            "elapsed_from_runtime_start_ms": 111523.957083,
+            "event_turn_duration_ms": 37489.785709,
+            "event_start_line": 925,
+            "event_end_line": 1512
+          },
+          "native": {
+            "input_tokens": 22943,
+            "cumulative_input_tokens": 53820,
+            "model_requests": 4,
+            "actual_attempts": 4,
+            "runtime_turn_duration_ms": 17786.980625,
+            "elapsed_from_runtime_start_ms": 50650.605541,
+            "event_turn_duration_ms": 17791.018875,
+            "event_start_line": 1274,
+            "event_end_line": 2258
+          },
+          "marginal_input_delta_broker_minus_native": -6515,
+          "cumulative_input_delta_broker_minus_native": -14083,
+          "elapsed_delta_broker_minus_native_ms": 60873.351542000004
+        },
+        {
+          "turn": 3,
+          "broker": {
+            "input_tokens": 17770,
+            "cumulative_input_tokens": 57507,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 12037.581625,
+            "elapsed_from_runtime_start_ms": 123649.211458,
+            "event_turn_duration_ms": 12045.008834,
+            "event_start_line": 1517,
+            "event_end_line": 2095
+          },
+          "native": {
+            "input_tokens": 26999,
+            "cumulative_input_tokens": 80819,
+            "model_requests": 4,
+            "actual_attempts": 4,
+            "runtime_turn_duration_ms": 18568.76775,
+            "elapsed_from_runtime_start_ms": 69327.5055,
+            "event_turn_duration_ms": 18577.451834,
+            "event_start_line": 2263,
+            "event_end_line": 3125
+          },
+          "marginal_input_delta_broker_minus_native": -9229,
+          "cumulative_input_delta_broker_minus_native": -23312,
+          "elapsed_delta_broker_minus_native_ms": 54321.705958000006
+        },
+        {
+          "turn": 4,
+          "broker": {
+            "input_tokens": 19195,
+            "cumulative_input_tokens": 76702,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 11192.782125,
+            "elapsed_from_runtime_start_ms": 134924.578125,
+            "event_turn_duration_ms": 11201.072291,
+            "event_start_line": 2100,
+            "event_end_line": 2678
+          },
+          "native": {
+            "input_tokens": 23259,
+            "cumulative_input_tokens": 104078,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 19136.544333,
+            "elapsed_from_runtime_start_ms": 88548.574708,
+            "event_turn_duration_ms": 19145.895416,
+            "event_start_line": 3130,
+            "event_end_line": 4089
+          },
+          "marginal_input_delta_broker_minus_native": -4064,
+          "cumulative_input_delta_broker_minus_native": -27376,
+          "elapsed_delta_broker_minus_native_ms": 46376.003417
+        }
+      ],
+      "input_crossing": {
+        "delta_by_turn": [
+          -7568,
+          -14083,
+          -23312,
+          -27376
+        ],
+        "initial_delta": -7568,
+        "end_delta": -27376,
+        "first_nonpositive_turn": 1,
+        "initial_premium_recovery_turn": null,
+        "starts_nonpositive": true,
+        "transitions": [],
+        "nonpositive_persists_from_first_through_horizon": true,
+        "observed_horizon": 4,
+        "extrapolation": "none"
+      },
+      "elapsed_crossing": {
+        "delta_by_turn": [
+          41190.178292000004,
+          60873.351542000004,
+          54321.705958000006,
+          46376.003417
+        ],
+        "initial_delta": 41190.178292000004,
+        "end_delta": 46376.003417,
+        "first_nonpositive_turn": null,
+        "initial_premium_recovery_turn": null,
+        "starts_nonpositive": false,
+        "transitions": [],
+        "nonpositive_persists_from_first_through_horizon": false,
+        "observed_horizon": 4,
+        "extrapolation": "none"
+      },
+      "interpretation": "one descriptive paired episode; correlated prefixes, not independent samples",
+      "quality_scope": "Retained episode grades plus same-byte output proof at the demanded turn; resources, selection, permission and side effects are not independently regraded per turn."
+    },
+    {
+      "scope": "historical-sdk2-codemode-free",
+      "broker_episode": "standing42-run-2-scale-tariff-n16-r8-001",
+      "native_episode": "standing42-run-2-scale-tariff-n16-r8-002",
+      "conditions": [
+        {
+          "episode_id": "standing42-run-2-scale-tariff-n16-r8-001",
+          "condition": "broker-free",
+          "original_outcome": "pass",
+          "business_status": "pass",
+          "critical_contracts": {
+            "total": 9,
+            "pass": 9,
+            "fail": 0,
+            "unknown": 0
+          },
+          "noncritical_unknown_contracts": [],
+          "turn_bound_business_artifacts": 8,
+          "timing": {
+            "episode_duration_ms": 131321.178625,
+            "startup_to_first_user_turn_ms": 8371.490084,
+            "after_last_user_turn_ms": 114.883208,
+            "between_turns_ms": 637.817458,
+            "boundary_note": "runtime turn ended precedes workspace snapshot and user_turn_end event; the two clocks are reported separately"
+          },
+          "originals": {
+            "events": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-tariff-n16-r8/raw/c48e80124ac19147783d220e3c52ca019b997041babe638ad4243b8d611a91fc",
+              "access": "published_privacy_projection",
+              "sha256": "c48e80124ac19147783d220e3c52ca019b997041babe638ad4243b8d611a91fc",
+              "original_source_sha256": "75d67b048e1a84118431c76ac56874806a16798f98891d13e215fb7f65ad0841"
+            },
+            "collection-runtime-result": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-tariff-n16-r8/raw/7cb09218f1c2d2ec9d5196238d89b2d206a19f14ae8127a7ad6cd6176b7bab81",
+              "access": "published_privacy_projection",
+              "sha256": "7cb09218f1c2d2ec9d5196238d89b2d206a19f14ae8127a7ad6cd6176b7bab81",
+              "original_source_sha256": "36b8d2af31884b2f33f0285fe95eb186661e153a46b611aebc419ffb5a1496e6"
+            },
+            "collection-readback": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-tariff-n16-r8/raw/b166dc5b3d3567c2f8e452767181ba2b87cb586561fe9ecaeb393c766c4896dd",
+              "access": "published_privacy_projection",
+              "sha256": "b166dc5b3d3567c2f8e452767181ba2b87cb586561fe9ecaeb393c766c4896dd",
+              "original_source_sha256": "960c3f50f0307724519c4edbf1a8d49b75af3c617bf2360f436f22250549f36d"
+            },
+            "collection-grade": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-tariff-n16-r8/raw/6ec649fa6b15c73592ed156b9130edfcfbbf09e29aab8d6125e4cb69f44d33d9",
+              "access": "published_privacy_projection",
+              "sha256": "6ec649fa6b15c73592ed156b9130edfcfbbf09e29aab8d6125e4cb69f44d33d9",
+              "original_source_sha256": "6ec649fa6b15c73592ed156b9130edfcfbbf09e29aab8d6125e4cb69f44d33d9"
+            }
+          }
+        },
+        {
+          "episode_id": "standing42-run-2-scale-tariff-n16-r8-002",
+          "condition": "native-free",
+          "original_outcome": "pass",
+          "business_status": "pass",
+          "critical_contracts": {
+            "total": 9,
+            "pass": 9,
+            "fail": 0,
+            "unknown": 0
+          },
+          "noncritical_unknown_contracts": [],
+          "turn_bound_business_artifacts": 8,
+          "timing": {
+            "episode_duration_ms": 112509.907542,
+            "startup_to_first_user_turn_ms": 658.624125,
+            "after_last_user_turn_ms": 134.951708,
+            "between_turns_ms": 740.000126,
+            "boundary_note": "runtime turn ended precedes workspace snapshot and user_turn_end event; the two clocks are reported separately"
+          },
+          "originals": {
+            "events": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-tariff-n16-r8/raw/8d39774a558fc139c3227231e06a61738351080fb4afd6251ef6d180b358bca2",
+              "access": "published_privacy_projection",
+              "sha256": "8d39774a558fc139c3227231e06a61738351080fb4afd6251ef6d180b358bca2",
+              "original_source_sha256": "c3c1d62c4b4ec92d9c0d7684a4d0d5c459cd5e727dd9827736ad93a07de7e21b"
+            },
+            "collection-runtime-result": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-tariff-n16-r8/raw/7aa7dcace14c9fd8a6c6870561458a2df31966cbb1eb5e7ca991373395ba0656",
+              "access": "published_privacy_projection",
+              "sha256": "7aa7dcace14c9fd8a6c6870561458a2df31966cbb1eb5e7ca991373395ba0656",
+              "original_source_sha256": "48f538a8d27db00c9da251491c43aaf5088889a0401a039882c582bf851b495e"
+            },
+            "collection-readback": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-tariff-n16-r8/raw/f3b9c099caaa8b69bbe1f3a4bfeef65e11dc59cb8fe84a253b779d823cde6b06",
+              "access": "published_privacy_projection",
+              "sha256": "f3b9c099caaa8b69bbe1f3a4bfeef65e11dc59cb8fe84a253b779d823cde6b06",
+              "original_source_sha256": "b342d5c54293be0dfcaca3c14c174ff7477b417665049ee32afc1f25421f9c00"
+            },
+            "collection-grade": {
+              "url": "https://github.com/yoyooyooo/pi-context-broker/blob/b863ebadd8af8319fa407b13e52eb2a2f9dfc66b/benchmark/results/2026-11-26-relative-source-reanalysis/packages/scale-tariff-n16-r8/raw/9002ab8666db6f73f4d884d795ce35c73f689dbfdc6cd016662f2c60b08a8a27",
+              "access": "published_privacy_projection",
+              "sha256": "9002ab8666db6f73f4d884d795ce35c73f689dbfdc6cd016662f2c60b08a8a27",
+              "original_source_sha256": "9002ab8666db6f73f4d884d795ce35c73f689dbfdc6cd016662f2c60b08a8a27"
+            }
+          }
+        }
+      ],
+      "rows": [
+        {
+          "turn": 1,
+          "broker": {
+            "input_tokens": 18052,
+            "cumulative_input_tokens": 18052,
+            "model_requests": 4,
+            "actual_attempts": 4,
+            "runtime_turn_duration_ms": 25292.173958,
+            "elapsed_from_runtime_start_ms": 33663.664042,
+            "event_turn_duration_ms": 25300.8945,
+            "event_start_line": 11,
+            "event_end_line": 602
+          },
+          "native": {
+            "input_tokens": 16238,
+            "cumulative_input_tokens": 16238,
+            "model_requests": 4,
+            "actual_attempts": 4,
+            "runtime_turn_duration_ms": 15389.140125,
+            "elapsed_from_runtime_start_ms": 16047.76425,
+            "event_turn_duration_ms": 15398.153875,
+            "event_start_line": 5,
+            "event_end_line": 792
+          },
+          "marginal_input_delta_broker_minus_native": 1814,
+          "cumulative_input_delta_broker_minus_native": 1814,
+          "elapsed_delta_broker_minus_native_ms": 17615.899791999997
+        },
+        {
+          "turn": 2,
+          "broker": {
+            "input_tokens": 15131,
+            "cumulative_input_tokens": 33183,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 8854.651666,
+            "elapsed_from_runtime_start_ms": 42604.89575,
+            "event_turn_duration_ms": 8858.544625,
+            "event_start_line": 607,
+            "event_end_line": 985
+          },
+          "native": {
+            "input_tokens": 9088,
+            "cumulative_input_tokens": 25326,
+            "model_requests": 2,
+            "actual_attempts": 2,
+            "runtime_turn_duration_ms": 8525.184666,
+            "elapsed_from_runtime_start_ms": 24660.7975,
+            "event_turn_duration_ms": 8538.524792,
+            "event_start_line": 797,
+            "event_end_line": 1202
+          },
+          "marginal_input_delta_broker_minus_native": 6043,
+          "cumulative_input_delta_broker_minus_native": 7857,
+          "elapsed_delta_broker_minus_native_ms": 17944.098250000003
+        },
+        {
+          "turn": 3,
+          "broker": {
+            "input_tokens": 16137,
+            "cumulative_input_tokens": 49320,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 9508.515292,
+            "elapsed_from_runtime_start_ms": 52190.050584,
+            "event_turn_duration_ms": 9518.743,
+            "event_start_line": 990,
+            "event_end_line": 1368
+          },
+          "native": {
+            "input_tokens": 15542,
+            "cumulative_input_tokens": 40868,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 14329.775083,
+            "elapsed_from_runtime_start_ms": 39105.488542,
+            "event_turn_duration_ms": 14336.227,
+            "event_start_line": 1207,
+            "event_end_line": 1962
+          },
+          "marginal_input_delta_broker_minus_native": 595,
+          "cumulative_input_delta_broker_minus_native": 8452,
+          "elapsed_delta_broker_minus_native_ms": 13084.562041999998
+        },
+        {
+          "turn": 4,
+          "broker": {
+            "input_tokens": 11405,
+            "cumulative_input_tokens": 60725,
+            "model_requests": 2,
+            "actual_attempts": 2,
+            "runtime_turn_duration_ms": 7751.550875,
+            "elapsed_from_runtime_start_ms": 60054.209125,
+            "event_turn_duration_ms": 7761.198292,
+            "event_start_line": 1373,
+            "event_end_line": 1728
+          },
+          "native": {
+            "input_tokens": 18161,
+            "cumulative_input_tokens": 59029,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 13766.152,
+            "elapsed_from_runtime_start_ms": 52980.897709,
+            "event_turn_duration_ms": 13771.132334,
+            "event_start_line": 1967,
+            "event_end_line": 2812
+          },
+          "marginal_input_delta_broker_minus_native": -6756,
+          "cumulative_input_delta_broker_minus_native": 1696,
+          "elapsed_delta_broker_minus_native_ms": 7073.311416000004
+        },
+        {
+          "turn": 5,
+          "broker": {
+            "input_tokens": 12023,
+            "cumulative_input_tokens": 72748,
+            "model_requests": 2,
+            "actual_attempts": 2,
+            "runtime_turn_duration_ms": 16795.451667,
+            "elapsed_from_runtime_start_ms": 76933.278709,
+            "event_turn_duration_ms": 16798.745166,
+            "event_start_line": 1733,
+            "event_end_line": 2098
+          },
+          "native": {
+            "input_tokens": 20973,
+            "cumulative_input_tokens": 80002,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 15086.721583,
+            "elapsed_from_runtime_start_ms": 68172.163792,
+            "event_turn_duration_ms": 15092.358625,
+            "event_start_line": 2817,
+            "event_end_line": 3656
+          },
+          "marginal_input_delta_broker_minus_native": -8950,
+          "cumulative_input_delta_broker_minus_native": -7254,
+          "elapsed_delta_broker_minus_native_ms": 8761.114916999999
+        },
+        {
+          "turn": 6,
+          "broker": {
+            "input_tokens": 12781,
+            "cumulative_input_tokens": 85529,
+            "model_requests": 2,
+            "actual_attempts": 2,
+            "runtime_turn_duration_ms": 10347.510792,
+            "elapsed_from_runtime_start_ms": 87358.541709,
+            "event_turn_duration_ms": 10354.532125,
+            "event_start_line": 2103,
+            "event_end_line": 2471
+          },
+          "native": {
+            "input_tokens": 23777,
+            "cumulative_input_tokens": 103779,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 13637.611959,
+            "elapsed_from_runtime_start_ms": 81920.414459,
+            "event_turn_duration_ms": 13642.216959,
+            "event_start_line": 3661,
+            "event_end_line": 4500
+          },
+          "marginal_input_delta_broker_minus_native": -10996,
+          "cumulative_input_delta_broker_minus_native": -18250,
+          "elapsed_delta_broker_minus_native_ms": 5438.12724999999
+        },
+        {
+          "turn": 7,
+          "broker": {
+            "input_tokens": 13283,
+            "cumulative_input_tokens": 98812,
+            "model_requests": 2,
+            "actual_attempts": 2,
+            "runtime_turn_duration_ms": 35348.555583,
+            "elapsed_from_runtime_start_ms": 122815.648667,
+            "event_turn_duration_ms": 35359.464875,
+            "event_start_line": 2476,
+            "event_end_line": 2841
+          },
+          "native": {
+            "input_tokens": 26583,
+            "cumulative_input_tokens": 130362,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 15568.334875,
+            "elapsed_from_runtime_start_ms": 97593.298542,
+            "event_turn_duration_ms": 15576.438292,
+            "event_start_line": 4505,
+            "event_end_line": 5344
+          },
+          "marginal_input_delta_broker_minus_native": -13300,
+          "cumulative_input_delta_broker_minus_native": -31550,
+          "elapsed_delta_broker_minus_native_ms": 25222.350124999997
+        },
+        {
+          "turn": 8,
+          "broker": {
+            "input_tokens": 13913,
+            "cumulative_input_tokens": 112725,
+            "model_requests": 2,
+            "actual_attempts": 2,
+            "runtime_turn_duration_ms": 8298.575292,
+            "elapsed_from_runtime_start_ms": 131206.292667,
+            "event_turn_duration_ms": 8307.812084,
+            "event_start_line": 2846,
+            "event_end_line": 3211
+          },
+          "native": {
+            "input_tokens": 29295,
+            "cumulative_input_tokens": 159657,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 14673.405792,
+            "elapsed_from_runtime_start_ms": 112374.950334,
+            "event_turn_duration_ms": 14689.201709,
+            "event_start_line": 5349,
+            "event_end_line": 6159
+          },
+          "marginal_input_delta_broker_minus_native": -15382,
+          "cumulative_input_delta_broker_minus_native": -46932,
+          "elapsed_delta_broker_minus_native_ms": 18831.342333000008
+        }
+      ],
+      "input_crossing": {
+        "delta_by_turn": [
+          1814,
+          7857,
+          8452,
+          1696,
+          -7254,
+          -18250,
+          -31550,
+          -46932
+        ],
+        "initial_delta": 1814,
+        "end_delta": -46932,
+        "first_nonpositive_turn": 5,
+        "initial_premium_recovery_turn": 5,
+        "starts_nonpositive": false,
+        "transitions": [
+          {
+            "after_turn": 5,
+            "kind": "positive_to_nonpositive"
+          }
+        ],
+        "nonpositive_persists_from_first_through_horizon": true,
+        "observed_horizon": 8,
+        "extrapolation": "none"
+      },
+      "elapsed_crossing": {
+        "delta_by_turn": [
+          17615.899791999997,
+          17944.098250000003,
+          13084.562041999998,
+          7073.311416000004,
+          8761.114916999999,
+          5438.12724999999,
+          25222.350124999997,
+          18831.342333000008
+        ],
+        "initial_delta": 17615.899791999997,
+        "end_delta": 18831.342333000008,
+        "first_nonpositive_turn": null,
+        "initial_premium_recovery_turn": null,
+        "starts_nonpositive": false,
+        "transitions": [],
+        "nonpositive_persists_from_first_through_horizon": false,
+        "observed_horizon": 8,
+        "extrapolation": "none"
+      },
+      "interpretation": "one descriptive paired episode; correlated prefixes, not independent samples",
+      "quality_scope": "Retained episode grades plus same-byte output proof at the demanded turn; resources, selection, permission and side effects are not independently regraded per turn."
+    },
+    {
+      "scope": "2026-11-27-early-sdk3-baseline-not-latest-next",
+      "broker_episode": "current-product-native-broker-pair-3-003",
+      "native_episode": "current-product-native-broker-pair-3-004",
+      "conditions": [
+        {
+          "episode_id": "current-product-native-broker-pair-3-003",
+          "condition": "current-broker-off",
+          "original_outcome": "pass",
+          "business_status": "pass",
+          "critical_contracts": {
+            "total": 3,
+            "pass": 3,
+            "fail": 0,
+            "unknown": 0
+          },
+          "noncritical_unknown_contracts": [],
+          "turn_bound_business_artifacts": 2,
+          "timing": {
+            "episode_duration_ms": 111623.92208399999,
+            "startup_to_first_user_turn_ms": 25489.277792,
+            "after_last_user_turn_ms": 112.220208,
+            "between_turns_ms": 75.076083,
+            "boundary_note": "runtime turn ended precedes workspace snapshot and user_turn_end event; the two clocks are reported separately"
+          },
+          "originals": {
+            "events": {
+              "run_id": "current-product-native-broker-pair-3-003",
+              "path_from_run": "benchmark/runtime/events.jsonl",
+              "access": "retained_private_original",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "original_source_sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b"
+            },
+            "collection-runtime-result": {
+              "run_id": "current-product-native-broker-pair-3-003",
+              "path_from_run": "benchmark/runtime/episode-result.json",
+              "access": "retained_private_original",
+              "sha256": "1606cd1c530d81403752689058e43f51fc0a01c27da8950f3988eadffda6a5c4",
+              "original_source_sha256": "1606cd1c530d81403752689058e43f51fc0a01c27da8950f3988eadffda6a5c4"
+            },
+            "collection-readback": {
+              "run_id": "current-product-native-broker-pair-3-003",
+              "path_from_run": "benchmark/normalized/readback.json",
+              "access": "retained_private_original",
+              "sha256": "88e76c20cf0fb0d93263d25b50f38a53ed6febb9012a533d77834282246e1a90",
+              "original_source_sha256": "88e76c20cf0fb0d93263d25b50f38a53ed6febb9012a533d77834282246e1a90"
+            },
+            "collection-grade": {
+              "run_id": "current-product-native-broker-pair-3-003",
+              "path_from_run": "benchmark/normalized/grade.json",
+              "access": "retained_private_original",
+              "sha256": "dc4a28c8387a3bd4730b9eb6f7d75b3f49cb1dfea4fb9346c3d2393d6bca0150",
+              "original_source_sha256": "dc4a28c8387a3bd4730b9eb6f7d75b3f49cb1dfea4fb9346c3d2393d6bca0150"
+            }
+          }
+        },
+        {
+          "episode_id": "current-product-native-broker-pair-3-004",
+          "condition": "current-native-off",
+          "original_outcome": "pass",
+          "business_status": "pass",
+          "critical_contracts": {
+            "total": 3,
+            "pass": 3,
+            "fail": 0,
+            "unknown": 0
+          },
+          "noncritical_unknown_contracts": [],
+          "turn_bound_business_artifacts": 2,
+          "timing": {
+            "episode_duration_ms": 26974.249625,
+            "startup_to_first_user_turn_ms": 704.619041,
+            "after_last_user_turn_ms": 89.347042,
+            "between_turns_ms": 77.983417,
+            "boundary_note": "runtime turn ended precedes workspace snapshot and user_turn_end event; the two clocks are reported separately"
+          },
+          "originals": {
+            "events": {
+              "run_id": "current-product-native-broker-pair-3-004",
+              "path_from_run": "benchmark/runtime/events.jsonl",
+              "access": "retained_private_original",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "original_source_sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87"
+            },
+            "collection-runtime-result": {
+              "run_id": "current-product-native-broker-pair-3-004",
+              "path_from_run": "benchmark/runtime/episode-result.json",
+              "access": "retained_private_original",
+              "sha256": "97be9c3858335f44407ce0bfb7dd7798cbff7f9deabaa337d0795183a4755748",
+              "original_source_sha256": "97be9c3858335f44407ce0bfb7dd7798cbff7f9deabaa337d0795183a4755748"
+            },
+            "collection-readback": {
+              "run_id": "current-product-native-broker-pair-3-004",
+              "path_from_run": "benchmark/normalized/readback.json",
+              "access": "retained_private_original",
+              "sha256": "b958fee8c844e780cb4621172ff42c61e95640a7409c10bfc6b04912fbe7d21c",
+              "original_source_sha256": "b958fee8c844e780cb4621172ff42c61e95640a7409c10bfc6b04912fbe7d21c"
+            },
+            "collection-grade": {
+              "run_id": "current-product-native-broker-pair-3-004",
+              "path_from_run": "benchmark/normalized/grade.json",
+              "access": "retained_private_original",
+              "sha256": "fb6afc6e732cd4b6bc4f919ad2cb72de77fb1e2bf195896ea0bd648dc94992ad",
+              "original_source_sha256": "fb6afc6e732cd4b6bc4f919ad2cb72de77fb1e2bf195896ea0bd648dc94992ad"
+            }
+          }
+        }
+      ],
+      "rows": [
+        {
+          "turn": 1,
+          "broker": {
+            "input_tokens": 20979,
+            "cumulative_input_tokens": 20979,
+            "model_requests": 5,
+            "actual_attempts": 5,
+            "runtime_turn_duration_ms": 76304.917583,
+            "elapsed_from_runtime_start_ms": 101794.195375,
+            "event_turn_duration_ms": 76307.710709,
+            "event_start_line": 41,
+            "event_end_line": 661
+          },
+          "native": {
+            "input_tokens": 13510,
+            "cumulative_input_tokens": 13510,
+            "model_requests": 4,
+            "actual_attempts": 4,
+            "runtime_turn_duration_ms": 13427.061625,
+            "elapsed_from_runtime_start_ms": 14131.680666,
+            "event_turn_duration_ms": 13428.840625,
+            "event_start_line": 5,
+            "event_end_line": 491
+          },
+          "marginal_input_delta_broker_minus_native": 7469,
+          "cumulative_input_delta_broker_minus_native": 7469,
+          "elapsed_delta_broker_minus_native_ms": 87662.514709
+        },
+        {
+          "turn": 2,
+          "broker": {
+            "input_tokens": 14226,
+            "cumulative_input_tokens": 35205,
+            "model_requests": 3,
+            "actual_attempts": 3,
+            "runtime_turn_duration_ms": 9642.428209,
+            "elapsed_from_runtime_start_ms": 111511.699667,
+            "event_turn_duration_ms": 9644.965042,
+            "event_start_line": 666,
+            "event_end_line": 1140
+          },
+          "native": {
+            "input_tokens": 16366,
+            "cumulative_input_tokens": 29876,
+            "model_requests": 4,
+            "actual_attempts": 4,
+            "runtime_turn_duration_ms": 12675.232333,
+            "elapsed_from_runtime_start_ms": 26884.896416,
+            "event_turn_duration_ms": 12677.359667,
+            "event_start_line": 496,
+            "event_end_line": 984
+          },
+          "marginal_input_delta_broker_minus_native": -2140,
+          "cumulative_input_delta_broker_minus_native": 5329,
+          "elapsed_delta_broker_minus_native_ms": 84626.80325099999
+        }
+      ],
+      "input_crossing": {
+        "delta_by_turn": [
+          7469,
+          5329
+        ],
+        "initial_delta": 7469,
+        "end_delta": 5329,
+        "first_nonpositive_turn": null,
+        "initial_premium_recovery_turn": null,
+        "starts_nonpositive": false,
+        "transitions": [],
+        "nonpositive_persists_from_first_through_horizon": false,
+        "observed_horizon": 2,
+        "extrapolation": "none"
+      },
+      "elapsed_crossing": {
+        "delta_by_turn": [
+          87662.514709,
+          84626.80325099999
+        ],
+        "initial_delta": 87662.514709,
+        "end_delta": 84626.80325099999,
+        "first_nonpositive_turn": null,
+        "initial_premium_recovery_turn": null,
+        "starts_nonpositive": false,
+        "transitions": [],
+        "nonpositive_persists_from_first_through_horizon": false,
+        "observed_horizon": 2,
+        "extrapolation": "none"
+      },
+      "interpretation": "one descriptive paired episode; correlated prefixes, not independent samples",
+      "quality_scope": "Retained episode grades plus same-byte output proof at the demanded turn; resources, selection, permission and side effects are not independently regraded per turn."
+    }
+  ]
+}

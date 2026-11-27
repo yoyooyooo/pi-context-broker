@@ -503,6 +503,12 @@ premium. Quality failures or unknowns are not cost wins. Keep token, elapsed,
 HTTP and any verifiable currency results separate; do not extrapolate unrun
 turns or generalize from one paired observation.
 
+The [2026-11-27 continuous-consumption result](benchmark-long-session-current-2026-11-27.md)
+includes both eight-turn scenarios, actual cumulative curves, original quality
+unknowns and a [read-only Mini entry](../benchmark/results/2026-11-27-long-session-current/README.md).
+Use that retained example to recover the result before preparing another run;
+its retired frozen build is evidence-only, not a reusable execution build.
+
 `analyze` verifies retained evidence and aggregates normalized observations.
 `reanalysis` reads the original transport, tool and output artifacts, applies the
 private oracle again, and saves a new analysis identity. Both make zero model
