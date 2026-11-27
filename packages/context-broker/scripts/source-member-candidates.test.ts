@@ -38,6 +38,21 @@ test("partial and ambiguous discovery cannot infer a unique alias; an exact targ
   expect(matchSourceMemberCandidate(token, source, [renamed], "complete")).toBe(renamed);
 });
 
+test("empty partial discovery is incomplete, not evidence that the selected Source has no match", () => {
+  const multiple = [member, { ...member, source_id: "other-origin", expected_skill_id: "other" }];
+  for (const members of [[], [member], multiple]) for (const query of ["root@team", "root@skill%3Aorigin-root@team", "root"]) {
+    let error: unknown;
+    try { matchSourceMemberCandidate(query, source, members, "partial"); } catch (cause) { error = cause; }
+    expect(error).toMatchObject({ code: "CATALOG_INCOMPLETE" });
+  }
+  expect(matchSourceMemberCandidate("root@team", source, [], "complete")).toBeUndefined();
+  expect(matchSourceMemberCandidate("root@another", source, [], "partial")).toBeUndefined();
+  let ambiguous: unknown;
+  try { matchSourceMemberCandidate("root@team", source, multiple, "complete"); }
+  catch (error) { ambiguous = error; }
+  expect(ambiguous).toMatchObject({ code: "SOURCE_REFERENCE_AMBIGUOUS" });
+});
+
 test("disabled registered members are not completion choices", () => {
   expect(sourceMemberCompletionCandidates([{ ...member, enabled: false }], source)).toEqual([]);
 });

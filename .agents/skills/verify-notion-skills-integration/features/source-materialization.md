@@ -10,6 +10,18 @@
 
 runner 启动实际 Git smart HTTP backend、受控 Notion HTTP、同一安装包的固定 manager 和真实 Pi RPC/provider serializer。manager 拥有私有 canonical Store 和与消费者不同的受控凭据；client binding 只能选定固定命令，不能覆盖 generation、Source 集合、凭据、origin 或 Store。回执 scope 必须来自 SDK 对消费者的实际鉴权，manager_scope 保留管理端的实际鉴权；runner 从两边 SQLite identities 独立读取后比较，不能只比较请求回显。正常成功路径的 manager scope 与 consumer scope 可以相同或不同；两者分别来自各自的实际鉴权，不能互相替代。本受控场景特意使用能产生不同 scope 的凭据，独立证明这次分离。命令使用本轮明确选定的受支持 Node 绝对路径；示例 `node` 表示该路径。
 
+## 来源选择前件
+
+先读取有效配置和普通 `$` 的完整本地目录，包含 `requireAutoload: false` 时可显式引用的 Skill。Notion 中 owner/Main 缺失，只证明该成员未导入；不能据此断定裸 `$name` 会选择 Notion。普通 registry 已选中本地 Skill 时，不应调用 Source-member 发现或 manager。
+
+保留同名本地 Skill、原裸名称和原候选事实。使用配置中真实的 namespace 提交普通 `$name@namespace`，并记录实际 prompt 与有效配置身份；namespace 不是上游 repo 或注册 Source ID。不要删本地文件、改优先级、注入 source_id，或先调用远端 list/source-members/consume 来制造冷启动前件。裸名本地正文成功、0 management 与 qualified Notion 首引用成功是两项独立证据；正文命中同名本地对象不能算作 Notion 物化通过。
+
+`source-materialize-first` 的两个客户端都保留同名、不同完整正文的本地 canary，且没有 autoload 标记。首引用和独立客户端使用 `$lazy-root@current-sdk`，完整 provider 必须包含已接受 Git 原件并排除本地 canary；暖读继续使用首次未物化候选的原精确 token。host 回归另验证裸名只交付本地正文且 source-members/management 为 0、qualified 输入完成管理和正文闭包、未知 namespace 不回退同名本地对象。
+
+命中所选 namespace 后，partial 目录即使 candidates 为空也不能证明「未找到」。核可见 `CATALOG_INCOMPLETE` warning、0 management、没有替代 Skill 正文；保留普通任务继续运行的非阻塞语义，不把其普通 provider 回答计作 Skill 交付。complete 空目录仍可报告无匹配，完整目录中的歧义保持明确拒绝。
+
+日用验证还须记录普通启动 shell/argv、继承的 PATH，以及实际解析的 Git 绝对路径、版本和文件 hash。用该实际二进制执行只读 capability 检查 `git --no-lazy-fetch --version` 并保留原退出状态；不能仅凭版本字符串假定选项可用。同一 Node/Pi/HOME 不证明同一 Git；远端非交互 SSH 与用户 login shell 也不能互相代证。复现日用启动方式后再提交首引用。受控 runner 的显式工具 PATH 只证明受控环境；不要临时 prepend Git 后称为日用通过，也不要把执行环境 PATH 遗漏解释成用户日用安装损坏。
+
 ## 执行
 
 ~~~sh
@@ -70,7 +82,7 @@ node scripts/notion-sdk-pi.mjs run --package /absolute/selected/broker \
 node scripts/notion-sdk-pi.mjs evidence --evidence /absolute/owned/materialize-cache-upgrade
 ~~~
 
-上述五个成功场景先运行实际模型工具的 readonly list，再提交用户字面 `$lazy-root` 或 growth 的 `$lazy-required`。覆盖旧行 Content/Current State 属性存在且值为空、仅 Source 无 Skill、Source 的 Content/Contributions 全空、已 ready 集合扩展四种初态。legacy-source 保留真实旧注册形状：Status=applied、Operation 为空、Last Revision 是原 Git commit；旧 commit 仅冻结所选 Git 输入，不能充当 current plan authority。旧行保留 page、Main File ID、stable Skill ID 和人工字段；Members 中的 sibling 不展开，Source 声明集合不能被局部选择替换。legacy 两例用真实 Requires 关系证明完整闭包；source-only 不凭 frontmatter 发明不存在的依赖关系。native-root 另以真实 native 主文为明确根，沿实际 Requires 修复旧 Source 依赖，保留 native 权威和三篇完整正文；authorization_root 的 physical page、scope 和 requires_digest 必须保持，Members 不展开。
+上述五个成功场景先运行实际模型工具的 readonly list，再提交用户字面 `$lazy-root`、growth 的 `$lazy-required`，或同名混合来源 first 场景的 `$lazy-root@current-sdk`。覆盖旧行 Content/Current State 属性存在且值为空、仅 Source 无 Skill、Source 的 Content/Contributions 全空、已 ready 集合扩展四种初态。legacy-source 保留真实旧注册形状：Status=applied、Operation 为空、Last Revision 是原 Git commit；旧 commit 仅冻结所选 Git 输入，不能充当 current plan authority。旧行保留 page、Main File ID、stable Skill ID 和人工字段；Members 中的 sibling 不展开，Source 声明集合不能被局部选择替换。legacy 两例用真实 Requires 关系证明完整闭包；source-only 不凭 frontmatter 发明不存在的依赖关系。native-root 另以真实 native 主文为明确根，沿实际 Requires 修复旧 Source 依赖，保留 native 权威和三篇完整正文；authorization_root 的 physical page、scope 和 requires_digest 必须保持，Members 不展开。
 
 物化 ready 回执只覆盖这次 root/Requires，仍是 partial 元数据。沿现役 SDK 完整目录读取核实当前 Library/scope，完成持久化后才回到普通只读 consume；记录这两步的实际顺序。不能用回执行拼成 complete 目录，也不能只看正文 local_cache 就报告整条缓存复用成功。目录失败、partial、错 scope，或等待期间取消/切换 session 都须阻止本次交付；单独的 metadata refresh 应重读原 Source，不应取消或改绑已接纳任务。
 
@@ -132,6 +144,8 @@ node --test scripts/notion-sdk-pi.test.mjs scripts/notion-sdk-pi-cache-upgrade.t
 ~~~
 
 未知写另由 CLI operation/source-writer 的真实 HTTP/Store 回放和 current-lifecycle 的 SourceWriterSettlement 负责。业务/控制 PATCH 结果未知时，即使 desired 相等也不能派发第二次；唯一原写终结前拒绝 successor，任一子意图未结清就不能先替换父 Source。客户端取消仅撤销等待和发布资格，不删除 manager pending 或因超时自动接管。
+
+消费者另有 `SourceMemberSelection` 有限切片，区分已有本地选择、所选 namespace、complete/partial 及 0/1/多个匹配；三个删守卫负例分别检查来源边界和 partial 管理准入。它以真实解析后的选择和目录作为输入，不证明普通 registry 构造、完整名称解析或启动 shell 的 Git 选择，也不证明 manager 完成。保留上述 mixed-source host/实际 Pi 和日用环境前件，不能用模型通过替代它们；具体动作/源码对应见 consumer-state Skill 的 `SourceMemberSelection` 合同。
 
 如果目录、TTL、readiness 或事实失效发生变化，还必须运行 [新进程缓存四例](session-cache-recovery.md#新进程复用) 的 http-warm-restart、http-warm-directory-expired、http-smart-revalidate、http-smart-current。它们拥有原先缓存全链路回归，新增物化案例不替代它们。
 
