@@ -75,7 +75,8 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
   for (const name of required) check(config.packageScripts['test:consumption']?.split(' ').includes('scripts/' + name + '.test.ts'),
     'GATE_TEST_MISSING', 'Required consumption regression is absent: ' + name);
   for (const path of ['scripts/pack-target.test.mjs', 'scripts/skill-consumption-contract.test.mjs',
-    'scripts/verification-skill-routing.test.mjs', 'scripts/context-once-evidence.test.mjs',
+    'scripts/verification-skill-routing.test.mjs', 'scripts/context-once-evidence.test.mjs', 'scripts/notion-sdk-pi.test.mjs',
+    'scripts/verify-pi-daily-cache.test.mjs',
     'scripts/catalog-representation.test.mjs',
     'packages/context-broker/scripts/final-request-undici.test.ts'])
     check(config.rootScripts['test:verification']?.split(' ').includes(path), 'GATE_VERIFICATION_MISSING',
@@ -95,7 +96,7 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     check(text.includes('bun-version: 1.4.3') && nodePinned,
       'GATE_TOOLCHAIN_VERSION', workflow.name + ' must use the pinned toolchain.');
     check(text.includes('run: bun run check:broker'), 'GATE_CHECK_MISSING', workflow.name + ' must run the current package check.');
-    check(!/--distinct-names|--ambiguous-names|--name-fixture|--ambiguity-fixture|--host omp|pi14|Pi 1\.4|@oh-my-pi|notion-sdk-pi\.mjs|context-broker-host-e2e|tern-context-broker\.tar/u.test(text),
+    check(!/--distinct-names|--ambiguous-names|--name-fixture|--ambiguity-fixture|--host omp|pi14|Pi 1\.4|@oh-my-pi|context-broker-host-e2e|tern-context-broker\.tar/u.test(text),
       'GATE_RETIRED_PATH', workflow.name + ' may not restore old fixture or deferred host gates.');
     const steps = text.split(/(?=^      - name: )/mu);
     const step = name => steps.find(value => value.startsWith('      - name: ' + name + '\n')) ?? '';
@@ -111,6 +112,29 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
     check(retained.includes('if: always()') && /uses: actions\/upload-artifact@[a-f0-9]{40} # v7\.0\.2/u.test(retained)
       && retained.includes('/tmp/broker-artifacts-*/') && retained.includes('${{ runner.temp }}/ntn-skills-current-fixture/')
       && retained.includes('include-hidden-files: true'), 'GATE_RESULTS_MISSING', workflow.name + ' must preserve actual package and HTTP results.');
+    if (workflow.name === 'ci') {
+      const piSteps = main.split(/(?=^      - name: )/mu)
+        .filter(value => value.startsWith('      - name: Actual Pi cross-session cache\n'));
+      const pi = piSteps.length === 1 ? piSteps[0] : '';
+      const cacheCases = ['http-warm-restart', 'http-warm-directory-expired'];
+      const expected = [
+        '      - name: Actual Pi cross-session cache',
+        '        run: |',
+        '          BROKER_PACKAGE=$(node -p \'require(process.argv[1]).package.installed\' "$RUNNER_TEMP/current-sdk-artifacts.json")',
+        '          PI_ENTRY=$(node -p \'require(process.argv[1]).pi.entry.path\' "$RUNNER_TEMP/current-sdk-artifacts.json")',
+        ...cacheCases.map(scenario => '          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/' + scenario.replace(/^http-/, 'pi-') + '" --scenario ' + scenario),
+      ].join('\n');
+      check(installed.includes('--report "$RUNNER_TEMP/current-sdk-artifacts.json"')
+        && pi.trimEnd() === expected && text.indexOf(installed) < text.indexOf(pi) && text.indexOf(pi) < text.indexOf(retained),
+        'GATE_PI_CACHE_MISSING', 'CI must reuse the checked installed package and explicit public Pi entry.');
+      for (const scenario of cacheCases) {
+        const output = scenario.replace(/^http-/, 'pi-');
+        check(retained.includes('${{ runner.temp }}/' + output + '/'), 'GATE_PI_CACHE_RESULTS_MISSING',
+          'CI must preserve ' + scenario + ' process, complete wire and independent HTTP evidence.');
+      }
+      check(retained.includes('${{ runner.temp }}/current-sdk-artifacts.json'), 'GATE_PI_CACHE_RESULTS_MISSING',
+        'CI must preserve the installed package and Pi identity handoff.');
+    }
     if (workflow.name === 'publish') {
       check(!/^    strategy:/mu.test(text), 'GATE_PUBLISH_MATRIX', 'Publishing remains a single job.');
       const candidate = step('Record the checked candidate'), presence = step('Reconcile npm presence'),
@@ -139,9 +163,10 @@ export function validateConsumptionGates(config = consumptionGateConfiguration()
         'GATE_RELEASE_HANDOFF_MISSING', 'Preserve each verified attempt and consume its producer-selected artifact.');
     }
   }
-  return { status: 'gate-wiring-valid', sdkVersion: 2, requiredTests: required.length,
+  return { status: 'gate-wiring-valid', sdkVersion: 3, requiredTests: required.length,
     cliSourceRevision: revision.groups.revision, installedSdk: 'required_current_http',
     piSession: 'not_run', providerModel: 'not_run', deferredHosts: ['OMP', 'Tern'],
+    ciPiCache: ['http-warm-restart', 'http-warm-directory-expired'],
     boundary: 'Wiring checks do not establish actual package execution or Pi daily-use acceptance.' };
 }
 

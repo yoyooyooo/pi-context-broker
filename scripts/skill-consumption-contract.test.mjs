@@ -4,13 +4,14 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { consumptionGateConfiguration, validateConsumptionGates } from './skill-consumption-contract.mjs';
 
-test('current CI and publish use one installed SDK v2 HTTP gate without claiming Pi acceptance', () => {
+test('CI requires actual Pi cache cases after installed SDK v3; the wiring check itself claims no execution', () => {
   const actual = validateConsumptionGates();
   assert.equal(actual.status, 'gate-wiring-valid');
-  assert.equal(actual.sdkVersion, 2);
+  assert.equal(actual.sdkVersion, 3);
   assert.equal(actual.installedSdk, 'required_current_http');
   assert.equal(actual.piSession, 'not_run');
   assert.equal(actual.providerModel, 'not_run');
+  assert.deepEqual(actual.ciPiCache, ['http-warm-restart', 'http-warm-directory-expired']);
   assert.deepEqual(actual.deferredHosts, ['OMP', 'Tern']);
   assert.equal(actual.cliSourceRevision, consumptionGateConfiguration().cliRevision.trim());
 });
@@ -65,6 +66,7 @@ test('missing consumption, drifting CLI input and skipped current HTTP gate are 
     [value => { value.packageScripts.check = 'bun run test'; }, 'GATE_CONSUMPTION_MISSING'],
     [value => { value.rootScripts['check:broker'] = 'bun run build:broker'; }, 'GATE_PACKAGE_CHECK_MISSING'],
     [value => { value.rootScripts.check = value.rootScripts.check.replace('bun run build:broker', 'bun run build'); }, 'GATE_BROKER_TARGET_MISSING'],
+    [value => { value.rootScripts['test:verification'] = value.rootScripts['test:verification'].replace('scripts/verify-pi-daily-cache.test.mjs', ''); }, 'GATE_VERIFICATION_MISSING'],
     [value => { value.packageScripts['test:consumption'] = value.packageScripts['test:consumption'].replace('scripts/notion-sdk.test.ts', ''); }, 'GATE_TEST_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('NTN_SKILLS_BUILD_ENTRY:', 'UNUSED_ENTRY:'); }, 'GATE_SDK_BUILD_INPUT_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace('ref: ${{ inputs.tag || github.ref }}', 'ref: main'); }, 'GATE_SDK_BUILD_INPUT_MISSING'],
@@ -75,6 +77,17 @@ test('missing consumption, drifting CLI input and skipped current HTTP gate are 
     [value => { value.workflows[0].text = value.workflows[0].text.replace('Create current SDK fixture\n', 'Create current SDK fixture\n        if: false\n'); }, 'GATE_CURRENT_FIXTURE_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('Installed current SDK consumption\n', 'Installed current SDK consumption\n        continue-on-error: true\n'); }, 'GATE_INSTALLED_SDK_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace(' --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs"', ''); }, 'GATE_INSTALLED_SDK_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('Actual Pi cross-session cache\n', 'Actual Pi cross-session cache\n        if: false\n'); }, 'GATE_PI_CACHE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('      - name: Actual Pi cross-session cache\n', '  skipped_cache:\n    if: false\n    runs-on: ubuntu-latest\n    steps:\n      - name: Actual Pi cross-session cache\n'); }, 'GATE_PI_CACHE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replaceAll('          node scripts/notion-sdk-pi.mjs run', '          # node scripts/notion-sdk-pi.mjs run'); }, 'GATE_PI_CACHE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replaceAll('          node scripts/notion-sdk-pi.mjs run', '          echo node scripts/notion-sdk-pi.mjs run'); }, 'GATE_PI_CACHE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('          BROKER_PACKAGE=', '          if false; then\n          BROKER_PACKAGE=').replace('      - name: Preserve current SDK results', '          fi\n      - name: Preserve current SDK results'); }, 'GATE_PI_CACHE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('--scenario http-warm-restart', '--scenario http-cache-recovery'); }, 'GATE_PI_CACHE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('--scenario http-warm-directory-expired', '--scenario http-warm-restart'); }, 'GATE_PI_CACHE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('require(process.argv[1]).pi.entry.path', '"/different/pi"'); }, 'GATE_PI_CACHE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('require(process.argv[1]).package.installed', '"packages/context-broker"'); }, 'GATE_PI_CACHE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('            ${{ runner.temp }}/pi-warm-restart/\n', ''); }, 'GATE_PI_CACHE_RESULTS_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('            ${{ runner.temp }}/pi-warm-directory-expired/\n', ''); }, 'GATE_PI_CACHE_RESULTS_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('if: always()', 'if: success()'); }, 'GATE_RESULTS_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace('environment: npm-publish', 'environment: bypass'); }, 'GATE_RELEASE_POLICY_MISSING'],
     [value => { value.workflows[1].text = value.workflows[1].text.replace('npm publish "$TARBALL"', 'npm publish packages/context-broker'); }, 'GATE_RELEASE_POLICY_MISSING'],

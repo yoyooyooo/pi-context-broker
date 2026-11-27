@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
 import { checkAgentContractCoverage } from "./notion-agent-scenarios.mjs"
+import { parseArgs as parseSdkPiArgs } from "./notion-sdk-pi.mjs"
 
 const root = fileURLToPath(new URL("../", import.meta.url))
 const read = (path) => readFileSync(resolve(root, path), "utf8")
@@ -19,6 +20,9 @@ const routes = [
   "verify-notion-consumption",
   "verify-notion-source-onboarding",
 ]
+const cacheFeature = ".agents/skills/verify-notion-skills-integration/features/session-cache-recovery.md"
+const dailyFeature = ".agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md"
+const cacheScenarios = ["http-warm-restart", "http-warm-directory-expired"]
 
 function verify(document, contents, scripts) {
   for (const route of routes) {
@@ -85,13 +89,49 @@ test("current verification maps resolve their links and existing executable rout
   assert.throws(() => verifyCurrentRoutes([[skills[0], "node scripts/missing-current-route.mjs"]]))
 })
 
+function verifyCacheCommands(document) {
+  const commands = [...document.replace(/\\\r?\n[ \t]*/gu, " ")
+    .matchAll(/^node scripts\/notion-sdk-pi\.mjs (.+)$/gmu)]
+    .map(match => parseSdkPiArgs(match[1].trim().split(/\s+/u)))
+  const outputs = new Set()
+  for (const scenario of cacheScenarios) {
+    const matching = commands.filter(command => command.action === "run" && command["--scenario"] === scenario)
+    assert.equal(matching.length, 1, "missing actual Pi execution: " + scenario)
+    const command = matching[0]
+    assert.ok(command["--pi"], "cache verification must select the actual installed Pi entry")
+    assert.ok(!outputs.has(command["--out"]), "each scenario needs its own new evidence directory")
+    outputs.add(command["--out"])
+    assert.ok(commands.some(item => item.action === "evidence" && item["--evidence"] === command["--out"]),
+      "cache execution must retain the existing evidence validation route: " + scenario)
+  }
+}
+
+test("cache verification instructions execute both public Pi scenarios and recheck their evidence", () => {
+  const guide = read(cacheFeature)
+  verifyCacheCommands(guide)
+  for (const scenario of cacheScenarios)
+    assert.throws(() => verifyCacheCommands(guide.replace("--scenario " + scenario, "--scenario default-view")),
+      /missing actual Pi execution/u)
+  assert.throws(() => verifyCacheCommands(guide.replace("notion-sdk-pi.mjs run", "notion-sdk-pi.mjs doctor")))
+  assert.throws(() => verifyCacheCommands(guide.replace(/^node scripts\/notion-sdk-pi\.mjs evidence .*\n/gmu, "")),
+    /evidence validation route/u)
+  for (const path of [skills[0], skills[1], skills[2], "docs/verification-routing.md"]) {
+    const content = read(path)
+    assert.ok(content.includes("features/session-cache-recovery.md#新进程复用"), path + ": missing cache handoff")
+    for (const scenario of cacheScenarios) assert.ok(content.includes(scenario), path + ": missing " + scenario)
+  }
+  const daily = read(dailyFeature)
+  assert.match(daily, /^node scripts\/verify-pi-daily-installation\.mjs cache-plan --config \/absolute\/\S+$/mu)
+  assert.match(daily, /^node scripts\/verify-pi-daily-installation\.mjs cache-run --config \/absolute\/\S+ --live$/mu)
+})
+
 test("the public daily entry exposes real read-only help with its actions and required flags", () => {
   const result = spawnSync(process.execPath, ["scripts/verify-pi-daily-installation.mjs", "--help"], {
     cwd: root, encoding: "utf8", timeout: 15000,
   })
   assert.equal(result.status, 0, result.stderr)
   assert.ok(result.stdout.trim(), "help must not silently import an implementation module")
-  for (const token of ["candidate-plan", "candidate-run", "--config", "--live"])
+  for (const token of ["candidate-plan", "candidate-run", "cache-plan", "cache-run", "--config", "--live"])
     assert.ok(result.stdout.includes(token), "missing public help: " + token)
 })
 
@@ -112,7 +152,9 @@ test("paired CLI contract owners and Broker commands resolve in this actual chec
           "the candidate implementation module is not a public CLI")
         if (entry.command.includes("/absolute/")) assert.ok(entry.required_inputs?.length,
           "an absolute config placeholder requires explicit inputs and is not an executed result")
-        for (const match of entry.command.matchAll(/\b((?:packages|scripts|verification)\/[\w./-]+\.(?:ts|mjs|py))\b/gu))
+        if (entry.command.startsWith("node scripts/notion-sdk-pi.mjs "))
+          parseSdkPiArgs(entry.command.slice("node scripts/notion-sdk-pi.mjs ".length).trim().split(/\s+/u))
+        for (const match of entry.command.matchAll(/(?<![\w./-])((?:packages|scripts|verification)\/[\w./-]+\.(?:ts|mjs|py))\b/gu))
           assert.ok(statSync(resolve(root, match[1])).isFile(), row.id + ": missing Broker command")
       }
     }

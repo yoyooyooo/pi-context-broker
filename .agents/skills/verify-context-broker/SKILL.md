@@ -17,9 +17,10 @@ description: "验证当前 Context Broker 的 Pi 注入、目录与资源消费�
 | 跨仓 SDK、包内运行时、安装后的 HTTP 消费 | [integration Skill](../verify-notion-skills-integration/SKILL.md)；`scripts/verify-artifacts.mjs` | 同一 CLI/SDK 候选，实际独立安装与 current HTTP |
 | 资格、固定选择、取消、provider/turn/投影状态 | [consumer-state Skill](../verify-notion-consumer-state/SKILL.md) | 审模型、受保护 guard 与反例；不刷新 hash 放行 |
 | 实际 Pi 的 SDK/工具/serializer 行为 | `scripts/notion-sdk-pi.mjs` 现有入口 | 记录所选场景与实际安装；受控 provider 不证明模型理解 |
+| 缓存、TTL、库选择、启动/SDK 次序与会话复用 | [缓存地图](../verify-notion-skills-integration/features/session-cache-recovery.md#新进程复用) 的 `http-warm-restart`、`http-warm-directory-expired` | 必须执行两个新 Pi 进程并核全部 HTTP、正文 consume 和实际 provider 全文；SDK 命中或助手单测不能代填 |
 | 实际 Pi 的 `$` 菜单、按键与时延 | `bun run test:pi-editor`；`scripts/pi-dollar-pty.mjs`，参数沿 [候选地图](../verify-notion-skills-integration/features/dollar-completion-selection.md) | 实 Editor 回放与实际 PTY 分开；warm 至少 20 个新进程，记录按键到目标终端帧 |
 | 自然用户旅程与 Agent 选路 | [工作流验证 Skill](../verify-notion-agent-workflows/SKILL.md) | 真实 worker、当前请求和独立业务读回；不以结构检查代填 |
-| 真实 Notion 与日用 Pi | `scripts/verify-pi-daily-installation.mjs` 的 plan/run/aggregate/candidate-plan/candidate-run | 两机 aggregate 只证明本次普通入口与 metadata；正文、取消与模型结果分别记录 |
+| 真实 Notion 与日用 Pi | [日用地图](../verify-notion-skills-integration/features/daily-installation-ui.md) 的公开动作；缓存复验用 `cache-plan/cache-run` | 两机 aggregate 只证明本次普通入口与 metadata；普通安装缓存、取消与模型结果分别记录 |
 
 OMP/Tern 产品代码保留，当前验收延期。旧双宿主控制器、旧 CLI fixture 总入口和依赖旧消费协议的原生 UI/PTY 驱动已删除。当前小型 `pi-dollar-pty` 入口复用 SDK HTTP fixture 并操作实际 Pi；它与实 Editor 回放分别覆盖终端和状态边界，不恢复旧协议。原生菜单、光标和 UI 操作须有对应实测，不能由源码、RPC 或安装包结果推断。
 

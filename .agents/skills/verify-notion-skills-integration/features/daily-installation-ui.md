@@ -2,6 +2,45 @@
 
 普通多机更新沿 [next 交付合同](../../../../docs/next-worktree-delivery.md) 使用同一配对归档和各机独立安装，核对普通入口与新 Pi 进程。下文 `plan/run/aggregate` 保留 AH-1197/AH-637/AH-1198 的历史 worktree 专项；它要求真实 next checkout，不应把独立安装目录伪装成 worktree。`scripts/verify-pi-daily-candidate.mjs` 是导入的实现模块，没有独立 CLI。真实表切换后，先核对有效 Pi 配置实际加载的安装，不能把工作树或独立临时包成功称为日用成功。
 
+## 普通安装的跨会话缓存
+
+缓存、TTL、库选择、启动/SDK 次序或会话复用变化，先执行 [两个受控 Pi 场景](session-cache-recovery.md#新进程复用)，再对实际日用安装运行：
+
+```sh
+node scripts/verify-pi-daily-installation.mjs cache-plan --config /absolute/owned/current-cache.json
+node scripts/verify-pi-daily-installation.mjs cache-run --config /absolute/owned/current-cache.json --live
+```
+
+将配置中的占位值替换为实际输入，`evidenceRoot` 使用本轮未占用的自有绝对路径：
+
+```json
+{
+  "version": 1,
+  "scope": "ordinary-pi-cache-reuse",
+  "brokerRoot": "/absolute/independently-installed/broker",
+  "library": "REPLACE_WITH_CANONICAL_LIBRARY_ROOT_UUID",
+  "query": "REPLACE_WITH_ONE_ACTUAL_SKILL_NAME",
+  "evidenceRoot": "/absolute/owned/current-cache-result",
+  "expectedMaxAgeMs": 3600000
+}
+```
+
+可选 `pi` 为普通 `pi` 或其实际入口绝对路径，`cwd` 为日用工作目录绝对路径。
+`brokerRoot` 必须是正常 Pi 配置实际加载的独立安装包；本动作不要求历史 next worktree。
+保留正常 HOME、agentDir、配置和缓存，不清缓存或预植快照。`expectedMaxAgeMs` 校验实际正文策略，不改写策略；缓存已存在时，不把第一次读取称为冷读。
+
+D 进程先通过公开 find 和 doctor 诊断；A/B 使用两个独立 Pi 进程和空 session。
+核 B 的 Skill 根与实际 Requires 来自 `local_cache`，consume HTTP 为 0，snapshot 和 `validated_at` 沿用 A，完整正文进入实际 provider 请求。
+分别记录目录、consume、其他 HTTP 和阶段时延；目录过期可刷新，Library 根结构 children 请求保留真实物理分类，不能隐去或改报成零正文请求。
+本动作不判断目录刷新是否必要；目录仍有效时总 HTTP 为 0、目录过期后只刷新目录的边界，由前述两个受控 Pi 场景证明。
+A/B 都通过实际 Pi RPC 提交 D 的公开 `find` 结果中的同一个 `$name@source`；别名、page、原始 prompt 和完整 provider 请求一并保留。这证明 `$` 消费路径，不代替菜单、按键或终端首帧的 PTY 验收。
+现场 Skill 的 Requires 数量按实际记录；无 Requires 的现场结果不覆盖闭包正例，该正例由受控场景执行。
+
+`cache-plan` 只准备输入；`cache-run --live` 证明普通安装、真实 Notion 与实际 Pi serializer 的缓存链路，受控 provider 不证明模型理解或自然任务。
+两者不替代 next 交付或下面的 metadata `run/aggregate`；后者仍要求 provider/tool/body 为 0，不将缓存正文复验混入其成绩。
+
+## 历史 worktree 与候选入口
+
 ```sh
 node scripts/verify-pi-daily-installation.mjs plan --config /absolute/current-daily.json
 node scripts/verify-pi-daily-installation.mjs run --config /absolute/current-daily.json
@@ -19,7 +58,7 @@ node scripts/verify-pi-daily-installation.mjs candidate-run --config /absolute/c
 | candidate-plan | version:1；自然旅程使用 scope:notion-agent-workflow 及 scenarioFile/scenarioId/profile/bindingsFile；原项目预检 scope 保留其 turns/expectedBodies。输出 prepared_not_executed。 |
 | candidate-run --live | 自然旅程按 [工作流 Skill](../../verify-notion-agent-workflows/SKILL.md) 绑定实际 fixture、配对包、source/library、注册位置与 evidenceRoot；原项目预检按其现有包/归档/所有权输入。正式模型为 magpie/group/worker、thinkingLevel:high。 |
 
-## 准备普通日用配置
+## 准备历史 worktree 日用配置
 
 先按 [next 交付合同](../../../../docs/next-worktree-delivery.md) 确定两机的同一目标提交和新 `delivery`。
 以下是 `plan/run` 的完整配置形状。把全部 `REPLACE_`、绝对路径和示例数字换为实际输入，
