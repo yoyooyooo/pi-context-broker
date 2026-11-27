@@ -447,6 +447,62 @@ complete observation; corrupt retained evidence still fails verification.
 journeys or normalized bundles and does not regrade. Use the current reporting
 CLI for this added view; an older frozen controller keeps its original output.
 
+`journey` also returns a top-level `turns` view of actual user turns. It joins
+retained turn boundaries and request identities to every actual provider
+attempt, including retries. Each row contains marginal and cumulative input,
+output and cache observations, request/tool counts, peak input, and original
+evidence refs. Unknown usage stays unknown with a separately named known
+subtotal; unassigned attempts cannot establish a complete turn cost. The first
+provider request is separate from the complete first user turn.
+
+The elapsed prefix starts at the retained episode start, so it includes startup
+and inter-turn gaps. User-turn duration starts at that turn's actual start.
+These use the original event clocks; the end event includes workspace capture.
+Do not combine their values with the slightly earlier runtime turn-settled
+clock or capped analysis scores. SDK operations remain a separate list with
+their recorded start context. That context is not causal attribution, and an
+operation crossing a turn boundary must not be counted twice.
+
+The view retains an original artifact grade for a user turn only when its
+uniquely named output has matching graded bytes, readback content and that
+turn's workspace hash. It does not invent a complete per-turn grade. Resource
+and legal-selection contracts keep their original episode scope. For a new
+reuse experiment, check the private oracle's explicit turn binding and complete
+resource delivery by its first required turn; later turns may use normal
+session history. Missing coverage remains unknown.
+
+### Continuous reuse and task switching
+
+The explicit `long-session-consumption-v1` diagnostic generator reuses the
+existing development routing and refund Skills. Select
+`long-session-reuse-a` and `long-session-switch-a`, each with 16 candidates and
+8 user turns. The first processes eight different routing batches. The second
+alternates routing, self-contained ordinary work, refund, ordinary work,
+routing, refund, ordinary work and routing. Each input arrives in its own
+prompt, with a unique output path and a private turn-bound business oracle.
+No future attachment is placed in the initial workspace. The two scenarios
+share source material and a cluster; their prefixes are correlated, not
+independent samples.
+
+For an existing Common16 Library, `refresh-readonly` accepts optional `corpus`
+and `caseIds` together in its existing private request. Build the new corpus
+with `buildLongSessionDiagnosticCorpus` from `benchmark/diagnostic-corpus.mjs`.
+The refresh checks every retained catalog Skill's complete object, including
+names, descriptions, Requires, versions and files. It rejects new targets,
+events, clarification or changed permissions, then reads the same remote
+objects through the selected SDK and writes a new material proof. It neither
+edits the old binding nor creates a new remote Library. Pass the returned new
+binding to `configure` with the same declared generator and selections.
+
+Compare Native and Broker under one frozen model route, Code Mode and initial
+state. Extract 1/2/4/8 prefixes from each actual eight-turn session; do not stitch
+independent runs. For each cost dimension, report cumulative Broker minus
+Native, the first observed positive-to-nonpositive crossing, later reversals,
+and the final difference. A lower first prefix is not recovery of an initial
+premium. Quality failures or unknowns are not cost wins. Keep token, elapsed,
+HTTP and any verifiable currency results separate; do not extrapolate unrun
+turns or generalize from one paired observation.
+
 `analyze` verifies retained evidence and aggregates normalized observations.
 `reanalysis` reads the original transport, tool and output artifacts, applies the
 private oracle again, and saves a new analysis identity. Both make zero model

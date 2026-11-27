@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { buildCorpus, sealCorpus } from './corpus/index.mjs';
 import { readCorpusSnapshot } from './corpus/snapshot.mjs';
-import { buildStoreDiagnosticCorpus, STORE_FIRST_USE_GENERATOR } from './diagnostic-corpus.mjs';
+import { buildStoreDiagnosticCorpus, STORE_FIRST_USE_GENERATOR, buildLongSessionDiagnosticCorpus, LONG_SESSION_GENERATOR } from './diagnostic-corpus.mjs';
 import { configureComparison } from './configure.mjs';
 import { executionImplementation } from './implementation.mjs';
 import { planBenchmarkFixture } from './fixture.mjs';
@@ -31,6 +31,16 @@ test('a frozen full snapshot preserves every canary, oracle and public byte acro
   assert.equal(sha(await readFile(setup.corpus.snapshot.path)), setup.corpus.snapshot.sha256);
   assert.notDeepEqual(buildStoreDiagnosticCorpus({ seed: setup.corpus.seed }).control.canaries, corpus.control.canaries);
   assert.equal(await readCorpusSnapshot({ corpus: {} }), null, 'Omitted snapshots preserve the existing generation path');
+});
+
+test('long-session snapshots keep their declared generator and exact eight-turn private control', async () => {
+  const { corpus, setup } = await fixture(buildLongSessionDiagnosticCorpus({ seed: 'long-session-snapshot' }));
+  assert.equal(setup.corpus.generator, LONG_SESSION_GENERATOR);
+  assert.deepEqual(await readCorpusSnapshot(setup), corpus);
+  assert.ok(corpus.publicCorpus.cases.every(item => item.turns.length === 8 && item.attachments.length === 0));
+  await assert.rejects(readCorpusSnapshot({ ...setup, corpus: { ...setup.corpus, generator: STORE_FIRST_USE_GENERATOR } }), /generator differs/);
+  await assert.rejects(readCorpusSnapshot({ ...setup, corpus: { ...setup.corpus, split: 'confirmation' } }), /development/);
+  await assert.rejects(readCorpusSnapshot({ ...setup, corpus: { ...setup.corpus, material_version: '1' } }));
 });
 
 test('snapshot loading preserves generator, seed, split and material-version boundaries', async () => {

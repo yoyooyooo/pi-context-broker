@@ -7,8 +7,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { buildCorpus, sealCorpus } from './corpus/index.mjs';
+import { fingerprint } from './protocol.mjs';
 import { planBenchmarkFixture, prepareBenchmarkFixture, inspectBenchmarkFixture, applyBenchmarkFixtureEvent, reconcileBenchmarkFixtureEvent,
-  resumeBenchmarkFixturePreparation, preparationResumeDecision, readPreparationDispatches, refreshReadonlyBenchmarkFixture } from './fixture.mjs';
+  resumeBenchmarkFixturePreparation, preparationResumeDecision, readPreparationDispatches, refreshReadonlyBenchmarkFixture, rebindReadonlyFixtureCases } from './fixture.mjs';
 
 const corpus = buildCorpus({ seed: 'benchmark-route-gate-v1', split: 'development', materialVersion: '2' });
 const sharedCases = ['no-skill-01-a','no-skill-02-a','no-skill-03-a','explicit-01-a',
@@ -51,6 +52,56 @@ test('current read-only refresh rejects a mutable retained plan before allocatin
   await assert.rejects(refreshReadonlyBenchmarkFixture({ retainedBinding: { path, sha256: sha(bytes) },
     controlRoot: join(root, 'new'), buildRoot: '/unused-build', node: process.execPath }), /shared-readonly/);
   assert.ok(!(await readdir(root)).includes('new'));
+});
+
+function renewCorpusIdentity(value) {
+  for (const item of value.publicCorpus.cases) {
+    const { content_sha256: ignored, ...body } = item;
+    item.content_sha256 = fingerprint(body);
+    for (const oracle of Object.values(value.control.cases.find(control => control.case_id === item.id).oracles))
+      oracle.public_sha256 = item.content_sha256;
+  }
+  const { content_sha256: ignored, ...body } = value.publicCorpus;
+  value.publicCorpus.content_sha256 = fingerprint(body);
+  value.control.public_sha256 = value.publicCorpus.content_sha256;
+  return value;
+}
+
+test('read-only refresh can bind different cases to the identical retained catalog', () => {
+  const original = planBenchmarkFixture(options(['implicit-01-a', 'explicit-01-a']));
+  const before = structuredClone(original);
+  const revised = rebindReadonlyFixtureCases(original, { corpus, caseIds: ['implicit-01-a'] });
+  assert.deepEqual(revised.case_ids, ['implicit-01-a']);
+  assert.deepEqual(revised.required_skill_ids, ['implicit-01-a-routing']);
+  assert.deepEqual(revised.catalog_skill_ids, original.catalog_skill_ids);
+  assert.deepEqual(revised.fixture, original.fixture);
+  assert.deepEqual([...revised.case_plans[0].publicCase.catalog.skill_ids].sort(), [...original.catalog_skill_ids].sort());
+  assert.deepEqual(original, before, 'The original frozen declaration stays unchanged');
+  assert.equal(rebindReadonlyFixtureCases(original), original);
+});
+
+test('read-only case reuse rejects changed catalog semantics and unsupported case authority', () => {
+  const original = planBenchmarkFixture(options(['implicit-01-a', 'explicit-01-a']));
+  const select = changed => rebindReadonlyFixtureCases(original, { corpus: renewCorpusIdentity(changed), caseIds: ['implicit-01-a'] });
+  for (const change of [
+    skill => { skill.name += '-changed'; },
+    skill => { skill.description += ' changed'; },
+    skill => { skill.requires = ['explicit-01-a-refund']; },
+    skill => { skill.versions.unobserved = structuredClone(skill.versions[skill.initial_version]); },
+    skill => { const file = skill.versions[skill.initial_version].files[0]; file.content += '\nchanged';
+      file.bytes = Buffer.byteLength(file.content); file.sha256 = sha(file.content); },
+  ]) {
+    const changed = structuredClone(corpus); change(changed.publicCorpus.skills.find(skill => skill.id === 'implicit-01-a-routing'));
+    assert.throws(() => select(changed), /cannot change any catalog Skill/);
+  }
+  const event = structuredClone(corpus);
+  event.control.cases.find(item => item.case_id === 'implicit-01-a').events.push({ id: 'unexpected-event' });
+  assert.throws(() => select(event), /cannot introduce remote events/);
+  const remote = structuredClone(corpus);
+  remote.publicCorpus.cases.find(item => item.id === 'implicit-01-a').authorization.remote_write = true;
+  assert.throws(() => select(remote), /cannot authorize remote writes/);
+  assert.throws(() => rebindReadonlyFixtureCases(original, { corpus, caseIds: ['references-01-a'] }), /omits a required case Skill/);
+  assert.throws(() => rebindReadonlyFixtureCases(original, { corpus }), /both corpus and caseIds/);
 });
 
 test('all forty cases have complete plans and mutable journeys require independent episodes', () => {

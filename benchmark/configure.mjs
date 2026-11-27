@@ -4,7 +4,7 @@ import { chmod, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { fingerprint } from './protocol.mjs';
 import { buildCorpus, writeCorpus } from './corpus/index.mjs';
-import { buildStoreDiagnosticCorpus, STORE_FIRST_USE_GENERATOR } from './diagnostic-corpus.mjs';
+import { buildStoreDiagnosticCorpus, STORE_FIRST_USE_GENERATOR, buildLongSessionDiagnosticCorpus, LONG_SESSION_GENERATOR } from './diagnostic-corpus.mjs';
 import { readCorpusSnapshot } from './corpus/snapshot.mjs';
 import { bindMaterializedCases, comparisonEnvironmentPairs, comparisonPairs, prepareCases, preregisterComparison } from './planning.mjs';
 import { prepareEpisodeFixtures, readEpisodeFixtureBindings, validateEpisodeFixturePolicy } from './fixture-dispatch.mjs';
@@ -136,9 +136,10 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
       scheduled_episodes: existing.slots.length, no_model_captures: proof.capture_count, actual_model_requests: 0, reused: true };
   }
   const materialization = setup.materialization_binding_file ? await readJson(setup.materialization_binding_file) : null;
-  if (setup.corpus.generator !== undefined) assert.equal(setup.corpus.generator, STORE_FIRST_USE_GENERATOR, 'Unknown explicit corpus generator');
+  const generators = { [STORE_FIRST_USE_GENERATOR]: buildStoreDiagnosticCorpus, [LONG_SESSION_GENERATOR]: buildLongSessionDiagnosticCorpus };
+  if (setup.corpus.generator !== undefined) assert.ok(Object.hasOwn(generators, setup.corpus.generator), 'Unknown explicit corpus generator');
   const corpus = snapshot ?? (materialization ? { publicCorpus: await readJson(materialization.public_corpus_path), control: await readJson(materialization.control_path) }
-    : (setup.corpus.generator === STORE_FIRST_USE_GENERATOR ? buildStoreDiagnosticCorpus : buildCorpus)(
+    : (setup.corpus.generator === undefined ? buildCorpus : generators[setup.corpus.generator])(
       { seed: setup.corpus.seed, split: setup.corpus.split, materialVersion: setup.corpus.material_version }));
   if (setup.corpus.generator !== undefined) assert.equal(corpus.publicCorpus.provenance.generator, setup.corpus.generator);
   assert.equal(corpus.publicCorpus.seed, setup.corpus.seed); assert.equal(corpus.publicCorpus.split, setup.corpus.split);
