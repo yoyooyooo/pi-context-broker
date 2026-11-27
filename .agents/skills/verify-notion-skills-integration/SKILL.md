@@ -125,6 +125,8 @@ bun test packages/context-broker/scripts/notion-source-sdk.test.ts packages/cont
 发现阶段只取目录，按实际选择获取完整正文/资源；不截断正文或省略文件来减少请求。
 普通消费恒为零语义写入。旧 `readOnly` 参数应在 I/O 前拒绝，不能恢复隐藏写入分支。
 保留缓存年龄、凭据/Store 隔离、取消和迟到结果的 guard；失败不能延长 TTL 或发布不完整目录。
+缓存、TTL、库选择、启动/SDK 调用次序或会话复用变化，必须按 [缓存地图](features/session-cache-recovery.md#新进程复用)
+执行 `http-warm-restart` 和 `http-warm-directory-expired`。前者核整个暖阶段零 HTTP，后者允许到期目录刷新但正文 consume 零 HTTP；两者都核新 PID/session、原 snapshot/校验时间和实际 provider 全文。SDK、安装包或助手单测通过不能代填这些实际 Pi 结果。
 `selectLibrary` 只读取本地配置，须在零 Notion I/O 下捕获本轮 root；`resolveLibrary`
 另行检查真实 root、完整 children、四 DB/DS 的 parent/schema/relations。fixture 必须
 独立声明这些物理事实，不能用待测 descriptor 反推。root children 读取仍计实际 body
