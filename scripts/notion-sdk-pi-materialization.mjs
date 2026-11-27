@@ -34,6 +34,74 @@ const management = events => events.filter(row => row.kind === 'context-broker.n
 const consumeValues = (events, pid) => events.filter(row => row.kind === 'context-broker.notion-sdk-result'
   && row.operation === 'consume' && row.observer_pid === pid && row.value?.status === 'ready');
 
+/** Bind every positive management result to its own actual child close and whole stdout. */
+export function assertPositiveManagerTransports({ base, binding, piPid, sourceId, managerScope, consumerScope,
+  managerPids, events, sessionReceipts, outputs }) {
+  assert.ok(managerPids.length > 0 && managerPids.every(pid => Number.isSafeInteger(pid) && pid > 0));
+  assert.equal(new Set(managerPids).size, managerPids.length, 'Accepted manager PIDs must be unique');
+  const transport = events.filter(row => row.kind === 'manager_transport');
+  assert.ok(transport.every(row => ['spawn', 'close'].includes(row.event)), 'Manager observation failed');
+  const spawns = transport.filter(row => row.event === 'spawn'), closes = transport.filter(row => row.event === 'close');
+  const actions = management(events), starts = actions.filter(row => row.event === 'start'), results = actions.filter(row => row.event === 'result');
+  assert.equal(actions.length, starts.length + results.length);
+  for (const group of [spawns, closes, starts, results, sessionReceipts, outputs]) assert.equal(group.length, managerPids.length);
+  assert.deepEqual(spawns.map(row => row.child_pid), managerPids);
+  assert.equal(new Set(starts.map(row => row.request_id)).size, starts.length, 'A manager request must be observed exactly once');
+  const one = (values, label) => { assert.equal(values.length, 1, label); return values[0]; };
+  assert.ok(typeof sourceId === 'string' && sourceId.length > 0);
+  const proofs = managerPids.map(pid => {
+    const spawn = one(spawns.filter(row => row.child_pid === pid), 'Missing or duplicate manager spawn');
+    const close = one(closes.filter(row => row.child_pid === pid), 'Missing or duplicate actual manager close');
+    assert.equal(spawn.command, binding.command); assert.equal(spawn.observer_pid, piPid); assert.equal(close.observer_pid, piPid);
+    assert.equal(close.code, 0, 'An actual successful manager exit is required'); assert.equal(close.signal, null);
+    const output = one(outputs.filter(row => row.pid === pid), 'Missing or duplicate original manager stdout').bytes;
+    assert.ok(Buffer.isBuffer(output)); assert.ok(output.length > 0 && output.length <= 1048576);
+    assert.equal(close.output_file, join(base, 'manager-response-' + pid + '.json'));
+    assert.equal(close.output_bytes, output.length); assert.equal(close.output_sha256, hash(output));
+    const envelope = JSON.parse(output.toString('utf8'));
+    assert.equal(envelope.version, 1); assert.equal(envelope.ok, true);
+    assert.equal(envelope.execution_id, binding.execution_id); assert.equal(envelope.library, binding.library);
+    const start = one(starts.filter(row => row.request_id === envelope.request_id), 'Stdout belongs to another management request');
+    const result = one(results.filter(row => row.request_id === envelope.request_id), 'Missing or duplicate SDK management result');
+    const session = one(sessionReceipts.filter(row => row.request_id === envelope.request_id), 'Missing or duplicate session management receipt');
+    assert.equal(session.source_id, sourceId);
+    for (const event of [start, result]) {
+      assert.equal(event.observer_pid, piPid); assert.equal(event.phase, 'management'); assert.equal(event.library, binding.library);
+      assert.equal(event.source_id, sourceId);
+    }
+    assert.ok(BigInt(start.observer_monotonic_ns) <= BigInt(spawn.observer_monotonic_ns));
+    assert.ok(BigInt(spawn.observer_monotonic_ns) < BigInt(close.observer_monotonic_ns));
+    assert.ok(BigInt(close.observer_monotonic_ns) <= BigInt(result.observer_monotonic_ns), 'A late or unrelated close cannot prove this SDK result');
+    const receipt = envelope.result;
+    assert.equal(receipt.version, 1); assert.equal(receipt.request_id, envelope.request_id); assert.equal(receipt.library_id, binding.library);
+    assert.ok(['ready', 'already_ready'].includes(receipt.status)); assert.equal(result.status, receipt.status);
+    assert.equal(receipt.scope, managerScope); assert.equal(result.manager_scope, managerScope);
+    assert.equal(session.manager_scope, managerScope); assert.equal(session.scope, consumerScope); assert.notEqual(managerScope, consumerScope);
+    assert.equal(typeof session.input_receipt, 'string'); assert.ok(envelope.request_id.startsWith(session.input_receipt + ':'));
+    for (const event of [start, result]) {
+      assert.equal(event.registered_source_id, receipt.target.source_id); assert.equal(event.member_key, receipt.target.member_key);
+      assert.deepEqual(event.authorization_root, receipt.authorization_root);
+    }
+    assert.equal(result.operation_id, receipt.operation_id); assert.deepEqual(result.effects, receipt.effects);
+    assert.equal(receipt.effects.projection, 'none'); assert.ok(['none', 'management'].includes(receipt.effects.remote_writes));
+    for (const key of ['request_id', 'operation_id', 'library_id', 'status', 'target', 'authorization_root', 'affected_skill_ids', 'source_revisions', 'effects'])
+      assert.deepEqual(session[key], receipt[key], 'Original manager and session receipt differ: ' + key);
+    return { pid, request_id: envelope.request_id, operation_id: receipt.operation_id ?? null, execution_id: envelope.execution_id,
+      library_id: receipt.library_id, target: receipt.target, status: receipt.status, manager_scope: receipt.scope, close };
+  });
+  assert.equal(new Set(proofs.map(row => row.request_id)).size, proofs.length, 'A request receipt cannot be reused by another manager');
+  assert.deepEqual(proofs.map(row => row.request_id).sort(), starts.map(row => row.request_id).sort(), 'Every original SDK request must have its own manager proof');
+  return proofs;
+}
+
+async function positiveManagerTransports({ base, manager, events, sessionReceipts, credentialScopes, piPid, sourceId }) {
+  const managerPids = (await readFile(join(base, 'manager/accepted-pids.txt'), 'utf8')).trim().split('\n').map(Number);
+  assert.ok(managerPids.every(pid => Number.isSafeInteger(pid) && pid > 0));
+  const outputs = await Promise.all(managerPids.map(async pid => ({ pid, bytes: await readFile(join(base, 'manager-response-' + pid + '.json')) })));
+  return assertPositiveManagerTransports({ base, binding: manager.binding, piPid, sourceId, managerScope: credentialScopes.manager.scope,
+    consumerScope: credentialScopes.clients[0].scope, managerPids, events, sessionReceipts, outputs });
+}
+
 async function actualCredentialScope(stateRoot) {
   const { DatabaseSync } = await import('node:sqlite');
   const path = join(stateRoot, 'state.sqlite'), database = new DatabaseSync(path, { readOnly: true });
@@ -464,7 +532,7 @@ syncBuiltinESMExports();
         CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_LOG_FILE: join(root, 'decisions.jsonl'),
         CURRENT_SDK_EVENTS: join(base, 'sdk.jsonl'), CURRENT_NATIVE_EVENTS: join(base, 'native.jsonl'), CURRENT_CONTROL: control,
         BROKER_E2E_PROCESS_LEDGER: join(base, 'processes.jsonl'), NODE_OPTIONS: '--import=' + preload, CTX_MOCK_PROVIDER_BASE_URL: provider.baseUrl,
-        ...(name === 'source-materialize-cancel-late' ? { CURRENT_MANAGER_ENTRY: manager.binding.command, CURRENT_MANAGER_OUTPUT: base } : {}) });
+        CURRENT_MANAGER_ENTRY: manager.binding.command, CURRENT_MANAGER_OUTPUT: base });
       await mkdir(env.NTN_SKILLS_CONFIG_HOME, { recursive: true, mode: 0o700 });
       await save(join(env.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: source.library });
       await save(join(env.NTN_SKILLS_CONFIG_HOME, 'source-manager.json'), manager.binding);
@@ -578,9 +646,8 @@ syncBuiltinESMExports();
       const values = consumeValues(events, process.pid); assert.ok(values.length > 0);
       for (const value of values) assert.equal(value.value.effects?.remote_writes, 'none', 'Consumption effects must remain separate from management');
     }
-    const managerPids = (await readFile(manager.pids, 'utf8')).trim().split('\n').map(Number); assert.ok(managerPids.every(pid => Number.isSafeInteger(pid) && pid > 0));
-    const managerProcesses = managerPids.map(pid => { let alive = true; try { process.kill(pid, 0); } catch (error) { if (error.code !== 'ESRCH') throw error; alive = false; } return { pid, observed_exit: !alive }; });
-    assert.ok(managerProcesses.every(row => row.observed_exit), 'Owned manager work is still active; do not erase its Store');
+    const managerProcesses = await positiveManagerTransports({ base, manager, events, sessionReceipts: sessionManagement.map(row => row.data),
+      credentialScopes, piPid: processes[0].pid, sourceId: first.source.id });
     const receipt = { version: 1, initial: facts.initial, max_age_ms: 300000, alias, warm_query: warmQuery, original_member_candidate: originalMemberCandidate, processes,
       manager_processes: managerProcesses, management_operations: initialManagement.length, semantic_writes: afterWrites, projection_writes: 0, copied_consumer_state: false, source_id: facts.source_id };
     await save(join(base, 'materialization.json'), receipt);
@@ -831,5 +898,6 @@ export async function verifyMaterializationEvidence({ base, entry, source, event
   }
   assert.deepEqual(assertMaterializedFacts(facts, ready), receipt.processes[0].facts);
   assert.deepEqual(JSON.parse(await readFile(join(base, 'after-independent-client.json'), 'utf8')), ready);
-  assert.ok(receipt.manager_processes.length > 0 && receipt.manager_processes.every(row => row.observed_exit === true));
+  assert.deepEqual(receipt.manager_processes, await positiveManagerTransports({ base, manager, events,
+    sessionReceipts: sessionManagement.map(row => row.data), credentialScopes, piPid: receipt.processes[0].pid, sourceId: clients[0].source.id }));
 }

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { parseArgs, validateCurrentFixture, currentServiceFacts, selectProviderCall, assertWireSources, verifyEvidence } from './notion-sdk-pi.mjs';
-import { assertCancellationCausality, assertNoCancellationPublication, readManagerState } from './notion-sdk-pi-materialization.mjs';
+import { assertCancellationCausality, assertNoCancellationPublication, assertPositiveManagerTransports, readManagerState } from './notion-sdk-pi-materialization.mjs';
 
 const options = ['--package', '/owned/installed', '--fixture', '/owned/current.json', '--source-http-helper', '/owned/current-http.mjs'];
 test('current command boundary rejects retired or ambiguous invocation before I/O', () => {
@@ -407,6 +407,103 @@ test('a cancelled or replacement session cannot hide selected graphs, receipts o
     assert.throws(() => assertNoCancellationPublication({ branch: [{ type: 'custom', customType, data: {} }] }, [body], assertWireSources));
   for (const content of [body, JSON.stringify({ content: body })])
     assert.throws(() => assertNoCancellationPublication({ branch: [{ type: 'message', message: { content } }] }, [body], assertWireSources));
+});
+
+function positiveManagerEvidence(count = 2) {
+  const base = '/owned/positive', piPid = 700, managerScope = 'a'.repeat(64), consumerScope = 'b'.repeat(64);
+  const binding = { version: 1, kind: 'local', command: base + '/manager/launch', execution_id: 'c'.repeat(64), library: '00000000-0000-4000-8000-000000000002' };
+  const value = { base, binding, piPid, sourceId: 'current-sdk', managerScope, consumerScope, managerPids: [], events: [], sessionReceipts: [], outputs: [] };
+  for (let i = 0; i < count; i++) {
+    const pid = 800 + i, input = 'input-' + i, request = input + ':request-' + i, time = 100 + i * 100;
+    const receipt = { version: 1, request_id: request, library_id: binding.library, scope: managerScope,
+      target: { source_id: 'source', member_key: 'skills/member-' + i, expected_skill_id: 'stable-' + i, registration_digest: 'd'.repeat(64) },
+      status: i === 0 ? 'ready' : 'already_ready', ...(i === 0 ? { operation_id: 'original-operation-' + i } : {}),
+      affected_skill_ids: ['stable-' + i], source_revisions: [{ source_id: 'source', revision: 'e'.repeat(64) }],
+      effects: { remote_writes: i === 0 ? 'management' : 'none', projection: 'none' } };
+    const bytes = Buffer.from(JSON.stringify({ version: 1, request_id: request, execution_id: binding.execution_id, library: binding.library, ok: true, result: receipt }) + '\n');
+    const attribution = { kind: 'context-broker.notion-materialization', observer_pid: piPid, phase: 'management', source_id: 'current-sdk',
+      request_id: request, library: binding.library, registered_source_id: receipt.target.source_id, member_key: receipt.target.member_key };
+    value.managerPids.push(pid); value.outputs.push({ pid, bytes });
+    value.sessionReceipts.push({ ...structuredClone(receipt), source_id: 'current-sdk', input_receipt: input, scope: consumerScope, manager_scope: managerScope });
+    value.events.push(
+      { ...attribution, event: 'start', observer_monotonic_ns: String(time) },
+      { kind: 'manager_transport', event: 'spawn', child_pid: pid, command: binding.command, observer_pid: piPid, observer_monotonic_ns: String(time + 10) },
+      { kind: 'manager_transport', event: 'close', child_pid: pid, observer_pid: piPid, observer_monotonic_ns: String(time + 20), code: 0, signal: null,
+        output_file: join(base, 'manager-response-' + pid + '.json'), output_bytes: bytes.length, output_sha256: createHash('sha256').update(bytes).digest('hex') },
+      { ...attribution, event: 'result', observer_monotonic_ns: String(time + 30), status: receipt.status, operation_id: receipt.operation_id,
+        effects: receipt.effects, manager_scope: managerScope },
+    );
+  }
+  return value;
+}
+
+function rewriteManagerStdout(value, index, change) {
+  const output = value.outputs[index], envelope = JSON.parse(output.bytes.toString('utf8'));
+  const replacement = change(envelope);
+  output.bytes = Buffer.from(replacement ?? JSON.stringify(envelope) + '\n');
+  const close = value.events.find(row => row.kind === 'manager_transport' && row.event === 'close' && row.child_pid === output.pid);
+  close.output_bytes = output.bytes.length; close.output_sha256 = createHash('sha256').update(output.bytes).digest('hex');
+}
+const firstManagerClose = value => value.events.find(row => row.kind === 'manager_transport' && row.event === 'close');
+
+test('positive manager evidence binds actual exits and original receipts for one or multiple managers', () => {
+  for (const count of [1, 2]) {
+    const value = positiveManagerEvidence(count), proof = assertPositiveManagerTransports(value);
+    assert.deepEqual(proof.map(row => row.pid), value.managerPids);
+    assert.deepEqual(proof.map(row => row.request_id), value.sessionReceipts.map(row => row.request_id));
+    assert.ok(proof.every(row => row.close.code === 0 && row.close.signal === null && row.manager_scope !== value.consumerScope));
+    assert.equal(proof[0].operation_id, 'original-operation-0');
+    if (count === 2) { assert.equal(proof[1].status, 'already_ready'); assert.equal(proof[1].operation_id, null); }
+  }
+});
+
+const managerEvidenceCorruptions = [
+  ['missing actual close even when a PID is marked exited', value => { const close = firstManagerClose(value); value.events.splice(value.events.indexOf(close), 1); value.observed_exit = true; }],
+  ['missing exit code', value => { delete firstManagerClose(value).code; }],
+  ['nonzero exit', value => { firstManagerClose(value).code = 1; }],
+  ['signal exit', value => { firstManagerClose(value).signal = 'SIGTERM'; }],
+  ['a close observed by another Pi process', value => { firstManagerClose(value).observer_pid++; }],
+  ['duplicate accepted PID', value => { value.managerPids[1] = value.managerPids[0]; }],
+  ['duplicate close hiding another manager', value => { value.events.filter(row => row.kind === 'manager_transport' && row.event === 'close')[1].child_pid = value.managerPids[0]; }],
+  ['an extra orphan spawn', value => { value.events.push({ ...value.events.find(row => row.event === 'spawn'), child_pid: 999 }); }],
+  ['observer failure', value => { value.events.push({ kind: 'manager_transport', event: 'observer-error' }); }],
+  ['missing original stdout', value => { value.outputs.pop(); }],
+  ['altered stdout with a stale byte hash', value => { value.outputs[0].bytes = Buffer.from('{}'); }],
+  ['a substituted stdout file path', value => { firstManagerClose(value).output_file = '/owned/another-response.json'; }],
+  ['wrong execution identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.execution_id = 'f'.repeat(64); }); }],
+  ['wrong Library identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.library = 'another-library'; }); }],
+  ['wrong outer request identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.request_id = 'another-request'; }); }],
+  ['wrong inner request identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.request_id = 'another-request'; }); }],
+  ['wrong operation identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.operation_id = 'replacement-operation'; }); }],
+  ['consumer scope impersonating the manager', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.scope = value.consumerScope; }); }],
+  ['wrong member identity', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.target.member_key = 'skills/other'; }); }],
+  ['wrong configured Source identity', value => { value.events.find(row => row.kind === 'context-broker.notion-materialization' && row.event === 'result').source_id = 'another-sdk'; }],
+  ['a configured Source replaced in both SDK events and session receipts', value => {
+    for (const row of value.events.filter(row => row.kind === 'context-broker.notion-materialization')) row.source_id = 'another-sdk';
+    for (const row of value.sessionReceipts) row.source_id = 'another-sdk';
+  }],
+  ['changed Source revision', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.source_revisions[0].revision = 'f'.repeat(64); }); }],
+  ['a pending receipt presented as success', value => { rewriteManagerStdout(value, 0, envelope => { envelope.result.status = 'pending'; }); }],
+  ['a missing session receipt', value => { value.sessionReceipts.pop(); }],
+  ['a replaced stable Skill identity', value => { value.sessionReceipts[0].target.expected_skill_id = 'replacement-skill'; }],
+  ['a duplicate SDK result hiding another request', value => { const results = value.events.filter(row => row.kind === 'context-broker.notion-materialization' && row.event === 'result'); Object.assign(results[1], results[0]); }],
+  ['a close arriving after the SDK result', value => { firstManagerClose(value).observer_monotonic_ns = '131'; }],
+  ['another valid request stdout mixed in after the original', value => { rewriteManagerStdout(value, 0, envelope => JSON.stringify(envelope) + '\n' + value.outputs[1].bytes.toString('utf8')); }],
+  ['two individually valid stdout receipts swapped between children', value => {
+    const first = value.outputs[0].bytes, second = value.outputs[1].bytes;
+    rewriteManagerStdout(value, 0, () => second); rewriteManagerStdout(value, 1, () => first);
+  }],
+  ['the same stdout request reused by overlapping managers while another request is left unbound', value => {
+    const pid = value.managerPids[1], request = value.sessionReceipts[1].request_id;
+    value.events.find(row => row.event === 'spawn' && row.child_pid === pid).observer_monotonic_ns = '115';
+    value.events.find(row => row.event === 'close' && row.child_pid === pid).observer_monotonic_ns = '125';
+    value.events.find(row => row.event === 'start' && row.request_id === request).observer_monotonic_ns = '105';
+    value.events.find(row => row.event === 'result' && row.request_id === request).observer_monotonic_ns = '135';
+    rewriteManagerStdout(value, 1, () => value.outputs[0].bytes);
+  }],
+];
+for (const [label, corrupt] of managerEvidenceCorruptions) test('positive manager evidence rejects ' + label, () => {
+  const value = positiveManagerEvidence(); corrupt(value); assert.throws(() => assertPositiveManagerTransports(value));
 });
 
 
