@@ -11,7 +11,8 @@ import { canonical } from './episode-evidence.mjs';
 
 const metricChannel = 'context-broker.notion-sdk';
 const resultChannel = 'context-broker.notion-sdk-result';
-const operationsAllowed = new Set(['library-selection', 'library', 'candidates', 'list', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search']);
+const managementChannel = 'context-broker.notion-materialization';
+const operationsAllowed = new Set(['library-selection', 'library', 'candidates', 'list', 'source-members', 'files', 'consume', 'read', 'read-resources', 'resolve', 'content-search']);
 const validId = id => typeof id === 'string' && /^[a-f0-9-]{36}$/i.test(id);
 
 const currentViewDirectory = value => validId(value.library_id) && value.coverage?.method === 'explicit_view'
@@ -59,16 +60,16 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
   };
   fs.mkdirSync(paths.responses, { recursive: true, mode: 0o700 });
   fs.writeFileSync(paths.ledger, '', { flag: 'wx', mode: 0o600 });
-  const operations = new Map(), callbacks = new Map(), idleWaiters = new Set();
-  let errors = 0, closed = false, lastActivity = performance.now(), source, graph, finished;
+  const operations = new Map(), managementOperations = new Map(), managementEventRefs = [], callbacks = new Map(), idleWaiters = new Set();
+  let errors = 0, managementErrors = 0, managementStartRef, closed = false, lastActivity = performance.now(), source, graph, finished;
   const fail = (channel, error) => {
-    errors++;
+    if (channel === managementChannel) managementErrors++; else errors++;
     try { recorder.record('notion_observer_error', { channel, message: String(error?.message ?? error) }); } catch {}
   };
   const guarded = (name, callback) => {
     const wrapped = event => {
       if (closed) return;
-      try { callback(name === metricChannel || name === resultChannel ? recorder.scrub(event) : event); }
+      try { callback([metricChannel, resultChannel, managementChannel].includes(name) ? recorder.scrub(event) : event); }
       catch (error) { fail(name, error); }
       finally { for (const check of idleWaiters) check(); }
     };
@@ -121,6 +122,47 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
       stage: operation.stage, active_tool_call_ids: operation.active_tool_call_ids, event,
     });
   };
+  const management = event => {
+    const observedContext = recorder.scrub(context());
+    const ref = recorder.record('notion_materialization_event', { context: observedContext, event });
+    managementEventRefs.push(ref); lastActivity = performance.now();
+    // These diagnostics describe the separate manager, never consumption effects
+    // or independent HTTP observation. Retain malformed and orphan events too.
+    const text = value => typeof value === 'string' && value.length > 0 && value.length <= 8192 && !/[\u0000-\u001f\u007f]/u.test(value);
+    assert.equal(event.version, 1); assert.equal(event.phase, 'management');
+    for (const key of ['request_id', 'source_id', 'library', 'registered_source_id', 'member_key'])
+      assert.ok(text(event[key]), 'BENCHMARK_MANAGEMENT_ATTRIBUTION_INVALID');
+    const attribution = canonical(Object.fromEntries(['source_id', 'library', 'registered_source_id', 'member_key', 'authorization_root']
+      .filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]])));
+    if (event.event === 'start') {
+      assert.ok(!managementOperations.has(event.request_id), 'BENCHMARK_MANAGEMENT_DUPLICATE_START');
+      managementOperations.set(event.request_id, { request_id: event.request_id, attribution,
+        start_context: observedContext, start_ref: ref, results: [] });
+      return;
+    }
+    assert.equal(event.event, 'result');
+    const operation = managementOperations.get(event.request_id);
+    assert.ok(operation, 'BENCHMARK_MANAGEMENT_UNPAIRED_RESULT');
+    assert.deepEqual(attribution, operation.attribution, 'BENCHMARK_MANAGEMENT_ATTRIBUTION_CHANGED');
+    assert.ok(['ready', 'already_ready', 'pending', 'blocked', 'failed', 'cancelled'].includes(event.status), 'BENCHMARK_MANAGEMENT_STATUS_INVALID');
+    assert.ok(event.effects && ['none', 'management', 'unknown'].includes(event.effects.remote_writes)
+      && ['none', 'unknown'].includes(event.effects.projection), 'BENCHMARK_MANAGEMENT_EFFECTS_INVALID');
+    if (['ready', 'already_ready', 'pending', 'blocked'].includes(event.status))
+      assert.equal(event.effects.projection, 'none', 'BENCHMARK_MANAGEMENT_RECEIPT_INVALID');
+    if (['ready', 'already_ready'].includes(event.status))
+      assert.notEqual(event.effects.remote_writes, 'unknown', 'BENCHMARK_MANAGEMENT_RECEIPT_INVALID');
+    for (const key of ['operation_id', 'manager_scope']) if (Object.hasOwn(event, key))
+      assert.ok(text(event[key]), 'BENCHMARK_MANAGEMENT_RECEIPT_INVALID');
+    operation.results.push({ status: event.status, effects: structuredClone(event.effects),
+      ...Object.fromEntries(['operation_id', 'manager_scope'].filter(key => Object.hasOwn(event, key)).map(key => [key, event[key]])),
+      context: observedContext, result_ref: ref });
+    // Current product publishes one result per request. A late first result can
+    // belong to an ended input; preserve its actual observation context.
+    assert.equal(operation.results.length, 1, 'BENCHMARK_MANAGEMENT_DUPLICATE_RESULT');
+  };
+  const managementInflight = () => [...managementOperations.values()].filter(operation => !operation.results.length);
+  const managementUnsettled = () => [...managementOperations.values()].filter(operation => operation.results.at(-1)?.status === 'pending');
+  const managementPending = () => [...managementInflight(), ...managementUnsettled()];
   try {
     source = observeSourceTransport({ diagnostics: { subscribe, unsubscribe }, fs, crypto, path, errorMonitor,
       output: paths.source, checkoutRoot: path.join(config.runRoot, 'subject-runtime'),
@@ -128,13 +170,15 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
       safeRequestMetrics: value => { const decoded = safeRequestMetrics(value); return decoded && recorder.scrub(decoded); },
     });
     graph = observeGraphSdk({ channel, fs: graphFs, paths, safeMetrics: value => safeRequestMetrics(value), processInfo: process });
-    subscribe(metricChannel, metrics); subscribe(resultChannel, result);
+    subscribe(metricChannel, metrics); subscribe(resultChannel, result); subscribe(managementChannel, management);
+    managementStartRef = recorder.record('notion_materialization_observer_start', { version: 1, channel: managementChannel, pid: process.pid });
   } catch (error) {
     graph?.close(); source?.finish();
-    for (const name of [metricChannel, resultChannel]) for (const wrapped of callbacks.values()) diagnostics.unsubscribe(name, wrapped);
+    for (const name of [metricChannel, resultChannel, managementChannel]) for (const wrapped of callbacks.values()) diagnostics.unsubscribe(name, wrapped);
     throw error;
   }
-  const pending = () => [...operations.values()].filter(operation => operation.status === 'pending');
+  const sdkPending = () => [...operations.values()].filter(operation => operation.status === 'pending');
+  const pending = () => [...sdkPending(), ...managementPending()];
   return {
     paths,
     waitIdle(timeoutMs = null, { signal } = {}) {
@@ -151,6 +195,10 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
         const check = () => {
           clearTimeout(quiet);
           if (errors) return finish(false, new Error('BENCHMARK_NOTION_OBSERVER_ERROR'));
+          // A pending receipt ends this foreground call; the product will not
+          // publish another result. Retain its unknown durable outcome without
+          // waiting forever or relabeling complete SDK evidence as partial.
+          if (managementErrors || managementUnsettled().length) return finish(false);
           if (closed) return finish(pending().length === 0);
           if (pending().length) return;
           // Retain the short diagnostic quiet window, not a startup deadline.
@@ -185,13 +233,13 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
         const matching = catalogs.filter(catalog => catalog.source_id === source.id);
         assert.ok(matching.length > 0 && matching.every(catalog => catalog.facets.every(facet => facet.ok)), 'BENCHMARK_NOTION_CATALOG_UNAVAILABLE: ' + source.id);
       }
-      assert.equal(errors, 0, 'BENCHMARK_NOTION_OBSERVER_ERROR');
+      assert.equal(errors + managementErrors, 0, 'BENCHMARK_NOTION_OBSERVER_ERROR');
       assert.equal(pending().length, 0, 'BENCHMARK_NOTION_STARTUP_PENDING');
       return { projection: { observed: catalogs.length > 0, catalogs }, evidence,
         scope: 'actual SDK catalog metadata; body delivery and deferred tool availability are established separately by final payload and tool/session results' };
     },
     preparedEntries() {
-      assert.equal(errors, 0, 'BENCHMARK_NOTION_OBSERVER_ERROR');
+      assert.equal(errors + managementErrors, 0, 'BENCHMARK_NOTION_OBSERVER_ERROR');
       assert.equal(pending().length, 0, 'BENCHMARK_NOTION_STARTUP_PENDING');
       return graphSourceViews([...operations.values()].map(operation => ({ transport: 'sdk',
         requestId: operation.operation_id, operation: operation.operation, status: operation.status,
@@ -202,8 +250,8 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
       if (finished) return finished;
       try { graph.close(); } catch (error) { fail('graph-close', error); }
       source.finish();
-      unsubscribe(metricChannel, metrics); unsubscribe(resultChannel, result);
-      for (const name of [metricChannel, resultChannel, 'tracing:child_process.spawn:start', 'tracing:child_process.spawn:error'])
+      unsubscribe(metricChannel, metrics); unsubscribe(resultChannel, result); unsubscribe(managementChannel, management);
+      for (const name of [metricChannel, resultChannel, managementChannel, 'tracing:child_process.spawn:start', 'tracing:child_process.spawn:error'])
         for (const wrapped of callbacks.values()) diagnostics.unsubscribe(name, wrapped);
       callbacks.clear(); closed = true;
       for (const check of idleWaiters) check();
@@ -226,7 +274,7 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
         own.push({ ...item, receipt_ref: receipt?.ref ?? null, metrics_complete: metrics?.complete === true,
           http_attempts: metrics?.complete === true ? metrics.total_requests : null });
       }
-      const sdkComplete = errors === 0 && pending().length === 0 && !ledger.some(row => row.phase === 'sdk-observer-error')
+      const sdkComplete = errors === 0 && sdkPending().length === 0 && !ledger.some(row => row.phase === 'sdk-observer-error')
         && ledger.at(-1)?.phase === 'sdk-observer-end' && ledger.at(-1)?.pending === 0
         && receipts.size === operations.size && own.every(operation => operation.receipt_ref && operation.end_ref && (operation.status !== 'completed' || operation.result_observed));
       const metricRows = observed.events.filter(row => row.phase === 'metrics');
@@ -236,11 +284,25 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
         child_lifecycle: observed.unmatchedChildLifecycle?.complete ? 'complete' : 'partial', descendant_transport: 'unobserved' };
       const refs = { source_terminal: terminal?.phase === 'source_observer_end' ? { artifact_id: 'notion-source', line: terminal.sequence } : null,
         sdk_terminal: { artifact_id: 'notion-sdk', line: ledger.length } };
+      const managementOwn = [...managementOperations.values()], managementResults = managementOwn.flatMap(operation => operation.results);
+      const managementComplete = managementErrors === 0 && managementPending().length === 0;
+      const reportedEffects = {
+        remote_writes: managementResults.some(result => result.effects.remote_writes === 'management') ? 'management'
+          : !managementComplete || managementResults.some(result => result.effects.remote_writes === 'unknown') ? 'unknown' : 'none',
+        projection: !managementComplete || managementResults.some(result => result.effects.projection === 'unknown') ? 'unknown' : 'none',
+      };
+      const managementEndRef = recorder.record('notion_materialization_observer_end', { version: 1, channel: managementChannel,
+        operations: managementOwn.length, events: managementEventRefs.length, pending: managementPending().length,
+        errors: managementErrors, coverage: managementComplete ? 'complete' : 'partial', reported_effects: reportedEffects });
+      const managementObservation = { version: 1, channel: managementChannel, coverage: managementComplete ? 'complete' : 'partial',
+        operations: managementOwn, event_refs: managementEventRefs, reported_effects: reportedEffects,
+        http: { status: 'unknown', value: null }, refs: { start: managementStartRef, end: managementEndRef },
+        scope: 'owned Pi management diagnostics and reported effects; manager HTTP, durable writer settlement and other processes are not independently observed' };
       const ref = recorder.record('notion_observation_end', { coverage, operations: own.length,
         observed_owned_http_attempts: observed.events.filter(row => row.phase === 'attempt' && row.kind === 'http').length,
         errors, source_validation_errors: observed.errors, refs });
       finished = { source_contract: 'notion-sdk-v3/library-root-v1/resource-read-v1/skill-ref-v2/preparation-evidence-v2',
-        operations: own, coverage, refs: { ...refs, end: ref },
+        operations: own, coverage, refs: { ...refs, end: ref }, management: managementObservation,
         source_scope: 'owned Pi SDK operations and directly observed bundled CLI; other descendants transport remains unknown',
         paths: { source: paths.source, sdk: paths.ledger, responses: paths.responses } };
       return finished;

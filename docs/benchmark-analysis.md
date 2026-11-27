@@ -191,6 +191,22 @@ capability and every applicable contract pass. Any confirmed applicable
 failure makes the joint result fail; unresolved evidence remains unknown.
 Unsupported capability stays separate from model failure.
 
+For newly observed Source management, collector 1.3.12 independently reconstructs
+the diagnostic lifecycle and verifies the retained summary against raw events.
+When the case freezes `authorization.remote_write: false`, it adds the narrow
+`source-management-authorization` contract, bound to that authorization hash and
+the management evidence. A verified reported management write fails the contract
+even if a different operation remains unresolved. Otherwise, incomplete coverage
+or unknown effects produce an unknown contract; complete diagnostics reporting
+no writes pass within this observed scope. Honest unknown outcomes and confirmed
+permission violations remain valid observations in the denominator. Changed or
+inconsistent evidence remains an observation failure. The original business
+oracle is unchanged, and `time_to_success_ms` requires this contract to pass too.
+
+This contract does not prohibit management when the frozen case authorizes remote
+writes. It does not establish the effects of other tools or processes. Historical
+artifacts with no management observation receive no new pass or inferred zero.
+
 Intervention records are `{ id, kind, refs }`, with kinds human_rescue,
 evaluation_rescue, task_clarification or product_recovery. Only the first
 two count as extra rescue. A verified success with incomplete observation

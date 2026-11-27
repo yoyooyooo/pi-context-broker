@@ -357,6 +357,16 @@ MCP configuration and private snapshots remain task-owned and byte-bound; do not
 widen ownership to a shared parent or edit a historical profile to reuse it.
 A changed apparatus reader requires a new frozen build.
 
+Before a read-only case's capture, inspect the selected product's preparation
+behavior. A zero-model capture can still exercise literal `$Skill` preparation,
+including an authorized Source manager in products that provide one. When the
+frozen case forbids remote writes, first verify that the existing Skill body and
+required dependencies are consumable through the selected installed public
+consumer SDK. Use a separate owned run/cache, retain its cost separately, and
+stop before capture if the source needs repair. Do not mutate the material or
+relax the case authorization to obtain a successful baseline. The runtime's
+separate management observations remain necessary during the actual episode.
+
 Run the same `configure`, `run-standing`, `query` and `journey` commands shown
 above. A complete correct answer supplies an absolute baseline observation.
 An incomplete answer retains its actual stop and unknown semantics; a complete
