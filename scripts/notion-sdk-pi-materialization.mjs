@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, readFile, readdir, readlink, realpath, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readFile, readdir, readlink, realpath, stat, writeFile } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -13,12 +13,12 @@ import { renderHttpWrapper, startLoopbackMock } from './mock-provider-adapter.mj
 export const materializationScenarios = Object.freeze([
   'source-materialize-legacy', 'source-materialize-first',
   'source-materialize-legacy-source', 'source-materialize-growth',
-  'source-materialize-native-root',
+  'source-materialize-native-root', 'source-materialize-cancel-late',
 ]);
 const initialFor = name => ({
   'source-materialize-legacy': 'legacy-members', 'source-materialize-first': 'source-only',
   'source-materialize-legacy-source': 'legacy-source', 'source-materialize-growth': 'manifest-growth',
-  'source-materialize-native-root': 'native-root',
+  'source-materialize-native-root': 'native-root', 'source-materialize-cancel-late': 'source-only',
 })[name];
 const hash = value => createHash('sha256').update(value).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -101,6 +101,213 @@ async function controlledManager(base, info, facts, origin, fixture) {
   const binding = { version: 1, kind: 'local', library, execution_id: inventory.sha256, command: launcher };
   await save(join(manager, 'identity.json'), { binding, config, inventory, tool_selection: tools, initialization: { sdk_module: join(info.packageRoot, 'dist/ntn-skills-sdk.mjs'), metrics }, launcher_sha256: hash(script) });
   return { binding, manager, roots, pids };
+}
+
+async function boundedObservation(promise, label, timeoutMs = 120000) {
+  let timer;
+  try { return await Promise.race([promise, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Bounded observation expired: ' + label)), timeoutMs);
+  })]); } finally { clearTimeout(timer); }
+}
+async function waitForObservation(read, label) {
+  const deadline = Date.now() + 120000;
+  for (;;) {
+    const value = await read(); if (value) return value;
+    assert.ok(Date.now() < deadline, 'Bounded observation expired: ' + label);
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}
+export async function readManagerState(path) {
+  const { DatabaseSync } = await import('node:sqlite');
+  const database = new DatabaseSync(path, { readOnly: true });
+  try {
+    assert.equal(database.prepare('PRAGMA application_id').get().application_id, 0x4e544e43);
+    return { identities: database.prepare('SELECT id,scope FROM identities ORDER BY id').all().map(row => ({ ...row })),
+      rows: database.prepare("SELECT key,category,payload,retired FROM shared_local_records WHERE key LIKE 'operations/%' ORDER BY key").all()
+        .map(row => ({ ...row, payload: JSON.parse(row.payload) })) };
+  } finally { database.close(); }
+}
+async function captureManagerState(manager, base, label) {
+  const original = await realpath(join(manager.roots.home, 'state.sqlite')), info = await stat(original);
+  const value = await readManagerState(original), directory = join(base, 'manager-state-' + label);
+  await mkdir(directory, { mode: 0o700 });
+  for (const suffix of ['', '-wal', '-shm']) await copyFile(original + suffix, join(directory, 'state.sqlite') + suffix)
+    .catch(error => { if (error.code !== 'ENOENT') throw error; });
+  assert.deepEqual(await readManagerState(join(directory, 'state.sqlite')), value, 'The retained SQLite copy must reproduce the observed canonical rows');
+  const receipt = { database: original, dev: info.dev, ino: info.ino, captured_monotonic_ns: process.hrtime.bigint().toString(), ...value };
+  await save(join(directory, 'snapshot.json'), receipt); return receipt;
+}
+const sourcePending = value => value.rows.filter(row => row.key.startsWith('operations/current-write-pending/') && row.payload.intent?.owner?.kind === 'source');
+const frozenRequests = value => value.rows.filter(row => row.key.startsWith('operations/current-source-materialization/'));
+
+/** Assert causal raw boundaries; a timeout, a desired GET or a summary status cannot settle the writer. */
+export function assertCancellationCausality({ points, held, cancelled, response, accepted, retained, settled }) {
+  const names = ['accepted', 'abort-requested', 'abort-completed', 'session-replaced', 'release-requested', 'manager-completed', 'recovery-started', 'recovery-completed'];
+  assert.deepEqual(points.map(row => row.event), names);
+  for (let i = 1; i < points.length; i++) assert.ok(BigInt(points[i].monotonic_ns) > BigInt(points[i - 1].monotonic_ns));
+  const point = name => BigInt(points.find(row => row.event === name).monotonic_ns);
+  assert.equal(held.method, 'PATCH'); assert.equal(held.request_bytes_complete, true); assert.equal(held.response_bytes_complete, true);
+  assert.equal(held.semantic_write, true); assert.equal(held.terminal, 'finished'); assert.equal(held.status, 200);
+  assert.ok(BigInt(held.started_monotonic_ns) < point('accepted'));
+  assert.ok(BigInt(held.ended_monotonic_ns) > point('release-requested'));
+  assert.ok(BigInt(held.closed_monotonic_ns) < point('manager-completed'));
+  assert.equal(cancelled.event, 'result'); assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.effects.remote_writes, 'unknown', 'Foreground cancellation is not proof of zero management writes');
+  assert.ok(BigInt(cancelled.observer_monotonic_ns) >= point('abort-requested'));
+  assert.ok(BigInt(cancelled.observer_monotonic_ns) < point('session-replaced'));
+  assert.equal(response.close.code, 0); assert.equal(response.close.signal, null);
+  assert.ok(BigInt(response.close.observer_monotonic_ns) > point('release-requested'));
+  assert.equal(response.envelope.ok, true); assert.equal(response.envelope.request_id, cancelled.request_id);
+  const receipt = response.envelope.result;
+  assert.equal(receipt.request_id, cancelled.request_id); assert.equal(receipt.status, 'ready');
+  assert.equal(receipt.effects.remote_writes, 'management'); assert.equal(receipt.effects.projection, 'none');
+  const frozen = frozenRequests(accepted), pending = sourcePending(accepted);
+  assert.equal(frozen.length, 1); assert.equal(pending.length, 1);
+  assert.equal(frozen[0].payload.request.request_id, cancelled.request_id);
+  assert.equal(pending[0].payload.intent.operation_id, receipt.operation_id);
+  assert.ok(frozen[0].payload.plans.some(plan => plan.operation_id === receipt.operation_id));
+  assert.equal(pending[0].payload.not_dispatched, undefined); assert.equal(pending[0].payload.settled_action, undefined);
+  assert.deepEqual(retained.rows, accepted.rows, 'The original accepted intent must remain unchanged while its HTTP is held');
+  assert.deepEqual(retained.identities, accepted.identities);
+  assert.deepEqual(settled.rows, [], 'A successful response must agree with the original Store having no pending intents');
+  for (const value of [retained, settled]) {
+    assert.equal(value.database, accepted.database); assert.equal(value.dev, accepted.dev); assert.equal(value.ino, accepted.ino);
+  }
+}
+
+export function assertNoCancellationPublication(snapshot, originals, assertWireSources) {
+  assert.ok(Array.isArray(snapshot.branch));
+  assert.equal(snapshot.branch.some(row => ['context-broker-selected-graph', 'context-broker-materialization'].includes(row.customType)), false);
+  assertWireSources({ messages: snapshot.branch }, [], originals);
+}
+
+async function runCancellation({ name, base, info, facts, first, manager, service, git, wire, steps, processes, rpc,
+  step, snapshot, finish, setPlan, checkWire, assertWireSources, present, absent }) {
+  const points = [], mark = event => points.push({ event, monotonic_ns: process.hrtime.bigint().toString() });
+  const allOriginals = [...new Set([...present, ...absent])];
+  const noSelection = value => assertNoCancellationPublication(value, allOriginals, assertWireSources);
+  const firstProcess = processes[0]; firstProcess.phase = 'cancel-late';
+  service.setPhase('cancel-pending'); git.setPhase('cancel-pending');
+  await captureManagerState(manager, base, 'before');
+  const held = service.holdNext({ method: 'PATCH', path: '/v1/pages/' + facts.source_page_id,
+    applyAfterDisconnect: true, matchBody: { path: ['properties', facts.sample.notion.library.sources.property_ids.Content], exists: true } });
+  let accepted, retained, settled, arrived, cancelled, response, oldSession, replacement, outcome;
+  const providerBoundary = wire.length;
+  setPlan({ mode: 'complete' });
+  const pending = rpc.prompt('$' + facts.members[0].name + ' Apply this Skill before cancellation.')
+    .then(value => ({ status: 'completed', value }), error => ({ status: 'rejected', error: error.message }));
+  try {
+    await step('actual Pi abort cancels only its wait after the original fixed manager HTTP is accepted', async () => {
+      arrived = await boundedObservation(Promise.race([held.reached, pending.then(value => {
+        throw new Error('The original Pi request completed before the held manager HTTP: ' + JSON.stringify(value));
+      })]), 'original Source PATCH');
+      assert.ok(arrived); assert.equal(arrived.method, 'PATCH'); assert.equal(arrived.response_bytes_complete, false);
+      await save(join(base, 'held-request-arrived.json'), arrived);
+      accepted = await captureManagerState(manager, base, 'accepted');
+      const starts = management(await rows(join(base, 'sdk.jsonl'))).filter(row => row.event === 'start');
+      assert.equal(starts.length, 1); assert.equal(frozenRequests(accepted)[0]?.payload.request.request_id, starts[0].request_id);
+      mark('accepted'); mark('abort-requested');
+      const abort = await rpc.command('abort'); outcome = await boundedObservation(pending, 'cancelled Pi prompt');
+      assert.equal(outcome.status, 'rejected', 'The native Pi prompt must acknowledge cancellation');
+      mark('abort-completed'); await save(join(base, 'abort-result.json'), { abort, outcome });
+      cancelled = management(await rows(join(base, 'sdk.jsonl'))).find(row => row.event === 'result' && row.request_id === starts[0].request_id);
+      assert.equal(cancelled?.status, 'cancelled'); assert.equal(cancelled.effects.remote_writes, 'unknown');
+      assert.equal(wire.length, providerBoundary, 'The cancelled explicit input must not reach the provider');
+      const stillHeld = service.requests.find(row => row.sequence === arrived.sequence);
+      assert.equal(stillHeld.terminal, 'pending'); assert.equal(stillHeld.closed_monotonic_ns, null);
+      oldSession = await snapshot('cancelled-turn'); noSelection(oldSession);
+      const oldState = await rpc.command('get_state');
+      const switched = await rpc.command('new_session');
+      const newState = await rpc.command('get_state');
+      assert.notEqual(newState.sessionId, oldState.sessionId); assert.equal(newState.messageCount, 0);
+      replacement = await snapshot('replacement-empty-session'); noSelection(replacement);
+      assert.notEqual(replacement.session_file, oldSession.session_file);
+      firstProcess.replacement_session_file = replacement.session_file;
+      await save(join(base, 'session-switch.json'), { switched, old_state: oldState, new_state: newState, pid: firstProcess.pid });
+      mark('session-replaced');
+      await writeFile(join(base, 'cancelled-native-before-late.jsonl'), await readFile(oldSession.session_file), { flag: 'wx', mode: 0o600 });
+      await rpc.prompt('Continue this independent ordinary task while the prior operation finishes.');
+      checkWire(wire.at(-1).body, [], allOriginals);
+      noSelection(await snapshot('replacement-before-late-session'));
+      retained = await captureManagerState(manager, base, 'retained-before-late');
+      assert.deepEqual(retained.rows, accepted.rows);
+    });
+    await step('the original manager finishes after cancellation without publishing its late receipt', async () => {
+      mark('release-requested'); held.release();
+      const originalClosed = await boundedObservation(held.closed, 'original held Source PATCH completion');
+      await save(join(base, 'held-request-closed.json'), originalClosed);
+      const close = await waitForObservation(async () => (await rows(join(base, 'sdk.jsonl')))
+        .find(row => row.kind === 'manager_transport' && row.event === 'close'), 'original manager actual close');
+      const raw = await readFile(close.output_file); assert.equal(hash(raw), close.output_sha256);
+      response = { close, envelope: JSON.parse(raw) };
+      assert.equal(response.envelope.request_id, cancelled.request_id);
+      assert.equal(response.envelope.execution_id, manager.binding.execution_id);
+      assert.equal(response.envelope.library, facts.sample.notion.library.library_id);
+      assert.equal(response.envelope.result.status, 'ready'); mark('manager-completed');
+      settled = await captureManagerState(manager, base, 'settled');
+      assert.deepEqual(settled.rows, []);
+      assertMaterializedFacts(facts, service.notion);
+      await save(join(base, 'after-late-materialization.json'), service.notion);
+      const afterLate = await snapshot('replacement-after-late-session'); noSelection(afterLate);
+      await writeFile(join(base, 'replacement-native-before-recovery.jsonl'), await readFile(replacement.session_file), { flag: 'wx', mode: 0o600 });
+      const oldBytes = await readFile(oldSession.session_file);
+      await writeFile(join(base, 'cancelled-native-after-late.jsonl'), oldBytes, { flag: 'wx', mode: 0o600 });
+      assert.deepEqual(oldBytes, await readFile(join(base, 'cancelled-native-before-late.jsonl')), 'A late receipt mutated the cancelled session');
+      const beforeRecovery = await rows(join(base, 'sdk.jsonl'));
+      assert.equal(consumeValues(beforeRecovery, firstProcess.pid).length, 0);
+      assert.deepEqual(management(beforeRecovery).filter(row => row.event === 'result').map(row => row.status), ['cancelled']);
+      await rpc.prompt('Continue the independent ordinary task after the prior operation has finished.');
+      checkWire(wire.at(-1).body, [], allOriginals);
+    });
+    const writesAfterOriginal = service.requests.filter(row => row.semantic_write).length;
+    await step('a later explicit input in the replacement native Pi session consumes the complete persisted Skill', async () => {
+      for (const entry of wire) checkWire(entry.body, [], allOriginals);
+      await waitForObservation(() => service.requests.every(row => row.closed_monotonic_ns !== null), 'all preceding HTTP completions');
+      service.setPhase('cancel-recovery'); git.setPhase('cancel-recovery'); mark('recovery-started');
+      await rpc.prompt('$' + facts.members[0].name + ' Apply this Skill to the new explicit task.');
+      mark('recovery-completed'); firstProcess.provider_file = checkWire(wire.at(-1).body);
+      assert.equal(service.requests.filter(row => row.semantic_write).length, writesAfterOriginal, 'The later input replayed a completed management mutation');
+      const final = await finish('cancel-late');
+      assert.equal(final.session_file, replacement.session_file);
+      assert.ok(final.branch.some(row => row.customType === 'context-broker-selected-graph'));
+      assert.equal(final.branch.some(row => row.customType === 'context-broker-materialization' && row.data?.request_id === cancelled.request_id), false);
+      await writeFile(join(base, 'replacement-native-final.jsonl'), await readFile(replacement.session_file), { flag: 'wx', mode: 0o600 });
+    });
+    const events = await rows(join(base, 'sdk.jsonl')), original = service.requests.find(row => row.sequence === arrived.sequence);
+    assertCancellationCausality({ points, held: original, cancelled, response, accepted, retained, settled });
+    assert.equal(service.requests.filter(row => row.method === original.method && row.path === original.path && row.request_sha256 === original.request_sha256).length, 1);
+    assert.deepEqual(service.unexpected, []); assert.deepEqual(git.unexpected, []);
+    assert.equal(service.requests.some(row => row.projection_write), false);
+    const values = consumeValues(events, firstProcess.pid); assert.ok(values.length > 0);
+    for (const value of values) {
+      assert.equal(value.value.effects?.remote_writes, 'none');
+      assert.ok(BigInt(value.observer_monotonic_ns) > BigInt(points.find(row => row.event === 'recovery-started').monotonic_ns));
+    }
+    const managerPids = (await readFile(manager.pids, 'utf8')).trim().split('\n').map(Number);
+    const managerProcesses = managerPids.map(pid => {
+      const closed = events.filter(row => row.kind === 'manager_transport' && row.event === 'close' && row.child_pid === pid);
+      assert.equal(closed.length, 1); assert.equal(closed[0].code, 0); assert.equal(closed[0].signal, null);
+      let alive = true; try { process.kill(pid, 0); } catch (error) { if (error.code !== 'ESRCH') throw error; alive = false; }
+      assert.equal(alive, false); return closed[0];
+    });
+    const credentialScopes = { manager: await actualCredentialScope(manager.roots.home), clients: [await actualCredentialScope(first.env.NTN_SKILLS_HOME)] };
+    assert.notEqual(credentialScopes.manager.scope, credentialScopes.clients[0].scope);
+    assert.equal(response.envelope.result.scope, credentialScopes.manager.scope);
+    await save(join(base, 'credential-scopes.json'), credentialScopes);
+    const receipt = { version: 1, kind: 'actual-pi-source-materialization-cancellation', actual_pi_cancellation: 'passed',
+      initial: facts.initial, points, held_sequence: arrived.sequence, request_id: cancelled.request_id,
+      original_manager_pid: response.close.child_pid, original_operation_id: response.envelope.result.operation_id,
+      processes, manager_processes: managerProcesses, recovery_provider_file: firstProcess.provider_file,
+      semantic_writes: writesAfterOriginal, projection_writes: 0, copied_consumer_state: false,
+      unknown_before_late: 'retained original canonical intent; cancellation did not settle management',
+      final_settlement: 'original successful transport receipt, actual manager exit and same SQLite intent retirement',
+      natural_model: 'not_run', live_notion: 'not_run' };
+    await save(join(base, 'cancellation.json'), receipt);
+    await save(join(base, 'after-recovery.json'), service.notion);
+    return { name, status: 'passed', evidence: base, steps, provider_requests: wire.length, source_requests: service.requests.length,
+      semantic_writes: writesAfterOriginal, projection_writes: 0, actual_pi_cancellation: 'passed',
+      sdk_operations: events.filter(row => row.kind === 'context-broker.notion-sdk' && row.event === 'end').length };
+  } finally { held.release(); }
 }
 
 export function assertMaterializedFacts(facts, after) {
@@ -188,11 +395,11 @@ export async function runMaterializationScenario(name, info, out, helpers) {
   const alias = facts.native_root?.alias ?? (facts.initial === 'manifest-growth' ? facts.members[1].name : facts.members[0].name);
   await save(join(base, 'source-facts.json'), facts);
   let plan = { mode: 'complete' };
-  const checkWire = body => {
-    helpers.assertWireSources(body, present, absent);
+  const checkWire = (body, included = present, excluded = absent) => {
+    helpers.assertWireSources(body, included, excluded);
     const captured = wire.find(item => item.body === body); assert.ok(captured);
     const original = text => ({ text, bytes: Buffer.byteLength(text), sha256: hash(text) });
-    const proof = { provider_file: captured.file, present: present.map(original), absent: absent.map(original) };
+    const proof = { provider_file: captured.file, present: included.map(original), absent: excluded.map(original) };
     proofs.push(proof); return proof.provider_file;
   };
   const step = async (label, action) => {
@@ -215,7 +422,8 @@ export async function runMaterializationScenario(name, info, out, helpers) {
     await writeFile(providerExtension, renderHttpWrapper({ helperUrl: new URL('./mock-provider-adapter.mjs', import.meta.url).href, serializerUrl: pathToFileURL(info.identity.serializer.serializer.path).href }));
     await writeFile(observerExtension, "import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';\nexport default " + helpers.lifecycleObserver.toString() + '\n');
     await writeFile(preload, `import { channel } from 'node:diagnostics_channel';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 const active = new Set();
@@ -223,7 +431,22 @@ const emit = (kind, event) => appendFileSync(process.env.CURRENT_SDK_EVENTS, JSO
 for(const topic of ['context-broker.notion-sdk','context-broker.notion-sdk-result','context-broker.notion-materialization'])
   channel(topic).subscribe(event=>{if(topic==='context-broker.notion-sdk'){if(event.event==='start')active.add(event.id);else if(event.event==='end')active.delete(event.id);}emit(topic,event);});
 for(const api of ['spawn','spawnSync','exec','execSync','execFile','execFileSync','fork']){
-  const original=childProcess[api];childProcess[api]=function(...args){emit('child_process',{api,command:String(args[0]).split('/').at(-1),active_sdk_ids:[...active]});return original.apply(this,args);};
+  const original=childProcess[api];childProcess[api]=function(...args){
+    emit('child_process',{api,command:String(args[0]).split('/').at(-1),active_sdk_ids:[...active]});
+    const child=original.apply(this,args);
+    if(api==='spawn' && args[0]===process.env.CURRENT_MANAGER_ENTRY){
+      emit('manager_transport',{event:'spawn',child_pid:child.pid,command:args[0]});
+      const chunks=[];let bytes=0;
+      child.stdout.on('data',chunk=>{bytes+=Buffer.byteLength(chunk);if(bytes<=1048576)chunks.push(Buffer.from(chunk));});
+      child.once('close',(code,signal)=>{try{
+        if(bytes>1048576)throw Error('MANAGER_OBSERVATION_BOUND');
+        const output=Buffer.concat(chunks),file=process.env.CURRENT_MANAGER_OUTPUT+'/manager-response-'+child.pid+'.json';
+        writeFileSync(file,output,{flag:'wx',mode:0o600});
+        emit('manager_transport',{event:'close',child_pid:child.pid,code,signal,output_file:file,output_bytes:output.length,output_sha256:createHash('sha256').update(output).digest('hex')});
+      }catch(error){emit('manager_transport',{event:'observer-error',child_pid:child.pid,error:error.message});}});
+    }
+    return child;
+  };
 }
 syncBuiltinESMExports();
 `);
@@ -240,7 +463,8 @@ syncBuiltinESMExports();
         NTN_SKILLS_NOTION_INTERVAL_MS: '100', NTN_SKILLS_REQUEST_TRACE_LIMIT: '10000',
         CONTEXT_BROKER_HOST: 'pi', CONTEXT_BROKER_CONFIG: config, CONTEXT_BROKER_LOG_FILE: join(root, 'decisions.jsonl'),
         CURRENT_SDK_EVENTS: join(base, 'sdk.jsonl'), CURRENT_NATIVE_EVENTS: join(base, 'native.jsonl'), CURRENT_CONTROL: control,
-        BROKER_E2E_PROCESS_LEDGER: join(base, 'processes.jsonl'), NODE_OPTIONS: '--import=' + preload, CTX_MOCK_PROVIDER_BASE_URL: provider.baseUrl });
+        BROKER_E2E_PROCESS_LEDGER: join(base, 'processes.jsonl'), NODE_OPTIONS: '--import=' + preload, CTX_MOCK_PROVIDER_BASE_URL: provider.baseUrl,
+        ...(name === 'source-materialize-cancel-late' ? { CURRENT_MANAGER_ENTRY: manager.binding.command, CURRENT_MANAGER_OUTPUT: base } : {}) });
       await mkdir(env.NTN_SKILLS_CONFIG_HOME, { recursive: true, mode: 0o700 });
       await save(join(env.NTN_SKILLS_CONFIG_HOME, 'config.json'), { default_library: source.library });
       await save(join(env.NTN_SKILLS_CONFIG_HOME, 'source-manager.json'), manager.binding);
@@ -284,6 +508,8 @@ syncBuiltinESMExports();
       assert.equal(service.requests.some(row => row.semantic_write), false);
       assert.deepEqual(service.notion.skills, facts.sample.notion.skills);
     });
+    if (name === 'source-materialize-cancel-late') return await runCancellation({ name, base, info, facts, first, manager, service, git, wire, steps, processes, rpc,
+      step, snapshot, finish, setPlan: value => { plan = value; }, checkWire, assertWireSources: helpers.assertWireSources, present, absent });
     // The first process now crosses a real input-receipt boundary.
     service.setPhase('materialize'); git.setPhase('materialize'); processes[0].phase = 'materialize';
     await step('literal dollar selection uses the fixed manager then publishes complete ordinary consumption', async () => {
@@ -374,7 +600,122 @@ syncBuiltinESMExports();
   }
 }
 
-export async function verifyMaterializationEvidence({ base, entry, source, events, proofs }) {
+async function verifyCancellationEvidence({ base, entry, source, events, proofs, assertWireSources }) {
+  const read = async name => JSON.parse(await readFile(join(base, name), 'utf8'));
+  const receipt = await read('cancellation.json'), facts = await read('source-facts.json');
+  assert.equal(entry.name, 'source-materialize-cancel-late'); assert.equal(receipt.version, 1);
+  assert.equal(receipt.kind, 'actual-pi-source-materialization-cancellation'); assert.equal(receipt.actual_pi_cancellation, 'passed');
+  assert.equal(facts.initial, 'source-only'); assert.equal(receipt.copied_consumer_state, false);
+  assert.equal(receipt.projection_writes, 0); assert.equal(receipt.live_notion, 'not_run'); assert.equal(receipt.natural_model, 'not_run');
+  assert.equal(receipt.processes.length, 1);
+  const process = receipt.processes[0]; assert.equal(process.phase, 'cancel-late');
+  const life = await read('cancel-late-rpc-lifecycle.json');
+  assert.equal(life[0].event, 'spawn'); assert.equal(life[0].pid, process.pid);
+  assert.equal(life.at(-1).event, 'close'); assert.equal(life.at(-1).pid, process.pid);
+  assert.equal(life.at(-1).code, 0); assert.equal(life.at(-1).signal, null);
+  const actions = management(events), original = actions.filter(row => row.request_id === receipt.request_id);
+  assert.deepEqual(original.map(row => row.event), ['start', 'result']);
+  assert.equal(original[0].observer_pid, process.pid); assert.equal(original[1].observer_pid, process.pid);
+  const close = events.filter(row => row.kind === 'manager_transport' && row.event === 'close' && row.child_pid === receipt.original_manager_pid);
+  assert.equal(close.length, 1); assert.equal(close[0].observer_pid, process.pid);
+  assert.equal(events.some(row => row.kind === 'manager_transport' && row.event === 'observer-error'), false);
+  assert.equal(close[0].output_file, join(base, 'manager-response-' + receipt.original_manager_pid + '.json'));
+  const raw = await readFile(close[0].output_file); assert.equal(hash(raw), close[0].output_sha256); assert.equal(raw.length, close[0].output_bytes);
+  const response = { close: close[0], envelope: JSON.parse(raw) };
+  const manager = await read('manager/identity.json'), launch = await read('client-1/launch.json');
+  assert.equal(manager.binding.kind, 'local'); assert.equal(manager.config.projection, 'none');
+  assert.equal(manager.binding.execution_id, hash(JSON.stringify(manager.inventory.files)));
+  assert.equal(manager.config.generation.inventory_sha256, manager.binding.execution_id);
+  assert.equal(response.envelope.execution_id, manager.binding.execution_id);
+  assert.equal(response.envelope.library, facts.sample.notion.library.library_id);
+  assert.deepEqual(launch.manager_binding, manager.binding); assert.equal(launch.copied_consumer_state, false);
+  assert.ok(Object.values(launch.empty_consumer_roots).every(value => value === 'absent'));
+  assert.equal(Object.keys(launch.empty_consumer_roots).length, 3);
+  assert.equal(launch.source.activation.maxAge, '5m'); assert.equal(launch.source.discovery.maxAge, '5m');
+  for (const role of ['node', 'git']) {
+    const selected = manager.tool_selection[role];
+    assert.equal(selected.path, join(base, 'manager/tools', role)); assert.notEqual(selected.path, selected.source);
+    assert.equal(selected.sha256, selected.source_sha256); assert.equal(hash(await readFile(selected.path)), selected.sha256);
+    assert.equal(selected.uid, globalThis.process.getuid()); assert.equal(selected.mode, 0o500);
+  }
+  assert.equal(manager.config.generation.runtime, manager.tool_selection.node.path);
+  assert.equal(manager.config.git.executable, manager.tool_selection.git.path);
+  const states = {};
+  for (const label of ['accepted', 'retained-before-late', 'settled']) {
+    const directory = 'manager-state-' + label, snapshot = await read(directory + '/snapshot.json');
+    assert.deepEqual(await readManagerState(join(base, directory, 'state.sqlite')), { identities: snapshot.identities, rows: snapshot.rows });
+    states[label] = snapshot;
+  }
+  const held = source.filter(row => row.sequence === receipt.held_sequence); assert.equal(held.length, 1);
+  const arrived = await read('held-request-arrived.json'), closed = await read('held-request-closed.json');
+  assert.equal(arrived.sequence, held[0].sequence); assert.equal(arrived.request_sha256, held[0].request_sha256);
+  assert.equal(arrived.response_bytes_complete, false); assert.equal(arrived.closed_monotonic_ns, null);
+  assert.deepEqual(closed, held[0]); assert.equal(held[0].path, '/v1/pages/' + facts.source_page_id);
+  assert.equal(source.filter(row => row.method === held[0].method && row.path === held[0].path && row.request_sha256 === held[0].request_sha256).length, 1);
+  assertCancellationCausality({ points: receipt.points, held: held[0], cancelled: original[1], response,
+    accepted: states.accepted, retained: states['retained-before-late'], settled: states.settled });
+  assert.equal(receipt.original_operation_id, response.envelope.result.operation_id);
+  assert.equal(source.filter(row => row.semantic_write).length, receipt.semantic_writes); assert.ok(receipt.semantic_writes > 0);
+  assert.equal(source.some(row => row.projection_write), false);
+  assert.equal(source.some(row => row.semantic_write && row.phase === 'cancel-recovery'), false);
+  const abort = await read('abort-result.json'); assert.equal(abort.outcome.status, 'rejected');
+  const rpc = await read('cancel-late-rpc.json');
+  assert.ok(rpc.some(row => row.type === 'response' && row.command === 'abort' && row.success === true));
+  assert.ok(rpc.some(row => row.type === 'response' && row.command === 'new_session' && row.success === true));
+  const switched = await read('session-switch.json'); assert.equal(switched.pid, process.pid);
+  assert.notEqual(switched.old_state.sessionId, switched.new_state.sessionId); assert.equal(switched.new_state.messageCount, 0);
+  const native = await rows(join(base, 'native.jsonl'));
+  assert.ok(native.some(row => row.type === 'session_before_switch' && row.pid === process.pid && row.session_id === switched.old_state.sessionId));
+  assert.ok(native.some(row => row.type === 'session_start' && row.reason === 'new' && row.pid === process.pid && row.session_id === switched.new_state.sessionId && row.previous_session_file === process.session_file));
+  const originals = [facts.expected.root, facts.expected.required, facts.expected.sibling, facts.sample.source_materialization.unaccepted_root.content];
+  for (const label of ['cancelled-turn', 'replacement-empty-session', 'replacement-before-late-session', 'replacement-after-late-session']) {
+    const snapshot = await read(label + '.json'); assertNoCancellationPublication(snapshot, originals, assertWireSources);
+    assert.equal(snapshot.session_file, label === 'cancelled-turn' ? process.session_file : process.replacement_session_file);
+  }
+  assert.notEqual(process.session_file, process.replacement_session_file);
+  assert.deepEqual(await readFile(join(base, 'cancelled-native-before-late.jsonl')), await readFile(join(base, 'cancelled-native-after-late.jsonl')));
+  const cancelledNative = await rows(join(base, 'cancelled-native-after-late.jsonl'));
+  assert.equal(cancelledNative[0].id, switched.old_state.sessionId);
+  assertNoCancellationPublication({ branch: cancelledNative }, originals, assertWireSources);
+  const replacementNative = await rows(join(base, 'replacement-native-before-recovery.jsonl'));
+  assert.equal(replacementNative[0].id, switched.new_state.sessionId);
+  assertNoCancellationPublication({ branch: replacementNative }, originals, assertWireSources);
+  const final = await read('cancel-late-final-session.json');
+  assert.equal(final.session_file, process.replacement_session_file);
+  assert.ok(final.branch.some(row => row.customType === 'context-broker-selected-graph'));
+  assert.equal(final.branch.some(row => row.customType === 'context-broker-materialization' && row.data?.request_id === receipt.request_id), false);
+  const recovery = receipt.points.find(row => row.event === 'recovery-started');
+  const values = consumeValues(events, process.pid); assert.ok(values.length > 0);
+  for (const value of values) {
+    assert.ok(BigInt(value.observer_monotonic_ns) > BigInt(recovery.monotonic_ns));
+    assert.equal(value.value.effects?.remote_writes, 'none');
+    const prepared = value.value.preparation.nodes.filter(row => row.state === 'prepared');
+    assert.equal(prepared.length, 1); assert.equal(prepared[0].content, facts.expected.root);
+    const end = events.find(row => row.kind === 'context-broker.notion-sdk' && row.event === 'end' && row.id === value.id);
+    assert.equal(end?.status, 'completed'); assert.equal(end?.request_metrics?.requests?.notion_write, 0);
+  }
+  const wire = await read('provider-index.json');
+  const last = wire.findIndex(row => row.file === receipt.recovery_provider_file); assert.equal(last, wire.length - 1);
+  for (const item of wire.slice(0, last)) assertWireSources(await read(item.file), [], originals);
+  assertWireSources(await read(receipt.recovery_provider_file), [facts.expected.root], originals.slice(1));
+  const proof = proofs.filter(row => row.provider_file === receipt.recovery_provider_file);
+  assert.equal(proof.length, 1); assert.deepEqual(proof[0].present.map(row => row.text), [facts.expected.root]);
+  const managerStarts = events.filter(row => row.kind === 'manager_transport' && row.event === 'spawn');
+  const pids = (await readFile(join(base, 'manager/accepted-pids.txt'), 'utf8')).trim().split('\n').map(Number);
+  assert.deepEqual(managerStarts.map(row => row.child_pid), pids);
+  assert.deepEqual(receipt.manager_processes, events.filter(row => row.kind === 'manager_transport' && row.event === 'close'));
+  assert.equal(receipt.manager_processes.length, pids.length);
+  assert.ok(receipt.manager_processes.every(row => row.code === 0 && row.signal === null));
+  const scopes = await read('credential-scopes.json');
+  assert.notEqual(scopes.manager.scope, scopes.clients[0].scope);
+  assert.equal(scopes.manager.scope, states.settled.identities[0].scope); assert.equal(response.envelope.result.scope, scopes.manager.scope);
+  assert.ok(values.every(row => row.value.preparation.nodes.every(node => node.state !== 'prepared' || node.binding.scope === scopes.clients[0].scope)));
+  const ready = await read('after-late-materialization.json'), after = await read('after-recovery.json');
+  assertMaterializedFacts(facts, ready); assert.deepEqual(after, ready);
+}
+
+export async function verifyMaterializationEvidence({ base, entry, source, events, proofs, assertWireSources }) {
+  if (entry.name === 'source-materialize-cancel-late') return verifyCancellationEvidence({ base, entry, source, events, proofs, assertWireSources });
   const receipt = JSON.parse(await readFile(join(base, 'materialization.json'), 'utf8'));
   const facts = JSON.parse(await readFile(join(base, 'source-facts.json'), 'utf8'));
   const upstreamHead = JSON.parse(await readFile(join(base, 'upstream-head.json'), 'utf8'));

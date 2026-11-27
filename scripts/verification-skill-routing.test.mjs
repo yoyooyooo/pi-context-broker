@@ -24,7 +24,7 @@ const cacheFeature = ".agents/skills/verify-notion-skills-integration/features/s
 const dailyFeature = ".agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md"
 const cacheScenarios = ["http-warm-restart", "http-warm-directory-expired", "http-smart-revalidate", "http-smart-current"]
 const materializationFeature = ".agents/skills/verify-notion-skills-integration/features/source-materialization.md"
-const materializationScenarios = ["source-materialize-legacy", "source-materialize-first", "source-materialize-legacy-source", "source-materialize-growth", "source-materialize-native-root"]
+const materializationScenarios = ["source-materialize-legacy", "source-materialize-first", "source-materialize-legacy-source", "source-materialize-growth", "source-materialize-native-root", "source-materialize-cancel-late"]
 
 function verify(document, contents, scripts) {
   for (const route of routes) {

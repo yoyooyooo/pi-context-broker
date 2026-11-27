@@ -84,6 +84,8 @@ jobs:
           node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-growth"
           node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-native-root" --scenario source-materialize-native-root
           node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-native-root"
+          node scripts/notion-sdk-pi.mjs run --package "$BROKER_PACKAGE" --fixture "$RUNNER_TEMP/ntn-skills-current-fixture/fixture.json" --source-http-helper "$GITHUB_WORKSPACE/.verification/ntn-skills-cli/scripts/sdk-source-fixture.mjs" --pi "$PI_ENTRY" --out "$RUNNER_TEMP/pi-source-materialize-cancel-late" --scenario source-materialize-cancel-late
+          node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-source-materialize-cancel-late"
       - name: Preserve current SDK results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -102,6 +104,7 @@ jobs:
             ${{ runner.temp }}/pi-source-materialize-legacy-source/
             ${{ runner.temp }}/pi-source-materialize-growth/
             ${{ runner.temp }}/pi-source-materialize-native-root/
+            ${{ runner.temp }}/pi-source-materialize-cancel-late/
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
