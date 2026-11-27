@@ -208,7 +208,17 @@ existing fresh-cache behavior.
 
 Each build gets a new ID. It copies the current tracked files and nonignored
 untracked files from both task clones into private source snapshots, using the
-Git file lists. It installs each snapshot's dependencies in that build, then
+Git file lists. The Broker snapshot excludes only the repository-root
+`benchmark/results` tree, which contains retained historical publications and
+is not a build or subject-runtime input. Benchmark source, runtime modules,
+tests, fixtures and other data remain selected. The CLI snapshot has no such
+exclusion. Capacity estimates use the same selection as the copy; each
+`build.json.sources.<repository>.projection` declares its version, Git selection
+rule and excluded roots. The copied-file fingerprints describe that explicit
+projection, not the omitted historical archive. Keep historical reports at their
+original evidence locations; this rule does not delete or rewrite them.
+
+It installs each snapshot's dependencies in that build, then
 produces complete CLI/SDK and Broker packages with their runtime dependencies.
 Concurrent builds do not install into the editable clones or share a source
 `node_modules` directory.

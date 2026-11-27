@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmod, mkdir, mkdtemp, readFile, readlink, realpath, rename, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { test } from 'node:test';
 import {
-  buildEnvironment, checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, seedBunCache, seedNpmCache, validatePiArguments, verifySelectedCliPair,
+  buildEnvironment, checkEnvironment, createEnvironment, installPackedPair, inventory, parseArgs, runEnvironment, runtimeEnvironment, seedBunCache, seedNpmCache, snapshotSource, validatePiArguments, verifySelectedCliPair,
 } from './paired-environment.mjs';
 import { fileInventory, selectedCliInputs } from './next-build-identity.mjs';
 
@@ -82,6 +83,59 @@ async function resealPair(root, selectedCli) {
   build.source_tree = await inventory(join(root, 'source'));
   await writeJson(join(root, 'build.json'), build);
 }
+
+test('source snapshots omit only Broker historical results and retain independent complete selected files', async t => {
+  const retained = await realpath(await mkdtemp(join(tmpdir(), 'paired-source-projection-test-')));
+  t.diagnostic('Owned projection fixtures retained for system-Trash cleanup: ' + retained);
+  const source = join(retained, 'source');
+  const commit = await sourceRepository(source, 'Snapshot fixture');
+  const inputs = {
+    '.gitignore': 'ignored.txt\n',
+    'benchmark/results/release/sentinel.json': 'tracked historical archive\n',
+    'benchmark/results/untracked.json': 'untracked historical archive\n',
+    'benchmark/results-extra/keep.mjs': 'export const nearby = true;\n',
+    'benchmark/runtime/episode-runner.mjs': 'export const runtime = true;\n',
+    'benchmark/runtime/nested/benchmark/results/keep.json': 'nested runtime input\n',
+    'benchmark/projection.test.mjs': 'retained test source\n',
+    'docs/runtime.md': 'retained documentation\n',
+    'ignored.txt': 'ignored file\n',
+  };
+  for (const [name, content] of Object.entries(inputs)) {
+    await mkdir(join(source, name, '..'), { recursive: true });
+    await writeFile(join(source, name), content);
+  }
+  git(source, 'add', 'benchmark/results/release/sentinel.json');
+  await chmod(join(source, 'benchmark/runtime/episode-runner.mjs'), 0o755);
+  const destinations = ['first', 'second'].map(name => join(retained, name));
+  const copies = await Promise.all(destinations.map(destination => snapshotSource(source, destination, 'broker')));
+  const expected = ['README.md', ...Object.keys(inputs).filter(name => name !== 'ignored.txt' && !name.startsWith('benchmark/results/'))].sort();
+  for (const [index, copy] of copies.entries()) {
+    assert.equal(copy.commit, commit);
+    assert.deepEqual(copy.projection, { version: 1, selection: 'git-tracked-and-nonignored-untracked', excluded_roots: ['benchmark/results'] });
+    assert.deepEqual(copy.files.map(file => file.path), expected);
+    assert.equal(copy.sha256, createHash('sha256').update(JSON.stringify(copy.files)).digest('hex'));
+    for (const file of copy.files) assert.equal(createHash('sha256').update(await readFile(join(destinations[index], file.path))).digest('hex'), file.sha256);
+    await assert.rejects(stat(join(destinations[index], 'benchmark/results')), { code: 'ENOENT' });
+    assert.ok((await stat(join(destinations[index], 'benchmark/runtime/episode-runner.mjs'))).mode & 0o100);
+  }
+  assert.deepEqual(copies[0], copies[1]);
+  await writeFile(join(destinations[0], 'benchmark/runtime/episode-runner.mjs'), 'private copy edit\n');
+  assert.equal(await readFile(join(source, 'benchmark/runtime/episode-runner.mjs'), 'utf8'), inputs['benchmark/runtime/episode-runner.mjs']);
+  assert.equal(await readFile(join(destinations[1], 'benchmark/runtime/episode-runner.mjs'), 'utf8'), inputs['benchmark/runtime/episode-runner.mjs']);
+  await assert.rejects(snapshotSource(source, destinations[1], 'broker'), { code: 'EEXIST' });
+  const cli = await snapshotSource(source, join(retained, 'cli-copy'), 'cli');
+  assert.deepEqual(cli.projection.excluded_roots, []);
+  assert.ok(cli.files.some(file => file.path === 'benchmark/results/release/sentinel.json'));
+  assert.ok(cli.files.some(file => file.path === 'benchmark/results/untracked.json'));
+  await writeFile(join(source, 'benchmark/runtime/episode-runner.mjs'), 'new source revision\n');
+  await writeFile(join(source, 'benchmark/new-runtime.mjs'), 'new selected file\n');
+  const changed = await snapshotSource(source, join(retained, 'new-revision'), 'broker');
+  assert.notEqual(changed.sha256, copies[1].sha256);
+  assert.ok(changed.files.some(file => file.path === 'benchmark/new-runtime.mjs'));
+  assert.equal(await readFile(join(destinations[1], 'benchmark/runtime/episode-runner.mjs'), 'utf8'), inputs['benchmark/runtime/episode-runner.mjs']);
+  await symlink('runtime/episode-runner.mjs', join(source, 'benchmark/linked-runtime'));
+  await assert.rejects(snapshotSource(source, join(retained, 'linked-source'), 'broker'), /ordinary files/);
+});
 
 test('paired environments isolate writable state and detect artifact changes', async t => {
   const retained = await realpath(await mkdtemp(join(tmpdir(), 'paired-environment-test-')));
@@ -201,6 +255,30 @@ test('paired environments isolate writable state and detect artifact changes', a
       await assert.rejects(stat(join(rootA, 'runs/capacity-refused-' + source)), { code: 'ENOENT' });
     }
     assert.equal((await checkEnvironment({ root: rootA, build: 'fixture' })).status, 'passed');
+  });
+
+  await t.test('build capacity estimates use the same source projection as snapshots', async () => {
+    const policy = join(retained, 'projection-refusal-policy.json');
+    await writeJson(policy, { version: 1, min_free_bytes: Number.MAX_SAFE_INTEGER });
+    const estimate = async () => {
+      let bytes;
+      await assert.rejects(buildEnvironment({ root: rootA, id: 'projection-capacity', 'capacity-policy': policy }), error => {
+        assert.equal(error.code, 'PAIRED_CAPACITY_REFUSED');
+        bytes = error.capacity.estimate.known_copy_bytes;
+        return true;
+      });
+      await assert.rejects(stat(join(rootA, 'builds/projection-capacity')), { code: 'ENOENT' });
+      return bytes;
+    };
+    const baseline = await estimate(), source = join(rootA, 'broker/benchmark');
+    await mkdir(join(source, 'results'), { recursive: true });
+    try {
+      await writeFile(join(source, 'results/sentinel'), Buffer.alloc(1024 * 1024));
+      assert.equal(await estimate(), baseline, 'Historical archive bytes are not a planned source copy');
+      const runtime = 'export const retainedRuntime = true;\n';
+      await writeFile(join(source, 'runtime.mjs'), runtime);
+      assert.equal(await estimate(), baseline + Buffer.byteLength(runtime), 'Runtime input bytes remain in the capacity estimate');
+    } finally { await rename(source, join(retained, 'projection-capacity-input')); }
   });
 
   await t.test('runtime-only commands retain private CLI/Pi launch and state without source or dependency copies', async () => {
