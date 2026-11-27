@@ -66,6 +66,14 @@
         "sha256": "0242dc7a7fc399512b15448a530137c5b4a5fac0c1ba09e5faf23d1f22faaf3d",
         "bytes": 23351
       }
+    },
+    {
+      "path": "cold-reuse.json",
+      "mode": "exact-small-receipt-copy",
+      "sha256": "0f887a7e6dbc9e6cac4e5043292d0ab3f5326e2b5cfae67dbe4a9c03f3e39a41",
+      "bytes": 12274,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/cold-reuse-readback-20261127.json",
+      "original_sha256": "0f887a7e6dbc9e6cac4e5043292d0ab3f5326e2b5cfae67dbe4a9c03f3e39a41"
     }
   ],
   "original_control": [

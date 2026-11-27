@@ -1,0 +1,249 @@
+{
+  "version": 1,
+  "kind": "independent-cold-start-readonly-reuse",
+  "date_utc": "2026-11-27",
+  "owner": "/root/cold_reuse_current",
+  "status": "passed_with_navigation_friction",
+  "scope": "Restore current phase from provided project entries and execute one existing offline read-only verification against a completed comparison.",
+  "starting_entries": {
+    "project": "https://app.notion.com/p/4125636c236e81f28894e4bbb4eab711",
+    "method": "https://app.notion.com/p/4205636c236e814397c1cb417d8d3db3",
+    "issue": "https://linear.app/yoyooyooo/issue/AH-1217",
+    "git": "https://github.com/yoyooyooo/pi-context-broker/tree/benchmark"
+  },
+  "observed_current_state": {
+    "project_last_edited_at": "2026-11-27T08:38:34.678Z",
+    "method_last_edited_at": "2026-11-27T07:36:39.258Z",
+    "ah1217_top_update": "2026-11-27 16:37 UTC+8",
+    "phase": "Use existing measurement for bounded product improvements; no historical matrix rerun.",
+    "accepted_pair": {
+      "cli": "31f30db8f960cc4f36d1e02f8e279d641b660718",
+      "broker": "312c40ba85a2253306c3b4f82f82a4686168af74",
+      "adoption_evidence": "Previously completed three-machine adoption as reported by Project and AH-1217; this cold-start check did not recheck live installation."
+    },
+    "latest_completed_comparison": "2026-11-27 accepted smart-cache, four observations, merged Benchmark report at 0cb3019795336248553770d1368ccd563905b60a",
+    "rejected_candidate": "Refresh guidance did not change observed request selection and was not adopted.",
+    "pending_product_fix": {
+      "pr": "https://github.com/yoyooyooo/notion-skills-cli/pull/42",
+      "observed_head": "c7a71032bca8cf1a40255c3600bbade8b24d37aa",
+      "work": "Same-operation Library-title GET reuse and first-start concurrent current-state admission fix",
+      "boundary": "Current-head CI, accepted pairing, packed artifacts, targeted real comparison and three-machine adoption were still pending in the observed entry. This receipt does not claim their completion."
+    }
+  },
+  "source_chain": [
+    {
+      "step": 1,
+      "source": "Notion Project and method",
+      "result": "Recovered product-first phase, latest completed comparisons, accepted cache versus pending PR42, and AH-1217 routing."
+    },
+    {
+      "step": 2,
+      "source": "Project Checkouts relation; six related pages fetched, then Checkouts query Host=mini Repository=pi-context-broker",
+      "result": "Found existing /Users/yoyo/Documents/code/personal/pi-context-broker-worktrees/daily-next; opened read-only. It was next and did not contain docs/benchmark-running.md."
+    },
+    {
+      "step": 3,
+      "source": "linear issue view AH-1217",
+      "result": "Recovered exact NEW root, current accepted/candidate identities, control pointers, frozen controller and latest report commit without asking root for paths."
+    },
+    {
+      "step": 4,
+      "source": "Local git show 0cb3019795336248553770d1368ccd563905b60a:docs/benchmark-smart-cache-2026-11-27.md and benchmark/results/2026-11-27-smart-cache/README.md",
+      "result": "Confirmed comparison direction, limits and original-only thin-index boundary."
+    },
+    {
+      "step": 5,
+      "source": "Same fixed Git commit docs/benchmark-running.md; original operator-readback-1.json and bundle-verification-2.json",
+      "result": "Located query/reanalysis entry and original evidence closure."
+    },
+    {
+      "step": 6,
+      "source": "Frozen next-smart-cache-20261127-1/source/broker/benchmark/cli.mjs and evidence/store.mjs",
+      "result": "Confirmed query calls readEvidenceBundle with default verify=true and reports zero model requests. Used exact plan root."
+    }
+  ],
+  "environment_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126",
+  "chosen_comparison": {
+    "reference_build": "next-product-runtime-20261127-2",
+    "candidate_build": "next-smart-cache-20261127-1",
+    "reference_sdk_sha256": "fd4384cf70e3e9334d94106b1b0aa5e72b3c2dccfc97bb77321e9cb9e93434f1",
+    "candidate_sdk_sha256": "ea241cd603491adaeb9e8a2364cb3fdc545459462a519b04eaad84500214a420",
+    "collector_version": "1.3.5",
+    "plan_path": "control/current-smart-cache-own-20261127-1/attempt-1/plan.json",
+    "plan_file_sha256": "584b65c0bde3bad5361580a57461b3817524b8f47d1ed39f17cbdcfe65e17bd7",
+    "environment_pairs": [
+      [
+        1,
+        0
+      ]
+    ],
+    "sequence": [
+      "e1",
+      "e0",
+      "e0",
+      "e1"
+    ]
+  },
+  "verification": {
+    "actual_command": "node /Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-smart-cache-20261127-1/source/broker/benchmark/cli.mjs query --root /Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-smart-cache-own-20261127-1/attempt-1",
+    "command_invocations": 2,
+    "reason_for_second_invocation": "First stdout was too large and tool output was truncated. Second identical read-only query was parsed in memory and emitted only selected fields.",
+    "exit_codes": [
+      0,
+      0
+    ],
+    "elapsed_seconds": [
+      0.449,
+      0.381
+    ],
+    "new_model_requests": 0,
+    "raw_artifact_reference_counts": [
+      224,
+      224,
+      244,
+      243
+    ],
+    "raw_artifact_reference_total": 935,
+    "raw_artifact_count_scope": "935 references summed across four verified bundles; shared references can repeat. Unique-file count was not measured.",
+    "controller": {
+      "files_sha256_and_bytes_checked": 89,
+      "all_matched": true,
+      "plan_declared_implementation_sha256": "4632e30dfeb7885fb5510558714cadb7a1f9fb6e408c2a733a88a52b6df296e2",
+      "method": "Python read_bytes for every execution.implementation.files path; assert actual SHA256 and length equal the frozen plan. No source copied."
+    },
+    "original_plan_and_ledger_before_after": {
+      "equality_checked": true,
+      "equal": true,
+      "plan_before_sha256": "584b65c0bde3bad5361580a57461b3817524b8f47d1ed39f17cbdcfe65e17bd7",
+      "plan_after_sha256": "584b65c0bde3bad5361580a57461b3817524b8f47d1ed39f17cbdcfe65e17bd7",
+      "ledger_path": "control/current-smart-cache-own-20261127-1/attempt-1/ledger.jsonl",
+      "ledger_before_sha256": null,
+      "ledger_after_sha256": null,
+      "ledger_digest_limitation": "The original in-memory before/after map included ledger SHA256 and equality returned true, but stdout did not emit that digest. It is not reconstructed or newly reread for this receipt."
+    },
+    "results": [
+      {
+        "run_id": "current-smart-cache-own-pair-1-001",
+        "build_id": "next-smart-cache-20261127-1",
+        "case_id": "explicit-01-a-n16-r1",
+        "condition_id": "m0-e1",
+        "validity": "valid",
+        "outcome": "pass",
+        "verified_success": true,
+        "unassisted_success": true,
+        "known_actual_attempts": 5,
+        "input_tokens": 20859,
+        "raw_artifact_references": 224,
+        "episode_sha256": "1e1e92cc4b76b68526d319bd0ac45524fe3083694e249456f570b7e3cf96bb40"
+      },
+      {
+        "run_id": "current-smart-cache-own-pair-1-002",
+        "build_id": "next-product-runtime-20261127-2",
+        "case_id": "explicit-01-a-n16-r1",
+        "condition_id": "m0-e0",
+        "validity": "valid",
+        "outcome": "pass",
+        "verified_success": true,
+        "unassisted_success": true,
+        "known_actual_attempts": 5,
+        "input_tokens": 20743,
+        "raw_artifact_references": 224,
+        "episode_sha256": "39acf6e09db4b3a752efa52c84e6f5f5de253a2a38c07dfb050ff01707fb39e6"
+      },
+      {
+        "run_id": "current-smart-cache-own-pair-1-003",
+        "build_id": "next-product-runtime-20261127-2",
+        "case_id": "continuation-01-a-n16-r2",
+        "condition_id": "m0-e0",
+        "validity": "valid",
+        "outcome": "pass",
+        "verified_success": true,
+        "unassisted_success": true,
+        "known_actual_attempts": 8,
+        "input_tokens": 35040,
+        "raw_artifact_references": 244,
+        "episode_sha256": "da1ba17fba8934b7d9eec0deaa1c7d4fd07b03fadb8ca9a0c60c028831ef4e78"
+      },
+      {
+        "run_id": "current-smart-cache-own-pair-1-004",
+        "build_id": "next-smart-cache-20261127-1",
+        "case_id": "continuation-01-a-n16-r2",
+        "condition_id": "m0-e1",
+        "validity": "valid",
+        "outcome": "unknown",
+        "verified_success": false,
+        "unassisted_success": false,
+        "known_actual_attempts": 8,
+        "input_tokens": 35518,
+        "raw_artifact_references": 243,
+        "episode_sha256": "d51b7510d5c4f252705b583a8a587e13e28073ce04d139086d539abfbe4a9dbb"
+      }
+    ],
+    "summary": {
+      "observations": 4,
+      "valid": 4,
+      "pass": 3,
+      "fail": 0,
+      "unknown": 1,
+      "historical_model_attempts": 26,
+      "historical_input_tokens": 112160
+    }
+  },
+  "access_accounting_before_receipt": {
+    "functions_calls": 18,
+    "nested_tool_calls": 31,
+    "skill_read_calls": 1,
+    "notion_page_fetches": 10,
+    "notion_database_queries": 1,
+    "linear_issue_reads": 1,
+    "devspace_workspace_opens": 2,
+    "devspace_file_reads": 7,
+    "devspace_exec_calls": 10,
+    "notes": [
+      "Devspace exec count includes the Linear read; do not add it again to tool-call totals.",
+      "Notion fetches include two repeat reads after overlarge initial output and six checkout pages.",
+      "One file read returned ENOENT for benchmark-running.md in daily-next.",
+      "One command failed because rg was unavailable; Python in-memory filtering was used instead.",
+      "Two query invocations concern the same four originals and do not add observations.",
+      "The route was sufficient, but these counts are the actual trace, not a claimed minimal theoretical path."
+    ]
+  },
+  "navigation_findings": [
+    {
+      "severity": "small",
+      "finding": "The latest smart-cache thin README identifies originals but has no copy-ready read-only command naming its frozen controller and plan root.",
+      "minimum_change": "Add one exact query command plus a one-line statement that it checks original evidence and does not rescore the private oracle. Keep the thin-index/nonportable boundary."
+    },
+    {
+      "severity": "small",
+      "finding": "Project Checkouts led to an older next checkout without Benchmark docs. The Project already routes experiments to AH-1217, but workspace acquisition still required that detour in this tool environment.",
+      "minimum_change": "AH-1217 already has the exact NEW root. Surface that existing route as the first Benchmark workspace entry; do not duplicate machine paths in the long-lived method page."
+    },
+    {
+      "severity": "operator_output",
+      "finding": "Unfiltered query stdout includes extensive raw-artifact metadata and was truncated in tool output.",
+      "minimum_change": "Document an in-memory projection of the existing query output for run_id, condition, outcome, requests and input. A new launcher or duplicate analysis tool is unnecessary."
+    }
+  ],
+  "not_proven": [
+    "Private-oracle regrading and full reanalysis were not run.",
+    "Portable replay after deleting retained originals/build closure was not tested; the selected directory is explicitly a thin index.",
+    "A stranger-agent low-intervention real-model pilot, new model behavior, or new candidate behavior was not tested.",
+    "Current PR42 integration, its exact-head CI, packed build and three-machine adoption were not rechecked.",
+    "No general latency, token-cost, monetary-cost or foreground HTTP improvement follows from this read-only verification.",
+    "935 artifact references are not claimed to be 935 unique files."
+  ],
+  "side_effects": {
+    "before_receipt": {
+      "created_files": 0,
+      "new_source_copies": 0,
+      "new_dependency_installs": 0,
+      "new_builds": 0,
+      "model_requests": 0,
+      "remote_writes": 0,
+      "processes_terminated": 0
+    },
+    "receipt_write": "One exclusively created small JSON in existing NEW/control, requested by root after verification; no raw artifacts copied.",
+    "retirement": "No environment or run was created. Retain this receipt with the task evidence; no temporary environment cleanup is required."
+  }
+}
