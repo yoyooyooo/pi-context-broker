@@ -1,0 +1,11 @@
+--- a/packages/context-broker/src/index.ts
++++ b/packages/context-broker/src/index.ts
+@@ -1062,7 +1062,7 @@
+       .filter(file => file.path !== skill.entrypoint).map(({ path, ref }) => ({ path, ref }));
+     const taskRole = presentation.sourceTaskRole?.(skill);
+     return [
+-      `<context-broker-record kind="${recordKind(skill)}" name="${escapeAttribute(skill.name)}" ref="${escapeAttribute(ref)}">`,
++      `<context-broker-record kind="${recordKind(skill)}" name="${escapeAttribute(skill.name)}" ref="${escapeAttribute(ref)}"${skill.sourceId ? ` source="${escapeAttribute(skill.sourceId)}"` : ""}>`,
+       ...(taskRole ? [`<task-role>${escapeText(JSON.stringify(taskRole))}</task-role>`] : []),
+       ...(files.length ? [`<resources>${escapeText(JSON.stringify(files))}</resources>`] : []),
+       "<body>",

@@ -8,7 +8,7 @@ import { gradeEpisode } from './corpus/grader.mjs';
 import { readTurnControlEvidence, collectTurnFacts } from './collect-turns.mjs';
 import { known, unknown, normalizeEpisode } from './evidence/normalize.mjs';
 import { assessReportedModel, providerReportedModel, validateRoutingPolicy } from './reported-model.mjs';
-import { deriveRedactedProviderBinding } from './provider-binding.mjs';
+import { deriveRedactedProviderBinding, isCredentialRedaction } from './provider-binding.mjs';
 export { deriveRedactedProviderBinding } from './provider-binding.mjs';
 import { verifyArtifactFiles, writeEvidenceBundle } from './evidence/store.mjs';
 import { readProviderTransport, providerApplicationCompletion } from '../scripts/skill-consumption-provider.mjs';
@@ -18,7 +18,7 @@ import { CURRENT_SOURCE_CONTRACT, loadCurrentSourceViews } from './current-sourc
 import { pairedBrokerEntry } from './paired-broker-entry.mjs';
 
 export const COLLECTOR_VERSION = '1.2.2';
-export const CURRENT_COLLECTOR_VERSION = '1.3.5';
+export const CURRENT_COLLECTOR_VERSION = '1.3.11';
 const retainedSourceViews = { contract: RETAINED_SOURCE_CONTRACT, graphSourceViews, verifyPreparationEvidence };
 const hash = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -93,7 +93,7 @@ export function collectProviderApplicationCompletion({ request, attempt, transpo
     || assistantEvent.request_id !== request.id || assistantEvent.data?.type !== 'message_end'
     || message?.role !== 'assistant' || message.errorMessage || message.api !== model.api
     || message.model !== (model.route ?? model.id) || message.provider !== model.provider
-      && !(message.provider === '[REDACTED_CREDENTIAL]' && providerBinding?.status === 'known' && providerBinding.value === model.provider)
+      && !(isCredentialRedaction(message.provider) && providerBinding?.status === 'known' && providerBinding.value === model.provider)
     || rawUsage?.complete !== true || !message.usage
     || message.usage.input + message.usage.cacheRead + message.usage.cacheWrite !== rawUsage.input
     || message.usage.output !== rawUsage.output || message.usage.totalTokens !== rawUsage.input + rawUsage.output) return null;
@@ -108,11 +108,19 @@ export function collectProviderApplicationCompletion({ request, attempt, transpo
 /** Recover only the exact recorder marker from an independently observed, unique
  * provider configuration key. A missing or arbitrary provider is never accepted. */
 
-/** Runtime-owned execution callbacks, not model proposals or CodeMode display previews. */
+/** Runtime-owned pipeline callbacks, with exact guard receipts for calls rejected
+ * before implementation execution. Model prose and display previews are not receipts. */
 export function collectRuntimeTools(events, eventArtifact, sessionEntries = null, sessionArtifact = null) {
-  const starts = new Map(), ends = new Map(), errors = [], native = new Map(), proposals = new Map();
+  const starts = new Map(), ends = new Map(), errors = [], native = new Map(), proposals = new Map(), guardCalls = new Map(), guardBlocks = new Map();
   const ref = index => ({ artifact_id: eventArtifact.id, sha256: eventArtifact.sha256, line: index + 1 });
   for (const [index, row] of events.entries()) {
+    if (['tool_call', 'tool_call_blocked'].includes(row.type)) {
+      const id = row.type === 'tool_call' ? row.data?.toolCallId : row.data?.tool_call_id;
+      if (typeof id !== 'string' || !id) { errors.push('Missing tool guard identity'); continue; }
+      const target = row.type === 'tool_call' ? guardCalls : guardBlocks;
+      target.set(id, [...(target.get(id) ?? []), { event: row.data, ref: ref(index), turn_id: row.turn_id ?? null, seq: index + 1 }]);
+      continue;
+    }
     if (row.type !== 'session_event') continue;
     const event = row.data;
     if (!['tool_execution_start', 'tool_execution_end'].includes(event?.type)) continue;
@@ -145,12 +153,26 @@ export function collectRuntimeTools(events, eventArtifact, sessionEntries = null
         canonicalJson(result.content ?? null) === canonicalJson(persisted.message.content ?? null))
       result = { ...result, details: persisted.message.details };
     const isError = end?.event.isError ?? result?.isError;
+    let rejected = null;
+    if (guardBlocks.has(id)) {
+      const calls = guardCalls.get(id) ?? [], blocks = guardBlocks.get(id), call = calls[0], block = blocks[0];
+      const parent = start.event.parentToolCallId ?? null;
+      if (calls.length === 1 && blocks.length === 1 && end && typeof start.turn_id === 'string' && start.turn_id.length > 0 && end.event.isError === true &&
+          end.event.toolName === start.event.toolName && (end.event.parentToolCallId ?? null) === parent && end.turn_id === start.turn_id &&
+          call.event.toolName === start.event.toolName && (call.event.parentToolCallId ?? null) === parent && call.turn_id === start.turn_id &&
+          block.event.tool === start.event.toolName && block.event.parent_tool_call_id === parent && block.turn_id === start.turn_id &&
+          block.event.executed === false && typeof block.event.code === 'string' && /^BENCHMARK_[A-Z0-9_]+$/.test(block.event.code) &&
+          block.event.scope === (block.event.code.startsWith('BENCHMARK_OUT_OF_SCOPE') ? 'apparatus-out-of-scope' : 'episode-guard') &&
+          start.seq < call.seq && call.seq < block.seq && block.seq < end.seq) rejected = { call, block };
+      else errors.push('Unverified tool guard rejection: ' + id);
+    }
     tools.push({ id, parent_id: start.event.parentToolCallId ?? null, name: start.event.toolName,
       args: structuredClone(start.event.args ?? {}), status: isError === true ? 'fail' : isError === false ? 'pass' : 'unknown',
-      result: structuredClone(result), turn_id: start.turn_id, execution: 'observed', sequence: start.seq, end_sequence: end?.seq ?? null,
-      refs: uniqueRefs([start.ref, end?.ref, persisted?.ref]), interface_misuse: null });
+      result: structuredClone(result), turn_id: start.turn_id, execution: rejected ? 'rejected_before_execution' : 'observed', sequence: start.seq, end_sequence: end?.seq ?? null,
+      refs: uniqueRefs([start.ref, end?.ref, persisted?.ref, rejected?.call.ref, rejected?.block.ref]), interface_misuse: null });
   }
   for (const [id, end] of ends) if (!starts.has(id)) errors.push('Tool result without execution start: ' + id);
+  for (const id of guardBlocks.keys()) if (!starts.has(id)) errors.push('Tool guard rejection without pipeline start: ' + id);
   // A rejected call can have a persisted native result without an execution callback.
   for (const [id, item] of native) if (!starts.has(id)) {
     const proposal = proposals.get(id);
@@ -200,7 +222,8 @@ export function collectRuntimeTools(events, eventArtifact, sessionEntries = null
         reasons.push('Direct CodeMode census differs from actual callbacks');
     }
     if (summary && reasons.length) errors.push('Unverified nested tool census: ' + tool.id);
-    if (descendants.some(child => child.status !== 'pass')) reasons.push('An executed descendant did not finish successfully');
+    if (descendants.some(child => child.execution === 'rejected_before_execution')) reasons.push('A descendant was rejected before execution');
+    if (descendants.some(child => child.execution !== 'rejected_before_execution' && child.status !== 'pass')) reasons.push('An executed descendant did not finish successfully');
     tool.container = { complete: reasons.length === 0 && tool.status === 'pass', descendant_ids: descendants.map(child => child.id),
       reasons, refs: uniqueRefs([native.get(tool.id)?.ref, ...descendants.flatMap(child => child.refs)]) };
   }
@@ -251,6 +274,18 @@ const notionMetadataProducers = [{
   // 3d57426c routes by local Library identity; only an observed SDK list below
   // can establish directory evidence. Local selection and candidates cannot.
   'src/index.ts': 'bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9',
+  'src/host-skills.ts': 'ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59',
+}, {
+  // Reviewed AH-1336 G-v3 guidance variant; the metadata execute branch is unchanged.
+  'src/index.ts': 'dccad7ad9eacd5de31fd2fa6b7c8005a8be305a15af760cb9066ce83a4647937',
+  'src/host-skills.ts': 'ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59',
+}, {
+  // Reviewed AH-1336 T-v2 descriptions; all metadata output and SDK checks still apply.
+  'src/index.ts': 'bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9',
+  'src/host-skills.ts': 'd89358ce068296b4c55e382c6e5d8ecd0371f4213573430f8a3b740ac5e2cb89',
+}, {
+  // Reviewed AH-1336 S prepared-record source label; metadata lists do not use that wrapper.
+  'src/index.ts': 'c8dd8b78298ac548dbde7a24c4c3fab3c9df728c8739f16054dfbceeff686a91',
   'src/host-skills.ts': 'ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59',
 }, {
   // b9de8bf0 changes only public refresh guidance, not metadata execution.
@@ -480,7 +515,8 @@ export function deliveredSourceBodies(tool, preparations = [], sourceViews = ret
   return output;
 }
 
-export async function collectEpisode({ raw, binding, protocol, slot, condition, model, outputDirectory, environmentRoot, reanalysisOf = null }) {
+export async function collectEpisode({ raw, binding, protocol, slot, condition, model, outputDirectory, environmentRoot,
+  reanalysisOf = null, finalAnswerReview = null }) {
   assert.ok(isAbsolute(environmentRoot) && isAbsolute(outputDirectory) && isAbsolute(raw.root));
   const owned = await realpath(environmentRoot), runRoot = await realpath(raw.root), workspace = join(runRoot, 'workspace');
   if (!inside(owned, resolve(outputDirectory)) && inside(resolve(environmentRoot), resolve(outputDirectory)))
@@ -663,14 +699,14 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
         if (output) { assert.equal(output.sha256, value.sha256); assert.equal(output.bytes, value.bytes); }
         sdkBodyRows.push({ operation_id: entry.requestId, path: value.path ?? 'SKILL.md', owner: value.record?.id ?? null,
           scope: value.scope, snapshot_id: value.snapshot_id, version_id: value.version_id,
-          record: value.record, file_binding: value.file_bindings?.find(file => file.path === (value.path ?? 'SKILL.md')),
+          record: value.record, file_binding: value.file_bindings?.find(file => file.path === (value.path ?? 'SKILL.md')) ?? null,
           sha256: hash(body), bytes: Buffer.byteLength(body), ref: receiptRefs.get(entry.requestId) });
       }
       for (const entry of views.resources) for (const file of entry.value.files) {
         const bytes = Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8');
         sdkBodyRows.push({ operation_id: entry.requestId, path: file.path, owner: entry.value.selection.owner,
           scope: entry.value.selection.scope, snapshot_id: entry.value.selection.snapshot_id, version_id: entry.value.selection.version_id,
-          record: entry.value.manifest.record, file_binding: entry.value.manifest.file_bindings?.find(binding => binding.path === file.path),
+          record: entry.value.manifest.record, file_binding: entry.value.manifest.file_bindings?.find(binding => binding.path === file.path) ?? null,
           sha256: hash(bytes), bytes: bytes.length, ref: receiptRefs.get(entry.requestId) });
       }
       assert.equal(episode.notion.coverage?.sdk, 'complete'); assert.equal(episode.notion.coverage?.owned_http, 'complete');
@@ -807,7 +843,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
       ...files.map(sourceRef), ...notion.refs.map(item => registry.get(item.artifact_id)?.kind === 'implementation'
         ? sourceRef(registry.get(item.artifact_id)) : item)]);
   } catch (error) { metadataRuntime.reason = error.message; }
-  const evidence = { artifacts: [], selections: [], resource_reads: [], clarifications: turnFacts.clarifications,
+  const evidence = { artifacts: [], final_answers: [], final_answer_reviews: [], selections: [], resource_reads: [], clarifications: turnFacts.clarifications,
     state_events: turnFacts.state_events,
     coverage: { artifacts: 'partial', selections: 'partial', resource_reads: 'partial', ...turnFacts.coverage } };
   const evidenceRefs = new Map(turnFacts.evidence_refs), unmatchedReads = [], opaqueTools = [], metadataOnlyTools = [];
@@ -901,6 +937,64 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
   const outputContracts = oracle.contracts.filter(item => item.kind === 'artifact-json');
   assert.ok(outputContracts.every(item => declaredOutputs.includes(item.path)), 'Private grader cannot request an undeclared subject file');
   const turns = episode?.turns ?? [];
+  const answerContracts = oracle.contracts.filter(item => item.kind === 'final-answer'), answerChecks = [];
+  if (answerContracts.length) {
+    assert.equal(binding.public_case.completion?.kind, 'final-answer', 'Natural answer needs a public completion declaration');
+    let complete = true;
+    for (const turnId of new Set(answerContracts.map(item => item.turn_id))) {
+      assert.ok(binding.public_case.turns.some(turn => turn.id === turnId), 'Private grader cannot request an undeclared turn');
+      const observed = turns.filter(turn => turn.id === turnId);
+      const endRows = events.filter(row => row.type === 'user_turn_end' && (row.turn_id === turnId || row.data?.id === turnId));
+      const turn = observed[0], ended = turn?.end_ref ? resolveRef(turn.end_ref) : null;
+      const row = ended?.value;
+      if (observed.length !== 1 || endRows.length !== 1 || ended?.ref.artifact_id !== eventArtifact?.id
+        || !Number.isSafeInteger(ended?.ref.line) || row?.type !== 'user_turn_end'
+        || row?.turn_id !== turnId || row?.data?.id !== turnId || row.data.settled !== true || row.data.is_idle !== true
+        || !Object.hasOwn(row.data, 'final_text') || row.data.final_text !== null && typeof row.data.final_text !== 'string') {
+        complete = false;
+        answerChecks.push({ turn_id: turnId, status: 'unavailable', reason: 'Missing unique settled final-answer event' });
+        continue;
+      }
+      if (Object.hasOwn(turn, 'final_text') && turn.final_text !== row.data.final_text) {
+        complete = false; problems.push('final_answer_summary_mismatch:' + turnId);
+        answerChecks.push({ turn_id: turnId, status: 'unavailable', reason: 'Turn summary differs from its original final-answer event' });
+        continue;
+      }
+      if (row.data.final_text === null) {
+        answerChecks.push({ turn_id: turnId, status: 'absent', refs: [ended.ref] });
+        continue;
+      }
+      const content = row.data.final_text, sha256 = hash(content), evidence_id = 'final-answer-' + evidence.final_answers.length;
+      evidence.final_answers.push({ evidence_id, turn_id: turnId, content, sha256 });
+      evidenceRefs.set(evidence_id, [ended.ref]);
+      answerChecks.push({ turn_id: turnId, status: 'observed', sha256, bytes: Buffer.byteLength(content), refs: [ended.ref] });
+    }
+    evidence.coverage.final_answers = complete ? 'complete' : 'partial';
+  }
+  let answerReview = null;
+  if (finalAnswerReview !== null) {
+    assert.ok(answerContracts.length, 'A review requires a declared natural answer contract');
+    assert.ok(isAbsolute(finalAnswerReview.path) && /^[a-f0-9]{64}$/.test(finalAnswerReview.sha256 ?? ''), 'Review needs an absolute path and original hash');
+    const reviewPath = await realpath(finalAnswerReview.path);
+    assert.ok(inside(owned, reviewPath) && !inside(runRoot, reviewPath), 'Independent review must stay in the owned controller namespace');
+    const artifact = await addFile('collection-answer-review', reviewPath, finalAnswerReview.sha256);
+    const review = JSON.parse(fileBytes.get(artifact.id));
+    assert.equal(review.schema_version, 1); assert.equal(review.kind, 'benchmark-final-answer-review');
+    assert.equal(review.run_id, run.run_id); assert.equal(review.case_id, slot.case_id);
+    assert.equal(review.oracle_sha256, binding.oracle_sha256, 'Review must bind the original private oracle');
+    assert.ok(Array.isArray(review.reviews) && review.reviews.length > 0, 'Review must contain independent assessments');
+    for (const [index, item] of review.reviews.entries()) {
+      const contract = answerContracts.find(contract => contract.id === item.contract_id && contract.turn_id === item.turn_id);
+      assert.equal(contract?.assessment, 'semantic-review', 'Review must name a declared semantic contract and turn');
+      assert.ok(evidence.final_answers.some(answer => answer.turn_id === item.turn_id && answer.sha256 === item.answer_sha256),
+        'Review must bind retained final-answer bytes');
+      const evidence_id = 'final-answer-review-' + index;
+      evidence.final_answer_reviews.push({ evidence_id, contract_id: item.contract_id, turn_id: item.turn_id,
+        answer_sha256: item.answer_sha256, status: item.status, reason: item.reason, reviewer: item.reviewer, method: item.method });
+      evidenceRefs.set(evidence_id, [ref(artifact, '/reviews/' + index)]);
+    }
+    answerReview = { sha256: artifact.sha256, refs: [ref(artifact)] };
+  }
   let allOutputsChecked = true, historicalOutputsComplete = true;
   for (const [index, name] of declaredOutputs.entries()) {
     const path = localPath(workspace, name);
@@ -951,16 +1045,21 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
     turn_effects: { coverage: turnFacts.coverage, limitations: turnFacts.limitations, material_versions: turnFacts.material_rows.map(row => ({
       skill_id: row.skill_id, path: row.path, version: row.version, actual_sha256: row.actual_sha256,
       canonical_sha256: row.canonical_sha256, available_from_turn_id: row.available_from_turn_id, event_id: row.event_id, mapping: row.mapping })) },
-    evidence, output_checks: outputChecks, tool_lineage_errors: toolResult.errors, unmatched_reads: unmatchedReads, opaque_tools: opaqueTools,
+    evidence, output_checks: outputChecks, answer_checks: answerChecks, final_answer_review: answerReview, tool_lineage_errors: toolResult.errors, unmatched_reads: unmatchedReads, opaque_tools: opaqueTools,
     code_mode_runtime: codeModeRuntime, metadata_runtime: metadataRuntime, metadata_only_tools: metadataOnlyTools,
     tool_containers: tools.filter(tool => tool.container).map(tool => ({ tool_call_id: tool.id, ...tool.container })),
     limitations: ['Source consumption requires delivered bytes and independently verified material parity.',
       'Opaque shell or arbitrary tool filesystem access is not inferred from code text or tool count.',
-      'No clarification or state callback is synthesized from an expected event.'],
+      'No clarification or state callback is synthesized from an expected event.',
+      'Natural-answer text facts are necessary conditions; semantic review is separate and binds exact retained answer bytes.',
+      'A review hash proves its retained bytes and linkage, not the independence or correctness of its reviewer.'],
     source_registry: artifacts.map(a => ({ id: a.id, sha256: a.sha256, bytes: a.bytes, kind: a.kind })) };
   const readbackArtifact = await save('collection-readback', 'readback.json', readback);
   for (const [index, item] of evidence.artifacts.entries()) evidenceRefs.set(item.evidence_id,
     uniqueRefs([...(evidenceRefs.get(item.evidence_id) ?? []), ref(readbackArtifact, '/evidence/artifacts/' + index)]));
+  for (const key of ['final_answers', 'final_answer_reviews'])
+    for (const [index, item] of evidence[key].entries()) evidenceRefs.set(item.evidence_id,
+      uniqueRefs([...(evidenceRefs.get(item.evidence_id) ?? []), ref(readbackArtifact, '/evidence/' + key + '/' + index)]));
   for (const [index, item] of evidence.resource_reads.entries()) evidenceRefs.set(item.evidence_id,
     uniqueRefs([...(evidenceRefs.get(item.evidence_id) ?? []), ref(readbackArtifact, '/evidence/resource_reads/' + index)]));
   const gradeArtifact = await save('collection-grade', 'grade.json', { ...grade, derivation: oracleIdentity, collector_version: collectorVersion });
@@ -981,7 +1080,7 @@ export async function collectEpisode({ raw, binding, protocol, slot, condition, 
   if (model.routing !== undefined) validateRoutingPolicy(model.routing);
   const providerBindings = new Map();
   async function bindProviderEvent(row, request, attempt, sourceRef) {
-    if (row.data.provider !== '[REDACTED_CREDENTIAL]' || !attempt) return null;
+    if (!isCredentialRedaction(row.data.provider) || !attempt) return null;
     if (providerBindings.has(attempt.id)) return providerBindings.get(attempt.id);
     const candidateArtifact = registry.get('candidate-observed'), admissionArtifact = registry.get('admission-comparison');
     if (!candidateArtifact || !admissionArtifact) return null;

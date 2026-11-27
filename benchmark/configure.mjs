@@ -25,6 +25,7 @@ import { ENGINEERING_WINDOW_DRAFT, assertEngineeringWindowSetup, isEngineeringCo
 import { ENGINEERING_PREFLIGHT_REPAIR_DRAFT } from './campaign-engineering-preflight-repair.mjs';
 import { assertStandingSetup, standingCampaignPolicy } from './standing-campaign.mjs';
 import { prepareAdapterEvidenceOwnership } from './collection-recovery.mjs';
+import { validateResourceProfileRef } from '../scripts/paired-resource-profile.mjs';
 import { assertConditionMaterialSetup, prepareConditionMaterialBindings, freezeConditionMaterialBindings,
   readConditionMaterialBindings, selectCaseBinding } from './condition-bindings.mjs';
 
@@ -35,6 +36,10 @@ const save = async (path, value) => {
   catch (error) { if (error.code !== 'EEXIST') throw error; assert.equal(await readFile(path, 'utf8'), bytes, 'Existing configuration differs: ' + path); }
 };
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
+const resourceProfileRef = value => {
+  if (value === undefined) return null;
+  validateResourceProfileRef(value); return { path: value.path, sha256: value.sha256 };
+};
 
 /** Each slot capture must belong to its exact physical material binding. */
 export function verifyRetainedSlotCapture({ launch, run, binding, candidate, conditionId }) {
@@ -44,6 +49,8 @@ export function verifyRetainedSlotCapture({ launch, run, binding, candidate, con
   assert.equal(launch.runtime_config.correlation.candidate_id, conditionId);
   assert.equal(launch.runtime_config.correlation.task_id, binding.id);
   assert.equal(run.build_id, candidate.build_id); assert.equal(run.pi_launch.mode, candidate.mode);
+  assert.deepEqual(resourceProfileRef(launch.runtime_config.resourceProfile), resourceProfileRef(candidate.resource_profile), 'Retained capture resource profile changed');
+  assert.deepEqual(resourceProfileRef(run.pi_launch.resource_profile), resourceProfileRef(candidate.resource_profile), 'Retained launch resource profile changed');
   if (candidate.mode === 'broker') assert.equal(run.remote.library, binding.notion_entry);
   else { assert.equal(run.remote.library, null); assert.equal(run.pi_launch.native_corpus.source, binding.skills_root); }
 }
@@ -76,6 +83,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   assert.equal(setup.version, 1);
   assert.ok(isAbsolute(setup.environment_root) && isAbsolute(setup.control_root));
   assert.ok(Array.isArray(setup.candidates));
+  for (const candidate of setup.candidates) if (candidate.resource_profile !== undefined) { validateResourceProfileRef(candidate.resource_profile); assert.equal(candidate.mode, 'broker', 'Ordinary-derived resources require Broker mode'); }
   assertConditionMaterialSetup(setup);
   const environmentPairs = comparisonEnvironmentPairs(setup.candidates.length, setup.environment_pairs);
   if (setup.candidates.length !== 2) assert.ok(setup.campaign_scope || setup.standing, 'Four candidates require an explicit campaign design');
@@ -144,7 +152,8 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const turnRuntimeBuilds = [];
   for (const buildId of new Set(setup.candidates.map(candidate => candidate.build_id))) {
     for (const binding of cases) {
-      const proof = await verifyTurnRuntimeBuild({ environmentRoot: setup.environment_root, buildId, binding });
+      const resourceProfile = setup.candidates.find(candidate => candidate.build_id === buildId && candidate.resource_profile !== undefined)?.resource_profile;
+      const proof = await verifyTurnRuntimeBuild({ environmentRoot: setup.environment_root, buildId, binding, resourceProfile });
       if (proof.required) { turnRuntimeBuilds.push(proof); break; }
     }
   }
@@ -222,12 +231,13 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
         ...(actual.slot && candidate.mode === 'broker' ? { notion_entry: actual.binding.notion_entry } : {}) },
       binding: actual.binding, mi, ei, ci, ...(actual.slot ? { slot: actual.slot } : {}) }));
   })));
-  // Natural prompts and task files are bound separately and checked on every run.
-  // Identical startup inputs share a frozen expectation; every actual first payload
+  // Natural prompts can trigger product preloading, so only identical first
+  // prompts and startup inputs share an expectation. Every actual first payload
   // still has to match it before transport. No observation is fabricated by substitution.
   const groups = new Map();
   for (const cell of cells) {
     const key = fingerprint({ model: cell.model, candidate: cell.candidate, runtime,
+      first_prompt: cell.binding.public_case.turns[0].prompt,
       ...(cell.slot ? { slot_id: cell.slot.slot_id } : {}),
       skills_root: cell.candidate.mode === 'native' || !cell.candidate.notion_entry ? cell.binding.skills_root : null });
     if (!groups.has(key)) groups.set(key, []); groups.get(key).push(cell);
@@ -252,13 +262,15 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
         assert.equal(launch.input_inventory_sha256, job.binding.input_inventory_sha256);
         assert.equal(launch.runtime_config.mode, job.candidate.mode);
         assert.equal(launch.runtime_config.model.id, job.model.route);
+        assert.deepEqual(launch.runtime_config.turns, job.binding.public_case.turns.map(({ id, prompt }) => ({ id, prompt })), 'Retained capture natural prompts changed');
         assert.deepEqual(launch.runtime_config.runtime, runtime);
+        assert.deepEqual(resourceProfileRef(launch.runtime_config.resourceProfile), resourceProfileRef(job.candidate.resource_profile), 'Retained capture resource profile changed');
         assert.equal(launch.runtime_config.limits.mode ?? 'bounded', setup.budget.mode ?? 'bounded', 'Retained capture resource policy changed');
       } catch (error) { if (error.code !== 'ENOENT') throw error; raw = null; }
       if (!raw) raw = await runSubject({ environmentRoot: setup.environment_root, buildId: job.candidate.build_id, mode: job.candidate.mode,
         binding: job.binding, model: { ...job.model, baseUrl: registry.base_url }, modelsFile, runtime,
         controlRoot: root, runId: id, conditionId: 'm' + job.mi + '-e' + job.ei, budget: setup.budget.episode, budgetMode: setup.budget.mode ?? 'bounded',
-        codeMode: job.candidate.code_mode, captureOnly: true, credential, notionEntry: job.candidate.notion_entry });
+        codeMode: job.candidate.code_mode, captureOnly: true, credential, notionEntry: job.candidate.notion_entry, resourceProfile: job.candidate.resource_profile });
       await save(captureFile, raw);
       assert.equal(raw.status, 'captured', 'No-model capture failed: ' + id);
       assert.equal(raw.shared.status, 'passed');
@@ -303,7 +315,7 @@ export async function configureComparison(setup, { onProgress = () => {} } = {})
   const conditions = Object.fromEntries(protocol.conditions.map(condition => {
     const ei = environments.findIndex(environment => environment.id === condition.environment_id), candidate = setup.candidates[ei];
     const selected = expanded.filter(result => result.ei === ei && result.model.id === condition.model_id);
-    return [condition.id, { build_id: candidate.build_id, mode: candidate.mode, ...(candidate.notion_entry ? { notion_entry: candidate.notion_entry } : {}),
+    return [condition.id, { build_id: candidate.build_id, mode: candidate.mode, ...(candidate.resource_profile !== undefined ? { resource_profile: candidate.resource_profile } : {}), ...(candidate.notion_entry ? { notion_entry: candidate.notion_entry } : {}),
       ...(conditionMaterials.registration ? { case_bindings: conditionMaterials.references[condition.id] } : {}),
       expectations: Object.fromEntries(selected.map(result => [result.slot?.slot_id ?? result.binding.id, result.expectation])) }];
   }));

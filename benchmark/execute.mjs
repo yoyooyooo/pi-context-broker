@@ -4,6 +4,7 @@ import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runEnvironment } from '../scripts/paired-environment.mjs';
+import { readResourceProfile, validateResourceProfileRef } from '../scripts/paired-resource-profile.mjs';
 import { resolveModelCredential } from './models.mjs';
 import { createTurnBridgeController, readTurnBridgeJournal } from './turn-bridge.mjs';
 import { createFixtureTurnAdapter, freezeClarificationPolicy, selectFrozenClarification } from './fixture-turn-adapter.mjs';
@@ -14,7 +15,7 @@ const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '
 /** Common Benchmark instrumentation must implement the controller's turn
  * contract before any fixture preparation, credential read or subject dispatch.
  * This check does not compare the candidate/reference product tools. */
-export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding, model }) {
+export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding, model, resourceProfile }) {
   assert.ok(isAbsolute(environmentRoot));
   assert.ok(typeof buildId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(buildId));
   const result = { version: 1, required: true, status: 'unverified', build_id: buildId, command_source: 'none',
@@ -29,6 +30,7 @@ export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding
     return { path, sha256: sha(bytes), bytes: bytes.length };
   }
   try {
+    if (resourceProfile !== undefined) validateResourceProfileRef(resourceProfile);
     assert.equal(await realpath(environmentRoot), environmentRoot, 'TURN_RUNTIME_ENVIRONMENT_ALIAS');
     const environmentFile = join(environmentRoot, 'environment.json'); result.environment = await file(environmentFile);
     const environment = JSON.parse(await readFile(environmentFile, 'utf8'));
@@ -51,9 +53,12 @@ export async function verifyTurnRuntimeBuild({ environmentRoot, buildId, binding
     result.selected_cli_sha256 = manifest.selected_cli_sha256;
     result.packages = Object.fromEntries(['cli', 'broker'].map(name => [name, manifest.packages[name].sha256]));
     result.product_artifacts_verification = 'full package/source bytes remain subject to the shared frozen-artifact check';
-    for (const name of ['subject.mjs', 'turn-bridge.mjs', 'runtime/episode-runner.mjs', 'runtime/episode-visibility.mjs', ...(model?.routing ? ['reported-model.mjs', 'runtime/episode-policy.mjs'] : [])]) {
-      const path = 'benchmark/' + name;
-      const current = await file(fileURLToPath(new URL('./' + name, import.meta.url)));
+    const paths = ['benchmark/subject.mjs', 'benchmark/turn-bridge.mjs', 'benchmark/runtime/episode-runner.mjs', 'benchmark/runtime/episode-visibility.mjs',
+      ...(model?.routing ? ['benchmark/reported-model.mjs'] : []),
+      ...(model?.routing || resourceProfile !== undefined ? ['benchmark/runtime/episode-policy.mjs'] : []),
+      ...(resourceProfile !== undefined ? ['scripts/paired-resource-profile.mjs', 'benchmark/runtime/episode-evidence.mjs'] : [])];
+    for (const path of paths) {
+      const current = await file(fileURLToPath(new URL('../' + path, import.meta.url)));
       const selected = await file(join(buildRoot, 'source/broker', path));
       const frozen = manifest.source_tree?.files?.filter(item => item.path === 'broker/' + path) ?? [];
       result.files.push({ path, current, build: selected, frozen_sha256: frozen[0]?.sha256 ?? null });
@@ -135,14 +140,17 @@ export async function readSubjectTurnControl({ controlRoot, runRoot, runId, requ
 
 /** The only paid subject dispatch path; the controller itself never invokes a provider. */
 export async function runSubject({ environmentRoot, buildId, mode, binding, model, modelsFile, runtime,
-  controlRoot, runId, conditionId, budget, budgetMode = 'bounded', codeMode = 'free', expected, captureOnly = false, credential, notionEntry }, apparatus = {}) {
+  controlRoot, runId, conditionId, budget, budgetMode = 'bounded', codeMode = 'free', expected, captureOnly = false, credential, notionEntry, resourceProfile }, apparatus = {}) {
   for (const path of [environmentRoot, modelsFile, controlRoot]) assert.ok(isAbsolute(path));
   assert.ok(['native', 'broker'].includes(mode));
   assert.ok(['free', 'off', 'required'].includes(codeMode));
   assert.ok(['bounded', 'unbounded'].includes(budgetMode), 'BENCHMARK_RESOURCE_MODE');
   const unbounded = budgetMode === 'unbounded';
   if (unbounded) assert.ok(Object.values(budget).every(value => value === null), 'BENCHMARK_UNBOUNDED_LIMITS_MUST_BE_NULL');
-  const turnRuntimeBuild = await (apparatus.verifyTurnRuntimeBuild ?? verifyTurnRuntimeBuild)({ environmentRoot, buildId, binding, model });
+  if (resourceProfile !== undefined) validateResourceProfileRef(resourceProfile);
+  const turnRuntimeBuild = await (apparatus.verifyTurnRuntimeBuild ?? verifyTurnRuntimeBuild)({ environmentRoot, buildId, binding, model, resourceProfile });
+  const resources = resourceProfile !== undefined ? await readResourceProfile(resourceProfile, { environmentRoot }) : null;
+  if (resources) assert.equal(mode, 'broker', 'Ordinary-derived resources require Broker mode');
   if (!captureOnly) {
     assert.ok(expected && isAbsolute(expected.path), 'Paid execution requires the exact frozen expectation');
     assert.equal(sha(await readFile(expected.path)), expected.sha256, 'Frozen expectation bytes changed');
@@ -169,7 +177,7 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
   const launch = { run_id: runId,
     input_root: binding.input_root, input_inventory_sha256: binding.input_inventory_sha256,
     ...(controller ? { turn_bridge: controller.publicConfig } : {}),
-    runtime_config: { version: 1, mode,
+    runtime_config: { version: 1, mode, ...(resources ? { resourceProfile: resources.ref } : {}),
       model: { provider: model.provider, id: model.route ?? model.id, api: model.api, baseUrl: model.baseUrl,
         apiKeyEnv: credential.api_key_env, parameters, ...(model.routing ? { routing: structuredClone(model.routing) } : {}) }, runtime,
       limits: { ...(unbounded ? { mode: 'unbounded' } : {}), wallTimeMs: budget.max_duration_ms, maxModelRequests: budget.max_model_requests, maxToolCalls: unbounded ? null : 40,
@@ -178,7 +186,7 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
       admission: { captureOnly, ...(expected ? { expectedFile: expected.path } : {}) },
       turns,
       correlation: { run_id: runId, episode_id: runId, candidate_id: conditionId, task_id: binding.id },
-      codeMode: { policy: codeMode, enabled: codeMode !== 'off', toolSearchEnabled: true, models: false } } };
+      codeMode: { policy: codeMode, enabled: codeMode !== 'off', toolSearchEnabled: resources ? false : true, models: false } } };
   const launchFile = join(controlRoot, runId + '.launch.json');
   try { await save(launchFile, launch); }
   catch (error) { await controller?.abandon('SUBJECT_LAUNCH_CONFIG_FAILED'); throw error; }
@@ -190,9 +198,10 @@ export async function runSubject({ environmentRoot, buildId, mode, binding, mode
     // process terminal or its actual request/usage artifacts.
     const subject = Promise.resolve().then(() => (apparatus.runEnvironment ?? runEnvironment)({ root: environmentRoot, build: buildId, target: 'command', id: runId,
       'command-source': 'none',
+      ...(resources ? { 'resource-profile': resources.ref.path, 'resource-profile-sha256': resources.ref.sha256 } : {}),
       'pi-mode': mode, ...(mode === 'native' ? { 'native-skills': binding.skills_root }
         : notionEntry ? { library: notionEntry } : { skills: binding.skills_root }),
-      models: modelsFile, 'pass-env': [credential.api_key_env, ...(notionEntry ? ['NOTION_API_TOKEN'] : [])],
+      models: modelsFile, 'pass-env': [...new Set([credential.api_key_env, ...(notionEntry ? ['NOTION_API_TOKEN'] : []), ...(resources?.manifest.environment_names ?? [])])],
       'timeout-ms': unbounded ? 'none' : Math.min(3600000, budget.max_duration_ms + 60000),
       args: ['node', join(environmentRoot, 'builds', buildId, 'source/broker/benchmark/subject.mjs'), launchFile] }));
     const bridge = controller ? controller.serve({ subject, executeEvent: adapter.executeEvent, reconcileEvent: adapter.reconcileEvent,

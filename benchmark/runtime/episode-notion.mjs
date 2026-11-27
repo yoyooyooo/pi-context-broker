@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { errorMonitor } from 'node:events';
 import { observeSourceTransport, readSourceObservation } from '../../scripts/skill-consumption-source-observer.mjs';
-import { catalogFacets, observeGraphSdk } from '../../scripts/notion-skill-graph-model-evidence.mjs';
+import { catalogFacets, graphSourceViews, observeGraphSdk } from '../../scripts/notion-skill-graph-model-evidence.mjs';
 import { safeRequestMetrics } from '../../scripts/notion-default-context.mjs';
 import { canonical } from './episode-evidence.mjs';
 
@@ -189,6 +189,14 @@ export function observeEpisodeNotion({ config, recorder, context = () => ({ stag
       assert.equal(pending().length, 0, 'BENCHMARK_NOTION_STARTUP_PENDING');
       return { projection: { observed: catalogs.length > 0, catalogs }, evidence,
         scope: 'actual SDK catalog metadata; body delivery and deferred tool availability are established separately by final payload and tool/session results' };
+    },
+    preparedEntries() {
+      assert.equal(errors, 0, 'BENCHMARK_NOTION_OBSERVER_ERROR');
+      assert.equal(pending().length, 0, 'BENCHMARK_NOTION_STARTUP_PENDING');
+      return graphSourceViews([...operations.values()].map(operation => ({ transport: 'sdk',
+        requestId: operation.operation_id, operation: operation.operation, status: operation.status,
+        resultObserved: operation.result_observed, value: operation.value }))).entries
+        .filter(entry => entry.evidence === 'consume.entries');
     },
     async finish() {
       if (finished) return finished;

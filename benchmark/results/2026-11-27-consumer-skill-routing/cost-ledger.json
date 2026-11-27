@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "kind": "ah1336-separated-cost-ledger",
+  "ordinary_registered_slots": {
+    "planned": 24,
+    "started": 2,
+    "provider_started": 1,
+    "never_started": 22,
+    "known_actual_attempts": 5,
+    "actual_attempts": null,
+    "input_known_subtotal": 176289,
+    "output_known_subtotal": 1611,
+    "input_total": null,
+    "output_total": null,
+    "complete_total": false
+  },
+  "retired_bare_observation": {
+    "included_in_ordinary_slots": false,
+    "observations": 1,
+    "observed_logical_requests": 2,
+    "known_actual_attempts": 1,
+    "input_known_subtotal": 12381,
+    "output_known_subtotal": 551,
+    "observed_elapsed_ms": 94205.210959
+  },
+  "ordinary_plus_retired_known_subtotal": {
+    "known_actual_attempts": 6,
+    "input": 188670,
+    "output": 2162,
+    "complete_total": false
+  },
+  "excluded_synthetic_fixture": {
+    "included_in_model_cost": false,
+    "local_http_requests": 1,
+    "real_model_requests": 0,
+    "synthetic_input": 100,
+    "synthetic_output": 20
+  },
+  "other_early_probes": {
+    "included": false,
+    "enumeration_complete": false
+  },
+  "currency_status": "unknown",
+  "amount": null
+}

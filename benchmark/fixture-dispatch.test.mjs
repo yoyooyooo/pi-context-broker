@@ -9,7 +9,7 @@ import { comparisonPairs, prepareCases } from './planning.mjs';
 import { scheduleProtocol } from './batch.mjs';
 import { fingerprint } from './protocol.mjs';
 import { prepareEpisodeFixtures, readEpisodeFixtureBindings, validateEpisodeFixturePolicy } from './fixture-dispatch.mjs';
-import { captureBindingsForCase, verifyRetainedSlotCapture } from './configure.mjs';
+import { captureBindingsForCase, configureComparison, verifyRetainedSlotCapture } from './configure.mjs';
 import { executionForSlot } from './controller.mjs';
 import { buildStoreDiagnosticCorpus } from './diagnostic-corpus.mjs';
 
@@ -228,6 +228,16 @@ test('retained slot captures bind the actual Library root, native root, physical
     value => { value.launch.input_inventory_sha256 = 'b'.repeat(64); }]) { const wrong = structuredClone(args); mutate(wrong); assert.throws(() => verifyRetainedSlotCapture(wrong)); }
   const native = structuredClone(args); native.candidate.mode = 'native'; native.run.pi_launch = { mode: 'native', native_corpus: { source: binding.skills_root } }; native.run.remote.library = null;
   verifyRetainedSlotCapture(native); native.run.pi_launch.native_corpus.source = '/owned/native-two'; assert.throws(() => verifyRetainedSlotCapture(native));
+  const profiled = structuredClone(args), ref = { path: '/owned/control/profile.json', sha256: 'c'.repeat(64) };
+  profiled.candidate.resource_profile = ref; profiled.launch.runtime_config.resourceProfile = structuredClone(ref); profiled.run.pi_launch.resource_profile = structuredClone(ref);
+  verifyRetainedSlotCapture(profiled);
+  profiled.candidate.resource_profile = { ...ref, bytes: 123 }; verifyRetainedSlotCapture(profiled);
+  profiled.launch.runtime_config.resourceProfile.sha256 = 'd'.repeat(64); assert.throws(() => verifyRetainedSlotCapture(profiled), /resource profile changed/);
+  for (const invalid of [null, false, '']) for (const set of [value => { value.candidate.resource_profile = invalid; },
+    value => { value.launch.runtime_config.resourceProfile = invalid; }, value => { value.run.pi_launch.resource_profile = invalid; }]) {
+    const changed = structuredClone(args); set(changed); assert.throws(() => verifyRetainedSlotCapture(changed), /RESOURCE_PROFILE_REFERENCE_REQUIRED/);
+  }
+
 });
 
 test('the eight diagnostic cells freeze independent clean/fault material, event identity and capture inputs', async () => {
@@ -299,4 +309,11 @@ test('capture selection excludes unscheduled followup cells and rejects partial 
   assert.throws(() => captureBindingsForCase({ ...args, conditionId: 'm0-e0' }), /cover every/);
   args.slotBindings.set('two', { binding: { ...binding, notion_entry: 'two' } });
   assert.deepEqual(captureBindingsForCase({ ...args, conditionId: 'm0-e0' }).map(item => item.binding.notion_entry), ['one', 'two']);
+});
+
+
+test('setup rejects an explicitly empty resource profile before discovery or capture', async () => {
+  for (const resource_profile of [null, false, '']) await assert.rejects(configureComparison({ version: 1,
+    environment_root: '/never-read/profile-environment', control_root: '/never-created/profile-control',
+    candidates: [{ mode: 'broker', resource_profile }, { mode: 'broker' }] }), /RESOURCE_PROFILE_REFERENCE_REQUIRED/);
 });

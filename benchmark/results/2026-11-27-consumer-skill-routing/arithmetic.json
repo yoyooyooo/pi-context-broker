@@ -1,0 +1,394 @@
+{
+  "schema_version": 1,
+  "kind": "ah1336-public-arithmetic",
+  "planned_slots": 24,
+  "material_clusters": 1,
+  "comparison_direction": "candidate divided by its own B0; quality is candidate minus its own B0",
+  "factors": [
+    {
+      "factor": "G",
+      "direction": "G/B0",
+      "baseline": {
+        "arm": "B0",
+        "planned": 4,
+        "started": 0,
+        "never_started": 4,
+        "valid": 0,
+        "invalid": 0,
+        "without_valid_observation": 4,
+        "valid_business_pass": 0,
+        "valid_business_fail": 0,
+        "valid_business_unknown": 0,
+        "verified_pass": 0,
+        "verified_fail": 0,
+        "verified_unknown": 0,
+        "quality": null,
+        "input_mean": null,
+        "scorer_capped_mean_ms": null,
+        "input_known_subtotal": 0,
+        "output_known_subtotal": 0,
+        "known_actual_attempts": 0,
+        "all_usage_complete": true
+      },
+      "candidate": {
+        "arm": "G",
+        "planned": 4,
+        "started": 0,
+        "never_started": 4,
+        "valid": 0,
+        "invalid": 0,
+        "without_valid_observation": 4,
+        "valid_business_pass": 0,
+        "valid_business_fail": 0,
+        "valid_business_unknown": 0,
+        "verified_pass": 0,
+        "verified_fail": 0,
+        "verified_unknown": 0,
+        "quality": null,
+        "input_mean": null,
+        "scorer_capped_mean_ms": null,
+        "input_known_subtotal": 0,
+        "output_known_subtotal": 0,
+        "known_actual_attempts": 0,
+        "all_usage_complete": true
+      },
+      "quality_delta": null,
+      "input_ratio": null,
+      "input_ratio_status": "unknown",
+      "scorer_capped_time_ratio": null,
+      "scorer_capped_time_ratio_status": "unknown",
+      "input_absolute_mean_difference": null,
+      "scorer_capped_absolute_mean_difference_ms": null,
+      "input_explanation_threshold_exceeded": null,
+      "time_explanation_threshold_exceeded": null,
+      "pairs": [
+        {
+          "pair_alias": "G-case01-r0",
+          "factor": "G",
+          "case_alias": "case01",
+          "repeat": 0,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": null,
+          "review_status": "unknown",
+          "business_gain": null
+        },
+        {
+          "pair_alias": "G-case01-r1",
+          "factor": "G",
+          "case_alias": "case01",
+          "repeat": 1,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": null,
+          "review_status": "unknown",
+          "business_gain": null
+        },
+        {
+          "pair_alias": "G-case02-r0",
+          "factor": "G",
+          "case_alias": "case02",
+          "repeat": 0,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": null,
+          "review_status": "unknown",
+          "business_gain": null
+        },
+        {
+          "pair_alias": "G-case02-r1",
+          "factor": "G",
+          "case_alias": "case02",
+          "repeat": 1,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": null,
+          "review_status": "unknown",
+          "business_gain": null
+        }
+      ],
+      "repeated_gain": [
+        {
+          "case_alias": "case01",
+          "business_gain_both_repeats": false,
+          "route_gain_both_repeats": false
+        },
+        {
+          "case_alias": "case02",
+          "business_gain_both_repeats": false,
+          "route_gain_both_repeats": false
+        }
+      ],
+      "screening_checks": {
+        "candidate_four_valid_business_passes": false,
+        "known_new_critical_regressions": 0,
+        "unresolved_critical_pairs": 4,
+        "repeatable_gain_present": false,
+        "complete_cost_comparison": false
+      }
+    },
+    {
+      "factor": "T",
+      "direction": "T/B0",
+      "baseline": {
+        "arm": "B0",
+        "planned": 4,
+        "started": 1,
+        "never_started": 3,
+        "valid": 0,
+        "invalid": 1,
+        "without_valid_observation": 4,
+        "valid_business_pass": 0,
+        "valid_business_fail": 0,
+        "valid_business_unknown": 0,
+        "verified_pass": 0,
+        "verified_fail": 0,
+        "verified_unknown": 0,
+        "quality": null,
+        "input_mean": null,
+        "scorer_capped_mean_ms": null,
+        "input_known_subtotal": 176289,
+        "output_known_subtotal": 1611,
+        "known_actual_attempts": 5,
+        "all_usage_complete": false
+      },
+      "candidate": {
+        "arm": "T",
+        "planned": 4,
+        "started": 0,
+        "never_started": 4,
+        "valid": 0,
+        "invalid": 0,
+        "without_valid_observation": 4,
+        "valid_business_pass": 0,
+        "valid_business_fail": 0,
+        "valid_business_unknown": 0,
+        "verified_pass": 0,
+        "verified_fail": 0,
+        "verified_unknown": 0,
+        "quality": null,
+        "input_mean": null,
+        "scorer_capped_mean_ms": null,
+        "input_known_subtotal": 0,
+        "output_known_subtotal": 0,
+        "known_actual_attempts": 0,
+        "all_usage_complete": true
+      },
+      "quality_delta": null,
+      "input_ratio": null,
+      "input_ratio_status": "unknown",
+      "scorer_capped_time_ratio": null,
+      "scorer_capped_time_ratio_status": "unknown",
+      "input_absolute_mean_difference": null,
+      "scorer_capped_absolute_mean_difference_ms": null,
+      "input_explanation_threshold_exceeded": null,
+      "time_explanation_threshold_exceeded": null,
+      "pairs": [
+        {
+          "pair_alias": "T-case01-r0",
+          "factor": "T",
+          "case_alias": "case01",
+          "repeat": 0,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": null,
+          "review_status": "unknown",
+          "business_gain": null
+        },
+        {
+          "pair_alias": "T-case01-r1",
+          "factor": "T",
+          "case_alias": "case01",
+          "repeat": 1,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": false,
+          "review_status": "unknown",
+          "business_gain": null
+        },
+        {
+          "pair_alias": "T-case02-r0",
+          "factor": "T",
+          "case_alias": "case02",
+          "repeat": 0,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": null,
+          "review_status": "unknown",
+          "business_gain": null
+        },
+        {
+          "pair_alias": "T-case02-r1",
+          "factor": "T",
+          "case_alias": "case02",
+          "repeat": 1,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": null,
+          "review_status": "unknown",
+          "business_gain": null
+        }
+      ],
+      "repeated_gain": [
+        {
+          "case_alias": "case01",
+          "business_gain_both_repeats": false,
+          "route_gain_both_repeats": false
+        },
+        {
+          "case_alias": "case02",
+          "business_gain_both_repeats": false,
+          "route_gain_both_repeats": false
+        }
+      ],
+      "screening_checks": {
+        "candidate_four_valid_business_passes": false,
+        "known_new_critical_regressions": 0,
+        "unresolved_critical_pairs": 4,
+        "repeatable_gain_present": false,
+        "complete_cost_comparison": false
+      }
+    },
+    {
+      "factor": "S",
+      "direction": "S/B0",
+      "baseline": {
+        "arm": "B0",
+        "planned": 4,
+        "started": 1,
+        "never_started": 3,
+        "valid": 0,
+        "invalid": 1,
+        "without_valid_observation": 4,
+        "valid_business_pass": 0,
+        "valid_business_fail": 0,
+        "valid_business_unknown": 0,
+        "verified_pass": 0,
+        "verified_fail": 0,
+        "verified_unknown": 0,
+        "quality": null,
+        "input_mean": null,
+        "scorer_capped_mean_ms": null,
+        "input_known_subtotal": 0,
+        "output_known_subtotal": 0,
+        "known_actual_attempts": 0,
+        "all_usage_complete": true
+      },
+      "candidate": {
+        "arm": "S",
+        "planned": 4,
+        "started": 0,
+        "never_started": 4,
+        "valid": 0,
+        "invalid": 0,
+        "without_valid_observation": 4,
+        "valid_business_pass": 0,
+        "valid_business_fail": 0,
+        "valid_business_unknown": 0,
+        "verified_pass": 0,
+        "verified_fail": 0,
+        "verified_unknown": 0,
+        "quality": null,
+        "input_mean": null,
+        "scorer_capped_mean_ms": null,
+        "input_known_subtotal": 0,
+        "output_known_subtotal": 0,
+        "known_actual_attempts": 0,
+        "all_usage_complete": true
+      },
+      "quality_delta": null,
+      "input_ratio": null,
+      "input_ratio_status": "unknown",
+      "scorer_capped_time_ratio": null,
+      "scorer_capped_time_ratio_status": "unknown",
+      "input_absolute_mean_difference": null,
+      "scorer_capped_absolute_mean_difference_ms": null,
+      "input_explanation_threshold_exceeded": null,
+      "time_explanation_threshold_exceeded": null,
+      "pairs": [
+        {
+          "pair_alias": "S-case01-r0",
+          "factor": "S",
+          "case_alias": "case01",
+          "repeat": 0,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": null,
+          "review_status": "unknown",
+          "business_gain": null
+        },
+        {
+          "pair_alias": "S-case01-r1",
+          "factor": "S",
+          "case_alias": "case01",
+          "repeat": 1,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": false,
+          "review_status": "unknown",
+          "business_gain": null
+        },
+        {
+          "pair_alias": "S-case02-r0",
+          "factor": "S",
+          "case_alias": "case02",
+          "repeat": 0,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": null,
+          "review_status": "unknown",
+          "business_gain": null
+        },
+        {
+          "pair_alias": "S-case02-r1",
+          "factor": "S",
+          "case_alias": "case02",
+          "repeat": 1,
+          "new_critical_regression": null,
+          "route_gain": null,
+          "baseline_detour_alias": null,
+          "full_journey_evidence_complete": null,
+          "review_status": "unknown",
+          "business_gain": null
+        }
+      ],
+      "repeated_gain": [
+        {
+          "case_alias": "case01",
+          "business_gain_both_repeats": false,
+          "route_gain_both_repeats": false
+        },
+        {
+          "case_alias": "case02",
+          "business_gain_both_repeats": false,
+          "route_gain_both_repeats": false
+        }
+      ],
+      "screening_checks": {
+        "candidate_four_valid_business_passes": false,
+        "known_new_critical_regressions": 0,
+        "unresolved_critical_pairs": 4,
+        "repeatable_gain_present": false,
+        "complete_cost_comparison": false
+      }
+    }
+  ],
+  "ordinary_actual_cost": {
+    "input_known_subtotal": 176289,
+    "output_known_subtotal": 1611,
+    "known_actual_attempts": 5,
+    "all_usage_complete": false
+  },
+  "limitations": "Arithmetic only. Cost explanations and adoption are reviewed conclusions, not inferred from token or tool counts. Private semantic evidence is not replayed."
+}

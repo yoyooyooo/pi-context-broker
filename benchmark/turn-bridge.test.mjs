@@ -29,8 +29,8 @@ async function setup(name, extra = {}) {
     clarifications: [], limits: { wallMs: 15000, waitMs: 8000, eventMs: 2000, pollMs: 5 }, ...extra };
   return { root, config };
 }
-function child(file, args = []) {
-  const process = spawn(globalThis.process.execPath, [file, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+function child(file, args = [], { pipeInput = false } = {}) {
+  const process = spawn(globalThis.process.execPath, [file, ...args], { stdio: [pipeInput ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
   let stdout = '', stderr = '';
   process.stdout.on('data', chunk => { stdout += chunk; }); process.stderr.on('data', chunk => { stderr += chunk; });
   const done = new Promise((resolve, reject) => { process.once('error', reject); process.once('close', (code, signal) => resolve({ code, signal, stdout, stderr })); });
@@ -51,6 +51,7 @@ const record = async (type, turn, data) => {
 try {
   bridge = await connectTurnBridge(config);
   if(config.cancelAfterMs)setTimeout(()=>void bridge.close(),config.cancelAfterMs);
+  if(config.cancelOnInput)process.stdin.once('data',()=>void bridge.close());
   for(const turn of turns) {
     const state = await readFile(join(config.runRoot,'workspace/policy.txt'),'utf8');
     observed.push({id:turn.id,prompt:turn.prompt,state,pid:process.pid});
@@ -62,6 +63,7 @@ try {
   }
 }catch(error){process.exitCode=2;observed.push({stopped:error.code??error.message});}
 finally{
+  if(config.cancelOnInput)process.stdin.destroy();
   await bridge?.close();
   await writeFile(join(config.runRoot,'subject-observed.json'),JSON.stringify(observed,null,2)+'\\n',{flag:'wx'});
 }
@@ -71,7 +73,7 @@ async function launchSubject(fixture, extras = {}) {
   await writeFile(file, subjectSource, { flag: 'wx' });
   const { runRoot, runId, episodeId, turns, limits } = fixture.config;
   await save(publicConfig, { runRoot, runId, episodeId, turns, limits, ...extras });
-  return child(file, [publicConfig]);
+  return child(file, [publicConfig], { pipeInput: extras.cancelOnInput === true });
 }
 async function receipt(config, eventId, status, suffix = '', extra = {}) {
   const file = join(config.controllerRoot, 'effect-' + eventId + suffix + '.json');
@@ -120,15 +122,23 @@ test('unbounded controller remains cancellable while waiting for the subject', {
   assert.equal(result.status, 'stopped'); assert.equal(result.reason, 'TURN_BRIDGE_CANCELLED');
 });
 
-test('unbounded pending event cancels on subject exit and retains unknown effect without a resume', { timeout: 15000 }, async () => {
+test('unbounded pending event cancels on subject exit and retains unknown effect without a resume', { timeout: 15000 }, async t => {
   const f = await setup('unbounded-event-cancel', { limits: { mode: 'unbounded', wallMs: null, waitMs: null, eventMs: null, pollMs: 5 } });
-  const controller = await createTurnBridgeController(f.config), subject = await launchSubject(f, { cancelAfterMs: 100 });
-  let cancelled = false;
+  const controller = await createTurnBridgeController(f.config), subject = await launchSubject(f, { cancelOnInput: true });
+  t.after(async () => {
+    subject.process.stdin.destroy();
+    if (subject.process.exitCode === null && subject.process.signalCode === null) subject.process.kill();
+    await subject.done;
+  });
+  let eventStarted = false, cancelled = false;
   const result = await controller.serve({ subject: subject.done, executeEvent: ({ signal }) => new Promise(resolve => {
+    eventStarted = true;
     signal.addEventListener('abort', () => { cancelled = true; resolve({ status: 'unknown', effect_unknown: true }); }, { once: true });
+    // Exit only after the pending event has installed its cancellation listener.
+    subject.process.stdin.end('cancel\n');
   }) });
   const exited = await subject.done;
-  assert.equal(exited.code, 2); assert.equal(result.status, 'stopped'); assert.equal(cancelled, true);
+  assert.equal(eventStarted, true); assert.equal(exited.code, 2); assert.equal(result.status, 'stopped'); assert.equal(cancelled, true);
   const rows = await readTurnBridgeJournal(result.journal.path);
   assert.equal(rows.find(row => row.type === 'event_result').data.result.status, 'unknown');
   assert.equal(rows.some(row => row.type === 'checkpoint_decided' && row.data.response.action === 'continue'), false);

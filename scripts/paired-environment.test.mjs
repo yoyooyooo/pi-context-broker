@@ -879,6 +879,40 @@ process.exit(0);`;
       id: 'invalid-profile-' + suffix, 'pass-env': [], args: ['--help'], ...extra }), message);
   });
 
+  await t.test('ordinary-derived inputs keep their order and private configuration while selecting the frozen Broker', async () => {
+    const directory = join(retained, 'ordinary-resource-profile'); await mkdir(directory, { mode: 0o700 });
+    const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+    const put = async (name, value) => {
+      const path = join(directory, name), bytes = Buffer.from(typeof value === 'string' ? value : JSON.stringify(value) + '\n');
+      await writeFile(path, bytes, { mode: 0o600 }); return { path, sha256: sha(bytes), bytes: bytes.length };
+    };
+    const first = await put('first.mjs', 'export default () => {};\n'), last = await put('last.mjs', 'export default () => {};\n');
+    const native = await put('SKILL.md', '---\nname: ordinary-fixture\ndescription: Explicit native fixture.\n---\nBody.\n');
+    const files = [first, last, native].map(({ path, ...item }) => ({ path: path.slice(directory.length + 1), ...item }));
+    const closure = await put('closure.json', { schema_version: 1, root: directory, files, sha256: sha(JSON.stringify(files)) });
+    const origin = await put('origin.json', { scope: 'synthetic ordinary resource identity' }), context = await put('AGENTS.md', 'Explicit context.\n');
+    const mcp = await put('mcp.json', { mcpServers: {} }), privateConfig = await put('private-web.json', { fixtureApiKey: 'SYNTHETIC-ONLY-PRIVATE-KEY' });
+    const selected = await put('profile.json', { schema_version: 1, kind: 'benchmark-ordinary-derived-resources', owner_root: retained,
+      ordinary_source_refs: [origin], extension_order: [{ role: 'frozen', ...first, closure_ref: closure }, { role: 'selected-broker' }, { role: 'frozen', ...last, closure_ref: closure }],
+      native_skills: [{ ...native, visible: true, closure_ref: closure }], context_files: [context], builtin_order: ['codemode', 'tool_search', 'mcp'],
+      mcp_config: mcp, mcp_tools: [], agent_files: [{ ...privateConfig, relative_path: 'web-search.json', credential_paths: [['fixtureApiKey']] }],
+      excluded_extensions: [{ path: join(directory, 'known-auto-write.mjs'), reason: 'Known lifecycle write omitted.' }],
+      settings: { enableSkillCommands: true }, shared_differences: ['Observer first; CodeMode models:false; ToolSearch false.'],
+      tool_policy: { allowed_tools: ['read', 'bash', 'codemode'], blocked_tools: ['tool_search'], blocked_parameters: [] } });
+    const options = { root: rootB, build: 'fixture', target: 'command', 'command-source': 'none', 'pi-mode': 'broker',
+      'resource-profile': selected.path, 'resource-profile-sha256': selected.sha256, 'pass-env': [], args: ['node', '-e', 'process.exit(0)'] };
+    const receipt = await runEnvironment({ ...options, id: 'ordinary-profile' }); assert.equal(receipt.status, 'passed');
+    const launch = await readJson(join(receipt.root, 'pi-launch.json'));
+    assert.deepEqual(launch.extensions.map(item => item.path), [first.path, join(buildB, 'broker/src/index.ts'), last.path]);
+    assert.equal(launch.extensions[1].role, 'broker'); assert.equal(launch.settings.enableSkillCommands, true); assert.deepEqual(launch.settings.packages, []);
+    assert.deepEqual(launch.native_skill_paths, [native.path]); assert.deepEqual(launch.native_skill_roots, []);
+    assert.equal(sha(await readFile(join(receipt.root, 'pi-agent/mcp.json'))), mcp.sha256);
+    const privateCopy = join(receipt.root, 'pi-agent/web-search.json'); assert.equal(sha(await readFile(privateCopy)), privateConfig.sha256);
+    assert.equal((await stat(privateCopy)).mode & 0o077, 0); assert.doesNotMatch(JSON.stringify(launch), /SYNTHETIC-ONLY-PRIVATE-KEY/);
+    await assert.rejects(runEnvironment({ ...options, id: 'ordinary-profile-wrong-target', target: 'pi', 'command-source': undefined, args: ['--help'] }), /runtime-only Benchmark/);
+    for (const invalid of [null, false, '']) await assert.rejects(runEnvironment({ ...options, id: 'ordinary-profile-invalid-reference', 'resource-profile': invalid }), /RESOURCE_PROFILE_CANONICAL_PATH/);
+  });
+
   await t.test('resource and session overrides cannot diverge the direct and private Pi entries', async () => {
     for (const flag of ['-e', '--extension=/shared/observer.ts', '--skill', '--session-dir', '--continue', '--fork', '--fork=/shared/session.jsonl', '--session-id', '--no-session', '--approve']) {
       assert.throws(() => validatePiArguments([flag]), /belongs to the isolated launcher/);

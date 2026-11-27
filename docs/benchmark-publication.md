@@ -26,6 +26,14 @@ The exporter verifies each original episode fingerprint, raw file SHA256 and sou
 
 Publication version 1.0.1 also replaces POSIX long-listing owner fields and discovers usernames from observed home paths and terminal listings. Whole-token replacement propagates those usernames through plain text, structured tool outputs and raw records. Tokens are bounded by Unicode letters, digits, underscore and hyphen, so a longer public repository name is not changed merely because it starts with a private username. The manifest records this policy and counts, never the private word list.
 
+Publication version 1.0.7 also refuses natural-answer oracle declarations with
+`final-answer` contracts and private `all`, `any`, or `none` fact constraints,
+including nested JSON objects. Derived grade diagnostics are not oracle
+declarations. This refusal does not classify arbitrary Skill bodies, prompts,
+answers, XML-escaped text or stream fragments as private. For real private
+materials, publish reviewed aggregate results and keep the complete originals
+in the controlled evidence store.
+
 Callers should supply any additional private strings that are specific to their environment. Pattern matching is not a general personal-data classifier. Deterministic pseudonyms preserve identity relationships; they are not a guarantee of irreversible anonymization.
 
 The function returns the directory, public manifest path and fingerprint, projected analysis and input, verification result, and `model_requests: 0`. Writes are immutable and repeatable: an identical export can be checked again; a different result cannot overwrite an existing member.

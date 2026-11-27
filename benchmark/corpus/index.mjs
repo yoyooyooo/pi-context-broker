@@ -26,7 +26,8 @@ function sortedSkills(skills, seed) {
 
 function publicVariant(plan) {
   return { turns: copy(plan.turns), attachments: copy(plan.attachments),
-    completion: { kind: 'artifacts', paths: plan.contracts.filter(c => c.kind === 'artifact-json').map(c => c.path) },
+    completion: { kind: plan.contracts.some(c => c.kind === 'final-answer') ? 'final-answer' : 'artifacts',
+      paths: plan.contracts.filter(c => c.kind === 'artifact-json').map(c => c.path) },
     contract_sha256: fingerprint(plan.contracts) };
 }
 
@@ -144,6 +145,8 @@ export function validateCorpus({ publicCorpus, control } = {}) {
         assert.equal(typeof turn.prompt, 'string'); assert.ok(turn.prompt.length > 0);
         assert.doesNotMatch(turn.prompt, /\b(?:notion_use|notion_list|notion_ctl)\b|(?:snapshot_id|file_id)\s*[:=]|skill:\/\//u, 'Prompt must not prescribe product tool internals');
       }
+      assert.ok(['artifacts', 'final-answer'].includes(variant.completion?.kind), 'Unsupported public completion kind');
+      assert.ok(Array.isArray(variant.completion.paths), 'Completion paths must be an array');
       for (const path of variant.completion.paths) assert.ok(validPath(path) && path.startsWith('output/'));
     }
   }
@@ -161,6 +164,10 @@ export function validateCorpus({ publicCorpus, control } = {}) {
       for (const [round, oracle] of Object.entries(item.oracles)) {
         validateOracle(oracle);
         const variant = Number(round) === publicCase.default_round_count ? publicCase : publicCase.variants[round];
+        const answers = oracle.contracts.filter(contract => contract.kind === 'final-answer');
+        assert.equal(variant.completion.kind === 'final-answer', answers.length > 0, 'Public and private completion kinds differ');
+        for (const contract of answers)
+          assert.ok(variant.turns.some(turn => turn.id === contract.turn_id), 'Final answer names an undeclared public turn');
         assert.equal(oracle.case_id, item.case_id, 'Oracle case identity mismatch');
         assert.equal(oracle.public_sha256, publicCase.content_sha256, 'Oracle public identity mismatch');
         assert.equal(fingerprint(oracle.contracts), variant.contract_sha256, 'Oracle contract fingerprint mismatch');

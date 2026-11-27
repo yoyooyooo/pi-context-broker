@@ -14,6 +14,7 @@ import { createPublicSanitizer, writePublicEvidencePackage, verifyPublicEvidence
 import { assessReportedModel } from './reported-model.mjs';
 import { deriveRedactedProviderBinding } from './provider-binding.mjs';
 import { verifyBundle } from './evidence/store.mjs';
+import { validateOracle } from './corpus/grader.mjs';
 
 const run=promisify(execFile),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const privateId='4205636c-236e-8110-9a1a-ce92cfb83ee0',secret='synthetic-export-secret-1234567890';
@@ -236,12 +237,45 @@ test('private-oracle and opaque binary inputs are refused rather than silently r
  }
 });
 
+test('private final-answer oracles are rejected by structure before public files are written',async()=>{
+ for(const assessment of ['necessary-facts','semantic-review']){
+  const oracle={schema_version:1,case_id:'synthetic-natural-question',capability_scope:'common',required_capabilities:[],
+   facts:{total:{anyOf:['Total: 7']},uncertain:{anyOf:['Ownership is unproven']},invented:{anyOf:['Ownership confirmed']}},
+   contracts:[{id:'answer',kind:'final-answer',turn_id:'turn-1',assessment,
+    all:['total'],any:['uncertain'],none:['invented'],critical:true}],
+   semantic_rubric:{rule:'Synthetic private truth for a publication boundary test.'},
+   source_evidence:[{kind:'synthetic',sha256:'e'.repeat(64)}]};
+  validateOracle(oracle);
+  for(const nested of [false,true]){
+   const f=await fixture(),episode=f.input.episodes[0];
+   const bytes=Buffer.from(canonicalJson(nested?{payload:{control:oracle}}:oracle)+'\n');
+   const path=join(f.originals,'synthetic-natural-oracle.json');await writeFile(path,bytes);
+   episode.artifacts.push({id:'synthetic-natural-oracle',path,sha256:sha(bytes),bytes:bytes.length,kind:'json'});
+   episode.episode_sha256=fingerprint({...episode,episode_sha256:null});
+   await assert.rejects(writePublicEvidencePackage({...f,rawRoot:f.root}),/Private oracle or control material cannot be published/);
+   await assert.rejects(readFile(join(f.directory,'public-manifest.json')),{code:'ENOENT'});
+  }
+ }
+});
+
+test('derived final-answer grade diagnostics are not private oracle declarations',async()=>{
+ const f=await fixture(),episode=f.input.episodes[0];
+ const grade={schema_version:1,case_id:'synthetic-natural-question',business_outcome:'unknown',contracts:[{
+  id:'answer',kind:'final-answer',status:'unknown',assessment:'semantic-review',critical:true,
+  checks:{all:[{id:'total',found:true}],any:[],none:[]},reason:'Independent review is unavailable.'}]};
+ const bytes=Buffer.from(canonicalJson(grade)+'\n'),path=join(f.originals,'synthetic-natural-grade.json');
+ await writeFile(path,bytes);episode.artifacts.push({id:'synthetic-natural-grade',path,sha256:sha(bytes),bytes:bytes.length,kind:'json'});
+ episode.episode_sha256=fingerprint({...episode,episode_sha256:null});
+ const before=scoreExperiment(f.input),out=await writePublicEvidencePackage({...f,rawRoot:f.root});
+ assert.equal(out.model_requests,0);assert.deepEqual(out.analysis.conditions.map(c=>c.counts),before.conditions.map(c=>c.counts));
+});
+
 test('reviewed synthetic binary bytes retain their identity through publication and offline replay',async()=>{
  const f=await fixture({terminalOwner:'yoyo'}),artifact=await addBinary(f),before=scoreExperiment(f.input);
  assert.equal(sha(markerBytes),markerApproval.sha256);
  const out=await writePublicEvidencePackage({...f,rawRoot:f.root,analysis:before,
   reviewedBinaryArtifacts:[markerApproval],redactions:{...f.redactions,identifier_words:['yoyo'],terminal_usernames:['yoyo']}});
-  assert.equal(out.manifest.publication_version,'1.0.6');
+  assert.equal(out.manifest.publication_version,'1.0.7');
  assert.deepEqual(out.manifest.policy.reviewed_binary_artifacts,[markerApproval]);
  const row=out.manifest.raw_mapping.find(item=>item.source_sha256===artifact.sha256);
  assert.equal(row.format,'binary');assert.equal(row.changed,false);
@@ -367,7 +401,7 @@ test('terminal user redaction propagates through normalized results and raw arti
  assert.equal(projected.content[0].text,projected.structuredContent.output);
  assert.match(projected.content[0].text,/yoyooyooo/);
  assert.deepEqual(exported.analysis.conditions.map(x=>x.counts),before.conditions.map(x=>x.counts));
-  assert.equal(exported.manifest.publication_version,'1.0.6');
+  assert.equal(exported.manifest.publication_version,'1.0.7');
  assert.ok(exported.manifest.policy.terminal_username_count>0);
  const rawArtifact=f.input.episodes[0].artifacts[0];
  const mapping=exported.manifest.raw_mapping.find(row=>row.source_sha256===rawArtifact.sha256);

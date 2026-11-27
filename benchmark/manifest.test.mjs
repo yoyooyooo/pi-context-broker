@@ -71,3 +71,49 @@ test('observer-looking filenames do not acquire the inline observer role', () =>
   input.projection.extensions.push({ path, resolved_path: path, entry: { path, realpath: path, sha256: otherSha } });
   assert.equal(extensionsFromCapture(input).at(-1).role, 'common');
 });
+
+
+test('MCP factory identity comes from the pinned SDK implementation, without a fabricated entry path', () => {
+  const input = fixture();
+  input.projection.extensions.push({ path: 'builtin:mcp', resolved_path: 'builtin:mcp', entry: null });
+  assert.throws(() => extensionsFromCapture(input), /no actual implementation identity/);
+  input.projection.pi.files.push({ path: '/pinned-pi/dist/extensions/mcp/index.js', sha256: otherSha });
+  assert.deepEqual(extensionsFromCapture(input).at(-1), { id: 'common-2', role: 'common', path: '/pinned-pi/dist/extensions/mcp/index.js', sha256: otherSha });
+});
+
+
+test('explicit builtin implementation identity survives opaque labels and paths without reversal', () => {
+  const input = fixture();
+  const file = { path: '/pinned-pi/dist/extensions/tool-REDACTED_CREDENTIAL/index.js', realpath: '/pinned-pi/dist/extensions/tool-REDACTED_CREDENTIAL/index.js', sha256: otherSha, bytes: 10 };
+  input.projection.pi.files.push(file);
+  input.projection.pi.entry = { path: '/pinned-pi/dist/index.js', sha256: observerSha };
+  input.projection.extensions.push({ path: 'builtin:tool_REDACTED_CREDENTIAL', resolved_path: 'builtin:tool_REDACTED_CREDENTIAL', entry: file });
+  assert.deepEqual(extensionsFromCapture(input).at(-1), { id: 'common-2', role: 'common', path: file.path, sha256: otherSha });
+  input.projection.extensions.at(-1).entry = null;
+  assert.throws(() => extensionsFromCapture(input), /no actual implementation identity/);
+});
+
+for (const [name, directory] of [['codemode', 'codemode'], ['tool_search', 'tool-search'], ['mcp', 'mcp']]) {
+  test('historical ' + name + ' capture retains its observed-file fallback', () => {
+    const input = fixture(), file = { path: '/pinned-pi/dist/extensions/' + directory + '/index.js', sha256: otherSha };
+    input.projection.extensions.push({ path: 'builtin:' + name, resolved_path: 'builtin:' + name, entry: null });
+    input.projection.pi.files.push(file);
+    assert.deepEqual(extensionsFromCapture(input).at(-1), { id: 'common-2', role: 'common', path: file.path, sha256: otherSha });
+  });
+}
+
+
+test('new builtin evidence rejects missing and inconsistent implementation identities', () => {
+  const input = fixture(), file = { path: '/pinned-pi/dist/extensions/codemode/index.js', realpath: '/pinned-pi/dist/extensions/codemode/index.js', sha256: otherSha, bytes: 10 };
+  input.projection.pi.entry = { path: '/pinned-pi/dist/index.js', sha256: observerSha };
+  input.projection.pi.files.push(file);
+  input.projection.extensions.push({ path: 'builtin:codemode', resolved_path: 'builtin:codemode', entry: null });
+  assert.throws(() => extensionsFromCapture(input), /no actual implementation identity/);
+  for (const change of [{ sha256: brokerSha }, { realpath: '/unobserved/index.js' }, { bytes: 11 }, { path: '/unobserved/index.js' }]) {
+    input.projection.extensions.at(-1).entry = { ...file, ...change };
+    assert.throws(() => extensionsFromCapture(input), assert.AssertionError);
+  }
+  input.projection.extensions.at(-1).entry = file;
+  input.projection.pi.files.push({ ...file });
+  assert.throws(() => extensionsFromCapture(input), /must have one observed file/);
+});

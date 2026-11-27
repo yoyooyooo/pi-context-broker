@@ -101,3 +101,72 @@ test('declaring one canonical auto group cannot admit another group, variant or 
   assert.equal(assessReportedModel({ routing: policy, sent: false,
     observations: [observation('group/auto-grok-4-7')] }).reason, 'reported_model_send_contradiction');
 });
+
+const mixedRouting = () => ({ mode: 'mixed-route', route: 'group/flash', configuration_sha256: 'b'.repeat(64),
+  reported_model_ids: ['group/flash', 'deepseek-v4.1-flash', 'provider/gpt-6.1-terra'] });
+
+test('an explicit mixed route retains every declared fallback model without claiming a single variant', () => {
+  const policy = mixedRouting(); validateRoutingPolicy(policy);
+  const observations = ['deepseek-v4.1-flash', 'provider/gpt-6.1-terra', 'deepseek-v4.1-flash']
+    .map((value, index) => observation(value, index + 1));
+  const report = assessReportedModel({ routing: policy, sent: true, observations });
+  assert.equal(report.status, 'matched'); assert.equal(report.reason, null);
+  assert.equal(report.label_kind, 'concrete_reported_label');
+  assert.deepEqual(report.reported_ids, ['deepseek-v4.1-flash', 'provider/gpt-6.1-terra']);
+  assert.deepEqual(report.observations, observations); assert.equal(report.refs.length, 3);
+  assert.equal(report.assurance, 'provider_reported_label_not_backend_attestation');
+  assert.equal(Object.hasOwn(policy, 'model_variant'), false);
+});
+
+test('a mixed-group echo identifies only the exact declared route, never its backend', () => {
+  const policy = mixedRouting();
+  const report = assessReportedModel({ routing: policy, sent: true, observations: [observation('group/flash')] });
+  assert.equal(report.status, 'matched'); assert.equal(report.label_kind, 'requested_route_alias');
+  assert.equal(report.assurance, 'provider_reported_label_not_backend_attestation');
+  for (const value of ['group/worker', 'provider/group/flash', 'auto/deepseek-v4.1-flash', 'group/flash ', 'unknown-model'])
+    assert.equal(assessReportedModel({ routing: policy, sent: true, observations: [observation(value)] }).status, 'mismatch');
+  const concreteOnly = { ...policy, reported_model_ids: policy.reported_model_ids.slice(1) };
+  assert.equal(assessReportedModel({ routing: concreteOnly, sent: true, observations: [observation('group/flash')] }).status, 'mismatch');
+});
+
+test('mixed identity still rejects missing, unbound and send-contradicting observations', () => {
+  const policy = mixedRouting();
+  assert.equal(assessReportedModel({ routing: policy, sent: true }).reason, 'reported_model_missing');
+  assert.equal(assessReportedModel({ routing: policy, sent: null, providerError: true }).status, 'send_unknown');
+  assert.equal(assessReportedModel({ routing: policy, sent: false }).status, 'not_sent');
+  assert.equal(assessReportedModel({ routing: policy, sent: false, observations: [observation('group/flash')] }).reason, 'reported_model_send_contradiction');
+  assert.equal(assessReportedModel({ routing: policy, sent: true,
+    observations: [{ ...observation('deepseek-v4.1-flash'), bound: false }] }).reason, 'reported_model_event_binding_mismatch');
+  const report = assessReportedModel({ routing: policy, sent: true,
+    observations: ['deepseek-v4.1-flash', 'undeclared-model', 'provider/gpt-6.1-terra'].map((value, index) => observation(value, index + 1)) });
+  assert.equal(report.status, 'mismatch'); assert.equal(report.observations.length, 3);
+});
+
+test('mixed routing requires its own closed configuration and cannot weaken a fixed model policy', () => {
+  for (const change of [
+    policy => { delete policy.configuration_sha256; },
+    policy => { policy.configuration_sha256 = 'not-a-hash'; },
+    policy => { policy.route = 'provider/group/flash'; },
+    policy => { policy.route = 'auto/deepseek-v4.1-flash'; },
+    policy => { policy.model_variant = 'deepseek-v4.1-flash'; },
+    policy => { policy.reported_model_ids = ['group/worker']; },
+    policy => { policy.reported_model_ids = ['auto/gpt-6.1-terra']; },
+    policy => { policy.reported_model_ids.push('group/flash'); },
+    policy => { policy.mode = 'fixed-route'; },
+  ]) { const policy = mixedRouting(); change(policy); assert.throws(() => validateRoutingPolicy(policy)); }
+  assert.throws(() => validateRoutingPolicy({ ...routing, mode: 'mixed-route' }));
+  assert.throws(() => validateRoutingPolicy({ ...routing, reported_model_ids: ['grok-4.7', 'deepseek-v4.1-flash'] }));
+});
+
+test('model selection freezes the mixed closure independently from the caller and other routes', () => {
+  const policy = mixedRouting();
+  const args = { registry: { provider: 'unit', models: [{ id: 'group/flash', api: 'openai-completions', maxTokens: 256 }] },
+    adapterReceipts: [{ api: 'openai-completions', id: 'adapter', version: '1', status: 'passed', sha256: 'a'.repeat(64) }],
+    parameters: { maxTokens: 128 }, window: { start: '2026-11-27T00:00:00Z', end: '2026-11-27T01:00:00Z' },
+    routing: { 'group/flash': policy } };
+  const [model] = verifiedModelConditions(args);
+  assert.equal(model.route, 'group/flash'); assert.equal(model.family, 'group/flash');
+  assert.deepEqual(model.routing, policy);
+  policy.configuration_sha256 = 'c'.repeat(64); policy.reported_model_ids.length = 0;
+  assert.deepEqual(model.routing, mixedRouting());
+});

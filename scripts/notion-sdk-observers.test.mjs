@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { appendFile, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
-import { observeOwnedObjectReads, assertCatalogCancellationBoundary } from './notion-sdk-observers.mjs';
+import { observeOwnedObjectReads, assertCatalogCancellationBoundary, waitForSdkOperations } from './notion-sdk-observers.mjs';
 
 test('owned read observer preserves returned bytes, errors, callbacks and restores the actual APIs', async () => {
   const bytes = Buffer.from('original bytes'), absent = Object.assign(new Error('missing'), { code: 'ENOENT' });
@@ -30,4 +33,52 @@ test('catalog cancellation requires the same process and exact native boundary i
   for (const changed of [{ pid: 2 }, { monotonic_ns: '201' }, { monotonic_ns: '99' }, { type: 'agent_end' }])
     assert.throws(() => assertCatalogCancellationBoundary(start, end, [{ ...good, ...changed }]));
   assert.throws(() => assertCatalogCancellationBoundary({ ...start, operation: 'consume' }, { ...end, operation: 'consume' }, [good]));
+});
+
+const sdkEvent = (event, id, pid = 42) => JSON.stringify({ kind: 'context-broker.notion-sdk',
+  observer_pid: pid, pid, event, id, operation: 'library-selection' });
+async function sdkLog(text) {
+  const directory = await mkdtemp(join(tmpdir(), 'current-sdk-settle-test-'));
+  const path = join(directory, 'sdk.jsonl'); await writeFile(path, text);
+  return path;
+}
+
+test('SDK EOF readiness rejects equal counts with different operation IDs', async () => {
+  const path = await sdkLog(sdkEvent('start', 'a') + '\n' + sdkEvent('end', 'b') + '\n');
+  await assert.rejects(waitForSdkOperations(path, 42), error => {
+    assert.equal(error.code, 'CURRENT_SDK_SETTLE_INVALID');
+    assert.equal(error.receipt.start_count, error.receipt.end_count);
+    assert.deepEqual(error.receipt.pending_ids, ['a']);
+    assert.deepEqual(error.receipt.errors.map(row => row.code), ['end_without_start']);
+    return true;
+  });
+});
+
+test('SDK EOF timeout retains exact pending IDs and cannot borrow another Pi completion', async () => {
+  const path = await sdkLog([sdkEvent('start', 'a'), sdkEvent('start', 'a', 99), sdkEvent('end', 'a', 99)].join('\n') + '\n');
+  await assert.rejects(waitForSdkOperations(path, 42, { timeoutMs: 1 }), error => {
+    assert.equal(error.code, 'CURRENT_SDK_SETTLE_TIMEOUT');
+    assert.equal(error.receipt.observer_pid, 42);
+    assert.deepEqual(error.receipt.pending_ids, ['a']);
+    assert.equal(error.receipt.start_count, 1); assert.equal(error.receipt.end_count, 0);
+    assert.deepEqual(error.receipt.errors, []);
+    assert.match(error.receipt.observed_sha256, /^[a-f0-9]{64}$/);
+    return true;
+  });
+});
+
+test('SDK EOF readiness waits for the final newline even when the tail is valid JSON', async () => {
+  const path = await sdkLog([sdkEvent('start', 'a'), sdkEvent('end', 'a'), sdkEvent('start', 'late')].join('\n'));
+  await assert.rejects(waitForSdkOperations(path, 42, { timeoutMs: 1 }), error => {
+    assert.equal(error.code, 'CURRENT_SDK_SETTLE_TIMEOUT');
+    assert.deepEqual(error.receipt.pending_ids, []);
+    assert.equal(error.receipt.start_count, 1); assert.equal(error.receipt.end_count, 1);
+    assert.ok(error.receipt.partial_tail_bytes > 0);
+    return true;
+  });
+  await appendFile(path, '\n' + sdkEvent('end', 'late') + '\n');
+  const settled = await waitForSdkOperations(path, 42);
+  assert.equal(settled.status, 'settled'); assert.equal(settled.partial_tail_bytes, 0);
+  assert.deepEqual(settled.start_ids, ['a', 'late']); assert.deepEqual(settled.end_ids, ['a', 'late']);
+  assert.deepEqual(settled.pending_ids, []);
 });

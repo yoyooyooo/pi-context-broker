@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "kind": "ah1336-retained-private-evidence-commitments",
+  "scope": "Hashes identify retained evidence but do not provide public access or independently establish semantic truth, source delivery, route attribution or measurement validity.",
+  "records": {
+    "ordinary_registration": {
+      "sha256": "c91a1198b59f78049bc52203ef8c781d911d813c64a5795e6f37d2461099de99",
+      "bytes": 27917
+    },
+    "decision_contract": {
+      "sha256": "d05216fd356cfecfcec95852bbe6a8edac1246709f7b4f8e1b089034ffc6c424",
+      "bytes": 2844
+    },
+    "G_dispatch_disposition": {
+      "sha256": "c7de305acc5331fac75e5430e4da70a217805278ca38c0ddb2daaf541d70481d",
+      "bytes": 2313
+    },
+    "T_final_disposition": {
+      "sha256": "0858b5ab0ec571d8fcaaeb68a74245156fcb777c77e842d50762e2a458f4c494",
+      "bytes": 3780
+    },
+    "S_final_disposition": {
+      "sha256": "657fedc3fb62894f169d9658943ae59315b4e3f12868b035ef23d5f20d357d04",
+      "bytes": 4808
+    },
+    "T_independent_review": {
+      "sha256": "843e9cecd9d7593663ebeca77482b40cd0b2980eb3b1c143f2b7cdd4c6e8bf87",
+      "bytes": 14469
+    },
+    "S_independent_review": {
+      "sha256": "bad148d66483fc7f9e00fccf4ce2123d8e0110103e5fe6479690f13d660e9e6d",
+      "bytes": 8514
+    },
+    "marker_regression_receipt": {
+      "sha256": "9adf1f878257655507034a4c26a489f6d69abf2891eb3623dc96aa7df6015dc7",
+      "bytes": 5973
+    },
+    "S_execution_after": {
+      "sha256": "3371cf90f99e9c4fe26d37c3e36e15f6a4f4cd252dc977cc8bbfb233f6ae1be9",
+      "bytes": 9922
+    },
+    "T_recollection_integrity": {
+      "sha256": "567e2624f89b1e2f10738e65a14a50b4804bd551a0a38392b712479ea5650ab1",
+      "bytes": 3549
+    }
+  }
+}

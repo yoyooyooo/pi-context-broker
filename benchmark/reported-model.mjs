@@ -8,18 +8,30 @@ export const REPORTED_MODEL_ASSURANCE = 'provider_reported_label_not_backend_att
 export const canonicalAutoGroupLabel = modelVariant => 'group/auto-' + modelVariant.replaceAll('.', '-');
 const declaredAutoGroupLabel = (routing, value) => routing.mode === 'auto-route' &&
   value === canonicalAutoGroupLabel(routing.model_variant) && routing.reported_model_ids.includes(value);
+const declaredMixedRouteLabel = (routing, value) => routing.mode === 'mixed-route' &&
+  value === routing.route && routing.reported_model_ids.includes(value);
 const allowedLabel = (routing, value) => concreteId(value) ||
-  routing.mode === 'auto-route' && value === 'auto/' + routing.model_variant || declaredAutoGroupLabel(routing, value);
+  routing.mode === 'auto-route' && value === 'auto/' + routing.model_variant || declaredAutoGroupLabel(routing, value)
+  || declaredMixedRouteLabel(routing, value);
 
-/** Exact frozen labels include declared route and canonical auto-group echoes. Neither a
- * concrete-looking label nor a routing alias attests the underlying backend. */
+/** A mixed group binds its configuration hash and exact response labels separately
+ * from fixed variants. Response labels never attest the underlying backend or the
+ * live routing configuration; those require independent gateway observations. */
 export function validateRoutingPolicy(routing) {
   assert.ok(object(routing), 'BENCHMARK_MODEL_ROUTING_REQUIRED');
-  assert.deepEqual(Object.keys(routing).sort(), ['mode', 'model_variant', 'reported_model_ids']);
-  assert.ok(['fixed-route', 'auto-route'].includes(routing.mode), 'BENCHMARK_MODEL_ROUTING_MODE');
-  assert.ok(typeof routing.model_variant === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(routing.model_variant), 'BENCHMARK_MODEL_VARIANT_REQUIRED');
+  assert.ok(['fixed-route', 'auto-route', 'mixed-route'].includes(routing.mode), 'BENCHMARK_MODEL_ROUTING_MODE');
   assert.ok(Array.isArray(routing.reported_model_ids) && routing.reported_model_ids.length > 0 &&
     new Set(routing.reported_model_ids).size === routing.reported_model_ids.length, 'BENCHMARK_REPORTED_MODEL_ALLOWLIST_REQUIRED');
+  if (routing.mode === 'mixed-route') {
+    assert.deepEqual(Object.keys(routing).sort(), ['configuration_sha256', 'mode', 'reported_model_ids', 'route']);
+    assert.ok(typeof routing.route === 'string' && /^group\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(routing.route), 'BENCHMARK_MIXED_ROUTE_REQUIRED');
+    assert.match(routing.configuration_sha256, /^[a-f0-9]{64}$/, 'BENCHMARK_MIXED_CONFIGURATION_REQUIRED');
+    for (const value of routing.reported_model_ids)
+      assert.ok(concreteId(value) || declaredMixedRouteLabel(routing, value), 'BENCHMARK_MIXED_REPORTED_MODEL_ALIAS');
+    return routing;
+  }
+  assert.deepEqual(Object.keys(routing).sort(), ['mode', 'model_variant', 'reported_model_ids']);
+  assert.ok(typeof routing.model_variant === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(routing.model_variant), 'BENCHMARK_MODEL_VARIANT_REQUIRED');
   for (const value of routing.reported_model_ids) assert.ok(allowedLabel(routing, value) &&
     (value === routing.model_variant || value.endsWith('/' + routing.model_variant) || declaredAutoGroupLabel(routing, value)), 'BENCHMARK_REPORTED_MODEL_ALIAS_NOT_CONCRETE');
   return routing;
@@ -53,7 +65,8 @@ export function assessReportedModel({ routing, sent, observations = [], provider
   } else status = 'matched';
   const sources = [...new Map([...refs, ...observations.map(item => item.ref)].filter(Boolean).map(ref => [JSON.stringify(ref), ref])).values()];
   // An undeclared group remains unrecognized when replaying an older policy.
-  const labelKind = !observations.length ? null : observations.some(item => item.value === 'auto/' + routing.model_variant || declaredAutoGroupLabel(routing, item.value))
+  const labelKind = !observations.length ? null : observations.some(item => item.value === 'auto/' + routing.model_variant
+    || declaredAutoGroupLabel(routing, item.value) || declaredMixedRouteLabel(routing, item.value))
     ? 'requested_route_alias' : observations.every(item => concreteId(item.value)) ? 'concrete_reported_label' : 'unrecognized_label';
   return { status, reason, assurance: REPORTED_MODEL_ASSURANCE, label_kind: labelKind, reported_ids: reportedIds,
     observations: structuredClone(observations), provider_error: providerError === true, refs: structuredClone(sources) };
