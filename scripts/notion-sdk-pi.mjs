@@ -202,6 +202,111 @@ export function assertWireSources(body, present, absent = []) {
   for (const text of absent) assert.equal(strings.some(value => value.includes(text)), false, 'Provider wire contains retired/undeclared body ' + hash(text));
 }
 
+const nativeBodyMaxAgeMs = 24 * 60 * 60 * 1000;
+const bodyTimes = state => state.native.flatMap(row => row.payload.files.map(file =>
+  [row.key, file.file_id, file.page_id, file.body_sha256, file.body_verified_at]));
+const withoutBodyTimes = state => {
+  const value = structuredClone(state); delete value.captured_at_ms;
+  for (const row of value.native) for (const file of row.payload.files) delete file.body_verified_at;
+  for (const row of value.observations) delete row.payload.shared_body_valid_until;
+  return value;
+};
+async function nativeBodyEvidence(stateRoot, library, owners) {
+  const { DatabaseSync } = await import('node:sqlite');
+  const database = new DatabaseSync(join(stateRoot, 'state.sqlite'), { readOnly: true });
+  try {
+    assert.equal(database.prepare('PRAGMA application_id').get().application_id, 0x4e544e43);
+    assert.equal(database.prepare('SELECT version FROM state_format').get().version, 1);
+    const native = database.prepare("SELECT key,payload FROM shared_local_records WHERE retired=0 AND key LIKE 'cache/current-native-bodies/%/latest.json' ORDER BY key").all()
+      .map(row => ({ key: row.key, payload: JSON.parse(row.payload) }))
+      .filter(row => row.payload.library_id === library && owners.includes(row.payload.skill_page_id));
+    assert.deepEqual(native.map(row => row.payload.skill_page_id).sort(), [...owners].sort());
+    assert.equal(new Set(native.map(row => row.payload.scope)).size, 1);
+    const scope = native[0].payload.scope;
+    const manifests = database.prepare('SELECT id,manifest FROM snapshots WHERE scope=? ORDER BY id').all(scope)
+      .filter(row => owners.includes(JSON.parse(row.manifest).record.locator.page_id));
+    assert.equal(manifests.length, 2);
+    const snapshots = manifests.map(row => ({ id: row.id, sha256: hash(row.manifest) }));
+    const observations = database.prepare('SELECT id,payload FROM observations WHERE scope=? ORDER BY id').all(scope)
+      .map(row => ({ id: row.id, payload: JSON.parse(row.payload) }))
+      .filter(row => snapshots.some(snapshot => snapshot.id === row.payload.snapshot_id) && row.payload.shared_body_valid_until !== undefined);
+    assert.ok(observations.length >= 2);
+    const protectedSqlite = {};
+    for (const { name } of database.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all()) {
+      assert.match(name, /^[a-z_]+$/);
+      const unchanged = database.prepare('SELECT * FROM "' + name + '"').all().filter(row =>
+        name !== 'shared_local_records' || !native.some(selected => selected.key === row.key)).filter(row =>
+        name !== 'observations' || !observations.some(selected => selected.id === row.id));
+      protectedSqlite[name] = { rows: unchanged.length, sha256: hash(unchanged.map(row => JSON.stringify(row)).sort().join('\n')) };
+    }
+    const digests = new Set(native.flatMap(row => row.payload.files.map(file => {
+      assert.match(file.body_sha256, /^[a-f0-9]{64}$/);
+      assert.ok(Number.isSafeInteger(file.body_verified_at) && file.body_verified_at >= 0);
+      return file.body_sha256;
+    })));
+    for (const row of manifests) {
+      const manifest = JSON.parse(row.manifest);
+      const entry = manifest.files.find(file => file.path === manifest.entrypoint); assert.ok(entry);
+      digests.add(entry.sha256);
+    }
+    const objects = [];
+    for (const digest of [...digests].sort()) {
+      const bytes = await readFile(join(stateRoot, 'objects', digest)); assert.equal(hash(bytes), digest);
+      objects.push({ sha256: digest, bytes: bytes.length });
+    }
+    return { captured_at_ms: Date.now(), state_path: join(stateRoot, 'state.sqlite'), scope, native, observations, snapshots, objects, protected_sqlite: protectedSqlite };
+  } finally { database.close(); }
+}
+async function ageOwnedNativeBodyEvidence(stateRoot, library, owners) {
+  const before = await nativeBodyEvidence(stateRoot, library, owners), agedAt = Date.now();
+  const expiredAt = agedAt - nativeBodyMaxAgeMs - 1000;
+  assert.ok(expiredAt > 0);
+  const { DatabaseSync } = await import('node:sqlite');
+  const database = new DatabaseSync(join(stateRoot, 'state.sqlite'));
+  try {
+    database.exec('BEGIN IMMEDIATE');
+    for (const row of before.native) {
+      const value = structuredClone(row.payload);
+      for (const file of value.files) file.body_verified_at = expiredAt;
+      assert.equal(database.prepare('UPDATE shared_local_records SET payload=? WHERE key=? AND retired=0').run(JSON.stringify(value), row.key).changes, 1);
+    }
+    for (const row of before.observations) {
+      const value = { ...row.payload, shared_body_valid_until: expiredAt + nativeBodyMaxAgeMs };
+      assert.equal(database.prepare('UPDATE observations SET payload=? WHERE id=?').run(JSON.stringify(value), row.id).changes, 1);
+    }
+    database.exec('COMMIT');
+  } catch (error) { database.exec('ROLLBACK'); throw error; }
+  finally { database.close(); }
+  const aged = await nativeBodyEvidence(stateRoot, library, owners);
+  assert.deepEqual(withoutBodyTimes(aged), withoutBodyTimes(before), 'Fixture aging may change only the two body-proof time fields');
+  return { mode: 'owned-cache-body-age', aged_at_ms: agedAt, expired_body_verified_at: expiredAt,
+    full_body_max_age_ms: nativeBodyMaxAgeMs, before, aged };
+}
+function phaseCost(events, source, pid, phase, elapsedMs, originals, maxAgeMs) {
+  const ends = events.filter(row => row.kind === 'context-broker.notion-sdk' && row.event === 'end' && row.observer_pid === pid);
+  assert.ok(ends.length > 0);
+  const metrics = ends.map(row => { assert.ok(row.request_metrics, 'Every phase needs actual SDK metrics'); return row.request_metrics; });
+  const sum = field => metrics.reduce((total, value) => {
+    assert.ok(Number.isFinite(value[field]) && value[field] >= 0, 'Missing actual metric: ' + field);
+    return total + value[field];
+  }, 0);
+  const requests = Object.fromEntries(['notion_metadata', 'notion_body', 'notion_write', 'provider'].map(kind => [kind,
+    metrics.reduce((total, value) => { assert.ok(Number.isSafeInteger(value.requests?.[kind]) && value.requests[kind] >= 0); return total + value.requests[kind]; }, 0)]));
+  const observed = source.filter(row => row.phase === phase);
+  const total = sum('total_requests'); assert.equal(total, observed.length, 'All foreground and background HTTP must be attributed');
+  assert.equal(Object.values(requests).reduce((a, b) => a + b, 0), total);
+  for (const value of metrics) {
+    assert.equal(value.trace_enabled, true); assert.equal(value.trace_dropped, 0);
+    assert.equal(value.trace.filter(row => row.event === 'attempt').length, value.total_requests);
+  }
+  return { phase, pid, elapsed_ms: elapsedMs, max_age_ms: maxAgeMs, sample_count: 1,
+    content: originals.map(text => ({ bytes: Buffer.byteLength(text), sha256: hash(text) })),
+    total_requests: total, requests, markdown_requests: observed.filter(row => /\/markdown$/.test(row.path)).length,
+    request_bytes: sum('request_bytes'), response_bytes: sum('response_bytes'),
+    unknown_request_bytes: sum('unknown_request_bytes'), unknown_response_bytes: sum('unknown_response_bytes'),
+    retry_wait_ms: sum('retry_wait_ms') };
+}
+
 async function runScenario(name, info, out) {
   const base = join(out, name); await mkdir(base, { mode: 0o700 });
   const { sample, owners } = currentServiceFacts(info.fixture);
@@ -215,9 +320,9 @@ async function runScenario(name, info, out) {
   await mkdir(join(agentDir, 'context-broker'), { recursive: true }); await mkdir(sessions);
   const metadataRevalidation = name === 'http-smart-revalidate';
   const directoryExpired = name === 'http-warm-directory-expired' || metadataRevalidation;
-  const maxAge = metadataRevalidation ? '1s' : isWarmRestart(name) || name === 'http-smart-current' ? '5m' : '0';
+  const maxAge = isWarmRestart(name) || name === 'http-smart-current' ? '5m' : '0';
   const source = { type: 'notion', id: 'current-sdk', namespace: 'current-sdk', library: sample.notion.library.library_id,
-    discovery: { maxAge: name === 'http-smart-current' ? '0' : directoryExpired ? '1s' : maxAge }, activation: { maxAge }, cacheDir: join(base, 'broker-cache'), prefetch: false };
+    discovery: { maxAge: name === 'http-smart-current' ? '0' : name === 'http-warm-directory-expired' ? '1s' : maxAge }, activation: { maxAge }, cacheDir: join(base, 'broker-cache'), prefetch: false };
   const config = join(agentDir, 'context-broker/config.yml'), control = join(base, 'control.json');
   await save(config, { sources: [source] }); await save(control, { action: 'none' });
   await save(join(agentDir, 'settings.json'), { compaction: { enabled: false, keepRecentTokens: 1, reserveTokens: 1024 }, retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } } });
@@ -269,10 +374,51 @@ async function runScenario(name, info, out) {
     const after = await snapshot(label + '-after'); assert.ok(after.branch.some(item => item.type === 'compaction')); return after;
   };
   try {
+    if (metadataRevalidation) service.setPhase('cold');
     rpc = await startRpc({ host: info.host, args, cwd: base, env, timeoutMs: 120000 });
     const a1 = sourceText(service.notion, owners.a), b1 = sourceText(service.notion, owners.b), c1 = sourceText(service.notion, owners.c);
     let records;
-    if (isWarmRestart(name)) {
+    if (metadataRevalidation) {
+      const receipt = { version: 1, fixture_sha256: hash(JSON.stringify(sample)), owners: [owners.a, owners.b],
+        full_body_max_age_ms: nativeBodyMaxAgeMs, processes: [], costs: [], states: {}, proofs: {} };
+      const readPhase = async (phase, maxAgeMs) => {
+        const empty = await snapshot(phase + '-empty-session');
+        assert.equal(empty.branch.some(entry => entry.customType === 'context-broker-selected-graph'), false);
+        const pid = rpc.lifecycle[0].pid;
+        receipt.processes.push({ phase, pid, session_file: empty.session_file, max_age_ms: maxAgeMs });
+        await step(phase + ': a fresh Pi dollar submission reads the complete root and Requires', async () => {
+          receipt.proofs[phase] = checkSources(await ordinary('$current-demo Apply this Skill to the new task.'), [a1, b1], [c1]);
+        });
+        await snapshot(phase + '-final-session'); await rpc.closeInput();
+        await save(join(base, phase + '-rpc.json'), rpc.frames);
+        await save(join(base, phase + '-rpc-lifecycle.json'), rpc.lifecycle);
+        const events = await rows(join(base, 'sdk.jsonl'));
+        receipt.costs.push(phaseCost(events, service.requests, pid, phase, steps.at(-1).elapsed_ms, [a1, b1], maxAgeMs));
+        receipt.states[phase] = await nativeBodyEvidence(env.NTN_SKILLS_HOME, source.library, receipt.owners);
+        await save(join(base, 'smart-revalidate.json'), receipt);
+      };
+      await readPhase('cold', 300000);
+      service.setPhase('full-warm');
+      rpc = await startRpc({ host: info.host, args, cwd: base, env, timeoutMs: 120000 });
+      await readPhase('full-warm', 300000);
+      assert.equal(receipt.costs.at(-1).total_requests, 0, 'The same complete fixture must have a genuine new-process warm sample');
+      source.discovery.maxAge = '1s'; source.activation.maxAge = '1s';
+      await save(config, { sources: [source] }); await save(join(base, 'metadata-source-config.json'), { sources: [source] });
+      await delay(1100);
+      service.setPhase('metadata');
+      rpc = await startRpc({ host: info.host, args, cwd: base, env, timeoutMs: 120000 });
+      await readPhase('metadata', 1000);
+      assert.equal(receipt.costs.at(-1).markdown_requests, 0);
+      assert.deepEqual(bodyTimes(receipt.states.metadata), bodyTimes(receipt.states.cold), 'Metadata success must retain original body-proof times');
+      receipt.aging = await ageOwnedNativeBodyEvidence(env.NTN_SKILLS_HOME, source.library, receipt.owners);
+      await save(join(base, 'smart-revalidate.json'), receipt);
+      await delay(1100);
+      service.setPhase('body-expiry');
+      rpc = await startRpc({ host: info.host, args, cwd: base, env, timeoutMs: 120000 });
+      await readPhase('body-expiry', 1000);
+      assert.ok(receipt.costs.at(-1).markdown_requests > 0, 'Expired independent body evidence must cause actual Markdown acquisition');
+      assert.ok(bodyTimes(receipt.states['body-expiry']).every(row => row[4] >= receipt.aging.aged_at_ms));
+    } else if (isWarmRestart(name)) {
       await step('cold dollar submission reads the complete root and Requires', async () => {
         checkSources(await ordinary('$current-demo Apply this Skill to the current task.'), [a1, b1], [c1]);
       });
@@ -432,8 +578,8 @@ async function runScenario(name, info, out) {
         });
       }
     }
-    await snapshot('final-session'); await rpc.closeInput();
-    if (isWarmRestart(name)) {
+    if (!metadataRevalidation) { await snapshot('final-session'); await rpc.closeInput(); }
+    if (isWarmRestart(name) && !metadataRevalidation) {
       const receiptPath = join(base, 'warm-restart.json'), receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
       receipt.warm_source_requests = service.requests.length - receipt.cold_source_requests;
       await save(receiptPath, receipt);
@@ -453,6 +599,92 @@ async function runScenario(name, info, out) {
     await save(join(base, 'provider-index.json'), wire.map(({ file, sha256, record }) => ({ file, sha256, ...record })));
     await save(join(base, 'scenario.json'), { name, status: failure ? 'failed' : 'passed', steps, ...(failure ? { error: failure.message, stack: failure.stack } : {}) });
   }
+}
+
+async function verifySmartRevalidation(base, source, events, proofs, steps) {
+  const receipt = JSON.parse(await readFile(join(base, 'smart-revalidate.json'), 'utf8'));
+  const facts = JSON.parse(await readFile(join(base, 'source-facts.json'), 'utf8'));
+  const phases = ['cold', 'full-warm', 'metadata', 'body-expiry'], policies = [300000, 300000, 1000, 1000];
+  assert.equal(receipt.version, 1); assert.equal(receipt.full_body_max_age_ms, nativeBodyMaxAgeMs);
+  assert.match(receipt.fixture_sha256, /^[a-f0-9]{64}$/);
+  assert.equal(receipt.fixture_sha256, hash(JSON.stringify(facts)));
+  assert.deepEqual(receipt.owners, [facts.root_page_id, property(facts.notion.skills.find(row => row.id === facts.root_page_id), 'requires').relation[0].id]);
+  assert.deepEqual(receipt.processes.map(row => row.phase), phases);
+  assert.equal(new Set(receipt.processes.map(row => row.pid)).size, 4);
+  assert.equal(new Set(receipt.processes.map(row => row.session_file)).size, 4);
+  assert.deepEqual(receipt.costs.map(row => row.phase), phases);
+  assert.equal(proofs.length, 4); assert.ok(proofs.every(proof => proof.present.length === 2));
+  assert.equal(new Set(Object.values(receipt.proofs)).size, 4);
+  assert.ok(source.every(row => phases.includes(row.phase)), 'Every observed HTTP attempt must belong to one reported phase');
+  const launch = JSON.parse(await readFile(join(base, 'launch.json'), 'utf8'));
+  const metadataConfig = JSON.parse(await readFile(join(base, 'metadata-source-config.json'), 'utf8'));
+  assert.equal(launch.source.activation.maxAge, '5m'); assert.equal(launch.source.discovery.maxAge, '5m');
+  assert.equal(metadataConfig.sources[0].activation.maxAge, '1s'); assert.equal(metadataConfig.sources[0].discovery.maxAge, '1s');
+  assert.deepEqual(metadataConfig.sources[0], { ...launch.source, activation: { maxAge: '1s' }, discovery: { maxAge: '1s' } });
+  assert.deepEqual(proofs[0].present.map(row => row.sha256), receipt.owners.map(owner => hash(sourceText(facts.notion, owner))));
+  let previousClose;
+  const prepared = [];
+  for (const [index, phase] of phases.entries()) {
+    const process = receipt.processes[index], cost = receipt.costs[index];
+    assert.equal(process.max_age_ms, policies[index]);
+    const lifecycle = JSON.parse(await readFile(join(base, phase + '-rpc-lifecycle.json'), 'utf8'));
+    assert.equal(lifecycle[0].event, 'spawn'); assert.equal(lifecycle[0].pid, process.pid);
+    assert.equal(lifecycle.at(-1).event, 'close'); assert.equal(lifecycle.at(-1).code, 0); assert.equal(lifecycle.at(-1).signal, null);
+    if (previousClose !== undefined) assert.ok(BigInt(lifecycle[0].monotonicNs) >= previousClose);
+    previousClose = BigInt(lifecycle.at(-1).monotonicNs);
+    const empty = JSON.parse(await readFile(join(base, phase + '-empty-session.json'), 'utf8'));
+    assert.equal(empty.session_file, process.session_file);
+    assert.equal(empty.branch.some(row => row.customType === 'context-broker-selected-graph'), false);
+    const matching = proofs.filter(proof => proof.provider_file === receipt.proofs[phase]); assert.equal(matching.length, 1);
+    assert.deepEqual(matching[0].present.map(row => row.sha256).sort(), proofs[0].present.map(row => row.sha256).sort());
+    const step = steps.find(row => row.label.startsWith(phase + ':')); assert.ok(step);
+    assert.ok(Number.isFinite(step.elapsed_ms) && step.elapsed_ms > 0);
+    assert.ok(step.elapsed_ms <= Number(BigInt(lifecycle.at(-1).monotonicNs) - BigInt(lifecycle[0].monotonicNs)) / 1e6);
+    assert.deepEqual(cost, phaseCost(events, source, process.pid, phase, step.elapsed_ms, matching[0].present.map(row => row.text), policies[index]));
+    const consumed = events.filter(row => row.kind === 'context-broker.notion-sdk-result' && row.operation === 'consume' && row.observer_pid === process.pid);
+    assert.equal(consumed.length, 1); assert.equal(consumed[0].value.status, 'ready');
+    const nodes = consumed[0].value.preparation.nodes.filter(node => node.state === 'prepared').sort((a, b) => a.id.localeCompare(b.id));
+    assert.equal(nodes.length, 2);
+    assert.ok(nodes.every(node => node.source === (phase === 'full-warm' ? 'local_cache' : 'notion')
+      && node.freshness.max_age_ms === policies[index] && node.freshness.policy !== 'refresh'
+      && node.freshness.age_ms >= 0 && node.freshness.age_ms < policies[index] && node.freshness.stale === false));
+    prepared.push(nodes);
+    const state = receipt.states[phase];
+    assert.ok(state.native.length === 2 && state.observations.length >= 2 && state.objects.length >= 2);
+    assert.deepEqual(state.native.map(row => row.payload.skill_page_id).sort(), [...receipt.owners].sort());
+    for (const object of state.objects) { assert.match(object.sha256, /^[a-f0-9]{64}$/); assert.ok(Number.isSafeInteger(object.bytes) && object.bytes >= 0); }
+    assert.deepEqual(state.snapshots, receipt.states.cold.snapshots, 'Body verification may not rewrite the immutable manifest');
+    assert.deepEqual(state.objects, receipt.states.cold.objects, 'The same fixture must retain exact original objects');
+  }
+  const identity = nodes => nodes.map(node => [node.id, node.binding.snapshot_id, node.body_sha256]);
+  for (const nodes of prepared) assert.deepEqual(identity(nodes), identity(prepared[0]));
+  assert.deepEqual(prepared[1].map(node => node.freshness.validated_at), prepared[0].map(node => node.freshness.validated_at));
+  assert.ok(prepared[2].every((node, index) => node.freshness.validation === 'metadata'
+    && Date.parse(node.freshness.validated_at) - Date.parse(prepared[1][index].freshness.validated_at) >= 1000));
+  assert.ok(prepared[3].every(node => node.freshness.validation !== 'metadata'));
+  assert.equal(receipt.costs[1].total_requests, 0);
+  assert.equal(receipt.costs[2].markdown_requests, 0); assert.ok(receipt.costs[2].total_requests > 0);
+  assert.ok(receipt.costs[3].markdown_requests > 0); assert.ok(receipt.costs[3].response_bytes > 0);
+  const rootChildren = '/v1/blocks/' + launch.source.library + '/children';
+  assert.ok(source.filter(row => row.phase === 'metadata').every(row => row.path === rootChildren || !/\/markdown$|\/blocks\//.test(row.path)));
+  const metadataBody = source.filter(row => row.phase === 'metadata' && row.path === rootChildren).length;
+  assert.equal(receipt.costs[2].requests.notion_body, metadataBody);
+  for (const phase of ['full-warm', 'metadata']) assert.deepEqual(bodyTimes(receipt.states[phase]), bodyTimes(receipt.states.cold));
+  const aging = receipt.aging;
+  assert.equal(aging.mode, 'owned-cache-body-age'); assert.equal(aging.full_body_max_age_ms, nativeBodyMaxAgeMs);
+  assert.ok(Number.isSafeInteger(aging.aged_at_ms) && aging.aged_at_ms > nativeBodyMaxAgeMs);
+  assert.equal(aging.expired_body_verified_at, aging.aged_at_ms - nativeBodyMaxAgeMs - 1000);
+  assert.deepEqual(withoutBodyTimes(aging.before), withoutBodyTimes(receipt.states.metadata));
+  assert.deepEqual(bodyTimes(aging.before), bodyTimes(receipt.states.metadata));
+  assert.deepEqual(withoutBodyTimes(aging.aged), withoutBodyTimes(aging.before), 'Aging cannot alter metadata, epochs, authority, pins or object bytes');
+  assert.ok(bodyTimes(aging.before).every(row => aging.aged_at_ms >= row[4] && aging.aged_at_ms - row[4] < nativeBodyMaxAgeMs));
+  assert.ok(bodyTimes(aging.aged).every(row => row[4] === aging.expired_body_verified_at));
+  assert.ok(aging.aged.observations.every(row => row.payload.shared_body_valid_until === aging.expired_body_verified_at + nativeBodyMaxAgeMs));
+  const renewed = bodyTimes(receipt.states['body-expiry']);
+  assert.deepEqual(renewed.map(row => row.slice(0, 4)), bodyTimes(aging.before).map(row => row.slice(0, 4)));
+  assert.ok(renewed.every(row => Number.isSafeInteger(row[4]) && row[4] >= aging.aged_at_ms));
+  for (const page of new Set(renewed.map(row => row[2])))
+    assert.ok(source.some(row => row.phase === 'body-expiry' && row.path === '/v1/pages/' + page + '/markdown'), 'Each expired native body needs an actual request');
 }
 
 export async function verifyEvidence(directory) {
@@ -538,7 +770,8 @@ export async function verifyEvidence(directory) {
       assert.equal(source.filter(row => ['dirty-cancel', 'dirty-recovery'].includes(row.phase)
         && row.path === '/v1/pages/' + receipt.owners.a + '/markdown').length, 0, 'Required-only change must not download unchanged root bytes');
     }
-    if (isWarmRestart(entry.name)) {
+    if (entry.name === 'http-smart-revalidate') await verifySmartRevalidation(base, source, events, proofs, scenario.steps);
+    if (isWarmRestart(entry.name) && entry.name !== 'http-smart-revalidate') {
       const metadataRevalidation = entry.name === 'http-smart-revalidate';
       const directoryExpired = entry.name === 'http-warm-directory-expired' || metadataRevalidation;
       assert.equal(proofs.length, 2, 'Cold and warm provider requests must both prove complete originals');

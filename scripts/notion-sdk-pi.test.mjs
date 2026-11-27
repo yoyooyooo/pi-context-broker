@@ -198,15 +198,97 @@ test('expired directory evidence counts every list request without reclassifying
   }
 });
 
-test('expired current evidence requires fresh metadata proof and retains complete body versions without hidden downloads', async () => {
-  const fixture = await warmEvidence('http-smart-revalidate');
+async function smartRevalidationEvidence() {
+  const name = 'http-smart-revalidate', directory = await mkdtemp(join(tmpdir(), 'current-pi-revalidation-evidence-test-')), base = join(directory, name);
+  await mkdir(base);
+  const hash = value => createHash('sha256').update(value).digest('hex'), day = 86400000, now = 1800000000000;
+  const phases = ['cold', 'full-warm', 'metadata', 'body-expiry'], owners = ['root', 'requires'];
+  const texts = ['Root original 完整正文\n', 'Requires original 完整正文\n'];
+  const content = texts.map(text => ({ text, bytes: Buffer.byteLength(text), sha256: hash(text) }));
+  const source = { library: 'library', activation: { maxAge: '5m' }, discovery: { maxAge: '5m' } };
+  const facts = { root_page_id: 'root', notion: { skills: owners.map((owner, index) => ({ id: owner, properties: {
+    Content: { id: 'content', rich_text: [{ plain_text: JSON.stringify({ frontmatter: '' }) }] },
+    Requires: { id: 'requires', relation: index === 0 ? [{ id: 'requires' }] : [] },
+  } })), bodies: Object.fromEntries(owners.map((owner, index) => [owner, texts[index]])) } };
+  const snapshots = owners.map(owner => ({ id: 'snapshot-' + owner, sha256: hash(owner) }));
+  const objects = content.map(({ sha256, bytes }) => ({ sha256, bytes }));
+  const state = (bodyTime, validatedAt) => ({ captured_at_ms: validatedAt, state_path: join(base, 'ntn/state/state.sqlite'), scope: 'a'.repeat(64),
+    native: owners.map((owner, index) => ({ key: 'cache/current-native-bodies/' + owner + '/latest.json', payload: {
+      generation: 1, scope: 'a'.repeat(64), library_id: 'library', skill_page_id: owner,
+      files: [{ file_id: owner, page_id: owner, path: 'SKILL.md', body_sha256: content[index].sha256, body_verified_at: bodyTime }],
+    } })),
+    observations: owners.map(owner => ({ id: owner, payload: { snapshot_id: 'snapshot-' + owner, validated_at: validatedAt, shared_body_valid_until: bodyTime + day } })),
+    snapshots: structuredClone(snapshots), objects: structuredClone(objects), protected_sqlite: { current_facts: { rows: 2, sha256: hash('original facts') } },
+  });
+  const receipt = { version: 1, fixture_sha256: hash(JSON.stringify(facts)), owners, full_body_max_age_ms: day,
+    processes: [], costs: [], proofs: {}, states: { cold: state(now, now), 'full-warm': state(now, now), metadata: state(now, now + 4000), 'body-expiry': state(now + 7000, now + 7000) } };
+  const agedAt = now + 5000, expiredAt = agedAt - day - 1000;
+  receipt.aging = { mode: 'owned-cache-body-age', aged_at_ms: agedAt, expired_body_verified_at: expiredAt, full_body_max_age_ms: day,
+    before: structuredClone(receipt.states.metadata), aged: state(expiredAt, now + 4000) };
+  const files = { 'source-facts.json': facts, 'launch.json': { source },
+    'metadata-source-config.json': { sources: [{ ...source, activation: { maxAge: '1s' }, discovery: { maxAge: '1s' } }] },
+    'source-http.jsonl': [], 'sdk.jsonl': [], 'provider-index.json': [], 'wire-source-assertions.json': [], 'scenario.json': { status: 'passed', steps: [] } };
+  const metrics = (metadata, body) => ({ total_requests: metadata + body, requests: { notion_metadata: metadata, notion_body: body, notion_write: 0, provider: 0 },
+    body_requests: { current_body: body, retained_body: 0, unclassified_body: 0 }, request_bytes: (metadata + body) * 4, response_bytes: (metadata + body) * 16,
+    unknown_request_bytes: 0, unknown_response_bytes: 0, retry_wait_ms: 0, trace_enabled: true, trace_dropped: 0,
+    trace: Array.from({ length: metadata + body }, () => ({ event: 'attempt' })) });
+  for (const [index, phase] of phases.entries()) {
+    const pid = 101 + index, maxAge = index < 2 ? 300000 : 1000, session = '/owned/' + phase + '.jsonl';
+    const lifecycle = [{ event: 'spawn', pid, monotonicNs: String(BigInt(index) * 20000000000n) },
+      { event: 'close', pid, monotonicNs: String(BigInt(index) * 20000000000n + 10000000000n), code: 0, signal: null }];
+    files[phase + '-rpc-lifecycle.json'] = lifecycle;
+    files[phase + '-empty-session.json'] = { session_file: session, branch: [] };
+    receipt.processes.push({ phase, pid, session_file: session, max_age_ms: maxAge });
+    const wire = JSON.stringify({ messages: [{ role: 'user', content: texts.join('\n') }] }), providerFile = 'provider-00' + (index + 1) + '.json';
+    files[providerFile] = wire; files['provider-index.json'].push({ file: providerFile, sha256: hash(wire), status: 200 });
+    files['wire-source-assertions.json'].push({ provider_file: providerFile, present: content, absent: [] });
+    receipt.proofs[phase] = providerFile;
+    const paths = phase === 'cold' ? ['/v1/users/me', '/v1/pages/root/markdown', '/v1/pages/requires/markdown']
+      : phase === 'full-warm' ? [] : ['/v1/users/me', '/v1/blocks/library/children', ...owners.map(owner => '/v1/pages/' + owner + (phase === 'metadata' ? '' : '/markdown'))];
+    files['source-http.jsonl'].push(...paths.map(path => ({ method: 'GET', path, phase, status: 200 })));
+    const value = { status: 'ready', preparation: { nodes: owners.map((owner, ownerIndex) => ({ id: owner, state: 'prepared', source: phase === 'full-warm' ? 'local_cache' : 'notion',
+      binding: { snapshot_id: 'snapshot-' + owner }, body_sha256: content[ownerIndex].sha256,
+      freshness: { policy: 'max_age', max_age_ms: maxAge, validated_at: new Date(index < 2 ? now : phase === 'metadata' ? now + 4000 : now + 7000).toISOString(),
+        age_ms: phase === 'full-warm' ? 2000 : 0, stale: false, ...(phase === 'metadata' ? { validation: 'metadata' } : {}) },
+    })) } };
+    const body = phase === 'cold' ? 2 : phase === 'metadata' ? 1 : phase === 'body-expiry' ? 3 : 0, metadata = paths.length - body;
+    const requestMetrics = metrics(metadata, body), operationId = phase + '-consume';
+    files['sdk.jsonl'].push({ kind: 'context-broker.notion-sdk', event: 'start', id: operationId, observer_pid: pid, operation: 'consume' },
+      { kind: 'context-broker.notion-sdk-result', id: operationId, observer_pid: pid, operation: 'consume', value },
+      { kind: 'context-broker.notion-sdk', event: 'end', id: operationId, observer_pid: pid, operation: 'consume', status: 'completed', request_metrics: requestMetrics });
+    receipt.costs.push({ phase, pid, elapsed_ms: 2000, max_age_ms: maxAge, sample_count: 1, content: content.map(({ bytes, sha256 }) => ({ bytes, sha256 })),
+      total_requests: paths.length, requests: requestMetrics.requests, markdown_requests: phase === 'cold' || phase === 'body-expiry' ? 2 : 0,
+      request_bytes: requestMetrics.request_bytes, response_bytes: requestMetrics.response_bytes, unknown_request_bytes: 0, unknown_response_bytes: 0, retry_wait_ms: 0 });
+    files['scenario.json'].steps.push({ label: phase + ': actual body read', status: 'passed', elapsed_ms: 2000 });
+    if (index === 3) files['rpc-lifecycle.json'] = lifecycle;
+  }
+  files['smart-revalidate.json'] = receipt;
+  const save = (name, value) => writeFile(join(base, name), name.endsWith('.jsonl') ? value.map(row => JSON.stringify(row)).join('\n') + '\n' : typeof value === 'string' ? value : JSON.stringify(value));
+  await writeFile(join(directory, 'result.json'), JSON.stringify({ schema: 2, status: 'passed', identity: { evidence_level: 'controlled-Pi' }, cases: [{ name, status: 'passed' }] }));
+  for (const [name, value] of Object.entries(files)) await save(name, value);
+  return { directory, files, save };
+}
+
+test('four-phase cost evidence requires original body times, actual expiry reads and complete new-Pi delivery', async () => {
+  const fixture = await smartRevalidationEvidence();
   await verifyEvidence(fixture.directory);
   const cases = [
-    ['sdk.jsonl', rows => { rows.find(row => row.id === 'warm-consume' && row.value).value.preparation.nodes[0].freshness.validation = undefined; }],
-    ['sdk.jsonl', rows => { rows.find(row => row.id === 'warm-consume' && row.value).value.preparation.nodes[0].freshness.validated_at = new Date(1000).toISOString(); }],
-    ['sdk.jsonl', rows => { rows.find(row => row.id === 'warm-consume' && row.value).value.preparation.nodes[0].body_sha256 = 'changed'; }],
-    ['sdk.jsonl', rows => { rows.find(row => row.id === 'warm-consume' && row.value).value.preparation.nodes[0].source = 'local_cache'; }],
-    ['source-http.jsonl', rows => { rows.find(row => row.phase === 'warm-restart' && row.path === '/v1/pages/root').path += '/markdown'; }],
+    ['sdk.jsonl', rows => { rows.find(row => row.id === 'metadata-consume' && row.value).value.preparation.nodes[0].freshness.validation = undefined; }],
+    ['sdk.jsonl', rows => { rows.find(row => row.id === 'metadata-consume' && row.value).value.preparation.nodes[0].freshness.validated_at = new Date(1800000000000).toISOString(); }],
+    ['sdk.jsonl', rows => { rows.find(row => row.id === 'metadata-consume' && row.value).value.preparation.nodes[0].body_sha256 = 'changed'; }],
+    ['sdk.jsonl', rows => { rows.find(row => row.id === 'metadata-consume' && row.value).value.preparation.nodes[0].source = 'local_cache'; }],
+    ['source-http.jsonl', rows => { rows.find(row => row.phase === 'metadata' && row.path === '/v1/pages/root').path += '/markdown'; }],
+    ['smart-revalidate.json', row => { row.states.metadata.native[0].payload.files[0].body_verified_at++; }],
+    ['smart-revalidate.json', row => { row.aging.aged.observations[0].payload.validated_at++; }],
+    ['smart-revalidate.json', row => { row.aging.aged.protected_sqlite.current_facts.sha256 = 'changed'; }],
+    ['smart-revalidate.json', row => { row.aging.aged.observations[0].payload.shared_body_valid_until++; }],
+    ['smart-revalidate.json', row => { row.states['body-expiry'].native[0].payload.files[0].body_verified_at = row.aging.expired_body_verified_at; }],
+    ['smart-revalidate.json', row => { row.costs[3].response_bytes = 0; }],
+    ['smart-revalidate.json', row => { row.costs[3].total_requests--; }],
+    ['smart-revalidate.json', row => { row.processes[3].pid = row.processes[2].pid; }],
+    ['sdk.jsonl', rows => { rows.find(row => row.id === 'body-expiry-consume' && row.value).value.preparation.nodes[0].freshness.policy = 'refresh'; }],
+    ['source-http.jsonl', rows => { rows.find(row => row.phase === 'body-expiry' && row.path === '/v1/pages/root/markdown').path = '/v1/pages/root'; }],
+    ['wire-source-assertions.json', rows => { rows[3].present.pop(); }],
   ];
   for (const [name, mutate] of cases) {
     const modified = structuredClone(fixture.files[name]); mutate(modified); await fixture.save(name, modified);
