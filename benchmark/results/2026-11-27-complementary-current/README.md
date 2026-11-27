@@ -48,8 +48,8 @@ node "$BENCH_REPORTER" journey --root "$BENCH_BATCH" --run current-complementary
 ```
 
 Both commands return JSON. `--outcome` continues to filter the overall outcome,
-not the business result. `journey.decision` is the same current read-only view as
-the corresponding query row. The returned `text` and `journey` preserve the
+not the business result. The `journey` command's top-level `decision` is the same
+current read-only view as the corresponding query row. The returned `text` and `journey` preserve the
 original stored timeline, and neither command rewrites `journey.md`, normalized
 episodes or grades.
 
