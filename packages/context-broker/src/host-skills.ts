@@ -1546,8 +1546,8 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
           acknowledgeProjection(run, contextEntries);
           run.userEntryId ??= contextEntries.findLast(entry => entry.sourceEntry.type === "message"
             && entry.messages.some(message => message.role === "user"))?.sourceEntry.id;
-          // Metadata, preparation and restoration share read time; only guarded
-          // management waits may use the separate cumulative management budget.
+          // Ordinary metadata and restoration share read time. A guarded Source
+          // repair owns its complete preparation episode within the same context.
           if (!run.prepared && (ctx.mode === "print" || ctx.mode === "json")) {
             await options.librarySelection?.identity(ctx);
             checkPreparationSignal(signal); assertPiRun(run, ctx);

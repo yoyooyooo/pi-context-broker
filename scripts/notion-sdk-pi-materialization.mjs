@@ -7,18 +7,20 @@ import { pathToFileURL } from 'node:url';
 import { isolatedEnv, resolveHost } from '../packages/context-broker/scripts/context-broker-e2e-fixture.mjs';
 import { startRpc } from '../packages/context-broker/scripts/context-broker-rpc-harness.mjs';
 import { renderHttpWrapper, startLoopbackMock } from './mock-provider-adapter.mjs';
+import { runColdMaterializationPrompt, assertColdMaterializationBudget } from './notion-sdk-pi-cold-materialization.mjs';
 
 // These cases are part of notion-sdk-pi, with the same installed artifact and
 // actual Pi provider serializer. There is no alternate test runner or mock SDK.
 export const materializationScenarios = Object.freeze([
   'source-materialize-legacy', 'source-materialize-first',
   'source-materialize-legacy-source', 'source-materialize-growth',
-  'source-materialize-native-root', 'source-materialize-cancel-late',
+  'source-materialize-native-root', 'source-materialize-cancel-late', 'source-materialize-cold-budget',
 ]);
 const initialFor = name => ({
   'source-materialize-legacy': 'legacy-members', 'source-materialize-first': 'source-only',
   'source-materialize-legacy-source': 'legacy-source', 'source-materialize-growth': 'manifest-growth',
   'source-materialize-native-root': 'native-root', 'source-materialize-cancel-late': 'source-only',
+  'source-materialize-cold-budget': 'legacy-source',
 })[name];
 const hash = value => createHash('sha256').update(value).digest('hex');
 const save = (path, value) => writeFile(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
@@ -674,7 +676,7 @@ syncBuiltinESMExports();
     };
     const first = await createClient(1);
     await open(first, 'discovery');
-    await step('actual model discovery has no management authority or semantic writes', async () => {
+    if (name !== 'source-materialize-cold-budget') await step('actual model discovery has no management authority or semantic writes', async () => {
       plan = { mode: 'call', call: { type: 'toolCall', id: 'readonly-discovery', name: 'notion_list', arguments: { query: alias, limit: 100 } } };
       await rpc.prompt('Find the named Skill without selecting it.');
       assert.equal(management(await rows(join(base, 'sdk.jsonl'))).length, 0);
@@ -686,7 +688,11 @@ syncBuiltinESMExports();
     // The first process now crosses a real input-receipt boundary.
     service.setPhase('materialize'); git.setPhase('materialize'); processes[0].phase = 'materialize';
     await step('literal dollar selection uses the fixed manager then publishes complete ordinary consumption', async () => {
-      plan = { mode: 'complete' }; await rpc.prompt('$' + alias + ' Apply this Skill to the task.');
+      plan = { mode: 'complete' };
+      const prompt = '$' + alias + ' Apply this Skill to the task.';
+      if (name === 'source-materialize-cold-budget')
+        await runColdMaterializationPrompt({ base, facts, service, rpc, piPid: processes[0].pid, prompt });
+      else await rpc.prompt(prompt);
       processes[0].provider_file = checkWire(wire.at(-1).body);
       processes[0].facts = assertMaterializedFacts(facts, service.notion);
       assert.ok(service.requests.some(row => row.semantic_write), 'Cold materialization did not reach actual management HTTP');
@@ -698,6 +704,11 @@ syncBuiltinESMExports();
       assert.ok(consumeValues(events, processes[0].pid).length > 0, 'Management receipt is not a consumption receipt');
     });
     const firstFinal = await finish('materialize');
+    if (name === 'source-materialize-cold-budget') assertColdMaterializationBudget({
+      receipt: JSON.parse(await readFile(join(base, 'cold-budget.json'), 'utf8')), facts, source: service.requests,
+      events: await rows(join(base, 'sdk.jsonl')), initial: JSON.parse(await readFile(join(base, 'discovery-empty-session.json'), 'utf8')),
+      session: firstFinal, piPid: processes[0].pid,
+    });
     const initialManagement = management(await rows(join(base, 'sdk.jsonl'))).filter(row => row.event === 'result');
     const sessionManagement = firstFinal.branch.filter(entry => entry.customType === 'context-broker-materialization');
     assert.equal(sessionManagement.length, initialManagement.length);
@@ -992,6 +1003,11 @@ export async function verifyMaterializationEvidence({ base, entry, source, event
   assert.equal(events.filter(row => row.kind === 'child_process' && row.active_sdk_ids.length > 0
     && !['git'].includes(row.command)).length, 0, 'The consumer spawned a management CLI');
   const session = JSON.parse(await readFile(join(base, 'materialize-final-session.json'), 'utf8'));
+  if (entry.name === 'source-materialize-cold-budget') assertColdMaterializationBudget({
+    receipt: JSON.parse(await readFile(join(base, 'cold-budget.json'), 'utf8')), facts, source, events,
+    initial: JSON.parse(await readFile(join(base, 'discovery-empty-session.json'), 'utf8')),
+    session, piPid: receipt.processes[0].pid,
+  });
   const sessionManagement = session.branch.filter(row => row.customType === 'context-broker-materialization');
   assert.equal(sessionManagement.length, starts.length);
   for (const row of sessionManagement) {

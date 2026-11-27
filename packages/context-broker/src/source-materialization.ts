@@ -6,7 +6,7 @@ import { decodeNotionContentRecord, SourceError } from "./notion-source";
 import { noConsumptionWrites } from "./consumption-effects";
 import { inputReceiptIsCurrent } from "./preparation-authority";
 import { decodeSourceMaterializationReceipt, materializationTarget, type SourceMemberCandidate, type SourceMaterializationAuthorization, type SourceMaterializationReceipt, type SourceMaterializationRequest } from "./source-materialization-contract";
-import type { ContextPreparationBudget, InputReceipt } from "./skill-preparation";
+import type { SourcePreparationScope, InputReceipt } from "./skill-preparation";
 import type { ContentRecord, ExtensionContext, SourceConfig } from "./types";
 
 const observations = channel("context-broker.notion-materialization");
@@ -24,7 +24,7 @@ export async function materializeExplicitCandidate(input: {
   candidate: SourceMemberCandidate; source: NotionSource; receipt: InputReceipt; query: string;
   purpose: "inspect" | "use"; ctx: ExtensionContext; signal?: AbortSignal;
   authorization?: SourceMaterializationAuthorization;
-  budget?: ContextPreparationBudget;
+  preparation?: SourcePreparationScope;
   onReceipt(receipt: SourceMaterializationReceipt): void | Promise<void>;
 }): Promise<{ record: ContentRecord; receipt: SourceMaterializationReceipt }> {
   const { candidate, source, receipt, query, ctx, signal } = input;
@@ -33,6 +33,7 @@ export async function materializeExplicitCandidate(input: {
   if (source.enabled === false || source.activation?.offline || source.discovery?.offline || !candidate.enabled
     || source.library !== candidate.library_id || candidate.readiness === "blocked" || candidate.readiness === "unknown")
     throw new SourceError("SOURCE_MATERIALIZATION_BLOCKED", source.id);
+  input.preparation?.begin();
   const target = materializationTarget(candidate);
   const request: SourceMaterializationRequest = { version: 1, library: candidate.library_id, purpose: input.purpose, target,
     ...(input.authorization ? { authorization_root: input.authorization } : {}),
@@ -44,7 +45,7 @@ export async function materializeExplicitCandidate(input: {
   try {
     const manage = () => materializeNotionSource(request, { cwd: ctx.cwd ?? process.cwd(), library: candidate.library_id, signal,
       env: { ...process.env, ...(source.requestTimeoutMs === undefined ? {} : { NTN_SKILLS_REQUEST_TIMEOUT_MS: String(source.requestTimeoutMs) }) } });
-    const response = await (input.budget ? input.budget.waitForManagement(manage) : manage());
+    const response = await manage().finally(() => input.preparation?.checkpoint());
     result = decodeSourceMaterializationReceipt(response, request, candidate.scope, value => decodeNotionContentRecord(value, source));
   } catch (error) {
     const unavailable = error instanceof SourceManagementUnavailable;

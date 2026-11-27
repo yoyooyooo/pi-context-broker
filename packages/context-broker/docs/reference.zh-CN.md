@@ -218,7 +218,7 @@ sources:
 
 `maxAge` 接受 `0`，或整数加 `s`、`m`、`h`、`d`。省略策略时使用 CLI 默认值。`offline: true` 优先于 `maxAge`，只使用已有 CLI 缓存；缓存不存在或不完整时失败，不悄然联网。[schema](../examples/config.schema.json) 拒绝未知 source 字段和类型不匹配的配置；source id 唯一性由 broker 运行时检查。
 
-每次网络尝试独立计时；分页和限流等待可能延长 SDK 操作。Broker 的每次后台目录请求最多等待 60 秒。Pi context 的普通读取累计最多 60 秒，已授权的 Source 物化等待另有累计 180 秒额度，整个 context 最多 240 秒；超时或失败不持续占用输入。显式 `requestTimeoutMs` 设置 SDK 本次操作或管理 CLI 的环境。Escape、Stop 和会话取消终止所属 SDK 等待及本次发布资格。固定 manager 已接纳的请求继续保留原 operation 和 Store；取消前台等待不会终止该 writer，也不能证明写入已结清。发现与正文准备各自保持新鲜度策略；Broker 不另设持久目录缓存或重置 SDK 的验证时间。
+每次网络尝试独立计时；分页和限流等待可能延长 SDK 操作。Broker 的每次后台目录请求最多等待 60 秒。Pi context 的普通读取累计最多 60 秒，显式 Source 准备流程另有累计 180 秒额度，覆盖定向成员发现、受守卫约束的物化、完整目录重建和普通图消费；整个 context 最多 240 秒。超时或失败不持续占用输入。显式 `requestTimeoutMs` 设置 SDK 本次操作或管理 CLI 的环境。Escape、Stop 和会话取消终止所属 SDK 等待及本次发布资格。固定 manager 已接纳的请求继续保留原 operation 和 Store；取消前台等待不会终止该 writer，也不能证明写入已结清。发现与正文准备各自保持新鲜度策略；Broker 不另设持久目录缓存或重置 SDK 的验证时间。
 
 Pi 的 `$` 每次按键只筛选内存候选。会话启动时分别读取本地 Skill、随包维护 Skill 和 SDK 的纯本地候选快照，在线验证在后台继续。快照复用已有持久缓存的最近完整目录与较新的部分结果，并应用最新拒绝事实；它不提供当前授权、完整正文或 Requires 证明，也不能用部分空结果证明不存在。目录刷新完成后自动更新仍有效的当前下拉，不等待 Default View 或文件投影。排序变化保留高亮身份；高亮记录消失后取消选择，用户须重新选择。Esc 在等待和已展开状态都关闭本次意图，迟到结果不会重新打开。普通输入和排队输入在接纳时分别冻结显示过的 Skill 身份、Library 与 Source，后续草稿或刷新不能换绑。
 
@@ -272,7 +272,7 @@ MCP transport、OAuth 和凭据只由同包 CLI/core 持有。REST 与 MCP 凭�
 
 `Default Context` 明确保留为可选的作者组织／View 筛选属性，不作为第二个可用开关或全文注入开关。保留现有值、稳定 schema 和作者读写入口，因为真实 View 与其他集成可以使用它。没有筛选它的 View 中，切换该字段没有独立效果；明确筛选它的 View 则按正常目录新鲜度改变成员。`Enabled=false` 不能被它解禁。本批不重命名、删除字段，也不强制隐藏用户管理视图中的列。
 
-Pi 在 input 边界保留本次选中的原文、图片和身份，待 `agent_start` 提供操作 signal 后，在 `context` hook 内获取目录、图与正文。每次模型请求前的 context 阶段在 Library 身份、print/JSON metadata、正文准备、任务 prompt 和固定上下文恢复之间共用累计 60 秒读取额度。只有当前字面 `$` 输入通过 Source 和 readiness 守卫后，配对 management SDK 的实际等待才使用独立的累计 180 秒管理额度。同一 context 的多个 root 和排队输入共用这两份额度，阶段切换不重新计满；整个 context 最多 240 秒。回执处理、完整目录重建和普通图消费重新使用剩余的读取额度。没有已授权管理调用时，仍是原来的 60 秒期限；source 忽略取消时也会结束等待。这些前台限制不改变固定 manager 自身配置的执行时限，也不改变 OMP 的独立命令路径。Broker 失败时撤销未确认的指令，发出非阻塞 warning，继续原始用户请求。权限、完整性、投影、最终 payload 和持久化检查仍拒绝无效 Skill 内容或激活回执，但不再中止用户对话。Pi 原生编辑器及后续消息队列保持可用。**Stop**、Escape、RPC `abort` 和切换会话仍取消所属获取，迟到的结果不能变成新的选择或投递。
+Pi 在 input 边界保留本次选中的原文、图片和身份，待 `agent_start` 提供操作 signal 后，在 `context` hook 内获取目录、图与正文。每次模型请求前的 context 阶段在 Library 身份、首次目录与普通图读取、任务 prompt 和固定上下文恢复之间共用累计 60 秒读取额度。当前字面 `$` 选中尚未就绪的注册成员、需要在唯一已启用且在线的 Source 内定向查找成员，或已授权精确 root 的消费遇到缺失 current 状态时，才进入独立的累计 180 秒 Source 准备额度。这段流程包括成员发现、受守卫约束的管理、回执处理、完整目录持久化和普通图消费。计费范围不授予写权限：管理仍须通过原有字面输入、Source、scope、readiness 和依赖守卫，consume 仍为只读。每次输入的 preflight 持有该 scope，直到本次图准备结束；之后的任务 prompt 和恢复回到剩余普通读取额度。同一 context 的多个 root 和排队输入共用这两份额度，重复进入不重新计满；整个 context 最多 240 秒。未进入 Source 准备时仍保留原来单一的 60 秒期限。定向发现没有候选或只找到已就绪成员时也必须关闭 scope，不能据此声称管理已执行。source 忽略取消时也会结束前台等待。这些前台限制不改变固定 manager 自身配置的执行时限，也不改变 OMP 的独立命令路径。Broker 失败时撤销未确认的指令，发出非阻塞 warning，继续原始用户请求。权限、完整性、投影、最终 payload 和持久化检查仍拒绝无效 Skill 内容或激活回执，但不再中止用户对话。Pi 原生编辑器及后续消息队列保持可用。**Stop**、Escape、RPC `abort` 和切换会话仍取消所属获取，迟到的结果不能变成新的选择或投递。
 
 公开 `notion_list` metadata 调用、`notion_use` 调用与 `notion_ctl cli_source` 验证各有 60 秒操作预算。Broker 拥有的单项 read 在引用解析、准备和原生文件读取之间共用此预算；无法接管原生 read executor 时，read hook 的来源获取仍有界。普通原生 read 保持原参数、结果与执行预算。内容搜索沿用 360 秒总预算，并包含最初的 Library 解析；资源 batch 沿用显式 `timeBudgetMs`（默认 30000，最多 120000）和 `RESOURCE_TIME_BUDGET` 错误。期限到达或用户取消都会结束 Broker 边界等待，即使 producer 忽略 signal。超时返回受控工具失败，对话继续；迟到结果不能新增来源回执或激活。`cli_source` 的时限只覆盖 root 验证，另行授权的 CLI 进程仍使用自身时限。
 

@@ -54,6 +54,13 @@ node scripts/notion-sdk-pi.mjs run --package /absolute/selected/broker \
   --pi /absolute/installed/pi/dist/bundle/cli.js \
   --scenario source-materialize-cancel-late --out /absolute/owned/materialize-cancel-late
 node scripts/notion-sdk-pi.mjs evidence --evidence /absolute/owned/materialize-cancel-late
+
+node scripts/notion-sdk-pi.mjs run --package /absolute/selected/broker \
+  --fixture /absolute/owned/materialization-fixture/fixture.json \
+  --source-http-helper /absolute/selected/cli/scripts/sdk-source-fixture.mjs \
+  --pi /absolute/installed/pi/dist/bundle/cli.js \
+  --scenario source-materialize-cold-budget --out /absolute/owned/materialize-cold-budget
+node scripts/notion-sdk-pi.mjs evidence --evidence /absolute/owned/materialize-cold-budget
 ~~~
 
 上述五个成功场景先运行实际模型工具的 readonly list，再提交用户字面 `$lazy-root` 或 growth 的 `$lazy-required`。覆盖旧行 Content/Current State 属性存在且值为空、仅 Source 无 Skill、Source 的 Content/Contributions 全空、已 ready 集合扩展四种初态。legacy-source 保留真实旧注册形状：Status=applied、Operation 为空、Last Revision 是原 Git commit；旧 commit 仅冻结所选 Git 输入，不能充当 current plan authority。旧行保留 page、Main File ID、stable Skill ID 和人工字段；Members 中的 sibling 不展开，Source 声明集合不能被局部选择替换。legacy 两例用真实 Requires 关系证明完整闭包；source-only 不凭 frontmatter 发明不存在的依赖关系。native-root 另以真实 native 主文为明确根，沿实际 Requires 修复旧 Source 依赖，保留 native 权威和三篇完整正文；authorization_root 的 physical page、scope 和 requires_digest 必须保持，Members 不展开。
@@ -62,9 +69,17 @@ node scripts/notion-sdk-pi.mjs evidence --evidence /absolute/owned/materialize-c
 
 这五个成功场景随后启动相同 Store 的另一个空 Pi session/PID，确实在五分钟内复用第一次消费取得的缓存；Notion HTTP、Git HTTP、管理新调用均为 0。source-only 使用首次未物化候选的原精确 `alias@skill%3A<stable-id>@namespace` token，物化后的真实目录必须直接复用它，不能偷偷改成另一次宽松别名匹配。最后启动全新独立 client-2，配置、Store、cache、session 不与 client-1 共用，未复制消费者文件；它从同一 Notion 事实与 Git 取得自身原件，语义写为 0。
 
+## 冷目录与真实慢请求
+
+`source-materialize-cold-budget` 使用独立的 legacy-source 远端事实与空客户端，第一次用户消息就是 `$lazy-root`。提交前不得执行 `notion_list`、consume 或来源发现，也不得产生 Notion HTTP。保留原五例的只读工具权限检查；这些先查目录的用例不能代替本例。
+
+使用现有 HTTP fixture 的精确 hold，依次将目录的三个请求各延迟 12 秒、首次 consume 的 owner GET 延迟 12 秒、source-members 的 root GET 延迟 14 秒。单个请求保持低于 transport 期限，产品时钟、60/180/240 秒上限与 SDK 实现不改。核实际 SDK operation ID、HTTP 开始/释放/结束时间和初始 native session，要求 manager 开始之前累计已经超过 60 秒；再证明管理回执之后确实完成完整 catalog 和正常 consume，完整根与 Requires 正文进入 provider。不能只用一段总耗时或假时钟证明这条接线。
+
+保存 `cold-budget.json` 与全部原始账本，沿同一 evidence 入口重算；之后仍执行不同 PID 的 0 Notion / 0 Git / 0 management 暖读和独立空客户端。旧包应在同一场景中保留读取超时失败，新包另起输出目录，不能覆盖旧结果。现役 host 单测另覆盖管理后慢目录和慢 consume、多个 root/queued input 累计额度、找不到候选、Stop/session switch 及定时器未调度的到期边界。
+
 ## 前台预算与超时
 
-每次 Pi context 共用累计 60 秒普通读取额度。只有当前真实 `$` 的授权、Source、scope 和 readiness 已通过，配对 management SDK 的实际 await 才使用累计 180 秒管理额度。管理回执处理、完整目录重建和普通 consume 使用剩余读取额度；此前已耗的读取时间不能重置。同一 context 的多个 root 和 queued inputs 共用这两份额度，绝对上限为 240 秒。无管理调用的 context、普通 read/use/model tool 仍保持原期限。固定 manager 的服务端时限由它自己的配置决定；此处 180 秒只规定 Pi 前台管理等待。
+每次 Pi context 共用累计 60 秒普通读取额度。真实字面 `$` 经当前输入、精确来源和目标守卫进入按需物化时，从定向 source-members 开始，到受原授权约束的管理请求、回执、完整目录持久化和正常 consume 完成，共用累计 180 秒 Source 准备额度。初次完整目录与首次普通 consume、准备结束后的 task prompt 和 active restoration 使用剩余普通读取额度。预算能力不授予远端写权限；没有合格修复路径的普通 read/use/model tool 保持原期限。同一 context 的多个 root 和 queued inputs 共用两份额度，不能按 root、SDK 调用或阶段重新计满，绝对上限仍为 240 秒。固定 manager 的服务端时限和未知派发恢复由它自己的配置与 Store 决定。
 
 按原 SDK/management 事件 ID 与单调时间分别记录普通准备、管理等待、目录重建和 consume 的开始、结束、取消或超时。慢 manager 完成后必须仍通过完整目录和 provider 正文断言，不能把 manager ready 当作交付成功。每次阶段切换及最终返回都须检查已耗时间，即使过期 timer 尚未执行。现役物化 runner 的 RPC 等待为 360 秒，大于产品 240 秒上限；外层测试驱动不能先于产品终止并误报其行为。
 
@@ -97,7 +112,7 @@ node --test scripts/notion-sdk-pi.test.mjs scripts/skill-consumption-source-obse
 
 如果目录、TTL、readiness 或事实失效发生变化，还必须运行 [新进程缓存四例](session-cache-recovery.md#新进程复用) 的 http-warm-restart、http-warm-directory-expired、http-smart-revalidate、http-smart-current。它们拥有原先缓存全链路回归，新增物化案例不替代它们。
 
-现役 CI 使用同一冻结 CLI 生成器、独立安装 Broker 与 Pi 1.6.0 执行原五例和独立取消迟到例，随后逐例运行同一 `evidence` 入口。失败也保留原始证据。`verification-skill-routing.test.mjs` 要求生成器、六次实际执行、六次独立回放及各自上传目录齐全；文档有命令不能替代该自动执行链。
+现役 CI 使用同一冻结 CLI 生成器、独立安装 Broker 与 Pi 1.6.0 执行原五例、独立取消迟到例和冷目录慢请求例，随后逐例运行同一 `evidence` 入口。失败也保留原始证据。`verification-skill-routing.test.mjs` 要求生成器、七次实际执行、七次独立回放及各自上传目录齐全；文档有命令不能替代该自动执行链。
 
 ## 结果范围
 
