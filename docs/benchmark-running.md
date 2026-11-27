@@ -112,7 +112,7 @@ The [2026-11-26 resource-read reanalysis](benchmark-relative-source-reanalysis-2
 records the original, intermediate and corrected outcomes across the six retained
 engineering scopes, unchanged actual costs, and the resulting product decision.
 
-Current collection uses collector `1.3.4` and explicitly binds SDK v3,
+Current collection uses collector `1.3.5` and explicitly binds SDK v3,
 Library-root v1, resource-read v1, Skill-ref v2 and preparation-evidence v2.
 The subject includes only the public observer dependencies and the exact paired
 reference producer. Its embedded SDK hash is checked against the Broker bundle;
@@ -129,9 +129,11 @@ Broker extension identity comes from the frozen build selection, its declared
 launch role and the observed loaded entry and hash. Directory and packed installs
 use that same check; a path merely resembling a Broker directory cannot assign
 ownership. Packed metadata collection also verifies the selected archive entry
-against the built package before applying the reviewed producer tuple.
+against the built package before applying the reviewed producer tuple. The
+refresh-guidance candidate has its own reviewed complete tuple; the accepted
+reference tuple remains valid. Changed or mixed producer hashes are not admitted.
 
-Collector `1.3.4` recognizes a successful `notion_list` metadata response only
+Collector `1.3.5` recognizes a successful `notion_list` metadata response only
 when its captured owner and admission match a reviewed Broker producer, its
 closed output matches the delivered metadata projection, and the record identity
 matches an actually observed SDK directory. The reviewed hashes for

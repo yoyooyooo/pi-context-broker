@@ -15,8 +15,11 @@ const candidateIndexSha = 'e76e3c3ac75e5c6f1ca9668e60f5addc625471ce68cb3a7cec20b
 const candidateHostSha = 'eb9153cdc6e3b6665633d80e6bca804bb72df7447eccd5ab98510640798da205';
 const localIdentityIndexSha = 'bfbf2d32db29c53a09f933ee657e467ef7132bcaf65becb4d19fac3c8efd8bd9';
 const localIdentityHostSha = 'ddfd7abf4d501c97c69d3d8baf4d3b4656fe9878361735f42d86e1742c5d9f59';
+const refreshGuidanceIndexSha = '6b08741c97d84ffe34741ce6cebe16c99c6e27834e2d27d2dea4e9e7f39770d2';
+const refreshGuidanceHostSha = 'd359e2919bc6a259eba2201c808683b04107bdeca249663b304560eaf816a36d';
 const producers = [{ indexSha, hostSha }, { indexSha: candidateIndexSha, hostSha: candidateHostSha },
-  { indexSha: localIdentityIndexSha, hostSha: localIdentityHostSha }];
+  { indexSha: localIdentityIndexSha, hostSha: localIdentityHostSha },
+  { indexSha: refreshGuidanceIndexSha, hostSha: refreshGuidanceHostSha }];
 function producerFixture({ indexSha, hostSha } = producers[0], mode = 'directory') {
   const suffix = mode === 'packed' ? '/installed/broker/node_modules/pi-context-broker' : '/broker';
   const view = root => {
