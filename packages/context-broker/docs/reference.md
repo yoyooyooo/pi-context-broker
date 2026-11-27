@@ -240,6 +240,46 @@ Pi filters an in-memory candidate snapshot on every `$` keystroke. Session start
 
 Online Notion metadata uses `listCatalog`; completion startup uses the local `readCandidateSnapshot` operation. Skill/Router preparation, direct Prompt loading and bounded prefetch all use `consume`; supporting files use `readSkill` or the current batch resource operation. The paired SDK returns the complete manifest and exact main body once. Broker initially materializes the main entry and retains every declared File binding for on-demand reads; `manifest_complete` does not mean every file is local. Each explicit Prompt submission obtains its own material. `source.command`, CLI prepare/read fallback and full-export snapshots are removed. Old or incomplete packages fail explicitly; upgrade the paired CLI/SDK and Broker together. OMP/Tern evolution is deferred.
 
+### First explicit selection of a registered Source member
+
+A literal `$` submitted by the user can prepare a registered upstream member that
+has no current consumable content yet. Broker first resolves its exact Library,
+registered Source, member and stable Skill identity. A member without a Skill row
+remains a metadata candidate; it never receives a fabricated page ID or `skill://`
+reference. Cached candidates expose `ready`, `materializable`, `preparing`,
+`blocked` or `unknown` readiness. A complete directory is required for unique
+alias matching; a partial result does not authorize a write.
+
+The configured manager performs the finite, incremental operation through the
+separate paired management entry. It retains existing materialized members,
+prepares the necessary Requires closure for use, and leaves Members lazy. It
+writes only the persistent consumption contract; Notion reading projections are
+not part of this path. Missing manager configuration, ambiguous identity, blocked
+policy and unresolved writes fail explicitly. Broker does not substitute an
+arbitrary local CLI or follow a new upstream revision to make the request pass.
+
+If a native root has no registered Source but its Required dependencies include
+unready registered Skills, the SDK supplies a fresh complete Requires observation
+for that exact physical root. The manager rechecks the root and relation digest
+before preparing only those dependencies. Error messages and Members never grant
+this authority. Broker then consumes the original root again.
+
+After a validated management receipt, the CLI retires affected persistent facts
+and Broker retires its scoped metadata and source jobs. The ordinary readonly
+`consume` operation must then prove the complete graph, body and file directory
+before Pi receives any instructions. A management receipt is not a loaded or
+delivered receipt. Its `scope` is verified under the consuming client; `manager_scope`
+retains the fixed writer attribution when the credentials differ. Management effects are recorded separately from consumption
+effects; pending or unknown writes remain pending or unknown.
+
+Ready selections keep the normal cached consumption path without a discovery or
+management call. Lists, completions, model reads, prefetch, restoration and
+configurable rule injections do not acquire management authority. Code examples
+and quoted Markdown `$` text do not grant it either. Cancellation ends the
+foreground wait and retires that input's publication authority; an accepted
+management operation keeps its durable recovery state. Existing session pins
+are preserved.
+
 The paired runtime accepts SDK v3 only, with matching SDK/runtime capabilities. Consumption performs no remote semantic writes and has no `readOnly` option. Candidate-snapshot v1 provides discovery metadata and a catalog-settled notification before the same combined operation reads its View; both the SDK and manifest must declare the capability. Catalog-directory v1 provides full-catalog and Default View projections in one operation. Each projection keeps its own result, so an unrelated catalog failure does not hide an accessible View. Missing capability fails before dispatch.
 
 Within the effective outgoing request, a complete Skill or resource body appears once for its exact identity and selected version. Explicit repeated `read` and `notion_use` operations still run, but their model projections can reuse a complete body and generated directory already present in that same request. Each operation retains its own effects. Summaries and past loaded flags are not complete-content witnesses. Original session entries and tool results remain intact. Retiring old source text does not erase an observed or unknown operation outcome. See the [projection contract](skill-consumption-runtime.md#presentation-and-proof).

@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { isBundledBuiltin } from "./bundled-builtins";
-import { candidateDescription, type CompletionCandidate, type CompletionSnapshot } from "./completion-candidates";
+import { candidateDescription, candidateMetadata, type CompletionCandidate, type CompletionSnapshot } from "./completion-candidates";
 import type {
   AutocompleteItem,
   AutocompleteProvider,
@@ -232,7 +232,7 @@ export type DollarMenuSource = {
 
 function candidateScore(candidate: CompletionCandidate, query: string): number {
   if (candidate.origin === "local") return scoreDollarSuggestion(candidate.record, query);
-  const record = candidate.record;
+  const record = candidateMetadata(candidate);
   const canonical = `${candidate.source.namespace ?? candidate.source.id}/${candidate.token.slice(0, candidate.token.lastIndexOf("@"))}`;
   return scoreDollarFields([
     { value: candidate.token, weight: 100 }, { value: canonical, weight: 100 },
@@ -244,18 +244,19 @@ function candidateScore(candidate: CompletionCandidate, query: string): number {
 function candidateRouterMatch(candidate: CompletionCandidate, query: string): boolean {
   if (candidate.origin === "local") return matchedRouterNameOrAlias(candidate.record, query);
   const normalized = normalizeKey(query);
-  return candidate.record.kind === "router" && Boolean(normalized) && candidate.record.alias.includes(normalized);
+  const metadata = candidateMetadata(candidate);
+  return metadata.kind === "router" && Boolean(normalized) && metadata.alias.includes(normalized);
 }
 
 export function completionCandidateItems(candidates: readonly CompletionCandidate[], query: string): AutocompleteItem[] {
   return candidates.map(candidate => ({ candidate, score: candidateScore(candidate, query) }))
     .filter(value => value.score > 0)
     .sort((a, b) => b.score - a.score || Number(candidateRouterMatch(b.candidate, query)) - Number(candidateRouterMatch(a.candidate, query))
-      || a.candidate.record.name.localeCompare(b.candidate.record.name))
+      || candidateMetadata(a.candidate).name.localeCompare(candidateMetadata(b.candidate).name))
     .slice(0, 50).map(({ candidate }) => ({ identity: candidate.identity, candidate,
-      kind: candidate.record.kind ?? "skill", source: candidate.origin,
-      ref: candidate.record.ref ?? (candidate.origin === "local" ? candidate.record.path : ""),
-      value: "$" + candidate.token, label: `$${candidate.token} [${candidate.record.kind ?? "skill"}]`,
+      kind: candidateMetadata(candidate).kind, source: candidate.origin === "local" ? "local" : "notion",
+      ...(candidate.origin === "source_member" ? {} : { ref: candidate.record.ref ?? (candidate.origin === "local" ? candidate.record.path : "") }),
+      value: "$" + candidate.token, label: `$${candidate.token} [${candidateMetadata(candidate).kind}]`,
       description: candidate.origin === "local" ? autocompleteDescription(candidate.record) : candidateDescription(candidate) }));
 }
 

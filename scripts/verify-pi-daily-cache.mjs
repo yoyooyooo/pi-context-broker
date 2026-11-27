@@ -75,7 +75,7 @@ async function inspect(opt) {
   const runtime = await json(join(packageRoot, 'dist/ntn-skills-runtime.json'));
   const runtimeHashes = verifyBundledRuntime({ manifest: runtime, expectedVersion: runtime.package_version,
     cliBytes: await readFile(join(packageRoot, 'dist/ntn-skills.mjs')),
-    sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')),
+    managementBytes: await readFile(join(packageRoot, 'dist/ntn-skills-management.mjs')), sdkBytes: await readFile(join(packageRoot, 'dist/ntn-skills-sdk.mjs')),
     refBytes: await readFile(join(packageRoot, 'dist/ntn-skills-ref.cjs')) });
   const host = { ...await resolveHost(opt.pi) };
   host.launcher = await identity(host.path); host.parent_pid = process.pid;

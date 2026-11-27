@@ -6,7 +6,7 @@ import { sessionSelection, selectedBinding, selectedTaskRole, persistSessionSele
 import { activeSelection, confirmActiveSources } from "./session-active";
 import { createActiveSourceRestorer } from "./session-recovery";
 import { checkPreparationSignal, isPreparationCancelled, withPreparationDeadline, type InputReceipt } from "./skill-preparation";
-import { createCompletionSnapshot, localCompletionCandidate, type CompletionCandidate } from "./completion-candidates";
+import { createCompletionSnapshot, localCompletionCandidate, notionCompletionCandidates, materializationCompletionCandidates, matchSourceMemberCandidate, sourceMemberLookupQuery, sourceMemberQuery, type CompletionCandidate } from "./completion-candidates";
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
@@ -51,7 +51,7 @@ import {
   InvocationError,
 } from "./discovery-records";
 import { bindNotionSource, discoverSourceCatalog, loadSourceSkill, normalizeSources, formatSourceFailures, hasEnabledNotionSource } from "./sources";
-import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources, readFixedNotionResource, resolveNotionReference, resolveNotionReferenceInSource, resolveNotionRelativeReference, readNotionCandidateSnapshot, materializeCompletionCandidate } from "./notion-source";
+import { diagnoseNotionSource, sourceFailureMessage, SourceError, ReferenceMiss, prepareNotionSkills, prefetchNotionSkills, loadNotionResource, readNotionResources, readFixedNotionResource, resolveNotionReference, resolveNotionReferenceInSource, resolveNotionRelativeReference, readNotionCandidateSnapshot, materializeCompletionCandidate, discoverNotionSourceMembers, discoverNotionRequiredSourceMembers } from "./notion-source";
 import { createFinalRequestLedger, formatFinalRequestDiagnostic } from "./final-request";
 import { installHostSkills } from "./host-skills";
 import { handleSourceConnection } from "./source-connection";
@@ -80,6 +80,7 @@ import type {
   ConfigFile,
   ContextEvent,
   ContextInjection,
+  ContentRecord,
   ContextResult,
   DiscoveryResult,
   DiscoveryRecord,
@@ -100,7 +101,10 @@ import type {
   TextContent,
 } from "./types";
 
-import { invocationText } from "./invocation-text";
+import { DOLLAR_SKILL_PATTERN, explicitDollarQueries, invocationText } from "./invocation-text";
+import { materializeExplicitCandidate, needsSourceMaterialization } from "./source-materialization";
+import type { SourceMemberCandidate, SourceMaterializationReceipt } from "./source-materialization-contract";
+import { authorizeExplicitPreparation, authorizedPreparationRoots, inputReceiptIsCurrent, preparationQuery, preparationReceipt, revokePreparationAuthority } from "./preparation-authority";
 
 const CUSTOM_TYPE = "context-broker";
 const BUILTIN_SKILL_PROMPT_TYPE = "skill-prompt";
@@ -116,7 +120,6 @@ type SkillInjectionPresentation = Pick<HostCapabilities, "skillInstructions"> & 
   sourceFiles?(record: SkillRecord): readonly { path: string; ref: string }[] | undefined;
   sourceTaskRole?(record: SkillRecord): { role: "root"; required_by?: readonly string[] } | { role: "required"; required_by: readonly string[] } | undefined;
 };
-const DOLLAR_SKILL_PATTERN = "(?:^|[^\\w\\\\$])\\$(?<query>[^\\s$]+?)(?=$|[\\s,，。!！？?；;、:：)）\\]】}]|\\.+(?=$|[\\s,，。!！？?；;、:：)）\\]】}]))";
 const DEFAULT_RULES: InvocationRule[] = [
   { id: "dollar-skill", match: [{ regex: [{ pattern: DOLLAR_SKILL_PATTERN, flags: "g" }] }] },
   { id: "skill-colon", match: [{ regex: [{ pattern: "^\\s*skill[:：]\\s*(?<query>.+?)\\s*$" }] }] },
@@ -1494,12 +1497,21 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const librarySelection = createLibrarySelection(config);
   const acceptedSelections = createAcceptedSelections<CompletionCandidate>(candidate => candidate.token);
   const acceptedRecords = new WeakMap<InputReceipt, Promise<ReadonlyMap<string, DiscoveryRecord>>>();
+  const materializedInputs = new WeakMap<InputReceipt, Set<string>>();
   const submissionRecords = (receipt: InputReceipt | undefined, signal?: AbortSignal): Promise<ReadonlyMap<string, DiscoveryRecord>> => {
     if (!receipt) return Promise.resolve(new Map());
     let pending = acceptedRecords.get(receipt);
     if (!pending) {
-      pending = Promise.all([...acceptedSelections.forSubmission(receipt)].map(async ([token, candidate]) =>
-        [token, await materializeCompletionCandidate(candidate, receipt.ctx.cwd ?? process.cwd(), signal)] as const)).then(entries => new Map(entries));
+      pending = (async () => {
+        const entries = new Map<string, DiscoveryRecord>();
+        for (const [token, candidate] of acceptedSelections.forSubmission(receipt)) {
+          const record = candidate.origin === "source_member"
+            ? await materializeInputMember(candidate.member, candidate.source, receipt, token, receipt.ctx, signal)
+            : await materializeCompletionCandidate(candidate, receipt.ctx.cwd ?? process.cwd(), signal);
+          entries.set(token, record);
+        }
+        return entries;
+      })();
       acceptedRecords.set(receipt, pending);
     }
     return pending;
@@ -1678,6 +1690,63 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
   const submissionRegistry = (ctx: ExtensionContext, text: string, accepted: ReadonlyMap<string, DiscoveryRecord>, signal?: AbortSignal) =>
     parseInvocations(text, configuredRules(config)).some(request => request.scope !== "configured" && !accepted.has(request.query))
       ? getDollarRegistry(ctx.cwd, ctx, text, signal) : Promise.resolve([]);
+  function materializationReceived(result: SourceMaterializationReceipt, source: Extract<SourceConfig, { type: "notion" }>, receipt: InputReceipt, ctx: ExtensionContext): void {
+    invalidateCatalogSources([source.id], ctx);
+    sourceRuntime.forgetSources([source.id]);
+    if (result.status === "ready" || result.status === "already_ready") {
+      const ids = materializedInputs.get(receipt) ?? new Set<string>();
+      for (const record of result.records) ids.add(JSON.stringify([source.id, result.scope, record.id]));
+      materializedInputs.set(receipt, ids);
+    }
+    const owner = completionOwner;
+    if (owner && menuIsCurrent(owner) && libraryContext(owner.ctx)?.local()?.root === result.library_id) {
+      // Retire rejected stale candidates as well as published ones. Ready
+      // read-back remains partial metadata and uses exact physical qualifiers.
+      owner.snapshot.accept(owner.snapshot.begin("refresh"),
+        materializationCompletionCandidates(owner.snapshot.read().candidates, source, result));
+    }
+    if (inputReceiptIsCurrent(receipt, ctx)) pi.appendEntry?.("context-broker-materialization", {
+      version: 1, input_receipt: receipt.id, request_id: result.request_id, operation_id: result.operation_id,
+      source_id: source.id, library_id: result.library_id, scope: result.scope, manager_scope: result.manager_scope, status: result.status,
+      target: result.target, authorization_root: result.authorization_root, affected_skill_ids: result.affected_skill_ids, source_revisions: result.source_revisions, effects: result.effects,
+    });
+  }
+  async function memberRecord(member: SourceMemberCandidate, source: Extract<SourceConfig, { type: "notion" }>,
+    record: ContentRecord, query: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord> {
+    if (record.locator.type !== "shared_skill") throw new SourceError("SOURCE_IDENTITY_MISMATCH", source.id);
+    return materializeCompletionCandidate({ origin: "notion", identity: JSON.stringify([source.id, member.scope, record.kind, record.locator.type, record.id]),
+      token: query, record: { ...record, locator: record.locator },
+      source, scope: member.scope }, ctx.cwd ?? process.cwd(), signal);
+  }
+  async function materializeInputMember(member: SourceMemberCandidate, source: Extract<SourceConfig, { type: "notion" }>,
+    receipt: InputReceipt, query: string, ctx: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord> {
+    if (member.readiness === "ready" && member.record) return memberRecord(member, source, member.record, query, ctx, signal);
+    const result = await materializeExplicitCandidate({ candidate: member, source, receipt, query, purpose: "use", ctx, signal,
+      onReceipt: value => materializationReceived(value, source, receipt, ctx) });
+    return memberRecord(member, source, result.record, query, ctx, signal);
+  }
+  async function discoverInputMembers(receipt: InputReceipt | undefined, text: string, ctx: ExtensionContext,
+    accepted: ReadonlyMap<string, DiscoveryRecord>, registry: readonly DiscoveryRecord[], signal?: AbortSignal): Promise<ReadonlyMap<string, DiscoveryRecord>> {
+    if (!receipt) return accepted;
+    const queries = explicitDollarQueries(receipt.event.text ?? ""), additional = new Map(accepted);
+    for (const request of parseInvocations(text, configuredRules(config))) {
+      if (request.scope !== "global" || !queries.has(request.query) || additional.has(request.query)
+        || matchDiscoveryRecord(request.query, [...registry], true).reason !== "not-found") continue;
+      const selected = await librarySelection.identity(ctx);
+      if (!selected) continue;
+      const qualified = request.query.includes("@") || request.query.includes("/");
+      const sources = qualified ? selected.sources.filter(source => sourceMemberQuery(request.query, source) !== undefined) : [selected.source];
+      if (sources.length !== 1) continue;
+      const source = sources[0]!, lookup = sourceMemberLookupQuery(request.query, source);
+      if (!lookup) continue;
+      const members = await discoverNotionSourceMembers(source, ctx.cwd ?? process.cwd(), lookup, signal);
+      const member = matchSourceMemberCandidate(request.query, source, members.candidates, members.coverage);
+      if (!member) continue;
+      additional.set(request.query, await materializeInputMember(member, source, receipt, request.query, ctx, signal));
+    }
+    acceptedRecords.set(receipt, Promise.resolve(additional));
+    return additional;
+  }
   const notionSources = () => (config.sources ?? []).filter((source): source is Extract<SourceConfig, { type: "notion" }> => source.type === "notion" && source.enabled !== false);
   const catalogError = (error: unknown) => error instanceof Error ? error.message : "context-broker source discovery failed";
   const completionListeners = new Set<() => void>();
@@ -1884,7 +1953,7 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
       if (!source || source.type !== "notion") throw new SourceError("SOURCE_UNAVAILABLE", record.sourceId ?? "notion");
       return readFixedNotionResource(record, ref, bindNotionSource(source, record), ctx.cwd ?? process.cwd(), signal, policy);
     }),
-    prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode, policy) => sourceRuntime.foreground(async () => {
+    prepareGraph: (records, ctx, signal, purpose, pins, pendingBindings, mode, policy, authority) => sourceRuntime.foreground(async () => {
       const groups = new Map<string, SkillRecord[]>();
       for (const record of records) {
         if (!record.sourceId || record.locator?.type !== "shared_skill" || !record.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", "selection");
@@ -1915,10 +1984,52 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
           if (previous && (previous.snapshot_id !== binding.snapshot_id || previous.body_sha256 !== binding.body_sha256)) throw new SourceError("SOURCE_SESSION_CONFLICT", sourceId);
           bindings.set(binding.record.id, binding);
         }
-        prepared.push(await prepareNotionSkills(roots, bindNotionSource(source, roots[0]!), ctx?.cwd ?? process.cwd(), {
-          purpose, signal, rootPins, sessionBindings: [...bindings.values()], refresh: mode === "replace",
-          ...policy,
-        }));
+        const boundSource = bindNotionSource(source, roots[0]!);
+        const receipt = preparationReceipt(authority);
+        const refreshed = receipt && roots.some(root => materializedInputs.get(receipt)?.has(JSON.stringify([source.id, root.sourceScope, root.id])));
+        const consume = (current: readonly SkillRecord[], refresh: boolean) => prepareNotionSkills(current, boundSource, ctx?.cwd ?? process.cwd(), {
+          purpose, signal, rootPins, sessionBindings: [...bindings.values()], refresh, ...policy,
+        });
+        try { prepared.push(await consume(roots, mode === "replace" || Boolean(refreshed))); }
+        catch (error) {
+          const authorized = authorizedPreparationRoots(authority, roots, ctx, signal).filter(root => root.id && !rootPins.has(root.id));
+          if (!ctx || !receipt || !authorized.length || mode === "replace" || !needsSourceMaterialization(error)) throw error;
+          const replacements = new Map<string, SkillRecord>();
+          for (const root of authorized) {
+            if (root.locator?.type !== "shared_skill") throw error;
+            const locator = root.locator;
+            const query = preparationQuery(authority, root);
+            if (!query) throw error;
+            const discovered = await discoverNotionSourceMembers(boundSource, ctx.cwd ?? process.cwd(), locator.skill_id, signal);
+            if (discovered.scope !== root.sourceScope) throw new SourceError("SOURCE_IDENTITY_MISMATCH", sourceId);
+            const candidates = discovered.candidates.filter(member => member.expected_skill_id === locator.skill_id
+              && member.record?.locator.type === "shared_skill" && member.record.locator.page_id === locator.page_id);
+            if (candidates.length > 1) throw new SourceError("SOURCE_REFERENCE_AMBIGUOUS", sourceId);
+            const member = candidates[0];
+            if (member) {
+              if (discovered.coverage !== "complete") throw new SourceError("CATALOG_INCOMPLETE", sourceId);
+              const result = await materializeExplicitCandidate({ candidate: member, source: boundSource, receipt, query, purpose, ctx, signal,
+                onReceipt: value => materializationReceived(value, boundSource, receipt, ctx) });
+              replacements.set(root.id!, { ...root, ...result.record });
+              continue;
+            }
+            if (purpose !== "use") continue;
+            const required = await discoverNotionRequiredSourceMembers(boundSource, ctx.cwd ?? process.cwd(), root, signal);
+            if (!required.candidates.length) continue;
+            for (const dependency of required.candidates) {
+              if (!dependency.record || dependency.record.locator.type !== "shared_skill") throw new SourceError("SOURCE_IDENTITY_MISMATCH", sourceId);
+              const key = JSON.stringify([source.id, required.scope, dependency.record.id]);
+              if (materializedInputs.get(receipt)?.has(key)) continue;
+              await materializeExplicitCandidate({ candidate: dependency, source: boundSource, receipt, query, purpose, ctx, signal,
+                authorization: required.authorization, onReceipt: value => materializationReceived(value, boundSource, receipt, ctx) });
+            }
+            replacements.set(root.id!, { ...root, ...required.root });
+          }
+          if (!replacements.size) throw error;
+          // A receipt retires pre-management facts; it never supplies provider
+          // bytes. The ordinary consumer must prove the entire graph again.
+          prepared.push(await consume(roots.map(root => replacements.get(root.id!) ?? root), true));
+        }
       }
       return prepared;
     }),
@@ -2014,12 +2125,15 @@ export default async function contextBroker(pi: ExtensionAPI): Promise<void> {
     preflightPrompt: async (text, ctx, signal, receipt) => {
       const requests = parseInvocations(text, configuredRules(config));
       if (requests.length === 0) return;
-      const accepted = await submissionRecords(receipt, signal);
+      let accepted = await submissionRecords(receipt, signal);
       const registry = await registryPromise;
       const dollarRegistry = requests.some(request => request.scope === "global" || request.scope === "catalog")
         ? await buildDollarRegistryForContext(ctx, submissionRegistry(ctx, text, accepted, signal)) : [];
+      accepted = await discoverInputMembers(receipt, text, ctx, accepted, dollarRegistry, signal);
       const { injections } = resolveSkillRequests(requests, registry, { phase: "input" }, dollarRegistry, config, accepted, libraryContext(ctx)?.local()?.source.id);
-      await host.prepareMany(injections.map(injection => injection.record).filter(record => record.sourceId), ctx, signal);
+      const authority = authorizeExplicitPreparation(receipt, injections);
+      try { await host.prepareMany(injections.map(injection => injection.record).filter(record => record.sourceId), ctx, signal, authority); }
+      finally { revokePreparationAuthority(authority); }
     },
   }, adapter);
   const writeSources = (ctx: ExtensionContext) => libraryContext(host.turnContext(ctx))?.local()?.sources ?? config.sources ?? [];

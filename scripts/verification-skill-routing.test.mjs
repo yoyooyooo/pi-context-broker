@@ -23,6 +23,8 @@ const routes = [
 const cacheFeature = ".agents/skills/verify-notion-skills-integration/features/session-cache-recovery.md"
 const dailyFeature = ".agents/skills/verify-notion-skills-integration/features/daily-installation-ui.md"
 const cacheScenarios = ["http-warm-restart", "http-warm-directory-expired", "http-smart-revalidate", "http-smart-current"]
+const materializationFeature = ".agents/skills/verify-notion-skills-integration/features/source-materialization.md"
+const materializationScenarios = ["source-materialize-legacy", "source-materialize-first", "source-materialize-legacy-source", "source-materialize-growth", "source-materialize-native-root"]
 
 function verify(document, contents, scripts) {
   for (const route of routes) {
@@ -89,12 +91,12 @@ test("current verification maps resolve their links and existing executable rout
   assert.throws(() => verifyCurrentRoutes([[skills[0], "node scripts/missing-current-route.mjs"]]))
 })
 
-function verifyCacheCommands(document) {
+function verifyCacheCommands(document, requiredScenarios = cacheScenarios) {
   const commands = [...document.replace(/\\\r?\n[ \t]*/gu, " ")
     .matchAll(/^node scripts\/notion-sdk-pi\.mjs (.+)$/gmu)]
     .map(match => parseSdkPiArgs(match[1].trim().split(/\s+/u)))
   const outputs = new Set()
-  for (const scenario of cacheScenarios) {
+  for (const scenario of requiredScenarios) {
     const matching = commands.filter(command => command.action === "run" && command["--scenario"] === scenario)
     assert.equal(matching.length, 1, "missing actual Pi execution: " + scenario)
     const command = matching[0]
@@ -123,6 +125,48 @@ test("cache verification instructions execute all current public Pi scenarios an
   const daily = read(dailyFeature)
   assert.match(daily, /^node scripts\/verify-pi-daily-installation\.mjs cache-plan --config \/absolute\/\S+$/mu)
   assert.match(daily, /^node scripts\/verify-pi-daily-installation\.mjs cache-run --config \/absolute\/\S+ --live$/mu)
+})
+
+test("Source materialization instructions require all initial states and actual Pi evidence replay", () => {
+  const guide = read(materializationFeature)
+  verifyCacheCommands(guide, materializationScenarios)
+  for (const scenario of materializationScenarios)
+    assert.throws(() => verifyCacheCommands(guide.replace("--scenario " + scenario, "--scenario default-view"), materializationScenarios), /missing actual Pi execution/u)
+  assert.throws(() => verifyCacheCommands(guide.replace("notion-sdk-pi.mjs run", "notion-sdk-pi.mjs doctor"), materializationScenarios))
+  for (const path of [skills[2], "docs/verification-routing.md"]) {
+    const content = read(path)
+    assert.ok(content.includes("features/source-materialization.md"), path + ": missing materialization handoff")
+    for (const scenario of materializationScenarios) assert.ok(content.includes(scenario), path + ": missing " + scenario)
+  }
+})
+
+function verifyMaterializationCi(workflow) {
+  assert.match(workflow, /sdk-fixture\.ts --outdir "\$RUNNER_TEMP\/ntn-skills-current-fixture" --catalog --materialization/u,
+    "CI must generate the selected CLI's real materialization originals")
+  const paths = { BROKER_PACKAGE: "/absolute/ci/installed-broker", PI_ENTRY: "/absolute/ci/pi.mjs",
+    RUNNER_TEMP: "/absolute/ci/tmp", GITHUB_WORKSPACE: "/absolute/ci/workspace" }
+  const commands = workflow.split(/\r?\n/u).map(line => line.trim())
+    .filter(line => line.startsWith("node scripts/notion-sdk-pi.mjs "))
+    .map(line => line.replace(/"\$([A-Z_]+)([^"]*)"/gu, (_match, name, suffix) => {
+      assert.ok(paths[name], "CI must select a declared installed input: " + name)
+      return paths[name] + suffix
+    })).join("\n")
+  verifyCacheCommands(commands, materializationScenarios)
+  for (const scenario of materializationScenarios)
+    assert.ok(workflow.includes("${{ runner.temp }}/pi-" + scenario + "/"), "CI must retain raw evidence: " + scenario)
+  assert.match(workflow, /name: Preserve current SDK results\s+if: always\(\)/u,
+    "Failed runs must retain their original evidence")
+}
+
+test("CI runs every materialization initial state and independently replays retained Pi evidence", () => {
+  const workflow = read(".github/workflows/ci.yml")
+  verifyMaterializationCi(workflow)
+  for (const scenario of materializationScenarios) {
+    assert.throws(() => verifyMaterializationCi(workflow.replace("--scenario " + scenario + "\n", "--scenario default-view\n")), /missing actual Pi execution/u)
+    assert.throws(() => verifyMaterializationCi(workflow.replace('node scripts/notion-sdk-pi.mjs evidence --evidence "$RUNNER_TEMP/pi-' + scenario + '"', "# removed replay")), /evidence validation route/u)
+    assert.throws(() => verifyMaterializationCi(workflow.replace("${{ runner.temp }}/pi-" + scenario + "/", "removed-output")), /retain raw evidence/u)
+  }
+  assert.throws(() => verifyMaterializationCi(workflow.replace("--catalog --materialization", "--catalog")), /real materialization originals/u)
 })
 
 test("the public daily entry exposes real read-only help with its actions and required flags", () => {

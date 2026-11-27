@@ -15,6 +15,7 @@ import { brokerToolResultDigest, continueWithoutBrokerPayload, withoutBrokerInst
 import type { AgentMessage, ConfigFile, ExtensionAPI, ExtensionContext, ImageContent, SkillRecord, DiscoveryResult, SourceConfig, SourceFailure, NotionListObservation, NotionViewState, ProjectedSessionEntry, ToolCallEvent, ToolCallResult } from "./types";
 import type { HostCapabilities } from "./host-adapter";
 import { invocationText } from "./invocation-text";
+import type { PreparationAuthority } from "./preparation-authority";
 import { viewSystemPrompt, withoutViewMetadata } from "./view-prompt";
 import { hostCliScope } from "./host-command";
 import { notifyUnavailableReferences, renderUnavailableReferences } from "./unavailable-references";
@@ -54,7 +55,7 @@ export type HostSkillOptions = {
   loadResource?(record: SkillRecord, path: string, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<string>;
   readFixedResource?(record: SkillRecord, ref: string, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<FixedResourceRead | undefined>;
   readResources?(record: SkillRecord, refs: readonly string[], budget: ResourceReadBudget, ctx: ExtensionContext, signal?: AbortSignal, policy?: ConsumptionPolicy): Promise<ResourceReadBatch>;
-  prepareGraph?(records: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal | undefined, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, bindings?: readonly PreparationBinding[], mode?: SelectionMode, policy?: ConsumptionPolicy): Promise<PreparedHostGraph[]>;
+  prepareGraph?(records: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal | undefined, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, bindings?: readonly PreparationBinding[], mode?: SelectionMode, policy?: ConsumptionPolicy, authority?: PreparationAuthority): Promise<PreparedHostGraph[]>;
   persistGraphs?(graphs: readonly PreparedHostGraph[], ctx: ExtensionContext, mode: SelectionMode): void;
   sessionGraph?(ctx: ExtensionContext): unknown;
   projectContext?(messages: AgentMessage[], ctx: ExtensionContext, pending?: readonly { graphs: PreparedHostGraph[]; mode: SelectionMode }[]): AgentMessage[];
@@ -81,7 +82,7 @@ export type HostSkills = {
   refresh(ctx?: ExtensionContext, options?: { preserveTurn?: boolean }): Promise<void>;
   activate(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<SkillRecord>;
   prepare(record: SkillRecord, ctx?: ExtensionContext, signal?: AbortSignal): Promise<PreparedReference>;
-  prepareMany(records: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal): Promise<void>;
+  prepareMany(records: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal, authority?: PreparationAuthority): Promise<void>;
   withPreparedPrompt<T>(prompt: string, ctx: ExtensionContext, build: (signal?: AbortSignal, native?: SkillRecord, original?: string, prepared?: readonly SkillRecord[], receipt?: InputReceipt) => Promise<T>): Promise<T>;
   isNativeLoaded(messages: AgentMessage[], record: SkillRecord): boolean;
   selectedModelReference(record: SkillRecord, ctx: ExtensionContext): string | undefined;
@@ -853,7 +854,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     }
   }
 
-  async function graphPreparation(selected: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, mode: SelectionMode = "extend", commitNow = true, policy?: ConsumptionPolicy): Promise<{ records: SkillRecord[]; graphs: PreparedHostGraph[]; commit(): void }> {
+  async function graphPreparation(selected: readonly SkillRecord[], ctx: ExtensionContext | undefined, signal: AbortSignal, purpose: PreparationPurpose, pins?: ReadonlyMap<string, string>, mode: SelectionMode = "extend", commitNow = true, policy?: ConsumptionPolicy, authority?: PreparationAuthority): Promise<{ records: SkillRecord[]; graphs: PreparedHostGraph[]; commit(): void }> {
     const owner = gate.active, observedGeneration = generation;
     const currentInspection = purpose === "inspect" && mode === "replace";
     const observedSession = ctx?.sessionManager?.getSessionId?.();
@@ -863,7 +864,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       || mode !== "replace" && (bindings.some(binding => binding.record.id === record.id)
         || ctx && options.sessionBinding?.(record, ctx)))).map(recordIdentity));
     let graphs: PreparedHostGraph[];
-    try { graphs = await options.prepareGraph!(selected, ctx, signal, purpose, pins, bindings, mode, policy); }
+    try { graphs = await options.prepareGraph!(selected, ctx, signal, purpose, pins, bindings, mode, policy, authority); }
     catch (error) { observeFailure(error, ticket, selected, fixed, ctx); throw error; }
     checkPreparationSignal(signal);
     if (generation !== observedGeneration || observedSession !== ctx?.sessionManager?.getSessionId?.()) throw preparationCancelled();
@@ -949,7 +950,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
     return { records: values, graphs, commit };
   }
 
-  async function prepareMany(selected: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal): Promise<void> {
+  async function prepareMany(selected: readonly SkillRecord[], ctx?: ExtensionContext, signal?: AbortSignal, authority?: PreparationAuthority): Promise<void> {
     const combined = signal ? AbortSignal.any([signal, lifecycleController.signal]) : lifecycleController.signal;
     const observedEffects: ConsumptionEffects[] = [];
     const policy: ConsumptionPolicy = { observeEffects: effects => observedEffects.push(effects) };
@@ -965,7 +966,7 @@ export async function installHostSkills(api: ExtensionAPI, options: HostSkillOpt
       if (options.prepareGraph && graphRoots.length) {
         const finish = feedback.begin(graphRoots, ctx, "use", options.config.sources?.find(source => source.id === graphRoots[0]!.sourceId && source.type === "notion"));
         try {
-          const values = await graphPreparation(graphRoots, ctx, combined, "use", undefined, "extend", true, policy);
+          const values = await graphPreparation(graphRoots, ctx, combined, "use", undefined, "extend", true, policy, authority);
           observedEffects.push(combineConsumptionEffects(values.graphs.map(graph => graph.effects)));
           finish?.({ value: values.records[0]! });
         } catch (error) {

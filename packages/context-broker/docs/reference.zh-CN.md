@@ -224,6 +224,18 @@ Pi 的 `$` 每次按键只筛选内存候选。会话启动时分别读取本地
 
 在线 Notion 元数据使用 `listCatalog`，补全预热使用 `readCandidateSnapshot` 的纯本地元数据。Skill/Router 准备、Prompt 直接加载和有预算的预取均调用 `consume`；支持文件使用 `readSkill` 或当前批量资源操作。配对 SDK 一次返回完整 manifest 与准确主文，Broker 首次只物化主文，保留所有 File 绑定供按需续读；`manifest_complete` 不代表全部文件已经在本地。Prompt 每次显式提交取得本轮内容。`source.command`、CLI prepare/read 回退和完整 export 快照路径已移除。旧包或不完整的包明确失败，需要一起升级配对 CLI/SDK 与 Broker。OMP/Tern 延后。
 
+### 首次显式选择已登记的 Source 成员
+
+真实用户提交的 `$` 可以为已登记但还没有 current 消费内容的上游成员执行有限的增量准备。Broker 先精确绑定 Library、登记 Source、member 与稳定 Skill 身份。尚无 Skill 行的成员只存在于候选元数据中，不伪造 page ID 或 `skill://` 引用。缓存候选区分 `ready`、`materializable`、`preparing`、`blocked` 和 `unknown`；按别名唯一匹配需要完整目录，部分发现不能授权写入。
+
+已配置的 manager 经独立配对管理入口执行物化，保留已有物化成员，为 use 准备必要 Requires，Members 继续按需加载。该路径只写后续消费必需的持久契约，不生成 Notion 阅读投影。manager 未配置、身份歧义、策略阻止或写入未决时明确失败，不临时换成本地任意 CLI，也不为了让首次使用成功而跟随新的上游版本。
+
+原生根没有登记 Source、但 Requires 中存在尚未就绪的登记 Skill 时，SDK 为该真实根返回新鲜且完整的 Requires 关系证明。manager 重新校验根身份与关系摘要，只准备这些依赖，随后 Broker 再次消费原根。错误文本与 Members 不构成管理权限。
+
+管理回执通过核验后，CLI 退休相关持久事实，Broker 退休本作用域元数据与旧 source jobs，然后重新走普通只读 `consume`。完整图、正文和文件目录仍须通过原有消费验证才交给 Pi。管理完成不等于 loaded 或 delivered。回执 `scope` 由消费端真实凭据校验，`manager_scope` 独立保留固定写入方作用域，两者不同不能混用。管理 effects 与消费 effects 分别记录，pending/unknown 不会被随后消费的零写结果覆盖。
+
+已就绪内容仍走原缓存消费路径，不附加 discovery 或 management 调用。列表、补全、模型 read、预取、恢复与可配置规则注入均没有管理权限；Markdown 代码和引用示例中的 `$` 也不授予该权限。取消只结束前台等待与本输入的发布资格，已经受理的管理操作保留可恢复状态。已有会话 pin 不被自动替换。
+
 配对 runtime 只接受 SDK v3，SDK 与 runtime 清单的能力必须一致。消费恒为零语义写入，不再接收 `readOnly` 参数。candidate-snapshot v1 提供候选元信息，并在同一次组合操作进入 View 读取前通知目录已结束；SDK 与清单都必须声明该能力。catalog-directory v1 在一次操作中提供完整目录与 Default View 两份独立投影，全库无关失败不会隐藏有效 View；缺少能力在调用前失败。
 
 Git-only 与混合 Skill 都暴露完整的当前文件目录。CLI/SDK 以每文件显式 native、resource 或 source descriptor 决定权威；编辑 Notion 阅读投影不会自动接管 Git/resource 内容，主文以 Notion 为权威。Broker 只消费准确正文和 File 绑定，不执行 adoption、不维护第二套归属。Notion 页面历史和 Git 历史不属于该消费协议。
