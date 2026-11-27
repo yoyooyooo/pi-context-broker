@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "kind": "operator-final-interpretation",
+  "recorded_at_utc": "2026-11-27T04:13:40.666916+00:00",
+  "result_reference": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-product-baseline-20261127-1/operator-results.json",
+    "sha256": "9591f7a15cce12a600299decc3c031221b8ae37faa4a212f662dcc99d40f77d7"
+  },
+  "status": "completed",
+  "scope": "This guided operator baseline is complete. It is not an unfamiliar-Agent cold-start or AH1228 acceptance.",
+  "episodes": [
+    {
+      "run_id": "current-product-native-broker-pair-3-001",
+      "mode": "native",
+      "case_id": "explicit-01-a-n16-r1",
+      "all_declared_contracts": "pass",
+      "requests": 4,
+      "input_tokens": 13566,
+      "output_tokens": 364,
+      "normalized_episode_seconds": 14.921751042000002,
+      "startup_before_first_model_request_seconds": 0.736,
+      "turn_usage": {
+        "turn-1": {
+          "requests": 4,
+          "input_tokens": 13566,
+          "output_tokens": 364,
+          "tool_calls": 4,
+          "resource_reads": 2,
+          "skill_adoptions": 1
+        }
+      }
+    },
+    {
+      "run_id": "current-product-native-broker-pair-3-002",
+      "mode": "broker",
+      "case_id": "explicit-01-a-n16-r1",
+      "all_declared_contracts": "pass",
+      "requests": 5,
+      "input_tokens": 20682,
+      "output_tokens": 339,
+      "normalized_episode_seconds": 89.91838608399999,
+      "startup_before_first_model_request_seconds": 25.317,
+      "turn_usage": {
+        "turn-1": {
+          "requests": 5,
+          "input_tokens": 20682,
+          "output_tokens": 339,
+          "tool_calls": 5,
+          "resource_reads": 2,
+          "skill_adoptions": 1
+        }
+      }
+    },
+    {
+      "run_id": "current-product-native-broker-pair-3-003",
+      "mode": "broker",
+      "case_id": "continuation-01-a-n16-r2",
+      "all_declared_contracts": "pass",
+      "requests": 8,
+      "input_tokens": 35205,
+      "output_tokens": 552,
+      "normalized_episode_seconds": 111.62392208399999,
+      "startup_before_first_model_request_seconds": 25.489,
+      "turn_usage": {
+        "turn-1": {
+          "requests": 5,
+          "input_tokens": 20979,
+          "output_tokens": 327,
+          "tool_calls": 5,
+          "resource_reads": 2,
+          "skill_adoptions": 1
+        },
+        "turn-2": {
+          "requests": 3,
+          "input_tokens": 14226,
+          "output_tokens": 225,
+          "tool_calls": 2,
+          "resource_reads": 0,
+          "skill_adoptions": 0
+        }
+      }
+    },
+    {
+      "run_id": "current-product-native-broker-pair-3-004",
+      "mode": "native",
+      "case_id": "continuation-01-a-n16-r2",
+      "all_declared_contracts": "pass",
+      "requests": 8,
+      "input_tokens": 29876,
+      "output_tokens": 640,
+      "normalized_episode_seconds": 26.974249625,
+      "startup_before_first_model_request_seconds": 0.704,
+      "turn_usage": {
+        "turn-1": {
+          "requests": 4,
+          "input_tokens": 13510,
+          "output_tokens": 319,
+          "tool_calls": 4,
+          "resource_reads": 2,
+          "skill_adoptions": 1
+        },
+        "turn-2": {
+          "requests": 4,
+          "input_tokens": 16366,
+          "output_tokens": 321,
+          "tool_calls": 4,
+          "resource_reads": 2,
+          "skill_adoptions": 1
+        }
+      }
+    }
+  ],
+  "timing_interpretation": {
+    "correction": "The earlier result field summary.business_duration_sum_ms is the sum of normalized episode durations. Its business label must not be interpreted as time after startup. Startup occurs inside these episode observations and must not be added a second time.",
+    "startup_source": "Root independently decomposed the retained runtime events and supplied these four observed values.",
+    "broker_explicit_decomposition": {
+      "model_intervals_seconds": 18.454,
+      "startup_sdk_list": {
+        "seconds": 23.523,
+        "http_requests": 36
+      },
+      "business_metadata_refresh_list": {
+        "seconds": 21.914,
+        "http_requests": 36
+      },
+      "consume": {
+        "seconds": 13.736,
+        "http_requests": 24
+      },
+      "resource_read": {
+        "seconds": 10.223,
+        "http_requests": 19
+      },
+      "owned_http_requests_total": 115
+    },
+    "broker_continuation_additional_use_refresh_list": {
+      "seconds": 8.819,
+      "http_requests": 17
+    },
+    "raw_sources": {
+      "broker_explicit": {
+        "events": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+        "episode_result": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/episode-result.json",
+        "normalized_collection": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/normalized/collection.json",
+        "readback": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/normalized/readback.json"
+      },
+      "broker_continuation": {
+        "events": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+        "episode_result": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/episode-result.json",
+        "normalized_collection": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/normalized/collection.json",
+        "readback": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/normalized/readback.json"
+      }
+    }
+  },
+  "ledger": {
+    "global_observations": 235,
+    "global_registrations": 31,
+    "own_global_ordinals": [
+      232,
+      233,
+      234,
+      235
+    ],
+    "active_lease": null,
+    "reference": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-product-baseline-20261127-1/final-ledger.json"
+  },
+  "sizes_at_observation": {
+    "scientific_runs_logical_bytes": 35432014,
+    "all_eight_runs_logical_bytes": 52420502,
+    "control_logical_bytes": 96104594,
+    "material_logical_bytes": 3265191,
+    "new_full_run_source_copies": 0
+  },
+  "retirement": {
+    "deleted_or_moved_paths": [],
+    "full_source_copy_cleanup_needed_for_operator_runs": false,
+    "preserve": "Four scientific runs, four capture runs including first failure, current material, grant/baseline/ledger and their control receipts. Root owns reference-aware retirement of superseded build copies.",
+    "candidate_status": "Build -2 remains the exact controller/runtime for the completed plan and its replay; build -1 is retained first-failure/material provenance."
+  },
+  "follow_up": {
+    "existing_issue": "AH1329",
+    "observed_status": "InProgress, including its child work; other owners are already working on it",
+    "owner_action": "Root will attach the current measured source-startup, refresh, consume and read evidence to the existing cache work.",
+    "operator_action": "No second implementation, model rerun or new scope was started."
+  },
+  "unresolved_interpretation": "The retained collector marks provider_error=true on 24 matched provider labels despite null runtime/assistant errors and complete passing business results. Its transport-end interpretation is retained for root review, not counted as model-task failures."
+}

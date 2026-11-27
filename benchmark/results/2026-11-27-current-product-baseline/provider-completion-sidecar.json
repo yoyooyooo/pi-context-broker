@@ -1,0 +1,1229 @@
+{
+  "schema_version": 1,
+  "kind": "benchmark-provider-completion-interpretation-sidecar",
+  "created_at": "2026-11-27T04:20:02.905Z",
+  "status": "verified",
+  "scope": "Offline interpretation of the original 25 requests; not new samples and not a replacement for original 1.3.3 bundles",
+  "implementation": {
+    "collector_sha256": "d27eada5f7b9587e10bce2badaf60398d825ca526d9229dfb73c61f1ecef1d32",
+    "shared_completion_sha256": "57941adf463148297ea3012aa9bbfd4d156627f22cfb3715e60bb46806d27c89",
+    "collector_version": "1.3.4"
+  },
+  "plan": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-product-baseline-20261127-1/attempt-3/plan.json",
+    "sha256": "2da57c6d26a084bf47d7548608bf476c532e901510a140034a45345499cc5eb0"
+  },
+  "model_requests_executed": 0,
+  "summary": {
+    "requests": 25,
+    "original_provider_error_true": 24,
+    "revised_provider_error_true": 0,
+    "application_completion": {
+      "sse-done-before-http-cancel": 24,
+      "http-complete": 1
+    },
+    "all_reported_model_matched": true,
+    "business_admission_usage_cost_duration_unchanged": true,
+    "original_files_preserved": 33
+  },
+  "interpretation": "Transport failure after a complete SSE application response remains in raw evidence. The provider_error label uses the shared completion rule only after same-request assistant, same-attempt usage and provider binding checks. HTTP error, incomplete/unknown SSE, errored/aborted assistant or mismatched binding stays an error.",
+  "limitations": [
+    "This narrow sidecar changes no formal success, source/tool coverage, model identity, request usage, timing or pricing result.",
+    "Existing unknowns and original normalized bundles remain authoritative; no model replay occurred."
+  ],
+  "runs": [
+    {
+      "run_id": "current-product-native-broker-pair-3-001",
+      "original_episode_sha256": "b7f3d9ffd498e0c245e1392fec0b5bd4e4501dd6d7de20aca875269f355e129c",
+      "original_collector_version": "1.3.3",
+      "original_result": {
+        "critical_failures": [],
+        "outcome": "pass",
+        "unassisted_success": true,
+        "verified_success": true
+      },
+      "original_admission_status": "valid",
+      "original_business": "pass",
+      "original_budget_usage": {
+        "duration_ms": 14921.751042000002,
+        "input_tokens": 13566,
+        "model_requests": 4,
+        "output_tokens": 364
+      },
+      "requests": [
+        {
+          "request_id": "current-product-native-broker-pair-3-001/request-1",
+          "attempt_id": "current-product-native-broker-pair-3-001/request-1/attempt-1",
+          "transport_id": 1,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 2998,
+            "output": 104,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/transport.jsonl",
+              "sha256": "cef65f894747e033da6b68a73d8f5729c219188b92fc4826cff5fe3b39e4cde0",
+              "line": 6
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/events.jsonl",
+              "sha256": "a8f614f73f0d70112ee86e90b4fcd3f75fa1a8ad29ec4f14514cf8f06a1d224e",
+              "line": 35
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/events.jsonl",
+              "sha256": "a8f614f73f0d70112ee86e90b4fcd3f75fa1a8ad29ec4f14514cf8f06a1d224e",
+              "line": 32
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-001/request-2",
+          "attempt_id": "current-product-native-broker-pair-3-001/request-2/attempt-2",
+          "transport_id": 2,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 3409,
+            "output": 73,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/transport.jsonl",
+              "sha256": "cef65f894747e033da6b68a73d8f5729c219188b92fc4826cff5fe3b39e4cde0",
+              "line": 10
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/events.jsonl",
+              "sha256": "a8f614f73f0d70112ee86e90b4fcd3f75fa1a8ad29ec4f14514cf8f06a1d224e",
+              "line": 189
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/events.jsonl",
+              "sha256": "a8f614f73f0d70112ee86e90b4fcd3f75fa1a8ad29ec4f14514cf8f06a1d224e",
+              "line": 187
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-001/request-3",
+          "attempt_id": "current-product-native-broker-pair-3-001/request-3/attempt-3",
+          "transport_id": 3,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 3514,
+            "output": 114,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/transport.jsonl",
+              "sha256": "cef65f894747e033da6b68a73d8f5729c219188b92fc4826cff5fe3b39e4cde0",
+              "line": 14
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/events.jsonl",
+              "sha256": "a8f614f73f0d70112ee86e90b4fcd3f75fa1a8ad29ec4f14514cf8f06a1d224e",
+              "line": 419
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/events.jsonl",
+              "sha256": "a8f614f73f0d70112ee86e90b4fcd3f75fa1a8ad29ec4f14514cf8f06a1d224e",
+              "line": 417
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-001/request-4",
+          "attempt_id": "current-product-native-broker-pair-3-001/request-4/attempt-4",
+          "transport_id": 4,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "stop",
+          "raw_finish_reason": "stop",
+          "raw_usage": {
+            "input": 3645,
+            "output": 73,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/transport.jsonl",
+              "sha256": "cef65f894747e033da6b68a73d8f5729c219188b92fc4826cff5fe3b39e4cde0",
+              "line": 18
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/events.jsonl",
+              "sha256": "a8f614f73f0d70112ee86e90b4fcd3f75fa1a8ad29ec4f14514cf8f06a1d224e",
+              "line": 563
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/events.jsonl",
+              "sha256": "a8f614f73f0d70112ee86e90b4fcd3f75fa1a8ad29ec4f14514cf8f06a1d224e",
+              "line": 561
+            }
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "current-product-native-broker-pair-3-002",
+      "original_episode_sha256": "688fdb2665ac8ded915c1b7d347c67f3d70c9df5764ef9ea10014b4e5846454b",
+      "original_collector_version": "1.3.3",
+      "original_result": {
+        "critical_failures": [],
+        "outcome": "pass",
+        "unassisted_success": true,
+        "verified_success": true
+      },
+      "original_admission_status": "valid",
+      "original_business": "pass",
+      "original_budget_usage": {
+        "duration_ms": 89918.386084,
+        "input_tokens": 20682,
+        "model_requests": 5,
+        "output_tokens": 339
+      },
+      "requests": [
+        {
+          "request_id": "current-product-native-broker-pair-3-002/request-1",
+          "attempt_id": "current-product-native-broker-pair-3-002/request-1/attempt-1",
+          "transport_id": 37,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 2881,
+            "output": 35,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/transport.jsonl",
+              "sha256": "d26ab5388329c16c3a1c52d7c720ae2a6cd307c0e047c32bdf7181dd7224d1d0",
+              "line": 150
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+              "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf",
+              "line": 113
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+              "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf",
+              "line": 111
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-002/request-2",
+          "attempt_id": "current-product-native-broker-pair-3-002/request-2/attempt-2",
+          "transport_id": 74,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 3999,
+            "output": 35,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/transport.jsonl",
+              "sha256": "d26ab5388329c16c3a1c52d7c720ae2a6cd307c0e047c32bdf7181dd7224d1d0",
+              "line": 298
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+              "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf",
+              "line": 184
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+              "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf",
+              "line": 182
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-002/request-3",
+          "attempt_id": "current-product-native-broker-pair-3-002/request-3/attempt-3",
+          "transport_id": 99,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 4365,
+            "output": 66,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/transport.jsonl",
+              "sha256": "d26ab5388329c16c3a1c52d7c720ae2a6cd307c0e047c32bdf7181dd7224d1d0",
+              "line": 398
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+              "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf",
+              "line": 225
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+              "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf",
+              "line": 222
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-002/request-4",
+          "attempt_id": "current-product-native-broker-pair-3-002/request-4/attempt-4",
+          "transport_id": 119,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 4653,
+            "output": 114,
+            "cache_read": 1536,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/transport.jsonl",
+              "sha256": "d26ab5388329c16c3a1c52d7c720ae2a6cd307c0e047c32bdf7181dd7224d1d0",
+              "line": 478
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+              "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf",
+              "line": 464
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+              "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf",
+              "line": 462
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-002/request-5",
+          "attempt_id": "current-product-native-broker-pair-3-002/request-5/attempt-5",
+          "transport_id": 120,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "stop",
+          "raw_finish_reason": "stop",
+          "raw_usage": {
+            "input": 4784,
+            "output": 89,
+            "cache_read": 3840,
+            "reasoning": 11
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/transport.jsonl",
+              "sha256": "d26ab5388329c16c3a1c52d7c720ae2a6cd307c0e047c32bdf7181dd7224d1d0",
+              "line": 482
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+              "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf",
+              "line": 614
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+              "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf",
+              "line": 612
+            }
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "current-product-native-broker-pair-3-003",
+      "original_episode_sha256": "ef8531e5f430bc6bdc39a88683b7223653ea2e64593501bbe9f81ed1f2fb4f2b",
+      "original_collector_version": "1.3.3",
+      "original_result": {
+        "critical_failures": [],
+        "outcome": "pass",
+        "unassisted_success": true,
+        "verified_success": true
+      },
+      "original_admission_status": "valid",
+      "original_business": "pass",
+      "original_budget_usage": {
+        "duration_ms": 111623.92208399999,
+        "input_tokens": 35205,
+        "model_requests": 8,
+        "output_tokens": 552
+      },
+      "requests": [
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-1",
+          "attempt_id": "current-product-native-broker-pair-3-003/request-1/attempt-1",
+          "transport_id": 37,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 2884,
+            "output": 58,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/transport.jsonl",
+              "sha256": "58a5d31bb1840b3f395de9db6704d9ff3b826ae671c54921646b80c51671d2c0",
+              "line": 150
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 79
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 76
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-2",
+          "attempt_id": "current-product-native-broker-pair-3-003/request-2/attempt-2",
+          "transport_id": 74,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 4135,
+            "output": 38,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/transport.jsonl",
+              "sha256": "58a5d31bb1840b3f395de9db6704d9ff3b826ae671c54921646b80c51671d2c0",
+              "line": 298
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 162
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 160
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-3",
+          "attempt_id": "current-product-native-broker-pair-3-003/request-3/attempt-3",
+          "transport_id": 116,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 4539,
+            "output": 34,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/transport.jsonl",
+              "sha256": "58a5d31bb1840b3f395de9db6704d9ff3b826ae671c54921646b80c51671d2c0",
+              "line": 466
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 242
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 240
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-4",
+          "attempt_id": "current-product-native-broker-pair-3-003/request-4/attempt-4",
+          "transport_id": 136,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 4646,
+            "output": 111,
+            "cache_read": 1536,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/transport.jsonl",
+              "sha256": "58a5d31bb1840b3f395de9db6704d9ff3b826ae671c54921646b80c51671d2c0",
+              "line": 546
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 469
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 467
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-5",
+          "attempt_id": "current-product-native-broker-pair-3-003/request-5/attempt-5",
+          "transport_id": 137,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "stop",
+          "raw_finish_reason": "stop",
+          "raw_usage": {
+            "input": 4775,
+            "output": 86,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/transport.jsonl",
+              "sha256": "58a5d31bb1840b3f395de9db6704d9ff3b826ae671c54921646b80c51671d2c0",
+              "line": 550
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 655
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 653
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-6",
+          "attempt_id": "current-product-native-broker-pair-3-003/request-6/attempt-6",
+          "transport_id": 138,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 4017,
+            "output": 21,
+            "cache_read": 1536,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/transport.jsonl",
+              "sha256": "58a5d31bb1840b3f395de9db6704d9ff3b826ae671c54921646b80c51671d2c0",
+              "line": 554
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 710
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 708
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-7",
+          "attempt_id": "current-product-native-broker-pair-3-003/request-7/attempt-7",
+          "transport_id": 139,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 5040,
+            "output": 111,
+            "cache_read": 3584,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/transport.jsonl",
+              "sha256": "58a5d31bb1840b3f395de9db6704d9ff3b826ae671c54921646b80c51671d2c0",
+              "line": 558
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 934
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 932
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-8",
+          "attempt_id": "current-product-native-broker-pair-3-003/request-8/attempt-8",
+          "transport_id": 140,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "stop",
+          "raw_finish_reason": "stop",
+          "raw_usage": {
+            "input": 5169,
+            "output": 93,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/transport.jsonl",
+              "sha256": "58a5d31bb1840b3f395de9db6704d9ff3b826ae671c54921646b80c51671d2c0",
+              "line": 562
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 1134
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+              "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b",
+              "line": 1132
+            }
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "current-product-native-broker-pair-3-004",
+      "original_episode_sha256": "db29169e4f3e9834abc63c80f95b9fda12c8e8fd13c835ed1d17c56b8b2e486c",
+      "original_collector_version": "1.3.3",
+      "original_result": {
+        "critical_failures": [],
+        "outcome": "pass",
+        "unassisted_success": true,
+        "verified_success": true
+      },
+      "original_admission_status": "valid",
+      "original_business": "pass",
+      "original_budget_usage": {
+        "duration_ms": 26974.249625,
+        "input_tokens": 29876,
+        "model_requests": 8,
+        "output_tokens": 640
+      },
+      "requests": [
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-1",
+          "attempt_id": "current-product-native-broker-pair-3-004/request-1/attempt-1",
+          "transport_id": 1,
+          "original_provider_error": false,
+          "revised_provider_error": false,
+          "application_completion": "http-complete",
+          "transport_outcome_preserved": "completed",
+          "http_status": 200,
+          "error_name": null,
+          "error_code": null,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 3001,
+            "output": 105,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/transport.jsonl",
+              "sha256": "94b90f9daa36979e0975315578d10ff40355382cf1257d9861b2ccef5f55fe1b",
+              "line": 6
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 35
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 32
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-2",
+          "attempt_id": "current-product-native-broker-pair-3-004/request-2/attempt-2",
+          "transport_id": 2,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 3386,
+            "output": 73,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/transport.jsonl",
+              "sha256": "94b90f9daa36979e0975315578d10ff40355382cf1257d9861b2ccef5f55fe1b",
+              "line": 10
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 189
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 187
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-3",
+          "attempt_id": "current-product-native-broker-pair-3-004/request-3/attempt-3",
+          "transport_id": 3,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 3506,
+            "output": 93,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/transport.jsonl",
+              "sha256": "94b90f9daa36979e0975315578d10ff40355382cf1257d9861b2ccef5f55fe1b",
+              "line": 14
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 377
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 375
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-4",
+          "attempt_id": "current-product-native-broker-pair-3-004/request-4/attempt-4",
+          "transport_id": 4,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "stop",
+          "raw_finish_reason": "stop",
+          "raw_usage": {
+            "input": 3617,
+            "output": 48,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/transport.jsonl",
+              "sha256": "94b90f9daa36979e0975315578d10ff40355382cf1257d9861b2ccef5f55fe1b",
+              "line": 18
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 485
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 483
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-5",
+          "attempt_id": "current-product-native-broker-pair-3-004/request-5/attempt-5",
+          "transport_id": 5,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 3715,
+            "output": 105,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/transport.jsonl",
+              "sha256": "94b90f9daa36979e0975315578d10ff40355382cf1257d9861b2ccef5f55fe1b",
+              "line": 22
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 524
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 521
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-6",
+          "attempt_id": "current-product-native-broker-pair-3-004/request-6/attempt-6",
+          "transport_id": 6,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 4100,
+            "output": 73,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/transport.jsonl",
+              "sha256": "94b90f9daa36979e0975315578d10ff40355382cf1257d9861b2ccef5f55fe1b",
+              "line": 26
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 678
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 676
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-7",
+          "attempt_id": "current-product-native-broker-pair-3-004/request-7/attempt-7",
+          "transport_id": 7,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "toolUse",
+          "raw_finish_reason": "tool_calls",
+          "raw_usage": {
+            "input": 4220,
+            "output": 93,
+            "cache_read": null,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/transport.jsonl",
+              "sha256": "94b90f9daa36979e0975315578d10ff40355382cf1257d9861b2ccef5f55fe1b",
+              "line": 30
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 866
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 864
+            }
+          }
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-8",
+          "attempt_id": "current-product-native-broker-pair-3-004/request-8/attempt-8",
+          "transport_id": 8,
+          "original_provider_error": true,
+          "revised_provider_error": false,
+          "application_completion": "sse-done-before-http-cancel",
+          "transport_outcome_preserved": "failure",
+          "http_status": 200,
+          "error_name": "AbortError",
+          "error_code": 20,
+          "reported_model_status": "matched",
+          "reported_model_reason": null,
+          "assistant_stop_reason": "stop",
+          "raw_finish_reason": "stop",
+          "raw_usage": {
+            "input": 4331,
+            "output": 50,
+            "cache_read": 1536,
+            "reasoning": null
+          },
+          "refs": {
+            "transport": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/transport.jsonl",
+              "sha256": "94b90f9daa36979e0975315578d10ff40355382cf1257d9861b2ccef5f55fe1b",
+              "line": 34
+            },
+            "assistant": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 978
+            },
+            "usage": {
+              "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+              "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87",
+              "line": 976
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "preserved_files": [
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-product-baseline-20261127-1/attempt-3/plan.json",
+      "sha256": "2da57c6d26a084bf47d7548608bf476c532e901510a140034a45345499cc5eb0"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/episode-result.json",
+      "sha256": "6cd9053babf102edaf0fbea223023f202875f4c80753c9330589f5802650f01a"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/events.jsonl",
+      "sha256": "a8f614f73f0d70112ee86e90b4fcd3f75fa1a8ad29ec4f14514cf8f06a1d224e"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/transport.jsonl",
+      "sha256": "cef65f894747e033da6b68a73d8f5729c219188b92fc4826cff5fe3b39e4cde0"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/normalized/collection.json",
+      "sha256": "1898af9242e5fd485c8016df5b710c85bef7bf1da60b7401da8fd144976ff36f"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/normalized/readback.json",
+      "sha256": "683a60bb5e93b22c03b2ad25b23441da048a1875fcbe02b31165af459a33e4a9"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/normalized/grade.json",
+      "sha256": "068d13ae497458fe8e802a482e34b32ed2be67a44eebd6b5f98c740b65426b3f"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/normalized/normalized/episode.json",
+      "sha256": "f9dc93c774eeb4ca97c6aa7565c73a83a39b0b951b8304a6b700d15590b42422"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/normalized/normalized/bundle.json",
+      "sha256": "5b34eba3f419000b638e8bb42f756ea9ad193f2e5bb6c7ef53ed19647f8e79ec"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/episode-result.json",
+      "sha256": "3167e6dcbf03d4e6d261b59fc780d74afc015d8c699b639f0af212c6cbf08106"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+      "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/transport.jsonl",
+      "sha256": "d26ab5388329c16c3a1c52d7c720ae2a6cd307c0e047c32bdf7181dd7224d1d0"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/normalized/collection.json",
+      "sha256": "e0fa22179e0c8550ddaea53743fba06ba6d5cbcfe1c6169c8bcd3bb4e753ea04"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/normalized/readback.json",
+      "sha256": "498a70bca2aa9461d8ddbd369b99bfa3d553982a66d884c3ea29329058a72f95"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/normalized/grade.json",
+      "sha256": "068d13ae497458fe8e802a482e34b32ed2be67a44eebd6b5f98c740b65426b3f"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/normalized/normalized/episode.json",
+      "sha256": "d02f4096226aeb7d047249c654595161759e675b4bc10062a09a72f59def6749"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/normalized/normalized/bundle.json",
+      "sha256": "4cec3f46fb997cf09d719bbf2ee074997b6551ec19c006a077486b6fa0ff4eee"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/episode-result.json",
+      "sha256": "1606cd1c530d81403752689058e43f51fc0a01c27da8950f3988eadffda6a5c4"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+      "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/transport.jsonl",
+      "sha256": "58a5d31bb1840b3f395de9db6704d9ff3b826ae671c54921646b80c51671d2c0"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/normalized/collection.json",
+      "sha256": "39af013b42464378e34d34a6cf6b44655fcaacfa7a677711ca44a605da75d455"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/normalized/readback.json",
+      "sha256": "88e76c20cf0fb0d93263d25b50f38a53ed6febb9012a533d77834282246e1a90"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/normalized/grade.json",
+      "sha256": "dc4a28c8387a3bd4730b9eb6f7d75b3f49cb1dfea4fb9346c3d2393d6bca0150"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/normalized/normalized/episode.json",
+      "sha256": "dd28c9d8128586c0b4699dee0df97557ee4cdaecbeadbfad0350559c90cc85c9"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/normalized/normalized/bundle.json",
+      "sha256": "c11a9207d33879210cc23fc4441f6d5477a8d6693d5e52487c1771cf9f9694ed"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/episode-result.json",
+      "sha256": "97be9c3858335f44407ce0bfb7dd7798cbff7f9deabaa337d0795183a4755748"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+      "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/transport.jsonl",
+      "sha256": "94b90f9daa36979e0975315578d10ff40355382cf1257d9861b2ccef5f55fe1b"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/normalized/collection.json",
+      "sha256": "f94c5dabdd0bfc84ed045e55088039f9811d20748b4263d1d3e567382258fdb5"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/normalized/readback.json",
+      "sha256": "b958fee8c844e780cb4621172ff42c61e95640a7409c10bfc6b04912fbe7d21c"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/normalized/grade.json",
+      "sha256": "fb6afc6e732cd4b6bc4f919ad2cb72de77fb1e2bf195896ea0bd648dc94992ad"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/normalized/normalized/episode.json",
+      "sha256": "3e61219492b7bcc51b9b45334b98241c1cc083f37a7de2409bf7d2baef780451"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/normalized/normalized/bundle.json",
+      "sha256": "c4fb401ce1afc7953663b8fb52d4cb239cc4b21dd8ddbaa178af5ec707aa88ec"
+    }
+  ]
+}

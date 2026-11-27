@@ -1,0 +1,1356 @@
+{
+  "schema_version": 1,
+  "kind": "current-product-latency-attribution",
+  "scope": "four existing current-product observations; monotonic observed intervals, no new requests",
+  "method": {
+    "model_interval": "model_request_start to request_usage_accounted; includes adapter bookkeeping, not provider-only compute",
+    "tool_interval": "tool_call to tool_result; union used for overlapping parallel calls",
+    "startup": "runtime_start to first user_turn_start; includes product startup and benchmark admission",
+    "http": "sum SDK operation request_metrics; SDK operations inspected as sequential for these observations; no claim of remote physical duplication from duplicate_requests alone"
+  },
+  "episodes": [
+    {
+      "run_id": "current-product-native-broker-pair-3-001",
+      "events": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/benchmark/runtime/events.jsonl",
+        "sha256": "a8f614f73f0d70112ee86e90b4fcd3f75fa1a8ad29ec4f14514cf8f06a1d224e"
+      },
+      "collection_sha256": "1898af9242e5fd485c8016df5b710c85bef7bf1da60b7401da8fd144976ff36f",
+      "total_ms": 14921.751042000002,
+      "startup_and_admission_ms": 736.000875,
+      "model_intervals_ms": 14132.884584,
+      "tool_interval_union_ms": 10.330166000000645,
+      "residual_ms": 42.53541700000187,
+      "sdk_http_total": 0,
+      "startup_sdk_ms": 0,
+      "sdk_operations": [],
+      "models": [
+        {
+          "request_id": "current-product-native-broker-pair-3-001/request-1",
+          "start_ms": 738.800542,
+          "end_ms": 4639.939625,
+          "duration_ms": 3901.139083,
+          "lines": [
+            12,
+            36
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-001/request-2",
+          "start_ms": 4654.0,
+          "end_ms": 7559.801334,
+          "duration_ms": 2905.8013339999998,
+          "lines": [
+            52,
+            190
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-001/request-3",
+          "start_ms": 7568.362042,
+          "end_ms": 11515.166459,
+          "duration_ms": 3946.8044170000003,
+          "lines": [
+            200,
+            420
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-001/request-4",
+          "start_ms": 11522.592417,
+          "end_ms": 14901.732167,
+          "duration_ms": 3379.1397500000003,
+          "lines": [
+            430,
+            564
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "tool": "read",
+          "tool_call_id": "call_8d178b2491504c2788bdb261d5b04422",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/skills/native/bm-explicit-01-a-refund-b0dcf165/SKILL.md"
+          },
+          "start_ms": 4643.414125,
+          "end_ms": 4649.489125,
+          "duration_ms": 6.074999999999818,
+          "is_error": false,
+          "lines": [
+            39,
+            42
+          ]
+        },
+        {
+          "tool": "read",
+          "tool_call_id": "call_f57f6a3fad7b4627a989514b1b50b987",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "input/returns.json"
+          },
+          "start_ms": 4643.717625,
+          "end_ms": 4650.03625,
+          "duration_ms": 6.318624999999884,
+          "is_error": false,
+          "lines": [
+            41,
+            44
+          ]
+        },
+        {
+          "tool": "read",
+          "tool_call_id": "call_d2eda8ddfa0949e0ab7bdf724f515f1f",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-001/skills/native/bm-explicit-01-a-refund-b0dcf165/references/refund.json"
+          },
+          "start_ms": 7562.157959,
+          "end_ms": 7564.192,
+          "duration_ms": 2.0340409999998883,
+          "is_error": false,
+          "lines": [
+            193,
+            194
+          ]
+        },
+        {
+          "tool": "write",
+          "tool_call_id": "call_43c81c41da234b918b9a6f1891a88bc3",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "output/refunds.json"
+          },
+          "start_ms": 11516.796917,
+          "end_ms": 11518.470917,
+          "duration_ms": 1.6740000000008877,
+          "is_error": false,
+          "lines": [
+            423,
+            424
+          ]
+        }
+      ],
+      "stages": [
+        {
+          "stage": "prepare",
+          "at_ms": 2.560709,
+          "line": 2
+        },
+        {
+          "stage": "admission",
+          "at_ms": 735.085709,
+          "line": 3
+        },
+        {
+          "stage": "user_task",
+          "at_ms": 735.953959,
+          "line": 4
+        },
+        {
+          "stage": "cleanup",
+          "at_ms": 14906.813042,
+          "line": 570
+        }
+      ]
+    },
+    {
+      "run_id": "current-product-native-broker-pair-3-002",
+      "events": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-002/benchmark/runtime/events.jsonl",
+        "sha256": "87eae2137359078bea0f786ba3ebf107b1d62c9bd2a7180a108f4b86a3e6a5bf"
+      },
+      "collection_sha256": "e0fa22179e0c8550ddaea53743fba06ba6d5cbcfe1c6169c8bcd3bb4e753ea04",
+      "total_ms": 89918.386084,
+      "startup_and_admission_ms": 25316.843208,
+      "model_intervals_ms": 18454.650876,
+      "tool_interval_union_ms": 46018.901499,
+      "residual_ms": 127.99050100000022,
+      "sdk_http_total": 115,
+      "startup_sdk_ms": 23522.834042,
+      "sdk_operations": [
+        {
+          "operation_id": "2b27a6be-88f6-4056-9378-430d0ab71c96",
+          "operation": "library-selection",
+          "stage": "prepare",
+          "turn_id": null,
+          "elapsed_ms": 78.8395,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 5
+        },
+        {
+          "operation_id": "1b2fc8f7-aabb-4f00-8fce-9015a2ef8f7f",
+          "operation": "candidates",
+          "stage": "prepare",
+          "turn_id": null,
+          "elapsed_ms": 5.215458,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 9
+        },
+        {
+          "operation_id": "47b4c5b0-ac08-4061-8248-1fe1b3996e62",
+          "operation": "candidates",
+          "stage": "prepare",
+          "turn_id": null,
+          "elapsed_ms": 15.738458,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 12
+        },
+        {
+          "operation_id": "568ca47d-86e9-4f56-b042-d53e30c8c549",
+          "operation": "list",
+          "stage": "prepare",
+          "turn_id": null,
+          "elapsed_ms": 23522.834042,
+          "requests": {
+            "notion_metadata": 34,
+            "notion_body": 2,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 36,
+          "duplicate_requests": 21,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 36,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 14
+        },
+        {
+          "operation_id": "b2e20a68-c7e8-465f-982f-b790bab2c95a",
+          "operation": "candidates",
+          "stage": "prepare",
+          "turn_id": null,
+          "elapsed_ms": 6.053,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 19
+        },
+        {
+          "operation_id": "df1da5ee-3498-4699-9683-21698c7dee36",
+          "operation": "library-selection",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "elapsed_ms": 72.998375,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 54
+        },
+        {
+          "operation_id": "846768b1-56bd-4e8a-a543-4a757c109a97",
+          "operation": "list",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "elapsed_ms": 6.402125,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 58
+        },
+        {
+          "operation_id": "0cb14b79-050f-4f4c-bc78-5837543bf64e",
+          "operation": "list",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "elapsed_ms": 21914.081708,
+          "requests": {
+            "notion_metadata": 34,
+            "notion_body": 2,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 36,
+          "duplicate_requests": 21,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 36,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 120
+        },
+        {
+          "operation_id": "7f8bab45-2dc6-4f9a-b271-3e760646f2d0",
+          "operation": "consume",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "elapsed_ms": 13735.583792,
+          "requests": {
+            "notion_metadata": 22,
+            "notion_body": 2,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 24,
+          "duplicate_requests": 8,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 24,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 191
+        },
+        {
+          "operation_id": "87b2344c-ed9e-4475-afb1-354d792e94f4",
+          "operation": "read",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "elapsed_ms": 10222.913834,
+          "requests": {
+            "notion_metadata": 17,
+            "notion_body": 2,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 19,
+          "duplicate_requests": 4,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 19,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 236
+        }
+      ],
+      "models": [
+        {
+          "request_id": "current-product-native-broker-pair-3-002/request-1",
+          "start_ms": 25324.431166,
+          "end_ms": 28312.528958,
+          "duration_ms": 2988.0977920000005,
+          "lines": [
+            51,
+            114
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-002/request-2",
+          "start_ms": 50277.661375,
+          "end_ms": 53368.893791,
+          "duration_ms": 3091.232415999999,
+          "lines": [
+            127,
+            185
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-002/request-3",
+          "start_ms": 67136.105916,
+          "end_ms": 70034.41975,
+          "duration_ms": 2898.3138340000005,
+          "lines": [
+            201,
+            226
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-002/request-4",
+          "start_ms": 80382.142541,
+          "end_ms": 84571.481,
+          "duration_ms": 4189.338459000006,
+          "lines": [
+            245,
+            465
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-002/request-5",
+          "start_ms": 84588.69025,
+          "end_ms": 89876.358625,
+          "duration_ms": 5287.668374999994,
+          "lines": [
+            475,
+            615
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "tool": "notion_list",
+          "tool_call_id": "call_55eae5abd062413386e029c80fa23c2d",
+          "turn_id": "turn-1",
+          "input": {
+            "query": "bm-explicit-01-a-refund-b0dcf165",
+            "refresh": true
+          },
+          "start_ms": 28318.253083,
+          "end_ms": 50272.161291,
+          "duration_ms": 21953.908207999997,
+          "is_error": false,
+          "lines": [
+            117,
+            121
+          ]
+        },
+        {
+          "tool": "notion_use",
+          "tool_call_id": "call_46c59bca8f9b491ea3fc9b926d64281c",
+          "turn_id": "turn-1",
+          "input": {
+            "ref": "sr:CAhCdsBRVfCcH85x80SMotg"
+          },
+          "start_ms": 53370.8335,
+          "end_ms": 67128.569208,
+          "duration_ms": 13757.735708,
+          "is_error": false,
+          "lines": [
+            188,
+            195
+          ]
+        },
+        {
+          "tool": "read",
+          "tool_call_id": "call_808522f816f543a3bb6a8fc9470f857a",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "input/returns.json"
+          },
+          "start_ms": 70037.142416,
+          "end_ms": 70058.234166,
+          "duration_ms": 21.091749999992317,
+          "is_error": false,
+          "lines": [
+            231,
+            233
+          ]
+        },
+        {
+          "tool": "read",
+          "tool_call_id": "call_bc54e9deda324bc2b8bff07389764179",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "sr:R7DmhM7P1JU4nWSahsMGK0Q"
+          },
+          "start_ms": 70036.708375,
+          "end_ms": 80342.729708,
+          "duration_ms": 10306.021332999997,
+          "is_error": false,
+          "lines": [
+            229,
+            237
+          ]
+        },
+        {
+          "tool": "write",
+          "tool_call_id": "call_5e12db61b8b243d0a7a373a68d94f4f3",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "output/refunds.json"
+          },
+          "start_ms": 84573.314125,
+          "end_ms": 84574.550375,
+          "duration_ms": 1.2362500000017462,
+          "is_error": false,
+          "lines": [
+            468,
+            469
+          ]
+        }
+      ],
+      "stages": [
+        {
+          "stage": "prepare",
+          "at_ms": 2.804666,
+          "line": 2
+        },
+        {
+          "stage": "admission",
+          "at_ms": 25315.411416,
+          "line": 39
+        },
+        {
+          "stage": "user_task",
+          "at_ms": 25316.777083,
+          "line": 40
+        },
+        {
+          "stage": "cleanup",
+          "at_ms": 89884.844625,
+          "line": 621
+        }
+      ]
+    },
+    {
+      "run_id": "current-product-native-broker-pair-3-003",
+      "events": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-003/benchmark/runtime/events.jsonl",
+        "sha256": "1a4b8e256e236799bae5ae2533a8f5001164c8294f30ca8306467d3b79f6553b"
+      },
+      "collection_sha256": "39af013b42464378e34d34a6cf6b44655fcaacfa7a677711ca44a605da75d455",
+      "total_ms": 111623.92208399999,
+      "startup_and_admission_ms": 25489.063625,
+      "model_intervals_ms": 34781.592209000024,
+      "tool_interval_union_ms": 51053.19466399998,
+      "residual_ms": 300.07158599999093,
+      "sdk_http_total": 132,
+      "startup_sdk_ms": 23692.211584,
+      "sdk_operations": [
+        {
+          "operation_id": "ba1e2259-912c-4406-9904-0d50f51bf1d3",
+          "operation": "library-selection",
+          "stage": "prepare",
+          "turn_id": null,
+          "elapsed_ms": 73.050208,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 5
+        },
+        {
+          "operation_id": "aa21b02a-59b1-4234-ad6a-c28c02e772a6",
+          "operation": "candidates",
+          "stage": "prepare",
+          "turn_id": null,
+          "elapsed_ms": 10.3035,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 9
+        },
+        {
+          "operation_id": "ec6c584f-564c-4538-9dd1-a4dcdf7a4ac3",
+          "operation": "candidates",
+          "stage": "prepare",
+          "turn_id": null,
+          "elapsed_ms": 14.049042,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 12
+        },
+        {
+          "operation_id": "3ed1a85d-73ec-4350-8de5-473e530ef3c1",
+          "operation": "list",
+          "stage": "prepare",
+          "turn_id": null,
+          "elapsed_ms": 23692.211584,
+          "requests": {
+            "notion_metadata": 34,
+            "notion_body": 2,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 36,
+          "duplicate_requests": 21,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 36,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 14
+        },
+        {
+          "operation_id": "30ff4c1b-6e7d-40f9-baa9-648f8e278f03",
+          "operation": "candidates",
+          "stage": "prepare",
+          "turn_id": null,
+          "elapsed_ms": 5.440208,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 19
+        },
+        {
+          "operation_id": "9a3a4a45-2fa2-4b5a-8ef2-29d46fa63ce7",
+          "operation": "library-selection",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "elapsed_ms": 76.746334,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 54
+        },
+        {
+          "operation_id": "f81045a3-0d77-43b4-b15a-faea3fe45462",
+          "operation": "list",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "elapsed_ms": 5.485917,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 58
+        },
+        {
+          "operation_id": "e3fcc263-9520-436d-a478-315a5f4e8235",
+          "operation": "list",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "elapsed_ms": 17821.864583,
+          "requests": {
+            "notion_metadata": 34,
+            "notion_body": 2,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 36,
+          "duplicate_requests": 21,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 36,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 90
+        },
+        {
+          "operation_id": "5a359bcb-fb67-4876-8bec-55b739e62c90",
+          "operation": "list",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "elapsed_ms": 8819.016167,
+          "requests": {
+            "notion_metadata": 16,
+            "notion_body": 1,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 17,
+          "duplicate_requests": 5,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 17,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 169
+        },
+        {
+          "operation_id": "ef531716-948e-4f6c-9717-cf5abf280bdd",
+          "operation": "consume",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "elapsed_ms": 13626.222958,
+          "requests": {
+            "notion_metadata": 22,
+            "notion_body": 2,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 24,
+          "duplicate_requests": 8,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 24,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 172
+        },
+        {
+          "operation_id": "3521f676-56c7-42ab-aa36-37f5e71902e1",
+          "operation": "read",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "elapsed_ms": 10680.659709,
+          "requests": {
+            "notion_metadata": 17,
+            "notion_body": 2,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 19,
+          "duplicate_requests": 4,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 19,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 249
+        },
+        {
+          "operation_id": "5834b68c-fbc8-4a5a-a41b-88d319c4e965",
+          "operation": "library-selection",
+          "stage": "user_task",
+          "turn_id": "turn-2",
+          "elapsed_ms": 23.706209,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 675
+        },
+        {
+          "operation_id": "e4d1a021-5c94-4c72-8eb8-cd4f5c062de1",
+          "operation": "list",
+          "stage": "user_task",
+          "turn_id": "turn-2",
+          "elapsed_ms": 10.850333,
+          "requests": {
+            "notion_metadata": 0,
+            "notion_body": 0,
+            "notion_write": 0,
+            "provider": 0
+          },
+          "request_total": 0,
+          "duplicate_requests": 0,
+          "retry_wait_ms": 0,
+          "outcomes": {
+            "success": 0,
+            "failure": 0,
+            "cancelled": 0
+          },
+          "line": 681
+        }
+      ],
+      "models": [
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-1",
+          "start_ms": 25495.989834,
+          "end_ms": 35505.44025,
+          "duration_ms": 10009.450416,
+          "lines": [
+            51,
+            80
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-2",
+          "start_ms": 53372.431625,
+          "end_ms": 56726.305334,
+          "duration_ms": 3353.8737089999995,
+          "lines": [
+            99,
+            163
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-3",
+          "start_ms": 79221.705792,
+          "end_ms": 82343.706292,
+          "duration_ms": 3122.000500000009,
+          "lines": [
+            182,
+            243
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-4",
+          "start_ms": 93054.134667,
+          "end_ms": 97697.746,
+          "duration_ms": 4643.6113329999935,
+          "lines": [
+            256,
+            470
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-5",
+          "start_ms": 97716.710375,
+          "end_ms": 101789.709625,
+          "duration_ms": 4072.999250000008,
+          "lines": [
+            480,
+            656
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-6",
+          "start_ms": 101885.2465,
+          "end_ms": 104164.186042,
+          "duration_ms": 2278.9395420000073,
+          "lines": [
+            672,
+            711
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-7",
+          "start_ms": 104190.519292,
+          "end_ms": 108068.616542,
+          "duration_ms": 3878.097250000006,
+          "lines": [
+            721,
+            935
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-003/request-8",
+          "start_ms": 108086.372625,
+          "end_ms": 111508.992834,
+          "duration_ms": 3422.6202090000006,
+          "lines": [
+            945,
+            1135
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "tool": "read",
+          "tool_call_id": "call_247213611c67443b903b707b9dec1943",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "input/packages-1.json"
+          },
+          "start_ms": 35507.665667,
+          "end_ms": 35515.543209,
+          "duration_ms": 7.877542000001995,
+          "is_error": false,
+          "lines": [
+            85,
+            87
+          ]
+        },
+        {
+          "tool": "notion_list",
+          "tool_call_id": "call_e8d533cda17e43a593b30d5d2f26edcf",
+          "turn_id": "turn-1",
+          "input": {
+            "query": "松涛39",
+            "refresh": true
+          },
+          "start_ms": 35507.356459,
+          "end_ms": 53364.77975,
+          "duration_ms": 17857.423291,
+          "is_error": false,
+          "lines": [
+            83,
+            91
+          ]
+        },
+        {
+          "tool": "notion_use",
+          "tool_call_id": "call_b1c366b3dfcc436c8f3aee13c66b4544",
+          "turn_id": "turn-1",
+          "input": {
+            "ref": "sr:CVAemGlAAk2SzUSG2mt3Whw",
+            "refresh": true
+          },
+          "start_ms": 56727.989959,
+          "end_ms": 79215.661625,
+          "duration_ms": 22487.671665999995,
+          "is_error": false,
+          "lines": [
+            166,
+            176
+          ]
+        },
+        {
+          "tool": "read",
+          "tool_call_id": "call_a81aadde1322409dbb6563d61c475028",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "sr:RYfvOcp0z1-mpgU1GogTKvQ"
+          },
+          "start_ms": 82344.192584,
+          "end_ms": 93045.183417,
+          "duration_ms": 10700.990832999989,
+          "is_error": false,
+          "lines": [
+            246,
+            250
+          ]
+        },
+        {
+          "tool": "write",
+          "tool_call_id": "call_8655f5d16ad44082b9688657b3cb9e60",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "output/routes-1.json"
+          },
+          "start_ms": 97699.654584,
+          "end_ms": 97701.155042,
+          "duration_ms": 1.5004579999949783,
+          "is_error": false,
+          "lines": [
+            473,
+            474
+          ]
+        },
+        {
+          "tool": "read",
+          "tool_call_id": "call_3c4fc3423fd243a4b3d85295afa45b34",
+          "turn_id": "turn-2",
+          "input": {
+            "path": "input/packages-2.json"
+          },
+          "start_ms": 104165.893792,
+          "end_ms": 104170.57075,
+          "duration_ms": 4.676957999996375,
+          "is_error": false,
+          "lines": [
+            714,
+            715
+          ]
+        },
+        {
+          "tool": "write",
+          "tool_call_id": "call_2cfe5908ce784051911d849875eac960",
+          "turn_id": "turn-2",
+          "input": {
+            "path": "output/routes-2.json"
+          },
+          "start_ms": 108070.163584,
+          "end_ms": 108071.095042,
+          "duration_ms": 0.931458000006387,
+          "is_error": false,
+          "lines": [
+            938,
+            939
+          ]
+        }
+      ],
+      "stages": [
+        {
+          "stage": "prepare",
+          "at_ms": 2.363459,
+          "line": 2
+        },
+        {
+          "stage": "admission",
+          "at_ms": 25488.002792,
+          "line": 39
+        },
+        {
+          "stage": "user_task",
+          "at_ms": 25489.006875,
+          "line": 40
+        },
+        {
+          "stage": "controller_pause",
+          "at_ms": 101796.864459,
+          "line": 662
+        },
+        {
+          "stage": "user_task",
+          "at_ms": 101869.024292,
+          "line": 665
+        },
+        {
+          "stage": "controller_pause",
+          "at_ms": 111514.098292,
+          "line": 1141
+        },
+        {
+          "stage": "cleanup",
+          "at_ms": 111587.454792,
+          "line": 1144
+        }
+      ]
+    },
+    {
+      "run_id": "current-product-native-broker-pair-3-004",
+      "events": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/benchmark/runtime/events.jsonl",
+        "sha256": "6b894e4ecf419def41a862df125f445824dd4700fcad1b08cafc5ae760ee7e87"
+      },
+      "collection_sha256": "f94c5dabdd0bfc84ed045e55088039f9811d20748b4263d1d3e567382258fdb5",
+      "total_ms": 26974.249625,
+      "startup_and_admission_ms": 704.329083,
+      "model_intervals_ms": 26020.233874,
+      "tool_interval_union_ms": 19.22095900000022,
+      "residual_ms": 230.46570899999824,
+      "sdk_http_total": 0,
+      "startup_sdk_ms": 0,
+      "sdk_operations": [],
+      "models": [
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-1",
+          "start_ms": 707.5035,
+          "end_ms": 4707.950541,
+          "duration_ms": 4000.4470410000004,
+          "lines": [
+            12,
+            36
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-2",
+          "start_ms": 4722.617958,
+          "end_ms": 7867.47825,
+          "duration_ms": 3144.8602920000003,
+          "lines": [
+            52,
+            190
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-3",
+          "start_ms": 7877.263666,
+          "end_ms": 11177.830041,
+          "duration_ms": 3300.5663749999994,
+          "lines": [
+            200,
+            378
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-4",
+          "start_ms": 11201.395958,
+          "end_ms": 14129.03175,
+          "duration_ms": 2927.635792000001,
+          "lines": [
+            388,
+            486
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-5",
+          "start_ms": 14215.371125,
+          "end_ms": 17799.813583,
+          "duration_ms": 3584.4424579999995,
+          "lines": [
+            501,
+            525
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-6",
+          "start_ms": 17804.866375,
+          "end_ms": 20822.99425,
+          "duration_ms": 3018.1278749999983,
+          "lines": [
+            541,
+            679
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-7",
+          "start_ms": 20829.690333,
+          "end_ms": 24123.808041,
+          "duration_ms": 3294.1177080000016,
+          "lines": [
+            689,
+            867
+          ]
+        },
+        {
+          "request_id": "current-product-native-broker-pair-3-004/request-8",
+          "start_ms": 24132.81175,
+          "end_ms": 26882.848083,
+          "duration_ms": 2750.036333,
+          "lines": [
+            877,
+            979
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "tool": "read",
+          "tool_call_id": "call_cb413d1df98e4842ae657e85890e7cf3",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "input/packages-1.json"
+          },
+          "start_ms": 4712.696583,
+          "end_ms": 4718.588916,
+          "duration_ms": 5.89233299999978,
+          "is_error": false,
+          "lines": [
+            41,
+            42
+          ]
+        },
+        {
+          "tool": "read",
+          "tool_call_id": "call_1252556b337b49478b3e89767315eb54",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/skills/native/bm-continuation-01-a-routing-b0dcf165/SKILL.md"
+          },
+          "start_ms": 4712.397166,
+          "end_ms": 4719.092625,
+          "duration_ms": 6.695459000000483,
+          "is_error": false,
+          "lines": [
+            39,
+            44
+          ]
+        },
+        {
+          "tool": "read",
+          "tool_call_id": "call_c70861bb4cb848d7bf5c356832438287",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/skills/native/bm-continuation-01-a-routing-b0dcf165/references/routing.json"
+          },
+          "start_ms": 7870.594333,
+          "end_ms": 7873.818208,
+          "duration_ms": 3.22387499999968,
+          "is_error": false,
+          "lines": [
+            193,
+            194
+          ]
+        },
+        {
+          "tool": "write",
+          "tool_call_id": "call_7712502935ad4987b779fc685d6e05e6",
+          "turn_id": "turn-1",
+          "input": {
+            "path": "output/routes-1.json"
+          },
+          "start_ms": 11179.804041,
+          "end_ms": 11184.082791,
+          "duration_ms": 4.27875000000131,
+          "is_error": false,
+          "lines": [
+            381,
+            382
+          ]
+        },
+        {
+          "tool": "read",
+          "tool_call_id": "call_5db7d249748049f09f747bc244c679dc",
+          "turn_id": "turn-2",
+          "input": {
+            "path": "input/packages-2.json"
+          },
+          "start_ms": 17800.713375,
+          "end_ms": 17802.240333,
+          "duration_ms": 1.526958000002196,
+          "is_error": false,
+          "lines": [
+            530,
+            531
+          ]
+        },
+        {
+          "tool": "read",
+          "tool_call_id": "call_36dc35d5ed1e450dac776bd8479205bf",
+          "turn_id": "turn-2",
+          "input": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/skills/native/bm-continuation-01-a-routing-b0dcf165/SKILL.md"
+          },
+          "start_ms": 17800.571375,
+          "end_ms": 17802.440833,
+          "duration_ms": 1.869458000001032,
+          "is_error": false,
+          "lines": [
+            528,
+            533
+          ]
+        },
+        {
+          "tool": "read",
+          "tool_call_id": "call_e985d13ffc0542c4ba22788fa7fa7da4",
+          "turn_id": "turn-2",
+          "input": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-product-native-broker-pair-3-004/skills/native/bm-continuation-01-a-routing-b0dcf165/references/routing.json"
+          },
+          "start_ms": 20824.869041,
+          "end_ms": 20826.485541,
+          "duration_ms": 1.6164999999964493,
+          "is_error": false,
+          "lines": [
+            682,
+            683
+          ]
+        },
+        {
+          "tool": "write",
+          "tool_call_id": "call_403ce4d2980c49b6ad05b7343dd7080c",
+          "turn_id": "turn-2",
+          "input": {
+            "path": "output/routes-2.json"
+          },
+          "start_ms": 24125.182083,
+          "end_ms": 24126.719,
+          "duration_ms": 1.5369170000012673,
+          "is_error": false,
+          "lines": [
+            870,
+            871
+          ]
+        }
+      ],
+      "stages": [
+        {
+          "stage": "prepare",
+          "at_ms": 3.174416,
+          "line": 2
+        },
+        {
+          "stage": "admission",
+          "at_ms": 703.542916,
+          "line": 3
+        },
+        {
+          "stage": "user_task",
+          "at_ms": 704.281458,
+          "line": 4
+        },
+        {
+          "stage": "controller_pause",
+          "at_ms": 14133.267958,
+          "line": 492
+        },
+        {
+          "stage": "user_task",
+          "at_ms": 14209.306916,
+          "line": 495
+        },
+        {
+          "stage": "controller_pause",
+          "at_ms": 26886.876833,
+          "line": 985
+        },
+        {
+          "stage": "cleanup",
+          "at_ms": 26962.76275,
+          "line": 988
+        }
+      ]
+    }
+  ]
+}
