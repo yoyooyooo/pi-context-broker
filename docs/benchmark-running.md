@@ -91,6 +91,8 @@ explicit states; repair the measurement only where it affects this decision.
 
 ## Current source and retained experiments
 
+The [current consumer Skill-routing follow-up](benchmark-consumer-skill-routing-current-2026-11-27.md) completed four valid ordinary-derived B0/G observations. Three stopped without answers; one completed G answer failed independent semantic review. G was not adopted, paired business effects remain unresolved, and confirmation stays unopened. This separate AH-1363 epoch preserves the original AH-1336 records and reports generic completion outcomes separately from answer semantics.
+
 The 2026-11-26 measured and adopted runtime paired CLI
 `ba092a531a64633c31e648b4f9f806e606a78f4e` with Broker
 `c3a880071996429e615bd66de74b86b462c669c3` on Pro, Mini and imile-win.

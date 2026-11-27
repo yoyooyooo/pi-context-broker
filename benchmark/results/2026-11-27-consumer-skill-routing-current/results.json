@@ -1,0 +1,424 @@
+{
+  "schema_version": 1,
+  "issue": "AH-1363",
+  "created_at": "2026-11-27T13:57:00.690590+00:00",
+  "decision": {
+    "status": "no_adoption",
+    "candidate": "G",
+    "reason": "Absolute business gate not met: candidate has zero confirmed passes, one incorrect completed answer and one missing answer.",
+    "candidate_confirmed_passes": 0,
+    "candidate_planned_observations": 2,
+    "paired_effect": "inconclusive",
+    "product_changed": false,
+    "confirmation_opened": false,
+    "fixed_model_regressions_run": false,
+    "T_S_dispatched": false,
+    "exploratory_issues_unchanged": [
+      "AH-1337",
+      "AH-1338",
+      "AH-1339"
+    ]
+  },
+  "method": {
+    "independent_cases": 1,
+    "material_clusters": 1,
+    "paired_repetitions": 2,
+    "planned_slots": 4,
+    "actual_order": [
+      "B0-r0",
+      "G-r0",
+      "G-r1",
+      "B0-r1"
+    ],
+    "profile": "ordinary-derived v4, Pi 1.6.0",
+    "native_skills_resolved": 121,
+    "native_skills_model_visible": 68,
+    "ordinary_file_extensions": 22,
+    "initially_active_tools": 32,
+    "registered_tools": 46,
+    "resource_scope": "Bounded ordinary-derived resource competition, not an OS sandbox or all daily resources.",
+    "case_parameters": {
+      "candidateCount": 16,
+      "roundCount": 1
+    },
+    "model_condition": {
+      "provider": "magpie",
+      "requested_model": "group/flash",
+      "route_mode": "mixed-route",
+      "thinkingLevel": "high",
+      "maxTokens": 8192,
+      "window": {
+        "start": "2026-11-27T13:21:24Z",
+        "end": "2026-11-27T19:21:24Z"
+      },
+      "routing_configuration_sha256": "0a179b7fa14a64bd338fab8b8041833b603915750404033d5263b0c9fc5a5c0f"
+    },
+    "episode_budget": {
+      "max_duration_ms": 600000,
+      "max_model_requests": 6,
+      "max_input_tokens": 800000,
+      "max_output_tokens": 32768,
+      "max_http_attempts": 6,
+      "max_retries": 0
+    },
+    "batch_budget": {
+      "max_episodes": 4,
+      "max_model_requests": 24,
+      "max_input_tokens": 3200000,
+      "max_output_tokens": 131072,
+      "max_duration_ms": 2700000,
+      "max_concurrency": 1
+    },
+    "monetary_policy": "unpriced",
+    "zero_send_captures": 2,
+    "capture_model_sends": 0,
+    "candidate_scope": "G-v3 changes only guidance and catalog-entry prose; exact actual-input comparison passed.",
+    "required_candidate_business_passes": 2,
+    "adoption_scope": "Descriptive screening only; an advancing candidate would require separate confirmation and necessary fixed-model critical checks.",
+    "history_scope": "New epoch. Original AH-1336 slots, invalids and accounting remain separate and unchanged."
+  },
+  "source": {
+    "cli_commit": "4ef03aa9859e5d5c74594626c0bdb3f2dcd88040",
+    "broker_next_commit": "7f87b9242c45714f12e70b7745f9ec1a340c3655",
+    "broker_build_source_commit": "e4eb222b66334bf0a6ce659924208ef51ce53dba",
+    "broker_product_tree_at_next_and_build": "a80a90a5e3102164cf31a307029e4982b121e45b",
+    "controller_commit": "f49155ef70362fda22be230a08aecd893ebae7b1",
+    "collector_version": "1.3.11",
+    "selected_cli_sha256": "c0e0d9e13230d476e02806fc2e81cfbdd8616c1676e88b791a4559ba7f680f83",
+    "G_patch": "../2026-11-27-consumer-skill-routing/recipes/G-v3.patch",
+    "G_patch_sha256": "31bd895addc4629ce88b008353f431693371aa91d27c6d1e9121de55e67d8ea6"
+  },
+  "observations": [
+    {
+      "id": "B0-r0",
+      "arm": "B0",
+      "repeat": 0,
+      "execution_order": 1,
+      "validity": "valid",
+      "runtime_status": "budget_stopped",
+      "generic_outcome": "fail",
+      "final_answer_delivered": false,
+      "independent_business_semantics": "unknown",
+      "visible_action_scope": "passed",
+      "final_answer_sha256": null,
+      "usage": {
+        "duration_ms": 402193.635459,
+        "input_tokens": 178750,
+        "model_requests": 5,
+        "output_tokens": 898
+      },
+      "runtime_logical_requests": 6,
+      "gateway": {
+        "input_tokens": 42558,
+        "output_tokens": 898,
+        "cache_read_tokens": 136192,
+        "cache_write_tokens": 0,
+        "requests": 5,
+        "upstream_tries": 7
+      },
+      "scorer_capped_time_ms": 600000,
+      "tool_callback_calls": 7,
+      "leaf_tool_calls": 7,
+      "avoidable_costs": [
+        {
+          "start_sequence": 703,
+          "end_sequence": 711,
+          "category": "broad_home_scan",
+          "observed_duration_ms": 193139.722125
+        }
+      ],
+      "blinding": {
+        "status": "condition_labels_removed",
+        "known_condition_path_exposure": false
+      },
+      "business_failures": [],
+      "input_preflight": {
+        "method": "serialized-utf8-bytes-times-four-plus-4096",
+        "serialized_bytes": 158040,
+        "estimated_tokens": 636256,
+        "precision": "conservative_heuristic_not_tokenizer_or_proven_upper_bound",
+        "remaining_input": 621250
+      }
+    },
+    {
+      "id": "G-r0",
+      "arm": "G",
+      "repeat": 0,
+      "execution_order": 2,
+      "validity": "valid",
+      "runtime_status": "budget_stopped",
+      "generic_outcome": "fail",
+      "final_answer_delivered": false,
+      "independent_business_semantics": "unknown",
+      "visible_action_scope": "passed",
+      "final_answer_sha256": null,
+      "usage": {
+        "duration_ms": 173517.18212500002,
+        "input_tokens": 134350,
+        "model_requests": 4,
+        "output_tokens": 1189
+      },
+      "runtime_logical_requests": 5,
+      "gateway": {
+        "input_tokens": 26830,
+        "output_tokens": 1189,
+        "cache_read_tokens": 107520,
+        "cache_write_tokens": 0,
+        "requests": 4,
+        "upstream_tries": 4
+      },
+      "scorer_capped_time_ms": 600000,
+      "tool_callback_calls": 8,
+      "leaf_tool_calls": 8,
+      "avoidable_costs": [
+        {
+          "start_sequence": 511,
+          "end_sequence": 520,
+          "category": "broad_dependency_scan",
+          "observed_duration_ms": 5972.7525
+        }
+      ],
+      "blinding": {
+        "status": "condition_labels_removed",
+        "known_condition_path_exposure": false
+      },
+      "business_failures": [],
+      "input_preflight": {
+        "method": "serialized-utf8-bytes-times-four-plus-4096",
+        "serialized_bytes": 169181,
+        "estimated_tokens": 680820,
+        "precision": "conservative_heuristic_not_tokenizer_or_proven_upper_bound",
+        "remaining_input": 665650
+      }
+    },
+    {
+      "id": "G-r1",
+      "arm": "G",
+      "repeat": 1,
+      "execution_order": 3,
+      "validity": "valid",
+      "runtime_status": "completed",
+      "generic_outcome": "unknown",
+      "final_answer_delivered": true,
+      "independent_business_semantics": "fail",
+      "visible_action_scope": "passed",
+      "final_answer_sha256": "032a03a318afb8d52c1a8765979565abd9499eb3f6cde3926c2a1ce51d99f6cc",
+      "usage": {
+        "duration_ms": 208500.654959,
+        "input_tokens": 171136,
+        "model_requests": 5,
+        "output_tokens": 2163
+      },
+      "runtime_logical_requests": 5,
+      "gateway": {
+        "input_tokens": 26880,
+        "output_tokens": 2163,
+        "cache_read_tokens": 144256,
+        "cache_write_tokens": 0,
+        "requests": 5,
+        "upstream_tries": 6
+      },
+      "scorer_capped_time_ms": 600000,
+      "tool_callback_calls": 8,
+      "leaf_tool_calls": 8,
+      "avoidable_costs": [
+        {
+          "category": "broad_root_scan",
+          "start_sequence": 309,
+          "end_sequence": 317,
+          "observed_duration_ms": 64118.9355,
+          "duration_interpretation": "Elapsed tool duration; for the broad catalog query this is not all attributed to avoidable breadth."
+        },
+        {
+          "category": "broad_skill_and_session_scan",
+          "start_sequence": 618,
+          "end_sequence": 628,
+          "observed_duration_ms": 40803.834917,
+          "duration_interpretation": "Elapsed tool duration; for the broad catalog query this is not all attributed to avoidable breadth."
+        }
+      ],
+      "blinding": {
+        "status": "condition_labels_removed",
+        "known_condition_path_exposure": false
+      },
+      "business_failures": [
+        "Unsupported global independence from a local negative search",
+        "Conditional companion misrepresented as a mandatory creation/delivery dependency"
+      ],
+      "input_preflight": null
+    },
+    {
+      "id": "B0-r1",
+      "arm": "B0",
+      "repeat": 1,
+      "execution_order": 4,
+      "validity": "valid",
+      "runtime_status": "budget_stopped",
+      "generic_outcome": "fail",
+      "final_answer_delivered": false,
+      "independent_business_semantics": "unknown",
+      "visible_action_scope": "passed",
+      "final_answer_sha256": null,
+      "usage": {
+        "duration_ms": 166609.578209,
+        "input_tokens": 142327,
+        "model_requests": 4,
+        "output_tokens": 1647
+      },
+      "runtime_logical_requests": 5,
+      "gateway": {
+        "input_tokens": 28535,
+        "output_tokens": 1647,
+        "cache_read_tokens": 113792,
+        "cache_write_tokens": 0,
+        "requests": 4,
+        "upstream_tries": 4
+      },
+      "scorer_capped_time_ms": 600000,
+      "tool_callback_calls": 13,
+      "leaf_tool_calls": 8,
+      "avoidable_costs": [
+        {
+          "category": "broad_root_scan",
+          "start_sequence": 649,
+          "end_sequence": 665,
+          "observed_duration_ms": 54328.4355,
+          "duration_interpretation": "Elapsed tool duration; for the broad catalog query this is not all attributed to avoidable breadth."
+        },
+        {
+          "category": "overbroad_catalog_query",
+          "start_sequence": 1159,
+          "end_sequence": 1203,
+          "observed_duration_ms": 40254.808209,
+          "duration_interpretation": "Elapsed tool duration; for the broad catalog query this is not all attributed to avoidable breadth."
+        }
+      ],
+      "blinding": {
+        "status": "partial_condition_path_exposure",
+        "known_condition_path_exposure": true,
+        "event_sequences": [
+          497,
+          499
+        ],
+        "exposed_path_category": "frozen build ID in builtin Skill installation path",
+        "reviewer_disclosed_exposure": true,
+        "effect": "May weaken subjective efficiency blinding. Missing final answer, stop identity, times and read-only command types remain objective. Previous packets/rubric were not revised."
+      },
+      "business_failures": [],
+      "input_preflight": {
+        "method": "serialized-utf8-bytes-times-four-plus-4096",
+        "serialized_bytes": 177594,
+        "estimated_tokens": 714472,
+        "precision": "conservative_heuristic_not_tokenizer_or_proven_upper_bound",
+        "remaining_input": 657673
+      }
+    }
+  ],
+  "totals": {
+    "model_requests": 18,
+    "input_tokens": 626563,
+    "output_tokens": 5897,
+    "duration_ms": 950821.0507520001
+  },
+  "counts": {
+    "valid": 4,
+    "invalid": 0,
+    "unresolved": 0,
+    "final_answers": 1,
+    "independent_semantics": {
+      "pass": 0,
+      "fail": 1,
+      "unknown": 3
+    },
+    "generic_outcomes": {
+      "pass": 0,
+      "fail": 3,
+      "unknown": 1
+    }
+  },
+  "arm_totals": {
+    "B0": {
+      "model_requests": 9,
+      "input_tokens": 321077,
+      "output_tokens": 2545,
+      "duration_ms": 568803.213668
+    },
+    "G": {
+      "model_requests": 9,
+      "input_tokens": 305486,
+      "output_tokens": 3352,
+      "duration_ms": 382017.837084
+    }
+  },
+  "pairs": [
+    {
+      "repeat": 0,
+      "baseline": "B0-r0",
+      "candidate": "G-r0",
+      "direction": "G/B0",
+      "input_ratio": 0.7516083916083917,
+      "observed_elapsed_ratio": 0.43142697155556686,
+      "capped_time_ratio": 1,
+      "both_business_pass": false,
+      "business_effect": "unresolved"
+    },
+    {
+      "repeat": 1,
+      "baseline": "B0-r1",
+      "candidate": "G-r1",
+      "direction": "G/B0",
+      "input_ratio": 1.2024141589438406,
+      "observed_elapsed_ratio": 1.2514325838905287,
+      "capped_time_ratio": 1,
+      "both_business_pass": false,
+      "business_effect": "unresolved"
+    }
+  ],
+  "aggregate_resource_ratios": {
+    "direction": "G/B0",
+    "method": "ratio of arm totals, not mean of paired ratios",
+    "input": 0.9514415545180751,
+    "observed_elapsed": 0.6716168754049565,
+    "capped_time": 1,
+    "interpretation": "Recorded resource consumption, not successful-task efficiency."
+  },
+  "gateway_totals": {
+    "requests": 18,
+    "upstream_tries": 21,
+    "input_tokens": 124803,
+    "output_tokens": 5897,
+    "cache_read_tokens": 501760,
+    "cache_write_tokens": 0
+  },
+  "gateway_success_identity": {
+    "provider": "upstream-A",
+    "model": "deepseek-v4.1-flash",
+    "effort": "high",
+    "matched_unique_responses": 18,
+    "assurance": "Exact response-ID correlation with gateway logs, not physical-backend attestation.",
+    "provider_label_scope": "Stable anonymous alias; the actual provider identity is retained in private correlation evidence."
+  },
+  "generic_analysis": {
+    "candidate": "B0",
+    "reference": "G",
+    "input_ratio": 1.051036708719876,
+    "capped_time_ratio": 1,
+    "decision": "rejected",
+    "decision_scope": "Original B0/G orientation. This is not the independent G screening decision.",
+    "independent_review_written_back": false
+  },
+  "review_limitations": [
+    "The independent reviewer did not write candidate guidance.",
+    "Three packets had condition labels removed; the last packet retained a build identifier in a builtin-Skill read path. Its subjective efficiency review is only partially blinded.",
+    "The incorrect completed answer was in an earlier packet without that observed condition-path exposure.",
+    "Missing final answers retain unknown semantics; valid evidence and delivered text do not establish correctness."
+  ],
+  "retention": {
+    "private_raw_evidence_retained": true,
+    "rebuildable_cache_directories_moved_to_system_trash": 4,
+    "logical_cache_bytes_retired": 536697111,
+    "claimed_released_bytes": null,
+    "historical_replay_guarantee": false
+  },
+  "publication_scope": "Anonymous projection and hash commitments only; private prompts, bodies, answers, source identifiers, machine paths and raw gateway/SDK/session logs are excluded."
+}
