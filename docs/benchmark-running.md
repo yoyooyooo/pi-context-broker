@@ -48,6 +48,10 @@ ordinary-profile delivery. Its original evidence packages remain immutable.
    Record the exact packages, fresh ordinary Pi observations and user-visible
    result. Publish Benchmark evidence separately, update the project record and
    retain the raw artifacts and accounting needed by the next iteration.
+   Retire owned mutable source, dependency and cache copies when their last
+   consumer finishes. Record precise dispositions and actual free space; moving
+   a path to same-volume Trash does not reclaim capacity. An evidence-only
+   manifest is not a promise that the original build remains runnable.
 
 Use the existing commands from the frozen controller:
 
@@ -85,6 +89,14 @@ separates guided operator reuse from unfamiliar-Agent onboarding. Broker PR #102
 changes verification and pins that CLI without changing this product runtime.
 Existing plans, product builds, raw observations and published scores retain
 their original identities; synchronizing source does not migrate an experiment.
+
+The subsequent [refresh-intent Own comparison](benchmark-refresh-guidance-2026-11-27.md)
+completed four observations with all applicable contracts passing. It did not
+establish improved refresh choice or request selection for the added public
+input, so product PR #105 was closed without adoption. Its reviewed producer
+tuple and original evidence remain available; the ordinary product source stays
+on the accepted runtime. This result is separate from the subsequently merged
+CLI smart-cache product and its Broker integration.
 
 Offline `reanalysis` can correct the interpretation of retained raw evidence
 without rebuilding or executing the product. Its historical source contracts
@@ -139,8 +151,9 @@ closed output matches the delivered metadata projection, and the record identity
 matches an actually observed SDK directory. The reviewed hashes for
 `src/index.ts` and `src/host-skills.ts` are pinned as complete pairs in the
 collector: the retained `cbe36c3` producer, the reviewed `3c78765f` producer
-with local candidate snapshots, and the reviewed `3d57426c` producer. In the
-third pair, Library identity selects routing from local configuration; the SDK
+with local candidate snapshots, the reviewed `3d57426c` producer, and the
+reviewed `b9de8bf0` refresh-guidance producer retained for the unadopted comparison.
+In the third pair, Library identity selects routing from local configuration; the SDK
 list still verifies the Library-bound directory. The list retains its selected
 metadata publication, generation and cancellation checks, and its closed
 metadata-only output. Local Library selection and candidate snapshots cannot

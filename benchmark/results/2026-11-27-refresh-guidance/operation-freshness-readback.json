@@ -1,0 +1,3254 @@
+{
+  "version": 1,
+  "at_utc": "2026-11-27T05:24:39.896Z",
+  "scope": "Exact observed operation/HTTP/time/freshness fields with original artifact refs; no remote calls and no resampling.",
+  "episodes": [
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-001",
+      "build_id": "next-product-runtime-20261127-2",
+      "condition_id": "m0-e0",
+      "case_id": "explicit-01-a-n16-r1",
+      "events": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/events.jsonl",
+        "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9",
+        "bytes": 1185409
+      },
+      "runtime_result": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/episode-result.json",
+        "sha256": "a814daf06bfbce4fa5e7bb248ec7ed91dbd490d0bf1d278627e633afc25e306b",
+        "bytes": 275290
+      },
+      "notion_source": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/notion-source.jsonl",
+        "sha256": "2a882bdcec74627a696933ebea789482861791ee68ec73bff903ea4deeeb26ec",
+        "bytes": 106649
+      },
+      "owned_http": {
+        "status": "known",
+        "value": 79,
+        "by_request_kind": {
+          "notion_body": 6,
+          "notion_metadata": 73
+        }
+      },
+      "request_intervals": [
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-001/request-1",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:09:48.801Z",
+          "end": "2026-11-27T05:09:52.570Z",
+          "duration_ms": 3768.715917,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 51,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 105,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "input": 2881,
+          "output": 31,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-001/request-2",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:09:52.577Z",
+          "end": "2026-11-27T05:09:55.827Z",
+          "duration_ms": 3250.521375,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 116,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 139,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "input": 4004,
+          "output": 67,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-001/request-3",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:10:10.094Z",
+          "end": "2026-11-27T05:10:12.661Z",
+          "duration_ms": 2566.728542,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 162,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 222,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "input": 4566,
+          "output": 34,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-001/request-4",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:10:25.049Z",
+          "end": "2026-11-27T05:10:28.847Z",
+          "duration_ms": 3798.698083,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 236,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 455,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "input": 4658,
+          "output": 114,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-001/request-5",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:10:28.856Z",
+          "end": "2026-11-27T05:10:34.107Z",
+          "duration_ms": 5251.05975,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 466,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 599,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "input": 4789,
+          "output": 64,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        }
+      ],
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:09:48.793Z",
+          "end": "2026-11-27T05:10:34.112Z",
+          "duration_ms": 45317.203333,
+          "model_requests": 5,
+          "input_tokens": 20898,
+          "output_tokens": 310,
+          "tool_calls": 5,
+          "policy_resource_reads": 2,
+          "selections": 1
+        }
+      ],
+      "operations": [
+        {
+          "operation_id": "7c980e36-456a-47d8-a931-666cfb46dc51",
+          "operation": "library-selection",
+          "source_id": null,
+          "library": null,
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:09:24.907Z",
+          "end_utc": "2026-11-27T05:09:25.017Z",
+          "duration_ms": 109.739583,
+          "receipt_elapsed_ms": 109.66425,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 3,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 5,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/notion-responses/7c980e36-456a-47d8-a931-666cfb46dc51.json",
+            "sha256": "ac843205e385cf10130ec730c0233dffced5eabe5be223cbc80d47a96e87c8bf",
+            "bytes": 347
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "02ff370c-d1ce-447a-8409-b383313e29b1",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:09:25.018Z",
+          "end_utc": "2026-11-27T05:09:25.024Z",
+          "duration_ms": 6.357334,
+          "receipt_elapsed_ms": 6.184125,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 6,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 9,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/notion-responses/02ff370c-d1ce-447a-8409-b383313e29b1.json",
+            "sha256": "a97a06cb80cc5db8ef152666c9a641392832490d75cb2579d7107f303b9c812a",
+            "bytes": 396
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "6517ade8-bf87-439b-9339-8b24e56c5f37",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 36,
+          "start_utc": "2026-11-27T05:09:25.019Z",
+          "end_utc": "2026-11-27T05:09:48.586Z",
+          "duration_ms": 23566.100083,
+          "receipt_elapsed_ms": 23563.566375,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 7,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 14,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/notion-responses/6517ade8-bf87-439b-9339-8b24e56c5f37.json",
+            "sha256": "67ede7db327621c3d26d5b11355201dbc86d9388069517179cf33f4854319aac",
+            "bytes": 43842
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 36,
+          "freshness_fields": [
+            {
+              "pointer": "/value/catalog/value/fetched_at",
+              "value": 1795756177164
+            },
+            {
+              "pointer": "/value/catalog/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/catalog/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:09:37.164Z",
+                "age_ms": 0,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/fetched_at",
+              "value": 1795756176413
+            },
+            {
+              "pointer": "/value/directory/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/directory/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:09:36.413Z",
+                "age_ms": 12168,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/view_query/expires_at",
+              "value": "2026-11-27T05:24:48.690+00:00"
+            }
+          ]
+        },
+        {
+          "operation_id": "91a03cf6-ba64-4cb0-905e-c63af390877b",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:09:37.165Z",
+          "end_utc": "2026-11-27T05:09:37.172Z",
+          "duration_ms": 6.573375,
+          "receipt_elapsed_ms": 6.274666,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 10,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 12,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/notion-responses/91a03cf6-ba64-4cb0-905e-c63af390877b.json",
+            "sha256": "550847fad369f1bec2fdcc7044714548f0c637ad86436fea6ea5160b76ac909e",
+            "bytes": 12370
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756177164
+            }
+          ]
+        },
+        {
+          "operation_id": "2a5972f3-ba1d-46c8-b27c-7d9b00d8da17",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:09:48.605Z",
+          "end_utc": "2026-11-27T05:09:48.612Z",
+          "duration_ms": 6.051625,
+          "receipt_elapsed_ms": 5.768666,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 16,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 19,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/notion-responses/2a5972f3-ba1d-46c8-b27c-7d9b00d8da17.json",
+            "sha256": "36d69fa24696338139673c2588b42040e6f9a6384864b3c6de4c6c80ed9198de",
+            "bytes": 12370
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756177164
+            }
+          ]
+        },
+        {
+          "operation_id": "f7074d96-5712-4865-a591-a0e2e25e140d",
+          "operation": "library-selection",
+          "source_id": null,
+          "library": null,
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:09:48.793Z",
+          "end_utc": "2026-11-27T05:09:48.882Z",
+          "duration_ms": 89.13225,
+          "receipt_elapsed_ms": 89.066917,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 42,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 54,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/notion-responses/f7074d96-5712-4865-a591-a0e2e25e140d.json",
+            "sha256": "977e46bfb6d6b964480186f4c6436cb2b00ab11b1840f3dcfb600dabb7f61e17",
+            "bytes": 347
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "1dd5e356-0273-4084-9518-68827d8b9fee",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-001/request-1",
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:09:48.883Z",
+          "end_utc": "2026-11-27T05:09:48.889Z",
+          "duration_ms": 6.259459,
+          "receipt_elapsed_ms": 5.805958,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 55,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 58,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/notion-responses/1dd5e356-0273-4084-9518-68827d8b9fee.json",
+            "sha256": "eb02ded377da69870635436b6c33411b8110d9f7071e8f09bf5191fb29d3f3f8",
+            "bytes": 14820
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756176413
+            },
+            {
+              "pointer": "/value/source",
+              "value": "local_cache"
+            },
+            {
+              "pointer": "/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:09:36.413Z",
+                "age_ms": 12474,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/view_query/expires_at",
+              "value": "2026-11-27T05:24:48.690+00:00"
+            }
+          ]
+        },
+        {
+          "operation_id": "e072f7aa-488f-4a40-8109-4244323d1888",
+          "operation": "consume",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-001/request-2",
+          "active_tool_call_ids": [
+            "call_4e1b4d91ecb74963a28eaf60227df442",
+            "call_929b0cb83a124c32a8a7122f4bc37207"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 24,
+          "start_utc": "2026-11-27T05:09:55.835Z",
+          "end_utc": "2026-11-27T05:10:10.074Z",
+          "duration_ms": 14237.873042,
+          "receipt_elapsed_ms": 14235.167,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 146,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 150,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/notion-responses/e072f7aa-488f-4a40-8109-4244323d1888.json",
+            "sha256": "9bcce48653fd97a5fdd8980d8e3ab9b41cd15f7d5b0a5936ed65ac7626fe7ae9",
+            "bytes": 21450
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 24,
+          "freshness_fields": [
+            {
+              "pointer": "/value/preparation/nodes/0/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/preparation/nodes/0/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:10:10.062Z",
+                "age_ms": 1,
+                "max_age_ms": 3600000,
+                "stale": false,
+                "policy_source": "product",
+                "full_body_max_age_ms": 86400000,
+                "current_eligibility_max_age_ms": 3600000
+              }
+            }
+          ]
+        },
+        {
+          "operation_id": "ee4abf44-73aa-43a5-80b4-c35aa759d910",
+          "operation": "read",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-001/request-3",
+          "active_tool_call_ids": [
+            "call_5660257f10f245ef86299ccab080f77e"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 19,
+          "start_utc": "2026-11-27T05:10:12.670Z",
+          "end_utc": "2026-11-27T05:10:25.035Z",
+          "duration_ms": 12364.700958,
+          "receipt_elapsed_ms": 12363.437167,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 227,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 229,
+            "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/notion-responses/ee4abf44-73aa-43a5-80b4-c35aa759d910.json",
+            "sha256": "cb3273ba2e44d22bbcf3bd0545fd4f16b7e74db70748daa7b70fb6b7da3bf41b",
+            "bytes": 11139
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 19,
+          "freshness_fields": [
+            {
+              "pointer": "/value/source",
+              "value": "local_snapshot"
+            },
+            {
+              "pointer": "/value/freshness",
+              "value": {
+                "policy": "pinned"
+              }
+            },
+            {
+              "pointer": "/value/reused",
+              "value": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-002",
+      "build_id": "next-refresh-guidance-20261127-1",
+      "condition_id": "m0-e1",
+      "case_id": "explicit-01-a-n16-r1",
+      "events": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/events.jsonl",
+        "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4",
+        "bytes": 1188178
+      },
+      "runtime_result": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/episode-result.json",
+        "sha256": "82d0f6f49f5506849ead47ab2c91ec503e2889c0322742924bae3d6ba6f9f06b",
+        "bytes": 277035
+      },
+      "notion_source": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/notion-source.jsonl",
+        "sha256": "bd5249b0a2a28ecf012f6e60d5a22ec857e5ef0be61799f635657e259d7fa44b",
+        "bytes": 106609
+      },
+      "owned_http": {
+        "status": "known",
+        "value": 79,
+        "by_request_kind": {
+          "notion_body": 6,
+          "notion_metadata": 73
+        }
+      },
+      "request_intervals": [
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-002/request-1",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:11:20.445Z",
+          "end": "2026-11-27T05:11:24.275Z",
+          "duration_ms": 3829.698292,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 51,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 105,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "input": 2913,
+          "output": 31,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-002/request-2",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:11:24.283Z",
+          "end": "2026-11-27T05:11:26.863Z",
+          "duration_ms": 2580.595292,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 116,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 175,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "input": 4045,
+          "output": 36,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-002/request-3",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:11:40.551Z",
+          "end": "2026-11-27T05:11:43.619Z",
+          "duration_ms": 3067.138583,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 192,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 216,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "input": 4414,
+          "output": 65,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-002/request-4",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:11:55.783Z",
+          "end": "2026-11-27T05:11:59.342Z",
+          "duration_ms": 3558.955167,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 236,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 455,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "input": 4701,
+          "output": 114,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-002/request-5",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:11:59.370Z",
+          "end": "2026-11-27T05:12:02.261Z",
+          "duration_ms": 2890.762584,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 466,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 603,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "input": 4832,
+          "output": 67,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        }
+      ],
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:11:20.438Z",
+          "end": "2026-11-27T05:12:02.263Z",
+          "duration_ms": 41824.417584,
+          "model_requests": 5,
+          "input_tokens": 20905,
+          "output_tokens": 313,
+          "tool_calls": 5,
+          "policy_resource_reads": 2,
+          "selections": 1
+        }
+      ],
+      "operations": [
+        {
+          "operation_id": "9b3a5f16-16d1-4779-9d3d-e01d4c0a07ea",
+          "operation": "library-selection",
+          "source_id": null,
+          "library": null,
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:10:53.454Z",
+          "end_utc": "2026-11-27T05:10:53.582Z",
+          "duration_ms": 128.2875,
+          "receipt_elapsed_ms": 128.192875,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 3,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 5,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/notion-responses/9b3a5f16-16d1-4779-9d3d-e01d4c0a07ea.json",
+            "sha256": "9c65aecfe5b23d5c9d2fe6c9e0765619b923eb65179ea77e93fc9a254f5fbc23",
+            "bytes": 348
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "d460228c-69e1-4077-8cde-20a23a142ec1",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:10:53.582Z",
+          "end_utc": "2026-11-27T05:10:53.589Z",
+          "duration_ms": 6.444333,
+          "receipt_elapsed_ms": 6.28925,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 6,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 9,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/notion-responses/d460228c-69e1-4077-8cde-20a23a142ec1.json",
+            "sha256": "1ff4997b8d853c02a27b4a8769bd81f4c41deed3ed5627730c2d24308142a2ed",
+            "bytes": 395
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "f38ee215-458a-450d-bfec-536f313e2b7a",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 36,
+          "start_utc": "2026-11-27T05:10:53.584Z",
+          "end_utc": "2026-11-27T05:11:20.232Z",
+          "duration_ms": 26647.358625,
+          "receipt_elapsed_ms": 26645.059333,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 7,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 14,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/notion-responses/f38ee215-458a-450d-bfec-536f313e2b7a.json",
+            "sha256": "c1f162edf600efc6a87951861a697aa73ae4d0a8a734a132266408085888bea3",
+            "bytes": 43815
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 36,
+          "freshness_fields": [
+            {
+              "pointer": "/value/catalog/value/fetched_at",
+              "value": 1795756264616
+            },
+            {
+              "pointer": "/value/catalog/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/catalog/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:11:04.616Z",
+                "age_ms": 0,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/fetched_at",
+              "value": 1795756263737
+            },
+            {
+              "pointer": "/value/directory/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/directory/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:11:03.737Z",
+                "age_ms": 16490,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/view_query/expires_at",
+              "value": "2026-11-27T05:26:20.027+00:00"
+            }
+          ]
+        },
+        {
+          "operation_id": "25a5cac4-86cd-48e3-ba54-a3bf711aa5aa",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:11:04.631Z",
+          "end_utc": "2026-11-27T05:11:04.651Z",
+          "duration_ms": 19.296458,
+          "receipt_elapsed_ms": 21.034417,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 10,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 12,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/notion-responses/25a5cac4-86cd-48e3-ba54-a3bf711aa5aa.json",
+            "sha256": "f5678c244bb5a770edfb092eea28638a80913bc3a28bb6431b5d79cd87f756cb",
+            "bytes": 12371
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756264616
+            }
+          ]
+        },
+        {
+          "operation_id": "a2ea3e17-815a-4082-9a8d-0e3c74f31841",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:11:20.251Z",
+          "end_utc": "2026-11-27T05:11:20.256Z",
+          "duration_ms": 5.724292,
+          "receipt_elapsed_ms": 5.358125,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 16,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 19,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/notion-responses/a2ea3e17-815a-4082-9a8d-0e3c74f31841.json",
+            "sha256": "fc7c5bdd4ea8caabb12e688c38c7d18fddeda8b65f26766bb79ee7672a47eed4",
+            "bytes": 12370
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756264616
+            }
+          ]
+        },
+        {
+          "operation_id": "6411998b-784a-4f2d-832f-9ed06259d5ef",
+          "operation": "library-selection",
+          "source_id": null,
+          "library": null,
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:11:20.438Z",
+          "end_utc": "2026-11-27T05:11:20.523Z",
+          "duration_ms": 84.715291,
+          "receipt_elapsed_ms": 84.60525,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 42,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 54,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/notion-responses/6411998b-784a-4f2d-832f-9ed06259d5ef.json",
+            "sha256": "4c6f702a00f5934b71c572d7c3884a1623294ef6a7dcb59cbb7428c766ce11ba",
+            "bytes": 346
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "330b404c-2ed6-4aa9-b5ec-7ecbed882128",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-002/request-1",
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:11:20.523Z",
+          "end_utc": "2026-11-27T05:11:20.530Z",
+          "duration_ms": 6.262583,
+          "receipt_elapsed_ms": 5.859458,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 55,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 58,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/notion-responses/330b404c-2ed6-4aa9-b5ec-7ecbed882128.json",
+            "sha256": "e126acb53290b8e786c9aa2782c702813db37601f06bf9484bfe57047125b982",
+            "bytes": 14820
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756263737
+            },
+            {
+              "pointer": "/value/source",
+              "value": "local_cache"
+            },
+            {
+              "pointer": "/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:11:03.737Z",
+                "age_ms": 16790,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/view_query/expires_at",
+              "value": "2026-11-27T05:26:20.027+00:00"
+            }
+          ]
+        },
+        {
+          "operation_id": "2fb180c3-af9c-4d2f-ac1c-1ebb3c525b00",
+          "operation": "consume",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-002/request-2",
+          "active_tool_call_ids": [
+            "call_0c3ddbbed2c04d76829460667435dc43"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 24,
+          "start_utc": "2026-11-27T05:11:26.866Z",
+          "end_utc": "2026-11-27T05:11:40.535Z",
+          "duration_ms": 13668.290833,
+          "receipt_elapsed_ms": 13666.827917,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 180,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 182,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/notion-responses/2fb180c3-af9c-4d2f-ac1c-1ebb3c525b00.json",
+            "sha256": "0fe46ea8eef8260282211919c1d45f74832dd034491be2b7160d05de9f5a586e",
+            "bytes": 21454
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 24,
+          "freshness_fields": [
+            {
+              "pointer": "/value/preparation/nodes/0/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/preparation/nodes/0/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:11:40.526Z",
+                "age_ms": 2,
+                "max_age_ms": 3600000,
+                "stale": false,
+                "policy_source": "product",
+                "full_body_max_age_ms": 86400000,
+                "current_eligibility_max_age_ms": 3600000
+              }
+            }
+          ]
+        },
+        {
+          "operation_id": "cf1ec4cd-be60-4968-a46c-ca49bd88e1a4",
+          "operation": "read",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-002/request-3",
+          "active_tool_call_ids": [
+            "call_94b564e2230244bdad5b953f9cd852b8",
+            "call_b8b84e2409fb43efb61b5052fb965bd5"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 19,
+          "start_utc": "2026-11-27T05:11:43.623Z",
+          "end_utc": "2026-11-27T05:11:55.772Z",
+          "duration_ms": 12148.89675,
+          "receipt_elapsed_ms": 12147.640959,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 223,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 227,
+            "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/notion-responses/cf1ec4cd-be60-4968-a46c-ca49bd88e1a4.json",
+            "sha256": "f80315112766af86f43a374f14d34cc37ae9d6fd2055aa6d38c64dc8b39ad7eb",
+            "bytes": 11122
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 19,
+          "freshness_fields": [
+            {
+              "pointer": "/value/source",
+              "value": "local_snapshot"
+            },
+            {
+              "pointer": "/value/freshness",
+              "value": {
+                "policy": "pinned"
+              }
+            },
+            {
+              "pointer": "/value/reused",
+              "value": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-003",
+      "build_id": "next-refresh-guidance-20261127-1",
+      "condition_id": "m0-e1",
+      "case_id": "continuation-01-a-n16-r2",
+      "events": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/events.jsonl",
+        "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932",
+        "bytes": 2014762
+      },
+      "runtime_result": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/episode-result.json",
+        "sha256": "695f037bfc34765fbbad84bd943a0d3ce0ffedcb98c7d54e4d90421d075249f5",
+        "bytes": 489989
+      },
+      "notion_source": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-source.jsonl",
+        "sha256": "16d7b0f1484f859a9ae42ee0dc481844e5301acfb3f644c203b33c69867aa7e9",
+        "bytes": 188989
+      },
+      "owned_http": {
+        "status": "known",
+        "value": 145,
+        "by_request_kind": {
+          "notion_body": 10,
+          "notion_metadata": 135
+        }
+      },
+      "request_intervals": [
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-003/request-1",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:12:47.173Z",
+          "end": "2026-11-27T05:12:50.195Z",
+          "duration_ms": 3021.347459,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 51,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 79,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "input": 2916,
+          "output": 58,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-003/request-2",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:13:14.813Z",
+          "end": "2026-11-27T05:13:18.567Z",
+          "duration_ms": 3753.932709,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 99,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 164,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "input": 4175,
+          "output": 39,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-003/request-3",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:13:54.040Z",
+          "end": "2026-11-27T05:13:56.783Z",
+          "duration_ms": 2743.202625,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 184,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 242,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "input": 4585,
+          "output": 33,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-003/request-4",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:14:10.833Z",
+          "end": "2026-11-27T05:14:14.345Z",
+          "duration_ms": 3512.086708,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 256,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 433,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "input": 4691,
+          "output": 93,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-003/request-5",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:14:14.352Z",
+          "end": "2026-11-27T05:14:17.724Z",
+          "duration_ms": 3372.060208,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 444,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 631,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "input": 4802,
+          "output": 93,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-003/request-6",
+          "turn_id": "turn-2",
+          "start": "2026-11-27T05:14:17.785Z",
+          "end": "2026-11-27T05:14:20.587Z",
+          "duration_ms": 2801.928583,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 648,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 684,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "input": 4044,
+          "output": 21,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-003/request-7",
+          "turn_id": "turn-2",
+          "start": "2026-11-27T05:14:20.611Z",
+          "end": "2026-11-27T05:14:23.944Z",
+          "duration_ms": 3333.721917,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 695,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 872,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "input": 5138,
+          "output": 93,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-003/request-8",
+          "turn_id": "turn-2",
+          "start": "2026-11-27T05:14:23.967Z",
+          "end": "2026-11-27T05:14:27.420Z",
+          "duration_ms": 3452.351625,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 883,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 1064,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "input": 5249,
+          "output": 90,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        }
+      ],
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:12:47.166Z",
+          "end": "2026-11-27T05:14:17.729Z",
+          "duration_ms": 90558.207667,
+          "model_requests": 5,
+          "input_tokens": 21169,
+          "output_tokens": 316,
+          "tool_calls": 5,
+          "policy_resource_reads": 2,
+          "selections": 1
+        },
+        {
+          "turn_id": "turn-2",
+          "start": "2026-11-27T05:14:17.778Z",
+          "end": "2026-11-27T05:14:27.428Z",
+          "duration_ms": 9645.2975,
+          "model_requests": 3,
+          "input_tokens": 14431,
+          "output_tokens": 204,
+          "tool_calls": 2,
+          "policy_resource_reads": 0,
+          "selections": 0
+        }
+      ],
+      "operations": [
+        {
+          "operation_id": "b2fcdbd6-0898-41c2-899d-28678ae86684",
+          "operation": "library-selection",
+          "source_id": null,
+          "library": null,
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:12:23.533Z",
+          "end_utc": "2026-11-27T05:12:23.632Z",
+          "duration_ms": 98.753792,
+          "receipt_elapsed_ms": 98.677917,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 3,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 5,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/b2fcdbd6-0898-41c2-899d-28678ae86684.json",
+            "sha256": "eea2fd2037d6d33f4215b66c165068b7d395280ea74bfacae3f1de92a4193fd6",
+            "bytes": 347
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "7135e8cd-e0fc-4435-8720-a988264e812f",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:12:23.633Z",
+          "end_utc": "2026-11-27T05:12:23.639Z",
+          "duration_ms": 6.571,
+          "receipt_elapsed_ms": 6.4095,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 6,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 9,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/7135e8cd-e0fc-4435-8720-a988264e812f.json",
+            "sha256": "44c98dfad8147f533ac6bfb818a96a228deb78ab0765a15144121496fc0ed9c8",
+            "bytes": 394
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "a707f996-4102-4f72-b2ac-190ed67236b5",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 36,
+          "start_utc": "2026-11-27T05:12:23.635Z",
+          "end_utc": "2026-11-27T05:12:46.961Z",
+          "duration_ms": 23325.936792,
+          "receipt_elapsed_ms": 23323.255791,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 7,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 14,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/a707f996-4102-4f72-b2ac-190ed67236b5.json",
+            "sha256": "d5234f877f1d896aeb8e70acbbce55e9cf6edc228c12142b1d55843f5d72c941",
+            "bytes": 43831
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 36,
+          "freshness_fields": [
+            {
+              "pointer": "/value/catalog/value/fetched_at",
+              "value": 1795756354211
+            },
+            {
+              "pointer": "/value/catalog/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/catalog/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:12:34.211Z",
+                "age_ms": 0,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/fetched_at",
+              "value": 1795756353623
+            },
+            {
+              "pointer": "/value/directory/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/directory/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:12:33.623Z",
+                "age_ms": 13332,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/view_query/expires_at",
+              "value": "2026-11-27T05:27:47.039+00:00"
+            }
+          ]
+        },
+        {
+          "operation_id": "718818b3-7179-4e97-99ab-20da1f0b1136",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:12:34.213Z",
+          "end_utc": "2026-11-27T05:12:34.219Z",
+          "duration_ms": 6.456542,
+          "receipt_elapsed_ms": 6.244542,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 10,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 12,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/718818b3-7179-4e97-99ab-20da1f0b1136.json",
+            "sha256": "06ac0ea41ec39c7e1de7881181e8689413d93f4c4b438e29e1098c245a24c6e7",
+            "bytes": 12370
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756354211
+            }
+          ]
+        },
+        {
+          "operation_id": "024713e0-cec3-4dfa-aad8-4b7e0874fc2b",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:12:46.981Z",
+          "end_utc": "2026-11-27T05:12:46.987Z",
+          "duration_ms": 5.968375,
+          "receipt_elapsed_ms": 5.618625,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 16,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 19,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/024713e0-cec3-4dfa-aad8-4b7e0874fc2b.json",
+            "sha256": "d26e704ff934d44d1b0b0aeea654ee7e3023677dfff076afa1ed3843aa63b355",
+            "bytes": 12370
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756354211
+            }
+          ]
+        },
+        {
+          "operation_id": "05be8d24-2cee-452c-82f4-94a32151cb47",
+          "operation": "library-selection",
+          "source_id": null,
+          "library": null,
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:12:47.167Z",
+          "end_utc": "2026-11-27T05:12:47.250Z",
+          "duration_ms": 83.088625,
+          "receipt_elapsed_ms": 83.044416,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 42,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 54,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/05be8d24-2cee-452c-82f4-94a32151cb47.json",
+            "sha256": "94d7fc77122271838df53b8960297b6f39637bb70edcd85f67359ec33f843a87",
+            "bytes": 347
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "cc013f75-eb2d-42da-899b-1c229e2b820c",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-003/request-1",
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:12:47.250Z",
+          "end_utc": "2026-11-27T05:12:47.255Z",
+          "duration_ms": 5.181792,
+          "receipt_elapsed_ms": 4.815958,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 55,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 58,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/cc013f75-eb2d-42da-899b-1c229e2b820c.json",
+            "sha256": "faba812a7ed5cc260ce67e4f13d1b58f98b9a013768eb28b1d24c0c181aee1a0",
+            "bytes": 14820
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756353623
+            },
+            {
+              "pointer": "/value/source",
+              "value": "local_cache"
+            },
+            {
+              "pointer": "/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:12:33.623Z",
+                "age_ms": 13631,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/view_query/expires_at",
+              "value": "2026-11-27T05:27:47.039+00:00"
+            }
+          ]
+        },
+        {
+          "operation_id": "e56fe249-c5dd-45b5-b9b8-904254a5a873",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-003/request-1",
+          "active_tool_call_ids": [
+            "call_50934e620fc444d59d70c26c02110985",
+            "call_5c5b18e05ce34250803febebd4a6bc39"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 36,
+          "start_utc": "2026-11-27T05:12:50.199Z",
+          "end_utc": "2026-11-27T05:13:14.783Z",
+          "duration_ms": 24583.633917,
+          "receipt_elapsed_ms": 24579.394084,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 86,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 90,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/e56fe249-c5dd-45b5-b9b8-904254a5a873.json",
+            "sha256": "a4e888ad47223eed953d8f8e4782a9448800de6519ad4ad887254dd2f6f82199",
+            "bytes": 43846
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 36,
+          "freshness_fields": [
+            {
+              "pointer": "/value/catalog/value/fetched_at",
+              "value": 1795756383838
+            },
+            {
+              "pointer": "/value/catalog/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/catalog/value/freshness",
+              "value": {
+                "policy": "refresh",
+                "validated_at": "2026-11-27T05:13:03.838Z",
+                "age_ms": 0,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/fetched_at",
+              "value": 1795756382655
+            },
+            {
+              "pointer": "/value/directory/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/directory/value/freshness",
+              "value": {
+                "policy": "refresh",
+                "validated_at": "2026-11-27T05:13:02.655Z",
+                "age_ms": 12119,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/view_query/expires_at",
+              "value": "2026-11-27T05:28:14.850+00:00"
+            }
+          ]
+        },
+        {
+          "operation_id": "b077b7ae-bc8c-4698-9a0e-6e167177b9e4",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-003/request-2",
+          "active_tool_call_ids": [
+            "call_4f85d09668a04f69af98b22e26ce38b7"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 17,
+          "start_utc": "2026-11-27T05:13:18.598Z",
+          "end_utc": "2026-11-27T05:13:34.346Z",
+          "duration_ms": 15748.344167,
+          "receipt_elapsed_ms": 15753.482666,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 169,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 171,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/b077b7ae-bc8c-4698-9a0e-6e167177b9e4.json",
+            "sha256": "5018dc509e5e823dce751c818149a0c58141c7330e2804b07d091a34141c4545",
+            "bytes": 21421
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 17,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756414330
+            },
+            {
+              "pointer": "/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/freshness",
+              "value": {
+                "policy": "refresh",
+                "validated_at": "2026-11-27T05:13:34.330Z",
+                "age_ms": 0,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            }
+          ]
+        },
+        {
+          "operation_id": "53e9b870-3a08-4de7-861a-f50bdd2ff7d1",
+          "operation": "consume",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-003/request-2",
+          "active_tool_call_ids": [
+            "call_4f85d09668a04f69af98b22e26ce38b7"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 24,
+          "start_utc": "2026-11-27T05:13:34.362Z",
+          "end_utc": "2026-11-27T05:13:54.024Z",
+          "duration_ms": 19661.603125,
+          "receipt_elapsed_ms": 19659.571958,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 172,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 174,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/53e9b870-3a08-4de7-861a-f50bdd2ff7d1.json",
+            "sha256": "caa11daeb597300a11599146290ba3017f834a621154c071dc29ff0594e5641e",
+            "bytes": 21678
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 24,
+          "freshness_fields": [
+            {
+              "pointer": "/value/preparation/nodes/0/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/preparation/nodes/0/freshness",
+              "value": {
+                "policy": "refresh",
+                "validated_at": "2026-11-27T05:13:54.014Z",
+                "age_ms": 2,
+                "max_age_ms": 3600000,
+                "stale": false,
+                "policy_source": "product",
+                "full_body_max_age_ms": 86400000,
+                "current_eligibility_max_age_ms": 3600000
+              }
+            }
+          ]
+        },
+        {
+          "operation_id": "1ed9838d-2702-495e-a825-b18f175169be",
+          "operation": "read",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-003/request-3",
+          "active_tool_call_ids": [
+            "call_1137ea3fef1e480b83bb15e803a7ed80"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 19,
+          "start_utc": "2026-11-27T05:13:56.786Z",
+          "end_utc": "2026-11-27T05:14:10.822Z",
+          "duration_ms": 14035.23,
+          "receipt_elapsed_ms": 14033.676083,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 247,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 249,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/1ed9838d-2702-495e-a825-b18f175169be.json",
+            "sha256": "fbec3c54dfe7d38e85d71504d86dc5aca002882c9add342da0320c8871ed01aa",
+            "bytes": 11249
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 19,
+          "freshness_fields": [
+            {
+              "pointer": "/value/source",
+              "value": "local_snapshot"
+            },
+            {
+              "pointer": "/value/freshness",
+              "value": {
+                "policy": "pinned"
+              }
+            },
+            {
+              "pointer": "/value/reused",
+              "value": false
+            }
+          ]
+        },
+        {
+          "operation_id": "3135129b-e2ce-4f5e-8820-fd8dbd50bc98",
+          "operation": "library-selection",
+          "source_id": null,
+          "library": null,
+          "stage": "user_task",
+          "turn_id": "turn-2",
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:14:17.779Z",
+          "end_utc": "2026-11-27T05:14:17.789Z",
+          "duration_ms": 9.9145,
+          "receipt_elapsed_ms": 10.062042,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 643,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 651,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/3135129b-e2ce-4f5e-8820-fd8dbd50bc98.json",
+            "sha256": "82af3ad8cbfc51fa498dcee60150629f6754bdd27c9b4e440e9bd23889476663",
+            "bytes": 347
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "d0e1d7d9-c1cf-48ee-948d-6ebf52c07e31",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-2",
+          "model_request_id": "current-refresh-guidance-own-pair-1-003/request-6",
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "cancelled",
+          "result_observed": false,
+          "metrics_complete": true,
+          "http_attempts": 13,
+          "start_utc": "2026-11-27T05:14:17.791Z",
+          "end_utc": "2026-11-27T05:14:27.537Z",
+          "duration_ms": 9745.618541,
+          "receipt_elapsed_ms": 9742.128291,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 652,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 1075,
+            "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/d0e1d7d9-c1cf-48ee-948d-6ebf52c07e31.json",
+            "sha256": "343ce3de767a8c135fae921de1d188b4c6f80227922919a174dddee4c1d3f218",
+            "bytes": 5677
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 13,
+          "freshness_fields": []
+        }
+      ]
+    },
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-004",
+      "build_id": "next-product-runtime-20261127-2",
+      "condition_id": "m0-e0",
+      "case_id": "continuation-01-a-n16-r2",
+      "events": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/events.jsonl",
+        "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c",
+        "bytes": 2228834
+      },
+      "runtime_result": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/episode-result.json",
+        "sha256": "444c20165d9c39aa41d7d96955e1d8a92c45026e5cb5f293c56feb5f33ce4273",
+        "bytes": 533773
+      },
+      "notion_source": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-source.jsonl",
+        "sha256": "65b2e37db9e3cfaf9fccf76a235ce4827aab1193107981fb22fc529a53f6a6f3",
+        "bytes": 197085
+      },
+      "owned_http": {
+        "status": "known",
+        "value": 152,
+        "by_request_kind": {
+          "notion_body": 10,
+          "notion_metadata": 142
+        }
+      },
+      "request_intervals": [
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-004/request-1",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:15:15.227Z",
+          "end": "2026-11-27T05:15:17.907Z",
+          "duration_ms": 2679.924042,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 51,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 79,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "input": 2884,
+          "output": 58,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-004/request-2",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:15:42.846Z",
+          "end": "2026-11-27T05:15:45.416Z",
+          "duration_ms": 2569.858,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 99,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 162,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "input": 4124,
+          "output": 38,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-004/request-3",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:16:12.504Z",
+          "end": "2026-11-27T05:16:14.774Z",
+          "duration_ms": 2269.660083,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 182,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 240,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "input": 4524,
+          "output": 33,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-004/request-4",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:16:25.679Z",
+          "end": "2026-11-27T05:16:30.502Z",
+          "duration_ms": 4823.02975,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 254,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 467,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "input": 4630,
+          "output": 111,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-004/request-5",
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:16:30.509Z",
+          "end": "2026-11-27T05:16:34.015Z",
+          "duration_ms": 3505.787875,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 478,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 679,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "input": 4759,
+          "output": 100,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-004/request-6",
+          "turn_id": "turn-2",
+          "start": "2026-11-27T05:16:34.088Z",
+          "end": "2026-11-27T05:16:36.325Z",
+          "duration_ms": 2237.0275,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 696,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 732,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "input": 4026,
+          "output": 21,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-004/request-7",
+          "turn_id": "turn-2",
+          "start": "2026-11-27T05:16:36.350Z",
+          "end": "2026-11-27T05:16:44.422Z",
+          "duration_ms": 8071.976792,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 743,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 960,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "input": 5102,
+          "output": 124,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        },
+        {
+          "request_id": "current-refresh-guidance-own-pair-1-004/request-8",
+          "turn_id": "turn-2",
+          "start": "2026-11-27T05:16:44.436Z",
+          "end": "2026-11-27T05:16:48.235Z",
+          "duration_ms": 3799.296375,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 971,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 1162,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "input": 5248,
+          "output": 94,
+          "usage_complete": true,
+          "attempts": 1,
+          "assistant_error": null
+        }
+      ],
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:15:15.220Z",
+          "end": "2026-11-27T05:16:34.032Z",
+          "duration_ms": 78810.177125,
+          "model_requests": 5,
+          "input_tokens": 20921,
+          "output_tokens": 340,
+          "tool_calls": 5,
+          "policy_resource_reads": 2,
+          "selections": 1
+        },
+        {
+          "turn_id": "turn-2",
+          "start": "2026-11-27T05:16:34.079Z",
+          "end": "2026-11-27T05:16:48.238Z",
+          "duration_ms": 14157.492791,
+          "model_requests": 3,
+          "input_tokens": 14376,
+          "output_tokens": 239,
+          "tool_calls": 2,
+          "policy_resource_reads": 0,
+          "selections": 0
+        }
+      ],
+      "operations": [
+        {
+          "operation_id": "101aef3a-ad0f-41be-9492-3e676f152a2f",
+          "operation": "library-selection",
+          "source_id": null,
+          "library": null,
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:14:52.574Z",
+          "end_utc": "2026-11-27T05:14:52.663Z",
+          "duration_ms": 89.627375,
+          "receipt_elapsed_ms": 89.549167,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 3,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 5,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/101aef3a-ad0f-41be-9492-3e676f152a2f.json",
+            "sha256": "7bc8cf09f4df44b1863cd5fbbde99e40ea7c030d5068b713496c04e0d27c0447",
+            "bytes": 347
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "5e86aef2-9ff7-4a2c-ad98-34355b1be7de",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:14:52.664Z",
+          "end_utc": "2026-11-27T05:14:52.670Z",
+          "duration_ms": 6.212166,
+          "receipt_elapsed_ms": 6.07,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 6,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 9,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/5e86aef2-9ff7-4a2c-ad98-34355b1be7de.json",
+            "sha256": "9cd7914875b88bc98f6e3cc9ca79551b5a3c13d225ac33d26ea68b29bd643f98",
+            "bytes": 392
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "52b0cb52-6ba8-4f18-b6db-7c6f557d65a2",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 36,
+          "start_utc": "2026-11-27T05:14:52.665Z",
+          "end_utc": "2026-11-27T05:15:15.011Z",
+          "duration_ms": 22345.90075,
+          "receipt_elapsed_ms": 22343.102084,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 7,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 14,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/52b0cb52-6ba8-4f18-b6db-7c6f557d65a2.json",
+            "sha256": "61a7e02f3c01b25b07327f5f15b9cdd0b5f4ddfe633dcf803bbbd0298a282f92",
+            "bytes": 43822
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 36,
+          "freshness_fields": [
+            {
+              "pointer": "/value/catalog/value/fetched_at",
+              "value": 1795756501913
+            },
+            {
+              "pointer": "/value/catalog/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/catalog/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:15:01.913Z",
+                "age_ms": 0,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/fetched_at",
+              "value": 1795756501373
+            },
+            {
+              "pointer": "/value/directory/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/directory/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:15:01.373Z",
+                "age_ms": 13630,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/view_query/expires_at",
+              "value": "2026-11-27T05:30:15.140+00:00"
+            }
+          ]
+        },
+        {
+          "operation_id": "4be4228e-8b23-471a-b7d0-1f77d22ca019",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:15:01.916Z",
+          "end_utc": "2026-11-27T05:15:01.923Z",
+          "duration_ms": 7.379875,
+          "receipt_elapsed_ms": 7.235833,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 10,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 12,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/4be4228e-8b23-471a-b7d0-1f77d22ca019.json",
+            "sha256": "a48288654ec801bfc41cc24099c221245b741e9185f386437aa9198f45421d7d",
+            "bytes": 12370
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756501913
+            }
+          ]
+        },
+        {
+          "operation_id": "f7c30e7e-5b5e-4226-84ae-6efd288de3ec",
+          "operation": "candidates",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "prepare",
+          "turn_id": null,
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:15:15.029Z",
+          "end_utc": "2026-11-27T05:15:15.035Z",
+          "duration_ms": 6.453875,
+          "receipt_elapsed_ms": 6.147333,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 16,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 19,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/f7c30e7e-5b5e-4226-84ae-6efd288de3ec.json",
+            "sha256": "782666f87ac358e16920545b96bcbec8f519acefbbdb8497e6dc87d867aa5736",
+            "bytes": 12370
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756501913
+            }
+          ]
+        },
+        {
+          "operation_id": "c1eae4d2-e934-4519-9a04-cdde729ad8c7",
+          "operation": "library-selection",
+          "source_id": null,
+          "library": null,
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:15:15.220Z",
+          "end_utc": "2026-11-27T05:15:15.338Z",
+          "duration_ms": 118.141917,
+          "receipt_elapsed_ms": 117.979709,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 42,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 54,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/c1eae4d2-e934-4519-9a04-cdde729ad8c7.json",
+            "sha256": "948ca1ecca7616f8daa4a57c8d90d1b14d1dbf81996b00e4460c55798cd9947f",
+            "bytes": 348
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "05efdf32-e75e-4d39-9ada-8d10f3e19b56",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-004/request-1",
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:15:15.339Z",
+          "end_utc": "2026-11-27T05:15:15.346Z",
+          "duration_ms": 7.51,
+          "receipt_elapsed_ms": 6.984709,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 55,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 58,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/05efdf32-e75e-4d39-9ada-8d10f3e19b56.json",
+            "sha256": "dd66ea7718247f8580169fdeddd1904b2d8e9d86d7a2abc53c8568b1dc6a5949",
+            "bytes": 14820
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756501373
+            },
+            {
+              "pointer": "/value/source",
+              "value": "local_cache"
+            },
+            {
+              "pointer": "/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:15:01.373Z",
+                "age_ms": 13971,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/view_query/expires_at",
+              "value": "2026-11-27T05:30:15.140+00:00"
+            }
+          ]
+        },
+        {
+          "operation_id": "09c983a3-621b-487f-9215-7708dc4572c8",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-004/request-1",
+          "active_tool_call_ids": [
+            "call_2cc043a947e94b3696ba8ab329e69200",
+            "call_a254bd64d25e4b9d8eb486084bd2b682"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 36,
+          "start_utc": "2026-11-27T05:15:17.928Z",
+          "end_utc": "2026-11-27T05:15:42.823Z",
+          "duration_ms": 24893.889834,
+          "receipt_elapsed_ms": 24886.661334,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 86,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 90,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/09c983a3-621b-487f-9215-7708dc4572c8.json",
+            "sha256": "e48c87ca22dd06ad49a44985025d16146646288c171373cc7da381ce04cb5c2b",
+            "bytes": 43858
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 36,
+          "freshness_fields": [
+            {
+              "pointer": "/value/catalog/value/fetched_at",
+              "value": 1795756531290
+            },
+            {
+              "pointer": "/value/catalog/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/catalog/value/freshness",
+              "value": {
+                "policy": "refresh",
+                "validated_at": "2026-11-27T05:15:31.290Z",
+                "age_ms": 0,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/fetched_at",
+              "value": 1795756530749
+            },
+            {
+              "pointer": "/value/directory/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/directory/value/freshness",
+              "value": {
+                "policy": "refresh",
+                "validated_at": "2026-11-27T05:15:30.749Z",
+                "age_ms": 12058,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/view_query/expires_at",
+              "value": "2026-11-27T05:30:42.945+00:00"
+            }
+          ]
+        },
+        {
+          "operation_id": "3112cef0-5786-4e83-bac5-9cd740fabb60",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-004/request-2",
+          "active_tool_call_ids": [
+            "call_9c1095e9d9b94c63af295ea952682a46"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 17,
+          "start_utc": "2026-11-27T05:15:45.426Z",
+          "end_utc": "2026-11-27T05:15:57.176Z",
+          "duration_ms": 11749.42025,
+          "receipt_elapsed_ms": 11744.645625,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 167,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 169,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/3112cef0-5786-4e83-bac5-9cd740fabb60.json",
+            "sha256": "2653f346b7fd109c48642280d7b7574b9fd4ed1861e349406b43ec82dc5e288e",
+            "bytes": 21422
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 17,
+          "freshness_fields": [
+            {
+              "pointer": "/value/fetched_at",
+              "value": 1795756557157
+            },
+            {
+              "pointer": "/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/freshness",
+              "value": {
+                "policy": "refresh",
+                "validated_at": "2026-11-27T05:15:57.157Z",
+                "age_ms": 0,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            }
+          ]
+        },
+        {
+          "operation_id": "e879dc16-37e3-433c-ae71-a3c0a1c84383",
+          "operation": "consume",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-004/request-2",
+          "active_tool_call_ids": [
+            "call_9c1095e9d9b94c63af295ea952682a46"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 24,
+          "start_utc": "2026-11-27T05:15:57.218Z",
+          "end_utc": "2026-11-27T05:16:12.485Z",
+          "duration_ms": 15267.312834,
+          "receipt_elapsed_ms": 15264.310875,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 170,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 172,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/e879dc16-37e3-433c-ae71-a3c0a1c84383.json",
+            "sha256": "8661e7055ee4bf073b8ab7235c1adc5d06b56ceff3a76ccd9015ce3c01eaf8c0",
+            "bytes": 21688
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 24,
+          "freshness_fields": [
+            {
+              "pointer": "/value/preparation/nodes/0/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/preparation/nodes/0/freshness",
+              "value": {
+                "policy": "refresh",
+                "validated_at": "2026-11-27T05:16:12.460Z",
+                "age_ms": 3,
+                "max_age_ms": 3600000,
+                "stale": false,
+                "policy_source": "product",
+                "full_body_max_age_ms": 86400000,
+                "current_eligibility_max_age_ms": 3600000
+              }
+            }
+          ]
+        },
+        {
+          "operation_id": "7e3c745d-6e2c-4129-8edf-b2d67fef7e91",
+          "operation": "read",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-1",
+          "model_request_id": "current-refresh-guidance-own-pair-1-004/request-3",
+          "active_tool_call_ids": [
+            "call_1d65c0aa40ba451bba446d5156debca2"
+          ],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 19,
+          "start_utc": "2026-11-27T05:16:14.778Z",
+          "end_utc": "2026-11-27T05:16:25.666Z",
+          "duration_ms": 10888.146542,
+          "receipt_elapsed_ms": 10886.758458,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 245,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 247,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/7e3c745d-6e2c-4129-8edf-b2d67fef7e91.json",
+            "sha256": "0be90f2d3fdc02eb12a6127cc7f750a7745f4c377241e99eb28624f6da67b2bc",
+            "bytes": 11228
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 19,
+          "freshness_fields": [
+            {
+              "pointer": "/value/source",
+              "value": "local_snapshot"
+            },
+            {
+              "pointer": "/value/freshness",
+              "value": {
+                "policy": "pinned"
+              }
+            },
+            {
+              "pointer": "/value/reused",
+              "value": false
+            }
+          ]
+        },
+        {
+          "operation_id": "650170fe-f32b-46a7-bf3f-e9c02ba8bd81",
+          "operation": "library-selection",
+          "source_id": null,
+          "library": null,
+          "stage": "user_task",
+          "turn_id": "turn-2",
+          "model_request_id": null,
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 0,
+          "start_utc": "2026-11-27T05:16:34.080Z",
+          "end_utc": "2026-11-27T05:16:34.093Z",
+          "duration_ms": 13.278334,
+          "receipt_elapsed_ms": 13.398875,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 691,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 702,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/650170fe-f32b-46a7-bf3f-e9c02ba8bd81.json",
+            "sha256": "e31f62661ac7ceadd4dc989f29422df642a3482799e67457c91e5bf7992387ca",
+            "bytes": 347
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 0,
+          "freshness_fields": []
+        },
+        {
+          "operation_id": "275c963e-7ce2-4722-b8ef-b07a1daf9d96",
+          "operation": "list",
+          "source_id": "notion",
+          "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+          "stage": "user_task",
+          "turn_id": "turn-2",
+          "model_request_id": "current-refresh-guidance-own-pair-1-004/request-6",
+          "active_tool_call_ids": [],
+          "tool_call_id": null,
+          "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+          "status": "completed",
+          "result_observed": true,
+          "metrics_complete": true,
+          "http_attempts": 20,
+          "start_utc": "2026-11-27T05:16:34.095Z",
+          "end_utc": "2026-11-27T05:16:48.051Z",
+          "duration_ms": 13955.592375,
+          "receipt_elapsed_ms": 13949.071042,
+          "start_ref": {
+            "artifact_id": "events",
+            "line": 703,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "end_ref": {
+            "artifact_id": "events",
+            "line": 1158,
+            "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+          },
+          "receipt": {
+            "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/275c963e-7ce2-4722-b8ef-b07a1daf9d96.json",
+            "sha256": "ce956f26aec0ce2b3b6a53251500801afb894366553aec564c06a02c1a321313",
+            "bytes": 37253
+          },
+          "metrics_complete_in_receipt": true,
+          "receipt_total_requests": 20,
+          "freshness_fields": [
+            {
+              "pointer": "/value/catalog/value/fetched_at",
+              "value": 1795756557157
+            },
+            {
+              "pointer": "/value/catalog/value/source",
+              "value": "local_cache"
+            },
+            {
+              "pointer": "/value/catalog/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:15:57.157Z",
+                "age_ms": 36942,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/fetched_at",
+              "value": 1795756606235
+            },
+            {
+              "pointer": "/value/directory/value/source",
+              "value": "notion"
+            },
+            {
+              "pointer": "/value/directory/value/freshness",
+              "value": {
+                "policy": "default",
+                "validated_at": "2026-11-27T05:16:46.235Z",
+                "age_ms": 1802,
+                "max_age_ms": 60000,
+                "stale": false
+              }
+            },
+            {
+              "pointer": "/value/directory/value/view_query/expires_at",
+              "value": "2026-11-27T05:31:46.919+00:00"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "continuation_turn_2_list": [
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-003",
+      "operation": {
+        "operation_id": "d0e1d7d9-c1cf-48ee-948d-6ebf52c07e31",
+        "operation": "list",
+        "source_id": "notion",
+        "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+        "stage": "user_task",
+        "turn_id": "turn-2",
+        "model_request_id": "current-refresh-guidance-own-pair-1-003/request-6",
+        "active_tool_call_ids": [],
+        "tool_call_id": null,
+        "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+        "status": "cancelled",
+        "result_observed": false,
+        "metrics_complete": true,
+        "http_attempts": 13,
+        "start_utc": "2026-11-27T05:14:17.791Z",
+        "end_utc": "2026-11-27T05:14:27.537Z",
+        "duration_ms": 9745.618541,
+        "receipt_elapsed_ms": 9742.128291,
+        "start_ref": {
+          "artifact_id": "events",
+          "line": 652,
+          "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+        },
+        "end_ref": {
+          "artifact_id": "events",
+          "line": 1075,
+          "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932"
+        },
+        "receipt": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/d0e1d7d9-c1cf-48ee-948d-6ebf52c07e31.json",
+          "sha256": "343ce3de767a8c135fae921de1d188b4c6f80227922919a174dddee4c1d3f218",
+          "bytes": 5677
+        },
+        "metrics_complete_in_receipt": true,
+        "receipt_total_requests": 13,
+        "freshness_fields": []
+      },
+      "preceding_directory": {
+        "operation_id": "e56fe249-c5dd-45b5-b9b8-904254a5a873",
+        "receipt": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/e56fe249-c5dd-45b5-b9b8-904254a5a873.json",
+          "sha256": "a4e888ad47223eed953d8f8e4782a9448800de6519ad4ad887254dd2f6f82199",
+          "bytes": 43846
+        },
+        "fetched_at": 1795756382655
+      },
+      "directory_age_at_turn_2_list_start_ms": 75136,
+      "preceding_catalog": {
+        "operation_id": "b077b7ae-bc8c-4698-9a0e-6e167177b9e4",
+        "receipt": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/notion-responses/b077b7ae-bc8c-4698-9a0e-6e167177b9e4.json",
+          "sha256": "5018dc509e5e823dce751c818149a0c58141c7330e2804b07d091a34141c4545",
+          "bytes": 21421
+        },
+        "fetched_at": 1795756414330
+      },
+      "catalog_age_at_turn_2_list_start_ms": 43461,
+      "observed_metadata_max_age_ms": 60000,
+      "model_list_or_use_calls_in_turn_2": 0
+    },
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-004",
+      "operation": {
+        "operation_id": "275c963e-7ce2-4722-b8ef-b07a1daf9d96",
+        "operation": "list",
+        "source_id": "notion",
+        "library": "4215636c-236e-81e8-8168-ee2ac696f73a",
+        "stage": "user_task",
+        "turn_id": "turn-2",
+        "model_request_id": "current-refresh-guidance-own-pair-1-004/request-6",
+        "active_tool_call_ids": [],
+        "tool_call_id": null,
+        "association_scope": "active calls are temporal context; causal tool binding requires returned source proof",
+        "status": "completed",
+        "result_observed": true,
+        "metrics_complete": true,
+        "http_attempts": 20,
+        "start_utc": "2026-11-27T05:16:34.095Z",
+        "end_utc": "2026-11-27T05:16:48.051Z",
+        "duration_ms": 13955.592375,
+        "receipt_elapsed_ms": 13949.071042,
+        "start_ref": {
+          "artifact_id": "events",
+          "line": 703,
+          "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+        },
+        "end_ref": {
+          "artifact_id": "events",
+          "line": 1158,
+          "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c"
+        },
+        "receipt": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/275c963e-7ce2-4722-b8ef-b07a1daf9d96.json",
+          "sha256": "ce956f26aec0ce2b3b6a53251500801afb894366553aec564c06a02c1a321313",
+          "bytes": 37253
+        },
+        "metrics_complete_in_receipt": true,
+        "receipt_total_requests": 20,
+        "freshness_fields": [
+          {
+            "pointer": "/value/catalog/value/fetched_at",
+            "value": 1795756557157
+          },
+          {
+            "pointer": "/value/catalog/value/source",
+            "value": "local_cache"
+          },
+          {
+            "pointer": "/value/catalog/value/freshness",
+            "value": {
+              "policy": "default",
+              "validated_at": "2026-11-27T05:15:57.157Z",
+              "age_ms": 36942,
+              "max_age_ms": 60000,
+              "stale": false
+            }
+          },
+          {
+            "pointer": "/value/directory/value/fetched_at",
+            "value": 1795756606235
+          },
+          {
+            "pointer": "/value/directory/value/source",
+            "value": "notion"
+          },
+          {
+            "pointer": "/value/directory/value/freshness",
+            "value": {
+              "policy": "default",
+              "validated_at": "2026-11-27T05:16:46.235Z",
+              "age_ms": 1802,
+              "max_age_ms": 60000,
+              "stale": false
+            }
+          },
+          {
+            "pointer": "/value/directory/value/view_query/expires_at",
+            "value": "2026-11-27T05:31:46.919+00:00"
+          }
+        ]
+      },
+      "preceding_directory": {
+        "operation_id": "09c983a3-621b-487f-9215-7708dc4572c8",
+        "receipt": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/09c983a3-621b-487f-9215-7708dc4572c8.json",
+          "sha256": "e48c87ca22dd06ad49a44985025d16146646288c171373cc7da381ce04cb5c2b",
+          "bytes": 43858
+        },
+        "fetched_at": 1795756530749
+      },
+      "directory_age_at_turn_2_list_start_ms": 63346,
+      "preceding_catalog": {
+        "operation_id": "3112cef0-5786-4e83-bac5-9cd740fabb60",
+        "receipt": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/notion-responses/3112cef0-5786-4e83-bac5-9cd740fabb60.json",
+          "sha256": "2653f346b7fd109c48642280d7b7574b9fd4ed1861e349406b43ec82dc5e288e",
+          "bytes": 21422
+        },
+        "fetched_at": 1795756557157
+      },
+      "catalog_age_at_turn_2_list_start_ms": 36938,
+      "observed_metadata_max_age_ms": 60000,
+      "model_list_or_use_calls_in_turn_2": 0
+    }
+  ],
+  "interpretation": {
+    "http_difference": "Both continuation runs have the same completed first-turn 132 HTTP: 36 startup + 36 explicit list refresh + 17 pre-consume list refresh + 24 consume + 19 resource read. Candidate adds 13 HTTP in a cancelled turn-2 list; reference adds 20 in a completed turn-2 list.",
+    "causal_boundary": "These turn-2 list operations start with no active model tool call and overlap the second business turn. Their timestamps are after the preceding directory metadata 60-second age window. That is consistent with directory TTL revalidation; the operation trace alone does not independently prove the scheduling branch. They are not extra consume/resource-read operations, and repeated paths alone do not establish removability.",
+    "timing_boundary": "Do not add background list duration to episode/model time; these intervals overlap."
+  }
+}

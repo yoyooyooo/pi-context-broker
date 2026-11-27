@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "recorded_at": "2026-11-27T05:08:44.997834+00:00",
+  "reason": "The v2 summary incorrectly hard-coded the baseline and first-candidate guidance lengths as 205 and 376. Exact Git string extraction gives 212 and 383. The current 205 value was correct. No product source or actual CI outcome changes.",
+  "supersedes": [
+    {
+      "file": "source-correspondence-v2.json",
+      "fields": [
+        "compressed_line_bytes.baseline",
+        "compressed_line_bytes.first_candidate",
+        "guidance_lengths.normal",
+        "guidance_lengths.discoverable"
+      ]
+    },
+    {
+      "file": "pr-body-v2.md",
+      "claim": "final line equal to baseline line"
+    },
+    {
+      "file": "pr-body-v3.md",
+      "claim": "final line equal to baseline line"
+    }
+  ],
+  "exact_source_strings": {
+    "baseline": {
+      "commit": "cd4123f19d0b4e913428502ead5d7f7b51e2cdb3",
+      "guidance_utf8_bytes": 212,
+      "refresh_description_utf8_bytes": 239,
+      "guidance_sha256": "6ecf7a41143bad72b1e092f6bc2859920c804ee27adcc4045987af0f0be79ead",
+      "refresh_description_sha256": "ad2f6175a0db2000f563e2473aeeddc7f27462e78a8c9f2fefd2803e176c715a"
+    },
+    "first": {
+      "commit": "e1e0936a1c1a8d7ce62637768ba2b473823da198",
+      "guidance_utf8_bytes": 383,
+      "refresh_description_utf8_bytes": 444,
+      "guidance_sha256": "09596c130ee73fbd1b5009830e93d84df2d864fdadeb4178ae2d84ccabfa1396",
+      "refresh_description_sha256": "9a415a3924fc2ed9c62193db9d82e516e22d0fba049617ab43f402313f68f443"
+    },
+    "compressed": {
+      "commit": "b9de8bf0b41d8f38d248dac29f52d05f70728217",
+      "guidance_utf8_bytes": 205,
+      "refresh_description_utf8_bytes": 444,
+      "guidance_sha256": "bffaf85e3ee9f46a0ce2d3eb046c4a6e646bb6b59c2541ce3e7b505d9bdc4ecf",
+      "refresh_description_sha256": "9a415a3924fc2ed9c62193db9d82e516e22d0fba049617ab43f402313f68f443"
+    },
+    "current": {
+      "commit": "b90e122de6ed2b465d93b2df35cb70769ae96147",
+      "guidance_utf8_bytes": 205,
+      "refresh_description_utf8_bytes": 444,
+      "guidance_sha256": "bffaf85e3ee9f46a0ce2d3eb046c4a6e646bb6b59c2541ce3e7b505d9bdc4ecf",
+      "refresh_description_sha256": "9a415a3924fc2ed9c62193db9d82e516e22d0fba049617ab43f402313f68f443"
+    }
+  },
+  "corrected_static_guidance_lengths": {
+    "normal": 1290,
+    "discoverable": 1489,
+    "method": "subtract actual source-line delta from retained standard capture and first CI measured combinations; the current CI independently passed all existing bounds"
+  },
+  "actual_payload": "Do not substitute this source calculation for root-owned canonical provider payload capture. Root reports actual captured request delta +198 B."
+}

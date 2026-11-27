@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "kind": "paired-command-run-retirement-closeout",
+  "closed_at": "2026-11-27T05:17:06.165938+00:00",
+  "status": "retired_to_system_trash",
+  "scope": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-focused-20261127/scope.json",
+    "sha256": "b987ec0671ed71361fe22c49cbb357a14d0256eb6ffb3c9b3a07a6eb8722e36e"
+  },
+  "pre_audit": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-focused-20261127/pre-audit.json",
+    "sha256": "1d13c7ed7297d72fea87ea0efdb3132cd734dce9344c8da7dd042f603e6da504"
+  },
+  "post_audit": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-focused-20261127/post-audit.json",
+    "sha256": "1994e5f6da211f99b5494498b188c86595845246dcb640b8e24a2df76e456340"
+  },
+  "build_checks": [
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-focused-20261127/build-check.before.json",
+      "sha256": "3c8e9a27f15d158a23659d786cab095295d382ea4236f7a78b67ec982c104672",
+      "status": "passed"
+    },
+    {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-focused-20261127/build-check.after.json",
+      "sha256": "3c8e9a27f15d158a23659d786cab095295d382ea4236f7a78b67ec982c104672",
+      "status": "passed"
+    }
+  ],
+  "paths": [
+    {
+      "source_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/refresh-guidance-focused-1/source",
+      "destination_path": "/Users/yoyo/.Trash/source 13-15-00-915",
+      "source_absent": true,
+      "allocated_kib_before": 336100,
+      "native_acknowledgement": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-focused-20261127/trash-1.native.json",
+        "sha256": "22a10e6acdffe0435471a2a54eb80eca9f29f882f5746376b305b4b670c63cfb"
+      },
+      "destination_bytes": "not_verified"
+    },
+    {
+      "source_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/refresh-guidance-focused-1/tmp",
+      "destination_path": "/Users/yoyo/.Trash/tmp 13-15-01-278",
+      "source_absent": true,
+      "allocated_kib_before": 60696,
+      "native_acknowledgement": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-focused-20261127/trash-2.native.json",
+        "sha256": "db4b4ba8b5b5405789821740ae176788ff7074eb72b8cda738eb254a7afb82ce"
+      },
+      "destination_bytes": "not_verified"
+    },
+    {
+      "source_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/refresh-guidance-focused-2/source",
+      "destination_path": "/Users/yoyo/.Trash/source 13-15-02-080",
+      "source_absent": true,
+      "allocated_kib_before": 336116,
+      "native_acknowledgement": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-focused-20261127/trash-3.native.json",
+        "sha256": "efebbc3537cebddd3feb3729b0348eae909a1cdb24b967937bd2a86a379ec5b2"
+      },
+      "destination_bytes": "not_verified"
+    },
+    {
+      "source_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/refresh-guidance-focused-2/tmp",
+      "destination_path": "/Users/yoyo/.Trash/tmp 13-15-02-541",
+      "source_absent": true,
+      "allocated_kib_before": 69312,
+      "native_acknowledgement": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-focused-20261127/trash-4.native.json",
+        "sha256": "a3ddb0c915086c914568b7c6779ab0222fc4f683712f02e20bb0c94e1da06e88"
+      },
+      "destination_bytes": "not_verified"
+    }
+  ],
+  "retired_active_allocated_kib": 802224,
+  "runs": [
+    {
+      "run_id": "refresh-guidance-focused-1",
+      "original_result": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/refresh-guidance-focused-1/result.json",
+        "sha256": "0e7d36ad9dca32761dea317f6e369a76feb39ef3eaf3003a384c6d43cdd49650",
+        "status": "failed",
+        "exit_code": 1
+      },
+      "retired_active_allocated_kib": 396796
+    },
+    {
+      "run_id": "refresh-guidance-focused-2",
+      "original_result": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/refresh-guidance-focused-2/result.json",
+        "sha256": "974cada47bf3102f61fc0bbe6c7d36bd1e1527e0dc79d140cdd4c19d5bb3624b",
+        "status": "passed",
+        "exit_code": 0
+      },
+      "retired_active_allocated_kib": 405428
+    }
+  ],
+  "retained_run_files_unchanged": 619,
+  "preserved_input_copies_verified": 10,
+  "disk": {
+    "before_available_kib": 49120676,
+    "after_available_kib": 48440316,
+    "available_delta_kib": -680360,
+    "reclaimed_bytes": "not_claimed",
+    "interpretation": "Same-volume Trash does not free disk capacity; df changes can include concurrent activity."
+  },
+  "new_model_requests": 0,
+  "build_model_capture_daily_paths_modified": [],
+  "failure_preserved": "focused-1 remains failed/exit1 because its source-test preparation omitted prepare:ref; focused-2 remains independently passed/exit0. Results and logs were not merged or rewritten."
+}

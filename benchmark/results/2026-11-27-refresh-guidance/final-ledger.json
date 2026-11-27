@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "at_utc": "2026-11-27T05:21:00.356Z",
+  "ledger_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/standing-benchmark-ledger-1",
+  "authorization": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/continue-benchmark-20261125-standing-authorization-1/user-authorization.json",
+    "sha256": "a630feb19255729ba6a9de991cf6b5cdbc890ed1454342094437b7a276c42627"
+  },
+  "baseline": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/continue-benchmark-20261125-standing-authorization-1/history-baseline.json",
+    "sha256": "be5f7a1a0420febadf2aa3de662a7f51f05012f05ca2df854fb4c72f64b10da4"
+  },
+  "history_observations": 104,
+  "history_registrations": 13,
+  "local_observations": 135,
+  "local_registrations": 19,
+  "global_observations": 239,
+  "global_registrations": 32,
+  "lease": null,
+  "scope_id": "current-refresh-guidance-own-pair-1",
+  "scope_observations": [
+    {
+      "ordinal": 236,
+      "reference": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/standing-benchmark-ledger-1/236.json",
+        "sha256": "f33242027bb857f95cfc7c0f42a7387595d6937435cf141f891d9067b30a9c34"
+      },
+      "run_id": "current-refresh-guidance-own-pair-1-001",
+      "slot_id": "m0-e0--explicit-01-a-n16-r1--r0"
+    },
+    {
+      "ordinal": 237,
+      "reference": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/standing-benchmark-ledger-1/237.json",
+        "sha256": "d8b714a779998312a18de65a21949bd4d79c09cc786bb571b5dc30fde4c4d029"
+      },
+      "run_id": "current-refresh-guidance-own-pair-1-002",
+      "slot_id": "m0-e1--explicit-01-a-n16-r1--r0"
+    },
+    {
+      "ordinal": 238,
+      "reference": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/standing-benchmark-ledger-1/238.json",
+        "sha256": "1e3adf1603ad3c3eb3c9bf9b27562b0a5daa4618bc1dc1c11570145395a0be62"
+      },
+      "run_id": "current-refresh-guidance-own-pair-1-003",
+      "slot_id": "m0-e1--continuation-01-a-n16-r2--r0"
+    },
+    {
+      "ordinal": 239,
+      "reference": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/standing-benchmark-ledger-1/239.json",
+        "sha256": "2640df6912819aba88321605b1f28687c2ffa159dc4f384ec1a08dae4f59b806"
+      },
+      "run_id": "current-refresh-guidance-own-pair-1-004",
+      "slot_id": "m0-e0--continuation-01-a-n16-r2--r0"
+    }
+  ],
+  "scope_registration": [
+    {
+      "sequence": 19,
+      "global_sequence": 32,
+      "reference": {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-continuation-mini-20261122-d1c699be/control/standing-benchmark-ledger-1/scope-registration-019.json",
+        "sha256": "ef1f566da809ebaef12c5535176fbe3e96bda231429b23c487722c3b43c03185"
+      }
+    }
+  ],
+  "scope": "Read-only summary of original shared ledger; the ledger is not copied or reset."
+}

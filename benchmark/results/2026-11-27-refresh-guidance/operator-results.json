@@ -1,0 +1,1785 @@
+{
+  "version": 1,
+  "kind": "operator-current-refresh-guidance-own-results",
+  "at_utc": "2026-11-27T05:24:39.898Z",
+  "status": "completed_candidate_not_adopted",
+  "scope": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1",
+  "identity": {
+    "plan": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/plan.json",
+      "sha256": "49d78a518ef67e548ce6ff93befb96ba687957679d7678a5901290c8090d8f3a",
+      "bytes": 96158
+    },
+    "plan_internal_sha256": "019467268a5cb6855335c1d68f4dfc27dc2beae9fb08cb2e75da7617d583aefc",
+    "work_plan": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/work-plan-1.json",
+      "sha256": "aa8a4c833ec1d54604c1f473ba6c395c8af542c136b435592be72e9f4e32370e",
+      "bytes": 18154
+    },
+    "controller_source": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/builds/next-refresh-guidance-20261127-1/source/broker",
+    "controller_sha256": "5e7e0a20d2f1eeda84a02375e112060ed2e79377577ef2d66ea3c8e532771e37",
+    "collector_version": "1.3.5",
+    "reference_build": "next-product-runtime-20261127-2",
+    "candidate_build": "next-refresh-guidance-20261127-1",
+    "root_model_gate": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/refresh-guidance-cycle-20261127/root-model-gate.json",
+      "sha256": "1b4669ba9a0fa5d87becc63f46c02bd74caa0c6795591bea129eeb6374311178",
+      "bytes": 2791
+    },
+    "configure_review": {
+      "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/configure-1-review.json",
+      "sha256": "f50cc41bc633d4f26b0a7b95d8d37e7ee7d1534f07886b4beb72c0473bfd7c12",
+      "bytes": 39655
+    }
+  },
+  "runner_receipt": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/runner-1/receipt.json",
+    "sha256": "9930bf25ee8c4d9415c68601189be08359fab0d351a560694d4baf9d2668977a",
+    "bytes": 2087
+  },
+  "final_status": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/final-status.json",
+    "sha256": "4d99d63c722adffd1ce92c3f3788b7b5c657ec76403e3edcbbfeb14b8be4219b",
+    "bytes": 5194
+  },
+  "standing_ledger": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/final-ledger.json",
+    "sha256": "be5629bb0e6fd1e427c5f1e0d253e5f7345429d18240938a5b506e044de9a95d",
+    "bytes": 3363
+  },
+  "summary": {
+    "episodes": 4,
+    "verified_successes": 4,
+    "contracts": 14,
+    "passed_contracts": 14,
+    "critical_contracts": 10,
+    "business_files": 6,
+    "business_rows": 20,
+    "all_independent_business_rows_match": true,
+    "model_requests": 26,
+    "input_tokens": 112700,
+    "output_tokens": 1722,
+    "total_tokens": 114422,
+    "tool_calls": 24,
+    "retries": 0,
+    "owned_http": 455,
+    "episode_duration_sum_ms": 384500.66270800005,
+    "provider_error_count": 0,
+    "money": {
+      "status": "unknown",
+      "policy": "unpriced"
+    }
+  },
+  "comparisons": [
+    {
+      "case_id": "explicit-01-a-n16-r1",
+      "reference_run": "current-refresh-guidance-own-pair-1-001",
+      "candidate_run": "current-refresh-guidance-own-pair-1-002",
+      "reference": {
+        "input": 20898,
+        "output": 310,
+        "requests": 5,
+        "duration_ms": 71041.342833,
+        "startup_ms": 25704.617125,
+        "http": 79
+      },
+      "candidate": {
+        "input": 20905,
+        "output": 313,
+        "requests": 5,
+        "duration_ms": 70442.37216700001,
+        "startup_ms": 28611.178791,
+        "http": 79
+      },
+      "candidate_minus_reference": {
+        "input_tokens": 7,
+        "output_tokens": 3,
+        "model_requests": 0,
+        "duration_ms": -598.9706659999938,
+        "owned_http": 0
+      },
+      "refresh_choices": {
+        "reference": [
+          {
+            "name": "notion_list",
+            "turn_id": "turn-1",
+            "refresh": "omitted"
+          },
+          {
+            "name": "notion_use",
+            "turn_id": "turn-1",
+            "refresh": "omitted"
+          }
+        ],
+        "candidate": [
+          {
+            "name": "notion_list",
+            "turn_id": "turn-1",
+            "refresh": "omitted"
+          },
+          {
+            "name": "notion_use",
+            "turn_id": "turn-1",
+            "refresh": "omitted"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "continuation-01-a-n16-r2",
+      "reference_run": "current-refresh-guidance-own-pair-1-004",
+      "candidate_run": "current-refresh-guidance-own-pair-1-003",
+      "reference": {
+        "input": 35297,
+        "output": 579,
+        "requests": 8,
+        "duration_ms": 117293.923958,
+        "startup_ms": 24190.710333,
+        "http": 152
+      },
+      "candidate": {
+        "input": 35600,
+        "output": 520,
+        "requests": 8,
+        "duration_ms": 125723.02375,
+        "startup_ms": 25303.062208,
+        "http": 145
+      },
+      "candidate_minus_reference": {
+        "input_tokens": 303,
+        "output_tokens": -59,
+        "model_requests": 0,
+        "duration_ms": 8429.099791999994,
+        "owned_http": -7
+      },
+      "refresh_choices": {
+        "reference": [
+          {
+            "name": "notion_list",
+            "turn_id": "turn-1",
+            "refresh": true
+          },
+          {
+            "name": "notion_use",
+            "turn_id": "turn-1",
+            "refresh": true
+          }
+        ],
+        "candidate": [
+          {
+            "name": "notion_list",
+            "turn_id": "turn-1",
+            "refresh": true
+          },
+          {
+            "name": "notion_use",
+            "turn_id": "turn-1",
+            "refresh": true
+          }
+        ]
+      }
+    }
+  ],
+  "episodes": [
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-001",
+      "run_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001",
+      "case_id": "explicit-01-a-n16-r1",
+      "condition_id": "m0-e0",
+      "build_id": "next-product-runtime-20261127-2",
+      "collector_version": "1.3.5",
+      "validity": "valid",
+      "outcome": "pass",
+      "verified_success": true,
+      "unassisted_success": true,
+      "contracts": [
+        {
+          "critical": true,
+          "evidence_ids": [
+            "artifact-0"
+          ],
+          "id": "business-refunds",
+          "kind": "artifact-json",
+          "reason": "Observed business values satisfy the declared output contract",
+          "status": "pass"
+        },
+        {
+          "critical": true,
+          "evidence_ids": [
+            "source-0",
+            "source-1"
+          ],
+          "id": "refund-policy-read",
+          "kind": "resources",
+          "reason": "Observed a complete legal resource path with matching content identities",
+          "status": "pass"
+        },
+        {
+          "critical": false,
+          "evidence_ids": [
+            "source-0"
+          ],
+          "id": "legal-selection",
+          "kind": "selection",
+          "reason": "Complete evidence establishes one legal selection set",
+          "status": "pass"
+        }
+      ],
+      "critical_flags": [],
+      "independent_business_readback": [
+        {
+          "contract_id": "business-refunds",
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/workspace/output/refunds.json",
+          "sha256": "1335abf46592f157db1a11f7a2b61fa9353300efe708ffce4ada7f053fa41c53",
+          "bytes": 188,
+          "expected": [
+            {
+              "id": "R586-1-1",
+              "decision": "approve"
+            },
+            {
+              "id": "R586-1-2",
+              "decision": "review"
+            },
+            {
+              "id": "R586-1-3",
+              "decision": "reject"
+            },
+            {
+              "id": "R586-1-4",
+              "decision": "reject"
+            }
+          ],
+          "actual": [
+            {
+              "id": "R586-1-1",
+              "decision": "approve"
+            },
+            {
+              "id": "R586-1-2",
+              "decision": "review"
+            },
+            {
+              "id": "R586-1-3",
+              "decision": "reject"
+            },
+            {
+              "id": "R586-1-4",
+              "decision": "reject"
+            }
+          ],
+          "rows": 4,
+          "rows_by_key_match": true,
+          "matches_collector_output_hash": true
+        }
+      ],
+      "usage": {
+        "duration_ms": 71041.342833,
+        "input_tokens": 20898,
+        "model_requests": 5,
+        "output_tokens": 310,
+        "total_tokens": 21208,
+        "actual_sent_attempts": 5,
+        "retries": 0,
+        "tool_calls": 5,
+        "full_input_status": "known",
+        "full_output_status": "known",
+        "cost": {
+          "reason": "Missing, unpriced or mixed currency costs",
+          "refs": [
+            {
+              "artifact_id": "collection-launcher-result",
+              "pointer": "",
+              "sha256": "4c38c29896f8c78b370ea9e4a0e3ddc534b251fee742b435a09d1ad1771b4ac4"
+            },
+            {
+              "artifact_id": "collection-readback",
+              "pointer": "",
+              "sha256": "5bddf2775cdb9e32495d1877358dac3dca23504fc4ea77ed2110ebaf242b82ce"
+            },
+            {
+              "artifact_id": "collection-runtime-result",
+              "pointer": "",
+              "sha256": "a814daf06bfbce4fa5e7bb248ec7ed91dbd490d0bf1d278627e633afc25e306b"
+            }
+          ],
+          "status": "unknown"
+        },
+        "unknown_attempt_breakdown": {
+          "cache_read": 2,
+          "cache_write": 5,
+          "reasoning": 5
+        }
+      },
+      "timing": {
+        "episode_duration_ms": 71041.342833,
+        "startup_before_first_model_request_ms": 25704.617125,
+        "first_model_request_utc": "2026-11-27T05:09:48.801Z",
+        "model_request_interval_sum_ms": 18635.723667,
+        "after_first_model_request_ms": 45336.725708,
+        "scope": "Startup is included in episode duration. Model-request intervals include serialization/transport until assistant message end. SDK operations may overlap model requests; these intervals are not additive."
+      },
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:09:48.793Z",
+          "end": "2026-11-27T05:10:34.112Z",
+          "duration_ms": 45317.203333,
+          "model_requests": 5,
+          "input_tokens": 20898,
+          "output_tokens": 310,
+          "tool_calls": 5,
+          "policy_resource_reads": 2,
+          "selections": 1
+        }
+      ],
+      "tools": [
+        {
+          "id": "call_92854d4efbe14850a42d2c87cf01bc39",
+          "name": "notion_list",
+          "args": {
+            "query": "bm-explicit-01-a-refund-b0dcf165"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 108,
+          "end_sequence": 111
+        },
+        {
+          "id": "call_929b0cb83a124c32a8a7122f4bc37207",
+          "name": "notion_use",
+          "args": {
+            "ref": "sr:CL-GhFAwIEXZCxA70tIBCEw"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 142,
+          "end_sequence": 155
+        },
+        {
+          "id": "call_4e1b4d91ecb74963a28eaf60227df442",
+          "name": "read",
+          "args": {
+            "path": "input/returns.json"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 144,
+          "end_sequence": 148
+        },
+        {
+          "id": "call_5660257f10f245ef86299ccab080f77e",
+          "name": "read",
+          "args": {
+            "path": "sr:R2Tjo4UJyu2JUV_-tZyGN8g"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 225,
+          "end_sequence": 231
+        },
+        {
+          "id": "call_c2f41ae5cce242f18cb22a4680931b4e",
+          "name": "write",
+          "args": {
+            "path": "output/refunds.json"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 458,
+          "end_sequence": 461
+        }
+      ],
+      "resource_reads": [
+        {
+          "actual_sha256": "4b20d60965edf2d7707b413c756ec16b8481664976e54a28be1b4d2c52f8f959",
+          "evidence_id": "source-0",
+          "kind": "broker-prepared-main",
+          "mapping": "verified-material-parity",
+          "path": "SKILL.md",
+          "sdk_association": "matching bytes and identity; causal association unproven",
+          "sdk_operation_ids": [
+            "e072f7aa-488f-4a40-8109-4244323d1888"
+          ],
+          "sha256": "75fcf165cd22e4ec7d6449c57005c765b70d7bf181a716a2cb383feb159f3463",
+          "skill_id": "explicit-01-a-refund",
+          "tool_call_id": "call_929b0cb83a124c32a8a7122f4bc37207",
+          "turn_id": "turn-1"
+        },
+        {
+          "actual_sha256": "b82fbac81ac90760b2ab112bfbdc44bd9445e04a87a31d14d647fdf2dedecef2",
+          "evidence_id": "source-1",
+          "kind": "broker-resource-read",
+          "mapping": "exact-bytes",
+          "path": "references/refund.json",
+          "sdk_association": "matching bytes and identity; causal association unproven",
+          "sdk_operation_ids": [
+            "ee4abf44-73aa-43a5-80b4-c35aa759d910"
+          ],
+          "sha256": "b82fbac81ac90760b2ab112bfbdc44bd9445e04a87a31d14d647fdf2dedecef2",
+          "skill_id": "explicit-01-a-refund",
+          "tool_call_id": "call_5660257f10f245ef86299ccab080f77e",
+          "turn_id": "turn-1"
+        }
+      ],
+      "selections": [
+        {
+          "evidence_id": "source-0",
+          "skill_id": "explicit-01-a-refund",
+          "tool_call_id": "call_929b0cb83a124c32a8a7122f4bc37207",
+          "turn_id": "turn-1"
+        }
+      ],
+      "metadata": {
+        "runtime_status": "verified",
+        "metadata_only_tool_count": 1,
+        "opaque_tool_count": 0,
+        "unmatched_read_count": 0,
+        "tool_lineage_error_count": 0,
+        "notion_status": "observed",
+        "notion_errors": [],
+        "owned_http": {
+          "status": "known",
+          "value": 79,
+          "by_request_kind": {
+            "notion_body": 6,
+            "notion_metadata": 73
+          }
+        },
+        "coverage": {
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved",
+          "owned_http": "complete",
+          "sdk": "complete"
+        },
+        "limitations": [
+          "Source consumption requires delivered bytes and independently verified material parity.",
+          "Opaque shell or arbitrary tool filesystem access is not inferred from code text or tool count.",
+          "No clarification or state callback is synthesized from an expected event."
+        ]
+      },
+      "route": {
+        "statuses": [
+          "matched"
+        ],
+        "reported_ids": [
+          "group/auto-gpt-6-2-sol"
+        ],
+        "provider_error_count": 0,
+        "assurance": "provider-reported labels only; no backend attestation"
+      },
+      "runtime": {
+        "paired_status": "passed",
+        "runtime_status": "unchanged",
+        "command_source": "none",
+        "source_disposition": "not_copied",
+        "run_source_exists": false,
+        "subject_projection_files": 18
+      },
+      "evidence": {
+        "normalized_episode": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/normalized/normalized/episode.json",
+          "sha256": "6b104da296f06c5d46a8a24bada215c4b19fbfbf82c8e324075995fe500813c3",
+          "bytes": 372507
+        },
+        "collection": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/normalized/collection.json",
+          "sha256": "b444eec79355ec2621e7c9d1c3a4cc7e442c723c214d423b64e1d7fa4f493619",
+          "bytes": 1933
+        },
+        "readback": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/normalized/readback.json",
+          "sha256": "5bddf2775cdb9e32495d1877358dac3dca23504fc4ea77ed2110ebaf242b82ce",
+          "bytes": 98006
+        },
+        "grade": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/normalized/grade.json",
+          "sha256": "d45b8660fce2d9d7f897e77d0442196e7d8dd63ae6a50d6f3aea4ebaf7991652",
+          "bytes": 1510
+        },
+        "runtime_result": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/episode-result.json",
+          "sha256": "a814daf06bfbce4fa5e7bb248ec7ed91dbd490d0bf1d278627e633afc25e306b",
+          "bytes": 275290
+        },
+        "events": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/benchmark/runtime/events.jsonl",
+          "sha256": "e40d524e50218408d2746f5b11153d36f7c362d725f79ce4ddf979006788ecd9",
+          "bytes": 1185409
+        },
+        "paired_result": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-001/result.json",
+          "sha256": "4c38c29896f8c78b370ea9e4a0e3ddc534b251fee742b435a09d1ad1771b4ac4",
+          "bytes": 10136
+        },
+        "oracle": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/cases/explicit-01-a-n16-r1/oracle.json",
+          "sha256": "f7ea9d525ea1afa15050a6aae1e0d056bc9c50324218901daaa7f5573a36c178",
+          "bytes": 1599
+        }
+      }
+    },
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-002",
+      "run_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002",
+      "case_id": "explicit-01-a-n16-r1",
+      "condition_id": "m0-e1",
+      "build_id": "next-refresh-guidance-20261127-1",
+      "collector_version": "1.3.5",
+      "validity": "valid",
+      "outcome": "pass",
+      "verified_success": true,
+      "unassisted_success": true,
+      "contracts": [
+        {
+          "critical": true,
+          "evidence_ids": [
+            "artifact-0"
+          ],
+          "id": "business-refunds",
+          "kind": "artifact-json",
+          "reason": "Observed business values satisfy the declared output contract",
+          "status": "pass"
+        },
+        {
+          "critical": true,
+          "evidence_ids": [
+            "source-0",
+            "source-1"
+          ],
+          "id": "refund-policy-read",
+          "kind": "resources",
+          "reason": "Observed a complete legal resource path with matching content identities",
+          "status": "pass"
+        },
+        {
+          "critical": false,
+          "evidence_ids": [
+            "source-0"
+          ],
+          "id": "legal-selection",
+          "kind": "selection",
+          "reason": "Complete evidence establishes one legal selection set",
+          "status": "pass"
+        }
+      ],
+      "critical_flags": [],
+      "independent_business_readback": [
+        {
+          "contract_id": "business-refunds",
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/workspace/output/refunds.json",
+          "sha256": "6bfbc6a066e40c19aa9ccecffa19e59320d8fcaf24b84ba9ab91612e1cf300ef",
+          "bytes": 180,
+          "expected": [
+            {
+              "id": "R586-1-1",
+              "decision": "approve"
+            },
+            {
+              "id": "R586-1-2",
+              "decision": "review"
+            },
+            {
+              "id": "R586-1-3",
+              "decision": "reject"
+            },
+            {
+              "id": "R586-1-4",
+              "decision": "reject"
+            }
+          ],
+          "actual": [
+            {
+              "id": "R586-1-1",
+              "decision": "approve"
+            },
+            {
+              "id": "R586-1-2",
+              "decision": "review"
+            },
+            {
+              "id": "R586-1-3",
+              "decision": "reject"
+            },
+            {
+              "id": "R586-1-4",
+              "decision": "reject"
+            }
+          ],
+          "rows": 4,
+          "rows_by_key_match": true,
+          "matches_collector_output_hash": true
+        }
+      ],
+      "usage": {
+        "duration_ms": 70442.37216700001,
+        "input_tokens": 20905,
+        "model_requests": 5,
+        "output_tokens": 313,
+        "total_tokens": 21218,
+        "actual_sent_attempts": 5,
+        "retries": 0,
+        "tool_calls": 5,
+        "full_input_status": "known",
+        "full_output_status": "known",
+        "cost": {
+          "reason": "Missing, unpriced or mixed currency costs",
+          "refs": [
+            {
+              "artifact_id": "collection-launcher-result",
+              "pointer": "",
+              "sha256": "d76e35768a3d02873a3b8c1cc4b59b626b5289ef5b2e6825635dc2d71ece8b49"
+            },
+            {
+              "artifact_id": "collection-readback",
+              "pointer": "",
+              "sha256": "e55b86ecf71ffe750873816931aed5123e0066c9dd907187e9ace25ddef31741"
+            },
+            {
+              "artifact_id": "collection-runtime-result",
+              "pointer": "",
+              "sha256": "82d0f6f49f5506849ead47ab2c91ec503e2889c0322742924bae3d6ba6f9f06b"
+            }
+          ],
+          "status": "unknown"
+        },
+        "unknown_attempt_breakdown": {
+          "cache_read": 3,
+          "cache_write": 5,
+          "reasoning": 5
+        }
+      },
+      "timing": {
+        "episode_duration_ms": 70442.37216700001,
+        "startup_before_first_model_request_ms": 28611.178791,
+        "first_model_request_utc": "2026-11-27T05:11:20.445Z",
+        "model_request_interval_sum_ms": 15927.149918,
+        "after_first_model_request_ms": 41831.19337600001,
+        "scope": "Startup is included in episode duration. Model-request intervals include serialization/transport until assistant message end. SDK operations may overlap model requests; these intervals are not additive."
+      },
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:11:20.438Z",
+          "end": "2026-11-27T05:12:02.263Z",
+          "duration_ms": 41824.417584,
+          "model_requests": 5,
+          "input_tokens": 20905,
+          "output_tokens": 313,
+          "tool_calls": 5,
+          "policy_resource_reads": 2,
+          "selections": 1
+        }
+      ],
+      "tools": [
+        {
+          "id": "call_91b281f613b24411bba7e45f5cf1513d",
+          "name": "notion_list",
+          "args": {
+            "query": "bm-explicit-01-a-refund-b0dcf165"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 108,
+          "end_sequence": 111
+        },
+        {
+          "id": "call_0c3ddbbed2c04d76829460667435dc43",
+          "name": "notion_use",
+          "args": {
+            "ref": "sr:CGIvS5Mykz1B613epr0qTWw"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 178,
+          "end_sequence": 187
+        },
+        {
+          "id": "call_b8b84e2409fb43efb61b5052fb965bd5",
+          "name": "read",
+          "args": {
+            "path": "sr:R-N_PIepxNv5GXTbXkQrkTQ"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 219,
+          "end_sequence": 229
+        },
+        {
+          "id": "call_94b564e2230244bdad5b953f9cd852b8",
+          "name": "read",
+          "args": {
+            "path": "input/returns.json"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 221,
+          "end_sequence": 225
+        },
+        {
+          "id": "call_486c206686b3446da54f4079c664d0ce",
+          "name": "write",
+          "args": {
+            "path": "output/refunds.json"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 458,
+          "end_sequence": 461
+        }
+      ],
+      "resource_reads": [
+        {
+          "actual_sha256": "4b20d60965edf2d7707b413c756ec16b8481664976e54a28be1b4d2c52f8f959",
+          "evidence_id": "source-0",
+          "kind": "broker-prepared-main",
+          "mapping": "verified-material-parity",
+          "path": "SKILL.md",
+          "sdk_association": "matching bytes and identity; causal association unproven",
+          "sdk_operation_ids": [
+            "2fb180c3-af9c-4d2f-ac1c-1ebb3c525b00"
+          ],
+          "sha256": "75fcf165cd22e4ec7d6449c57005c765b70d7bf181a716a2cb383feb159f3463",
+          "skill_id": "explicit-01-a-refund",
+          "tool_call_id": "call_0c3ddbbed2c04d76829460667435dc43",
+          "turn_id": "turn-1"
+        },
+        {
+          "actual_sha256": "b82fbac81ac90760b2ab112bfbdc44bd9445e04a87a31d14d647fdf2dedecef2",
+          "evidence_id": "source-1",
+          "kind": "broker-resource-read",
+          "mapping": "exact-bytes",
+          "path": "references/refund.json",
+          "sdk_association": "matching bytes and identity; causal association unproven",
+          "sdk_operation_ids": [
+            "cf1ec4cd-be60-4968-a46c-ca49bd88e1a4"
+          ],
+          "sha256": "b82fbac81ac90760b2ab112bfbdc44bd9445e04a87a31d14d647fdf2dedecef2",
+          "skill_id": "explicit-01-a-refund",
+          "tool_call_id": "call_b8b84e2409fb43efb61b5052fb965bd5",
+          "turn_id": "turn-1"
+        }
+      ],
+      "selections": [
+        {
+          "evidence_id": "source-0",
+          "skill_id": "explicit-01-a-refund",
+          "tool_call_id": "call_0c3ddbbed2c04d76829460667435dc43",
+          "turn_id": "turn-1"
+        }
+      ],
+      "metadata": {
+        "runtime_status": "verified",
+        "metadata_only_tool_count": 1,
+        "opaque_tool_count": 0,
+        "unmatched_read_count": 0,
+        "tool_lineage_error_count": 0,
+        "notion_status": "observed",
+        "notion_errors": [],
+        "owned_http": {
+          "status": "known",
+          "value": 79,
+          "by_request_kind": {
+            "notion_body": 6,
+            "notion_metadata": 73
+          }
+        },
+        "coverage": {
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved",
+          "owned_http": "complete",
+          "sdk": "complete"
+        },
+        "limitations": [
+          "Source consumption requires delivered bytes and independently verified material parity.",
+          "Opaque shell or arbitrary tool filesystem access is not inferred from code text or tool count.",
+          "No clarification or state callback is synthesized from an expected event."
+        ]
+      },
+      "route": {
+        "statuses": [
+          "matched"
+        ],
+        "reported_ids": [
+          "group/auto-gpt-6-2-sol"
+        ],
+        "provider_error_count": 0,
+        "assurance": "provider-reported labels only; no backend attestation"
+      },
+      "runtime": {
+        "paired_status": "passed",
+        "runtime_status": "unchanged",
+        "command_source": "none",
+        "source_disposition": "not_copied",
+        "run_source_exists": false,
+        "subject_projection_files": 18
+      },
+      "evidence": {
+        "normalized_episode": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/normalized/normalized/episode.json",
+          "sha256": "006df677ef91357e0e0f2958f25bdc63b0525c0ac0e0da2d8967fad093b86524",
+          "bytes": 378390
+        },
+        "collection": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/normalized/collection.json",
+          "sha256": "d108de8920b1ca00bc36aaf479328d46c681e4153be2db2f16afa40f30157c24",
+          "bytes": 1938
+        },
+        "readback": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/normalized/readback.json",
+          "sha256": "e55b86ecf71ffe750873816931aed5123e0066c9dd907187e9ace25ddef31741",
+          "bytes": 97998
+        },
+        "grade": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/normalized/grade.json",
+          "sha256": "6bad37724f7c0baa1fa6f51cc62e48e017eccb2b49eee4a68bc5005340c483c2",
+          "bytes": 1510
+        },
+        "runtime_result": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/episode-result.json",
+          "sha256": "82d0f6f49f5506849ead47ab2c91ec503e2889c0322742924bae3d6ba6f9f06b",
+          "bytes": 277035
+        },
+        "events": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/benchmark/runtime/events.jsonl",
+          "sha256": "5edb3469bf3f97cf856c04752aaf2ac091f2486ef5d5ded8a3e8eae3390f8dc4",
+          "bytes": 1188178
+        },
+        "paired_result": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-002/result.json",
+          "sha256": "d76e35768a3d02873a3b8c1cc4b59b626b5289ef5b2e6825635dc2d71ece8b49",
+          "bytes": 10137
+        },
+        "oracle": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/cases/explicit-01-a-n16-r1/oracle.json",
+          "sha256": "f7ea9d525ea1afa15050a6aae1e0d056bc9c50324218901daaa7f5573a36c178",
+          "bytes": 1599
+        }
+      }
+    },
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-003",
+      "run_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003",
+      "case_id": "continuation-01-a-n16-r2",
+      "condition_id": "m0-e1",
+      "build_id": "next-refresh-guidance-20261127-1",
+      "collector_version": "1.3.5",
+      "validity": "valid",
+      "outcome": "pass",
+      "verified_success": true,
+      "unassisted_success": true,
+      "contracts": [
+        {
+          "critical": true,
+          "evidence_ids": [
+            "artifact-0"
+          ],
+          "id": "business-routes-1",
+          "kind": "artifact-json",
+          "reason": "Observed business values satisfy the declared output contract",
+          "status": "pass"
+        },
+        {
+          "critical": true,
+          "evidence_ids": [
+            "artifact-2"
+          ],
+          "id": "business-routes-2",
+          "kind": "artifact-json",
+          "reason": "Observed business values satisfy the declared output contract",
+          "status": "pass"
+        },
+        {
+          "critical": true,
+          "evidence_ids": [
+            "source-0",
+            "source-1"
+          ],
+          "id": "routing-policy-read",
+          "kind": "resources",
+          "reason": "Observed a complete legal resource path with matching content identities",
+          "status": "pass"
+        },
+        {
+          "critical": false,
+          "evidence_ids": [
+            "source-0"
+          ],
+          "id": "legal-selection",
+          "kind": "selection",
+          "reason": "Complete evidence establishes one legal selection set",
+          "status": "pass"
+        }
+      ],
+      "critical_flags": [],
+      "independent_business_readback": [
+        {
+          "contract_id": "business-routes-1",
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/workspace/output/routes-1.json",
+          "sha256": "8b0daeb682e5b1c4905a7d4f80881f18788b32a2622e91980cc364ffaf67302e",
+          "bytes": 133,
+          "expected": [
+            {
+              "id": "R733-1-1",
+              "route": "express"
+            },
+            {
+              "id": "R733-1-2",
+              "route": "standard"
+            },
+            {
+              "id": "R733-1-3",
+              "route": "care"
+            }
+          ],
+          "actual": [
+            {
+              "id": "R733-1-1",
+              "route": "express"
+            },
+            {
+              "id": "R733-1-2",
+              "route": "standard"
+            },
+            {
+              "id": "R733-1-3",
+              "route": "care"
+            }
+          ],
+          "rows": 3,
+          "rows_by_key_match": true,
+          "matches_collector_output_hash": true
+        },
+        {
+          "contract_id": "business-routes-2",
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/workspace/output/routes-2.json",
+          "sha256": "818f5d39f377ef8199c714ba8b79ef3a2f08b49802c8b8e9df0008ef096afd66",
+          "bytes": 133,
+          "expected": [
+            {
+              "id": "R733-2-1",
+              "route": "express"
+            },
+            {
+              "id": "R733-2-2",
+              "route": "standard"
+            },
+            {
+              "id": "R733-2-3",
+              "route": "care"
+            }
+          ],
+          "actual": [
+            {
+              "id": "R733-2-1",
+              "route": "express"
+            },
+            {
+              "id": "R733-2-2",
+              "route": "standard"
+            },
+            {
+              "id": "R733-2-3",
+              "route": "care"
+            }
+          ],
+          "rows": 3,
+          "rows_by_key_match": true,
+          "matches_collector_output_hash": true
+        }
+      ],
+      "usage": {
+        "duration_ms": 125723.02375,
+        "input_tokens": 35600,
+        "model_requests": 8,
+        "output_tokens": 520,
+        "total_tokens": 36120,
+        "actual_sent_attempts": 8,
+        "retries": 0,
+        "tool_calls": 7,
+        "full_input_status": "known",
+        "full_output_status": "known",
+        "cost": {
+          "reason": "Missing, unpriced or mixed currency costs",
+          "refs": [
+            {
+              "artifact_id": "collection-launcher-result",
+              "pointer": "",
+              "sha256": "a4c2d0fa0bd01a305fd79e2195e9275e44c5be2295237d6ed63f287432380a14"
+            },
+            {
+              "artifact_id": "collection-readback",
+              "pointer": "",
+              "sha256": "2a648d646a68f8b23a4336442b71520faf9b00396f0843b9c3ce7344d55a5b02"
+            },
+            {
+              "artifact_id": "collection-runtime-result",
+              "pointer": "",
+              "sha256": "695f037bfc34765fbbad84bd943a0d3ce0ffedcb98c7d54e4d90421d075249f5"
+            },
+            {
+              "artifact_id": "collection-turn-control-receipt",
+              "pointer": "",
+              "sha256": "f3728c5991c1ef667608810b395e6d6b5ff610793e339ca34ba742a0c571eedd"
+            },
+            {
+              "artifact_id": "collection-turn-controller-journal",
+              "line": 1,
+              "sha256": "3b4cd88130121055e68adcbe53c4ecdf90d3444b80205750a44306a5bedbff80"
+            },
+            {
+              "artifact_id": "collection-turn-controller-journal",
+              "line": 6,
+              "sha256": "3b4cd88130121055e68adcbe53c4ecdf90d3444b80205750a44306a5bedbff80"
+            },
+            {
+              "artifact_id": "collection-turn-subject-result",
+              "pointer": "",
+              "sha256": "5d7a235dfbf5c6e7597300583d78a15457f6fc42d73189d4ccf2d4e5a9ff5c6c"
+            },
+            {
+              "artifact_id": "collection-turn-subject-journal",
+              "line": 1,
+              "sha256": "6d7c4dfbabb4d2b65b71c6f04080fa15bdb669c77c60eb46266b9330bc29cf51"
+            },
+            {
+              "artifact_id": "collection-turn-subject-journal",
+              "line": 6,
+              "sha256": "6d7c4dfbabb4d2b65b71c6f04080fa15bdb669c77c60eb46266b9330bc29cf51"
+            }
+          ],
+          "status": "unknown"
+        },
+        "unknown_attempt_breakdown": {
+          "cache_read": 3,
+          "cache_write": 8,
+          "reasoning": 8
+        }
+      },
+      "timing": {
+        "episode_duration_ms": 125723.02375,
+        "startup_before_first_model_request_ms": 25303.062208,
+        "first_model_request_utc": "2026-11-27T05:12:47.173Z",
+        "model_request_interval_sum_ms": 25990.631833999996,
+        "after_first_model_request_ms": 100419.96154199999,
+        "scope": "Startup is included in episode duration. Model-request intervals include serialization/transport until assistant message end. SDK operations may overlap model requests; these intervals are not additive."
+      },
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:12:47.166Z",
+          "end": "2026-11-27T05:14:17.729Z",
+          "duration_ms": 90558.207667,
+          "model_requests": 5,
+          "input_tokens": 21169,
+          "output_tokens": 316,
+          "tool_calls": 5,
+          "policy_resource_reads": 2,
+          "selections": 1
+        },
+        {
+          "turn_id": "turn-2",
+          "start": "2026-11-27T05:14:17.778Z",
+          "end": "2026-11-27T05:14:27.428Z",
+          "duration_ms": 9645.2975,
+          "model_requests": 3,
+          "input_tokens": 14431,
+          "output_tokens": 204,
+          "tool_calls": 2,
+          "policy_resource_reads": 0,
+          "selections": 0
+        }
+      ],
+      "tools": [
+        {
+          "id": "call_5c5b18e05ce34250803febebd4a6bc39",
+          "name": "notion_list",
+          "args": {
+            "query": "松涛39",
+            "refresh": true
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 82,
+          "end_sequence": 92
+        },
+        {
+          "id": "call_50934e620fc444d59d70c26c02110985",
+          "name": "read",
+          "args": {
+            "path": "input/packages-1.json"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 84,
+          "end_sequence": 88
+        },
+        {
+          "id": "call_4f85d09668a04f69af98b22e26ce38b7",
+          "name": "notion_use",
+          "args": {
+            "ref": "sr:C1qkdU7hdSunIYkoE8iYsBQ",
+            "refresh": true
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 167,
+          "end_sequence": 179
+        },
+        {
+          "id": "call_1137ea3fef1e480b83bb15e803a7ed80",
+          "name": "read",
+          "args": {
+            "path": "sr:RcroX9p94z3k8MOMLhcGaMg"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 245,
+          "end_sequence": 251
+        },
+        {
+          "id": "call_9267592cf84e46df8e7330811399cf4f",
+          "name": "write",
+          "args": {
+            "path": "output/routes-1.json"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 436,
+          "end_sequence": 439
+        },
+        {
+          "id": "call_6c1aa946a7e54d308940167ab4a43706",
+          "name": "read",
+          "args": {
+            "path": "input/packages-2.json"
+          },
+          "turn_id": "turn-2",
+          "status": "pass",
+          "sequence": 687,
+          "end_sequence": 690
+        },
+        {
+          "id": "call_573091e9fccc4abeac42e4aabb9b8625",
+          "name": "write",
+          "args": {
+            "path": "output/routes-2.json"
+          },
+          "turn_id": "turn-2",
+          "status": "pass",
+          "sequence": 875,
+          "end_sequence": 878
+        }
+      ],
+      "resource_reads": [
+        {
+          "actual_sha256": "eba5500f1059cd9b2687e62dd05feee037cde1834acd09b7eaf77dce7bc9a3ba",
+          "evidence_id": "source-0",
+          "kind": "broker-prepared-main",
+          "mapping": "verified-material-parity",
+          "path": "SKILL.md",
+          "sdk_association": "matching bytes and identity; causal association unproven",
+          "sdk_operation_ids": [
+            "53e9b870-3a08-4de7-861a-f50bdd2ff7d1"
+          ],
+          "sha256": "26cfb63ac1ad22046fcac7454063b1a135acb3f9a77be1b57d80cb542e74eb86",
+          "skill_id": "continuation-01-a-routing",
+          "tool_call_id": "call_4f85d09668a04f69af98b22e26ce38b7",
+          "turn_id": "turn-1"
+        },
+        {
+          "actual_sha256": "7f1f215e712b9b4fa4130197ec32a84ed7045cb94ee293d53c77ea114ce6e821",
+          "evidence_id": "source-1",
+          "kind": "broker-resource-read",
+          "mapping": "exact-bytes",
+          "path": "references/routing.json",
+          "sdk_association": "matching bytes and identity; causal association unproven",
+          "sdk_operation_ids": [
+            "1ed9838d-2702-495e-a825-b18f175169be"
+          ],
+          "sha256": "7f1f215e712b9b4fa4130197ec32a84ed7045cb94ee293d53c77ea114ce6e821",
+          "skill_id": "continuation-01-a-routing",
+          "tool_call_id": "call_1137ea3fef1e480b83bb15e803a7ed80",
+          "turn_id": "turn-1"
+        }
+      ],
+      "selections": [
+        {
+          "evidence_id": "source-0",
+          "skill_id": "continuation-01-a-routing",
+          "tool_call_id": "call_4f85d09668a04f69af98b22e26ce38b7",
+          "turn_id": "turn-1"
+        }
+      ],
+      "metadata": {
+        "runtime_status": "verified",
+        "metadata_only_tool_count": 1,
+        "opaque_tool_count": 0,
+        "unmatched_read_count": 0,
+        "tool_lineage_error_count": 0,
+        "notion_status": "observed",
+        "notion_errors": [],
+        "owned_http": {
+          "status": "known",
+          "value": 145,
+          "by_request_kind": {
+            "notion_body": 10,
+            "notion_metadata": 135
+          }
+        },
+        "coverage": {
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved",
+          "owned_http": "complete",
+          "sdk": "complete"
+        },
+        "limitations": [
+          "Source consumption requires delivered bytes and independently verified material parity.",
+          "Opaque shell or arbitrary tool filesystem access is not inferred from code text or tool count.",
+          "No clarification or state callback is synthesized from an expected event."
+        ]
+      },
+      "route": {
+        "statuses": [
+          "matched"
+        ],
+        "reported_ids": [
+          "group/auto-gpt-6-2-sol"
+        ],
+        "provider_error_count": 0,
+        "assurance": "provider-reported labels only; no backend attestation"
+      },
+      "runtime": {
+        "paired_status": "passed",
+        "runtime_status": "unchanged",
+        "command_source": "none",
+        "source_disposition": "not_copied",
+        "run_source_exists": false,
+        "subject_projection_files": 18
+      },
+      "evidence": {
+        "normalized_episode": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/normalized/normalized/episode.json",
+          "sha256": "82d90b5bcccb0f208136aa65c5215f387014f6eef92287ea40079feda1050ed5",
+          "bytes": 587148
+        },
+        "collection": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/normalized/collection.json",
+          "sha256": "c3519fb71429a4fc1fab14f815c8711cd974675e3449ca3ebcfc6d1e8f459d4d",
+          "bytes": 3303
+        },
+        "readback": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/normalized/readback.json",
+          "sha256": "2a648d646a68f8b23a4336442b71520faf9b00396f0843b9c3ce7344d55a5b02",
+          "bytes": 132229
+        },
+        "grade": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/normalized/grade.json",
+          "sha256": "6d54c24af264ee289fcbbf598eb0104fe425a7120f46375e2b2325d1f31d52fe",
+          "bytes": 1856
+        },
+        "runtime_result": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/episode-result.json",
+          "sha256": "695f037bfc34765fbbad84bd943a0d3ce0ffedcb98c7d54e4d90421d075249f5",
+          "bytes": 489989
+        },
+        "events": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/benchmark/runtime/events.jsonl",
+          "sha256": "929a9a074f8cb2bd515fd2fb40215df69089788cf472576fd940b9e60b27b932",
+          "bytes": 2014762
+        },
+        "paired_result": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-003/result.json",
+          "sha256": "a4c2d0fa0bd01a305fd79e2195e9275e44c5be2295237d6ed63f287432380a14",
+          "bytes": 10137
+        },
+        "oracle": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/cases/continuation-01-a-n16-r2/oracle.json",
+          "sha256": "ff9d4d022b5e48e49ac9b1a2ae645961d6ef3e0792c802a1447e5de2cef20c03",
+          "bytes": 2073
+        }
+      }
+    },
+    {
+      "run_id": "current-refresh-guidance-own-pair-1-004",
+      "run_root": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004",
+      "case_id": "continuation-01-a-n16-r2",
+      "condition_id": "m0-e0",
+      "build_id": "next-product-runtime-20261127-2",
+      "collector_version": "1.3.5",
+      "validity": "valid",
+      "outcome": "pass",
+      "verified_success": true,
+      "unassisted_success": true,
+      "contracts": [
+        {
+          "critical": true,
+          "evidence_ids": [
+            "artifact-0"
+          ],
+          "id": "business-routes-1",
+          "kind": "artifact-json",
+          "reason": "Observed business values satisfy the declared output contract",
+          "status": "pass"
+        },
+        {
+          "critical": true,
+          "evidence_ids": [
+            "artifact-2"
+          ],
+          "id": "business-routes-2",
+          "kind": "artifact-json",
+          "reason": "Observed business values satisfy the declared output contract",
+          "status": "pass"
+        },
+        {
+          "critical": true,
+          "evidence_ids": [
+            "source-0",
+            "source-1"
+          ],
+          "id": "routing-policy-read",
+          "kind": "resources",
+          "reason": "Observed a complete legal resource path with matching content identities",
+          "status": "pass"
+        },
+        {
+          "critical": false,
+          "evidence_ids": [
+            "source-0"
+          ],
+          "id": "legal-selection",
+          "kind": "selection",
+          "reason": "Complete evidence establishes one legal selection set",
+          "status": "pass"
+        }
+      ],
+      "critical_flags": [],
+      "independent_business_readback": [
+        {
+          "contract_id": "business-routes-1",
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/workspace/output/routes-1.json",
+          "sha256": "aee438883d1556fb80ea131e0d4a8e58c78ec8d52f5fb3b031ae353320bb0024",
+          "bytes": 163,
+          "expected": [
+            {
+              "id": "R733-1-1",
+              "route": "express"
+            },
+            {
+              "id": "R733-1-2",
+              "route": "standard"
+            },
+            {
+              "id": "R733-1-3",
+              "route": "care"
+            }
+          ],
+          "actual": [
+            {
+              "id": "R733-1-1",
+              "route": "express"
+            },
+            {
+              "id": "R733-1-2",
+              "route": "standard"
+            },
+            {
+              "id": "R733-1-3",
+              "route": "care"
+            }
+          ],
+          "rows": 3,
+          "rows_by_key_match": true,
+          "matches_collector_output_hash": true
+        },
+        {
+          "contract_id": "business-routes-2",
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/workspace/output/routes-2.json",
+          "sha256": "7c9c16cdf5aa1bcb923f5eb1bfd67eceafd3bf3961aed7297e023a969f92186c",
+          "bytes": 163,
+          "expected": [
+            {
+              "id": "R733-2-1",
+              "route": "express"
+            },
+            {
+              "id": "R733-2-2",
+              "route": "standard"
+            },
+            {
+              "id": "R733-2-3",
+              "route": "care"
+            }
+          ],
+          "actual": [
+            {
+              "id": "R733-2-1",
+              "route": "express"
+            },
+            {
+              "id": "R733-2-2",
+              "route": "standard"
+            },
+            {
+              "id": "R733-2-3",
+              "route": "care"
+            }
+          ],
+          "rows": 3,
+          "rows_by_key_match": true,
+          "matches_collector_output_hash": true
+        }
+      ],
+      "usage": {
+        "duration_ms": 117293.923958,
+        "input_tokens": 35297,
+        "model_requests": 8,
+        "output_tokens": 579,
+        "total_tokens": 35876,
+        "actual_sent_attempts": 8,
+        "retries": 0,
+        "tool_calls": 7,
+        "full_input_status": "known",
+        "full_output_status": "known",
+        "cost": {
+          "reason": "Missing, unpriced or mixed currency costs",
+          "refs": [
+            {
+              "artifact_id": "collection-launcher-result",
+              "pointer": "",
+              "sha256": "c14075f0a3910e0377a6ad54f8a0926e3a14a461df04c58e91403c19b5474528"
+            },
+            {
+              "artifact_id": "collection-readback",
+              "pointer": "",
+              "sha256": "70976faaab38f806554f14a00c0ac3740e64a18f8ccb79c034feb7290f67559f"
+            },
+            {
+              "artifact_id": "collection-runtime-result",
+              "pointer": "",
+              "sha256": "444c20165d9c39aa41d7d96955e1d8a92c45026e5cb5f293c56feb5f33ce4273"
+            },
+            {
+              "artifact_id": "collection-turn-control-receipt",
+              "pointer": "",
+              "sha256": "a8a87cd63c4c6f8e97a7a520ba6f671ded0886d7c0a4c0d05d76b6effa9b8036"
+            },
+            {
+              "artifact_id": "collection-turn-controller-journal",
+              "line": 1,
+              "sha256": "8b98109be734609d816fb423db603ce9bda2dd495058fb259410be9cc2ce5d24"
+            },
+            {
+              "artifact_id": "collection-turn-controller-journal",
+              "line": 6,
+              "sha256": "8b98109be734609d816fb423db603ce9bda2dd495058fb259410be9cc2ce5d24"
+            },
+            {
+              "artifact_id": "collection-turn-subject-result",
+              "pointer": "",
+              "sha256": "d0793d8d6ed265ed3fb152250576d997a986dc92238b681c65aac7843339c932"
+            },
+            {
+              "artifact_id": "collection-turn-subject-journal",
+              "line": 1,
+              "sha256": "a0fa8e50c7f7c137b045359c02f6c5af2eae9e400058957fb84bc49b84062d62"
+            },
+            {
+              "artifact_id": "collection-turn-subject-journal",
+              "line": 6,
+              "sha256": "a0fa8e50c7f7c137b045359c02f6c5af2eae9e400058957fb84bc49b84062d62"
+            }
+          ],
+          "status": "unknown"
+        },
+        "unknown_attempt_breakdown": {
+          "cache_read": 3,
+          "cache_write": 8,
+          "reasoning": 7
+        }
+      },
+      "timing": {
+        "episode_duration_ms": 117293.923958,
+        "startup_before_first_model_request_ms": 24190.710333,
+        "first_model_request_utc": "2026-11-27T05:15:15.227Z",
+        "model_request_interval_sum_ms": 29956.560417,
+        "after_first_model_request_ms": 93103.213625,
+        "scope": "Startup is included in episode duration. Model-request intervals include serialization/transport until assistant message end. SDK operations may overlap model requests; these intervals are not additive."
+      },
+      "turns": [
+        {
+          "turn_id": "turn-1",
+          "start": "2026-11-27T05:15:15.220Z",
+          "end": "2026-11-27T05:16:34.032Z",
+          "duration_ms": 78810.177125,
+          "model_requests": 5,
+          "input_tokens": 20921,
+          "output_tokens": 340,
+          "tool_calls": 5,
+          "policy_resource_reads": 2,
+          "selections": 1
+        },
+        {
+          "turn_id": "turn-2",
+          "start": "2026-11-27T05:16:34.079Z",
+          "end": "2026-11-27T05:16:48.238Z",
+          "duration_ms": 14157.492791,
+          "model_requests": 3,
+          "input_tokens": 14376,
+          "output_tokens": 239,
+          "tool_calls": 2,
+          "policy_resource_reads": 0,
+          "selections": 0
+        }
+      ],
+      "tools": [
+        {
+          "id": "call_a254bd64d25e4b9d8eb486084bd2b682",
+          "name": "notion_list",
+          "args": {
+            "query": "松涛39",
+            "refresh": true
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 82,
+          "end_sequence": 92
+        },
+        {
+          "id": "call_2cc043a947e94b3696ba8ab329e69200",
+          "name": "read",
+          "args": {
+            "path": "input/packages-1.json"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 84,
+          "end_sequence": 88
+        },
+        {
+          "id": "call_9c1095e9d9b94c63af295ea952682a46",
+          "name": "notion_use",
+          "args": {
+            "ref": "sr:CeMXTN8Zj-Z-FP7uBZSJhEg",
+            "refresh": true
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 165,
+          "end_sequence": 177
+        },
+        {
+          "id": "call_1d65c0aa40ba451bba446d5156debca2",
+          "name": "read",
+          "args": {
+            "path": "sr:R-Cc-DfOK4Q2ygOrc5rtaMw"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 243,
+          "end_sequence": 249
+        },
+        {
+          "id": "call_c92a25959b894863be539498d614393b",
+          "name": "write",
+          "args": {
+            "path": "output/routes-1.json"
+          },
+          "turn_id": "turn-1",
+          "status": "pass",
+          "sequence": 470,
+          "end_sequence": 473
+        },
+        {
+          "id": "call_86ee5506782b4579b2040dbc2175c939",
+          "name": "read",
+          "args": {
+            "path": "input/packages-2.json"
+          },
+          "turn_id": "turn-2",
+          "status": "pass",
+          "sequence": 735,
+          "end_sequence": 738
+        },
+        {
+          "id": "call_a29ed37447454a57a98ea9d9e05ce04a",
+          "name": "write",
+          "args": {
+            "path": "output/routes-2.json"
+          },
+          "turn_id": "turn-2",
+          "status": "pass",
+          "sequence": 963,
+          "end_sequence": 966
+        }
+      ],
+      "resource_reads": [
+        {
+          "actual_sha256": "eba5500f1059cd9b2687e62dd05feee037cde1834acd09b7eaf77dce7bc9a3ba",
+          "evidence_id": "source-0",
+          "kind": "broker-prepared-main",
+          "mapping": "verified-material-parity",
+          "path": "SKILL.md",
+          "sdk_association": "matching bytes and identity; causal association unproven",
+          "sdk_operation_ids": [
+            "e879dc16-37e3-433c-ae71-a3c0a1c84383"
+          ],
+          "sha256": "26cfb63ac1ad22046fcac7454063b1a135acb3f9a77be1b57d80cb542e74eb86",
+          "skill_id": "continuation-01-a-routing",
+          "tool_call_id": "call_9c1095e9d9b94c63af295ea952682a46",
+          "turn_id": "turn-1"
+        },
+        {
+          "actual_sha256": "7f1f215e712b9b4fa4130197ec32a84ed7045cb94ee293d53c77ea114ce6e821",
+          "evidence_id": "source-1",
+          "kind": "broker-resource-read",
+          "mapping": "exact-bytes",
+          "path": "references/routing.json",
+          "sdk_association": "matching bytes and identity; causal association unproven",
+          "sdk_operation_ids": [
+            "7e3c745d-6e2c-4129-8edf-b2d67fef7e91"
+          ],
+          "sha256": "7f1f215e712b9b4fa4130197ec32a84ed7045cb94ee293d53c77ea114ce6e821",
+          "skill_id": "continuation-01-a-routing",
+          "tool_call_id": "call_1d65c0aa40ba451bba446d5156debca2",
+          "turn_id": "turn-1"
+        }
+      ],
+      "selections": [
+        {
+          "evidence_id": "source-0",
+          "skill_id": "continuation-01-a-routing",
+          "tool_call_id": "call_9c1095e9d9b94c63af295ea952682a46",
+          "turn_id": "turn-1"
+        }
+      ],
+      "metadata": {
+        "runtime_status": "verified",
+        "metadata_only_tool_count": 1,
+        "opaque_tool_count": 0,
+        "unmatched_read_count": 0,
+        "tool_lineage_error_count": 0,
+        "notion_status": "observed",
+        "notion_errors": [],
+        "owned_http": {
+          "status": "known",
+          "value": 152,
+          "by_request_kind": {
+            "notion_body": 10,
+            "notion_metadata": 142
+          }
+        },
+        "coverage": {
+          "child_lifecycle": "complete",
+          "descendant_transport": "unobserved",
+          "owned_http": "complete",
+          "sdk": "complete"
+        },
+        "limitations": [
+          "Source consumption requires delivered bytes and independently verified material parity.",
+          "Opaque shell or arbitrary tool filesystem access is not inferred from code text or tool count.",
+          "No clarification or state callback is synthesized from an expected event."
+        ]
+      },
+      "route": {
+        "statuses": [
+          "matched"
+        ],
+        "reported_ids": [
+          "group/auto-gpt-6-2-sol"
+        ],
+        "provider_error_count": 0,
+        "assurance": "provider-reported labels only; no backend attestation"
+      },
+      "runtime": {
+        "paired_status": "passed",
+        "runtime_status": "unchanged",
+        "command_source": "none",
+        "source_disposition": "not_copied",
+        "run_source_exists": false,
+        "subject_projection_files": 18
+      },
+      "evidence": {
+        "normalized_episode": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/normalized/normalized/episode.json",
+          "sha256": "d333631928230496b6f48e21758810aa56e232030f5b66e3ba048a297e323c96",
+          "bytes": 611871
+        },
+        "collection": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/normalized/collection.json",
+          "sha256": "56541f8380fc446d685e7fe0e31a89e9a4f87847d5cf73e9ab42c9524a01fa2f",
+          "bytes": 3304
+        },
+        "readback": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/normalized/readback.json",
+          "sha256": "70976faaab38f806554f14a00c0ac3740e64a18f8ccb79c034feb7290f67559f",
+          "bytes": 134958
+        },
+        "grade": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/normalized/grade.json",
+          "sha256": "5a2f51efeca8cfee0f1def8a9a2d83378fa072804ff3fc74d007748cd3b3473c",
+          "bytes": 1856
+        },
+        "runtime_result": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/episode-result.json",
+          "sha256": "444c20165d9c39aa41d7d96955e1d8a92c45026e5cb5f293c56feb5f33ce4273",
+          "bytes": 533773
+        },
+        "events": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/benchmark/runtime/events.jsonl",
+          "sha256": "d591cbaad595c708869bd61540543a31cb2c38238fb95682c59430f638c1e65c",
+          "bytes": 2228834
+        },
+        "paired_result": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/current-refresh-guidance-own-pair-1-004/result.json",
+          "sha256": "c14075f0a3910e0377a6ad54f8a0926e3a14a461df04c58e91403c19b5474528",
+          "bytes": 10136
+        },
+        "oracle": {
+          "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/cases/continuation-01-a-n16-r2/oracle.json",
+          "sha256": "ff9d4d022b5e48e49ac9b1a2ae645961d6ef3e0792c802a1447e5de2cef20c03",
+          "bytes": 2073
+        }
+      }
+    }
+  ],
+  "operation_freshness": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/operation-freshness-readback.json",
+    "sha256": "1427267282ad1037421ceec2894d3493f0dff0c68a6b3029a120a8e43b0d104f",
+    "bytes": 131067
+  },
+  "conclusions": {
+    "direct_behavior": "The new Own pair shows no improvement in explicit refresh choice: both accepted reference and candidate omit refresh on notion_list and notion_use, each performing 79 owned HTTP and five model requests. The prior Native/Broker baseline is not substituted into this pair.",
+    "current_and_pin_semantics": "Both continuation runs explicitly refresh list and use for the original current-rules request. Both produce correct outputs and reuse the chosen policy on turn 2 without new policy resource reads or adoption. Candidate 145 versus reference 152 HTTP differs only in an extra non-tool turn-2 list that was cancelled after 13 requests versus completed after 20.",
+    "guidance_contract": "Capture verifies that the candidate makes the ordinary discovery/named application default and the current/latest exception explicit. This textual distinction is visible, but this pair does not establish an associated behavior, request-selection or efficiency improvement.",
+    "input_tradeoff": "The two intended strings increase the canonical first request by 198 UTF-8 bytes (+205 refresh description, -7 guidance line). No corresponding measured benefit was established in this pair.",
+    "timing": "Explicit candidate is 0.599 seconds shorter; continuation candidate is 8.429 seconds longer. Startup and network/model durations vary, and the background list overlaps turn-2 work. No speedup or lower refresh-probability claim follows."
+  },
+  "decision": {
+    "status": "not_adopted_in_this_cycle",
+    "owner": "root",
+    "source": "Root decision communicated after the original four observations; no additional samples requested.",
+    "reasons": [
+      "No improvement in direct refresh behavior or model request selection in this Own pair.",
+      "The seven-HTTP continuation difference is an operation completion/cancellation boundary, not an adopted refresh-choice improvement.",
+      "The additional 198-byte public input has no corresponding observed benefit in this comparison."
+    ],
+    "additional_model_sampling": false,
+    "product_source_modified_by_operator": false
+  },
+  "limitations": [
+    "Two existing development cases, one repetition per condition; descriptive only, no population efficiency or reliability claim.",
+    "Provider-reported route labels are matched but are not backend attestation.",
+    "Money remains unknown/unpriced; unavailable cache/reasoning token breakdowns remain unknown while full input/output totals are known.",
+    "Owned Notion SDK/HTTP observations are complete within their declared scope; unrelated descendant transport is not established.",
+    "The cancelled turn-2 list has no result value or final freshness snapshot.",
+    "This operator had explicit environment/design/input pointers; this does not establish natural cold-start onboarding."
+  ],
+  "retirement": {
+    "operator_performed": false,
+    "scope": "No source, repository, build or independent environment retirement was performed. Root owns reference-aware closeout.",
+    "reference_build2": "Retained intact; root identified a future accepted-product comparison consumer.",
+    "candidate_build": "No further model consumer is planned for this rejected guidance candidate; root will handle evidence_only closeout."
+  }
+}

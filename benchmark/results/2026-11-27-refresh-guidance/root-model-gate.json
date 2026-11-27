@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "at_utc": "2026-11-27T05:08:17.800210+00:00",
+  "decision": "proceed_with_original_4_episode_own_plan",
+  "authorization": "Existing standing user authorization; this is technical readiness, not a new permission request.",
+  "plan": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/attempt-1/plan.json",
+    "sha256": "49d78a518ef67e548ce6ff93befb96ba687957679d7678a5901290c8090d8f3a",
+    "internal_sha256": "019467268a5cb6855335c1d68f4dfc27dc2beae9fb08cb2e75da7617d583aefc"
+  },
+  "configure_review": {
+    "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/configure-1-review.json",
+    "sha256": "f50cc41bc633d4f26b0a7b95d8d37e7ee7d1534f07886b4beb72c0473bfd7c12"
+  },
+  "local_gate": {
+    "run": "refresh-guidance-focused-2",
+    "collector_pass": 36,
+    "optional_historical_skip": 1,
+    "product_tests_pass": 82,
+    "fail": 0,
+    "runtime": "unchanged",
+    "artifacts": [
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/refresh-guidance-focused-2/run.json",
+        "sha256": "c294a10e36db456658cc51e01fd90b679ea72cc73560b283f4e7ab9014e740ac"
+      },
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/refresh-guidance-focused-2/result.json",
+        "sha256": "974cada47bf3102f61fc0bbe6c7d36bd1e1527e0dc79d140cdd4c19d5bb3624b"
+      },
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/refresh-guidance-focused-2/command.stdout.log",
+        "sha256": "c16a0df67a9dc91e8bf202d4f453124b12e0f2805cc266d8007c1c7909d92d4d"
+      },
+      {
+        "path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/runs/refresh-guidance-focused-2/command.stderr.log",
+        "sha256": "9f78b01bcc6486ec332d63e65a8c76ed52e4dd0ae798febf791cc23f513212e0"
+      }
+    ]
+  },
+  "actual_capture_correction": {
+    "guidance_line_bytes": [
+      212,
+      205
+    ],
+    "refresh_description_bytes": [
+      239,
+      444
+    ],
+    "canonical_request_bytes": [
+      14480,
+      14678
+    ],
+    "delta_bytes": 198
+  },
+  "decision_limits": [
+    "Explicit-use case is the principal test of unnecessary metadata refresh.",
+    "Continuation current-rules wording permits refresh; preserve correctness and selected-policy reuse.",
+    "One planned pair per case; no population or backend-identity claim.",
+    "Keep all attempts and failures; no relabeling historical baseline."
+  ]
+}

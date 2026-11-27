@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "kind": "thin-original-evidence-index",
+  "status": "candidate_not_adopted",
+  "files": [
+    {
+      "path": "operator-results.json",
+      "sha256": "d7f7c33167b1870ab60ea985efcf1fe92050c9aac64c854a8f9815696c7aab5b",
+      "bytes": 67010,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/operator-results.json"
+    },
+    {
+      "path": "operation-freshness-readback.json",
+      "sha256": "1427267282ad1037421ceec2894d3493f0dff0c68a6b3029a120a8e43b0d104f",
+      "bytes": 131067,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/operation-freshness-readback.json"
+    },
+    {
+      "path": "configure-1-review.json",
+      "sha256": "f50cc41bc633d4f26b0a7b95d8d37e7ee7d1534f07886b4beb72c0473bfd7c12",
+      "bytes": 39655,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/configure-1-review.json"
+    },
+    {
+      "path": "operator-closeout.json",
+      "sha256": "cfd2fd7c4cc589bb85b244e46a04c553a1d5c6cf17917a1a9a5059330842ae9f",
+      "bytes": 3849,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/operator-closeout.json"
+    },
+    {
+      "path": "final-status.json",
+      "sha256": "4d99d63c722adffd1ce92c3f3788b7b5c657ec76403e3edcbbfeb14b8be4219b",
+      "bytes": 5194,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/final-status.json"
+    },
+    {
+      "path": "final-ledger.json",
+      "sha256": "be5629bb0e6fd1e427c5f1e0d253e5f7345429d18240938a5b506e044de9a95d",
+      "bytes": 3363,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/current-refresh-guidance-own-20261127-1/final-ledger.json"
+    },
+    {
+      "path": "root-model-gate.json",
+      "sha256": "1b4669ba9a0fa5d87becc63f46c02bd74caa0c6795591bea129eeb6374311178",
+      "bytes": 2791,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/refresh-guidance-cycle-20261127/root-model-gate.json"
+    },
+    {
+      "path": "product-decision.json",
+      "sha256": "314b10dd46469a92d1b47763ac89d3b85ae638a1b0fcc15f225efdea010b7588",
+      "bytes": 2318,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/refresh-guidance-cycle-20261127/product-decision.json"
+    },
+    {
+      "path": "pr105-closed-readback.json",
+      "sha256": "a234506330689139f7b83db6ef5a6246a05b3fd65daac9d84305c0fb960edba9",
+      "bytes": 202,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/refresh-guidance-cycle-20261127/pr105-closed-readback.json"
+    },
+    {
+      "path": "focused-retirement.json",
+      "sha256": "693de382fdf438df3a1f837a3937f7cece3e096c3a09d39b28ade4258591b631",
+      "bytes": 5886,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-product-cycle-20261126/control/retirement-refresh-guidance-focused-20261127/closeout.json"
+    },
+    {
+      "path": "ci-terminal.json",
+      "sha256": "ec70beeda2f1c13e236514ab22652bf8663e9002dd6afc3f16f3845d6d104670",
+      "bytes": 1346,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-refresh-guidance-20261127/control/refresh-guidance-candidate/ci-terminal.json"
+    },
+    {
+      "path": "byte-count-correction.json",
+      "sha256": "06640d520b0ab61bd541e26846ab080452b5b735ff5bef9bb296388410936b5f",
+      "bytes": 2687,
+      "original_path": "/Users/yoyo/Documents/code/personal/notion-skills-environments/benchmark-refresh-guidance-20261127/control/refresh-guidance-candidate/byte-count-correction.json"
+    }
+  ],
+  "scope": "Navigation and selected summaries; complete original requests, responses and sessions remain at referenced Mini paths. Not a portable sealed replay package."
+}
