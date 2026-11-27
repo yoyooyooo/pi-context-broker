@@ -74,12 +74,15 @@ The subsequent engineering sync to
 runtime-only command preparation. These are historical integration and delivery
 identities, not assertions about today's ordinary installation.
 
-The 2026-11-27 continuation targets shared product source CLI
+The [2026-11-27 current-product baseline](benchmark-current-product-baseline-2026-11-27.md)
+completed four packed Native/Broker observations against shared product source CLI
 `a22aa1cd5506d393df6ef4d37a6aeb7c575453ba` and Broker
-`3d57426c237def82833a86eda367e476e28cd76c`. Broker PR #102 changes verification
-and pins that CLI; it does not change this product runtime. New execution must
-bind the completed frozen build and its actual admission receipts before it can
-establish a baseline for this pair.
+`3d57426c237def82833a86eda367e476e28cd76c`. All business and critical contracts
+pass in that small design. Its actual source waits identify the next comparison
+for the existing smart-cache product work. The report binds the build, plan,
+original collector, unchanged accounting and retained Mini evidence; it also
+separates guided operator reuse from unfamiliar-Agent onboarding. Broker PR #102
+changes verification and pins that CLI without changing this product runtime.
 Existing plans, product builds, raw observations and published scores retain
 their original identities; synchronizing source does not migrate an experiment.
 
@@ -109,12 +112,18 @@ The [2026-11-26 resource-read reanalysis](benchmark-relative-source-reanalysis-2
 records the original, intermediate and corrected outcomes across the six retained
 engineering scopes, unchanged actual costs, and the resulting product decision.
 
-Current collection uses collector `1.3.3` and explicitly binds SDK v3,
+Current collection uses collector `1.3.4` and explicitly binds SDK v3,
 Library-root v1, resource-read v1, Skill-ref v2 and preparation-evidence v2.
 The subject includes only the public observer dependencies and the exact paired
 reference producer. Its embedded SDK hash is checked against the Broker bundle;
 the public SDK hash and reference bytes are checked against the paired CLI.
 Current collection cannot interpret old material proofs as newly verified data.
+
+For current receipts, `provider_error` excludes a normal application completion
+followed by HTTP cancellation only when the shared provider completion rule
+matches the same request's observed assistant and that attempt's raw usage;
+the original transport outcome remains unchanged, and unproved cancellation,
+HTTP errors and failed or aborted assistants remain errors.
 
 Broker extension identity comes from the frozen build selection, its declared
 launch role and the observed loaded entry and hash. Directory and packed installs
@@ -122,7 +131,7 @@ use that same check; a path merely resembling a Broker directory cannot assign
 ownership. Packed metadata collection also verifies the selected archive entry
 against the built package before applying the reviewed producer tuple.
 
-Collector `1.3.3` recognizes a successful `notion_list` metadata response only
+Collector `1.3.4` recognizes a successful `notion_list` metadata response only
 when its captured owner and admission match a reviewed Broker producer, its
 closed output matches the delivered metadata projection, and the record identity
 matches an actually observed SDK directory. The reviewed hashes for
