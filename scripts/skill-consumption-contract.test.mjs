@@ -11,7 +11,7 @@ test('CI requires actual Pi cache cases after installed SDK v3; the wiring check
   assert.equal(actual.installedSdk, 'required_current_http');
   assert.equal(actual.piSession, 'not_run');
   assert.equal(actual.providerModel, 'not_run');
-  assert.deepEqual(actual.ciPiCache, ['http-warm-restart', 'http-warm-directory-expired']);
+  assert.deepEqual(actual.ciPiCache, ['http-warm-restart', 'http-warm-directory-expired', 'http-smart-revalidate', 'http-smart-current']);
   assert.deepEqual(actual.deferredHosts, ['OMP', 'Tern']);
   assert.equal(actual.cliSourceRevision, consumptionGateConfiguration().cliRevision.trim());
 });
@@ -84,6 +84,8 @@ test('missing consumption, drifting CLI input and skipped current HTTP gate are 
     [value => { value.workflows[0].text = value.workflows[0].text.replace('          BROKER_PACKAGE=', '          if false; then\n          BROKER_PACKAGE=').replace('      - name: Preserve current SDK results', '          fi\n      - name: Preserve current SDK results'); }, 'GATE_PI_CACHE_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('--scenario http-warm-restart', '--scenario http-cache-recovery'); }, 'GATE_PI_CACHE_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('--scenario http-warm-directory-expired', '--scenario http-warm-restart'); }, 'GATE_PI_CACHE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('--scenario http-smart-revalidate', '--scenario http-warm-directory-expired'); }, 'GATE_PI_CACHE_MISSING'],
+    [value => { value.workflows[0].text = value.workflows[0].text.replace('--scenario http-smart-current', '--scenario http-cache-recovery'); }, 'GATE_PI_CACHE_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('require(process.argv[1]).pi.entry.path', '"/different/pi"'); }, 'GATE_PI_CACHE_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('require(process.argv[1]).package.installed', '"packages/context-broker"'); }, 'GATE_PI_CACHE_MISSING'],
     [value => { value.workflows[0].text = value.workflows[0].text.replace('            ${{ runner.temp }}/pi-warm-restart/\n', ''); }, 'GATE_PI_CACHE_RESULTS_MISSING'],

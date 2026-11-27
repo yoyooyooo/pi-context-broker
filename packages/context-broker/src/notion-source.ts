@@ -220,7 +220,7 @@ export function sourceFailureMessage(code: string, details?: SourceError["detail
     case "SNAPSHOT_MISSING":
     case "SNAPSHOT_NOT_MATERIALIZED": return "This selection is no longer available. Refresh the source and select its current content again.";
     case "CACHE_REFRESH_REQUIRED": return "The local selection uses an older cache contract. Refresh the source online and select its current content again.";
-    case "CACHE_INVALIDATED": return "The cache was cleared during this acquisition. Retry the fixed read, or explicitly select current content if the original snapshot is unavailable.";
+    case "CACHE_INVALIDATED": return "Current facts or cache state changed during this acquisition. Select current content again; existing fixed selections remain unchanged.";
     case "STATE_BUSY": return "The local state store is busy. Let the current operation finish and retry; unrelated conversation can continue.";
     case "STATE_RUNTIME_UNSUPPORTED": return "The current process cannot open the SDK state store. Restart Pi with a runtime supported by the bundled ntn-skills SDK.";
     case "UPSTREAM_GIT_RUNTIME_UNSUPPORTED": return "The Git used by this process lacks --no-lazy-fetch. Select a Git with that capability before retrying upstream file acquisition; Git 2.50.1 is verified.";
