@@ -7,6 +7,18 @@ import { createHash } from "node:crypto";
 
 const cases = [
   {
+    "name": "source-discovery-finalization-budget",
+    "file": "src/skill-preparation.ts",
+    "old": "phase = next; arm(now);",
+    "replacement": "phase = next === \"discovery\" ? \"finalization\" : next; arm(now);",
+    "test": "source-materialization-catalog.test.ts",
+    "pattern": "125s discovery leaves full catalog and consume time for root and Requires",
+    "properties": [],
+    "concrete_obligations": [
+      "Directed metadata discovery uses its separate cumulative allowance so the production-hook 125s discovery, 163s manager, 36s catalog and 30s ordinary consume deliver complete root and Requires bodies. Charging discovery to finalization must produce SOURCE_PREPARATION_TIMEOUT and no body/selection; this runtime timing obligation is outside the finite TLC variables."
+    ]
+  },
+  {
     "name": "accepted-candidate-directory-wait",
     "file": "src/host-skills.ts",
     "old": "if (!selected.every(exactNotionRecord)) {",
@@ -520,6 +532,19 @@ try {
       entry.phases.push({ phase, argv, exitCode: result.status, signal: result.signal, elapsedMs: Date.now() - started,
         stdoutSha256: hash(result.stdout ?? ""), stderrSha256: hash(result.stderr ?? "") }); save();
       assert.ok(!result.error && !result.signal, item.name + ": execution error is not a guard counterexample");
+      if (item.name === "source-discovery-finalization-budget") {
+        const prefix = "source-finalization-125-36-30-observation ";
+        const lines = (result.stdout ?? "").split(/\r?\n/).filter(line => line.startsWith(prefix));
+        assert.equal(lines.length, 1, item.name + ": one production-hook observation is required");
+        const observation = JSON.parse(lines[0].slice(prefix.length));
+        const success = phase !== "mutated";
+        assert.deepEqual(observation, {
+          elapsed_ms: 354000, trace: ["source-discovery", "management", "catalog", "consume"],
+          timeout: !success, root_body: success, required_body: success, selected_scopes: success ? 1 : 0,
+        }, item.name + ": require the actual timeout/body counterexample and complete restored delivery");
+        if (!success) assert.doesNotMatch(result.stderr ?? "", /TypeError|SyntaxError|Cannot find module|Module not found|error: Cannot find/);
+        entry.phases.at(-1).observation = observation; save();
+      }
       return result;
     };
     const baseline = run("baseline");

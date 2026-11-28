@@ -651,28 +651,38 @@ test('retained SQLite evidence preserves exact fields through JSON replay', asyn
 function coldBudgetEvidence() {
   const library = { library_id: 'library', skills: { data_source_id: 'skills' }, files: { data_source_id: 'files' },
     records: { data_source_id: 'records' }, sources: { data_source_id: 'sources' } };
-  const facts = { sample: { notion: { library } }, members: [{ name: 'lazy-root', legacy_page_id: 'root-page' }] };
+  const facts = { sample: { notion: { library } }, members: [
+    { name: 'lazy-root', legacy_page_id: 'root-page' }, { name: 'lazy-required', legacy_page_id: 'required-page' },
+  ] };
   const prompt = '$lazy-root Apply this Skill to the task.', piPid = 701, managerPid = 702, requestId = 'original-request';
-  const ns = ms => String(BigInt(ms) * 1000000n), events = [], source = [], holds = [];
+  const ns = ms => String(BigInt(ms) * 1000000n), events = [], source = [], holds = [], deferred = [];
   const specs = [
-    ['catalog-root', 'list', '/v1/pages/library', 12000, 'catalog'],
-    ['catalog-children', 'list', '/v1/blocks/library/children', 12000, 'catalog'],
-    ['catalog-skills-schema', 'list', '/v1/data_sources/skills', 12000, 'catalog'],
-    ['initial-consume-owner', 'consume', '/v1/pages/root-page', 12000, 'missing'],
-    ['source-discovery-root', 'source-members', '/v1/pages/library', 14000, 'discover'],
-    ['source-discovery-children', 'source-members', '/v1/blocks/library/children', 20000, 'discover'],
-    ['source-discovery-skills-schema', 'source-members', '/v1/data_sources/skills', 20000, 'discover'],
-    ['source-discovery-files-schema', 'source-members', '/v1/data_sources/files', 20000, 'discover'],
-    ['source-discovery-records-schema', 'source-members', '/v1/data_sources/records', 20000, 'discover'],
-    ['source-discovery-sources-schema', 'source-members', '/v1/data_sources/sources', 20000, 'discover'],
-    ['manager-root', 'management', '/v1/pages/library', 20000, requestId],
-    ['manager-children', 'management', '/v1/blocks/library/children', 20000, requestId],
-    ['manager-skills-schema', 'management', '/v1/data_sources/skills', 20000, requestId],
-    ['manager-files-schema', 'management', '/v1/data_sources/files', 20000, requestId],
+    ['catalog-root', 'list', '/v1/pages/library', 0, 'catalog', 'ordinary'],
+    ['catalog-children', 'list', '/v1/blocks/library/children', 0, 'catalog', 'ordinary'],
+    ['catalog-skills-schema', 'list', '/v1/data_sources/skills', 0, 'catalog', 'ordinary'],
+    ['initial-consume-owner', 'consume', '/v1/pages/root-page', 0, 'missing', 'ordinary'],
+    ['source-discovery-root', 'source-members', '/v1/pages/library', 14000, 'discover', 'discovery'],
+    ['source-discovery-children', 'source-members', '/v1/blocks/library/children', 20000, 'discover', 'discovery'],
+    ['source-discovery-skills-schema', 'source-members', '/v1/data_sources/skills', 20000, 'discover', 'discovery'],
+    ['source-discovery-files-schema', 'source-members', '/v1/data_sources/files', 20000, 'discover', 'discovery'],
+    ['source-discovery-records-schema', 'source-members', '/v1/data_sources/records', 20000, 'discover', 'discovery'],
+    ['source-discovery-sources-schema', 'source-members', '/v1/data_sources/sources', 20000, 'discover', 'discovery'],
+    ['manager-root', 'management', '/v1/pages/library', 20000, requestId, 'management'],
+    ['manager-children', 'management', '/v1/blocks/library/children', 20000, requestId, 'management'],
+    ['manager-skills-schema', 'management', '/v1/data_sources/skills', 20000, requestId, 'management'],
+    ['manager-files-schema', 'management', '/v1/data_sources/files', 20000, requestId, 'management'],
+    ['post-catalog-root', 'list', '/v1/pages/library', 12000, 'refreshed', 'post_catalog'],
+    ['post-catalog-children', 'list', '/v1/blocks/library/children', 12000, 'refreshed', 'post_catalog'],
+    ['post-catalog-skills-schema', 'list', '/v1/data_sources/skills', 12000, 'refreshed', 'post_catalog'],
+    ['final-consume-root', 'consume', '/v1/pages/root-page', 18000, 'ready', 'final_consume'],
+    ['final-consume-required', 'consume', '/v1/pages/required-page', 18000, 'ready', 'final_consume'],
   ];
   let time = 1000;
   const event = (kind, fields, at = time) => events.push({ kind, observer_pid: piPid, observer_monotonic_ns: ns(at), ...fields });
-  for (const [index, [label, operation, path, delay_ms, id]] of specs.entries()) {
+  const http = (sequence, path, start, end) => source.push({ method: 'GET', path, sequence, started_monotonic_ns: ns(start),
+    ended_monotonic_ns: ns(end + 1), closed_monotonic_ns: ns(end + 2), control: 'hold-before-headers',
+    phase: 'materialize', terminal: 'finished', status: 200, response_bytes_complete: true });
+  for (const [index, [label, operation, path, delay_ms, id, stage]] of specs.entries()) {
     time += 100;
     if (index === 0 || specs[index - 1][4] !== id) {
       if (operation === 'management') {
@@ -680,36 +690,36 @@ function coldBudgetEvidence() {
         event('manager_transport', { event: 'spawn', child_pid: managerPid }, time - 1);
       } else event('context-broker.notion-sdk', { event: 'start', id, operation }, time - 1);
     }
-    const start = time; time += delay_ms;
-    holds.push({ label, operation, method: 'GET', path, delay_ms, sequence: index + 1,
+    const start = time, sequence = source.length + 1; time += delay_ms;
+    holds.push({ label, operation, stage, method: 'GET', path, delay_ms, sequence,
       ...(operation === 'management' ? { request_id: requestId, manager_pid: managerPid } : { sdk_id: id }),
       reached_monotonic_ns: ns(start), released_monotonic_ns: ns(time), closed_monotonic_ns: ns(time + 2) });
-    source.push({ method: 'GET', path, sequence: index + 1, started_monotonic_ns: ns(start),
-      ended_monotonic_ns: ns(time + 1), closed_monotonic_ns: ns(time + 2), control: 'hold-before-headers',
-      phase: 'materialize', terminal: 'finished', status: 200, response_bytes_complete: true });
-    time += 3;
+    http(sequence, path, start, time); time += 3;
     if (specs[index + 1]?.[4] !== id) {
       if (operation === 'management') {
         event('manager_transport', { event: 'close', child_pid: managerPid, code: 0, signal: null });
-        event('context-broker.notion-materialization', { event: 'result', request_id: requestId, status: 'ready' }, ++time);
+        // The original public manager completes one readonly scope GET after its child closes.
+        time += 1;
+        const sequence = source.length + 1;
+        deferred.push({ label: 'post-catalog-root', stage: 'management_pending', operation: 'management', method: 'GET',
+          path: '/v1/pages/library', delay_ms: 0, sequence, request_id: requestId, manager_pid: managerPid,
+          reached_monotonic_ns: ns(time), released_monotonic_ns: ns(time), closed_monotonic_ns: ns(time + 2) });
+        http(sequence, '/v1/pages/library', time, time); time += 3;
+        event('context-broker.notion-materialization', { event: 'result', request_id: requestId, status: 'ready' });
       } else {
-        if (operation === 'consume') event('context-broker.notion-sdk-result', { id, operation,
+        if (id === 'missing') event('context-broker.notion-sdk-result', { id, operation,
           value: { status: 'failed', error: { code: 'CURRENT_SCHEMA_REQUIRED' } } });
+        if (id === 'ready') event('context-broker.notion-sdk-result', { id, operation, value: { status: 'ready' } });
         if (operation === 'source-members') event('context-broker.notion-sdk-result', { id, operation,
           value: { coverage: 'complete', failures: [] } });
-        event('context-broker.notion-sdk', { event: 'end', id, operation, status: operation === 'consume' ? 'failed' : 'completed' }, ++time);
+        event('context-broker.notion-sdk', { event: 'end', id, operation, status: id === 'missing' ? 'failed' : 'completed' }, ++time);
       }
     }
   }
-  time += 1; event('context-broker.notion-sdk', { event: 'start', id: 'refreshed', operation: 'list' });
-  time += 2000; event('context-broker.notion-sdk', { event: 'end', id: 'refreshed', operation: 'list', status: 'completed' });
-  time += 1; event('context-broker.notion-sdk', { event: 'start', id: 'ready', operation: 'consume' });
-  time += 2000; event('context-broker.notion-sdk-result', { id: 'ready', operation: 'consume', value: { status: 'ready' } });
-  event('context-broker.notion-sdk', { event: 'end', id: 'ready', operation: 'consume', status: 'completed' }, ++time);
   return { facts, piPid, events, source, initial: { branch: [] },
     session: { branch: [{ type: 'message', message: { role: 'user', content: [{ type: 'text', text: prompt }] } }] },
-    receipt: { version: 2, kind: 'actual-pi-cold-materialization-budget', status: 'completed', prompt, pi_pid: piPid,
-      initial_http_count: 0, sent_monotonic_ns: ns(1000), completed_monotonic_ns: ns(time + 100), holds } };
+    receipt: { version: 3, kind: 'actual-pi-cold-materialization-budget', status: 'completed', prompt, pi_pid: piPid,
+      initial_http_count: 0, sent_monotonic_ns: ns(1000), completed_monotonic_ns: ns(time + 100), holds, deferred_holds: deferred } };
 }
 
 test('cold materialization evidence rejects prewarming, short or misattributed delays and a missing catalog barrier', () => {
@@ -767,7 +777,7 @@ test('cold evidence requires manager close before the ready receipt and all held
   assert.throws(() => assertColdMaterializationBudget(receiptBeforeClose), /ready result must follow the actual manager close/);
 
   const closedBeforeHttp = coldBudgetEvidence();
-  const finalHold = closedBeforeHttp.receipt.holds.at(-1);
+  const finalHold = closedBeforeHttp.receipt.holds.findLast(row => row.stage === 'management');
   closedBeforeHttp.events.find(row => row.kind === 'manager_transport' && row.event === 'close')
     .observer_monotonic_ns = String(BigInt(finalHold.closed_monotonic_ns) - 1n);
   assert.throws(() => assertColdMaterializationBudget(closedBeforeHttp), /original manager must remain alive through its held HTTP response/);
@@ -775,7 +785,7 @@ test('cold evidence requires manager close before the ready receipt and all held
 
 function shiftColdEvidenceFrom(proof, from, millis) {
   const cutoff = BigInt(from), offset = BigInt(millis) * 1000000n;
-  for (const row of [...proof.events, ...proof.source, ...proof.receipt.holds, proof.receipt]) {
+  for (const row of [...proof.events, ...proof.source, ...proof.receipt.holds, ...proof.receipt.deferred_holds, proof.receipt]) {
     for (const key of Object.keys(row)) {
       if (key.endsWith('monotonic_ns') && BigInt(row[key]) >= cutoff) row[key] = String(BigInt(row[key]) + offset);
     }
@@ -798,7 +808,59 @@ test('cold evidence bounds real management, initial reads and non-writer finaliz
   assert.throws(() => assertColdMaterializationBudget(initialReadExpired), /Initial ordinary reads must remain below 60s/);
 
   const finalizationExpired = coldBudgetEvidence();
-  const refresh = finalizationExpired.events.find(row => row.id === 'refreshed' && row.event === 'start');
-  shiftColdEvidenceFrom(finalizationExpired, refresh.observer_monotonic_ns, 70000);
-  assert.throws(() => assertColdMaterializationBudget(finalizationExpired), /discovery and finalization must fit the separate 180s allowance/);
+  const ready = finalizationExpired.events.find(row => row.kind === 'context-broker.notion-materialization' && row.event === 'result');
+  const consumed = finalizationExpired.events.find(row => row.id === 'ready' && row.event === 'end');
+  const finalExtra = 180000 - Number(BigInt(consumed.observer_monotonic_ns) - BigInt(ready.observer_monotonic_ns)) / 1e6;
+  shiftColdEvidenceFrom(finalizationExpired, consumed.observer_monotonic_ns, finalExtra);
+  assert.throws(() => assertColdMaterializationBudget(finalizationExpired), /Observed finalization must fit its own 180s allowance/);
+
+  const discoveryExpired = coldBudgetEvidence();
+  const begun = discoveryExpired.events.find(row => row.id === 'discover' && row.event === 'start');
+  const ended = discoveryExpired.events.find(row => row.id === 'discover' && row.event === 'end');
+  const discoveryExtra = 180000 - Number(BigInt(ended.observer_monotonic_ns) - BigInt(begun.observer_monotonic_ns)) / 1e6;
+  shiftColdEvidenceFrom(discoveryExpired, ended.observer_monotonic_ns, discoveryExtra);
+  assert.throws(() => assertColdMaterializationBudget(discoveryExpired), /Observed discovery must fit its own 180s allowance/);
+});
+
+
+test('cold finalization delays belong to the post-ready catalog and complete root plus Requires consume', () => {
+  const original = coldBudgetEvidence(), observation = assertColdMaterializationBudget(original);
+  assert.equal(observation.kind, 'cold-budget-phase-observation');
+  assert.equal(observation.discovery_sdk_id, 'discover'); assert.equal(observation.catalog_sdk_id, 'refreshed');
+  assert.equal(observation.consume_sdk_id, 'ready'); assert.equal(observation.manager_pid, 702);
+  assert.ok(observation.discovery_ms >= 114000); assert.ok(observation.post_catalog_ms >= 36000);
+  assert.ok(observation.final_consume_ms >= 36000); assert.ok(observation.observed_finalization_ms < 180000);
+  assert.ok(observation.observed_non_management_ms > 180000); assert.equal(observation.immediate_management_releases, 1);
+  const changes = [
+    proof => { proof.receipt.holds.find(row => row.label === 'post-catalog-root').sdk_id = 'catalog'; },
+    proof => { proof.receipt.holds.find(row => row.label === 'final-consume-required').sdk_id = 'missing'; },
+    proof => { proof.receipt.holds.find(row => row.label === 'post-catalog-root').stage = 'management'; },
+    proof => { proof.receipt.holds = proof.receipt.holds.filter(row => row.label !== 'final-consume-required'); },
+    proof => { proof.events.find(row => row.id === 'refreshed' && row.event === 'start').observer_monotonic_ns =
+      proof.events.find(row => row.kind === 'context-broker.notion-materialization' && row.event === 'start').observer_monotonic_ns; },
+    proof => { const hold = proof.receipt.holds.find(row => row.label === 'final-consume-required'); hold.released_monotonic_ns = hold.reached_monotonic_ns; },
+  ];
+  for (const change of changes) {
+    const proof = structuredClone(original); change(proof); assert.throws(() => assertColdMaterializationBudget(proof));
+  }
+});
+
+test('manager completion metadata is released without delay and cannot prove finalization time', () => {
+  const original = coldBudgetEvidence(); assertColdMaterializationBudget(original);
+  const changes = [
+    proof => { proof.receipt.deferred_holds[0].request_id = 'another-request'; },
+    proof => { proof.receipt.deferred_holds[0].manager_pid = 999; },
+    proof => { proof.receipt.deferred_holds[0].delay_ms = 12000; },
+    proof => { proof.receipt.deferred_holds[0].sdk_id = 'refreshed'; },
+    proof => { proof.receipt.deferred_holds[0].sequence = proof.receipt.holds[14].sequence; },
+    proof => { proof.source.find(row => row.sequence === proof.receipt.deferred_holds[0].sequence).semantic_write = true; },
+    proof => { proof.source.find(row => row.sequence === proof.receipt.deferred_holds[0].sequence).method = 'POST'; },
+    proof => { const hold = proof.receipt.deferred_holds[0]; const raw = proof.source.find(row => row.sequence === hold.sequence);
+      raw.closed_monotonic_ns = hold.closed_monotonic_ns = String(BigInt(proof.events.find(row =>
+        row.kind === 'context-broker.notion-materialization' && row.event === 'result').observer_monotonic_ns) + 1n); },
+    proof => { proof.receipt.deferred_holds.push(...Array.from({ length: 8 }, () => structuredClone(proof.receipt.deferred_holds[0]))); },
+  ];
+  for (const change of changes) {
+    const proof = structuredClone(original); change(proof); assert.throws(() => assertColdMaterializationBudget(proof));
+  }
 });

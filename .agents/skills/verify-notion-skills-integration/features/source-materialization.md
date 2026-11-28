@@ -109,13 +109,15 @@ provider wire 要排除原主文和补丁后的整篇主文，原 Pi session 不
 
 `source-materialize-cold-budget` 使用独立的 legacy-source 远端事实与空客户端，第一次用户消息就是 `$lazy-root`。提交前不得执行 `notion_list`、consume 或来源发现，也不得产生 Notion HTTP。保留原五例的只读工具权限检查；这些先查目录的用例不能代替本例。
 
-沿现有 HTTP fixture 的精确 hold 复现发现与管理串联超过旧期限的路径。首次目录三个 GET 各等 12 秒，初次 consume 的 owner GET 等 12 秒，保留原 48 秒冷读。source-members 的 root GET 等 14 秒，children 和 Skills、Files、Records、Sources 四个 schema GET 各等 20 秒，共 114 秒。随后固定 manager 自己的 root、children、Skills 和 Files schema GET 各等 20 秒，共 80 秒。这些请求由真实 SDK 和原 manager 发出，单次延迟低于 CLI 默认 30 秒传输期限；不改 SDK、产品时钟、manager 配置或 HTTP 事实。两段准备延迟合计 194 秒，全部延迟合计 242 秒，分别超过旧共享 180 秒准备额度和旧 240 秒总上限。
+沿现有 HTTP fixture 的精确 hold 复现发现、管理和消费收尾串联的路径。首次目录和初次 consume 仍是真实冷读，逐请求观察，但不再人为增加 48 秒等待；普通 read 的 60 秒边界由 core 回归覆盖。source-members 的 root GET 等 14 秒，children 和 Skills、Files、Records、Sources 四个 schema GET 各等 20 秒，共 114 秒。固定 manager 的 root、children、Skills 和 Files schema GET 各等 20 秒，共 80 秒。管理 ready 后，完整 catalog 的 root、children、Skills schema GET 各等 12 秒；最终普通 consume 的根与 Requires owner GET 各等 18 秒。post catalog 与最终 consume 分别有 36 秒延迟，发现与它们合计 186 秒，全部人工延迟为 266 秒。每个请求由实际 SDK 或原 manager 发出，单次延迟低于 CLI 默认 30 秒期限；不改 SDK、产品时钟、manager 配置或 HTTP 事实。
 
-通过须由原件重算实际时间。`cold-budget.json` version 2 将消费者 hold 绑定原 SDK ID，将管理 hold 绑定原 request_id 与 manager PID。逐条核 HTTP 开始、到达、释放、结束和实际 close；source-members 必须完整结束后才出现唯一管理请求。原 manager 的实际 spawn/close、完整 stdout/stderr 和已验证 ready 回执由同一 evidence 入口联合核对。发现开始到原 manager close 的真实跨度必须超过 180 秒，整次 prompt 到完成必须超过 240 秒；不能只相加计划延迟来声称复现。管理诊断区间须小于 600 秒，可见初次读取小于 60 秒，发现至最终 consume 的跨度扣除原 manager 实际生命周期后小于 180 秒，整次观测小于 840 秒。
+通过须由原件重算实际时间。`cold-budget.json` version 3 将每个消费者 hold 绑定原 SDK ID，将管理 hold 绑定原 request_id 与 manager PID，并保存阶段、HTTP 开始、到达、释放、结束和实际 close。source-members 必须完整结束后才出现唯一管理请求。原 manager 的实际 spawn/close、完整 stdout/stderr 和已验证 ready 回执由同一 evidence 入口联合核对。发现开始到原 manager close 的跨度必须超过 180 秒，整次 prompt 到完成超过 240 秒；不能只相加计划延迟声称复现。实际 discovery 小于 180 秒，管理诊断小于 600 秒，初次读取小于 60 秒；ready 后到最终 consume 完成的可见跨度小于 180 秒，发现至最终 consume 的跨度扣除完整管理诊断后大于 180 秒，整次观测小于 840 秒。普通 post catalog 和最终 consume 各自必须包含至少 36 秒的实际延迟。
 
-这些观测区间不等同于产品内部的精确计费时点。管理诊断包含边界前后的少量工作；manager 子进程生命周期也不包含公开管理 API 的全部收尾。精确累计、切换和到期边界由现役 core 时间回归证明。真实 Pi 本例必须继续完成管理后的完整 catalog、普通 consume 和完整根与 Requires 的 provider 正文，不能拿 manager ready 代替交付。原 360 秒 RPC 外层期限保留，它只容纳这次受控延迟组合，不证明实际等待了 600 或 840 秒；若外层先结束，保留原失败和未结清管理事实，不推断产品已耗尽自己的额度。
+管理子进程关闭后，公开管理 API 仍可能读取 Library 来验证消费者 scope。若待延迟的 post-catalog-root 捕获了这类 GET，controller 验证仍是同一未完成管理请求、没有活动消费者 SDK 后立即释放，并重新等待相同路径。每次即时释放单列在 `deferred_holds`，保留原 request/PID、零人为延迟、完整 HTTP close；最多八次。它们不能兼任延迟样本，也不能计为 ready 后的 finalization。随后只有实际 ready 诊断之后的 SDK list 可以接收三个 catalog 延迟；两个正文延迟必须属于同一最终 ready consume。
 
-保存全部原始账本，沿同一 evidence 入口独立复算，拒绝错 SDK/request/PID、重复请求、未闭合 manager、过短延迟或过期区间。随后仍执行同一 case 的不同 PID、五分钟内 0 Notion / 0 Git / 0 management 暖读，以及独立空客户端。旧包失败与新包结果使用不同输出目录，旧 Store 和失败标签不改。现役 core 回归另覆盖管理后慢目录与慢 consume、多 root/queued input 累计、找不到候选、Stop/session switch、重入/迟到 scope，以及过期 timer 尚未执行的边界。
+这些观测区间不等同于产品内部的精确计费时点。管理诊断包含边界前后的少量工作，不能仅减去 manager 子进程生命周期来计算非管理时间。精确累计、切换和到期由 core 时间回归证明，包括 125 秒 discovery、163 秒 management、36 秒 catalog、30 秒 consume 的真实 production hook 路径。真实 Pi 必须继续完成完整根与 Requires 的 provider 正文，不能拿 manager ready 代替交付。原 360 秒 RPC 外层期限保留，它容纳这次受控延迟组合，不证明实际等待了 600 或 840 秒；若外层先结束，保留原失败和未结清管理事实，不推断产品已耗尽自己的额度。run 的 `cold-budget-phase-observation` 输出实际 SDK/request/PID 和各段时长，evidence 从同一批原件重新核算。
+
+保存全部原始账本，沿同一 evidence 入口独立复算，拒绝错 SDK/request/PID、重复请求、未闭合 manager、过短延迟或过期区间。随后仍执行同一 case 的不同 PID、五分钟内 0 Notion / 0 Git / 0 management 暖读，以及独立空客户端。旧包失败与新包结果使用不同输出目录，旧 Store 和失败标签不改。现役 core 回归另覆盖 finalization 与 discovery 的独立余额、多 root/Requires/queued input 累计、找不到候选、Stop/session switch、重入/迟到 scope，以及过期 timer 尚未执行的边界。
 
 ## 升级后的混合目录 Store
 
@@ -133,32 +135,36 @@ Broker 再核当前 request/library/target/authorization_root、phase/code 及�
 
 ## 前台预算与超时
 
-每次 Pi context 共用三个累计额度和一个总墙钟上限：
+每次 Pi context 共用四个累计额度和一个独立总墙钟上限：
 
 | 状态 | 累计额度 | 计入的工作 |
 | --- | --- | --- |
-| read | 60 秒 | 初次完整目录、首次普通 consume、准备结束后的 task prompt 与 active restoration |
-| source | 180 秒 | 定向 source-members，以及管理返回后的 receipt 校验、完整 catalog 和普通 consume |
-| management | 600 秒 | 当前有效 Source scope 内一次公开 management API 的等待，包括该 API 内部的消费者 load/invalidate 收尾 |
-| context | 840 秒 | 从本 context 开始经过的全部墙钟时间 |
+| read | 60 秒 | 尚未进入授权 Source 准备的普通目录/consume，以及准备 scope 返回后的 task prompt 与 active restoration |
+| discovery | 180 秒 | 当前 Source scope 内三个既有 metadata 发现入口的 `withDiscovery` 调用，包括显式根和 Requires 查找 |
+| finalization | 180 秒 | 授权 Source 准备的默认阶段：receipt 校验、完整 catalog、普通 consume，以及同次图展开中非 discovery/management 的工作 |
+| management | 600 秒 | 当前有效 Source scope 内公开 management API 的等待，包括该 API 内部的消费者 load/invalidate 收尾 |
+| context | 840 秒 | 从本 context 开始经过的全部墙钟时间；不等于四份额度的总和 |
 
-真实字面 `$` 必须先通过当前输入、精确来源和目标守卫，才可进入 Source 准备；预算能力本身不授权远端写。management 只可由当前有效 Source scope 的 lexical `withManagement` 进入，退出后回到 source 并继续扣原余额。普通 read/use/model tool 不获得管理额度。同一 context 的多个 root 和 queued inputs 共用三份余额，重复 begin、阶段切换或第二个 manager 都不续期。重叠、重入、已返回或迟到的 scope 不得取得另一个 owner 的管理额度。
+真实字面 `$` 必须通过原有当前输入、来源、目标及在线条件，才可 `begin` 进入 finalization；新增计时方法不授权远端写，也不给普通已 ready 根或模型工具额外时间。`withDiscovery` 只包住三个既有 metadata 发现调用，`withManagement` 只包住原公开管理调用；两者必须由当前有效 scope 从 finalization 进入，退出后继续扣原 finalization 余额。下一条 Requires 再发现时恢复的是同一 discovery 余额。同一 context 的多个 root 和 queued inputs 共用四份余额，重复 begin、阶段切换、失败返回或第二个 manager 都不续期。重叠、重入、已返回或迟到的 scope 不得取得另一个 owner 的额度；scope 返回后仅恢复剩余 read 额度。
 
 ```mermaid
 stateDiagram-v2
     direction TB
     [*] --> read
-    read --> source: 当前输入的 Source 准备
-    source --> management: 当前 scope 的 withManagement
-    management --> source: 同一调用完成或抛错
-    source --> read: 当前 Source scope 返回
+    read --> finalization: 原有授权入口 begin
+    finalization --> discovery: 当前 scope 的 withDiscovery
+    discovery --> finalization: 调用完成或抛错
+    finalization --> management: 当前 scope 的 withManagement
+    management --> finalization: 调用完成或抛错
+    finalization --> read: 当前 Source scope 返回
     read --> closed: context 返回或取消到期
-    source --> closed: context 取消或到期
+    discovery --> closed: context 取消或到期
+    finalization --> closed: context 取消或到期
     management --> closed: context 取消或到期
     closed --> [*]
 ```
 
-每次切换和最终返回都检查已耗时间，即使 timer 回调尚未运行。实现将总墙钟限制为 840 秒；源码回归覆盖三个桶的累计、600 秒管理到期，以及 timer 尚未运行时的扣账守卫。真实 Pi 的 cold-budget 场景证明发现与管理实际串联、原 manager 结清后的完整消费与新进程复用。TLC 继续验证取消、owner 和发布资格的抽象，不把 SelectionGraph 的字节预算或有限模型结果当作墙钟、Promise 调度或精确分桶证明。
+每次切换和最终返回都检查已耗时间，即使 timer 回调尚未运行。实现显式保留总墙钟 840 秒；四桶剩余总和更大也不能延长它。源码回归覆盖每个桶累计、多 root/Requires/queued input、失败调用、旧 scope、纯 ready 的 60 秒边界和未执行 timer 的扣账。管理的 `finally` 扣账不能丢弃真实 receipt；已验证回执仍先沿现有 `onReceipt` 退休共享事实，再由取消/当前输入守卫决定是否允许本轮发布。真实 Pi 的 cold-budget 场景证明慢发现后仍能完成慢 catalog、完整消费与新进程复用。TLC 继续验证取消、owner 和发布资格的抽象，不把 SelectionGraph 的字节预算或有限模型结果当作墙钟、Promise 调度或精确分桶证明。
 
 超时和 Stop 只结束前台等待及旧 session 的发布资格，不终止已接纳 writer、不创建新 request、不删除 pending。固定 manager 的服务端时限与未知派发恢复仍由它自己的配置和 Store 决定。迟到回执可以失效共享事实，不能追加到已取消 session、激活选择或进入 provider。未捕获 manager exit 时如实记录未捕获；PID 消失不能推断 exit 0。原独立 cancel-late 场景继续核实际取消、session 替换、原 writer 迟到结清和后续正常消费。
 

@@ -13,22 +13,31 @@ const one = (rows, message) => { assert.equal(rows.length, 1, message); return r
 function delayPlan(facts) {
   const library = facts.sample.notion.library;
   return [
-    { label: 'catalog-root', operation: 'list', path: '/v1/pages/' + library.library_id, delay_ms: 12000 },
-    { label: 'catalog-children', operation: 'list', path: '/v1/blocks/' + library.library_id + '/children', delay_ms: 12000 },
-    { label: 'catalog-skills-schema', operation: 'list', path: '/v1/data_sources/' + library.skills.data_source_id, delay_ms: 12000 },
-    { label: 'initial-consume-owner', operation: 'consume', path: '/v1/pages/' + facts.members[0].legacy_page_id, delay_ms: 12000 },
-    { label: 'source-discovery-root', operation: 'source-members', path: '/v1/pages/' + library.library_id, delay_ms: 14000 },
-    { label: 'source-discovery-children', operation: 'source-members', path: '/v1/blocks/' + library.library_id + '/children', delay_ms: 20000 },
+    ...[
+      ['catalog-root', 'list', '/v1/pages/' + library.library_id],
+      ['catalog-children', 'list', '/v1/blocks/' + library.library_id + '/children'],
+      ['catalog-skills-schema', 'list', '/v1/data_sources/' + library.skills.data_source_id],
+      ['initial-consume-owner', 'consume', '/v1/pages/' + facts.members[0].legacy_page_id],
+    ].map(([label, operation, path]) => ({ label, operation, path, stage: 'ordinary', delay_ms: 0 })),
+    { label: 'source-discovery-root', stage: 'discovery', operation: 'source-members', path: '/v1/pages/' + library.library_id, delay_ms: 14000 },
+    { label: 'source-discovery-children', stage: 'discovery', operation: 'source-members', path: '/v1/blocks/' + library.library_id + '/children', delay_ms: 20000 },
     ...['skills', 'files', 'records', 'sources'].map(role => ({
-      label: 'source-discovery-' + role + '-schema', operation: 'source-members',
+      label: 'source-discovery-' + role + '-schema', stage: 'discovery', operation: 'source-members',
       path: '/v1/data_sources/' + library[role].data_source_id, delay_ms: 20000,
     })),
-    { label: 'manager-root', operation: 'management', path: '/v1/pages/' + library.library_id, delay_ms: 20000 },
-    { label: 'manager-children', operation: 'management', path: '/v1/blocks/' + library.library_id + '/children', delay_ms: 20000 },
+    { label: 'manager-root', stage: 'management', operation: 'management', path: '/v1/pages/' + library.library_id, delay_ms: 20000 },
+    { label: 'manager-children', stage: 'management', operation: 'management', path: '/v1/blocks/' + library.library_id + '/children', delay_ms: 20000 },
     ...['skills', 'files'].map(role => ({
-      label: 'manager-' + role + '-schema', operation: 'management',
+      label: 'manager-' + role + '-schema', stage: 'management', operation: 'management',
       path: '/v1/data_sources/' + library[role].data_source_id, delay_ms: 20000,
     })),
+    ...[
+      ['root', '/v1/pages/' + library.library_id],
+      ['children', '/v1/blocks/' + library.library_id + '/children'],
+      ['skills-schema', '/v1/data_sources/' + library.skills.data_source_id],
+    ].map(([label, path]) => ({ label: 'post-catalog-' + label, stage: 'post_catalog', operation: 'list', path, delay_ms: 12000 })),
+    ...[0, 1].map(index => ({ label: 'final-consume-' + (index ? 'required' : 'root'), stage: 'final_consume',
+      operation: 'consume', path: '/v1/pages/' + facts.members[index].legacy_page_id, delay_ms: 18000 })),
   ].map(item => ({ ...item, method: 'GET' }));
 }
 
@@ -47,7 +56,22 @@ function activeOwner(events, item, piPid) {
     assert.ok(BigInt(request.observer_monotonic_ns) <= BigInt(child.observer_monotonic_ns));
     return { request_id: request.request_id, manager_pid: child.child_pid };
   }
-  assert.equal(management.length, 0, 'A consumer SDK hold must precede management');
+  // The public manager still verifies the consumer scope after its child closes.
+  // Release that matching GET immediately; only a ready-result-followed SDK list
+  // can own the delayed post-catalog response.
+  if (item.label === 'post-catalog-root' && management.length) {
+    assert.equal(sdk.length, 0);
+    const request = one(management, 'One unfinished management request owns this metadata GET');
+    const child = one(own.filter(row => row.kind === 'manager_transport' && row.event === 'spawn'),
+      'The unfinished request must retain its original manager PID');
+    return { deferred: true, request_id: request.request_id, manager_pid: child.child_pid };
+  }
+  assert.equal(management.length, 0, 'A consumer SDK hold cannot overlap management');
+  if (['post_catalog', 'final_consume'].includes(item.stage)) {
+    const ready = one(own.filter(row => row.kind === 'context-broker.notion-materialization' && row.event === 'result'),
+      'Post-management holds require the actual ready receipt');
+    assert.ok(['ready', 'already_ready'].includes(ready.status));
+  }
   const operation = one(sdk, 'The delayed HTTP must belong to exactly one active SDK operation: ' + item.label);
   assert.equal(operation.operation, item.operation);
   return { sdk_id: operation.id };
@@ -68,9 +92,9 @@ export async function runColdMaterializationPrompt({ base, facts, service, rpc, 
     controls.push(hold); return hold;
   };
   let hold = arm(plan[0]);
-  const receipt = { version: 2, kind: 'actual-pi-cold-materialization-budget', prompt, pi_pid: piPid,
+  const receipt = { version: 3, kind: 'actual-pi-cold-materialization-budget', prompt, pi_pid: piPid,
     initial_session: 'discovery-empty-session.json', initial_http_count: service.requests.length,
-    initial_sdk_events: before.length, sent_monotonic_ns: now(), holds: [] };
+    initial_sdk_events: before.length, sent_monotonic_ns: now(), holds: [], deferred_holds: [] };
   const save = () => writeFile(join(base, 'cold-budget.json'), JSON.stringify(receipt, null, 2) + '\n', { mode: 0o600 });
   await save();
   const result = rpc.prompt(prompt).then(value => ({ ok: true, value }), error => ({ ok: false, error }));
@@ -81,8 +105,23 @@ export async function runColdMaterializationPrompt({ base, facts, service, rpc, 
   prematurelyEnded.catch(() => {});
   try {
     for (const [index, item] of plan.entries()) {
-      const arrived = await Promise.race([hold.reached, prematurelyEnded]);
-      const owner = activeOwner(await readRows(eventsPath), item, piPid);
+      let arrived, owner;
+      for (;;) {
+        arrived = await Promise.race([hold.reached, prematurelyEnded]);
+        owner = activeOwner(await readRows(eventsPath), item, piPid);
+        if (!owner.deferred) break;
+        assert.ok(receipt.deferred_holds.length < 8, 'Unexpected repeated management metadata while awaiting its ready receipt');
+        const next = arm(item), reached = now();
+        const proof = { label: item.label, stage: 'management_pending', operation: 'management', method: item.method, path: item.path,
+          delay_ms: 0, sequence: arrived.sequence, request_id: owner.request_id, manager_pid: owner.manager_pid,
+          reached_monotonic_ns: reached, released_monotonic_ns: now() };
+        receipt.deferred_holds.push(proof);
+        hold.release();
+        const closed = await hold.closed;
+        proof.closed_monotonic_ns = closed.closed_monotonic_ns;
+        assert.equal(closed.terminal, 'finished'); assert.equal(closed.status, 200);
+        await save(); hold = next;
+      }
       const next = index + 1 < plan.length ? arm(plan[index + 1]) : undefined;
       const proof = { ...item, sequence: arrived.sequence, ...owner, reached_monotonic_ns: now() };
       receipt.holds.push(proof); await save();
@@ -115,7 +154,7 @@ export async function runColdMaterializationPrompt({ base, facts, service, rpc, 
  * The caller also verifies the original manager stdout/stderr, binding and receipt.
  */
 export function assertColdMaterializationBudget({ receipt, facts, source, events, initial, session, piPid }) {
-  assert.equal(receipt.version, 2); assert.equal(receipt.kind, 'actual-pi-cold-materialization-budget');
+  assert.equal(receipt.version, 3); assert.equal(receipt.kind, 'actual-pi-cold-materialization-budget');
   assert.equal(receipt.status, 'completed'); assert.equal(receipt.pi_pid, piPid);
   assert.equal(receipt.initial_http_count, 0); assert.deepEqual(userTexts(initial), []);
   assert.equal(userTexts(session)[0], receipt.prompt);
@@ -175,11 +214,14 @@ export function assertColdMaterializationBudget({ receipt, facts, source, events
       const end = one(own.filter(row => row.kind === 'context-broker.notion-sdk' && row.event === 'end' && row.id === proof.sdk_id),
         'One original SDK end must settle each consumer hold');
       assert.equal(begin.operation, proof.operation); assert.equal(end.operation, proof.operation);
-      assert.equal(end.status, proof.operation === 'consume' ? 'failed' : 'completed');
+      assert.equal(end.status, proof.stage === 'ordinary' && proof.operation === 'consume' ? 'failed' : 'completed');
       assert.ok(BigInt(begin.observer_monotonic_ns) <= BigInt(request.started_monotonic_ns));
       assert.ok(BigInt(end.observer_monotonic_ns) >= BigInt(request.ended_monotonic_ns));
-      assert.ok(BigInt(end.observer_monotonic_ns) < BigInt(start.observer_monotonic_ns),
-        'The original read and discovery operations must settle before management');
+      if (['ordinary', 'discovery'].includes(proof.stage))
+        assert.ok(BigInt(end.observer_monotonic_ns) < BigInt(start.observer_monotonic_ns),
+          'The original read and discovery operations must settle before management');
+      else assert.ok(BigInt(begin.observer_monotonic_ns) > BigInt(managed.observer_monotonic_ns),
+        'Post-catalog and final consume must follow the actual ready management result');
     }
     assert.ok(BigInt(proof.reached_monotonic_ns) >= BigInt(request.started_monotonic_ns));
     assert.ok(milliseconds(proof.released_monotonic_ns, proof.reached_monotonic_ns) >= proof.delay_ms);
@@ -187,6 +229,28 @@ export function assertColdMaterializationBudget({ receipt, facts, source, events
     assert.equal(request.closed_monotonic_ns, proof.closed_monotonic_ns);
     assert.ok(BigInt(request.closed_monotonic_ns) >= BigInt(request.ended_monotonic_ns));
     if (index) assert.ok(BigInt(request.started_monotonic_ns) >= BigInt(receipt.holds[index - 1].released_monotonic_ns));
+  }
+  assert.ok(Array.isArray(receipt.deferred_holds) && receipt.deferred_holds.length <= 8);
+  assert.equal(new Set([...receipt.holds, ...receipt.deferred_holds].map(proof => proof.sequence)).size,
+    receipt.holds.length + receipt.deferred_holds.length, 'Immediate releases cannot also prove delayed SDK holds');
+  for (const proof of receipt.deferred_holds) {
+    assert.equal(proof.label, 'post-catalog-root'); assert.equal(proof.stage, 'management_pending');
+    assert.equal(proof.operation, 'management'); assert.equal(proof.delay_ms, 0); assert.equal(proof.sdk_id, undefined);
+    assert.equal(proof.request_id, start.request_id); assert.equal(proof.manager_pid, spawn.child_pid);
+    const request = one(source.filter(row => row.sequence === proof.sequence), 'Immediate release requires its original HTTP record');
+    assert.equal(proof.method, 'GET'); assert.equal(request.method, proof.method);
+    assert.equal(proof.path, '/v1/pages/' + facts.sample.notion.library.library_id); assert.equal(request.path, proof.path);
+    assert.equal(request.control, 'hold-before-headers'); assert.equal(request.phase, 'materialize');
+    assert.equal(request.terminal, 'finished'); assert.equal(request.status, 200); assert.equal(request.response_bytes_complete, true);
+    assert.ok(request.semantic_write === undefined || request.semantic_write === false);
+    assert.ok(BigInt(request.started_monotonic_ns) >= BigInt(start.observer_monotonic_ns));
+    assert.ok(BigInt(request.closed_monotonic_ns) <= BigInt(managed.observer_monotonic_ns),
+      'Manager completion HTTP cannot be counted as post-ready finalization');
+    assert.ok(BigInt(proof.reached_monotonic_ns) >= BigInt(request.started_monotonic_ns));
+    assert.ok(BigInt(proof.released_monotonic_ns) >= BigInt(proof.reached_monotonic_ns));
+    assert.ok(BigInt(request.ended_monotonic_ns) >= BigInt(proof.released_monotonic_ns));
+    assert.equal(request.closed_monotonic_ns, proof.closed_monotonic_ns);
+    assert.ok(BigInt(request.closed_monotonic_ns) >= BigInt(request.ended_monotonic_ns));
   }
   assert.equal(new Set(receipt.holds.slice(0, 3).map(proof => proof.sdk_id)).size, 1);
   const firstConsume = one(own.filter(row => row.kind === 'context-broker.notion-sdk-result' && row.id === receipt.holds[3].sdk_id),
@@ -223,10 +287,29 @@ export function assertColdMaterializationBudget({ receipt, facts, source, events
   assert.ok(BigInt(consumed.observer_monotonic_ns) >= BigInt(consumeStart.observer_monotonic_ns));
   assert.ok(BigInt(consumeEnd.observer_monotonic_ns) >= BigInt(consumed.observer_monotonic_ns));
   assert.ok(completed >= BigInt(consumeEnd.observer_monotonic_ns));
-  // This observable interval excludes only the actual child lifetime. It is not
-  // an internal timer reading; exact cumulative charging is covered by core tests.
-  const nonWriterMs = milliseconds(consumeEnd.observer_monotonic_ns, discovery.observer_monotonic_ns)
-    - milliseconds(close.observer_monotonic_ns, spawn.observer_monotonic_ns);
-  assert.ok(nonWriterMs >= 114000 && nonWriterMs < 180000,
-    'Observed discovery and finalization must fit the separate 180s allowance');
+  const discoveryEnd = one(own.filter(row => row.kind === 'context-broker.notion-sdk' && row.event === 'end' && row.id === discovery.id),
+    'Slow discovery must retain its original terminal');
+  const catalogHolds = receipt.holds.filter(proof => proof.stage === 'post_catalog');
+  const consumeHolds = receipt.holds.filter(proof => proof.stage === 'final_consume');
+  assert.ok(catalogHolds.every(proof => proof.sdk_id === refreshed.id), 'Every post-catalog delay belongs to the actual refreshed SDK operation');
+  assert.ok(consumeHolds.every(proof => proof.sdk_id === consumeStart.id), 'Every final body delay belongs to the actual ready consume');
+  const discoveryMs = milliseconds(discoveryEnd.observer_monotonic_ns, discovery.observer_monotonic_ns);
+  const catalogMs = milliseconds(end.observer_monotonic_ns, refreshed.observer_monotonic_ns);
+  const consumeMs = milliseconds(consumeEnd.observer_monotonic_ns, consumeStart.observer_monotonic_ns);
+  // These are operation observations, not exact internal bucket counters. The
+  // management diagnostic encloses the public API; never subtract just its child.
+  const finalizationMs = milliseconds(consumeEnd.observer_monotonic_ns, managed.observer_monotonic_ns);
+  const nonManagementMs = milliseconds(consumeEnd.observer_monotonic_ns, discovery.observer_monotonic_ns) - managementMs;
+  assert.ok(discoveryMs >= 114000 && discoveryMs < 180000, 'Observed discovery must fit its own 180s allowance');
+  assert.ok(catalogMs >= 36000, 'The actual post-management catalog must include its 36s HTTP delay');
+  assert.ok(consumeMs >= 36000, 'The actual final consume must include both 18s owner delays');
+  assert.ok(finalizationMs >= 72000 && finalizationMs < 180000, 'Observed finalization must fit its own 180s allowance');
+  assert.ok(nonManagementMs > 180000, 'Discovery and finalization together must cross the former shared 180s limit');
+  return { version: 1, kind: 'cold-budget-phase-observation', pi_pid: piPid, manager_pid: spawn.child_pid, request_id: start.request_id,
+    discovery_sdk_id: discovery.id, catalog_sdk_id: refreshed.id, consume_sdk_id: consumeStart.id,
+    total_ms: milliseconds(completed, sent), initial_read_ms: milliseconds(discovery.observer_monotonic_ns, sent),
+    discovery_ms: discoveryMs, management_ms: managementMs, post_catalog_ms: catalogMs, final_consume_ms: consumeMs,
+    observed_finalization_ms: finalizationMs, observed_non_management_ms: nonManagementMs,
+    delayed_http_count: receipt.holds.filter(proof => proof.delay_ms > 0).length, immediate_management_releases: receipt.deferred_holds.length };
+
 }

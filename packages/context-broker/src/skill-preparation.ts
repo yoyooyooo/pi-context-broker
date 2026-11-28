@@ -59,7 +59,9 @@ export async function withPreparationDeadline<T>(parent: AbortSignal, work: (sig
  * never grants a write or changes a manager's lifetime. */
 export type SourcePreparationScope = {
   begin(): void;
-  /** Await the fixed management API without spending the Source-read balance. */
+  /** Discover metadata without spending the Source finalization balance. */
+  withDiscovery<T>(work: () => Promise<T>): Promise<T>;
+  /** Await the fixed management API without spending either Source-read balance. */
   withManagement<T>(work: () => Promise<T>): Promise<T>;
   /** Charge before publication without discarding a late durable receipt. */
   checkpoint(): void;
@@ -68,8 +70,8 @@ export type ContextPreparationBudget = {
   withSourcePreparation<T>(work: (scope: SourcePreparationScope) => Promise<T>): Promise<T>;
 };
 
-/** One Pi context shares cumulative read, Source and management time across all
- * accepted inputs and roots. Ordinary tools keep their original deadline. */
+/** One Pi context shares cumulative read, discovery, finalization and management
+ * time across accepted inputs and roots. Ordinary tools keep their original deadline. */
 export async function withContextPreparationDeadline<T>(
   parent: AbortSignal,
   work: (signal: AbortSignal, budget: ContextPreparationBudget) => Promise<T>,
@@ -77,10 +79,10 @@ export async function withContextPreparationDeadline<T>(
   checkPreparationSignal(parent);
   const controller = new AbortController(), signal = AbortSignal.any([parent, controller.signal]);
   const stopped = Promise.withResolvers<never>();
-  const remaining = { read: 60_000, preparation: 180_000, management: 600_000 }, started = performance.now();
-  // Foreground policy is independent of the fixed manager deployment budget.
-  const maxDurationMs = remaining.read + remaining.preparation + remaining.management;
-  let phase: "read" | "preparation" | "management" | "closed" = "read", changedAt = started;
+  const remaining = { read: 60_000, discovery: 180_000, finalization: 180_000, management: 600_000 }, started = performance.now();
+  // The wall cap is independent of the per-phase maxima and manager deployment.
+  const maxDurationMs = 840_000;
+  let phase: keyof typeof remaining | "closed" = "read", changedAt = started;
   let currentScope: SourcePreparationScope | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const close = () => { phase = "closed"; clearTimeout(timer); };
@@ -114,28 +116,30 @@ export async function withContextPreparationDeadline<T>(
       // but nested, overlapping and closed scopes cannot start more work.
       if (phase === "closed" || currentScope) throw preparationCancelled();
       charge(); checkPreparationSignal(signal);
+      const withPhase = async <T>(next: "discovery" | "management", operation: () => Promise<T>): Promise<T> => {
+        if (currentScope !== scope || phase !== "finalization") throw preparationCancelled();
+        const now = charge();
+        checkPreparationSignal(signal);
+        phase = next; arm(now);
+        try { return await operation(); }
+        finally {
+          // Do not throw away a known durable receipt on expiry. An old producer
+          // cannot charge or reopen a later accepted input's accounting owner.
+          if (currentScope === scope && phase === next) {
+            const completedAt = charge();
+            if (phase === next && !signal.aborted) { phase = "finalization"; arm(completedAt); }
+          }
+        }
+      };
       const scope: SourcePreparationScope = Object.freeze({
         begin() {
           if (currentScope !== scope || phase === "closed") throw preparationCancelled();
           const now = charge();
           checkPreparationSignal(signal);
-          if (phase === "read") { phase = "preparation"; arm(now); }
+          if (phase === "read") { phase = "finalization"; arm(now); }
         },
-        async withManagement<T>(operation: () => Promise<T>): Promise<T> {
-          if (currentScope !== scope || phase !== "preparation") throw preparationCancelled();
-          const now = charge();
-          checkPreparationSignal(signal);
-          phase = "management"; arm(now);
-          try { return await operation(); }
-          finally {
-            // Keep a durable receipt even when accounting expires. An old
-            // producer cannot charge or reopen the next input's scope.
-            if (currentScope === scope && phase === "management") {
-              const completedAt = charge();
-              if (phase === "management" && !signal.aborted) { phase = "preparation"; arm(completedAt); }
-            }
-          }
-        },
+        withDiscovery<T>(operation: () => Promise<T>): Promise<T> { return withPhase("discovery", operation); },
+        withManagement<T>(operation: () => Promise<T>): Promise<T> { return withPhase("management", operation); },
         checkpoint() {
           // A late operation may still retire durable facts. Its old scope
           // cannot charge or reopen a later input's accounting owner.
@@ -148,7 +152,7 @@ export async function withContextPreparationDeadline<T>(
         if (currentScope === scope) {
           const now = charge();
           currentScope = undefined;
-          if ((phase === "preparation" || phase === "management") && !signal.aborted) { phase = "read"; arm(now); }
+          if ((phase === "finalization" || phase === "discovery" || phase === "management") && !signal.aborted) { phase = "read"; arm(now); }
         }
       }
     },
