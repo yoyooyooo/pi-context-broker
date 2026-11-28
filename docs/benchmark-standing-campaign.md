@@ -230,9 +230,15 @@ Both paths must be absolute. `--prelaunch-request` cannot be combined with
 request without acquiring a lease or writing files. It verifies the exact
 reviewed producer closure and byte-bound plan, profile, registration,
 reservation, ledger and runner records. It requires a dead runner owner and
-the absence of the batch lease, run directory, launch artifact and turn-control
-directory. The read-only preflight also requires the campaign lease file to be
-absent. Error text alone cannot prove this boundary.
+the absence of the batch lease, run directory, launch artifact, dispatch-error
+diagnostic and turn-control directory. The read-only preflight also requires the
+campaign lease file to be absent. Error text alone cannot prove this boundary.
+A dispatch diagnostic does not prove that a provider received a request; its
+presence still excludes this case of profile validation before launcher invocation.
+
+Changing `execute.mjs` requires reviewing the order of profile validation and
+binding the current producer to the reviewed bytes. The legacy producer keeps
+its original execution boundary; the two bindings cannot be interchanged.
 
 `disposeProfilePrelaunchFailure` acquires the existing campaign lease, repeats
 the checks and publishes the fixed `prelaunch-disposition.json` sidecar without
