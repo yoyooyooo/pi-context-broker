@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,8 @@ import { createFixtureTurnAdapter } from './fixture-turn-adapter.mjs';
 import { inventoryPublicInputs } from './subject.mjs';
 import { readTurnBridgeJournal } from './turn-bridge.mjs';
 import { executionImplementation } from './implementation.mjs';
+import { collectEpisode } from './collect.mjs';
+import { preflightCapacity } from '../scripts/paired-capacity.mjs';
 
 const repository = dirname(dirname(fileURLToPath(import.meta.url)));
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -182,6 +184,8 @@ async function textFiles(root) {
 test('runSubject launches a real isolated child; clarification and complete native replacement preserve one session', async () => {
   const f = await fixture(), result = await run(f);
   assert.equal(result.status, 'completed', JSON.stringify(result)); assert.equal(result.stop_batch, false);
+  assert.equal(Object.hasOwn(result, 'dispatch_diagnostic'), false);
+  await assert.rejects(lstat(join(f.controlRoot, f.runId + '.dispatch-error.json')), { code: 'ENOENT' });
   assert.equal(result.turn_control.status, 'completed'); assert.deepEqual(f.counts(), { apply: 1, reconcile: 0, child: 1 });
   assert.deepEqual(result.episode.turns.map(turn => turn.id), ['turn-1', 'clarification-1', 'turn-2']);
   assert.equal(new Set(result.episode.turns.map(turn => turn.session_id)).size, 1); assert.equal(new Set(result.episode.turns.map(turn => turn.pid)).size, 1);
@@ -258,6 +262,10 @@ test('launcher acknowledgement failure retains actual child result and metering 
   assert.equal(result.episode.status, 'completed'); assert.equal(result.episode.turns.length, 3);
   assert.equal(result.episode.requests.length, 0); assert.equal(result.shared.exit_code, 0);
   assert.equal(result.stop_batch, true); assert.match(result.dispatch_error.message, /acknowledgement/);
+  assert.equal(result.dispatch_diagnostic.status, 'retained');
+  const retained = await json(result.dispatch_diagnostic.receipt.path);
+  assert.equal(retained.error.message, result.dispatch_error.message);
+  assert.equal(Object.hasOwn(retained.error, 'capacity'), false);
 });
 
 test('controller recovery cannot infer success from a missing or changed private receipt', async () => {
@@ -273,3 +281,145 @@ test('controller recovery cannot infer success from a missing or changed private
   assert.equal((await json(join(f.runRoot, 'benchmark/runtime/episode-result.json'))).requests.length, 0);
 });
 
+
+// These fixtures stop at the existing dispatch boundary. No product build,
+// provider, Source, fixture turn adapter or real credentials are needed.
+async function dispatchFailureFixture(t, { outsideControl = false } = {}) {
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'benchmark-dispatch-error-')));
+  const root = join(base, 'environment'); await mkdir(root);
+  const runId = 'dispatch-' + randomUUID().slice(0, 8), runRoot = join(root, 'runs', runId);
+  const controlRoot = join(outsideControl ? base : root, 'control');
+  const expected = await save(join(controlRoot, 'expectation.json'), { scope: 'no-model-dispatch-fixture' });
+  const options = { environmentRoot: root, buildId: 'fixture-build', mode: 'native',
+    binding: { id: 'dispatch-fixture', input_root: join(root, 'input-not-read'), input_inventory_sha256: '1'.repeat(64),
+      skills_root: join(root, 'skills-not-read'), public_case: { turns: [{ id: 'turn-1', prompt: 'Local fixture.' }] } },
+    model: { provider: 'apparatus', id: 'no-model', api: 'openai-completions', parameters: {} },
+    modelsFile: join(controlRoot, 'models-not-read.json'), runtime: {}, controlRoot, runId, conditionId: 'fixture',
+    expected, budget: { max_duration_ms: 1000, max_model_requests: 0, max_http_attempts: 0,
+      max_input_tokens: 0, max_output_tokens: 0 },
+    credential: { source_file: '/not-read', provider: 'apparatus', api_key_env: 'DISPATCH_ERROR_TEST_KEY' } };
+  const deps = { resolveModelCredential: async () => ({}),
+    verifyTurnRuntimeBuild: async () => ({ status: 'apparatus_only', required: true }) };
+  const diagnosticPath = join(controlRoot, runId + '.dispatch-error.json');
+  t.diagnostic('Owned no-model fixture retained: ' + base);
+  return { base, root, runRoot, controlRoot, runId, options, deps, diagnosticPath };
+}
+
+async function failedDispatch(f, failure, t) {
+  const lines = [], stderr = t.mock.method(process.stderr, 'write', chunk => { lines.push(String(chunk)); return true; });
+  let calls = 0, result;
+  try { result = await runSubject(f.options, { ...f.deps, runEnvironment: async options => { calls++; return failure(options); } }); }
+  finally { stderr.mock.restore(); }
+  assert.equal(calls, 1, 'Diagnostic retention never retries a dispatch');
+  return { result, stderr: lines.join('') };
+}
+
+const ordinaryDispatchError = () => Object.assign(new Error('original local dispatch failure'), {
+  code: 'EAPPARATUS', unrelated: 'PRIVATE_PROPERTY_MUST_NOT_BE_SERIALIZED' });
+
+function assertUnknownDispatch(result) {
+  assert.equal(result.status, 'invalid'); assert.equal(result.episode, null); assert.equal(result.shared, null);
+  assert.equal(result.stop_batch, true);
+  assert.match(result.error, /actual request\/cost status remains unknown/);
+  for (const name of ['budget_usage', 'requests', 'input_tokens', 'output_tokens', 'terminal_disposition', 'zero_send'])
+    assert.equal(Object.hasOwn(result, name), false, 'Diagnostic does not create ' + name);
+}
+
+test('dispatch failure retains a real typed capacity refusal before collector realpath can mask it', async t => {
+  const f = await dispatchFailureFixture(t);
+  await save(join(f.root, 'capacity-policy.json'), { version: 1, min_free_bytes: Number.MAX_SAFE_INTEGER });
+  let original;
+  const { result, stderr } = await failedDispatch(f, async () => {
+    try { await preflightCapacity({ root: f.root }, 'run-preparation', { known_copy_bytes: 0, unknown: [] }, f.runRoot); }
+    catch (error) { original = error; throw error; }
+    assert.fail('The fixture policy must refuse before creating a run directory');
+  }, t);
+  assert.equal(original.code, 'PAIRED_CAPACITY_REFUSED'); assertUnknownDispatch(result);
+  assert.deepEqual(result.dispatch_error, { name: original.name, message: original.message }, 'Legacy raw error shape remains unchanged');
+  await assert.rejects(lstat(f.runRoot), { code: 'ENOENT' });
+  const bytes = await readFile(f.diagnosticPath), receipt = JSON.parse(bytes);
+  assert.equal(receipt.version, 1); assert.equal(receipt.kind, 'benchmark-subject-dispatch-error');
+  assert.equal(receipt.stage, 'runEnvironment'); assert.equal(receipt.run_id, f.runId);
+  assert.equal(receipt.environment_root, f.root); assert.equal(receipt.build_id, f.options.buildId);
+  assert.equal(receipt.error.code, original.code); assert.deepEqual(receipt.error.capacity, original.capacity);
+  assert.equal(receipt.error.name, original.name); assert.equal(receipt.error.message, original.message);
+  assert.match(receipt.observed_at, /^\d{4}-\d{2}-\d{2}T.*Z$/);
+  const launchPath = join(f.controlRoot, f.runId + '.launch.json'), launchBytes = await readFile(launchPath);
+  assert.deepEqual(receipt.launch, { path: launchPath, sha256: sha(launchBytes), bytes: launchBytes.length });
+  assert.deepEqual(receipt.expected, { path: f.options.expected.path, sha256: f.options.expected.sha256 });
+  assert.equal(receipt.resource_profile, null); assert.match(receipt.scope, /diagnostic/);
+  const info = await stat(f.diagnosticPath);
+  assert.equal(info.mode & 0o777, 0o600); if (process.getuid) assert.equal(info.uid, process.getuid());
+  assert.deepEqual(result.dispatch_diagnostic, { status: 'retained', receipt: { path: f.diagnosticPath, sha256: sha(bytes), bytes: bytes.length } });
+  assert.equal(stderr, '');
+  await assert.rejects(collectEpisode({ raw: result, environmentRoot: f.root,
+    outputDirectory: join(f.runRoot, 'benchmark/normalized') }), error => error.code === 'ENOENT' && error.syscall === 'realpath');
+  assert.deepEqual(await readFile(f.diagnosticPath), bytes, 'The downstream error cannot erase the retained original');
+  await assert.rejects(lstat(f.runRoot), { code: 'ENOENT' });
+});
+
+test('dispatch failure retains ordinary errors without adding capacity or arbitrary properties', async t => {
+  const f = await dispatchFailureFixture(t), error = ordinaryDispatchError();
+  error.capacity = { untrusted: true };
+  const { result, stderr } = await failedDispatch(f, async () => { throw error; }, t);
+  const receipt = await json(f.diagnosticPath); assertUnknownDispatch(result);
+  assert.deepEqual(receipt.error, { name: error.name, message: error.message, code: error.code });
+  assert.deepEqual(result.dispatch_error, { name: error.name, message: error.message });
+  assert.ok(!(await readFile(f.diagnosticPath, 'utf8')).includes(error.unrelated)); assert.equal(stderr, '');
+});
+
+test('dispatch failure never overwrites an existing diagnostic or follows its symlink', async t => {
+  for (const kind of ['file', 'partial', 'symlink']) await t.test(kind, async t => {
+    const f = await dispatchFailureFixture(t), original = ordinaryDispatchError();
+    const first = kind === 'partial' ? '{"version":' : 'first owned evidence\n';
+    const target = kind === 'symlink' ? join(f.base, 'untouched-target.json') : f.diagnosticPath;
+    await writeFile(target, first, { flag: 'wx', mode: 0o600 });
+    if (kind === 'symlink') await symlink(target, f.diagnosticPath);
+    const { result, stderr } = await failedDispatch(f, async () => { throw original; }, t);
+    assertUnknownDispatch(result); assert.equal(result.dispatch_diagnostic.status, 'unavailable');
+    assert.equal(result.dispatch_diagnostic.path, f.diagnosticPath); assert.equal(result.dispatch_diagnostic.error.code, 'EEXIST');
+    assert.equal(Object.hasOwn(result.dispatch_diagnostic, 'receipt'), false);
+    assert.equal(await readFile(target, 'utf8'), first);
+    assert.match(stderr, /benchmark_dispatch_error_retention_failed/); assert.ok(stderr.includes(original.message));
+    assert.match(stderr, /EEXIST/); assert.ok(!stderr.includes(original.unrelated));
+    if (kind === 'symlink') assert.equal((await lstat(f.diagnosticPath)).isSymbolicLink(), true);
+  });
+});
+
+test('dispatch failure refuses diagnostic output outside the owned environment', async t => {
+  const f = await dispatchFailureFixture(t, { outsideControl: true }), original = ordinaryDispatchError();
+  const { result, stderr } = await failedDispatch(f, async () => { throw original; }, t);
+  assertUnknownDispatch(result); assert.equal(result.dispatch_diagnostic.status, 'unavailable');
+  await assert.rejects(lstat(f.diagnosticPath), { code: 'ENOENT' });
+  assert.match(result.dispatch_diagnostic.error.message, /DISPATCH_DIAGNOSTIC_CONTROL_ROOT/);
+  assert.ok(stderr.includes(original.message)); assert.match(stderr, /DISPATCH_DIAGNOSTIC_CONTROL_ROOT/);
+});
+
+
+test('dispatch failure refuses a symlinked controller directory', async t => {
+  const f = await dispatchFailureFixture(t), original = ordinaryDispatchError();
+  const moved = join(f.root, 'real-control'); await rename(f.controlRoot, moved); await symlink(moved, f.controlRoot);
+  const { result, stderr } = await failedDispatch(f, async () => { throw original; }, t);
+  assertUnknownDispatch(result); assert.equal(result.dispatch_diagnostic.status, 'unavailable');
+  await assert.rejects(lstat(f.diagnosticPath), { code: 'ENOENT' });
+  assert.match(result.dispatch_diagnostic.error.message, /DISPATCH_DIAGNOSTIC_CONTROL_ROOT/);
+  assert.ok(stderr.includes(original.message));
+});
+
+test('dispatch failure diagnostic write failure preserves a complete child and its original acknowledgement error', async t => {
+  const f = await fixture({ failLauncherAfterTerminal: true });
+  const path = join(f.controlRoot, f.runId + '.dispatch-error.json'), first = 'first evidence must survive\n';
+  await writeFile(path, first, { flag: 'wx', mode: 0o600 });
+  const lines = [], stderr = t.mock.method(process.stderr, 'write', chunk => { lines.push(String(chunk)); return true; });
+  let result;
+  try { result = await run(f); } finally { stderr.mock.restore(); }
+  assert.equal(result.episode.status, 'completed'); assert.equal(result.episode.turns.length, 3);
+  assert.equal(result.episode.requests.length, 0); assert.equal(result.shared.exit_code, 0);
+  assert.equal(result.stop_batch, true); assert.match(result.dispatch_error.message, /acknowledgement/);
+  assert.equal(result.dispatch_diagnostic.status, 'unavailable'); assert.equal(result.dispatch_diagnostic.error.code, 'EEXIST');
+  assert.equal(await readFile(path, 'utf8'), first);
+  assert.ok(lines.join('').includes(result.dispatch_error.message)); assert.match(lines.join(''), /EEXIST/);
+  assert.deepEqual(await json(join(f.runRoot, 'benchmark/runtime/episode-result.json')), result.episode);
+  assert.deepEqual(await json(join(f.runRoot, 'result.json')), result.shared);
+  assert.equal(f.counts().child, 1, 'Retention failure does not repeat an already completed child');
+});

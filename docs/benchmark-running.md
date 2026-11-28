@@ -695,6 +695,22 @@ node benchmark/cli.mjs reconcile --root /absolute/task/batch --lease observed-de
 An unresolved execution is not automatically rerun. Its send and cost status
 must be established or retained as unknown. Never delete a run or its receipts.
 
+When `runEnvironment` rejects, the controller first attempts to retain
+`<controlRoot>/<runId>.dispatch-error.json`. This diagnostic binds the run and
+launch bytes and records the original error name, message, explicit code, and
+any `PAIRED_CAPACITY_REFUSED` capacity observation. It preserves the first cause
+even if collection later reports that the owned run directory is missing.
+`raw.dispatch_diagnostic` reports whether retention succeeded; if it did not,
+stderr records both the original dispatch error and the retention error.
+
+The diagnostic does not prove zero sends, supply missing usage, establish a
+terminal result, or authorize resumption. A lost launcher acknowledgement may
+still leave complete runtime evidence, so the existing collector continues to
+inspect retained results. Old runs without the diagnostic keep their original
+unknowns; a later free-space reading cannot establish their earlier failure
+cause. Adopt this change through a new frozen controller identity, without
+rewriting an existing plan or its failure records.
+
 ## Setup fields and limits
 
 ### Reusing a complete private corpus
