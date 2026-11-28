@@ -80,6 +80,13 @@ node scripts/notion-sdk-pi.mjs run --package /absolute/selected/broker \
   --pi /absolute/installed/pi/dist/bundle/cli.js \
   --scenario source-materialize-cache-upgrade --out /absolute/owned/materialize-cache-upgrade
 node scripts/notion-sdk-pi.mjs evidence --evidence /absolute/owned/materialize-cache-upgrade
+
+node scripts/notion-sdk-pi.mjs run --package /absolute/selected/broker \
+  --fixture /absolute/owned/materialization-fixture/fixture.json \
+  --source-http-helper /absolute/selected/cli/scripts/sdk-source-fixture.mjs \
+  --pi /absolute/installed/pi/dist/bundle/cli.js \
+  --scenario source-materialize-blocked-member --out /absolute/owned/materialize-blocked-member
+node scripts/notion-sdk-pi.mjs evidence --evidence /absolute/owned/materialize-blocked-member
 ~~~
 
 上述五个成功场景先运行实际模型工具的 readonly list，再提交用户字面 `$lazy-root`、growth 的 `$lazy-required`，或同名混合来源 first 场景的 `$lazy-root@current-sdk`。覆盖旧行 Content/Current State 属性存在且值为空、仅 Source 无 Skill、Source 的 Content/Contributions 全空、已 ready 集合扩展四种初态。legacy-source 保留真实旧注册形状：Status=applied、Operation 为空、Last Revision 是原 Git commit；旧 commit 仅冻结所选 Git 输入，不能充当 current plan authority。旧行保留 page、Main File ID、stable Skill ID 和人工字段；Members 中的 sibling 不展开，Source 声明集合不能被局部选择替换。legacy 两例用真实 Requires 关系证明完整闭包；source-only 不凭 frontmatter 发明不存在的依赖关系。native-root 另以真实 native 主文为明确根，沿实际 Requires 修复旧 Source 依赖，保留 native 权威和三篇完整正文；authorization_root 的 physical page、scope 和 requires_digest 必须保持，Members 不展开。
@@ -87,6 +94,14 @@ node scripts/notion-sdk-pi.mjs evidence --evidence /absolute/owned/materialize-c
 物化 ready 回执只覆盖这次 root/Requires，仍是 partial 元数据。沿现役 SDK 完整目录读取核实当前 Library/scope，完成持久化后才回到普通只读 consume；记录这两步的实际顺序。不能用回执行拼成 complete 目录，也不能只看正文 local_cache 就报告整条缓存复用成功。目录失败、partial、错 scope，或等待期间取消/切换 session 都须阻止本次交付；单独的 metadata refresh 应重读原 Source，不应取消或改绑已接纳任务。
 
 这五个成功场景随后启动相同 Store 的另一个空 Pi session/PID，确实在五分钟内复用第一次消费取得的缓存；Notion HTTP、Git HTTP、管理新调用均为 0。source-only 使用首次未物化候选的原精确 `alias@skill%3A<stable-id>@namespace` token，物化后的真实目录必须直接复用它，不能偷偷改成另一次宽松别名匹配。最后启动全新独立 client-2，配置、Store、cache、session 不与 client-1 共用，未复制消费者文件；它从同一 Notion 事实与 Git 取得自身原件，语义写为 0。
+
+## 成员能力阻断与零派发
+
+source-materialize-blocked-member 保留真实 Source-only 注册、固定 commit 的 Git 原件和有效 fixed-manager 配置，只给缺失成员声明 legacy Options.settings.member_patches 中一处有效 SKILL.md description 引号补丁。未改 Git 字节，不注入 SDK 返回值，也不删 manager binding。新的空 Pi 直接提交普通 qualified `$lazy-root@current-sdk`；初态不预热 list/source-members/consume。
+
+SDK 必须从真实 Git metadata 发现唯一候选，完整目录返回 blocked / CURRENT_SOURCE_WRITE_UNSUPPORTED，并保持精确 Source、member、stable Skill、commit/revision 与 scope。进程级 observer 从 Pi 加载到实际 exit0 全程闭合，SDK start/end 配对且无在途请求；管理 diagnostic、固定 manager spawn、替代管理子进程和 consume 都为0。有效 launcher 的 PID 文件保持缺失或空，原 manager Store 的 operations 集合不变；受控 Notion 全部请求为只读，Source/Skill/File/关系/投影事实逐值不变。
+
+provider wire 要排除原主文和补丁后的整篇主文，原 Pi session 不得有 selected graph 或 materialization receipt，并保留明确的阻断提示。一次普通回复完成不等于 Skill 交付；本负例不产生暖读成功证明。先在前代独立包保留 materializable 假阳性失败，再在本轮配对新包通过同一 run/evidence 入口。Source 声明级 supported 不能替代成员能力；完整 immutable 文件证明仍由 writer 的实际 manifest/blob 校验负责。
 
 ## 冷目录与真实慢请求
 
@@ -149,7 +164,7 @@ node --test scripts/notion-sdk-pi.test.mjs scripts/notion-sdk-pi-cache-upgrade.t
 
 如果目录、TTL、readiness 或事实失效发生变化，还必须运行 [新进程缓存四例](session-cache-recovery.md#新进程复用) 的 http-warm-restart、http-warm-directory-expired、http-smart-revalidate、http-smart-current。它们拥有原先缓存全链路回归，新增物化案例不替代它们。
 
-现役 CI 使用同一冻结 CLI 生成器、独立安装 Broker 与 Pi 1.6.0 执行原五例、独立取消迟到例和冷目录慢请求例与混合旧目录升级例，随后逐例运行同一 `evidence` 入口。失败也保留原始证据。`verification-skill-routing.test.mjs` 要求生成器、八次实际执行、八次独立回放及各自上传目录齐全；文档有命令不能替代该自动执行链。
+现役 CI 使用同一冻结 CLI 生成器、独立安装 Broker 与 Pi 1.6.0 执行原五例、独立取消迟到例和冷目录慢请求例与混合旧目录升级例，以及成员能力阻断负例，随后逐例运行同一 `evidence` 入口。失败也保留原始证据。`verification-skill-routing.test.mjs` 要求生成器、九次实际执行、九次独立回放及各自上传目录齐全；文档有命令不能替代该自动执行链。
 
 ## 结果范围
 
